@@ -37,8 +37,15 @@ func (r *MetricCategoryRepository) Create(c *models.MetricCategory) error {
 	return wrapDBError(r.db.Create(c).Error)
 }
 
-func (r *MetricCategoryRepository) Update(c *models.MetricCategory) error {
-	return wrapDBError(r.db.Save(c).Error)
+func (r *MetricCategoryRepository) Update(c *models.MetricCategory, expectedVersion int64) error {
+	if err := updateVersioned(r.db, c, c.ID, c.TenantID, expectedVersion, map[string]interface{}{
+		"name": c.Name, "description": c.Description, "parent_id": c.ParentID,
+		"sort_order": c.SortOrder, "updated_by": c.UpdatedBy,
+	}); err != nil {
+		return err
+	}
+	c.Version = expectedVersion + 1
+	return nil
 }
 
 func (r *MetricCategoryRepository) Delete(id, tenantID int64) error {
@@ -115,18 +122,26 @@ func (r *MetricRepository) Create(m *models.Metric) error {
 	return wrapDBError(r.db.Create(m).Error)
 }
 
-func (r *MetricRepository) Update(m *models.Metric) error {
-	return wrapDBError(r.db.Save(m).Error)
+func (r *MetricRepository) Update(m *models.Metric, expectedVersion int64) error {
+	if err := updateVersioned(r.db, m, m.ID, m.TenantID, expectedVersion, map[string]interface{}{
+		"category_id": m.CategoryID, "domain_id": m.DomainID, "name": m.Name, "type": m.Type,
+		"definition": m.Definition, "formula": m.Formula, "unit_id": m.UnitID, "base_metric_id": m.BaseMetricID,
+		"derivation_config": m.DerivationConfig, "steward_id": m.StewardID, "tags": m.Tags, "updated_by": m.UpdatedBy,
+	}); err != nil {
+		return err
+	}
+	m.Version = expectedVersion + 1
+	return nil
 }
 
 func (r *MetricRepository) Delete(id, tenantID int64) error {
 	return deleteInTransaction(r.db, &models.Metric{}, "id = ? AND tenant_id = ?", id, tenantID)
 }
 
-func (r *MetricRepository) UpdateStatus(id, tenantID int64, status string, updatedBy int64) error {
-	return requireAffectedRow(r.db.Model(&models.Metric{}).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
-		Updates(map[string]interface{}{"status": status, "updated_by": updatedBy}))
+func (r *MetricRepository) UpdateStatus(id, tenantID, expectedVersion int64, status string, updatedBy int64) error {
+	return updateVersioned(r.db, &models.Metric{}, id, tenantID, expectedVersion, map[string]interface{}{
+		"status": status, "updated_by": updatedBy,
+	})
 }
 
 func (r *MetricRepository) ExistsByCode(code string, tenantID int64, excludeID int64) (bool, error) {
@@ -211,7 +226,7 @@ func (r *MetricRepository) CreateWithRelations(metric *models.Metric, elementIDs
 	}))
 }
 
-func (r *MetricRepository) UpdateWithRelations(metric *models.Metric, elementIDs, dependencyIDs []int64) error {
+func (r *MetricRepository) UpdateWithRelations(metric *models.Metric, elementIDs, dependencyIDs []int64, expectedVersion int64) error {
 	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
 		if dependencyIDs != nil {
 			if err := lockMetricDependencies(tx, metric.TenantID); err != nil {
@@ -225,7 +240,12 @@ func (r *MetricRepository) UpdateWithRelations(metric *models.Metric, elementIDs
 				return ErrMetricDependencyCycle
 			}
 		}
-		if err := tx.Save(metric).Error; err != nil {
+		if err := updateVersioned(tx, metric, metric.ID, metric.TenantID, expectedVersion, map[string]interface{}{
+			"category_id": metric.CategoryID, "domain_id": metric.DomainID, "name": metric.Name, "type": metric.Type,
+			"definition": metric.Definition, "formula": metric.Formula, "unit_id": metric.UnitID,
+			"base_metric_id": metric.BaseMetricID, "derivation_config": metric.DerivationConfig,
+			"steward_id": metric.StewardID, "tags": metric.Tags, "updated_by": metric.UpdatedBy,
+		}); err != nil {
 			return err
 		}
 		if elementIDs != nil {
@@ -236,6 +256,7 @@ func (r *MetricRepository) UpdateWithRelations(metric *models.Metric, elementIDs
 		if dependencyIDs != nil {
 			return replaceMetricDependencies(tx, metric.ID, dependencyIDs)
 		}
+		metric.Version = expectedVersion + 1
 		return nil
 	}))
 }

@@ -23,12 +23,30 @@ type ConnectorStatus struct {
 	Error          string
 }
 
+type ConnectorOffset struct {
+	Partition map[string]json.RawMessage `json:"partition"`
+	Offset    map[string]json.RawMessage `json:"offset"`
+}
+
+type ConnectorOffsets struct {
+	Offsets []ConnectorOffset `json:"offsets"`
+}
+
 type ConnectControl interface {
 	PutConfig(ctx context.Context, name string, config map[string]string) error
 	Status(ctx context.Context, name string) (*ConnectorStatus, error)
+	Offsets(ctx context.Context, name string) (*ConnectorOffsets, error)
 	Pause(ctx context.Context, name string) error
 	Resume(ctx context.Context, name string) error
 	Delete(ctx context.Context, name string) error
+}
+
+func (c *ConnectClient) Offsets(ctx context.Context, name string) (*ConnectorOffsets, error) {
+	var response ConnectorOffsets
+	if err := c.do(ctx, http.MethodGet, "/connectors/"+url.PathEscape(name)+"/offsets", nil, &response, http.StatusOK); err != nil {
+		return nil, err
+	}
+	return &response, nil
 }
 
 type ConnectClient struct {

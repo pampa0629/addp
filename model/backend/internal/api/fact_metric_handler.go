@@ -25,6 +25,10 @@ func NewFactMetricHandler(svc *service.FactMetricService) *FactMetricHandler {
 // @Produce json
 // @Param id path int true "事实表ID | Fact table ID"
 // @Success 200 {object} map[string]interface{} "指标关联列表 | Metric mapping list"
+// @Failure 400 {object} models.ErrorResponse "事实表 ID 或表类型无效 | Invalid fact table ID or table type"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 404 {object} models.ErrorResponse "逻辑表不存在 | Logical table not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.logical_model.read"]
 // @Router /logical-tables/{id}/metrics [get]
@@ -54,6 +58,8 @@ func (h *FactMetricHandler) ListMetrics(c *gin.Context) {
 // @Param body body models.CreateFactMetricMappingRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的关联 | Created mapping"
 // @Failure 400 {object} models.ErrorResponse "请求的表类型无效 | Invalid table type"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 404 {object} models.ErrorResponse "逻辑表或字段不存在 | Logical table or field not found"
 // @Failure 409 {object} models.ErrorResponse "逻辑表状态或指标关联冲突 | Logical table state or metric mapping conflict"
 // @Failure 503 {object} models.ErrorResponse "数据标准服务不可用 | Data Standard service unavailable"
@@ -92,6 +98,11 @@ func (h *FactMetricHandler) AddMetric(c *gin.Context) {
 // @Param id path int true "事实表ID | Fact table ID"
 // @Param mid path int true "关联ID | Mapping ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Removed successfully"
+// @Failure 400 {object} models.ErrorResponse "事实表或关联 ID 无效 | Invalid fact table or mapping ID"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 404 {object} models.ErrorResponse "逻辑表或指标关联不存在 | Logical table or metric mapping not found"
+// @Failure 409 {object} models.ErrorResponse "逻辑表状态冲突 | Logical table state conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.logical_model.update"]
 // @Router /logical-tables/{id}/metrics/{mid} [delete]

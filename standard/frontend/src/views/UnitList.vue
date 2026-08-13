@@ -11,7 +11,7 @@
           <template #header>
             <div class="card-header">
               <span>{{ $t('standard.unit.category') }}</span>
-              <el-button size="small" type="primary" @click="showAddCategory = true">{{ $t('standard.unit.addCategory') }}</el-button>
+              <el-button v-if="canCreate" size="small" type="primary" @click="showAddCategory = true">{{ $t('standard.unit.addCategory') }}</el-button>
             </div>
           </template>
           <el-tree
@@ -26,8 +26,8 @@
                 <span class="tree-node-name">{{ data.name }}</span>
                 <span class="tree-node-meta">{{ data.code }}</span>
                 <div class="tree-node-actions">
-                  <el-button link size="small" @click.stop="editCategory(data)">{{ $t('standard.common.edit') }}</el-button>
-                  <el-button link size="small" type="danger" @click.stop="deleteCategory(data)" :disabled="data.is_system">{{ $t('standard.common.delete') }}</el-button>
+                  <el-button v-if="canUpdate" link size="small" @click.stop="editCategory(data)">{{ $t('standard.common.edit') }}</el-button>
+                  <el-button v-if="canDelete" link size="small" type="danger" :loading="isActionLocked(`unit-category:${data.id}`)" @click.stop="deleteCategory(data)" :disabled="data.is_system">{{ $t('standard.common.delete') }}</el-button>
                 </div>
               </div>
             </template>
@@ -41,7 +41,7 @@
           <template #header>
             <div class="card-header">
               <span>{{ selectedCategory ? $t('standard.unit.unitsOfCategory', { name: selectedCategory.name }) : $t('standard.unit.allUnits') }}</span>
-              <el-button size="small" type="primary" @click="openAddUnit">{{ $t('standard.unit.addUnit') }}</el-button>
+              <el-button v-if="canCreate" size="small" type="primary" @click="openAddUnit">{{ $t('standard.unit.addUnit') }}</el-button>
             </div>
           </template>
           <el-table :data="units" v-loading="loadingUnits" size="small">
@@ -63,8 +63,8 @@
             <el-table-column :label="$t('standard.common.actions')" width="150" fixed="right">
               <template #default="{ row }">
                 <div class="table-actions">
-                <el-button link size="small" @click="editUnit(row)" :disabled="row.is_system">{{ $t('standard.common.edit') }}</el-button>
-                <el-button link size="small" type="danger" @click="deleteUnit(row)" :disabled="row.is_system">{{ $t('standard.common.delete') }}</el-button>
+                <el-button v-if="canUpdate" link size="small" @click="editUnit(row)" :disabled="row.is_system">{{ $t('standard.common.edit') }}</el-button>
+                <el-button v-if="canDelete" link size="small" type="danger" :loading="isActionLocked(`unit:${row.id}`)" @click="deleteUnit(row)" :disabled="row.is_system">{{ $t('standard.common.delete') }}</el-button>
                 </div>
               </template>
             </el-table-column>
@@ -132,8 +132,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { measurementCategoryAPI, unitAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
+import { useStandardPermissions } from '../composables/useStandardPermissions'
+import { createLatestRequestCoordinator } from '@common-ui'
+import { useActionLock } from '../composables/useActionLock'
 
 const { t } = useI18n()
+const { canCreate, canUpdate, canDelete } = useStandardPermissions('unit')
+const { isLocked: isActionLocked, runLocked } = useActionLock()
 const route = useRoute()
 const router = useRouter()
 const categories = ref([])
@@ -141,6 +146,7 @@ const units = ref([])
 const loadingUnits = ref(false)
 const saving = ref(false)
 const selectedCategory = ref(null)
+const unitRequests = createLatestRequestCoordinator()
 
 const showAddCategory = ref(false)
 const showAddUnit = ref(false)
@@ -163,16 +169,19 @@ const loadCategories = async () => {
 }
 
 const loadUnits = async (categoryID) => {
+  const params = categoryID ? { category_id: categoryID } : {}
+  const request = unitRequests.begin(JSON.stringify(params))
   loadingUnits.value = true
   try {
-    const params = categoryID ? { category_id: categoryID } : {}
     const res = await unitAPI.list(params)
+    if (!unitRequests.isCurrent(request, JSON.stringify(params))) return
     units.value = res || []
   } catch (e) {
+    if (!unitRequests.isCurrent(request, JSON.stringify(params))) return
     units.value = []
     ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
   } finally {
-    loadingUnits.value = false
+    if (unitRequests.isCurrent(request, JSON.stringify(params))) loadingUnits.value = false
   }
 }
 
@@ -187,11 +196,12 @@ const handleCategoryClick = (data) => {
 
 const editCategory = (data) => {
   editingCategory.value = data
-  categoryForm.value = { name: data.name, code: data.code, description: data.description, sort_order: data.sort_order }
+  categoryForm.value = { name: data.name, code: data.code, description: data.description, sort_order: data.sort_order, version: data.version }
   showAddCategory.value = true
 }
 
 const saveCategory = async () => {
+  if (saving.value) return
   saving.value = true
   try {
     if (editingCategory.value) {
@@ -213,24 +223,26 @@ const saveCategory = async () => {
 }
 
 const deleteCategory = async (data) => {
-  try {
-    await ElMessageBox.confirm(t('standard.unit.confirmDeleteCategory', { name: data.name }), t('standard.common.hint'), { type: 'warning' })
-    await measurementCategoryAPI.delete(data.id)
-    ElMessage.success(t('standard.common.deleteSuccess'))
-    if (selectedCategory.value?.id === data.id) {
-      selectedCategory.value = null
-      navigateStandardRoute(router, '/units', { history: 'replace' })
+  await runLocked(`unit-category:${data.id}`, async () => {
+    try {
+      await ElMessageBox.confirm(t('standard.unit.confirmDeleteCategory', { name: data.name }), t('standard.common.hint'), { type: 'warning' })
+      await measurementCategoryAPI.delete(data.id)
+      ElMessage.success(t('standard.common.deleteSuccess'))
+      if (selectedCategory.value?.id === data.id) {
+        selectedCategory.value = null
+        navigateStandardRoute(router, '/units', { history: 'replace' })
+      }
+      await loadCategories()
+      await loadUnits(null)
+    } catch (e) {
+      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
     }
-    await loadCategories()
-    await loadUnits(null)
-  } catch (e) {
-    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
-  }
+  })
 }
 
 const editUnit = (data) => {
   editingUnit.value = data
-  unitForm.value = { category_id: data.category_id, name: data.name, symbol: data.symbol, description: data.description, sort_order: data.sort_order }
+  unitForm.value = { category_id: data.category_id, name: data.name, symbol: data.symbol, description: data.description, sort_order: data.sort_order, version: data.version }
   showAddUnit.value = true
 }
 
@@ -241,6 +253,7 @@ const openAddUnit = () => {
 }
 
 const saveUnit = async () => {
+  if (saving.value) return
   saving.value = true
   try {
     if (editingUnit.value) {
@@ -262,14 +275,16 @@ const saveUnit = async () => {
 }
 
 const deleteUnit = async (data) => {
-  try {
-    await ElMessageBox.confirm(t('standard.unit.confirmDeleteUnit', { name: data.name }), t('standard.common.hint'), { type: 'warning' })
-    await unitAPI.delete(data.id)
-    ElMessage.success(t('standard.common.deleteSuccess'))
-    await loadUnits(selectedCategory.value?.id || null)
-  } catch (e) {
-    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
-  }
+  await runLocked(`unit:${data.id}`, async () => {
+    try {
+      await ElMessageBox.confirm(t('standard.unit.confirmDeleteUnit', { name: data.name }), t('standard.common.hint'), { type: 'warning' })
+      await unitAPI.delete(data.id)
+      ElMessage.success(t('standard.common.deleteSuccess'))
+      await loadUnits(selectedCategory.value?.id || null)
+    } catch (e) {
+      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
+    }
+  })
 }
 
 onMounted(async () => {

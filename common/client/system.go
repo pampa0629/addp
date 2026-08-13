@@ -90,6 +90,10 @@ type EngineCatalogListChildrenResponse struct {
 	Nodes []EngineCatalogEntry `json:"nodes"`
 }
 
+type EngineCatalogDescribeFactsRequest struct {
+	Path EngineCatalogPath `json:"path"`
+}
+
 type EngineCatalogPath struct {
 	Version  string                 `json:"version,omitempty"`
 	EngineID uint                   `json:"engine_id,omitempty"`

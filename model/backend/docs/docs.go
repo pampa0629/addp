@@ -36,6 +36,18 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -76,6 +88,24 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
                     "409": {
@@ -120,6 +150,30 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "分层 ID 无效 | Invalid DW layer ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "数仓分层不存在 | DW layer not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -169,6 +223,36 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "请求或分层 ID 无效 | Invalid request or DW layer ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "数仓分层不存在 | DW layer not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "分层编码冲突 | DW layer code conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -206,6 +290,24 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "400": {
+                        "description": "分层 ID 无效 | Invalid DW layer ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "数仓分层不存在 | DW layer not found",
                         "schema": {
@@ -241,12 +343,17 @@ const docTemplate = `{
                 "summary": "查询实体列表 | List entities",
                 "parameters": [
                     {
+                        "minimum": 1,
                         "type": "integer",
                         "description": "业务域ID | Domain ID",
                         "name": "domain_id",
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "draft",
+                            "approved"
+                        ],
                         "type": "string",
                         "description": "状态过滤 | Filter by status",
                         "name": "status",
@@ -259,13 +366,18 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "minimum": 1,
                         "type": "integer",
+                        "default": 1,
                         "description": "页码 | Page number",
                         "name": "page",
                         "in": "query"
                     },
                     {
+                        "maximum": 100,
+                        "minimum": 1,
                         "type": "integer",
+                        "default": 20,
                         "description": "每页数量 | Page size",
                         "name": "page_size",
                         "in": "query"
@@ -277,6 +389,24 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "查询参数无效 | Invalid query parameters",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -326,6 +456,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "引用的业务域不存在 | Referenced business domain not found",
                         "schema": {
@@ -371,6 +513,18 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -423,6 +577,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
                     "409": {
                         "description": "存在已审批实体 | Approved entities exist",
                         "schema": {
@@ -468,6 +634,30 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "实体 ID 无效 | Invalid entity ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "实体不存在 | Entity not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -518,6 +708,24 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "400": {
+                        "description": "请求或实体 ID 无效 | Invalid request or entity ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "实体不存在 | Entity not found",
                         "schema": {
@@ -525,7 +733,13 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "实体状态冲突 | Entity state conflict",
+                        "description": "实体状态或属性列名冲突 | Entity state or attribute column name conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "数据标准服务不可用 | Data Standard service unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -564,6 +778,24 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "实体 ID 无效 | Invalid entity ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
                     "404": {
@@ -617,7 +849,19 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "实体不满足审批条件 | Entity is not ready for approval",
+                        "description": "实体缺少属性、主键或属性定义不完整 | Entity has no attributes, no primary key, or an incomplete attribute definition",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -671,6 +915,30 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "实体 ID 无效 | Invalid entity ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "实体不存在 | Entity not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -720,6 +988,24 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "400": {
+                        "description": "请求或实体 ID 无效 | Invalid request or entity ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "实体或引用资源不存在 | Entity or referenced resource not found",
                         "schema": {
@@ -728,6 +1014,12 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "实体状态冲突 | Entity state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "数据标准服务不可用 | Data Standard service unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -788,6 +1080,42 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "请求、实体或属性 ID 无效 | Invalid request, entity, or attribute ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "实体或属性不存在 | Entity or attribute not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "实体状态或属性列名冲突 | Entity state or attribute column name conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "数据标准服务不可用 | Data Standard service unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -831,6 +1159,36 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "实体或属性 ID 无效 | Invalid entity or attribute ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "实体或属性不存在 | Entity or attribute not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "实体状态冲突 | Entity state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -867,6 +1225,24 @@ const docTemplate = `{
                         "description": "重新打开成功 | Reopened successfully",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "实体 ID 无效 | Invalid entity ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
                     "404": {
@@ -917,6 +1293,24 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "实体 ID 过滤无效 | Invalid entity ID filter",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -959,6 +1353,24 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "关系实体不存在 | Referenced entity not found",
                         "schema": {
@@ -966,7 +1378,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "关系状态或自关联冲突 | Relation state or self-reference conflict",
+                        "description": "关系重复、状态或自关联冲突 | Duplicate, state, or self-reference conflict",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -1007,6 +1419,30 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "关系 ID 无效 | Invalid relation ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "实体关系不存在 | Entity relation not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -1057,6 +1493,24 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "400": {
+                        "description": "请求或关系 ID 无效 | Invalid request or relation ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "实体关系或关系实体不存在 | Entity relation or referenced entity not found",
                         "schema": {
@@ -1064,7 +1518,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "关系状态冲突 | Relation state conflict",
+                        "description": "关系重复或状态冲突 | Duplicate or relation state conflict",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -1104,6 +1558,36 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "关系 ID 无效 | Invalid relation ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "实体关系不存在 | Entity relation not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "关系实体状态冲突 | Relation entity state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -1134,12 +1618,21 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "entity",
+                            "fact",
+                            "dimension"
+                        ],
                         "type": "string",
                         "description": "表类型 | Table type",
                         "name": "table_type",
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "draft",
+                            "approved"
+                        ],
                         "type": "string",
                         "description": "状态过滤 | Filter by status",
                         "name": "status",
@@ -1152,19 +1645,25 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "minimum": 1,
                         "type": "integer",
                         "description": "业务域ID | Domain ID",
                         "name": "domain_id",
                         "in": "query"
                     },
                     {
+                        "minimum": 1,
                         "type": "integer",
+                        "default": 1,
                         "description": "页码 | Page number",
                         "name": "page",
                         "in": "query"
                     },
                     {
+                        "maximum": 100,
+                        "minimum": 1,
                         "type": "integer",
+                        "default": 20,
                         "description": "每页数量 | Page size",
                         "name": "page_size",
                         "in": "query"
@@ -1176,6 +1675,24 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "查询参数无效 | Invalid query parameters",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -1221,6 +1738,18 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -1280,6 +1809,30 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "逻辑表 ID 无效 | Invalid logical table ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表不存在 | Logical table not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -1329,6 +1882,24 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "400": {
+                        "description": "请求或逻辑表 ID 无效 | Invalid request or logical table ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "逻辑表不存在 | Logical table not found",
                         "schema": {
@@ -1336,7 +1907,13 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "逻辑表状态冲突 | Logical table state conflict",
+                        "description": "逻辑表状态或字段列名冲突 | Logical table state or field column name conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "数据标准服务不可用 | Data Standard service unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -1375,6 +1952,24 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "逻辑表 ID 无效 | Invalid logical table ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
                     "404": {
@@ -1427,7 +2022,19 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "逻辑表不满足审批条件 | Logical table is not ready for approval",
+                        "description": "逻辑表缺少字段或主键 | Logical table has no fields or primary key",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -1481,6 +2088,30 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "事实表 ID 或表类型无效 | Invalid fact table ID or table type",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表不存在 | Logical table not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -1532,6 +2163,18 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "表或字段类型无效 | Invalid table or field type",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -1592,6 +2235,36 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "事实表或关联 ID 无效 | Invalid fact table or relation ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表或维度关联不存在 | Logical table or dimension relation not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "逻辑表状态冲突 | Logical table state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -1629,6 +2302,30 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "逻辑表 ID 无效 | Invalid logical table ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表不存在 | Logical table not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -1685,6 +2382,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "逻辑表或引用资源不存在 | Logical table or referenced resource not found",
                         "schema": {
@@ -1693,6 +2402,12 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "逻辑表状态冲突 | Logical table state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "数据标准服务不可用 | Data Standard service unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -1753,6 +2468,42 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "字段定义无效 | Invalid field definition",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表或字段不存在 | Logical table or field not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "逻辑表状态或字段列名冲突 | Logical table state or field column name conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "数据标准服务不可用 | Data Standard service unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -1796,6 +2547,36 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "逻辑表或字段 ID 无效 | Invalid logical table or field ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表或字段不存在 | Logical table or field not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "逻辑表状态冲突 | Logical table state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -1833,6 +2614,30 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "事实表 ID 或表类型无效 | Invalid fact table ID or table type",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表不存在 | Logical table not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -1885,6 +2690,18 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "请求的表类型无效 | Invalid table type",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -1951,6 +2768,36 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "事实表或关联 ID 无效 | Invalid fact table or mapping ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表或指标关联不存在 | Logical table or metric mapping not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "逻辑表状态冲突 | Logical table state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -2008,6 +2855,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "逻辑表不存在 | Logical table not found",
                         "schema": {
@@ -2051,6 +2910,24 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_model_internal_models.MessageResponse"
                         }
                     },
+                    "400": {
+                        "description": "逻辑表 ID 无效 | Invalid logical table ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "逻辑表不存在 | Logical table not found",
                         "schema": {
@@ -2083,10 +2960,12 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "layer_code": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 20
                 },
                 "layer_name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 100
                 },
                 "naming_rule": {
                     "type": "string"
@@ -2096,7 +2975,8 @@ const docTemplate = `{
                     "additionalProperties": true
                 },
                 "sort_order": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0
                 }
             }
         },
@@ -2109,28 +2989,45 @@ const docTemplate = `{
             ],
             "properties": {
                 "column_name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                 },
                 "data_type": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "string",
+                        "int",
+                        "bigint",
+                        "float",
+                        "decimal",
+                        "date",
+                        "datetime",
+                        "bool",
+                        "json",
+                        "text",
+                        "geometry"
+                    ]
                 },
                 "description": {
                     "type": "string"
                 },
                 "element_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 },
                 "is_pk": {
                     "type": "boolean"
                 },
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                 },
                 "nullable": {
                     "type": "boolean"
                 },
                 "sort_order": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0
                 }
             }
         },
@@ -2146,7 +3043,8 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                 },
                 "relation_type": {
                     "type": "string",
@@ -2157,10 +3055,12 @@ const docTemplate = `{
                     ]
                 },
                 "source_entity": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 },
                 "target_entity": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -2172,16 +3072,19 @@ const docTemplate = `{
             ],
             "properties": {
                 "code": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 100
                 },
                 "description": {
                     "type": "string"
                 },
                 "domain_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 },
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                 }
             }
         },
@@ -2192,10 +3095,12 @@ const docTemplate = `{
             ],
             "properties": {
                 "field_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 },
                 "metric_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 },
                 "note": {
                     "type": "string"
@@ -2211,10 +3116,24 @@ const docTemplate = `{
             ],
             "properties": {
                 "column_name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                 },
                 "data_type": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "string",
+                        "int",
+                        "bigint",
+                        "float",
+                        "decimal",
+                        "date",
+                        "datetime",
+                        "bool",
+                        "json",
+                        "text",
+                        "geometry"
+                    ]
                 },
                 "default_value": {
                     "type": "string"
@@ -2223,16 +3142,27 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "element_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 },
                 "field_role": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "regular",
+                        "measure_additive",
+                        "measure_semi",
+                        "measure_non",
+                        "dimension_fk",
+                        "degenerate_dim"
+                    ]
                 },
                 "hierarchy_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 },
                 "hierarchy_level": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0
                 },
                 "is_partition": {
                     "type": "boolean"
@@ -2241,16 +3171,19 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "length": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 },
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                 },
                 "nullable": {
                     "type": "boolean"
                 },
                 "sort_order": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0
                 }
             }
         },
@@ -2258,40 +3191,51 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "code",
+                "layer",
                 "name",
                 "table_type"
             ],
             "properties": {
                 "code": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                 },
                 "description": {
                     "type": "string"
                 },
                 "domain_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 },
                 "entity_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 },
                 "grain_description": {
                     "type": "string"
                 },
                 "layer": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 20
                 },
                 "materialization": {
                     "type": "object",
                     "additionalProperties": true
                 },
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                 },
                 "scd_type": {
                     "type": "integer"
                 },
                 "table_type": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "entity",
+                        "fact",
+                        "dimension"
+                    ]
                 }
             }
         },
@@ -2305,16 +3249,23 @@ const docTemplate = `{
             "properties": {
                 "relation_type": {
                     "description": "fk/join，默认 fk",
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "fk",
+                        "join"
+                    ]
                 },
                 "source_field": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 },
                 "target_field": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 },
                 "target_table": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -2365,90 +3316,162 @@ const docTemplate = `{
         },
         "github_com_addp_model_internal_models.UpdateDWLayerRequest": {
             "type": "object",
+            "required": [
+                "layer_name",
+                "sort_order"
+            ],
             "properties": {
                 "description": {
                     "type": "string"
                 },
                 "layer_name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 100
                 },
                 "naming_rule": {
                     "type": "string"
                 },
                 "quality_sla": {
                     "type": "object",
-                    "additionalProperties": true
+                    "additionalProperties": true,
+                    "x-nullable": true
                 },
                 "sort_order": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0
                 }
             }
         },
         "github_com_addp_model_internal_models.UpdateEntityAttributeRequest": {
             "type": "object",
+            "required": [
+                "column_name",
+                "data_type",
+                "is_pk",
+                "name",
+                "nullable",
+                "sort_order"
+            ],
             "properties": {
                 "column_name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                 },
                 "data_type": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "string",
+                        "int",
+                        "bigint",
+                        "float",
+                        "decimal",
+                        "date",
+                        "datetime",
+                        "bool",
+                        "json",
+                        "text",
+                        "geometry"
+                    ]
                 },
                 "description": {
                     "type": "string"
                 },
                 "element_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1,
+                    "x-nullable": true
                 },
                 "is_pk": {
                     "type": "boolean"
                 },
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                 },
                 "nullable": {
                     "type": "boolean"
                 },
                 "sort_order": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0
                 }
             }
         },
         "github_com_addp_model_internal_models.UpdateEntityRelationRequest": {
             "type": "object",
+            "required": [
+                "relation_type"
+            ],
             "properties": {
                 "description": {
                     "type": "string"
                 },
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                 },
                 "relation_type": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "one_to_one",
+                        "one_to_many",
+                        "many_to_many"
+                    ]
                 }
             }
         },
         "github_com_addp_model_internal_models.UpdateEntityRequest": {
             "type": "object",
+            "required": [
+                "name"
+            ],
             "properties": {
                 "description": {
                     "type": "string"
                 },
                 "domain_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1,
+                    "x-nullable": true
                 },
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                 }
             }
         },
         "github_com_addp_model_internal_models.UpdateLogicalFieldRequest": {
             "type": "object",
+            "required": [
+                "column_name",
+                "data_type",
+                "field_role",
+                "is_partition",
+                "is_pk",
+                "name",
+                "nullable",
+                "sort_order"
+            ],
             "properties": {
                 "column_name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                 },
                 "data_type": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "string",
+                        "int",
+                        "bigint",
+                        "float",
+                        "decimal",
+                        "date",
+                        "datetime",
+                        "bool",
+                        "json",
+                        "text",
+                        "geometry"
+                    ]
                 },
                 "default_value": {
                     "type": "string"
@@ -2457,16 +3480,30 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "element_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1,
+                    "x-nullable": true
                 },
                 "field_role": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "regular",
+                        "measure_additive",
+                        "measure_semi",
+                        "measure_non",
+                        "dimension_fk",
+                        "degenerate_dim"
+                    ]
                 },
                 "hierarchy_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1,
+                    "x-nullable": true
                 },
                 "hierarchy_level": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "x-nullable": true
                 },
                 "is_partition": {
                     "type": "boolean"
@@ -2475,49 +3512,71 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "length": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1,
+                    "x-nullable": true
                 },
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                 },
                 "nullable": {
                     "type": "boolean"
                 },
                 "sort_order": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0
                 }
             }
         },
         "github_com_addp_model_internal_models.UpdateLogicalTableRequest": {
             "type": "object",
+            "required": [
+                "layer",
+                "materialization",
+                "name",
+                "scd_type",
+                "table_type"
+            ],
             "properties": {
                 "description": {
                     "type": "string"
                 },
                 "domain_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1,
+                    "x-nullable": true
                 },
                 "entity_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1,
+                    "x-nullable": true
                 },
                 "grain_description": {
                     "type": "string"
                 },
                 "layer": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 20
                 },
                 "materialization": {
                     "type": "object",
                     "additionalProperties": true
                 },
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                 },
                 "scd_type": {
                     "type": "integer"
                 },
                 "table_type": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "entity",
+                        "fact",
+                        "dimension"
+                    ]
                 }
             }
         }

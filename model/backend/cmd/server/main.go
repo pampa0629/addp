@@ -36,7 +36,7 @@ func main() {
 	}
 
 	// 连接数据库
-	db, err := gorm.Open(postgres.Open(cfg.GetDatabaseDSN()), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(cfg.GetDatabaseDSN()), &gorm.Config{TranslateError: true})
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -80,7 +80,7 @@ func main() {
 	entitySvc := service.NewEntityService(entityRepo, entityRelationRepo)
 	entitySvc.SetStandardClient(standardClient)
 	entityRelationSvc := service.NewEntityRelationService(entityRelationRepo, entityRepo)
-	logicalTableSvc := service.NewLogicalTableService(logicalTableRepo)
+	logicalTableSvc := service.NewLogicalTableService(logicalTableRepo, entityRepo, dwLayerRepo)
 	logicalTableSvc.SetStandardClient(standardClient)
 	dwLayerSvc := service.NewDWLayerService(dwLayerRepo)
 	factMetricSvc := service.NewFactMetricService(factMetricRepo, logicalTableRepo)

@@ -43,6 +43,9 @@ func (s *FactMetricService) ListMetrics(factTableID, tenantID int64) ([]models.F
 
 // AddMetric 为事实表添加指标关联
 func (s *FactMetricService) AddMetric(factTableID, tenantID, userID int64, req *models.CreateFactMetricMappingRequest) (*models.FactMetricMapping, error) {
+	if err := validateCreateFactMetricRequest(req); err != nil {
+		return nil, err
+	}
 	// 验证事实表存在且属于该租户
 	table, err := s.tableRepo.GetByID(factTableID, tenantID)
 	if err != nil {

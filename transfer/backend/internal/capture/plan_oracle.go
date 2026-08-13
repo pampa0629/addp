@@ -63,12 +63,18 @@ func validateOracleCaptureSettings(ctx context.Context, plan *CapturePlan) error
 		return fmt.Errorf("open Oracle CDC connection: %w", err)
 	}
 	defer db.Close()
-	var logMode, forceLogging, supplementalMin string
-	if err := db.QueryRowContext(ctx, `SELECT LOG_MODE, FORCE_LOGGING, SUPPLEMENTAL_LOG_DATA_MIN FROM V$DATABASE`).Scan(&logMode, &forceLogging, &supplementalMin); err != nil {
+	var logMode, forceLogging, supplementalMin, clusterDatabase string
+	if err := db.QueryRowContext(ctx, `
+		SELECT d.LOG_MODE, d.FORCE_LOGGING, d.SUPPLEMENTAL_LOG_DATA_MIN,
+		       (SELECT VALUE FROM V$PARAMETER WHERE NAME = 'cluster_database')
+		FROM V$DATABASE d`).Scan(&logMode, &forceLogging, &supplementalMin, &clusterDatabase); err != nil {
 		return fmt.Errorf("query Oracle CDC database settings: %w", err)
 	}
 	if !strings.EqualFold(strings.TrimSpace(logMode), "ARCHIVELOG") || !strings.EqualFold(strings.TrimSpace(forceLogging), "YES") || !strings.EqualFold(strings.TrimSpace(supplementalMin), "YES") {
 		return fmt.Errorf("Oracle CDC requires ARCHIVELOG, FORCE_LOGGING=YES and SUPPLEMENTAL_LOG_DATA_MIN=YES (actual log_mode=%q force_logging=%q supplemental_log_data_min=%q)", logMode, forceLogging, supplementalMin)
+	}
+	if err := validateOracleSingleInstance(clusterDatabase); err != nil {
+		return err
 	}
 	var allColumnGroups int
 	if err := db.QueryRowContext(ctx, `
@@ -85,6 +91,13 @@ func validateOracleCaptureSettings(ctx context.Context, plan *CapturePlan) error
 		return fmt.Errorf("Oracle CDC credentials cannot read source table: %w", err)
 	} else {
 		rows.Close()
+	}
+	return nil
+}
+
+func validateOracleSingleInstance(clusterDatabase string) error {
+	if !strings.EqualFold(strings.TrimSpace(clusterDatabase), "FALSE") {
+		return fmt.Errorf("Oracle CDC does not support RAC; V$PARAMETER.cluster_database must be FALSE, got %q", clusterDatabase)
 	}
 	return nil
 }
@@ -214,7 +227,7 @@ func oracleCDCNativeType(dataType string, precision, scale sql.NullInt64) string
 
 func validateOracleCDCSourceFieldType(name, nativeType, dataType string, temporalPrecision sql.NullInt64, configuredType datatype.FieldType) error {
 	base := strings.ToUpper(strings.Join(strings.Fields(strings.TrimSpace(dataType)), " "))
-	if strings.Contains(base, "LOB") || base == "LONG" || strings.Contains(base, "RAW") || base == "XMLTYPE" || base == "JSON" {
+	if strings.Contains(base, "LOB") || base == "LONG" || strings.Contains(base, "RAW") || base == "XMLTYPE" || base == "JSON" || base == "BOOLEAN" {
 		return fmt.Errorf("Oracle CDC source field %q uses unsupported Oracle type %q", name, nativeType)
 	}
 	actualType := (&oracletypes.TypeMapper{}).ToCommon(nativeType)

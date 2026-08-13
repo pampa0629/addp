@@ -15,6 +15,7 @@ type Classification struct {
 	UpdatedBy   *int64    `json:"updated_by,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	Version     int64     `gorm:"not null;default:1" json:"version"`
 }
 
 func (Classification) TableName() string {
@@ -31,6 +32,7 @@ type GradingLevel struct {
 	Color       string    `gorm:"size:20" json:"color"` // 十六进制颜色
 	SortOrder   int       `gorm:"default:0" json:"sort_order"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	Version     int64     `gorm:"not null;default:1" json:"version"`
 }
 
 func (GradingLevel) TableName() string {
@@ -48,6 +50,7 @@ type CreateClassificationRequest struct {
 
 // UpdateClassificationRequest 更新数据分类请求
 type UpdateClassificationRequest struct {
+	Version     int64  `json:"version" binding:"required"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	ParentID    *int64 `json:"parent_id,omitempty"`
@@ -56,6 +59,7 @@ type UpdateClassificationRequest struct {
 
 // UpdateGradingLevelRequest 更新数据分级请求（只允许修改名称/描述/颜色，不允许增删）
 type UpdateGradingLevelRequest struct {
+	Version     int64  `json:"version" binding:"required"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Color       string `json:"color"`

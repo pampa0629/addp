@@ -47,6 +47,7 @@ export const ORACLE_CDC_FIELD_TYPES = Object.freeze([
 ])
 
 const DATABASE_CDC_SOURCE_TYPES = Object.freeze(['postgresql', 'mysql', 'oracle'])
+const DATABASE_CDC_TARGET_TYPES = Object.freeze(['postgresql', 'mysql', 'oracle'])
 
 export function isKafkaTopicSource(engineType, locator) {
   return String(engineType || '').trim().toLowerCase() === 'kafka' && locatorType(locator) === 'topic'
@@ -101,7 +102,7 @@ export function databaseCDCUnavailableReasonCodes({
 	if (String(sourceRepresentation || '').trim().toLowerCase() !== 'native') {
 		reasons.push({ code: 'sourceNativeRequired' })
 	}
-	if (!['postgresql', 'mysql'].includes(normalizedEngineType(targetEngineType))) {
+	if (!DATABASE_CDC_TARGET_TYPES.includes(normalizedEngineType(targetEngineType))) {
 		reasons.push({ code: 'targetAtomicApplyRequired' })
 	}
 	if (String(targetRepresentation || '').trim().toLowerCase() !== 'native') {

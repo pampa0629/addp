@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"strconv"
 
 	commonAPI "github.com/addp/common/api"
 	commoni18n "github.com/addp/common/middleware/i18n"
@@ -69,7 +68,7 @@ func (h *IssueHandler) List(c *gin.Context) {
 // @Security BearerAuth
 func (h *IssueHandler) Get(c *gin.Context) {
 	tenantID := getTenantID(c)
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := requiredPositiveID(c.Param("id"))
 	if err != nil {
 		respondInvalidRequest(c, "")
 		return
@@ -99,7 +98,7 @@ func (h *IssueHandler) Get(c *gin.Context) {
 // @Security BearerAuth
 func (h *IssueHandler) UpdateStatus(c *gin.Context) {
 	tenantID := getTenantID(c)
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := requiredPositiveID(c.Param("id"))
 	if err != nil {
 		respondInvalidRequest(c, "")
 		return

@@ -224,6 +224,11 @@ func BuildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, resolver EngineRes
 	if err != nil {
 		return nil, err
 	}
+	if bindings.TargetType == "oracle" {
+		if err := validateOracleDatabaseCDCTarget(fields); err != nil {
+			return nil, err
+		}
+	}
 	sourceKeys, targetKeys, err := DatabaseCDCSourceToTargetKeys(spec)
 	if err != nil {
 		return nil, err
@@ -254,6 +259,11 @@ func BuildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, resolver EngineRes
 			return nil, err
 		}
 	}
+	if bindings.TargetType == "oracle" {
+		if err := validateOracleDatabaseCDCSpatialTarget(targetSpatialInfo); err != nil {
+			return nil, err
+		}
+	}
 	return &ContinuousPlan{
 		Source: ContinuousSourcePlan{
 			ConnInfo: stream.ConnInfo, Path: stream.Path, SourceIdentity: stream.SourceIdentity,
@@ -265,6 +275,32 @@ func BuildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, resolver EngineRes
 		Envelope: envelope, RecordFailureMode: RecordFailureModeBlock,
 		CDC: &DatabaseCDCSourcePlan{Provider: bindings.SourceType, ConnectorName: strings.TrimSpace(stream.ConnectorName), Database: stream.Database, Schema: stream.Schema, Table: stream.Table, CaptureTable: captureTable, SpatialInfo: stream.SpatialInfo.Clone()},
 	}, nil
+}
+
+func validateOracleDatabaseCDCTarget(fields []datatype.FieldInfo) error {
+	for _, field := range fields {
+		switch field.Type {
+		case datatype.FieldTypeTime:
+			return fmt.Errorf("Oracle CDC target does not support time-only field %q", field.Name)
+		case datatype.FieldTypeDecimal:
+			if field.Precision > 38 {
+				return fmt.Errorf("Oracle CDC target decimal field %q precision %d exceeds 38", field.Name, field.Precision)
+			}
+		}
+	}
+	return nil
+}
+
+func validateOracleDatabaseCDCSpatialTarget(spatialInfo *datatype.SpatialInfo) error {
+	if spatialInfo == nil {
+		return nil
+	}
+	for _, column := range spatialInfo.GeometryColumns {
+		if column.Dimension == nil || *column.Dimension != 2 {
+			return fmt.Errorf("Oracle CDC target geometry field %q requires frozen XY dimension 2", column.Name)
+		}
+	}
+	return nil
 }
 
 func mapDatabaseCDCSpatialInfo(provider string, source *datatype.SpatialInfo, mappings []ContinuousFieldPlan) (*datatype.SpatialInfo, error) {

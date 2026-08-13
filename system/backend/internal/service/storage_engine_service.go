@@ -96,6 +96,11 @@ func (s *StorageEngineService) ListCatalogChildren(ctx context.Context, resource
 	return result, nil
 }
 
+// DescribeCatalogFacts 返回指定 catalog 叶子的实时结构事实。
+func (s *StorageEngineService) DescribeCatalogFacts(ctx context.Context, resource *models.Engine, req models.CatalogDescribeFactsRequest) (*plugin.CatalogFacts, error) {
+	return dbbridge.DescribeCatalogFacts(ctx, resource, toPluginCatalogPath(req.Path), plugin.CatalogFactsOptions{})
+}
+
 func toPluginCatalogPath(path models.CatalogPath) plugin.CatalogPath {
 	segments := make([]plugin.CatalogSegment, 0, len(path.Segments))
 	for _, segment := range path.Segments {

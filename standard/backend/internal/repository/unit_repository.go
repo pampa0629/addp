@@ -31,8 +31,14 @@ func (r *MeasurementCategoryRepository) Create(cat *models.MeasurementCategory) 
 	return wrapDBError(r.db.Create(cat).Error)
 }
 
-func (r *MeasurementCategoryRepository) Update(cat *models.MeasurementCategory) error {
-	return wrapDBError(r.db.Save(cat).Error)
+func (r *MeasurementCategoryRepository) Update(cat *models.MeasurementCategory, expectedVersion int64) error {
+	if err := updateVersioned(r.db, cat, cat.ID, cat.TenantID, expectedVersion, map[string]interface{}{
+		"name": cat.Name, "description": cat.Description, "sort_order": cat.SortOrder,
+	}); err != nil {
+		return err
+	}
+	cat.Version = expectedVersion + 1
+	return nil
 }
 
 func (r *MeasurementCategoryRepository) Delete(id, tenantID int64) error {
@@ -78,8 +84,14 @@ func (r *UnitRepository) Create(unit *models.Unit) error {
 	return wrapDBError(r.db.Create(unit).Error)
 }
 
-func (r *UnitRepository) Update(unit *models.Unit) error {
-	return wrapDBError(r.db.Save(unit).Error)
+func (r *UnitRepository) Update(unit *models.Unit, expectedVersion int64) error {
+	if err := updateVersioned(r.db, unit, unit.ID, unit.TenantID, expectedVersion, map[string]interface{}{
+		"name": unit.Name, "symbol": unit.Symbol, "description": unit.Description, "sort_order": unit.SortOrder,
+	}); err != nil {
+		return err
+	}
+	unit.Version = expectedVersion + 1
+	return nil
 }
 
 func (r *UnitRepository) Delete(id, tenantID int64) error {

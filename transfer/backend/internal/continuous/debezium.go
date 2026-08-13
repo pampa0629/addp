@@ -204,7 +204,7 @@ func decodeDebeziumSnapshotNotification(value []byte, plan *planner.ContinuousPl
 	if err := json.Unmarshal(object["type"], &notificationType); err != nil {
 		return nil, true, incompatibleSchemaField("Debezium snapshot notification", "type")
 	}
-	if notificationType != "STARTED" && notificationType != "IN_PROGRESS" && notificationType != "TABLE_SCAN_COMPLETED" && notificationType != "COMPLETED" {
+	if notificationType != "STARTED" && notificationType != "IN_PROGRESS" && notificationType != "TABLE_SCAN_COMPLETED" && notificationType != "COMPLETED" && notificationType != "SKIPPED" {
 		return nil, true, fmt.Errorf("unsupported Debezium snapshot notification type %q", notificationType)
 	}
 	if err := json.Unmarshal(object["aggregate_type"], &aggregateType); err != nil || aggregateType != "Initial Snapshot" {
@@ -221,12 +221,39 @@ func decodeDebeziumSnapshotNotification(value []byte, plan *planner.ContinuousPl
 	if err != nil {
 		return nil, true, err
 	}
-	if err := validateObjectFields(additional, []string{"connector_name"}, []string{"connector_name"}, "Debezium snapshot notification additional_data"); err != nil {
+	if err := validateObjectFields(additional, []string{"connector_name"}, []string{
+		"connector_name",
+		"current_collection_in_progress",
+		"data_collections",
+		"scanned_collection",
+		"total_rows_scanned",
+		"status",
+	}, "Debezium snapshot notification additional_data"); err != nil {
 		return nil, true, err
 	}
 	var connectorName string
 	if err := json.Unmarshal(additional["connector_name"], &connectorName); err != nil || strings.TrimSpace(connectorName) == "" {
 		return nil, true, incompatibleSchemaField("Debezium snapshot notification additional_data", "connector_name")
+	}
+	if raw, ok := additional["current_collection_in_progress"]; ok {
+		var collection string
+		if err := json.Unmarshal(raw, &collection); err != nil {
+			return nil, true, incompatibleSchemaField("Debezium snapshot notification additional_data", "current_collection_in_progress")
+		}
+	}
+	if raw, ok := additional["data_collections"]; ok {
+		var collections string
+		if err := json.Unmarshal(raw, &collections); err != nil || strings.TrimSpace(collections) == "" {
+			return nil, true, incompatibleSchemaField("Debezium snapshot notification additional_data", "data_collections")
+		}
+	}
+	for _, field := range []string{"scanned_collection", "total_rows_scanned", "status"} {
+		if raw, ok := additional[field]; ok {
+			var value string
+			if err := json.Unmarshal(raw, &value); err != nil || strings.TrimSpace(value) == "" {
+				return nil, true, incompatibleSchemaField("Debezium snapshot notification additional_data", field)
+			}
+		}
 	}
 	if plan == nil || plan.CDC == nil || strings.TrimSpace(plan.CDC.ConnectorName) == "" {
 		return nil, true, fmt.Errorf("Debezium snapshot notification requires expected connector name")

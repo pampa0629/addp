@@ -674,7 +674,7 @@ func (h *EngineHandler) ListCatalogChildren(c *gin.Context) {
 		return
 	}
 
-	_, tenantID, err := iamTenantUserActor(c)
+	_, tenantID, _, err := iamTenantActor(c)
 	if err != nil {
 		respondIAMError(c, err)
 		return
@@ -692,6 +692,51 @@ func (h *EngineHandler) ListCatalogChildren(c *gin.Context) {
 	}
 
 	commonapi.RespondSuccess(c, models.CatalogListChildrenResponse{Nodes: nodes})
+}
+
+// DescribeCatalogFacts 返回指定实时 catalog 叶子的结构事实。
+// @Summary 获取实时 catalog 叶子事实 | Describe live catalog leaf facts
+// @Description 基于 System 管理的引擎连接读取一个 catalog 叶子的结构事实；普通列表不会携带的字段详情通过此接口按需读取。| Read structural facts for one catalog leaf using the System-managed engine connection. Field details omitted from list responses are loaded here on demand.
+// @Tags 引擎管理 | Engine Management
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "引擎ID | Engine ID"
+// @Param request body models.CatalogDescribeFactsRequest true "Catalog 叶子路径 | Catalog leaf path"
+// @Success 200 {object} plugin.CatalogFacts
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine.read"]
+// @Router /engines/{id}/catalog/facts [post]
+func (h *EngineHandler) DescribeCatalogFacts(c *gin.Context) {
+	id, err := commonapi.BindIDParam(c, "id")
+	if err != nil {
+		return
+	}
+	var req models.CatalogDescribeFactsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	_, tenantID, _, err := iamTenantActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	engine, err := h.engineService.GetForConnection(id, tenantID)
+	if err != nil {
+		h.respondWithResourceError(c, err)
+		return
+	}
+	facts, err := h.storageEngineService.DescribeCatalogFacts(c.Request.Context(), engine, req)
+	if err != nil {
+		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	commonapi.RespondSuccess(c, facts)
 }
 
 // RuntimeEngineRegistrationRequest 是内置工作流 Runtime 的平台注册请求。

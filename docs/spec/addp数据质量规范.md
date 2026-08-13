@@ -88,6 +88,8 @@ Standard 在创建和更新数据元时校验完整规则文档。Quality 创建
 
 一条 RuleApplication 表示：某个数据元的规则快照被应用于一个确定的 PostgreSQL Engine Instance、schema、table 和 column。
 
+RuleApplication 只持久化 `element_id` 和质量规则快照，不复制数据元名称或编码。Quality 列表 API 必须通过租户服务身份按当前页 `element_id` 集合从 Standard 批量读取当前摘要，并在响应中投影只读 `element: {id, name, code}`；该投影不是历史快照，也不得要求浏览器额外拥有 `standard.element.read`。Standard 不可用或引用失效时列表请求整体失败，不能静默退回裸 ID 或逐条请求。
+
 稳定身份为：
 
 ```text
@@ -96,12 +98,18 @@ tenant_id + element_id + engine_id + schema_name + table_name + column_name
 
 数据库必须对该身份建立唯一约束。重复创建应返回冲突，不得产生两条同时生效的同义应用。`schema_name`、`table_name` 和 `column_name` 都必须明确提供；Quality 不隐式补充 PostgreSQL 默认 schema，避免请求含义与持久化身份不一致。
 
+规则应用创建页必须通过 System 的实时 Catalog 按 Engine Instance 级联选择 schema、table 和 column，不能继续把它们作为自由文本。System Catalog 列表只返回层级节点，表字段通过同一 Catalog 控制面的按需 facts 接口读取。Catalog 只负责创建时的资源发现和归属校验，不改变 RuleApplication 的稳定身份，也不新增 `item_id`、ResourceLocator 或 CatalogPath 持久字段。Quality 后端必须在保存前再次从 System Catalog 确认 schema、table 和 column 属于当前 Tenant 的目标 Engine，不能只信任前端提交值，也不能依赖 Meta 是否已完成扫描。
+
+数据元候选是 Quality 创建工作流所需的跨模块只读投影。浏览器必须通过 Quality 的 `GET /rule-applications/element-candidates` 搜索，Quality 使用租户服务身份从 Standard 读取并只返回 `id + name + code + quality_rules`；不得让仅持有 `quality.rule_application.create` 的浏览器额外依赖 `standard.element.read`，也不得保留浏览器直连 Standard 的并行路径。用户选择数据元后，创建页必须展示将被冻结的全部启用规则及其类型、级别、参数和说明；没有启用规则时前端阻止提交，后端仍执行同一事实校验。
+
 RuleApplication 是当前生效的规则快照，不是执行历史。删除时必须遵循：
 
 1. 若 `pending|running` execution 已冻结该 RuleApplication，删除返回冲突；不得让执行结束后重新产生已失去 owner 的 Issue。
 2. 任务触发冻结规则快照与删除必须通过数据库行锁串行化，不能依赖请求时序规避竞态。
 3. 无活动 execution 引用时，在同一事务中删除 `tenant_id + rule_application_id` 对应的当前 Issue，再删除 RuleApplication。
 4. 已完成 execution 的 `execution_config` 和 `metadata.rule_details` 继续作为不可变历史保留，不因 RuleApplication 删除而改写或清理。
+
+RuleApplication 可通过唯一 `PUT /rule-applications/{id}` 显式切换 `enabled`，请求体必须且只能包含布尔字段 `enabled`。启停只影响未来 execution 的规则冻结；已进入 `pending|running` 的 execution 继续使用其不可变快照。手动停用不改变已有 Issue 状态，因为停止检查不等于问题已解决或已忽略；问题治理仍通过 Issue 的独立人工状态流转完成。重新启用前必须确认绑定 Engine 当前仍为本 Tenant 的 active PostgreSQL Engine；停用不依赖 Engine 可用性。更新只能修改 `enabled`、`updated_by` 和 `updated_at`，不得用整行保存覆盖并发变化，也不得通过空请求隐式解释为停用。
 
 ### 4.2 检查任务
 
@@ -113,6 +121,8 @@ tenant_id + engine_id + schema_name + table_name
 
 `schema_name` 和 `table_name` 都必须提供；不支持“整个 schema”或“整个引擎”的隐式扩展范围。任务语义身份必须有数据库唯一约束。任务只支持手动执行或由 Orchestrator 显式执行：
 
+检查任务创建和更新页必须通过 System 的实时 Catalog 按 Engine Instance 级联选择 schema 和 table，不能继续把二者作为自由文本。Catalog 只负责表单中的资源发现和保存前归属校验，不改变 CheckTask 的稳定身份，也不新增 CatalogPath 持久字段。Quality 后端必须在创建和更新前再次确认 schema 和 table 属于当前 Tenant 的目标 Engine；不能只信任前端提交值，也不能依赖 Meta 扫描状态。
+
 - TaskProvider `supports_schedule=false`
 - TaskProvider `supports_cancel=false`
 - `trigger_type` 只接受 `manual`
@@ -121,11 +131,15 @@ tenant_id + engine_id + schema_name + table_name
 
 创建和更新任务不保存 schedule、`next_run_at` 或任务授权主体。未来开放 owner 调度前，必须先更新本规范和任务体系规范。
 
+CheckTask 列表中的运行状态只能投影 `last_execution_id + last_execution_status + last_run_at`，不得再建立任务运行状态字段。前端必须展示该最近 execution 摘要并提供详情入口；`pending|running` 期间按列表摘要轮询，并禁用编辑、重复执行和删除，终态后停止轮询并恢复操作。后端的任务行锁和 active execution 检查仍是并发正确性的最终防线。
+
 ## 5. PostgreSQL SQL 编译
 
 ### 5.1 方言边界
 
 Quality v1 只允许目标 Engine Plugin 为 PostgreSQL。API、任务创建、规则应用创建和执行前都必须校验该事实；前端只展示 PostgreSQL Engine Instance。
+
+规则应用和检查任务的历史列表必须同时读取 `active`、`disabled` PostgreSQL Engine Instance，以名称和 ID 回显已有绑定；`deleting` 不进入正常业务展示或选择。新建和更新只允许选择 `active` 引擎，前端提交前与后端都必须再次校验生命周期，不能把历史回显集合误作可选集合。
 
 SQL 编译必须遵守：
 
@@ -134,6 +148,8 @@ SQL 编译必须遵守：
 3. 编译结果由 SQL 文本和参数数组共同构成；repository 或 executor 必须原样传给数据库驱动。
 4. 每条规则使用一条聚合查询同时返回 `total_count` 和 `failed_count`，避免对同一表重复执行无关计数。
 5. 规则结构、参数、目标方言或数据库表达式错误都属于 execution 错误，不能跳过规则后继续宣告成功。
+
+Quality failed execution 的 `error_details.code` 必须使用稳定领域错误码；原始数据库、SQL、连接和外部服务错误只写服务日志，不得返回给前端。v1 错误码包括：`quality.authorization.issue_failed`、`quality.authorization.persist_failed`、`quality.execution.authorization_missing`、`quality.execution.authorization_failed`、`quality.execution.unsupported_engine`、`quality.execution.target_connection_failed`、`quality.execution.rule_snapshot_invalid`、`quality.execution.no_rule_applications`、`quality.execution.rule_compile_failed`、`quality.execution.sql_execution_failed`、`quality.execution.result_invalid`、`quality.execution.lease_expired`、`quality.issue.reconcile_failed` 和兜底码 `quality.execution.failed`。前端必须使用同一映射按错误码本地化展示失败原因；执行列表和详情都只能展示该稳定原因，不得展示持久化的安全摘要或内部错误文本。
 
 ### 5.2 空表与规则真值
 
@@ -171,8 +187,8 @@ Quality 使用数据库任务队列作为唯一执行路线，不使用请求内
 
 Quality 当前不提供取消，因为目标 SQL 的可靠中断、连接回收和终态确认尚未形成闭环。
 
-System lifecycle cleanup 与任务触发必须使用相同的 CheckTask 行锁顺序串行化。logical cleanup 只有在命中任务均无 `pending|running` execution 时，才可在同一事务中禁用 RuleApplication 并将 open Issue 置为 ignored；任一更新失败必须整体回滚。
-tenant physical cleanup 同样必须在锁定命中 CheckTask 后，以单一事务删除 Issue、CheckTask 和 RuleApplication；任一删除失败必须整体回滚，execution 历史不受影响。
+System lifecycle cleanup 与任务触发必须使用相同的 CheckTask 行锁顺序串行化。cleanup 的 scan 报告和 execute 最终判断都必须查询 `common.task_executions` 中该任务的 `pending|running` execution，不能把 CheckTask 的最近执行摘要当作并发事实。logical cleanup 只有在命中任务均无活动 execution 时，才可在同一事务中禁用 RuleApplication，并将 open Issue 置为 ignored、记录系统处理时间且保持 `resolved_by=NULL`；任一更新失败必须整体回滚。
+tenant physical cleanup 同样必须在按 ID 稳定顺序锁定命中 CheckTask 并查询活动 execution 后，以单一事务按 ID 顺序、按 `tenant_id + id` 删除 Issue、CheckTask 和 RuleApplication；任一删除失败、候选跨 Tenant 或目标已并发变化必须整体回滚，execution 历史不受影响。logical cleanup 对 RuleApplication 和 Issue 也使用稳定 ID 顺序，避免重叠 lifecycle cleanup 形成交叉锁顺序。
 
 ## 8. 结果与评分契约
 

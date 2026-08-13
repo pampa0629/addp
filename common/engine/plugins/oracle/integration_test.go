@@ -111,6 +111,31 @@ func TestIntegrationOracleCatalogAndRead(t *testing.T) {
 	}
 }
 
+func TestIntegrationOracleSDEWorkspaceNotDetected(t *testing.T) {
+	if os.Getenv("ADDP_ORACLE_INTEGRATION") != "1" {
+		t.Skip("set ADDP_ORACLE_INTEGRATION=1 to run Oracle integration test")
+	}
+
+	p := &OraclePlugin{}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	resolved, err := p.ResolveCapabilities(ctx, oracleIntegrationConnInfo(t), p.Capabilities())
+	if err != nil {
+		t.Fatalf("ResolveCapabilities() error = %v", err)
+	}
+	workspaces, err := plugin.SpatialWorkspacesFromExtensions(resolved.Extensions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workspaces) != 1 || workspaces[0].Ecosystem != "arcgis" || workspaces[0].Kind != plugin.SpatialWorkspaceArcGISSDE ||
+		workspaces[0].State != plugin.SpatialWorkspaceStateNotDetected || workspaces[0].CanEnable {
+		t.Fatalf("Oracle SDE workspace = %#v, want not_detected", workspaces)
+	}
+	if resolved.Storage == nil || resolved.Storage.Store == nil || resolved.Storage.Store.ChangeStreamRead != nil {
+		t.Fatalf("Oracle SDE probe must not change ordinary store capabilities: %#v", resolved.Storage)
+	}
+}
+
 func TestIntegrationOracleSpatialFactsAndRead(t *testing.T) {
 	if os.Getenv("ADDP_ORACLE_SPATIAL_INTEGRATION") != "1" {
 		t.Skip("set ADDP_ORACLE_SPATIAL_INTEGRATION=1 to run Oracle Spatial integration test")

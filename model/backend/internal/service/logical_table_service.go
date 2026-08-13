@@ -10,11 +10,14 @@ import (
 	"github.com/addp/model/internal/repository"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 type LogicalTableService struct {
-	repo     *repository.LogicalTableRepository
-	standard *commonClient.StandardClient
+	repo        *repository.LogicalTableRepository
+	entityRepo  *repository.EntityRepository
+	dwLayerRepo *repository.DWLayerRepository
+	standard    *commonClient.StandardClient
 }
 
 func (s *LogicalTableService) SetStandardClient(client *commonClient.StandardClient) {
@@ -64,13 +67,36 @@ func validateLogicalTableShape(tableType string, scdType int, grain string) erro
 	return nil
 }
 
-func NewLogicalTableService(repo *repository.LogicalTableRepository) *LogicalTableService {
-	return &LogicalTableService{repo: repo}
+func NewLogicalTableService(
+	repo *repository.LogicalTableRepository,
+	entityRepo *repository.EntityRepository,
+	dwLayerRepo *repository.DWLayerRepository,
+) *LogicalTableService {
+	return &LogicalTableService{repo: repo, entityRepo: entityRepo, dwLayerRepo: dwLayerRepo}
+}
+
+func (s *LogicalTableService) validateOwnedReferences(tenantID int64, entityID *int64, layer string) error {
+	if entityID != nil {
+		if *entityID <= 0 {
+			return apperrors.NotFound("entity_not_found", i18n.MsgEntityNotFound)
+		}
+		if _, err := s.entityRepo.GetByID(*entityID, tenantID); err != nil {
+			return apperrors.NotFound("entity_not_found", i18n.MsgEntityNotFound)
+		}
+	}
+	exists, err := s.dwLayerRepo.ExistsByCode(layer, tenantID, 0)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return apperrors.NotFound("dw_layer_not_found", i18n.MsgLayerNotFound)
+	}
+	return nil
 }
 
 func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableRequest, tenantID, userID int64) (*models.LogicalTable, error) {
-	if strings.TrimSpace(req.Layer) == "" {
-		return nil, apperrors.Validation("logical_table_layer_required", i18n.MsgValidationFailed)
+	if err := validateCreateLogicalTableRequest(req); err != nil {
+		return nil, err
 	}
 	if err := validateMaterializationKeys(req.Materialization); err != nil {
 		return nil, apperrors.Wrap(apperrors.KindValidation, "materialization_invalid", i18n.MsgValidationFailed, err)
@@ -79,6 +105,9 @@ func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableR
 		return nil, err
 	}
 	if err := s.validateReferences(tenantID, req.DomainID, nil, nil); err != nil {
+		return nil, err
+	}
+	if err := s.validateOwnedReferences(tenantID, req.EntityID, req.Layer); err != nil {
 		return nil, err
 	}
 	exists, err := s.repo.ExistsByCode(req.Code, tenantID, 0)
@@ -120,6 +149,19 @@ func (s *LogicalTableService) GetLogicalTable(id, tenantID int64) (*models.Logic
 }
 
 func (s *LogicalTableService) ListLogicalTables(tenantID int64, opts repository.ListLogicalTableOptions) ([]models.LogicalTable, int64, error) {
+	if !validOptionalID(opts.DomainID) || !validListStatus(opts.Status) ||
+		opts.TableType != "" && !validValue(opts.TableType, "entity", "fact", "dimension") {
+		return nil, 0, invalidRequest()
+	}
+	if opts.Layer != "" {
+		exists, err := s.dwLayerRepo.ExistsByCode(opts.Layer, tenantID, 0)
+		if err != nil {
+			return nil, 0, err
+		}
+		if !exists {
+			return nil, 0, invalidRequest()
+		}
+	}
 	return s.repo.List(tenantID, opts)
 }
 
@@ -131,38 +173,34 @@ func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req
 	if table.Status != "draft" {
 		return nil, apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
 	}
+	if req == nil || !validOptionalID(req.DomainID) || !validOptionalID(req.EntityID) ||
+		!validRequiredString(req.Name, 200) || !validValue(req.TableType, "entity", "fact", "dimension") ||
+		!validRequiredString(req.Layer, 20) || req.SCDType == nil || req.Materialization == nil {
+		return nil, apperrors.Validation("invalid_request", i18n.MsgValidationFailed)
+	}
 
-	if req.Name != "" {
-		table.Name = req.Name
+	if err := s.validateReferences(tenantID, req.DomainID, nil, nil); err != nil {
+		return nil, err
 	}
-	if req.DomainID != nil {
-		if err := s.validateReferences(tenantID, req.DomainID, nil, nil); err != nil {
-			return nil, err
-		}
-		table.DomainID = req.DomainID
-	}
-	if req.EntityID != nil {
-		table.EntityID = req.EntityID
-	}
+	table.Name = req.Name
+	table.DomainID = req.DomainID
+	table.EntityID = req.EntityID
 	table.Description = req.Description
-	if req.TableType != "" {
-		table.TableType = req.TableType
-	}
-	if req.Layer != "" {
-		table.Layer = req.Layer
-	}
+	table.TableType = req.TableType
+	table.Layer = req.Layer
 	if strings.TrimSpace(table.Layer) == "" {
 		return nil, apperrors.Validation("logical_table_layer_required", i18n.MsgValidationFailed)
 	}
 	table.GrainDescription = req.GrainDescription
-	table.SCDType = req.SCDType
-	if req.Materialization != nil {
-		if err := validateMaterializationKeys(req.Materialization); err != nil {
-			return nil, apperrors.Wrap(apperrors.KindValidation, "materialization_invalid", i18n.MsgValidationFailed, err)
-		}
-		table.Materialization = req.Materialization
+	table.SCDType = *req.SCDType
+	if err := validateMaterializationKeys(req.Materialization); err != nil {
+		return nil, apperrors.Wrap(apperrors.KindValidation, "materialization_invalid", i18n.MsgValidationFailed, err)
 	}
+	table.Materialization = req.Materialization
 	if err := validateLogicalTableShape(table.TableType, table.SCDType, table.GrainDescription); err != nil {
+		return nil, err
+	}
+	if err := s.validateOwnedReferences(tenantID, table.EntityID, table.Layer); err != nil {
 		return nil, err
 	}
 	table.UpdatedBy = &userID
@@ -220,7 +258,7 @@ func (s *LogicalTableService) ApproveLogicalTable(id, tenantID, userID int64) er
 		return err
 	}
 	if len(fields) == 0 {
-		return apperrors.Validation("logical_table_approval_invalid", i18n.MsgValidationFailed)
+		return apperrors.Validation("logical_table_approval_fields_required", i18n.MsgTableFieldsRequired)
 	}
 	hasPrimaryKey := false
 	for _, field := range fields {
@@ -229,7 +267,7 @@ func (s *LogicalTableService) ApproveLogicalTable(id, tenantID, userID int64) er
 		}
 	}
 	if !hasPrimaryKey {
-		return apperrors.Validation("logical_table_approval_invalid", i18n.MsgValidationFailed)
+		return apperrors.Validation("logical_table_approval_primary_key_required", i18n.MsgTablePrimaryKeyRequired)
 	}
 	return s.repo.UpdateStatus(id, tenantID, "approved", userID)
 }
@@ -261,6 +299,9 @@ func (s *LogicalTableService) CreateField(tableID, tenantID int64, req *models.C
 	}
 	if table.Status != "draft" {
 		return nil, apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
+	}
+	if err := validateCreateLogicalFieldRequest(req); err != nil {
+		return nil, err
 	}
 	if err := s.validateReferences(tenantID, nil, req.ElementID, req.HierarchyID); err != nil {
 		return nil, err
@@ -295,7 +336,7 @@ func (s *LogicalTableService) CreateField(tableID, tenantID int64, req *models.C
 	}
 
 	if err := s.repo.CreateField(field); err != nil {
-		return nil, err
+		return nil, modelResourceError(err, "logical_field_column", i18n.MsgFieldColumnConflict)
 	}
 	return field, nil
 }
@@ -309,6 +350,9 @@ func (s *LogicalTableService) UpdateField(fieldID, tableID, tenantID int64, req 
 	if table.Status != "draft" {
 		return nil, apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
 	}
+	if req == nil {
+		return nil, apperrors.Validation("invalid_request", i18n.MsgValidationFailed)
+	}
 
 	if err := s.validateReferences(tenantID, nil, req.ElementID, req.HierarchyID); err != nil {
 		return nil, err
@@ -317,35 +361,26 @@ func (s *LogicalTableService) UpdateField(fieldID, tableID, tenantID int64, req 
 	if err != nil {
 		return nil, apperrors.NotFound("logical_field_not_found", i18n.MsgFieldNotFound)
 	}
+	if !validRequiredString(req.Name, 200) || !modelCodePattern.MatchString(req.ColumnName) || utf8.RuneCountInString(req.ColumnName) > 200 ||
+		!validValue(req.DataType, modelDataTypes...) || !validValue(req.FieldRole, modelFieldRoles...) ||
+		!validOptionalID(req.ElementID) || !validOptionalID(req.HierarchyID) ||
+		req.Nullable == nil || req.IsPK == nil || req.IsPartition == nil || req.SortOrder == nil || *req.SortOrder < 0 ||
+		(req.Length != nil && *req.Length <= 0) || !validHierarchy(req.HierarchyID, req.HierarchyLevel) {
+		return nil, apperrors.Validation("invalid_request", i18n.MsgValidationFailed)
+	}
 
-	if req.Name != "" {
-		field.Name = req.Name
-	}
-	if req.ColumnName != "" {
-		field.ColumnName = req.ColumnName
-	}
-	if req.DataType != "" {
-		field.DataType = req.DataType
-	}
+	field.Name = req.Name
+	field.ColumnName = req.ColumnName
+	field.DataType = req.DataType
 	field.ElementID = req.ElementID
 	field.Length = req.Length
-	if req.Nullable != nil {
-		field.Nullable = *req.Nullable
-	}
-	if req.IsPK != nil {
-		field.IsPK = *req.IsPK
-	}
-	if req.IsPartition != nil {
-		field.IsPartition = *req.IsPartition
-	}
+	field.Nullable = *req.Nullable
+	field.IsPK = *req.IsPK
+	field.IsPartition = *req.IsPartition
 	field.DefaultValue = req.DefaultValue
 	field.Description = req.Description
-	if req.SortOrder != nil {
-		field.SortOrder = *req.SortOrder
-	}
-	if req.FieldRole != "" {
-		field.FieldRole = req.FieldRole
-	}
+	field.SortOrder = *req.SortOrder
+	field.FieldRole = req.FieldRole
 	field.HierarchyID = req.HierarchyID
 	field.HierarchyLevel = req.HierarchyLevel
 	if field.IsPK && field.Nullable {
@@ -356,7 +391,7 @@ func (s *LogicalTableService) UpdateField(fieldID, tableID, tenantID int64, req 
 	}
 
 	if err := s.repo.UpdateField(field); err != nil {
-		return nil, err
+		return nil, modelResourceError(err, "logical_field_column", i18n.MsgFieldColumnConflict)
 	}
 	return field, nil
 }

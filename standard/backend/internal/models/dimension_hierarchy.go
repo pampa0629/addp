@@ -15,6 +15,7 @@ type DimensionHierarchy struct {
 	UpdatedBy   *int64                    `json:"updated_by,omitempty"`
 	CreatedAt   time.Time                 `json:"created_at"`
 	UpdatedAt   time.Time                 `json:"updated_at"`
+	Version     int64                     `gorm:"not null;default:1" json:"version"`
 	Levels      []DimensionHierarchyLevel `gorm:"foreignKey:HierarchyID;-:migration" json:"levels,omitempty"`
 }
 
@@ -47,6 +48,7 @@ type CreateDimensionHierarchyRequest struct {
 
 // UpdateDimensionHierarchyRequest 更新维度层级请求
 type UpdateDimensionHierarchyRequest struct {
+	Version     int64  `json:"version" binding:"required"`
 	DomainID    *int64 `json:"domain_id,omitempty"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -54,9 +56,15 @@ type UpdateDimensionHierarchyRequest struct {
 
 // UpsertHierarchyLevelRequest 新增或更新层级中的一层
 type UpsertHierarchyLevelRequest struct {
+	Version     int64  `json:"version" binding:"required"`
 	LevelNum    int    `json:"level_num" binding:"required"`
 	Name        string `json:"name" binding:"required"`
 	ElementID   *int64 `json:"element_id,omitempty"`
 	Description string `json:"description"`
 	SortOrder   int    `json:"sort_order"`
+}
+
+type HierarchyLevelMutationResponse struct {
+	Level   *DimensionHierarchyLevel `json:"level"`
+	Version int64                    `json:"version"`
 }

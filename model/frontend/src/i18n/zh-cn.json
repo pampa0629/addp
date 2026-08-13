@@ -43,6 +43,7 @@
       "invalid_detail_id": "详情地址中的 ID 无效，请返回列表重新选择。",
       "optional": "可选",
       "permission_denied": "当前账号没有访问权限，请联系租户管理员分配对应角色或权限后重试。",
+      "reference_data_unavailable": "部分标准引用数据暂不可用，相关筛选或关联选择可能受限，请联系管理员检查数据标准服务状态和对应只读权限。",
       "retry": "重试",
       "copy_success": "已复制到剪贴板",
       "copy_failed": "复制失败"
@@ -99,6 +100,7 @@
       "direction": "方向",
       "target": "目标实体",
       "name": "关系名称",
+      "name_placeholder": "例如：places、belongs_to、has",
       "description": "描述",
       "actions": "操作",
       "direction_outgoing": "{name} 指向其他实体",
@@ -286,6 +288,7 @@
       "dimension_relations": "关联维度表",
       "add_relation": "添加关联",
       "no_dimensions": "暂无关联维度表",
+      "no_metrics": "暂无关联指标",
       "detail": "详情",
       "remove": "移除",
       "remove_confirm": "确认移除与「{name}」的关联吗？",

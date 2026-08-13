@@ -13,6 +13,7 @@ type MeasurementCategory struct {
 	IsSystem    bool      `gorm:"default:false" json:"is_system"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	Version     int64     `gorm:"not null;default:1" json:"version"`
 }
 
 func (MeasurementCategory) TableName() string {
@@ -31,6 +32,7 @@ type Unit struct {
 	IsSystem    bool      `gorm:"default:false" json:"is_system"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	Version     int64     `gorm:"not null;default:1" json:"version"`
 
 	Category *MeasurementCategory `gorm:"foreignKey:CategoryID;-:migration" json:"category,omitempty"`
 }
@@ -49,6 +51,7 @@ type CreateMeasurementCategoryRequest struct {
 
 // UpdateMeasurementCategoryRequest 更新度量类别请求
 type UpdateMeasurementCategoryRequest struct {
+	Version     int64  `json:"version" binding:"required"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	SortOrder   int    `json:"sort_order"`
@@ -65,6 +68,7 @@ type CreateUnitRequest struct {
 
 // UpdateUnitRequest 更新计量单位请求
 type UpdateUnitRequest struct {
+	Version     int64  `json:"version" binding:"required"`
 	Name        string `json:"name"`
 	Symbol      string `json:"symbol"`
 	Description string `json:"description"`

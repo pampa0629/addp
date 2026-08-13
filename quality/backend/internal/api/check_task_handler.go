@@ -3,7 +3,6 @@ package api
 import (
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 
 	commonAPI "github.com/addp/common/api"
@@ -59,7 +58,7 @@ func (h *CheckTaskHandler) List(c *gin.Context) {
 // @Security BearerAuth
 func (h *CheckTaskHandler) Get(c *gin.Context) {
 	tenantID := getTenantID(c)
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := requiredPositiveID(c.Param("id"))
 	if err != nil {
 		respondInvalidRequest(c, "")
 		return
@@ -73,6 +72,7 @@ func (h *CheckTaskHandler) Get(c *gin.Context) {
 }
 
 // @Summary 创建检查任务 | Create check task
+// @Description 创建前校验目标 PostgreSQL Schema 和数据表属于当前租户引擎 | Validate the target PostgreSQL schema and table against the tenant engine before creation
 // @Tags CheckTask
 // @Accept json
 // @Produce json
@@ -102,6 +102,7 @@ func (h *CheckTaskHandler) Create(c *gin.Context) {
 }
 
 // @Summary 更新检查任务 | Update check task
+// @Description 更新前校验目标 PostgreSQL Schema 和数据表属于当前租户引擎 | Validate the target PostgreSQL schema and table against the tenant engine before update
 // @Tags CheckTask
 // @Accept json
 // @Produce json
@@ -119,7 +120,7 @@ func (h *CheckTaskHandler) Create(c *gin.Context) {
 func (h *CheckTaskHandler) Update(c *gin.Context) {
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := requiredPositiveID(c.Param("id"))
 	if err != nil {
 		respondInvalidRequest(c, "")
 		return
@@ -151,7 +152,7 @@ func (h *CheckTaskHandler) Update(c *gin.Context) {
 // @Security BearerAuth
 func (h *CheckTaskHandler) Delete(c *gin.Context) {
 	tenantID := getTenantID(c)
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := requiredPositiveID(c.Param("id"))
 	if err != nil {
 		respondInvalidRequest(c, "")
 		return
@@ -178,7 +179,7 @@ func (h *CheckTaskHandler) Delete(c *gin.Context) {
 func (h *CheckTaskHandler) Run(c *gin.Context) {
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := requiredPositiveID(c.Param("id"))
 	if err != nil {
 		respondInvalidRequest(c, "")
 		return

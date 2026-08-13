@@ -64,13 +64,15 @@ func (r *DocumentRepository) Create(doc *models.Document) error {
 	return wrapDBError(r.db.Create(doc).Error)
 }
 
-func (r *DocumentRepository) Update(doc *models.Document) error {
-	return requireAffectedRow(r.db.Model(&models.Document{}).
-		Where("id = ? AND tenant_id = ?", doc.ID, doc.TenantID).
-		Updates(map[string]interface{}{
-			"name": doc.Name, "doc_type": doc.DocType, "source_org": doc.SourceOrg,
-			"version": doc.Version, "description": doc.Description, "updated_by": doc.UpdatedBy,
-		}))
+func (r *DocumentRepository) Update(doc *models.Document, expectedVersion int64) error {
+	if err := updateVersioned(r.db, doc, doc.ID, doc.TenantID, expectedVersion, map[string]interface{}{
+		"name": doc.Name, "doc_type": doc.DocType, "source_org": doc.SourceOrg,
+		"document_version": doc.DocumentVersion, "description": doc.Description, "updated_by": doc.UpdatedBy,
+	}); err != nil {
+		return err
+	}
+	doc.Version = expectedVersion + 1
+	return nil
 }
 
 func (r *DocumentRepository) Delete(id, tenantID int64) (*models.DocumentFileCleanup, error) {
@@ -90,7 +92,7 @@ func (r *DocumentRepository) Delete(id, tenantID int64) (*models.DocumentFileCle
 	return cleanup, err
 }
 
-func (r *DocumentRepository) ReplaceFile(id, tenantID int64, fileKey, fileName string, fileSize int64) (*models.DocumentFileCleanup, error) {
+func (r *DocumentRepository) ReplaceFile(id, tenantID, expectedVersion int64, fileKey, fileName string, fileSize int64) (*models.DocumentFileCleanup, error) {
 	var cleanup *models.DocumentFileCleanup
 	err := wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
 		var doc models.Document
@@ -102,10 +104,12 @@ func (r *DocumentRepository) ReplaceFile(id, tenantID int64, fileKey, fileName s
 		if err != nil {
 			return err
 		}
-		return requireAffectedRow(tx.Model(&models.Document{}).
-			Where("id = ? AND tenant_id = ?", id, tenantID).
-			Updates(map[string]interface{}{"file_key": fileKey, "file_name": fileName, "file_size": fileSize}))
+		return updateVersioned(tx, &models.Document{}, id, tenantID, expectedVersion,
+			map[string]interface{}{"file_key": fileKey, "file_name": fileName, "file_size": fileSize})
 	}))
+	if err != nil {
+		return nil, err
+	}
 	return cleanup, err
 }
 
@@ -247,8 +251,11 @@ func (r *DocumentRepository) SetMetricMappings(docID int64, metricIDs []int64, l
 	}))
 }
 
-func (r *DocumentRepository) SetMappings(docID int64, elementIDs, glossaryIDs, metricIDs []int64, locations map[string]string) error {
+func (r *DocumentRepository) SetMappings(docID, tenantID, expectedVersion int64, elementIDs, glossaryIDs, metricIDs []int64, locations map[string]string) error {
 	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		if err := updateVersioned(tx, &models.Document{}, docID, tenantID, expectedVersion, map[string]interface{}{}); err != nil {
+			return err
+		}
 		for _, model := range []interface{}{
 			&models.DocumentElementMapping{},
 			&models.DocumentGlossaryMapping{},
@@ -296,6 +303,40 @@ func (r *DocumentRepository) CreateWithMapping(doc *models.Document, mapping int
 			return fmt.Errorf("unsupported document mapping type %T", mapping)
 		}
 		return tx.Create(mapping).Error
+	}))
+}
+
+func (r *DocumentRepository) CreateWithMappingVersioned(doc *models.Document, mapping interface{}, parent interface{}, parentID, tenantID, expectedVersion int64) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		if err := updateVersioned(tx, parent, parentID, tenantID, expectedVersion, map[string]interface{}{}); err != nil {
+			return err
+		}
+		if err := tx.Create(doc).Error; err != nil {
+			return err
+		}
+		switch value := mapping.(type) {
+		case *models.DocumentElementMapping:
+			value.DocumentID = doc.ID
+		case *models.DocumentGlossaryMapping:
+			value.DocumentID = doc.ID
+		case *models.DocumentMetricMapping:
+			value.DocumentID = doc.ID
+		default:
+			return fmt.Errorf("unsupported document mapping type %T", mapping)
+		}
+		return tx.Create(mapping).Error
+	}))
+}
+
+func (r *DocumentRepository) MutateMappingVersioned(parent interface{}, parentID, tenantID, expectedVersion int64, mapping interface{}, add bool, query string, args ...interface{}) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		if err := updateVersioned(tx, parent, parentID, tenantID, expectedVersion, map[string]interface{}{}); err != nil {
+			return err
+		}
+		if add {
+			return tx.Where(query, args...).FirstOrCreate(mapping).Error
+		}
+		return requireAffectedRow(tx.Where(query, args...).Delete(mapping))
 	}))
 }
 

@@ -40,3 +40,11 @@ func optionalPositiveID(value string) (int64, error) {
 	}
 	return id, nil
 }
+
+func requiredPositiveID(value string) (int64, error) {
+	id, err := optionalPositiveID(value)
+	if err != nil || id == 0 {
+		return 0, fmt.Errorf("invalid positive id")
+	}
+	return id, nil
+}

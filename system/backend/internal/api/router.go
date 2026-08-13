@@ -3,8 +3,10 @@ package api
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
+	"github.com/addp/common/buildinfo"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
@@ -106,7 +108,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	router.GET("/", func(c *gin.Context) {
 		c.JSON(200, gin.H{"message": cfg.ProjectName, "name_en": "All Domain Data Platform"})
 	})
-	router.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
+	router.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, buildinfo.Health("system")) })
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	api := router.Group("/api/v1/system")

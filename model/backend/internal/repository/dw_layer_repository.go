@@ -27,7 +27,7 @@ func (r *DWLayerRepository) GetByID(id, tenantID int64) (*models.DWLayer, error)
 func (r *DWLayerRepository) List(tenantID int64) ([]models.DWLayer, error) {
 	var layers []models.DWLayer
 	err := r.db.Where("tenant_id = ?", tenantID).Order("sort_order ASC, created_at ASC").Find(&layers).Error
-	return layers, err
+	return layers, commonrepo.WrapDBError(err)
 }
 
 func (r *DWLayerRepository) Update(layer *models.DWLayer) error {
@@ -52,11 +52,11 @@ func (r *DWLayerRepository) ExistsByCode(code string, tenantID int64, excludeID 
 		query = query.Where("id != ?", excludeID)
 	}
 	err := query.Count(&count).Error
-	return count > 0, err
+	return count > 0, commonrepo.WrapDBError(err)
 }
 
 func (r *DWLayerRepository) CountLogicalTableReferences(layerCode string, tenantID int64) (int64, error) {
 	var count int64
 	err := r.db.Model(&models.LogicalTable{}).Where("tenant_id = ? AND layer = ?", tenantID, layerCode).Count(&count).Error
-	return count, err
+	return count, commonrepo.WrapDBError(err)
 }

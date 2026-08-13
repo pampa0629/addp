@@ -19,7 +19,7 @@ import {
 
 const databaseCDCCapability = {
 		sources: ['postgresql', 'mysql', 'oracle'],
-		targets: ['postgresql', 'mysql'],
+		targets: ['postgresql', 'mysql', 'oracle'],
 	bootstrap: ['initial_snapshot'],
 	apply_mode: 'upsert_delete'
 }

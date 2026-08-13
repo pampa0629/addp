@@ -63,18 +63,38 @@ func (r *GlossaryRepository) List(tenantID int64, opts ListGlossaryOptions) ([]m
 	return glossaries, total, err
 }
 
-func (r *GlossaryRepository) Update(glossary *models.Glossary) error {
-	return wrapDBError(r.db.Save(glossary).Error)
+func (r *GlossaryRepository) UpdateWithRelations(glossary *models.Glossary, elementIDs []int64, expectedVersion int64) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		if err := updateVersioned(tx, glossary, glossary.ID, glossary.TenantID, expectedVersion, map[string]interface{}{
+			"domain_id": glossary.DomainID, "name": glossary.Name, "alias": glossary.Alias,
+			"definition": glossary.Definition, "example": glossary.Example, "note": glossary.Note,
+			"steward_id": glossary.StewardID, "tags": glossary.Tags, "updated_by": glossary.UpdatedBy,
+		}); err != nil {
+			return err
+		}
+		if elementIDs != nil {
+			if err := tx.Where("glossary_id = ?", glossary.ID).Delete(&models.GlossaryElementMapping{}).Error; err != nil {
+				return err
+			}
+			for _, elementID := range uniqueInt64s(elementIDs) {
+				if err := tx.Create(&models.GlossaryElementMapping{GlossaryID: glossary.ID, ElementID: elementID}).Error; err != nil {
+					return err
+				}
+			}
+		}
+		glossary.Version = expectedVersion + 1
+		return nil
+	}))
 }
 
 func (r *GlossaryRepository) Delete(id, tenantID int64) error {
 	return deleteInTransaction(r.db, &models.Glossary{}, "id = ? AND tenant_id = ?", id, tenantID)
 }
 
-func (r *GlossaryRepository) UpdateStatus(id, tenantID int64, status string, updatedBy int64) error {
-	return requireAffectedRow(r.db.Model(&models.Glossary{}).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
-		Updates(map[string]interface{}{"status": status, "updated_by": updatedBy}))
+func (r *GlossaryRepository) UpdateStatus(id, tenantID, expectedVersion int64, status string, updatedBy int64) error {
+	return updateVersioned(r.db, &models.Glossary{}, id, tenantID, expectedVersion, map[string]interface{}{
+		"status": status, "updated_by": updatedBy,
+	})
 }
 
 // GetMappedElements 获取术语关联的完整数据元列表
@@ -86,24 +106,6 @@ func (r *GlossaryRepository) GetMappedElements(glossaryID, tenantID int64) ([]mo
 		WHERE gem.glossary_id = ? AND e.tenant_id = ?
 	`, glossaryID, tenantID).Scan(&elements).Error
 	return elements, err
-}
-
-// SetElementMappings 批量替换术语的数据元映射（事务：先删全部，再插入）
-func (r *GlossaryRepository) SetElementMappings(glossaryID, tenantID int64, elementIDs []int64) error {
-	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("glossary_id = ?", glossaryID).Delete(&models.GlossaryElementMapping{}).Error; err != nil {
-			return err
-		}
-		if len(elementIDs) == 0 {
-			return nil
-		}
-		uniqueIDs := uniqueInt64s(elementIDs)
-		mappings := make([]models.GlossaryElementMapping, len(uniqueIDs))
-		for i, eid := range uniqueIDs {
-			mappings[i] = models.GlossaryElementMapping{GlossaryID: glossaryID, ElementID: eid}
-		}
-		return tx.Create(&mappings).Error
-	}))
 }
 
 // GetGlossariesByElementID 根据数据元ID反查关联的术语列表

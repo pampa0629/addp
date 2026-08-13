@@ -2,12 +2,37 @@ package execution
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"testing/fstest"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestEmbeddedMigrationsContainQualityQueueIndexes(t *testing.T) {
+	names, err := executionMigrationNames(migrationFiles, "migrations")
+	if err != nil {
+		t.Fatalf("executionMigrationNames() error = %v", err)
+	}
+	if got := names[len(names)-1]; got != "008_quality_execution_queue_indexes.sql" {
+		t.Fatalf("latest execution migration = %q", got)
+	}
+	contents, err := migrationFiles.ReadFile("migrations/008_quality_execution_queue_indexes.sql")
+	if err != nil {
+		t.Fatalf("read quality queue migration: %v", err)
+	}
+	for _, required := range []string{
+		"task_type = 'check'",
+		"execution_authorization_id IS NOT NULL",
+		"idx_task_executions_quality_running_lease",
+		"lease_expires_at IS NOT NULL",
+	} {
+		if !strings.Contains(string(contents), required) {
+			t.Fatalf("quality queue migration missing %q", required)
+		}
+	}
+}
 
 func TestExecutionMigrationNamesFiltersDownMigrations(t *testing.T) {
 	t.Parallel()

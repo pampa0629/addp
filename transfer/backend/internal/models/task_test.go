@@ -25,6 +25,49 @@ func TestCaptureSummaryDoesNotExposeInternalResourceNames(t *testing.T) {
 	}
 }
 
+func TestCaptureSummaryExposesTypedSourceRecoveryFacts(t *testing.T) {
+	summary := NewCaptureSummary(&CaptureResource{SourceRecovery: JSONMap{
+		"schema_version": "capture.source_recovery/v1", "provider": "oracle", "health": "critical",
+		"capture_position": "100", "earliest_available_position": "110", "position_headroom": "-10",
+		"source_password": "must-not-leak",
+	}})
+	if summary.SourceRecovery == nil || summary.SourceRecovery.Health != "critical" || summary.SourceRecovery.PositionHeadroom != "-10" {
+		t.Fatalf("source recovery summary = %#v", summary.SourceRecovery)
+	}
+	data, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "must-not-leak") || strings.Contains(string(data), "source_password") {
+		t.Fatalf("capture summary leaked private recovery fields: %s", data)
+	}
+}
+
+func TestCaptureSummaryExposesTypedSourceTransactionFacts(t *testing.T) {
+	duration := int64(3600)
+	summary := NewCaptureSummary(&CaptureResource{SourceTransactions: JSONMap{
+		"schema_version": "capture.source_transactions/v1", "provider": "oracle", "status": "available",
+		"active_count": 2, "oldest_start_position": "1234", "oldest_duration_seconds": duration,
+		"used_undo_blocks": "10", "used_undo_records": "20", "source_password": "must-not-leak",
+	}})
+	if summary.SourceTransactions == nil || summary.SourceTransactions.ActiveCount != 2 || summary.SourceTransactions.OldestDurationSeconds == nil || *summary.SourceTransactions.OldestDurationSeconds != duration {
+		t.Fatalf("source transaction summary = %#v", summary.SourceTransactions)
+	}
+	data, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "must-not-leak") || strings.Contains(string(data), "source_password") {
+		t.Fatalf("capture summary leaked private transaction fields: %s", data)
+	}
+	emptyData, err := json.Marshal(NewCaptureSummary(&CaptureResource{SourceTransactions: JSONMap{
+		"schema_version": "capture.source_transactions/v1", "provider": "oracle", "status": "available", "active_count": 0,
+	}}))
+	if err != nil || !strings.Contains(string(emptyData), `"active_count":0`) {
+		t.Fatalf("empty transaction count is not explicit: %s, %v", emptyData, err)
+	}
+}
+
 func TestCaptureResourceKeepsProviderFieldsOutOfGenericGeneration(t *testing.T) {
 	typeOfCapture := reflect.TypeOf(CaptureResource{})
 	for _, field := range []string{"SlotName", "PublicationName", "SlotOwned", "PublicationOwned", "ConnectorServerID"} {

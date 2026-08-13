@@ -165,18 +165,18 @@ func (s *ElementService) UpdateElement(id, tenantID, userID int64, req *models.U
 	}
 	element.UpdatedBy = &userID
 
-	if err := s.repo.Update(element); err != nil {
+	if err := s.repo.Update(element, req.Version); err != nil {
 		return nil, err
 	}
-	return element, nil
+	return s.GetElement(id, tenantID)
 }
 
 func (s *ElementService) DeleteElement(id, tenantID int64) error {
 	return s.repo.Delete(id, tenantID)
 }
 
-func (s *ElementService) ApproveElement(id, tenantID, userID int64) error {
-	return s.repo.UpdateStatus(id, tenantID, "approved", userID)
+func (s *ElementService) ApproveElement(id, tenantID, userID, version int64) error {
+	return s.repo.UpdateStatus(id, tenantID, version, "approved", userID)
 }
 
 func (s *ElementService) GetQualityRules(id, tenantID int64) (*dataquality.Document, error) {

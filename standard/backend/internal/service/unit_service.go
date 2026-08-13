@@ -53,10 +53,10 @@ func (s *UnitService) UpdateCategory(id, tenantID int64, req *models.UpdateMeasu
 	}
 	cat.Description = req.Description
 	cat.SortOrder = req.SortOrder
-	if err := s.catRepo.Update(cat); err != nil {
+	if err := s.catRepo.Update(cat, req.Version); err != nil {
 		return nil, err
 	}
-	return cat, nil
+	return s.catRepo.GetByID(id, tenantID)
 }
 
 func (s *UnitService) DeleteCategory(id, tenantID int64) error {
@@ -112,10 +112,10 @@ func (s *UnitService) UpdateUnit(id, tenantID int64, req *models.UpdateUnitReque
 	unit.Symbol = req.Symbol
 	unit.Description = req.Description
 	unit.SortOrder = req.SortOrder
-	if err := s.unitRepo.Update(unit); err != nil {
+	if err := s.unitRepo.Update(unit, req.Version); err != nil {
 		return nil, err
 	}
-	return unit, nil
+	return s.unitRepo.GetByID(id, tenantID)
 }
 
 func (s *UnitService) DeleteUnit(id, tenantID int64) error {

@@ -33,7 +33,7 @@ func (r *EntityRelationRepository) GetByEntityID(tenantID, entityID int64) ([]mo
 		tenantID, entityID, entityID).
 		Order("created_at DESC").
 		Find(&relations).Error
-	return relations, err
+	return relations, commonrepo.WrapDBError(err)
 }
 
 // ListByTenantID 列出租户的所有实体关系
@@ -42,7 +42,7 @@ func (r *EntityRelationRepository) ListByTenantID(tenantID int64) ([]models.Enti
 	err := r.db.Where("tenant_id = ?", tenantID).
 		Order("created_at DESC").
 		Find(&relations).Error
-	return relations, err
+	return relations, commonrepo.WrapDBError(err)
 }
 
 // Update 更新实体关系
@@ -64,11 +64,11 @@ func (r *EntityRelationRepository) Delete(id, tenantID int64) error {
 
 // DeleteByTenantID 删除租户的所有实体关系（用于Mermaid导入时清理）
 func (r *EntityRelationRepository) DeleteByTenantID(tenantID int64) error {
-	return r.db.Where("tenant_id = ?", tenantID).Delete(&models.EntityRelation{}).Error
+	return commonrepo.WrapDBError(r.db.Where("tenant_id = ?", tenantID).Delete(&models.EntityRelation{}).Error)
 }
 
 // DeleteByEntityID 删除某个实体相关的所有关系
 func (r *EntityRelationRepository) DeleteByEntityID(entityID int64) error {
-	return r.db.Where("source_entity = ? OR target_entity = ?", entityID, entityID).
-		Delete(&models.EntityRelation{}).Error
+	return commonrepo.WrapDBError(r.db.Where("source_entity = ? OR target_entity = ?", entityID, entityID).
+		Delete(&models.EntityRelation{}).Error)
 }

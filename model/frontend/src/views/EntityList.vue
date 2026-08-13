@@ -3,23 +3,23 @@
     <!-- 搜索区 -->
     <el-card shadow="never" class="search-card">
       <el-row :gutter="12" align="middle">
-        <el-col :span="6">
+        <el-col :xs="24" :sm="12" :md="6">
           <el-input v-model="searchForm.keyword" :placeholder="t('model.entity.search_placeholder')" clearable @change="handleSearch">
             <template #prefix><el-icon><Search /></el-icon></template>
           </el-input>
         </el-col>
-        <el-col :span="5">
+        <el-col :xs="24" :sm="12" :md="5">
           <el-select v-model="searchForm.domain_id" :placeholder="t('model.entity.domain')" clearable @change="handleSearch" style="width:100%">
             <el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" />
           </el-select>
         </el-col>
-        <el-col :span="4">
+        <el-col :xs="24" :sm="12" :md="4">
           <el-select v-model="searchForm.status" :placeholder="t('model.entity.status')" clearable @change="handleSearch" style="width:100%">
             <el-option :label="t('model.common.status_draft')" value="draft" />
             <el-option :label="t('model.common.status_approved')" value="approved" />
           </el-select>
         </el-col>
-        <el-col :span="4">
+        <el-col :xs="24" :sm="12" :md="4" class="search-action">
           <el-button v-if="can('model.entity.create')" type="primary" @click="openCreateDialog">
             <el-icon><Plus /></el-icon>
             {{ t('model.entity.new') }}
@@ -39,8 +39,17 @@
       <el-button link type="danger" @click="reload">{{ t('model.common.retry') }}</el-button>
     </el-alert>
 
+    <el-alert
+      v-if="!loadError && referenceError"
+      class="load-error"
+      type="warning"
+      :title="referenceError"
+      show-icon
+      :closable="false"
+    />
+
     <!-- 实体列表 -->
-    <el-card v-else shadow="never" style="margin-top:12px">
+    <el-card v-if="!loadError" shadow="never" style="margin-top:12px">
       <el-table :data="entities" v-loading="loading" stripe>
         <el-table-column :label="t('model.entity.name')" prop="name" min-width="160">
           <template #default="{ row }">
@@ -90,13 +99,13 @@
     </el-card>
 
     <!-- 新建对话框 -->
-    <el-dialog v-model="createDialogVisible" :title="t('model.entity.new')" width="480px">
+    <el-dialog v-model="createDialogVisible" :title="t('model.entity.new')" width="min(480px, calc(100vw - 32px))">
       <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-width="90px">
         <el-form-item :label="t('model.entity.name')" prop="name">
-          <el-input v-model="createForm.name" :placeholder="t('model.entity.name_placeholder')" />
+          <el-input v-model="createForm.name" maxlength="200" :placeholder="t('model.entity.name_placeholder')" />
         </el-form-item>
         <el-form-item :label="t('model.entity.code')" prop="code">
-          <el-input v-model="createForm.code" :placeholder="t('model.entity.code_placeholder')" />
+          <el-input v-model="createForm.code" maxlength="100" :placeholder="t('model.entity.code_placeholder')" />
         </el-form-item>
         <el-form-item :label="t('model.entity.domain')">
           <el-select v-model="createForm.domain_id" :placeholder="t('model.entity.domain_placeholder')" clearable style="width:100%">
@@ -135,6 +144,7 @@ const authStore = useAuthStore()
 const can = permission => authStore.hasPermission(permission)
 const loading = ref(false)
 const loadError = ref('')
+const referenceError = ref('')
 const creating = ref(false)
 const entities = ref([])
 const domains = ref([])
@@ -212,11 +222,13 @@ const loadDomains = async () => {
     const res = await domainAPI.list()
     domains.value = res || []
   } catch (err) {
-    loadError.value = getModelErrorMessage(err, t, 'model.common.load_failed')
+    domains.value = []
+    referenceError.value = t('model.common.reference_data_unavailable')
   }
 }
 
 const reload = async () => {
+  referenceError.value = ''
   await Promise.all([loadDomains(), loadEntities()])
 }
 
@@ -237,6 +249,10 @@ const openCreateDialog = () => {
 }
 
 const handleCreate = async () => {
+  if (!can('model.entity.create')) {
+    ElMessage.error(t('model.common.permission_denied'))
+    return
+  }
   try {
     await createFormRef.value.validate()
   } catch {
@@ -259,6 +275,10 @@ const handleCreate = async () => {
 }
 
 const handleDelete = async (id) => {
+  if (!can('model.entity.delete')) {
+    ElMessage.error(t('model.common.permission_denied'))
+    return
+  }
   try {
     await entityAPI.delete(id)
     ElMessage.success(t('model.common.delete_success'))
@@ -302,6 +322,14 @@ onMounted(async () => {
 
 .search-card {
   margin-bottom: 0;
+}
+
+.search-card :deep(.el-row) {
+  row-gap: 12px;
+}
+
+.search-action :deep(.el-button) {
+  width: 100%;
 }
 
 .load-error {

@@ -40,7 +40,16 @@
         <el-button link type="danger" @click="reload">{{ t('model.common.retry') }}</el-button>
       </el-alert>
 
-      <div v-else class="diagram-info">
+      <el-alert
+        v-if="!loadError && referenceError"
+        class="load-error"
+        type="warning"
+        :title="referenceError"
+        show-icon
+        :closable="false"
+      />
+
+      <div v-if="!loadError" class="diagram-info">
         <el-alert type="info" :closable="false">
           {{ t('model.er_diagram.entity_count', { count: entities.length, relations: relations.length }) }}
         </el-alert>
@@ -60,7 +69,7 @@
     <el-dialog
       v-model="importDialogVisible"
       :title="t('model.er_diagram.import_dialog_title')"
-      width="800px"
+      width="min(800px, calc(100vw - 32px))"
     >
       <el-tabs v-model="importTab">
         <el-tab-pane :label="t('model.er_diagram.paste_code')" name="paste">
@@ -154,6 +163,7 @@ const canExport = computed(() => hasPermissions([
 const entities = ref([])
 const relations = ref([])
 const domains = ref([])
+const referenceError = ref('')
 const selectedDomainId = ref(null)
 const globalMermaidCode = ref('')
 const diagramContainer = ref(null)
@@ -181,14 +191,16 @@ const loadDomains = async () => {
   try {
     domains.value = await domainAPI.list() || []
   } catch (err) {
-    loadError.value = getModelErrorMessage(err, t, 'model.common.load_failed')
+    domains.value = []
+    referenceError.value = t('model.common.reference_data_unavailable')
   }
 }
 
 const reload = async () => {
   loadError.value = ''
+  referenceError.value = ''
   await loadDomains()
-  if (!loadError.value) await refreshDiagram()
+  await refreshDiagram()
 }
 
 // 加载数据并生成ER图
@@ -344,6 +356,10 @@ const handleFileUpload = (file) => {
 
 // 执行导入
 const executeImport = async () => {
+  if (!canImport.value) {
+    ElMessage.error(t('model.common.permission_denied'))
+    return
+  }
   if (!importMermaidCode.value.trim()) {
     ElMessage.warning(t('model.er_diagram.import_empty'))
     return
@@ -480,5 +496,31 @@ onBeforeUnmount(() => stopThemeObserver?.())
   font-size: 67px;
   color: var(--el-color-primary);
   margin-bottom: 16px;
+}
+
+@media (max-width: 767px) {
+  .er-diagram-manager {
+    padding: 12px;
+  }
+
+  .header-left,
+  .domain-filter,
+  .toolbar {
+    width: 100%;
+  }
+
+  .toolbar {
+    margin-left: 0;
+  }
+
+  .toolbar :deep(.el-button) {
+    flex: 1 1 auto;
+    margin-left: 0;
+  }
+
+  .diagram-container {
+    min-height: 360px;
+    padding: 16px;
+  }
 }
 </style>

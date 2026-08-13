@@ -2,6 +2,7 @@ package capture
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"testing"
@@ -39,6 +40,9 @@ func TestCaptureSupervisorStartPauseResumeStopLifecycle(t *testing.T) {
 	if resource.Status != models.CaptureStatusRunning || !topics.created || !topics.accessCreated || connect.putConfig == nil {
 		t.Fatalf("resource=%+v topic=%v config=%#v", resource, topics.created, connect.putConfig)
 	}
+	if source.probeCalls == 0 {
+		t.Fatal("capture start did not probe the source database")
+	}
 	if err := supervisor.Pause(context.Background(), task); err != nil {
 		t.Fatal(err)
 	}
@@ -60,6 +64,90 @@ func TestCaptureSupervisorStartPauseResumeStopLifecycle(t *testing.T) {
 	}
 	if err := supervisor.Stop(context.Background(), task); err != nil {
 		t.Fatalf("second Stop() error = %v", err)
+	}
+}
+
+func TestCaptureSupervisorRefreshRequiresConnectorAndSourceHealth(t *testing.T) {
+	store := &fakeCaptureStore{resource: &models.CaptureResource{
+		ID: 1, TaskID: 3, TenantID: 2, SourceType: models.CaptureSourceOracle,
+		SourceEngineID: 22, SourceDatabase: "FREEPDB1", SourceConnectionFingerprint: "fingerprint",
+		ConnectorName: "connector", Status: models.CaptureStatusRunning, ResourceVersion: 1,
+	}}
+	plans := fakePlanResolver{plan: &CapturePlan{
+		SourceType: models.CaptureSourceOracle, SourceEngineID: 22, SourceDatabase: "FREEPDB1",
+		SourceConnectionFingerprint: "fingerprint", CDCConnInfo: engineplugin.ConnectionInfo{"user": "C##ADDP_CDC"},
+	}}
+	source := &fakeSourceResources{
+		probeErr: errors.New("oracle unavailable"),
+		recovery: &models.CaptureSourceRecovery{
+			SchemaVersion: "capture.source_recovery/v1", Provider: "oracle", Health: "healthy", CapturePosition: "100", SampledAt: time.Now(),
+		},
+		transactions: &models.CaptureSourceTransactions{
+			SchemaVersion: "capture.source_transactions/v1", Provider: "oracle", Status: "available", ActiveCount: 1, SampledAt: time.Now(),
+		},
+	}
+	supervisor, err := NewSupervisor(store, plans, &fakeConnectControl{state: "RUNNING"}, &fakeTopicControl{}, source, SupervisorConfig{
+		TopicRetention: time.Hour, TopicReplication: 1, ProvisioningTimeout: time.Second,
+		StatusPollInterval: time.Millisecond, MonitorInterval: time.Second, SourceProbeTimeout: time.Second,
+	}, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := supervisor.Refresh(context.Background(), store.resource); err == nil {
+		t.Fatal("Refresh() succeeded while source probe failed")
+	}
+	if store.resource.Status != models.CaptureStatusFailed || store.resource.SourceStatus != "OFFLINE" || store.resource.ConnectorStatus != "RUNNING" {
+		t.Fatalf("resource after failed source probe = %+v", store.resource)
+	}
+	if recovery := models.NewCaptureSummary(store.resource).SourceRecovery; recovery == nil || recovery.Health != "unknown" {
+		t.Fatalf("source failure recovery observation = %#v", recovery)
+	}
+	if transactions := models.NewCaptureSummary(store.resource).SourceTransactions; transactions == nil || transactions.Status != "unavailable" {
+		t.Fatalf("source failure transaction observation = %#v", transactions)
+	}
+	source.probeErr = nil
+	if _, err := supervisor.Refresh(context.Background(), store.resource); err != nil {
+		t.Fatal(err)
+	}
+	if store.resource.Status != models.CaptureStatusRunning || store.resource.SourceStatus != "ONLINE" {
+		t.Fatalf("resource after source recovery = %+v", store.resource)
+	}
+	if recovery := models.NewCaptureSummary(store.resource).SourceRecovery; recovery == nil || recovery.Health != "healthy" || recovery.CapturePosition != "100" {
+		t.Fatalf("source recovery observation = %#v", recovery)
+	}
+	if transactions := models.NewCaptureSummary(store.resource).SourceTransactions; transactions == nil || transactions.Status != "available" || transactions.ActiveCount != 1 {
+		t.Fatalf("source transaction observation = %#v", transactions)
+	}
+}
+
+func TestCaptureSupervisorResumeRecordsConnectorFailureFacts(t *testing.T) {
+	store := &fakeCaptureStore{resource: &models.CaptureResource{
+		ID: 1, TaskID: 3, TenantID: 2, SourceType: models.CaptureSourcePostgreSQL,
+		SourceEngineID: 12, SourceDatabase: "business", SourceConnectionFingerprint: "fingerprint",
+		ConnectorName: "connector", Status: models.CaptureStatusRunning, ResourceVersion: 1,
+	}}
+	connect := &fakeConnectControl{state: "FAILED"}
+	supervisor, err := NewSupervisor(store, fakePlanResolver{plan: &CapturePlan{}}, connect, &fakeTopicControl{}, &fakeSourceResources{}, SupervisorConfig{
+		TopicRetention: time.Hour, TopicReplication: 1, ProvisioningTimeout: time.Second,
+		StatusPollInterval: time.Millisecond, MonitorInterval: time.Second, SourceProbeTimeout: time.Second,
+	}, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.Resume(context.Background(), &models.TransferTask{ID: 3, TenantID: 2}); err == nil {
+		t.Fatal("Resume() succeeded with an unhealthy connector")
+	}
+	if store.resource.Status != models.CaptureStatusFailed || store.resource.ConnectorStatus != "FAILED" {
+		t.Fatalf("resource after connector failure = %+v", store.resource)
+	}
+}
+
+func TestSourceProbeQueryUsesOracleDual(t *testing.T) {
+	if got := sourceProbeQuery(models.CaptureSourceOracle); got != "SELECT 1 FROM DUAL" {
+		t.Fatalf("Oracle probe query = %q", got)
+	}
+	if got := sourceProbeQuery(models.CaptureSourcePostgreSQL); got != "SELECT 1" {
+		t.Fatalf("PostgreSQL probe query = %q", got)
 	}
 }
 
@@ -207,6 +295,18 @@ func (f *fakeCaptureStore) apply(fields map[string]interface{}) {
 	if value, ok := fields["connector_created"].(bool); ok {
 		f.resource.ConnectorCreated = value
 	}
+	if value, ok := fields["connector_status"].(string); ok {
+		f.resource.ConnectorStatus = value
+	}
+	if value, ok := fields["source_status"].(string); ok {
+		f.resource.SourceStatus = value
+	}
+	if value, ok := fields["source_recovery"].(models.JSONMap); ok {
+		f.resource.SourceRecovery = value
+	}
+	if value, ok := fields["source_transactions"].(models.JSONMap); ok {
+		f.resource.SourceTransactions = value
+	}
 }
 
 func (f *fakeCaptureStore) HasStopInitiatedGeneration(context.Context, uint, uint) (bool, error) {
@@ -221,6 +321,9 @@ func (f fakePlanResolver) Resolve(context.Context, *models.TransferTask) (*Captu
 func (f fakePlanResolver) ResolveForCleanup(context.Context, *models.TransferTask) (*CapturePlan, error) {
 	return f.plan, nil
 }
+func (f fakePlanResolver) ResolveForObservation(context.Context, *models.CaptureResource) (*CapturePlan, error) {
+	return f.plan, nil
+}
 
 type fakeConnectControl struct {
 	state       string
@@ -228,6 +331,7 @@ type fakeConnectControl struct {
 	pauseCalls  int
 	resumeCalls int
 	deleted     bool
+	offsets     *ConnectorOffsets
 }
 
 func (f *fakeConnectControl) PutConfig(_ context.Context, _ string, config map[string]string) error {
@@ -242,6 +346,12 @@ func (f *fakeConnectControl) Status(context.Context, string) (*ConnectorStatus, 
 		return nil, ErrConnectorNotFound
 	}
 	return &ConnectorStatus{ConnectorState: f.state, TaskStates: []string{f.state}}, nil
+}
+func (f *fakeConnectControl) Offsets(context.Context, string) (*ConnectorOffsets, error) {
+	if f.offsets != nil {
+		return f.offsets, nil
+	}
+	return &ConnectorOffsets{Offsets: []ConnectorOffset{{Offset: map[string]json.RawMessage{"scn": json.RawMessage(`"1"`)}}}}, nil
 }
 func (f *fakeConnectControl) Pause(context.Context, string) error {
 	f.pauseCalls++
@@ -295,8 +405,14 @@ func (f *fakeTopicControl) DeleteSchemaHistoryAccess(context.Context, string) er
 func (f *fakeTopicControl) Close() {}
 
 type fakeSourceResources struct {
-	ensureCalls int
-	calls       int
+	ensureCalls     int
+	calls           int
+	probeCalls      int
+	probeErr        error
+	recovery        *models.CaptureSourceRecovery
+	recoveryErr     error
+	transactions    *models.CaptureSourceTransactions
+	transactionsErr error
 }
 
 func (f *fakeSourceResources) EnsureOwnedResources(context.Context, *CapturePlan, *models.CaptureResource) error {
@@ -307,4 +423,16 @@ func (f *fakeSourceResources) EnsureOwnedResources(context.Context, *CapturePlan
 func (f *fakeSourceResources) DropOwnedResources(context.Context, *CapturePlan, *models.CaptureResource) error {
 	f.calls++
 	return nil
+}
+
+func (f *fakeSourceResources) Probe(context.Context, *CapturePlan, *models.CaptureResource) error {
+	f.probeCalls++
+	return f.probeErr
+}
+
+func (f *fakeSourceResources) Observe(context.Context, *CapturePlan, *models.CaptureResource, *ConnectorOffsets, time.Time) (*SourceObservation, error) {
+	return &SourceObservation{
+		Recovery: f.recovery, RecoveryError: f.recoveryErr,
+		Transactions: f.transactions, TransactionsError: f.transactionsErr,
+	}, nil
 }

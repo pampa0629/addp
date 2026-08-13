@@ -3,9 +3,9 @@
     <template #header>
       <div class="card-header">
         <h3><el-icon class="header-icon"><Document /></el-icon>{{ $t('standard.documentPanel.title') }}</h3>
-        <div class="header-actions">
-          <el-button size="small" @click="openLinkDialog">{{ $t('standard.documentPanel.linkExisting') }}</el-button>
-          <el-button size="small" type="primary" @click="openUploadDialog">{{ $t('standard.documentPanel.uploadNew') }}</el-button>
+        <div v-if="canLink || canCreateAndLink" class="header-actions">
+          <el-button v-if="canLink" size="small" @click="openLinkDialog">{{ $t('standard.documentPanel.linkExisting') }}</el-button>
+          <el-button v-if="canCreateAndLink" size="small" type="primary" @click="openUploadDialog">{{ $t('standard.documentPanel.uploadNew') }}</el-button>
         </div>
       </div>
     </template>
@@ -35,7 +35,7 @@
         <template #default="{ row }">
           <div class="table-actions">
           <el-button v-if="row.file_name" link size="small" type="primary" @click="downloadDoc(row)">{{ $t('standard.documentPanel.download') }}</el-button>
-          <el-button link size="small" type="danger" @click="unlinkDoc(row)">{{ $t('standard.documentPanel.unlink') }}</el-button>
+          <el-button v-if="canLink" link size="small" type="danger" :loading="isActionLocked(`document-unlink:${row.id}`)" @click="unlinkDoc(row)">{{ $t('standard.documentPanel.unlink') }}</el-button>
           </div>
         </template>
       </el-table-column>
@@ -59,12 +59,12 @@
           <el-input v-model="uploadForm.source_org" :placeholder="$t('standard.document.sourcePlaceholder')" />
         </el-form-item>
         <el-form-item :label="$t('standard.documentPanel.versionLabel')">
-          <el-input v-model="uploadForm.version" :placeholder="$t('standard.document.versionPlaceholder')" />
+          <el-input v-model="uploadForm.document_version" :placeholder="$t('standard.document.versionPlaceholder')" />
         </el-form-item>
         <el-form-item :label="$t('standard.documentPanel.descriptionLabel')">
           <el-input v-model="uploadForm.description" type="textarea" :rows="2" :placeholder="$t('standard.document.descriptionLabel')" />
         </el-form-item>
-        <el-form-item :label="$t('standard.documentPanel.fileLabel')">
+        <el-form-item v-if="canUploadFile" :label="$t('standard.documentPanel.fileLabel')">
           <el-upload
             ref="uploadRef"
             :auto-upload="false"
@@ -121,13 +121,15 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Paperclip } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { elementDocumentAPI, glossaryDocumentAPI, metricDocumentAPI, documentAPI } from '../api/standard'
 import { saveBlob } from '../utils/download'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
+import { useStandardPermissions } from '../composables/useStandardPermissions'
+import { useActionLock } from '../composables/useActionLock'
 
 const { t } = useI18n()
 
@@ -140,8 +142,18 @@ const props = defineProps({
   entityId: {
     type: Number,
     default: null
-  }
+  },
+  entityVersion: { type: Number, required: true }
 })
+
+const emit = defineEmits(['update:entityVersion'])
+
+const { canUpdate: canUpdateEntity } = useStandardPermissions(props.entityType)
+const { canCreate: canCreateDocument, canUpdate: canUpdateDocument } = useStandardPermissions('document')
+const canCreateAndLink = computed(() => canUpdateEntity.value && canCreateDocument.value)
+const canLink = computed(() => canUpdateEntity.value && canUpdateDocument.value)
+const canUploadFile = canUpdateDocument
+const { isLocked: isActionLocked, runLocked } = useActionLock()
 
 // 根据实体类型选择对应的 API
 const api = {
@@ -162,7 +174,7 @@ const uploadForm = ref({
   name: '',
   doc_type: 'reference',
   source_org: '',
-  version: '',
+  document_version: '',
   description: ''
 })
 
@@ -188,7 +200,7 @@ const loadDocs = async () => {
     const res = await api[props.entityType].list(props.entityId)
     docs.value = res || []
   } catch (e) {
-    docs.value = []
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -206,14 +218,17 @@ const downloadDoc = async (doc) => {
 }
 
 const unlinkDoc = async (doc) => {
-  try {
-    await ElMessageBox.confirm(t('standard.documentPanel.confirmUnlink', { name: doc.name }), t('standard.common.hint'), { type: 'warning' })
-    await api[props.entityType].unlink(props.entityId, doc.id)
-    ElMessage.success(t('standard.documentPanel.unlinkSuccess'))
-    await loadDocs()
-  } catch (e) {
-    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t))
-  }
+  await runLocked(`document-unlink:${doc.id}`, async () => {
+    try {
+      await ElMessageBox.confirm(t('standard.documentPanel.confirmUnlink', { name: doc.name }), t('standard.common.hint'), { type: 'warning' })
+      const res = await api[props.entityType].unlink(props.entityId, doc.id, props.entityVersion)
+      emit('update:entityVersion', res.version)
+      ElMessage.success(t('standard.documentPanel.unlinkSuccess'))
+      await loadDocs()
+    } catch (e) {
+      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t))
+    }
+  })
 }
 
 const openUploadDialog = () => {
@@ -221,7 +236,7 @@ const openUploadDialog = () => {
 }
 
 const resetUploadForm = () => {
-  uploadForm.value = { name: '', doc_type: 'reference', source_org: '', version: '', description: '' }
+  uploadForm.value = { name: '', doc_type: 'reference', source_org: '', document_version: '', description: '' }
   selectedFile.value = null
   uploadRef.value?.clearFiles()
 }
@@ -234,18 +249,20 @@ const onFileChange = (file) => {
 }
 
 const submitUpload = async () => {
+  if (uploading.value) return
   if (!uploadForm.value.name) {
     ElMessage.warning(t('standard.documentPanel.nameRequired'))
     return
   }
   uploading.value = true
   try {
-    const res = await api[props.entityType].create(props.entityId, uploadForm.value)
-    const doc = res
+    const res = await api[props.entityType].create(props.entityId, { ...uploadForm.value, version: props.entityVersion })
+    const doc = res.document
+    emit('update:entityVersion', res.version)
     if (selectedFile.value) {
       const formData = new FormData()
       formData.append('file', selectedFile.value)
-      await api[props.entityType].uploadFile(doc.id, formData)
+      await api[props.entityType].uploadFile(doc.id, formData, doc.version)
     }
     ElMessage.success(t('standard.documentPanel.linkSuccess'))
     showUploadDialog.value = false
@@ -272,21 +289,30 @@ const searchDocs = async (keyword) => {
     const res = await documentAPI.list({ keyword, page_size: 50 })
     searchedDocs.value = res.data || []
   } catch (e) {
-    searchedDocs.value = []
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
   } finally {
     docSearchLoading.value = false
   }
 }
 
 const confirmLink = async () => {
-  if (selectedDocIds.value.length === 0) return
+  if (linking.value || selectedDocIds.value.length === 0) return
   linking.value = true
   try {
-    const results = await Promise.allSettled(
-      selectedDocIds.value.map(docId => api[props.entityType].link(props.entityId, docId))
-    )
-    const failed = results.filter(result => result.status === 'rejected').length
-    const succeeded = results.length - failed
+    let version = props.entityVersion
+    let succeeded = 0
+    let failed = 0
+    for (const docId of selectedDocIds.value) {
+      try {
+        const res = await api[props.entityType].link(props.entityId, docId, version)
+        version = res.version
+        succeeded += 1
+      } catch {
+        failed += 1
+        break
+      }
+    }
+    emit('update:entityVersion', version)
     await loadDocs()
     if (failed > 0) {
       ElMessage.warning(t('standard.documentPanel.linkPartial', { succeeded, failed }))

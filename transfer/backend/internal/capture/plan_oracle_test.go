@@ -22,11 +22,39 @@ func TestOracleCDCNativeTypeAndStrictTypeMatrix(t *testing.T) {
 	if err := validateOracleCDCSourceFieldType("SHAPE", "MDSYS.SDO_GEOMETRY", "MDSYS.SDO_GEOMETRY", sql.NullInt64{}, datatype.FieldTypeGeometry); err != nil {
 		t.Fatalf("Oracle Spatial CDC geometry rejected: %v", err)
 	}
-	if err := validateOracleCDCSourceFieldType("PAYLOAD", "CLOB", "CLOB", sql.NullInt64{}, datatype.FieldTypeString); err == nil {
-		t.Fatal("Oracle LOB CDC must be rejected in v1")
+	rejectedTypes := []struct {
+		nativeType     string
+		dataType       string
+		configuredType datatype.FieldType
+	}{
+		{nativeType: "CLOB", dataType: "CLOB", configuredType: datatype.FieldTypeString},
+		{nativeType: "NCLOB", dataType: "NCLOB", configuredType: datatype.FieldTypeString},
+		{nativeType: "BLOB", dataType: "BLOB", configuredType: datatype.FieldTypeBytes},
+		{nativeType: "BFILE", dataType: "BFILE", configuredType: datatype.FieldTypeBytes},
+		{nativeType: "LONG", dataType: "LONG", configuredType: datatype.FieldTypeString},
+		{nativeType: "LONG RAW", dataType: "LONG RAW", configuredType: datatype.FieldTypeBytes},
+		{nativeType: "XMLTYPE", dataType: "XMLTYPE", configuredType: datatype.FieldTypeString},
+		{nativeType: "JSON", dataType: "JSON", configuredType: datatype.FieldTypeJSON},
+		{nativeType: "BOOLEAN", dataType: "BOOLEAN", configuredType: datatype.FieldTypeBool},
+	}
+	for _, test := range rejectedTypes {
+		if err := validateOracleCDCSourceFieldType("PAYLOAD", test.nativeType, test.dataType, sql.NullInt64{}, test.configuredType); err == nil {
+			t.Errorf("Oracle CDC source type %q must be rejected", test.nativeType)
+		}
 	}
 	if err := validateOracleCDCSourceFieldType("UPDATED_AT", "TIMESTAMP(6)", "TIMESTAMP(6)", sql.NullInt64{Int64: 6, Valid: true}, datatype.FieldTypeTimestamp); err == nil {
 		t.Fatal("Oracle sub-millisecond timestamp precision must be rejected")
+	}
+}
+
+func TestOracleCDCRACIsExplicitlyRejected(t *testing.T) {
+	if err := validateOracleSingleInstance("FALSE"); err != nil {
+		t.Fatalf("single-instance Oracle rejected: %v", err)
+	}
+	for _, value := range []string{"TRUE", "", "unknown"} {
+		if err := validateOracleSingleInstance(value); err == nil {
+			t.Errorf("cluster_database=%q accepted", value)
+		}
 	}
 }
 

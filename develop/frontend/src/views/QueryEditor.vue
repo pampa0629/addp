@@ -70,7 +70,7 @@
             :aria-label="t('develop.query.format')"
             @click="formatQuery"
           >
-            <el-icon><MagicStick /></el-icon>
+            <el-icon><Operation /></el-icon>
           </el-button>
         </el-tooltip>
         <el-button
@@ -603,6 +603,7 @@ import {
   List,
   MagicStick,
   Menu,
+  Operation,
   Plus,
   Position,
   VideoPlay

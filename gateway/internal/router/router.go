@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/addp/common/buildinfo"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/cors"
 	"github.com/addp/gateway/internal"
@@ -56,10 +57,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 
 	// 健康检查（无需鉴权）
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"status":  "ok",
-			"service": "gateway",
-		})
+		c.JSON(http.StatusOK, buildinfo.Health("gateway"))
 	})
 
 	// 网关首页（无需鉴权）

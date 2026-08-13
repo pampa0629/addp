@@ -25,6 +25,10 @@ func NewTableRelationHandler(svc *service.TableRelationService) *TableRelationHa
 // @Produce json
 // @Param id path int true "事实表ID | Fact table ID"
 // @Success 200 {object} map[string]interface{} "维度关联列表 | Dimension relation list"
+// @Failure 400 {object} models.ErrorResponse "事实表 ID 或表类型无效 | Invalid fact table ID or table type"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 404 {object} models.ErrorResponse "逻辑表不存在 | Logical table not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.logical_model.read"]
 // @Router /logical-tables/{id}/dimension-relations [get]
@@ -53,6 +57,8 @@ func (h *TableRelationHandler) ListDimensionRelations(c *gin.Context) {
 // @Param body body models.CreateTableRelationRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的关联 | Created relation"
 // @Failure 400 {object} models.ErrorResponse "表或字段类型无效 | Invalid table or field type"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 404 {object} models.ErrorResponse "逻辑表或字段不存在 | Logical table or field not found"
 // @Failure 409 {object} models.ErrorResponse "表状态或关联冲突 | Table state or relation conflict"
 // @x-addp-auth-mode "permission"
@@ -86,6 +92,11 @@ func (h *TableRelationHandler) AddDimensionRelation(c *gin.Context) {
 // @Param id path int true "事实表ID | Fact table ID"
 // @Param rid path int true "关联ID | Relation ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Removed successfully"
+// @Failure 400 {object} models.ErrorResponse "事实表或关联 ID 无效 | Invalid fact table or relation ID"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 404 {object} models.ErrorResponse "逻辑表或维度关联不存在 | Logical table or dimension relation not found"
+// @Failure 409 {object} models.ErrorResponse "逻辑表状态冲突 | Logical table state conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.logical_model.update"]
 // @Router /logical-tables/{id}/dimension-relations/{rid} [delete]

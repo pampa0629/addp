@@ -25,7 +25,8 @@
       </el-form-item>
     </el-form>
 
-    <el-table :data="list" v-loading="loading" border>
+    <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" class="load-error" />
+    <el-table :data="list" v-loading="loading" :empty-text="emptyText" border>
       <el-table-column prop="id" :label="t('quality.issue.id')" width="80" />
       <el-table-column prop="type" :label="t('quality.issue.ruleType')" width="120" />
       <el-table-column prop="table_name" :label="t('quality.issue.tableName')" width="160" />
@@ -77,8 +78,20 @@
       <el-table-column :label="t('quality.issue.actions')" width="220" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="openIssue(row.id)">{{ t('quality.issue.detail') }}</el-button>
-          <el-button v-if="row.status === 'open'" size="small" type="success" @click="changeStatus(row.id, 'resolved')">{{ t('quality.issue.markResolved') }}</el-button>
-          <el-button v-if="row.status === 'open'" size="small" @click="changeStatus(row.id, 'ignored')">{{ t('quality.issue.ignore') }}</el-button>
+          <el-button
+            v-if="row.status === 'open'"
+            size="small"
+            type="success"
+            :loading="updatingIssueIds.has(row.id)"
+            :disabled="updatingIssueIds.has(row.id)"
+            @click="changeStatus(row.id, 'resolved')"
+          >{{ t('quality.issue.markResolved') }}</el-button>
+          <el-button
+            v-if="row.status === 'open'"
+            size="small"
+            :disabled="updatingIssueIds.has(row.id)"
+            @click="changeStatus(row.id, 'ignored')"
+          >{{ t('quality.issue.ignore') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -96,7 +109,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { issueAPI, systemEngineAPI } from '../api/quality'
 import { useI18n } from 'vue-i18n'
@@ -111,10 +124,17 @@ const router = useRouter()
 
 const list = ref([])
 const loading = ref(false)
+const loadError = ref('')
 const filter = ref({ status: '', engine_id: null })
 const pagination = ref({ page: 1, page_size: 20, total: 0 })
 const engines = ref([])
+const updatingIssueIds = ref(new Set())
 let routeReady = false
+let listRequestSequence = 0
+const hasFilters = computed(() => Boolean(filter.value.status || filter.value.engine_id))
+const emptyText = computed(() => t(hasFilters.value
+  ? 'quality.issue.filteredEmpty'
+  : 'quality.issue.empty'))
 
 const statusTagType = (s) => ({ open: 'danger', resolved: 'success', ignored: 'info' }[s] || 'info')
 const statusLabel = (s) => ({
@@ -124,12 +144,15 @@ const statusLabel = (s) => ({
 }[s] || s)
 
 const fetchList = async () => {
+  const requestSequence = ++listRequestSequence
   loading.value = true
+  loadError.value = ''
   try {
     const params = { page: pagination.value.page, page_size: pagination.value.page_size }
     if (filter.value.status) params.status = filter.value.status
     if (filter.value.engine_id) params.engine_id = filter.value.engine_id
     const res = await issueAPI.list(params)
+    if (requestSequence !== listRequestSequence) return
     list.value = res?.data || []
     pagination.value.total = res?.total || 0
     const lastPage = Math.max(1, Math.ceil(pagination.value.total / pagination.value.page_size))
@@ -140,9 +163,13 @@ const fetchList = async () => {
       return
     }
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('quality.issue.loadFailed'))
+    if (requestSequence !== listRequestSequence) return
+    list.value = []
+    pagination.value.total = 0
+    loadError.value = e.response?.data?.error || t('quality.issue.loadFailed')
+    ElMessage.error(loadError.value)
   } finally {
-    loading.value = false
+    if (requestSequence === listRequestSequence) loading.value = false
   }
 }
 
@@ -185,12 +212,15 @@ const openIssue = (issueId) => {
 }
 
 const changeStatus = async (id, status) => {
+  if (updatingIssueIds.value.has(id)) return
+  updatingIssueIds.value.add(id)
   try {
     const { value: note } = await ElMessageBox.prompt(t('quality.issue.notePrompt'), t('quality.issue.noteTitle'), {
       inputPattern: /\S+/,
       inputErrorMessage: t('quality.issue.noteRequired'),
       confirmButtonText: t('quality.issue.confirm'),
-      cancelButtonText: t('quality.issue.cancel')
+      cancelButtonText: t('quality.issue.cancel'),
+      customClass: 'addp-message-box'
     })
     await issueAPI.updateStatus(id, status, note)
     ElMessage.success(t('quality.issue.updateSuccess'))
@@ -198,6 +228,8 @@ const changeStatus = async (id, status) => {
   } catch (e) {
     if (e === 'cancel' || e === 'close') return
     ElMessage.error(e.response?.data?.error || t('quality.issue.updateFailed'))
+  } finally {
+    updatingIssueIds.value.delete(id)
   }
 }
 
@@ -248,6 +280,9 @@ onMounted(async () => {
 .pagination {
   margin-top: 16px;
   justify-content: flex-end;
+}
+.load-error {
+  margin-bottom: 16px;
 }
 .execution-links {
   display: grid;

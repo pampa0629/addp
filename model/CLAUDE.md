@@ -80,6 +80,7 @@ model/
 | name / code | string | 显示名 / 英文标识符 |
 | description | text | 描述 |
 | status | string | `draft` / `approved` |
+| version | int64 | Entity 聚合的资源并发版本，从 1 开始 |
 | created_by / updated_by | int64 | 操作人 |
 
 ### `model.entity_attributes` — 实体属性
@@ -100,6 +101,7 @@ model/
 | source_entity / target_entity | int64 | 源/目标实体 |
 | relation_type | string | `one_to_one` / `one_to_many` / `many_to_many` |
 | name | string | 关系名称 |
+| version | int64 | 独立关系事实的资源并发版本，从 1 开始 |
 
 ### `model.logical_tables` — 逻辑表
 
@@ -111,6 +113,7 @@ model/
 | grain_description | text | 粒度声明（仅 fact 表） |
 | scd_type | int | 缓慢变化维类型 0=静态/1=覆盖/2=拉链/3=混合（仅 dimension 表） |
 | materialization | JSONB | 物化配置（关联到真实物理表） |
+| version | int64 | LogicalTable 聚合的资源并发版本，从 1 开始 |
 
 ### `model.logical_fields` — 逻辑表字段
 
@@ -149,6 +152,14 @@ model/
 | naming_rule | text | 命名规范 |
 | quality_sla | JSONB | 质量 SLA 配置 |
 | sort_order | int | 显示顺序 |
+| version | int64 | DWLayer 的资源并发版本，从 1 开始 |
+
+### `model.entity_model_revisions` — Tenant 实体模型集合修订
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| tenant_id | int64 PK | Tenant 唯一集合修订行 |
+| revision | int64 | Mermaid 全量导入的集合修订版本，从 1 开始 |
 
 ## API 端点（`/api/v1/model`）
 
@@ -165,6 +176,10 @@ GET/POST/PUT/DELETE .../attributes       # 实体属性 CRUD
 POST   /api/model/entities/import-mermaid # 从 Mermaid ER 图导入
 GET    /api/model/entities/export-mermaid # 导出 Mermaid ER 图
 ```
+
+Entity、LogicalTable、DWLayer 和 EntityRelation 是独立并发版本主体。EntityAttribute 使用父 Entity 版本；LogicalField、TableRelation 和 FactMetricMapping 使用父 LogicalTable 版本。已有资源及聚合子资源的所有写操作都在 JSON body 中携带对应 `version`，成功后返回新版本；不接受 query、Header 或服务端版本兜底。
+
+Mermaid 导出返回 `{ "mermaid_code": "...", "revision": 1 }`，导入提交同一结构并在单个事务内推进 Tenant 实体模型集合 `revision`。不得保留只返回字符串或不带修订版本的并行接口。
 
 ### 实体关系
 
@@ -227,6 +242,8 @@ Model 和 Standard 使用不同的 PostgreSQL Schema，**无数据库外键约�
 Model 是 `model.logical_model.*` 第一批 Permission 的唯一 owner，机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Model 服务启动时不向 System 动态注册 Permission。
 
 Entity、EntityRelation、DWLayer 和 LogicalModel 分别使用 `model.entity.*`、`model.entity_relation.*`、`model.dw_layer.*`、`model.logical_model.*`。EntityAttribute 是 Entity 聚合内子资源；LogicalField、TableRelation 和 FactMetricMapping 是 LogicalModel 聚合内子资源，不建立平行宽泛 Permission。Mermaid 导入是破坏性全量替换，按 Entity 与 EntityRelation 的 create/delete 执行 all-of 校验；导出按两者的 read 执行 all-of 校验。已审批实体必须先全部重新打开，导入不会绕过生命周期约束。
+
+并发契约以 [Model 概念与数据约束规范](docs/model概念与数据约束规范.md) 为事实源。后端必须把版本校验、生命周期校验、聚合写入和版本递增放在同一事务中；前端收到 `409 resource_version_conflict` 后保留本地未保存状态，不自动重试。
 
 ## 特殊设计
 

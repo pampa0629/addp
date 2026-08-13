@@ -27,7 +27,7 @@
     </div>
 
     <el-table v-loading="loading" :data="rows" stripe>
-      <el-table-column :label="t('system.iam.memberships.member')" min-width="190"><template #default="{ row }"><div class="iam-primary-cell"><strong>{{ row.display_name }}</strong><span>{{ row.username || row.principal_id }}</span></div></template></el-table-column>
+      <el-table-column :label="t('system.iam.memberships.member')" min-width="220"><template #default="{ row }"><div class="iam-primary-cell"><strong>{{ memberDisplayName(row) }}</strong><span>{{ memberPrincipalLabel(row) }} · {{ memberIdentifier(row) }}</span></div></template></el-table-column>
       <el-table-column :label="t('system.iam.roles.role')" min-width="210"><template #default="{ row }"><div class="iam-primary-cell"><strong>{{ assignmentRoleName(row) }}</strong><span class="iam-role-key">{{ row.role_key }}</span></div></template></el-table-column>
       <el-table-column :label="t('system.iam.roleAssignments.scope')" width="170"><template #default="{ row }">{{ scopeValue(row) }}</template></el-table-column>
       <el-table-column :label="t('system.iam.common.status')" width="110"><template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ t(`system.iam.status.${row.status}`) }}</el-tag></template></el-table-column>
@@ -152,6 +152,9 @@ function roleLabel(role) { return resolveRoleName(role, t, te) }
 function assignmentRoleName(row) { return resolveRoleName(row, t, te) }
 function recommendationAssigned(roleKey) { return hasTenantRole(authStore.authContext, roleKey, 'tenant') }
 function memberLabel(member) { return `${member.display_name} (${member.username || member.principal_id})` }
+function memberDisplayName(row) { return row.display_name || row.service_principal_name || row.principal_id }
+function memberPrincipalLabel(row) { return t(`system.iam.principalType.${row.principal_type || 'user'}`) }
+function memberIdentifier(row) { return row.username || row.service_principal_name || row.principal_id }
 function scopeLabel(scope) { return resolveTenantScopeLabel(scope, t) }
 function scopeValue(row) { return formatTenantAssignmentScope(row, t) }
 function formatDate(value) { return value ? new Date(value).toLocaleString() : '-' }

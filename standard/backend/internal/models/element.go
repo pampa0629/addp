@@ -61,6 +61,7 @@ type Element struct {
 	UpdatedBy        *int64      `json:"updated_by,omitempty"`
 	CreatedAt        time.Time   `json:"created_at"`
 	UpdatedAt        time.Time   `json:"updated_at"`
+	Version          int64       `gorm:"not null;default:1" json:"version"`
 }
 
 func (Element) TableName() string {
@@ -93,6 +94,7 @@ type CreateElementRequest struct {
 
 // UpdateElementRequest 更新数据元请求
 type UpdateElementRequest struct {
+	Version          int64                  `json:"version" binding:"required"`
 	DomainID         *int64                 `json:"domain_id,omitempty"`
 	Name             string                 `json:"name"`
 	DataType         string                 `json:"data_type"`

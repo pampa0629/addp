@@ -2,12 +2,30 @@ package capture
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/transfer/internal/models"
 )
+
+func TestBuildOracleTransactionObservation(t *testing.T) {
+	sampledAt := time.Now()
+	empty, err := buildOracleTransactionObservation(0, sql.NullString{}, sql.NullString{}, "0", "0", sampledAt)
+	if err != nil || empty.ActiveCount != 0 || empty.OldestDurationSeconds != nil || empty.OldestStartPosition != "" {
+		t.Fatalf("empty transaction observation = %#v, %v", empty, err)
+	}
+	active, err := buildOracleTransactionObservation(1,
+		sql.NullString{String: "5852211", Valid: true}, sql.NullString{String: "11", Valid: true}, "1", "3", sampledAt)
+	if err != nil || active.ActiveCount != 1 || active.OldestStartPosition != "5852211" || active.OldestDurationSeconds == nil || *active.OldestDurationSeconds != 11 || active.UsedUndoBlocks != "1" || active.UsedUndoRecords != "3" {
+		t.Fatalf("active transaction observation = %#v, %v", active, err)
+	}
+	if _, err := buildOracleTransactionObservation(1, sql.NullString{}, sql.NullString{}, "1", "3", sampledAt); err == nil {
+		t.Fatal("invalid active transaction facts succeeded")
+	}
+}
 
 func TestDatabaseSourceResourcesRejectsChangedConnectionIdentity(t *testing.T) {
 	err := (DatabaseSourceResources{}).DropOwnedResources(context.Background(),

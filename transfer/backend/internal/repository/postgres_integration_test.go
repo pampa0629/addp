@@ -258,7 +258,7 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 			"0": {Partition: "0", EarliestOffset: 0, LatestOffset: 10, Health: "degraded"},
 		},
 	}
-	if err := leaseRepo.RecordDiagnostics(context.Background(), *claim, diagnostics); err != nil {
+	if err := leaseRepo.RecordDiagnostics(context.Background(), *claim, diagnostics, nil); err != nil {
 		t.Fatalf("RecordDiagnostics() error = %v", err)
 	}
 	syncRepo := NewSyncStateRepository(db)
@@ -290,7 +290,7 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 	if err := taskRepo.SetContinuousDesiredState(context.Background(), task.ID, task.TenantID, models.TaskDesiredStatePaused, "paused"); err != nil {
 		t.Fatalf("pause continuous task: %v", err)
 	}
-	if err := leaseRepo.RecordDiagnostics(context.Background(), *claim, diagnostics); !errors.Is(err, ErrRuntimeLeaseLost) {
+	if err := leaseRepo.RecordDiagnostics(context.Background(), *claim, diagnostics, nil); !errors.Is(err, ErrRuntimeLeaseLost) {
 		t.Fatalf("diagnostics after pause error = %v, want ErrRuntimeLeaseLost", err)
 	}
 	if err := leaseRepo.Renew(context.Background(), task.ID, "worker-a", 1, now.Add(2*time.Second), 30*time.Second); !errors.Is(err, ErrRuntimeLeaseLost) {
@@ -314,7 +314,7 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 	if secondClaim.Lease.FencingToken != 2 {
 		t.Fatalf("second fencing token = %d, want 2", secondClaim.Lease.FencingToken)
 	}
-	if err := leaseRepo.RecordDiagnostics(context.Background(), *claim, diagnostics); !errors.Is(err, ErrRuntimeLeaseLost) {
+	if err := leaseRepo.RecordDiagnostics(context.Background(), *claim, diagnostics, nil); !errors.Is(err, ErrRuntimeLeaseLost) {
 		t.Fatalf("stale diagnostics error = %v, want ErrRuntimeLeaseLost", err)
 	}
 	var diagnosticsExecution commonExecution.TaskExecution

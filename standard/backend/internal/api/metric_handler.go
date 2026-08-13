@@ -26,7 +26,9 @@ func NewMetricHandler(svc *service.MetricService) *MetricHandler {
 // @Summary 获取指标分类列表 | List metric categories
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {array} models.MetricCategory
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.read"]
 // @Router /metric-categories [get]
@@ -44,7 +46,9 @@ func (h *MetricHandler) ListCategories(c *gin.Context) {
 // @Summary 创建指标分类 | Create metric category
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 201 {object} models.MetricCategory
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.create"]
 // @Router /metric-categories [post]
@@ -67,8 +71,12 @@ func (h *MetricHandler) CreateCategory(c *gin.Context) {
 
 // @Summary 更新指标分类 | Update metric category
 // @Tags Standard
+// @Param request body models.UpdateMetricCategoryRequest true "更新指标分类 | Update metric category"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.update"]
 // @Router /metric-categories/{id} [put]
@@ -99,6 +107,8 @@ func (h *MetricHandler) UpdateCategory(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Failure 409 {object} map[string]string
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.delete"]
 // @Router /metric-categories/{id} [delete]
@@ -122,7 +132,9 @@ func (h *MetricHandler) DeleteCategory(c *gin.Context) {
 // @Summary 获取指标列表 | List metrics
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} models.PaginatedMetricResponse
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.read"]
 // @Router /metrics [get]
@@ -173,6 +185,8 @@ func (h *MetricHandler) ListMetrics(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.read"]
 // @Router /metrics/{id} [get]
@@ -209,6 +223,8 @@ func (h *MetricHandler) GetMetric(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.create"]
 // @Router /metrics [post]
@@ -232,7 +248,11 @@ func (h *MetricHandler) CreateMetric(c *gin.Context) {
 // @Summary 更新指标 | Update metric
 // @Tags Standard
 // @Produce json
+// @Param request body models.UpdateMetricRequest true "更新指标 | Update metric"
 // @Success 200 {object} map[string]interface{}
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.update"]
 // @Router /metrics/{id} [put]
@@ -263,6 +283,8 @@ func (h *MetricHandler) UpdateMetric(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Failure 409 {object} map[string]string
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.delete"]
 // @Router /metrics/{id} [delete]
@@ -284,7 +306,11 @@ func (h *MetricHandler) DeleteMetric(c *gin.Context) {
 // @Summary 审批指标 | Approve metric
 // @Tags Standard
 // @Produce json
+// @Param request body models.VersionRequest true "当前资源版本 | Current resource version"
 // @Success 200 {object} map[string]interface{}
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.approve"]
 // @Router /metrics/{id}/approve [post]
@@ -295,9 +321,14 @@ func (h *MetricHandler) ApproveMetric(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
-	if err := h.svc.ApproveMetric(id, tenantID, userID); err != nil {
+	if err := h.svc.ApproveMetric(id, tenantID, userID, req.Version); err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
@@ -307,7 +338,11 @@ func (h *MetricHandler) ApproveMetric(c *gin.Context) {
 // @Summary 废弃指标 | Deprecate metric
 // @Tags Standard
 // @Produce json
+// @Param request body models.VersionRequest true "当前资源版本 | Current resource version"
 // @Success 200 {object} map[string]interface{}
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.offline"]
 // @Router /metrics/{id}/deprecate [post]
@@ -318,9 +353,14 @@ func (h *MetricHandler) DeprecateMetric(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
-	if err := h.svc.DeprecateMetric(id, tenantID, userID); err != nil {
+	if err := h.svc.DeprecateMetric(id, tenantID, userID, req.Version); err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}

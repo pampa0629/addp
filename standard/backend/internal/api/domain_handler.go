@@ -23,7 +23,9 @@ func NewDomainHandler(svc *service.DomainService) *DomainHandler {
 // @Summary 获取业务域列表 | List business domains
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {array} service.DomainTree
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.domain.read"]
 // @Router /domains [get]
@@ -43,6 +45,8 @@ func (h *DomainHandler) ListDomains(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.domain.create"]
 // @Router /domains [post]
@@ -70,6 +74,8 @@ func (h *DomainHandler) CreateDomain(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.domain.read"]
 // @Router /domains/{id} [get]
@@ -93,8 +99,12 @@ func (h *DomainHandler) GetDomain(c *gin.Context) {
 // UpdateDomain PUT /api/model/domains/:id
 // @Summary 更新业务域 | Update business domain
 // @Tags Standard
+// @Param request body models.UpdateDomainRequest true "更新业务域 | Update business domain"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.domain.update"]
 // @Router /domains/{id} [put]
@@ -129,6 +139,8 @@ func (h *DomainHandler) UpdateDomain(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Failure 409 {object} map[string]string
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.domain.delete"]
 // @Router /domains/{id} [delete]

@@ -20,10 +20,9 @@ export const glossaryAPI = {
   get(id) { return client.get(`/standard/glossaries/${id}`) },
   update(id, data) { return client.put(`/standard/glossaries/${id}`, data) },
   delete(id) { return client.delete(`/standard/glossaries/${id}`) },
-  approve(id) { return client.post(`/standard/glossaries/${id}/approve`) },
-  deprecate(id) { return client.post(`/standard/glossaries/${id}/deprecate`) },
-  getElements(id) { return client.get(`/standard/glossaries/${id}/elements`) },
-  setElements(id, elementIds) { return client.put(`/standard/glossaries/${id}/elements`, { element_ids: elementIds }) }
+  approve(id, version) { return client.post(`/standard/glossaries/${id}/approve`, { version }) },
+  deprecate(id, version) { return client.post(`/standard/glossaries/${id}/deprecate`, { version }) },
+  getElements(id) { return client.get(`/standard/glossaries/${id}/elements`) }
 }
 
 // ========== 数据元 API ==========
@@ -33,7 +32,7 @@ export const elementAPI = {
   get(id) { return client.get(`/standard/elements/${id}`) },
   update(id, data) { return client.put(`/standard/elements/${id}`, data) },
   delete(id) { return client.delete(`/standard/elements/${id}`) },
-  approve(id) { return client.post(`/standard/elements/${id}/approve`) },
+  approve(id, version) { return client.post(`/standard/elements/${id}/approve`, { version }) },
   getQualityRules(id) { return client.get(`/standard/elements/${id}/quality-rules`) }
 }
 
@@ -47,7 +46,7 @@ export const codeSetAPI = {
   getItems(codeSetId) { return client.get(`/standard/code-sets/${codeSetId}/items`) },
   createItem(codeSetId, data) { return client.post(`/standard/code-sets/${codeSetId}/items`, data) },
   updateItem(codeSetId, itemId, data) { return client.put(`/standard/code-sets/${codeSetId}/items/${itemId}`, data) },
-  deleteItem(codeSetId, itemId) { return client.delete(`/standard/code-sets/${codeSetId}/items/${itemId}`) }
+  deleteItem(codeSetId, itemId, version) { return client.delete(`/standard/code-sets/${codeSetId}/items/${itemId}`, { data: { version } }) }
 }
 
 // ========== 计量单位 API ==========
@@ -94,8 +93,8 @@ export const metricAPI = {
   create(data) { return client.post('/standard/metrics', data) },
   update(id, data) { return client.put(`/standard/metrics/${id}`, data) },
   delete(id) { return client.delete(`/standard/metrics/${id}`) },
-  approve(id) { return client.post(`/standard/metrics/${id}/approve`) },
-  deprecate(id) { return client.post(`/standard/metrics/${id}/deprecate`) }
+  approve(id, version) { return client.post(`/standard/metrics/${id}/approve`, { version }) },
+  deprecate(id, version) { return client.post(`/standard/metrics/${id}/deprecate`, { version }) }
 }
 
 // ========== 标准文档 API ==========
@@ -107,7 +106,7 @@ export const documentAPI = {
   delete(id) { return client.delete(`/standard/documents/${id}`) },
   getMappings(id) { return client.get(`/standard/documents/${id}/mappings`) },
   setMappings(id, data) { return client.put(`/standard/documents/${id}/mappings`, data) },
-  uploadFile(id, formData) { return client.post(`/standard/documents/${id}/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }) },
+  uploadFile(id, formData, version) { formData.append('version', String(version)); return client.post(`/standard/documents/${id}/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }) },
   download(id) { return client.get(`/standard/documents/${id}/download`, { responseType: 'blob' }) }
 }
 
@@ -115,27 +114,27 @@ export const documentAPI = {
 export const elementDocumentAPI = {
   list(elementId) { return client.get(`/standard/elements/${elementId}/documents`) },
   create(elementId, data) { return client.post(`/standard/elements/${elementId}/documents`, data) },
-  link(elementId, docId) { return client.post(`/standard/elements/${elementId}/documents/link`, { doc_id: docId }) },
-  unlink(elementId, docId) { return client.delete(`/standard/elements/${elementId}/documents/${docId}`) },
-  uploadFile(docId, formData) { return documentAPI.uploadFile(docId, formData) },
+  link(elementId, docId, version) { return client.post(`/standard/elements/${elementId}/documents/link`, { doc_id: docId, version }) },
+  unlink(elementId, docId, version) { return client.delete(`/standard/elements/${elementId}/documents/${docId}`, { data: { version } }) },
+  uploadFile(docId, formData, version) { return documentAPI.uploadFile(docId, formData, version) },
   download(docId) { return documentAPI.download(docId) }
 }
 
 export const glossaryDocumentAPI = {
   list(glossaryId) { return client.get(`/standard/glossaries/${glossaryId}/documents`) },
   create(glossaryId, data) { return client.post(`/standard/glossaries/${glossaryId}/documents`, data) },
-  link(glossaryId, docId) { return client.post(`/standard/glossaries/${glossaryId}/documents/link`, { doc_id: docId }) },
-  unlink(glossaryId, docId) { return client.delete(`/standard/glossaries/${glossaryId}/documents/${docId}`) },
-  uploadFile(docId, formData) { return documentAPI.uploadFile(docId, formData) },
+  link(glossaryId, docId, version) { return client.post(`/standard/glossaries/${glossaryId}/documents/link`, { doc_id: docId, version }) },
+  unlink(glossaryId, docId, version) { return client.delete(`/standard/glossaries/${glossaryId}/documents/${docId}`, { data: { version } }) },
+  uploadFile(docId, formData, version) { return documentAPI.uploadFile(docId, formData, version) },
   download(docId) { return documentAPI.download(docId) }
 }
 
 export const metricDocumentAPI = {
   list(metricId) { return client.get(`/standard/metrics/${metricId}/documents`) },
   create(metricId, data) { return client.post(`/standard/metrics/${metricId}/documents`, data) },
-  link(metricId, docId) { return client.post(`/standard/metrics/${metricId}/documents/link`, { doc_id: docId }) },
-  unlink(metricId, docId) { return client.delete(`/standard/metrics/${metricId}/documents/${docId}`) },
-  uploadFile(docId, formData) { return documentAPI.uploadFile(docId, formData) },
+  link(metricId, docId, version) { return client.post(`/standard/metrics/${metricId}/documents/link`, { doc_id: docId, version }) },
+  unlink(metricId, docId, version) { return client.delete(`/standard/metrics/${metricId}/documents/${docId}`, { data: { version } }) },
+  uploadFile(docId, formData, version) { return documentAPI.uploadFile(docId, formData, version) },
   download(docId) { return documentAPI.download(docId) }
 }
 
@@ -149,5 +148,5 @@ export const dimensionHierarchyAPI = {
   getLevels(id) { return client.get(`/standard/dimension-hierarchies/${id}/levels`) },
   createLevel(id, data) { return client.post(`/standard/dimension-hierarchies/${id}/levels`, data) },
   updateLevel(id, levelId, data) { return client.put(`/standard/dimension-hierarchies/${id}/levels/${levelId}`, data) },
-  deleteLevel(id, levelId) { return client.delete(`/standard/dimension-hierarchies/${id}/levels/${levelId}`) }
+  deleteLevel(id, levelId, version) { return client.delete(`/standard/dimension-hierarchies/${id}/levels/${levelId}`, { data: { version } }) }
 }

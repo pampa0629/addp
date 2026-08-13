@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -78,6 +79,48 @@ func TestCheckTaskExecutionLifecycleIsAtomic(t *testing.T) {
 	}
 	if runningTask.LastExecutionStatus != commonExecution.ExecutionStatusSuccess {
 		t.Fatalf("completed task status = %s, want success", runningTask.LastExecutionStatus)
+	}
+}
+
+func TestClaimExecutionSnapshotsOnlyEnabledRuleApplications(t *testing.T) {
+	db := newCheckTaskRepositoryTestDB(t)
+	repo := NewCheckTaskRepository(db)
+	task := createCheckTaskRepositoryTestTask(t, db, 17)
+	createCheckTaskRepositoryTestRuleApplication(t, db, models.RuleApplication{
+		TenantID: 17, ElementID: 101, EngineID: task.EngineID, SchemaName: task.SchemaName, Table: task.Table,
+		ColumnName: "enabled_column", Enabled: true, CreatedBy: 1,
+	})
+	createCheckTaskRepositoryTestRuleApplication(t, db, models.RuleApplication{
+		TenantID: 17, ElementID: 102, EngineID: task.EngineID, SchemaName: task.SchemaName, Table: task.Table,
+		ColumnName: "disabled_column", Enabled: false, CreatedBy: 1,
+	})
+
+	execution := newQualityRepositoryTestExecution("quality-enabled-snapshot", 17, time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC))
+	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, execution); err != nil {
+		t.Fatalf("ClaimExecution: %v", err)
+	}
+
+	var stored commonExecution.TaskExecution
+	if err := db.Where("execution_id = ?", execution.ExecutionID).First(&stored).Error; err != nil {
+		t.Fatalf("load execution: %v", err)
+	}
+	raw, ok := stored.ExecutionConfig["rule_applications"]
+	if !ok {
+		t.Fatal("execution config missing rule_applications")
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatalf("marshal rule snapshot: %v", err)
+	}
+	var snapshots []struct {
+		ID         int64  `json:"id"`
+		ColumnName string `json:"column_name"`
+	}
+	if err := json.Unmarshal(encoded, &snapshots); err != nil {
+		t.Fatalf("decode rule snapshot: %v", err)
+	}
+	if len(snapshots) != 1 || snapshots[0].ColumnName != "enabled_column" {
+		t.Fatalf("rule application snapshot = %#v, want only enabled application", snapshots)
 	}
 }
 
@@ -341,6 +384,23 @@ func createCheckTaskRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID int64
 		t.Fatalf("create check task: %v", err)
 	}
 	return task
+}
+
+func createCheckTaskRepositoryTestRuleApplication(t *testing.T, db *gorm.DB, application models.RuleApplication) models.RuleApplication {
+	t.Helper()
+	enabled := application.Enabled
+	if len(application.RuleConfig) == 0 {
+		application.RuleConfig = []byte(`{"schema_version":"addp.quality.rules/v1","rules":[{"type":"not_null","enabled":true,"severity":"error","message":"","params":{}}]}`)
+	}
+	if err := db.Create(&application).Error; err != nil {
+		t.Fatalf("create rule application: %v", err)
+	}
+	if !enabled {
+		if err := db.Exec("UPDATE quality.rule_applications SET enabled = ? WHERE id = ?", false, application.ID).Error; err != nil {
+			t.Fatalf("persist disabled rule application: %v", err)
+		}
+	}
+	return application
 }
 
 func newQualityRepositoryTestExecution(executionID string, tenantID int, createdAt time.Time) *commonExecution.TaskExecution {

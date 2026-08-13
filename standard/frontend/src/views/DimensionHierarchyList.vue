@@ -11,7 +11,7 @@
           </el-input>
         </el-col>
         <el-col :span="4">
-          <el-button type="primary" @click="openCreateDialog">
+          <el-button v-if="canCreate" type="primary" @click="openCreateDialog">
             <el-icon><Plus /></el-icon>
             {{ $t('standard.dimHierarchy.create') }}
           </el-button>
@@ -46,7 +46,7 @@
               <el-button link type="primary" @click="openDetail(row)">
                 {{ $t('standard.dimHierarchy.manageLevels') }}
               </el-button>
-              <el-button link type="danger" @click="handleDelete(row)">{{ $t('standard.common.delete') }}</el-button>
+              <el-button v-if="canDelete" link type="danger" :loading="isActionLocked(`dimension-hierarchy:${row.id}`)" @click="handleDelete(row)">{{ $t('standard.common.delete') }}</el-button>
             </div>
           </template>
         </el-table-column>
@@ -84,8 +84,12 @@ import { dimensionHierarchyAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 import { formatStandardDateTime } from '../utils/dateTime'
+import { useStandardPermissions } from '../composables/useStandardPermissions'
+import { useActionLock } from '../composables/useActionLock'
 
 const { t, locale } = useI18n()
+const { canCreate, canDelete } = useStandardPermissions('dimension_hierarchy')
+const { isLocked: isActionLocked, runLocked } = useActionLock()
 const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
@@ -132,9 +136,11 @@ function openCreateDialog() {
 }
 
 async function handleCreate() {
-  await createFormRef.value.validate()
+  if (creating.value) return
   creating.value = true
   try {
+    const valid = await createFormRef.value.validate().catch(() => false)
+    if (!valid) return
     const res = await dimensionHierarchyAPI.create({ ...createForm })
     createVisible.value = false
     await navigateStandardRoute(router, `/dimension-hierarchies/${res.id}`, { history: 'replace' })
@@ -151,14 +157,16 @@ const openDetail = row => navigateStandardRoute(router, {
 })
 
 async function handleDelete(row) {
-  try {
-    await ElMessageBox.confirm(t('standard.dimHierarchy.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
-    await dimensionHierarchyAPI.delete(row.id)
-    ElMessage.success(t('standard.dimHierarchy.deleted'))
-    loadList()
-  } catch (err) {
-    if (!isCanceledInteraction(err)) ElMessage.error(getStandardErrorMessage(err, t, 'standard.dimHierarchy.deleteFailed'))
-  }
+  await runLocked(`dimension-hierarchy:${row.id}`, async () => {
+    try {
+      await ElMessageBox.confirm(t('standard.dimHierarchy.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
+      await dimensionHierarchyAPI.delete(row.id)
+      ElMessage.success(t('standard.dimHierarchy.deleted'))
+      await loadList()
+    } catch (err) {
+      if (!isCanceledInteraction(err)) ElMessage.error(getStandardErrorMessage(err, t, 'standard.dimHierarchy.deleteFailed'))
+    }
+  })
 }
 
 watch(() => route.query.keyword, value => {

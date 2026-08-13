@@ -12,6 +12,10 @@ export function getContinuousDiagnostics(metadata) {
   return objectValue(objectValue(metadata).continuous?.diagnostics)
 }
 
+export function getContinuousCapture(metadata) {
+  return objectValue(objectValue(metadata).continuous?.capture)
+}
+
 export function hasContinuousExecutionMetadata(metadata) {
   const value = objectValue(metadata)
   if (Object.keys(objectValue(value.continuous)).length > 0) return true
@@ -138,6 +142,7 @@ export function buildContinuousSignals(metadata, status, now = Date.now()) {
   const value = objectValue(metadata)
   const continuous = objectValue(value.continuous)
   const diagnostics = getContinuousDiagnostics(value)
+  const capture = getContinuousCapture(value)
   const recovery = getContinuousRecovery(metadata, status, now)
   const schemaChange = objectValue(continuous.schema_change)
   const signals = []
@@ -163,6 +168,16 @@ export function buildContinuousSignals(metadata, status, now = Date.now()) {
   }
   if (diagnostics.error) {
     signals.push({ code: 'diagnostics_error', severity: 'warning', diagnostics })
+  }
+  const sourceRecovery = objectValue(capture.source_recovery)
+  if (sourceRecovery.health === 'critical') {
+    signals.push({ code: 'source_recovery_critical', severity: 'critical', capture, sourceRecovery })
+  } else if (sourceRecovery.health === 'unknown') {
+    signals.push({ code: 'source_recovery_unavailable', severity: 'warning', capture, sourceRecovery })
+  }
+  const sourceTransactions = objectValue(capture.source_transactions)
+  if (sourceTransactions.status === 'unavailable') {
+    signals.push({ code: 'source_transactions_unavailable', severity: 'warning', capture, sourceTransactions })
   }
   if (schemaChange.status === 'pending') {
     signals.push({ code: 'schema_change_blocked', severity: 'critical', schemaChange })

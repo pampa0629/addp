@@ -60,6 +60,9 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 cd "${ROOT_DIR}"
 
+source "${SCRIPT_DIR}/lifecycle-lock.sh"
+addp_acquire_lifecycle_lock start "$@"
+
 export PROJECT_ROOT="${ROOT_DIR}"
 mkdir -p logs
 
@@ -146,6 +149,7 @@ export GOTOOLCHAIN="local"
 # 加载颜色定义（提前加载，供检查函数使用）
 source "${SCRIPT_DIR}/../utils/colors.sh"
 source "${SCRIPT_DIR}/jupyter-env.sh"
+source "${SCRIPT_DIR}/build-identity.sh"
 
 # ============================================================
 # Python 版本选择函数
@@ -611,29 +615,27 @@ build_service() {
     local binary_path="${output_dir}/${binary_name}"
 
     # 检查是否需要重新编译（增量编译）
-    if [[ -f "$binary_path" ]] && { [[ "$name" != "duckdb" ]] || [[ -f "${output_dir}/addp-duckdb-prepare" ]]; }; then
-        local src_newer=$(find "$src_dir" -type f -name "*.go" -newer "$binary_path" 2>/dev/null | wc -l | tr -d ' ')
-        if [[ $src_newer -eq 0 ]]; then
-            echo "  ✓ ${binary_name} 已是最新"
-            return 0
-        fi
+    local build_args=()
+    if [[ "$name" == "transfer" ]]; then
+        build_args+=(-tags sqlite_load_extension)
+    fi
+    build_args+=(./cmd/server)
+
+    if addp_go_build_is_current "$src_dir" "$binary_path" "${build_args[@]}" &&
+        { [[ "$name" != "duckdb" ]] || addp_go_build_is_current "$src_dir" "${output_dir}/addp-duckdb-prepare" ./cmd/prepare-extensions; }; then
+        echo "  ✓ ${binary_name} 已是最新"
+        return 0
     fi
 
     echo "  🔨 编译 ${binary_name}..."
 
-    # Transfer 模块需要启用 SQLite 扩展加载支持
-    local build_tags=""
-    if [[ "$name" == "transfer" ]]; then
-        build_tags="-tags sqlite_load_extension"
-    fi
-
-    (cd "$src_dir" && go build $build_tags -o "${PROJECT_ROOT}/${binary_path}" cmd/server/main.go) || {
+    addp_atomic_go_build "$name" "$src_dir" "$binary_path" "${build_args[@]}" || {
         echo "  ✗ 编译失败: ${name}"
         return 1
     }
 
     if [[ "$name" == "duckdb" ]]; then
-        (cd "$src_dir" && go build -o "${PROJECT_ROOT}/${output_dir}/addp-duckdb-prepare" cmd/prepare-extensions/main.go) || {
+        addp_atomic_go_build "duckdb-prepare" "$src_dir" "${output_dir}/addp-duckdb-prepare" ./cmd/prepare-extensions || {
             echo "  ✗ 编译失败: DuckDB extension preparer"
             return 1
         }
@@ -653,17 +655,14 @@ build_worker() {
     local binary_path="${output_dir}/${binary_name}"
 
     # 检查是否需要重新编译（增量编译）
-    if [[ -f "$binary_path" ]]; then
-        local src_newer=$(find "$src_dir" -type f -name "*.go" -newer "$binary_path" 2>/dev/null | wc -l | tr -d ' ')
-        if [[ $src_newer -eq 0 ]]; then
-            echo "  ✓ ${binary_name} 已是最新"
-            return 0
-        fi
+    if addp_go_build_is_current "$src_dir" "$binary_path" ./cmd/worker; then
+        echo "  ✓ ${binary_name} 已是最新"
+        return 0
     fi
 
     echo "  🔨 编译 ${binary_name}..."
 
-    (cd "$src_dir" && go build -o "${PROJECT_ROOT}/${binary_path}" cmd/worker/main.go) || {
+    addp_atomic_go_build "${name}-worker" "$src_dir" "$binary_path" ./cmd/worker || {
         echo "  ✗ 编译失败: ${name} worker"
         return 1
     }
@@ -673,15 +672,12 @@ build_worker() {
 
 build_transfer_bounded_worker() {
     local binary_path=".dev-bins/addp-transfer-bounded-worker"
-    if [[ -f "$binary_path" ]]; then
-        local src_newer=$(find "transfer/backend" -type f -name "*.go" -newer "$binary_path" 2>/dev/null | wc -l | tr -d ' ')
-        if [[ $src_newer -eq 0 ]]; then
-            echo "  ✓ addp-transfer-bounded-worker 已是最新"
-            return 0
-        fi
+    if addp_go_build_is_current "transfer/backend" "$binary_path" -tags sqlite_load_extension ./cmd/worker; then
+        echo "  ✓ addp-transfer-bounded-worker 已是最新"
+        return 0
     fi
     echo "  🔨 编译 addp-transfer-bounded-worker..."
-    (cd transfer/backend && go build -tags sqlite_load_extension -o "${PROJECT_ROOT}/${binary_path}" cmd/worker/main.go) || {
+    addp_atomic_go_build "transfer-bounded-worker" "transfer/backend" "$binary_path" -tags sqlite_load_extension ./cmd/worker || {
         echo "  ✗ 编译失败: transfer bounded worker"
         return 1
     }
@@ -690,15 +686,12 @@ build_transfer_bounded_worker() {
 
 build_transfer_continuous_worker() {
     local binary_path=".dev-bins/addp-transfer-continuous-worker"
-    if [[ -f "$binary_path" ]]; then
-        local src_newer=$(find "transfer/backend" -type f -name "*.go" -newer "$binary_path" 2>/dev/null | wc -l | tr -d ' ')
-        if [[ $src_newer -eq 0 ]]; then
-            echo "  ✓ addp-transfer-continuous-worker 已是最新"
-            return 0
-        fi
+    if addp_go_build_is_current "transfer/backend" "$binary_path" ./cmd/continuous-worker; then
+        echo "  ✓ addp-transfer-continuous-worker 已是最新"
+        return 0
     fi
     echo "  🔨 编译 addp-transfer-continuous-worker..."
-    (cd transfer/backend && go build -o "${PROJECT_ROOT}/${binary_path}" cmd/continuous-worker/main.go) || {
+    addp_atomic_go_build "transfer-continuous-worker" "transfer/backend" "$binary_path" ./cmd/continuous-worker || {
         echo "  ✗ 编译失败: transfer continuous worker"
         return 1
     }
@@ -712,17 +705,14 @@ build_gateway() {
     local binary_path="${output_dir}/${binary_name}"
 
     # 检查是否需要重新编译（增量编译）
-    if [[ -f "$binary_path" ]]; then
-        local src_newer=$(find "gateway" -type f -name "*.go" -newer "$binary_path" 2>/dev/null | wc -l | tr -d ' ')
-        if [[ $src_newer -eq 0 ]]; then
-            echo "  ✓ ${binary_name} 已是最新"
-            return 0
-        fi
+    if addp_go_build_is_current "gateway" "$binary_path" ./cmd/gateway; then
+        echo "  ✓ ${binary_name} 已是最新"
+        return 0
     fi
 
     echo "  🔨 编译 ${binary_name}..."
 
-    (cd gateway && go build -o "${PROJECT_ROOT}/${binary_path}" cmd/gateway/main.go) || {
+    addp_atomic_go_build "gateway" "gateway" "$binary_path" ./cmd/gateway || {
         echo "  ✗ 编译失败: gateway"
         return 1
     }

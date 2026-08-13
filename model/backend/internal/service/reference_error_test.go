@@ -24,6 +24,13 @@ func TestStandardReferenceErrorMapsOnlyNotFound(t *testing.T) {
 		t.Fatalf("service unavailable error = %#v, %t", domainErr, ok)
 	}
 
+	forbidden := &commonclient.TenantAPIError{StatusCode: http.StatusForbidden, ErrorCode: "permission_denied"}
+	err = standardReferenceError(forbidden, "domain_not_found")
+	domainErr, ok = apperrors.As(err)
+	if !ok || domainErr.Kind != apperrors.KindUnavailable || domainErr.Code != "standard_service_unavailable" || !errors.Is(err, forbidden) {
+		t.Fatalf("forbidden upstream error = %#v, %t", domainErr, ok)
+	}
+
 	crossTenant := commonclient.ErrTenantReferenceNotFound
 	err = standardReferenceError(crossTenant, "domain_not_found")
 	domainErr, ok = apperrors.As(err)
@@ -36,5 +43,12 @@ func TestStandardReferenceErrorMapsOnlyNotFound(t *testing.T) {
 	domainErr, ok = apperrors.As(err)
 	if !ok || domainErr.Kind != apperrors.KindUnavailable || !errors.Is(err, transportFailure) {
 		t.Fatalf("transport failure = %#v, %t", domainErr, ok)
+	}
+
+	tokenFailure := errors.New("service token unavailable")
+	err = standardReferenceError(tokenFailure, "domain_not_found")
+	domainErr, ok = apperrors.As(err)
+	if !ok || domainErr.Kind != apperrors.KindUnavailable || domainErr.Code != "standard_service_unavailable" || !errors.Is(err, tokenFailure) {
+		t.Fatalf("token failure = %#v, %t", domainErr, ok)
 	}
 }

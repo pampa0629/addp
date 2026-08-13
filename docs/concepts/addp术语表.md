@@ -18,6 +18,8 @@
 | resource tree | 资源树 | 以树形方式展示 engine 内 node 和 data item 的视图。 | 用于浏览、展开、刷新和定位；不是新的身份层。 |
 | resource tree search | 资源树搜索 | 在资源树视图内按名称、路径或轻量展示信息定位 node / data item 的浏览辅助能力。 | 不等同于全文检索或语义检索。 |
 | resource | 资源 | 引擎 catalog 或资源树语境下的外部对象统称。 | 当讨论内容读写边界时优先使用 content / ref，避免把 engine 资源模型带入 format。 |
+| resource concurrency version | 资源并发版本 | 可变持久化主资源用于乐观并发控制的单调递增正整数。 | API 字段统一为 `version`，数据库统一使用非空 `BIGINT` 并从 `1` 开始；只判断客户端编辑基线是否仍然有效，不表达业务版次、发布版本或内容来源版本。聚合子资源共用聚合根版本。 |
+| collection revision | 集合修订版本 | 对一次跨多个独立聚合的集合级替换提供并发边界的单调递增正整数。 | 仅在操作没有单一聚合根时使用；API 字段统一为 `revision`。它不是集合成员数量，也不能用任一成员的资源并发版本替代。 |
 | CatalogPath | 引擎目录路径 | 引擎 catalog 内的路径坐标。 | 不等同于 ResourceLocator，也不等同于 Meta `full_name`。 |
 | CatalogEntry | 引擎目录条目 | `CatalogProvider.ListChildren` 返回的 catalog 列表项，不是“入口”。 | 回答“当前位置下面有什么、结构上怎么走”；通过 `role=branch/leaf` 表达结构角色；列表摘要使用 `Table`、`Storage`、`LeafCount` 等显式字段，不保留兜底 attributes / stats。 |
 | CatalogRoot | 引擎目录根 | 每个引擎 catalog 的显性结构根。 | 通常投影为 root `meta_node`；`full_name=""`，ResourceLocator path 为空，但仍可通过 `node_id` 定位。面向用户展示时使用引擎实例名称，不显示内部术语。 |
@@ -150,12 +152,14 @@
 | load mode | 装载方式 | Transfer 从源端读取完整范围还是已提交位置之后的变化。 | 只允许 `snapshot` / `incremental`；它与触发方式和目标应用方式正交。 |
 | watermark | 水位游标 | 以源表中可稳定排序的业务字段识别 insert/update 变化的批增量位置。 | 必须使用 `(watermark_field, tie_breaker...)` 复合游标并冻结每次 bounded execution 的上界；普通 watermark 不发现物理删除，不等同于 CDC。 |
 | CDC | 数据库变更捕获 | 从数据库事务日志持续捕获已提交的 insert、update 和 delete，并按确定的初始化与恢复协议交给下游应用。 | CDC 不等于按 `updated_at` 轮询；PostgreSQL 第一版由 Debezium 读取 logical replication slot，经 Infra Kafka 交给 Transfer。 |
-| Oracle CDC | Oracle 数据库变更捕获 | Transfer 通过独立 Oracle common user 和 Debezium LogMiner 从 redo 捕获普通关系字段；遇到 `MDSYS.SDO_GEOMETRY` 时，由同一 capture generation 在源 schema 内维护 ADDP-owned WKB 镜像表、行级触发器和 DDL guard，再交给统一 continuous worker。 | 支持 CDB/PDB 下有稳定主键、已启用表级 `ALL COLUMN LOGGING` 的普通字段与 Oracle Spatial 单表，固定 `initial_snapshot` 和严格 schema drift；Spatial capture 运行时拒绝源表 DDL，镜像对象由 Transfer 创建并在 Stop 删除。RAC、普通业务 LOB 和长事务专项策略仍未开放。不能由 Oracle Engine 普通读取能力自动推断，也不等同 ArcGIS SDE 逻辑变化源。 |
-| ArcGIS SDE logical change source | ArcGIS SDE 逻辑变化源 | 按 ArcGIS enterprise geodatabase 的版本模型、业务事务和 delta table 语义识别的要素变化源。 | 后续能力；即使底层使用 Oracle，也不等同 Oracle redo 中的普通表 CDC，必须由独立 Provider/adapter 契约表达。 |
+| Oracle CDC | Oracle 数据库变更捕获 | Transfer 通过独立 Oracle common user 和 Debezium LogMiner 从 redo 捕获普通关系字段；遇到 `MDSYS.SDO_GEOMETRY` 时，由同一 capture generation 在源 schema 内维护 ADDP-owned WKB 镜像表、行级触发器和 DDL guard，再交给统一 continuous worker。 | 支持 CDB/PDB 下有稳定主键、已启用表级 `ALL COLUMN LOGGING` 的普通字段与 Oracle Spatial 单表，固定 `initial_snapshot` 和严格 schema drift；Spatial capture 运行时拒绝源表 DDL，镜像对象由 Transfer 创建并在 Stop 删除。RAC 和普通业务 LOB 仍未开放；长事务仅提供源端压力观测，不改变已提交事务 CDC 语义。不能由 Oracle Engine 普通读取能力自动推断，也不等同 ArcGIS SDE 逻辑变化源。 |
+| ArcGIS SDE logical change source | ArcGIS SDE 逻辑变化源 | 按 ArcGIS enterprise geodatabase 的版本模型、业务事务和 delta table 语义识别的要素变化源。 | 当前仅完成 Oracle 实例级 workspace 正式核心表组合探测；尚未读取 delta/state 数据。即使底层使用 Oracle，也不等同 Oracle redo 中的普通表 CDC，后续必须由独立 Provider/adapter 契约表达。 |
 | CDC bootstrap | CDC 初始化 | 在一个无空洞的日志衔接点上建立一致性初始快照，并继续消费快照期间和之后产生的日志变化。 | PostgreSQL 第一版固定使用 Debezium `initial` snapshot；Transfer 不自行拼接“先全量、后开 CDC”两条路径。 |
 | apply mode | 目标应用方式 | Transfer 将本次读取结果应用到目标的策略。 | 稳定取值为 `replace`、`append`、`upsert`、`upsert_delete`；目标 Provider 必须声明并真实实现对应能力。 |
 | sync state | 同步主状态 | Transfer 为增量任务保存的已提交源位置。 | 存储于 `transfer.sync_states`；与任务定义、execution checkpoint 分离，只能在目标提交成功后通过 CAS/fencing 推进。 |
-| capture position | 捕获位点 | 捕获组件已经从源数据库事务日志可靠读取并写入 Infra Kafka 的源日志位置。 | PostgreSQL CDC 对应 Debezium/Kafka Connect 管理的 LSN 与 connector offset；Transfer 不复制维护该位点。 |
+| capture position | 捕获位点 | 捕获组件已经从源数据库事务日志可靠读取并写入 Infra Kafka 的源日志位置。 | PostgreSQL CDC 对应 LSN，MySQL 对应 binlog position，Oracle 对应 SCN；均由 Debezium/Kafka Connect connector offset 管理，Transfer 只读观测而不复制维护。 |
+| source recovery window | 源恢复窗口 | 当前仍可供 capture position 连续恢复的源数据库事务日志范围。 | 与 Infra Kafka retention 正交；Oracle 由当前可用 redo/archive 最早 SCN、时间窗口和可选 FRA 容量事实表达，不从 SCN 差值伪造时间。 |
+| source transaction pressure | 源事务压力 | capture 数据库当前未提交事务形成的运行压力事实。 | 与源连通状态、源恢复窗口和已提交事件 lag 正交；Oracle 由活跃事务数、最老事务起始 SCN/持续秒数和 Undo blocks/records 表达，不按平台硬编码阈值派生健康状态。 |
 | committed position | 已提交位置 | 目标端已可靠应用完成后允许继续消费的源位置。 | Kafka position v1 按 partition 保存 `next_offset`；worker 必须从该 offset seek，不能依赖 consumer auto commit 作为事实源。 |
 | runtime session | 运行时会话 | continuous execution 在某个 Transfer continuous worker 中的一次实际长驻运行。 | 一个 task 同一时刻只有一个合法 session owner；session 结束后 execution 随之结束，恢复必须创建新 execution。 |
 | runtime lease | 运行时租约 | continuous worker 对 runtime session 的限时所有权。 | 保存 owner instance、lease deadline、heartbeat 和 fencing token；与业务 committed position 分离。 |

@@ -42,7 +42,7 @@
 | 多表 CDC | 当前一个任务只绑定一张源表和一张新目标表 | table identity、路由、每表 schema revision、部分失败和资源生命周期 |
 | 无主键 CDC | 当前要求稳定非空主键 | 事件身份、update/delete 定位、重复应用和目标一致性保证 |
 | PostgreSQL/MySQL/Oracle 类型矩阵扩展 | 当前只开放已完成真实 Debezium E2E 的无歧义类型集合 | Debezium wire schema、精度/时区、目标映射、键约束和全生命周期 E2E |
-| Oracle CDC 高级能力 | 当前支持单实例 CDB/PDB、普通字段及 generation-owned WKB 镜像承载的 Oracle Spatial 单表 | RAC、普通业务 LOB、长事务、归档日志容量与恢复策略 |
+| Oracle CDC 高级能力 | 当前支持单实例 CDB/PDB、普通字段及 generation-owned WKB 镜像承载的 Oracle Spatial 单表，并提供源恢复窗口和未提交事务压力观测 | RAC、普通业务 LOB、长事务阈值/告警策略、归档日志自动治理 |
 | ArcGIS SDE 逻辑变化源 | 普通 Oracle/PostgreSQL 表日志不能等同版本化要素变化 | geodatabase 版本模型、A/D delta tables、空间类型、业务事务和许可边界 |
 
 Oracle 普通表 CDC 与 ArcGIS SDE 逻辑变化源是两个不同能力，不能包装成同一路径。Oracle Spatial CDC 已通过 Transfer-owned generation 镜像表接入普通 Oracle CDC 主链路；ArcGIS 传统版本化编辑仍需独立验证版本、权限、事务和许可边界。基础 `MDSYS.SDO_GEOMETRY` Spatial 读取继续由 Oracle Engine Provider 独立支持。

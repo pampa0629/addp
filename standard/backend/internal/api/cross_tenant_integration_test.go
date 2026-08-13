@@ -92,7 +92,8 @@ func createDimensionHierarchyTestSchema(t testing.TB, db *gorm.DB) {
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL,
 			domain_id INTEGER, name TEXT NOT NULL, code TEXT NOT NULL,
 			description TEXT, created_by INTEGER NOT NULL, updated_by INTEGER,
-			created_at DATETIME, updated_at DATETIME
+			created_at DATETIME, updated_at DATETIME,
+			version INTEGER NOT NULL DEFAULT 1
 		)`,
 		`CREATE TABLE standard.dimension_hierarchy_levels (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, hierarchy_id INTEGER NOT NULL,

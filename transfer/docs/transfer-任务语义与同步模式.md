@@ -214,6 +214,16 @@ Pause 停止目标应用并结束当前 session；Resume 在 committed position 
 
 数据库 CDC 的 Pause 不暂停 connector。捕获仍会写入 Infra Kafka，主要风险是 backlog、磁盘和 retention；connector 或 Kafka 故障时还要分别观测 PostgreSQL WAL、MySQL binlog 或 Oracle redo/archive log 容量风险。
 
+capture generation 的健康由两个独立事实聚合：`connector_status` 表示 Kafka Connect connector/task 线程状态，`source_status` 表示使用 connector 实际数据库凭据执行最小只读查询的结果。只有两者都健康时 capture 才是 `running`；任一失败或无法观测时 capture 为 `failed`。Oracle 使用独立 `cdc_user` 探测，不能因为 Kafka Connect REST 仍返回 `RUNNING` 就推断 LogMiner 数据源可达，也不能用业务 schema-owner 连接或 System 的普通 Engine 连通性缓存代替。
+
+`source_recovery` 单独表达源事务日志恢复窗口，不替代上述健康事实，也不替代 Kafka retention。Oracle 使用 Kafka Connect connector offset 的 `scn` 与当前可用 redo/archive 最早 SCN 比较，公开 capture position、最早可用 position、SCN headroom、最早日志时间形成的事实窗口秒数和可选 FRA 使用率。capture SCN 已早于日志窗口时为 `critical`；事实完整且仍在窗口内时为 `healthy`；offset、视图或时间不足时为 `unknown`。FRA 未启用时容量为空，SCN 差值不换算成时间。
+
+`source_transactions` 单独表达源端当前未提交事务压力，不替代 `source_recovery`、source health 或已提交事件 lag。Oracle 从 `V$TRANSACTION` 公开活跃事务数、最老事务起始 SCN、由数据库计算的持续秒数以及合计 Undo blocks/records。无活跃事务时计数和 Undo 用量为 0，最老事务字段为空。Transfer 不内置长事务时长或 Undo 阈值，也不据此改变 capture 状态；事务观测失败不能覆盖已成功的恢复窗口观测。
+
+Oracle CDC 普通源表字段明确拒绝 `CLOB`、`NCLOB`、`BLOB`、`BFILE`、`LONG`、`LONG RAW`、`XMLTYPE` 和原生 `JSON`。拒绝发生在 capture plan 冻结、generation 创建和外部资源创建之前。Oracle Spatial 镜像表使用的 WKB `BLOB` 是 generation-owned 内部传输实现，不是普通业务 LOB 支持，也不能作为旁路开放这些类型。
+
+Oracle RAC 当前没有 capture/provider 契约。readiness 必须读取 `V$PARAMETER.cluster_database` 并只接受明确 `FALSE`；`TRUE` 或无法解释的值都在 capture generation 和外部资源创建前拒绝，不能把单实例 LogMiner 路线旁路复用于 RAC。
+
 数据库 CDC 的 Stop 是不可逆终态。它清理 ADDP-owned connector、Provider 专属捕获资源、data/schema-history topic、consumer group 和 ACL；已停止任务不能再次 Start/Resume。重新同步必须创建新任务和新目标表。Stop 保留目标业务数据、目标 ledger、任务定义、execution 和审计记录。
 
 ### 6.5 诊断与恢复窗口
@@ -226,7 +236,7 @@ continuous worker 定期读取每个 partition 的 earliest/latest position，�
 - retention horizon。
 - checkpoint age 与 health。
 
-诊断写入 `common.task_executions.metadata.continuous`，Monitor 只读取公共 execution metadata，不直连 Kafka 或 Transfer 私有表。Resume 前必须验证 committed position 没有被 retention 清除，不能静默跳到 earliest。
+诊断写入 `common.task_executions.metadata.continuous`。数据库 CDC 在同一次诊断采样中把当前 capture generation 的安全摘要写入唯一 `metadata.continuous.capture`，仅包含 `generation`、类型化 `source_recovery` 和 `source_transactions`；私有错误、连接信息、凭据、Provider 资源名和未知字段不得进入公共 execution。非数据库 continuous execution 不保留该对象。Monitor 只读取公共 execution metadata，不直连 Kafka，也不读取 Transfer 的 `sync_states`、`runtime_leases`、`capture_resources` 或 Provider 私表。Resume 前必须验证 committed position 没有被 retention 清除，不能静默跳到 earliest。
 
 ## 七、Schema 变化
 

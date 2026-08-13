@@ -129,6 +129,32 @@
             "critical": "严重",
             "unknown": "未知"
           },
+          "capture": {
+            "title": "CDC 源端观测",
+            "generation": "捕获代次",
+            "provider": "源 Provider",
+            "recovery_health": "源恢复窗口",
+            "recovery_sampled_at": "恢复窗口采样时间",
+            "capture_position": "捕获位点",
+            "current_position": "源当前位点",
+            "earliest_position": "最早可用位点",
+            "position_headroom": "位点余量",
+            "window": "事实日志窗口",
+            "earliest_available_at": "最早可用日志时间",
+            "fra_used": "FRA 已使用",
+            "fra_reclaimable": "FRA 可回收",
+            "transactions_status": "事务观测",
+            "transactions_sampled_at": "事务采样时间",
+            "active_transactions": "活跃事务数",
+            "oldest_transaction_position": "最老事务起始位点",
+            "oldest_transaction_duration": "最老事务持续时间",
+            "used_undo_blocks": "Undo 块数",
+            "used_undo_records": "Undo 记录数",
+            "transaction_status_values": {
+              "available": "可用",
+              "unavailable": "不可用"
+            }
+          },
           "signals": {
             "recovery_circuit_open": {
               "title": "自动恢复已熔断",
@@ -161,6 +187,18 @@
             "diagnostics_error": {
               "title": "持续同步观测异常",
               "description": "Transfer 无法完成本次诊断采样：{error}"
+            },
+            "source_recovery_critical": {
+              "title": "源日志恢复窗口已失效",
+              "description": "捕获位点已早于源数据库当前可用日志边界，当前 capture generation 无法从原位点连续恢复。"
+            },
+            "source_recovery_unavailable": {
+              "title": "源日志恢复窗口不可观测",
+              "description": "Transfer 当前缺少判断源日志恢复窗口所需的完整事实；这不表示数据源离线。"
+            },
+            "source_transactions_unavailable": {
+              "title": "源事务压力不可观测",
+              "description": "Transfer 当前无法取得未提交事务压力事实；源恢复窗口和数据源连通状态仍独立判定。"
             },
             "schema_change_blocked": {
               "title": "数据库结构变化阻塞同步",

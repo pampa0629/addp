@@ -17,8 +17,8 @@
       <div class="detail-toolbar">
         <el-tag :type="statusTagType(issue.status)">{{ statusLabel(issue.status) }}</el-tag>
         <div v-if="issue.status === 'open'" class="detail-actions">
-          <el-button type="success" @click="changeStatus('resolved')">{{ t('quality.issue.markResolved') }}</el-button>
-          <el-button @click="changeStatus('ignored')">{{ t('quality.issue.ignore') }}</el-button>
+          <el-button type="success" :loading="updating" :disabled="updating" @click="changeStatus('resolved')">{{ t('quality.issue.markResolved') }}</el-button>
+          <el-button :disabled="updating" @click="changeStatus('ignored')">{{ t('quality.issue.ignore') }}</el-button>
         </div>
       </div>
 
@@ -91,6 +91,7 @@ const router = useRouter()
 const issue = ref(null)
 const loading = ref(false)
 const loadError = ref('')
+const updating = ref(false)
 let loadSequence = 0
 
 const detailTitle = computed(() => `${t('quality.issue.detailTitle')} - ${issue.value?.id || route.params.id || ''}`)
@@ -144,12 +145,15 @@ const loadIssue = async () => {
 }
 
 const changeStatus = async (status) => {
+  if (updating.value) return
+  updating.value = true
   try {
     const { value: note } = await ElMessageBox.prompt(t('quality.issue.notePrompt'), t('quality.issue.noteTitle'), {
       inputPattern: /\S+/,
       inputErrorMessage: t('quality.issue.noteRequired'),
       confirmButtonText: t('quality.issue.confirm'),
-      cancelButtonText: t('quality.issue.cancel')
+      cancelButtonText: t('quality.issue.cancel'),
+      customClass: 'addp-message-box'
     })
     await issueAPI.updateStatus(issue.value.id, status, note)
     ElMessage.success(t('quality.issue.updateSuccess'))
@@ -157,6 +161,8 @@ const changeStatus = async (status) => {
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
     ElMessage.error(error.response?.data?.error || t('quality.issue.updateFailed'))
+  } finally {
+    updating.value = false
   }
 }
 

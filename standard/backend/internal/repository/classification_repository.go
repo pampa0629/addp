@@ -31,8 +31,15 @@ func (r *ClassificationRepository) Create(c *models.Classification) error {
 	return wrapDBError(r.db.Create(c).Error)
 }
 
-func (r *ClassificationRepository) Update(c *models.Classification) error {
-	return wrapDBError(r.db.Save(c).Error)
+func (r *ClassificationRepository) Update(c *models.Classification, expectedVersion int64) error {
+	if err := updateVersioned(r.db, c, c.ID, c.TenantID, expectedVersion, map[string]interface{}{
+		"name": c.Name, "description": c.Description, "parent_id": c.ParentID,
+		"sort_order": c.SortOrder, "updated_by": c.UpdatedBy,
+	}); err != nil {
+		return err
+	}
+	c.Version = expectedVersion + 1
+	return nil
 }
 
 func (r *ClassificationRepository) Delete(id, tenantID int64) error {
@@ -63,9 +70,7 @@ func (r *GradingLevelRepository) Update(id, tenantID int64, req *models.UpdateGr
 	if req.Color != "" {
 		updates["color"] = req.Color
 	}
-	return requireAffectedRow(r.db.Model(&models.GradingLevel{}).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
-		Updates(updates))
+	return updateVersioned(r.db, &models.GradingLevel{}, id, tenantID, req.Version, updates)
 }
 
 // EnsureDefaults 确保租户有默认的 L1-L4 分级数据

@@ -183,6 +183,17 @@ definitions:
       update_permission:
         type: string
     type: object
+  datatype.CRSDefinition:
+    properties:
+      definition:
+        type: string
+      definition_encoding:
+        type: string
+      id:
+        type: string
+      source:
+        type: string
+    type: object
   datatype.FieldInfo:
     properties:
       comment:
@@ -254,6 +265,115 @@ definitions:
     - FieldTypeArray
     - FieldTypeUUID
     - FieldTypeGeometry
+  datatype.GeometryColumnInfo:
+    properties:
+      crs_ref:
+        type: string
+      dimension:
+        type: integer
+      geometry_type:
+        type: string
+      name:
+        type: string
+      nullable:
+        type: boolean
+      srid:
+        type: integer
+    type: object
+  datatype.GraphEndpointInfo:
+    properties:
+      labels:
+        items:
+          type: string
+        type: array
+      shape_name:
+        type: string
+    type: object
+  datatype.GraphInfo:
+    properties:
+      directed:
+        type: boolean
+      model:
+        type: string
+      node_count:
+        type: integer
+      node_shapes:
+        items:
+          $ref: '#/definitions/datatype.GraphNodeShapeInfo'
+        type: array
+      relationship_count:
+        type: integer
+      relationship_shapes:
+        items:
+          $ref: '#/definitions/datatype.GraphRelationshipShapeInfo'
+        type: array
+    type: object
+  datatype.GraphNodeShapeInfo:
+    properties:
+      count:
+        type: integer
+      kind:
+        type: string
+      labels:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      properties:
+        items:
+          $ref: '#/definitions/datatype.FieldInfo'
+        type: array
+    type: object
+  datatype.GraphRelationshipPatternInfo:
+    properties:
+      count:
+        type: integer
+      from:
+        $ref: '#/definitions/datatype.GraphEndpointInfo'
+      to:
+        $ref: '#/definitions/datatype.GraphEndpointInfo'
+    type: object
+  datatype.GraphRelationshipShapeInfo:
+    properties:
+      count:
+        type: integer
+      patterns:
+        items:
+          $ref: '#/definitions/datatype.GraphRelationshipPatternInfo'
+        type: array
+      properties:
+        items:
+          $ref: '#/definitions/datatype.FieldInfo'
+        type: array
+      type:
+        type: string
+    type: object
+  datatype.SpatialInfo:
+    properties:
+      crs_definitions:
+        items:
+          $ref: '#/definitions/datatype.CRSDefinition'
+        type: array
+      crs_ref:
+        type: string
+      extent:
+        items:
+          type: number
+        type: array
+      geometry_columns:
+        items:
+          $ref: '#/definitions/datatype.GeometryColumnInfo'
+        type: array
+      has_spatial_index:
+        type: boolean
+      index_name:
+        type: string
+      primary_geometry_column:
+        type: string
+      srid:
+        type: integer
+    type: object
   datatype.TableInfo:
     properties:
       comment:
@@ -643,6 +763,11 @@ definitions:
         items:
           $ref: '#/definitions/github_com_addp_common_models.CapabilityViewBadge'
         type: array
+    type: object
+  github_com_addp_system_internal_models.CatalogDescribeFactsRequest:
+    properties:
+      path:
+        $ref: '#/definitions/github_com_addp_system_internal_models.CatalogPath'
     type: object
   github_com_addp_system_internal_models.CatalogEntry:
     properties:
@@ -2151,6 +2276,8 @@ definitions:
         type: string
       principal_id:
         type: string
+      principal_type:
+        type: string
       project_group_id:
         type: string
       reason:
@@ -2168,6 +2295,8 @@ definitions:
       role_name_i18n_key:
         type: string
       scope_type:
+        type: string
+      service_principal_name:
         type: string
       status:
         type: string
@@ -2342,6 +2471,55 @@ definitions:
       user_agent:
         type: string
     type: object
+  plugin.CatalogFacts:
+    properties:
+      constraints:
+        items:
+          $ref: '#/definitions/plugin.ConstraintFacts'
+        type: array
+      graph:
+        $ref: '#/definitions/datatype.GraphInfo'
+      indexes:
+        items:
+          $ref: '#/definitions/plugin.IndexFacts'
+        type: array
+      kind:
+        type: string
+      partitioning:
+        $ref: '#/definitions/plugin.TablePartitioningFacts'
+      path:
+        $ref: '#/definitions/plugin.CatalogPath'
+      spatial:
+        $ref: '#/definitions/datatype.SpatialInfo'
+      storage:
+        $ref: '#/definitions/plugin.CatalogStorageFacts'
+      table:
+        $ref: '#/definitions/datatype.TableInfo'
+      topic:
+        $ref: '#/definitions/plugin.TopicFacts'
+      updated_at:
+        type: string
+    type: object
+  plugin.CatalogPath:
+    properties:
+      engine_id:
+        type: integer
+      segments:
+        items:
+          $ref: '#/definitions/plugin.CatalogSegment'
+        type: array
+      version:
+        type: string
+    type: object
+  plugin.CatalogSegment:
+    properties:
+      kind:
+        type: string
+      name:
+        type: string
+      term:
+        type: string
+    type: object
   plugin.CatalogStorageFacts:
     properties:
       content_type:
@@ -2356,6 +2534,85 @@ definitions:
         type: string
       size_bytes:
         type: integer
+    type: object
+  plugin.ConstraintFacts:
+    properties:
+      constraint_type:
+        type: string
+      fields:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      referenced_fields:
+        items:
+          type: string
+        type: array
+      referenced_namespace:
+        type: string
+      referenced_table:
+        type: string
+    type: object
+  plugin.IndexFacts:
+    properties:
+      fields:
+        items:
+          type: string
+        type: array
+      index_type:
+        type: string
+      is_unique:
+        type: boolean
+      name:
+        type: string
+    type: object
+  plugin.TablePartitioningFacts:
+    properties:
+      key_fields:
+        items:
+          type: string
+        type: array
+      partition_count:
+        type: integer
+      strategy:
+        type: string
+      subpartition_key_fields:
+        items:
+          type: string
+        type: array
+      subpartition_strategy:
+        type: string
+    type: object
+  plugin.TopicFacts:
+    properties:
+      partition_count:
+        type: integer
+      partitions:
+        items:
+          $ref: '#/definitions/plugin.TopicPartitionFacts'
+        type: array
+      replication_factor:
+        type: integer
+    type: object
+  plugin.TopicPartitionFacts:
+    properties:
+      earliest_offset:
+        type: integer
+      isr:
+        items:
+          type: integer
+        type: array
+      latest_offset:
+        type: integer
+      leader:
+        type: integer
+      partition:
+        type: integer
+      replicas:
+        items:
+          type: integer
+        type: array
     type: object
 host: localhost:8180
 info:
@@ -3412,6 +3669,56 @@ paths:
       security:
       - BearerAuth: []
       summary: 列出实时 catalog 子节点 | List live catalog children
+      tags:
+      - 引擎管理 | Engine Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine.read
+  /engines/{id}/catalog/facts:
+    post:
+      consumes:
+      - application/json
+      description: 基于 System 管理的引擎连接读取一个 catalog 叶子的结构事实；普通列表不会携带的字段详情通过此接口按需读取。|
+        Read structural facts for one catalog leaf using the System-managed engine
+        connection. Field details omitted from list responses are loaded here on demand.
+      parameters:
+      - description: 引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Catalog 叶子路径 | Catalog leaf path
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.CatalogDescribeFactsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/plugin.CatalogFacts'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取实时 catalog 叶子事实 | Describe live catalog leaf facts
       tags:
       - 引擎管理 | Engine Management
       x-addp-auth-mode: permission

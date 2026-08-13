@@ -77,8 +77,17 @@ func (r *RuleApplicationRepository) Create(item *models.RuleApplication) error {
 	return commonRepository.WrapDBError(r.db.Create(item).Error)
 }
 
-func (r *RuleApplicationRepository) Update(item *models.RuleApplication) error {
-	return commonRepository.WrapDBError(r.db.Save(item).Error)
+func (r *RuleApplicationRepository) UpdateEnabled(id, tenantID, userID int64, enabled bool) error {
+	result := r.db.Model(&models.RuleApplication{}).
+		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Updates(map[string]interface{}{"enabled": enabled, "updated_by": userID, "updated_at": gorm.Expr("CURRENT_TIMESTAMP")})
+	if result.Error != nil {
+		return commonRepository.WrapDBError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return commonAPI.ErrNotFound
+	}
+	return nil
 }
 
 func (r *RuleApplicationRepository) Delete(ctx context.Context, id, tenantID int64) error {
@@ -92,6 +101,7 @@ func (r *RuleApplicationRepository) Delete(ctx context.Context, id, tenantID int
 		var tasks []models.CheckTask
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("tenant_id = ? AND engine_id = ? AND schema_name = ? AND table_name = ?", tenantID, application.EngineID, application.SchemaName, application.Table).
+			Order("id ASC").
 			Find(&tasks).Error; err != nil {
 			return err
 		}

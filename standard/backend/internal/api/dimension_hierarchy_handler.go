@@ -24,7 +24,9 @@ func NewDimensionHierarchyHandler(svc *service.DimensionHierarchyService) *Dimen
 // @Summary 获取维度层级列表 | List dimension hierarchies
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {array} models.DimensionHierarchy
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.dimension_hierarchy.read"]
 // @Router /dimension-hierarchies [get]
@@ -44,6 +46,8 @@ func (h *DimensionHierarchyHandler) List(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.dimension_hierarchy.read"]
 // @Router /dimension-hierarchies/{id} [get]
@@ -68,6 +72,8 @@ func (h *DimensionHierarchyHandler) Get(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.dimension_hierarchy.create"]
 // @Router /dimension-hierarchies [post]
@@ -92,7 +98,11 @@ func (h *DimensionHierarchyHandler) Create(c *gin.Context) {
 // @Summary 更新维度层级 | Update dimension hierarchy
 // @Tags Standard
 // @Produce json
+// @Param request body models.UpdateDimensionHierarchyRequest true "更新维度层级 | Update dimension hierarchy"
 // @Success 200 {object} map[string]interface{}
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.dimension_hierarchy.update"]
 // @Router /dimension-hierarchies/{id} [put]
@@ -123,6 +133,8 @@ func (h *DimensionHierarchyHandler) Update(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.dimension_hierarchy.delete"]
 // @Router /dimension-hierarchies/{id} [delete]
@@ -147,7 +159,9 @@ func (h *DimensionHierarchyHandler) Delete(c *gin.Context) {
 // @Summary 获取维度层级的层次列表 | List hierarchy levels
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {array} models.DimensionHierarchyLevel
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.dimension_hierarchy.read"]
 // @Router /dimension-hierarchies/{id}/levels [get]
@@ -169,8 +183,12 @@ func (h *DimensionHierarchyHandler) ListLevels(c *gin.Context) {
 // CreateLevel POST /api/standard/dimension-hierarchies/:id/levels
 // @Summary 创建层次 | Create hierarchy level
 // @Tags Standard
+// @Param request body models.UpsertHierarchyLevelRequest true "创建层次及当前维度层级版本 | Create level with current hierarchy version"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.dimension_hierarchy.update"]
 // @Router /dimension-hierarchies/{id}/levels [post]
@@ -197,8 +215,12 @@ func (h *DimensionHierarchyHandler) CreateLevel(c *gin.Context) {
 // UpdateLevel PUT /api/standard/dimension-hierarchies/:id/levels/:lid
 // @Summary 更新层次 | Update hierarchy level
 // @Tags Standard
+// @Param request body models.UpsertHierarchyLevelRequest true "更新层次及当前维度层级版本 | Update level with current hierarchy version"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.dimension_hierarchy.update"]
 // @Router /dimension-hierarchies/{id}/levels/{lid} [put]
@@ -230,8 +252,12 @@ func (h *DimensionHierarchyHandler) UpdateLevel(c *gin.Context) {
 // DeleteLevel DELETE /api/standard/dimension-hierarchies/:id/levels/:lid
 // @Summary 删除层次 | Delete hierarchy level
 // @Tags Standard
+// @Param request body models.VersionRequest true "当前维度层级版本 | Current hierarchy version"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.dimension_hierarchy.update"]
 // @Router /dimension-hierarchies/{id}/levels/{lid} [delete]
@@ -247,9 +273,14 @@ func (h *DimensionHierarchyHandler) DeleteLevel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidLevelID)})
 		return
 	}
-	if err := h.svc.DeleteLevel(lid, id, getTenantID(c)); err != nil {
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	if err := h.svc.DeleteLevel(lid, id, getTenantID(c), req.Version); err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
+	c.JSON(http.StatusOK, models.ResourceVersionResponse{Version: req.Version + 1})
 }

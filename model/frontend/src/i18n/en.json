@@ -43,6 +43,7 @@
       "invalid_detail_id": "The detail URL contains an invalid ID. Return to the list and select an item again.",
       "optional": "Optional",
       "permission_denied": "This account does not have access. Ask the tenant administrator to assign the required role or permission, then try again.",
+      "reference_data_unavailable": "Some reference data is unavailable. Related filters or association selectors may be limited; ask an administrator to check the Data Standard service and required read permissions.",
       "retry": "Retry",
       "copy_success": "Copied to clipboard",
       "copy_failed": "Copy failed"
@@ -99,6 +100,7 @@
       "direction": "Direction",
       "target": "Target Entity",
       "name": "Relation Name",
+      "name_placeholder": "For example: places, belongs_to, has",
       "description": "Description",
       "actions": "Actions",
       "direction_outgoing": "{name} points to another entity",
@@ -286,6 +288,7 @@
       "dimension_relations": "Dimension Relations",
       "add_relation": "Add Relation",
       "no_dimensions": "No dimension relations",
+      "no_metrics": "No associated metrics",
       "detail": "Detail",
       "remove": "Remove",
       "remove_confirm": "Confirm removing relation with \"{name}\"?",

@@ -674,7 +674,7 @@
           "spatialWorkspace": "空间工作区",
           "supermapSdxPostgis": "SuperMap SDX+ for PostGIS",
           "supermapSdxPostgresql": "SuperMap SDX+ for PostgreSQL",
-          "arcgisSde": "ArcGIS SDE for PostgreSQL",
+          "arcgisSde": "ArcGIS 企业级地理数据库（SDE）",
           "postgresqlExtraExtensions": "其他已安装扩展",
           "pgvector": "pgvector 向量扩展"
         },

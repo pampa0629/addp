@@ -22,6 +22,8 @@ func TestConnectClientLifecycle(t *testing.T) {
 			w.WriteHeader(http.StatusCreated)
 		case "GET /connectors/cdc/status":
 			_, _ = w.Write([]byte(`{"name":"cdc","connector":{"state":"RUNNING","worker_id":"worker-1"},"tasks":[{"state":"RUNNING"}]}`))
+		case "GET /connectors/cdc/offsets":
+			_, _ = w.Write([]byte(`{"offsets":[{"partition":{"server":"cdc"},"offset":{"scn":"123"}}]}`))
 		case "PUT /connectors/cdc/pause", "PUT /connectors/cdc/resume":
 			w.WriteHeader(http.StatusAccepted)
 		case "DELETE /connectors/cdc":
@@ -50,6 +52,10 @@ func TestConnectClientLifecycle(t *testing.T) {
 	if err := client.Pause(ctx, "cdc"); err != nil {
 		t.Fatal(err)
 	}
+	offsets, err := client.Offsets(ctx, "cdc")
+	if err != nil || len(offsets.Offsets) != 1 || string(offsets.Offsets[0].Offset["scn"]) != `"123"` {
+		t.Fatalf("offsets = %#v, err = %v", offsets, err)
+	}
 	if err := client.Resume(ctx, "cdc"); err != nil {
 		t.Fatal(err)
 	}
@@ -64,5 +70,24 @@ func TestConnectClientDeleteIsIdempotent(t *testing.T) {
 	client, _ := NewConnectClient(server.URL, "", "", time.Second)
 	if err := client.Delete(context.Background(), "missing"); err != nil {
 		t.Fatalf("Delete() error = %v", err)
+	}
+}
+
+func TestOracleCaptureSCNRequiresOneStringOffset(t *testing.T) {
+	valid := &ConnectorOffsets{Offsets: []ConnectorOffset{{Offset: map[string]json.RawMessage{"scn": json.RawMessage(`"12345678901234567890"`)}}}}
+	scn, err := oracleCaptureSCN(valid)
+	if err != nil || scn.String() != "12345678901234567890" {
+		t.Fatalf("Oracle capture SCN = %v, err = %v", scn, err)
+	}
+	for _, invalid := range []*ConnectorOffsets{
+		nil,
+		{},
+		{Offsets: []ConnectorOffset{{Offset: map[string]json.RawMessage{}}}},
+		{Offsets: []ConnectorOffset{{Offset: map[string]json.RawMessage{"scn": json.RawMessage(`123`)}}}},
+		{Offsets: []ConnectorOffset{{Offset: map[string]json.RawMessage{"scn": json.RawMessage(`"-1"`)}}}},
+	} {
+		if _, err := oracleCaptureSCN(invalid); err == nil {
+			t.Fatalf("oracleCaptureSCN(%#v) succeeded", invalid)
+		}
 	}
 }

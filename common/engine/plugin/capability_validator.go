@@ -419,6 +419,9 @@ func implementsNativeTableWriter(p EnginePlugin) bool {
 	if _, ok := p.(TableWriteSessionProvider); ok {
 		return true
 	}
+	if _, ok := p.(PartitionedTableChangeApplyProvider); ok {
+		return true
+	}
 	return false
 }
 

@@ -73,6 +73,75 @@ func TestServiceErrorResponseLocalizesDomainError(t *testing.T) {
 	}
 }
 
+func TestUniqueConflictResponsesAreLocalizedWithStableCodes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		code      string
+		messageID string
+		zh        string
+		en        string
+	}{
+		{code: "entity_attribute_column_conflict", messageID: i18n.MsgAttributeColumnConflict, zh: "实体属性列名已存在", en: "Entity attribute column name already exists"},
+		{code: "logical_field_column_conflict", messageID: i18n.MsgFieldColumnConflict, zh: "逻辑表字段列名已存在", en: "Logical table field column name already exists"},
+		{code: "entity_relation_conflict", messageID: i18n.MsgRelationConflict, zh: "相同的实体关系已存在", en: "The same entity relation already exists"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.code, func(t *testing.T) {
+			responseForLanguage := func(language string) (int, gin.H) {
+				c, _ := gin.CreateTestContext(httptest.NewRecorder())
+				c.Request = httptest.NewRequest("GET", "/", nil)
+				c.Request.Header.Set("Accept-Language", language)
+				commoni18n.I18nMiddleware()(c)
+				return serviceErrorResponse(c, apperrors.Conflict(tt.code, tt.messageID))
+			}
+
+			zhStatus, zhResponse := responseForLanguage("zh-CN")
+			enStatus, enResponse := responseForLanguage("en")
+			if zhStatus != http.StatusConflict || enStatus != http.StatusConflict ||
+				zhResponse["error_code"] != tt.code || enResponse["error_code"] != tt.code ||
+				zhResponse["error"] != tt.zh || enResponse["error"] != tt.en {
+				t.Fatalf("unexpected localized conflict responses: zh=%d %#v en=%d %#v", zhStatus, zhResponse, enStatus, enResponse)
+			}
+		})
+	}
+}
+
+func TestApprovalValidationResponsesAreLocalizedWithStableCodes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		code      string
+		messageID string
+		zh        string
+		en        string
+	}{
+		{code: "entity_approval_attributes_required", messageID: i18n.MsgEntityAttributesRequired, zh: "实体至少需要一个属性才能审批", en: "The entity must have at least one attribute before approval"},
+		{code: "entity_approval_primary_key_required", messageID: i18n.MsgEntityPrimaryKeyRequired, zh: "实体至少需要一个主键属性才能审批", en: "The entity must have at least one primary key attribute before approval"},
+		{code: "logical_table_approval_fields_required", messageID: i18n.MsgTableFieldsRequired, zh: "逻辑表至少需要一个字段才能审批", en: "The logical table must have at least one field before approval"},
+		{code: "logical_table_approval_primary_key_required", messageID: i18n.MsgTablePrimaryKeyRequired, zh: "逻辑表至少需要一个主键字段才能审批", en: "The logical table must have at least one primary key field before approval"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.code, func(t *testing.T) {
+			responseForLanguage := func(language string) (int, gin.H) {
+				c, _ := gin.CreateTestContext(httptest.NewRecorder())
+				c.Request = httptest.NewRequest("GET", "/", nil)
+				c.Request.Header.Set("Accept-Language", language)
+				commoni18n.I18nMiddleware()(c)
+				return serviceErrorResponse(c, apperrors.Validation(tt.code, tt.messageID))
+			}
+
+			zhStatus, zhResponse := responseForLanguage("zh-CN")
+			enStatus, enResponse := responseForLanguage("en")
+			if zhStatus != http.StatusBadRequest || enStatus != http.StatusBadRequest ||
+				zhResponse["error_code"] != tt.code || enResponse["error_code"] != tt.code ||
+				zhResponse["error"] != tt.zh || enResponse["error"] != tt.en {
+				t.Fatalf("unexpected localized validation responses: zh=%d %#v en=%d %#v", zhStatus, zhResponse, enStatus, enResponse)
+			}
+		})
+	}
+}
+
 func TestLocalizedErrorResponsesUseStableCodes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())

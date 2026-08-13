@@ -73,6 +73,51 @@
           <el-descriptions-item :label="t('transfer.taskDetail.connectorStatus')">
             {{ task.capture.connector_status || '-' }}
           </el-descriptions-item>
+          <el-descriptions-item :label="t('transfer.taskDetail.sourceStatus')">
+            {{ task.capture.source_status || '-' }}
+          </el-descriptions-item>
+			<template v-if="sourceRecovery">
+				<el-descriptions-item :label="t('transfer.taskDetail.sourceRecoveryHealth')">
+					<el-tag :type="sourceRecoveryTagType">{{ sourceRecoveryHealthText }}</el-tag>
+				</el-descriptions-item>
+				<el-descriptions-item :label="t('transfer.taskDetail.capturePosition')">
+					{{ sourceRecovery.capture_position || '-' }}
+				</el-descriptions-item>
+				<el-descriptions-item :label="t('transfer.taskDetail.earliestAvailablePosition')">
+					{{ sourceRecovery.earliest_available_position || '-' }}
+				</el-descriptions-item>
+				<el-descriptions-item :label="t('transfer.taskDetail.positionHeadroom')">
+					{{ sourceRecovery.position_headroom ?? '-' }}
+				</el-descriptions-item>
+				<el-descriptions-item :label="t('transfer.taskDetail.sourceRecoveryWindow')">
+					{{ formatDurationSeconds(sourceRecovery.window_seconds) }}
+				</el-descriptions-item>
+				<el-descriptions-item :label="t('transfer.taskDetail.fraUsage')">
+					{{ formatPercent(sourceRecovery.fra_used_percent) }}
+				</el-descriptions-item>
+			</template>
+			<template v-if="sourceTransactions">
+				<el-descriptions-item :label="t('transfer.taskDetail.sourceTransactionsStatus')">
+					<el-tag :type="sourceTransactions.status === 'available' ? 'info' : 'warning'">
+						{{ t(`transfer.taskDetail.sourceTransactionsStatusValues.${sourceTransactions.status || 'unavailable'}`) }}
+					</el-tag>
+				</el-descriptions-item>
+				<el-descriptions-item :label="t('transfer.taskDetail.activeTransactionCount')">
+					{{ sourceTransactions.active_count ?? '-' }}
+				</el-descriptions-item>
+				<el-descriptions-item :label="t('transfer.taskDetail.oldestTransactionPosition')">
+					{{ sourceTransactions.oldest_start_position || '-' }}
+				</el-descriptions-item>
+				<el-descriptions-item :label="t('transfer.taskDetail.oldestTransactionDuration')">
+					{{ formatDurationSeconds(sourceTransactions.oldest_duration_seconds) }}
+				</el-descriptions-item>
+				<el-descriptions-item :label="t('transfer.taskDetail.usedUndoBlocks')">
+					{{ sourceTransactions.used_undo_blocks ?? '-' }}
+				</el-descriptions-item>
+				<el-descriptions-item :label="t('transfer.taskDetail.usedUndoRecords')">
+					{{ sourceTransactions.used_undo_records ?? '-' }}
+				</el-descriptions-item>
+			</template>
         </template>
       </el-descriptions>
 
@@ -112,15 +157,25 @@
 				</el-button>
 			</div>
 
-			<el-alert
-				v-else-if="captureHealthWarning"
+				<el-alert
+					v-else-if="captureHealthWarning"
 				:title="t('transfer.taskDetail.captureHealthWarningTitle')"
 				:description="t('transfer.taskDetail.captureHealthWarningDescription', captureHealthWarning)"
 				type="error"
 				:closable="false"
 				show-icon
-				class="schema-blocked-alert"
-			/>
+					class="schema-blocked-alert"
+				/>
+
+				<el-alert
+					v-else-if="sourceRecoveryWarning"
+					:title="t('transfer.taskDetail.sourceRecoveryWarningTitle')"
+					:description="t('transfer.taskDetail.sourceRecoveryWarningDescription', sourceRecoveryWarning)"
+					type="error"
+					:closable="false"
+					show-icon
+					class="schema-blocked-alert"
+				/>
 
       <el-alert
         v-if="continuousRecoveryNotice"
@@ -394,7 +449,7 @@ import { continuousRecoveryTagType, formatLocatorDisplayPath, getContinuousRecov
 import { taskAPI, executionAPI } from '@/api/tasks'
 import { formatDate } from '@common-ui'
 import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType, getExecutionTagType, getExecutionLabel } from '@/utils/formatters'
-import { buildCDCStopRequest, continuousStartDisabledReason, getCDCCaptureHealthWarning, isCDCSchemaBlocked as isCDCSchemaBlockedTask, isDatabaseCDCTask } from '@/utils/cdcTask.mjs'
+import { buildCDCStopRequest, continuousStartDisabledReason, getCDCCaptureHealthWarning, getCDCSourceRecoveryWarning, isCDCSchemaBlocked as isCDCSchemaBlockedTask, isDatabaseCDCTask } from '@/utils/cdcTask.mjs'
 import { parseTransferLocator } from '@/utils/resourceLocator'
 import { buildSchemaChangeApproval, buildSchemaChangeScanRetry, getSchemaChangeScanNotice } from '@/utils/schemaChange.mjs'
 import { navigateTransferRoute } from '@/utils/moduleNavigation'
@@ -441,6 +496,11 @@ const isDatabaseCDC = computed(() => isDatabaseCDCTask(task.value))
 const isCDCSchemaBlocked = computed(() => isCDCSchemaBlockedTask(task.value))
 const schemaChangeScanNotice = computed(() => getSchemaChangeScanNotice(schemaChange.value))
 const captureHealthWarning = computed(() => getCDCCaptureHealthWarning(task.value))
+const sourceRecovery = computed(() => task.value?.capture?.source_recovery || null)
+const sourceTransactions = computed(() => task.value?.capture?.source_transactions || null)
+const sourceRecoveryWarning = computed(() => getCDCSourceRecoveryWarning(task.value))
+const sourceRecoveryTagType = computed(() => ({ healthy: 'success', critical: 'danger', unknown: 'info' }[sourceRecovery.value?.health] || 'info'))
+const sourceRecoveryHealthText = computed(() => t(`transfer.taskDetail.sourceRecoveryHealthValues.${sourceRecovery.value?.health || 'unknown'}`))
 const isManualTask = computed(() => !isContinuousTask.value && !task.value?.schedule)
 const canStartSchedule = computed(() => !task.value?.enabled)
 const canPauseSchedule = computed(() => task.value?.enabled)
@@ -483,6 +543,23 @@ const recoveryNoticeDescription = computed(() => continuousRecoveryNotice.value
 let refreshTimer = null
 
 const isTaskRunning = (taskData) => !isCDCSchemaBlockedTask(taskData) && (taskData?.status === 'running' || (taskData?.config?.runtime?.boundary === 'continuous' && taskData?.desired_state === 'running'))
+
+const formatDurationSeconds = (value) => {
+	if (value === null || value === undefined || value === '' || !Number.isFinite(Number(value))) return '-'
+	const seconds = Math.max(0, Math.round(Number(value)))
+	const days = Math.floor(seconds / 86400)
+	const hours = Math.floor((seconds % 86400) / 3600)
+	const minutes = Math.floor((seconds % 3600) / 60)
+	return days > 0
+		? t('transfer.taskDetail.durationDaysHours', { days, hours })
+		: hours > 0
+			? t('transfer.taskDetail.durationHoursMinutes', { hours, minutes })
+			: minutes > 0
+				? t('transfer.taskDetail.durationMinutes', { minutes })
+				: t('transfer.taskDetail.durationSeconds', { seconds })
+}
+
+const formatPercent = (value) => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}%` : '-'
 
 const stopAutoRefresh = () => {
   if (refreshTimer) {

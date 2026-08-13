@@ -102,10 +102,10 @@ func (s *DomainService) UpdateDomain(id, tenantID, userID int64, req *models.Upd
 	domain.SortOrder = req.SortOrder
 	domain.UpdatedBy = &userID
 
-	if err := s.repo.Update(domain); err != nil {
+	if err := s.repo.Update(domain, req.Version); err != nil {
 		return nil, err
 	}
-	return domain, nil
+	return s.repo.GetByID(id, tenantID)
 }
 
 func (s *DomainService) validateParent(id, tenantID int64, parentID *int64) error {

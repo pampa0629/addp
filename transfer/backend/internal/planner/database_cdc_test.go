@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/engine/plugins/mysql"
+	"github.com/addp/common/engine/plugins/oracle"
 	"github.com/addp/common/engine/plugins/postgresql"
 )
 
@@ -21,6 +22,26 @@ func TestParseDatabaseCDCTaskSpecAcceptsFrozenV1Contract(t *testing.T) {
 	}
 	if len(sourceKeys) != 1 || sourceKeys[0] != "id" || targetKeys[0] != "id" {
 		t.Fatalf("keys = %v -> %v", sourceKeys, targetKeys)
+	}
+}
+
+func TestResolveDatabaseCDCBindingsAcceptsOracleAtomicTarget(t *testing.T) {
+	config := validPostgreSQLCDCConfig()
+	config["target"].(map[string]interface{})["parent_locator"] = "addp://engine/20/path/BUSINESS?type=schema"
+	spec, err := ParseDatabaseCDCTaskSpec(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetCaps := (&oracle.OraclePlugin{}).Capabilities()
+	bindings, err := ResolveDatabaseCDCBindings(spec, StaticEngineResolver{
+		12: {Type: "postgresql", EngineID: 12},
+		20: {Type: "oracle", EngineID: 20, Capabilities: &targetCaps},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bindings.TargetType != "oracle" {
+		t.Fatalf("target type = %q, want oracle", bindings.TargetType)
 	}
 }
 

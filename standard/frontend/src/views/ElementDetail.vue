@@ -7,10 +7,11 @@
         <el-tag :type="statusType(element.status)" size="small" v-if="element.status">
           {{ statusLabel(element.status) }}
         </el-tag>
+        <el-tag v-if="isDirty" type="warning" size="small">{{ $t('standard.common.unsaved') }}</el-tag>
       </div>
       <div class="header-right">
-        <el-button type="primary" @click="saveChanges" :loading="saving">{{ $t('standard.common.save') }}</el-button>
-        <el-button type="success" @click="handleApprove" v-if="element.status === 'draft'" :disabled="saving">{{ $t('standard.common.approve') }}</el-button>
+        <el-button v-if="canUpdate" type="primary" @click="saveChanges" :loading="saving">{{ $t('standard.common.save') }}</el-button>
+        <el-button v-if="canApprove && element.status === 'draft'" type="success" @click="handleApprove" :loading="isActionLocked(actionKey)" :disabled="saving">{{ $t('standard.common.approve') }}</el-button>
       </div>
     </div>
 
@@ -19,7 +20,7 @@
         <!-- 基本信息 -->
         <el-card class="section-card">
           <template #header><h3>{{ $t('standard.element.basicInfo') }}</h3></template>
-          <el-form :model="element" label-width="120px" size="default">
+          <el-form :model="element" label-width="120px" size="default" :disabled="!canUpdate">
             <el-row :gutter="20">
               <el-col :span="12">
                 <el-form-item :label="$t('standard.element.nameLabel')">
@@ -121,7 +122,7 @@
           <template #header>
             <div class="card-header">
               <h3><el-icon class="header-icon"><CircleCheck /></el-icon>{{ $t('standard.element.qualityRules') }}</h3>
-              <el-button size="small" @click="addRule">{{ $t('standard.element.addRule') }}</el-button>
+              <el-button v-if="canUpdate" size="small" @click="addRule">{{ $t('standard.element.addRule') }}</el-button>
             </div>
           </template>
           <div v-if="!qualityRules || qualityRules.length === 0" class="empty-rules">
@@ -144,7 +145,7 @@
                   <el-option :label="$t('standard.element.severityWarning')" value="warning" />
                   <el-option :label="$t('standard.element.severityInfo')" value="info" />
                 </el-select>
-                <el-button link type="danger" @click="removeRule(index)">{{ $t('standard.common.delete') }}</el-button>
+                <el-button v-if="canUpdate" link type="danger" @click="removeRule(index)">{{ $t('standard.common.delete') }}</el-button>
               </div>
               <el-input
                 v-model="rule.message"
@@ -206,7 +207,7 @@
         </el-card>
 
         <!-- 关联文档 -->
-        <DocumentPanel v-if="element.id" entity-type="element" :entity-id="element.id" />
+        <DocumentPanel v-if="element.id" entity-type="element" :entity-id="element.id" v-model:entity-version="element.version" />
       </el-col>
 
       <el-col :span="8">
@@ -255,12 +256,18 @@ import DocumentPanel from '../components/DocumentPanel.vue'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 import { formatStandardDateTime } from '../utils/dateTime'
+import { useStandardPermissions } from '../composables/useStandardPermissions'
+import { useActionLock } from '../composables/useActionLock'
+import { useUnsavedChanges } from '../composables/useUnsavedChanges'
 
 const router = useRouter()
 const route = useRoute()
 const { t, locale } = useI18n()
+const { canUpdate, canApprove } = useStandardPermissions('element')
+const { isLocked: isActionLocked, runLocked } = useActionLock()
 const loading = ref(false)
 const saving = ref(false)
+const actionKey = computed(() => `element:${route.params.id}`)
 const element = ref({})
 const codeSets = ref([])
 const codeItems = ref([])
@@ -269,6 +276,19 @@ const relatedGlossaries = ref([])
 const units = ref([])
 const gradingLevels = ref([])
 const classifications = ref([])
+const editableState = computed(() => {
+  const {
+    id,
+    status,
+    created_at,
+    updated_at,
+    created_by,
+    updated_by,
+    ...editable
+  } = element.value
+  return editable
+})
+const { isDirty, markSaved } = useUnsavedChanges({ state: editableState, t })
 
 const unitsByCategory = computed(() => {
   const map = {}
@@ -332,6 +352,7 @@ const loadElement = async () => {
     if (element.value.code_set_id) {
       loadCodeItems(element.value.code_set_id)
     }
+    markSaved()
   } catch (e) {
     ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
     goBack()
@@ -425,6 +446,7 @@ const handleRuleTypeChange = (rule) => {
 }
 
 const saveChanges = async () => {
+  if (saving.value) return
   saving.value = true
   try {
     await elementAPI.update(route.params.id, element.value)
@@ -438,14 +460,20 @@ const saveChanges = async () => {
 }
 
 const handleApprove = async () => {
-  try {
-    await ElMessageBox.confirm(t('standard.element.confirmApprove'), t('standard.common.hint'), { type: 'info' })
-    await elementAPI.approve(route.params.id)
-    ElMessage.success(t('standard.common.approveSuccess'))
-    await loadElement()
-  } catch (e) {
-    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.approveFailed'))
+  if (isDirty.value) {
+    ElMessage.warning(t('standard.common.saveBeforeAction'))
+    return
   }
+  await runLocked(actionKey.value, async () => {
+    try {
+      await ElMessageBox.confirm(t('standard.element.confirmApprove'), t('standard.common.hint'), { type: 'info' })
+      await elementAPI.approve(route.params.id, element.value.version)
+      ElMessage.success(t('standard.common.approveSuccess'))
+      await loadElement()
+    } catch (e) {
+      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.approveFailed'))
+    }
+  })
 }
 
 watch(() => route.params.id, () => {

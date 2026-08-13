@@ -12,40 +12,907 @@ definitions:
         description: 在源模块中的唯一标识
         type: string
     type: object
-  dataquality.Parameters:
+  github_com_addp_standard_internal_models.Classification:
     properties:
-      max:
+      code:
         type: string
-      min:
+      created_at:
         type: string
-      pattern:
+      created_by:
+        type: integer
+      description:
         type: string
-      values:
+      id:
+        type: integer
+      name:
+        type: string
+      parent_id:
+        type: integer
+      sort_order:
+        type: integer
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+      version:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.CodeItem:
+    properties:
+      code:
+        type: string
+      code_set_id:
+        type: integer
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      is_active:
+        type: boolean
+      parent_id:
+        description: 预留树形结构
+        type: integer
+      sort_order:
+        type: integer
+      updated_at:
+        type: string
+      value:
+        type: string
+    type: object
+  github_com_addp_standard_internal_models.CodeSet:
+    properties:
+      code:
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      tenant_id:
+        type: integer
+      type:
+        description: system/custom
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.CreateCodeItemRequest:
+    properties:
+      code:
+        type: string
+      description:
+        type: string
+      is_active:
+        type: boolean
+      sort_order:
+        type: integer
+      value:
+        type: string
+      version:
+        type: integer
+    required:
+    - code
+    - value
+    - version
+    type: object
+  github_com_addp_standard_internal_models.CreateLinkedDocumentRequest:
+    properties:
+      description:
+        type: string
+      doc_type:
+        type: string
+      document_version:
+        type: string
+      name:
+        type: string
+      source_org:
+        type: string
+      version:
+        type: integer
+    required:
+    - name
+    - version
+    type: object
+  github_com_addp_standard_internal_models.DimensionHierarchy:
+    properties:
+      code:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      domain_id:
+        type: integer
+      id:
+        type: integer
+      levels:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.DimensionHierarchyLevel'
+        type: array
+      name:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+      version:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.DimensionHierarchyLevel:
+    properties:
+      description:
+        type: string
+      element_id:
+        description: 可选关联 standard.elements，目标删除时置空
+        type: integer
+      hierarchy_id:
+        type: integer
+      id:
+        type: integer
+      level_num:
+        description: 1=最粗粒度，数字越大粒度越细
+        type: integer
+      name:
+        description: e.g., "年", "季度", "月", "日"
+        type: string
+      sort_order:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.Document:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      doc_type:
+        description: national/industry/internal/reference
+        type: string
+      document_version:
+        type: string
+      file_key:
+        description: MinIO 存储路径
+        type: string
+      file_name:
+        type: string
+      file_size:
+        type: integer
+      id:
+        type: integer
+      name:
+        type: string
+      publish_date:
+        type: string
+      source_org:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+      version:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.Element:
+    properties:
+      classification_id:
+        description: 关联数据分类
+        type: integer
+      code:
+        type: string
+      code_set_id:
+        description: 关联码值集
+        type: integer
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      data_type:
+        description: string/int/float/date/bool/json
+        type: string
+      default_value:
+        type: string
+      definition:
+        type: string
+      domain_id:
+        type: integer
+      example_values:
         items:
           type: string
         type: array
-    type: object
-  dataquality.Rule:
-    properties:
-      enabled:
-        type: boolean
-      message:
+      format:
         type: string
-      params:
-        $ref: '#/definitions/dataquality.Parameters'
-      severity:
+      id:
+        type: integer
+      length:
+        type: integer
+      name:
+        type: string
+      nullable:
+        type: boolean
+      precision_num:
+        type: integer
+      quality_rules:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_standard_internal_models.JSONB'
+        description: 质量规则
+      scale:
+        type: integer
+      security_level:
+        description: L1/L2/L3/L4
+        type: string
+      status:
+        description: draft/approved/deprecated
+        type: string
+      steward_id:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+      tenant_id:
+        type: integer
+      unit_id:
+        description: 关联计量单位
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+      value_range:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.JSONB'
+      version:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.Glossary:
+    properties:
+      alias:
+        items:
+          type: string
+        type: array
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      definition:
+        type: string
+      domain_id:
+        type: integer
+      example:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      note:
+        type: string
+      related_ids:
+        items:
+          type: integer
+        type: array
+      status:
+        description: draft/approved/deprecated
+        type: string
+      steward_id:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+      version:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.GradingLevel:
+    properties:
+      color:
+        description: 十六进制颜色
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      level:
+        description: L1/L2/L3/L4
+        type: string
+      name:
+        type: string
+      sort_order:
+        type: integer
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.JSONB:
+    additionalProperties: true
+    type: object
+  github_com_addp_standard_internal_models.LinkDocumentRequest:
+    properties:
+      doc_id:
+        type: integer
+      version:
+        type: integer
+    required:
+    - doc_id
+    - version
+    type: object
+  github_com_addp_standard_internal_models.MeasurementCategory:
+    properties:
+      code:
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      is_system:
+        type: boolean
+      name:
+        type: string
+      sort_order:
+        type: integer
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.Metric:
+    properties:
+      base_metric_id:
+        description: 派生指标的基准原子指标
+        type: integer
+      category_id:
+        type: integer
+      code:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      definition:
+        description: 业务口径描述
+        type: string
+      derivation_config:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.JSONB'
+      domain_id:
+        description: 辅助标注，关联的主业务域
+        type: integer
+      formula:
+        description: 复合指标：计算公式描述
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      status:
+        type: string
+      steward_id:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+      tenant_id:
+        type: integer
+      type:
+        description: atomic/derived/composite
+        type: string
+      unit_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+      version:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.MetricCategory:
+    properties:
+      code:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      parent_id:
+        type: integer
+      sort_order:
+        type: integer
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+      version:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.PaginatedCodeSetResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSet'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.PaginatedDocumentResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.Document'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.PaginatedElementResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.Element'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.PaginatedGlossaryResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.Glossary'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.PaginatedMetricResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.Metric'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.SetDocumentMappingsRequest:
+    properties:
+      element_ids:
+        items:
+          type: integer
+        type: array
+      glossary_ids:
+        items:
+          type: integer
+        type: array
+      locations:
+        additionalProperties:
+          type: string
+        description: 'key: "element_1" / "glossary_2" / "metric_3"'
+        type: object
+      metric_ids:
+        items:
+          type: integer
+        type: array
+      version:
+        type: integer
+    required:
+    - version
+    type: object
+  github_com_addp_standard_internal_models.Unit:
+    properties:
+      category:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.MeasurementCategory'
+      category_id:
+        type: integer
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      is_system:
+        type: boolean
+      name:
+        type: string
+      sort_order:
+        type: integer
+      symbol:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.UpdateClassificationRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: integer
+      sort_order:
+        type: integer
+      version:
+        type: integer
+    required:
+    - version
+    type: object
+  github_com_addp_standard_internal_models.UpdateCodeItemRequest:
+    properties:
+      description:
+        type: string
+      is_active:
+        type: boolean
+      sort_order:
+        type: integer
+      value:
+        type: string
+      version:
+        type: integer
+    required:
+    - value
+    - version
+    type: object
+  github_com_addp_standard_internal_models.UpdateCodeSetRequest:
+    properties:
+      description:
+        type: string
+      name:
         type: string
       type:
         type: string
+      version:
+        type: integer
+    required:
+    - name
+    - version
     type: object
-  github_com_addp_standard_internal_models.QualityRulesResponse:
+  github_com_addp_standard_internal_models.UpdateDimensionHierarchyRequest:
     properties:
-      rules:
-        items:
-          $ref: '#/definitions/dataquality.Rule'
-        type: array
-      schema_version:
+      description:
         type: string
+      domain_id:
+        type: integer
+      name:
+        type: string
+      version:
+        type: integer
+    required:
+    - version
+    type: object
+  github_com_addp_standard_internal_models.UpdateDocumentRequest:
+    properties:
+      description:
+        type: string
+      doc_type:
+        type: string
+      document_version:
+        type: string
+      name:
+        type: string
+      source_org:
+        type: string
+      version:
+        type: integer
+    required:
+    - version
+    type: object
+  github_com_addp_standard_internal_models.UpdateDomainRequest:
+    properties:
+      description:
+        type: string
+      icon:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: integer
+      sort_order:
+        type: integer
+      version:
+        type: integer
+    required:
+    - version
+    type: object
+  github_com_addp_standard_internal_models.UpdateElementRequest:
+    properties:
+      classification_id:
+        type: integer
+      code_set_id:
+        type: integer
+      data_type:
+        type: string
+      default_value:
+        type: string
+      definition:
+        type: string
+      domain_id:
+        type: integer
+      example_values:
+        items:
+          type: string
+        type: array
+      format:
+        type: string
+      length:
+        type: integer
+      name:
+        type: string
+      nullable:
+        type: boolean
+      precision_num:
+        type: integer
+      quality_rules:
+        additionalProperties: true
+        type: object
+      scale:
+        type: integer
+      security_level:
+        type: string
+      steward_id:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+      unit_id:
+        type: integer
+      value_range:
+        additionalProperties: true
+        type: object
+      version:
+        type: integer
+    required:
+    - version
+    type: object
+  github_com_addp_standard_internal_models.UpdateGlossaryRequest:
+    properties:
+      alias:
+        items:
+          type: string
+        type: array
+      definition:
+        type: string
+      domain_id:
+        type: integer
+      element_ids:
+        items:
+          type: integer
+        type: array
+      example:
+        type: string
+      name:
+        type: string
+      note:
+        type: string
+      steward_id:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+      version:
+        type: integer
+    required:
+    - version
+    type: object
+  github_com_addp_standard_internal_models.UpdateGradingLevelRequest:
+    properties:
+      color:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+      version:
+        type: integer
+    required:
+    - version
+    type: object
+  github_com_addp_standard_internal_models.UpdateMeasurementCategoryRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      sort_order:
+        type: integer
+      version:
+        type: integer
+    required:
+    - version
+    type: object
+  github_com_addp_standard_internal_models.UpdateMetricCategoryRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: integer
+      sort_order:
+        type: integer
+      version:
+        type: integer
+    required:
+    - version
+    type: object
+  github_com_addp_standard_internal_models.UpdateMetricRequest:
+    properties:
+      base_metric_id:
+        type: integer
+      category_id:
+        type: integer
+      definition:
+        type: string
+      dependency_ids:
+        items:
+          type: integer
+        type: array
+      derivation_config:
+        additionalProperties: true
+        type: object
+      domain_id:
+        type: integer
+      element_ids:
+        items:
+          type: integer
+        type: array
+      formula:
+        type: string
+      name:
+        type: string
+      steward_id:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+      type:
+        type: string
+      unit_id:
+        type: integer
+      version:
+        type: integer
+    required:
+    - version
+    type: object
+  github_com_addp_standard_internal_models.UpdateUnitRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      sort_order:
+        type: integer
+      symbol:
+        type: string
+      version:
+        type: integer
+    required:
+    - version
+    type: object
+  github_com_addp_standard_internal_models.UpsertHierarchyLevelRequest:
+    properties:
+      description:
+        type: string
+      element_id:
+        type: integer
+      level_num:
+        type: integer
+      name:
+        type: string
+      sort_order:
+        type: integer
+      version:
+        type: integer
+    required:
+    - level_num
+    - name
+    - version
+    type: object
+  github_com_addp_standard_internal_models.VersionRequest:
+    properties:
+      version:
+        type: integer
+    required:
+    - version
+    type: object
+  github_com_addp_standard_internal_service.DomainTree:
+    properties:
+      children:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_service.DomainTree'
+        type: array
+      code:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      icon:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      parent_id:
+        type: integer
+      sort_order:
+        type: integer
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+      version:
+        type: integer
     type: object
 host: localhost:8110
 info:
@@ -64,6 +931,18 @@ paths:
             items:
               $ref: '#/definitions/client.DiscoverableAsset'
             type: array
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
         "500":
           description: Internal Server Error
           schema:
@@ -86,7 +965,20 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            items:
+              $ref: '#/definitions/github_com_addp_standard_internal_models.Classification'
+            type: array
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -100,10 +992,21 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/github_com_addp_standard_internal_models.Classification'
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -123,6 +1026,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
         "409":
           description: Conflict
           schema:
@@ -138,6 +1053,13 @@ paths:
       x-addp-required-permissions:
       - standard.classification.delete
     put:
+      parameters:
+      - description: 更新数据分类 | Update data classification
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateClassificationRequest'
       produces:
       - application/json
       responses:
@@ -145,6 +1067,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -162,7 +1102,18 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/github_com_addp_standard_internal_models.PaginatedCodeSetResponse'
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -181,6 +1132,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 创建码值集 | Create code set
@@ -198,6 +1161,18 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
         "409":
           description: Conflict
@@ -222,6 +1197,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取码值集详情 | Get code set detail
@@ -231,6 +1218,13 @@ paths:
       x-addp-required-permissions:
       - standard.code_set.read
     put:
+      parameters:
+      - description: 更新码值集 | Update code set
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateCodeSetRequest'
       produces:
       - application/json
       responses:
@@ -238,6 +1232,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -255,7 +1267,20 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            items:
+              $ref: '#/definitions/github_com_addp_standard_internal_models.CodeItem'
+            type: array
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -266,6 +1291,13 @@ paths:
       x-addp-required-permissions:
       - standard.code_set.read
     post:
+      parameters:
+      - description: 创建码值项及当前码值集版本 | Create code item with current code-set version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CreateCodeItemRequest'
       produces:
       - application/json
       responses:
@@ -273,6 +1305,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -284,6 +1334,13 @@ paths:
       - standard.code_set.update
   /code-sets/{id}/items/{iid}:
     delete:
+      parameters:
+      - description: 当前码值集版本 | Current code-set version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.VersionRequest'
       produces:
       - application/json
       responses:
@@ -291,6 +1348,18 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
         "409":
           description: Conflict
@@ -307,6 +1376,13 @@ paths:
       x-addp-required-permissions:
       - standard.code_set.update
     put:
+      parameters:
+      - description: 更新码值项及当前码值集版本 | Update code item with current code-set version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateCodeItemRequest'
       produces:
       - application/json
       responses:
@@ -314,6 +1390,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -331,7 +1425,20 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            items:
+              $ref: '#/definitions/github_com_addp_standard_internal_models.DimensionHierarchy'
+            type: array
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -349,6 +1456,18 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -368,6 +1487,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 删除维度层级 | Delete dimension hierarchy
@@ -385,6 +1516,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取维度层级详情 | Get dimension hierarchy detail
@@ -394,6 +1537,13 @@ paths:
       x-addp-required-permissions:
       - standard.dimension_hierarchy.read
     put:
+      parameters:
+      - description: 更新维度层级 | Update dimension hierarchy
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateDimensionHierarchyRequest'
       produces:
       - application/json
       responses:
@@ -401,6 +1551,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -418,7 +1586,20 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            items:
+              $ref: '#/definitions/github_com_addp_standard_internal_models.DimensionHierarchyLevel'
+            type: array
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -429,6 +1610,13 @@ paths:
       x-addp-required-permissions:
       - standard.dimension_hierarchy.read
     post:
+      parameters:
+      - description: 创建层次及当前维度层级版本 | Create level with current hierarchy version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpsertHierarchyLevelRequest'
       produces:
       - application/json
       responses:
@@ -436,6 +1624,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -447,6 +1653,13 @@ paths:
       - standard.dimension_hierarchy.update
   /dimension-hierarchies/{id}/levels/{lid}:
     delete:
+      parameters:
+      - description: 当前维度层级版本 | Current hierarchy version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.VersionRequest'
       produces:
       - application/json
       responses:
@@ -454,6 +1667,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -464,6 +1695,13 @@ paths:
       x-addp-required-permissions:
       - standard.dimension_hierarchy.update
     put:
+      parameters:
+      - description: 更新层次及当前维度层级版本 | Update level with current hierarchy version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpsertHierarchyLevelRequest'
       produces:
       - application/json
       responses:
@@ -471,6 +1709,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -488,7 +1744,18 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/github_com_addp_standard_internal_models.PaginatedDocumentResponse'
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -502,10 +1769,21 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/github_com_addp_standard_internal_models.Document'
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -525,6 +1803,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 删除标准文档 | Delete standard document
@@ -540,7 +1830,18 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/github_com_addp_standard_internal_models.Document'
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -551,13 +1852,37 @@ paths:
       x-addp-required-permissions:
       - standard.document.read
     put:
+      parameters:
+      - description: 更新标准文档 | Update standard document
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateDocumentRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/github_com_addp_standard_internal_models.Document'
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -576,6 +1901,18 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
         "404":
           description: Not Found
@@ -607,6 +1944,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取文档关联映射 | Get document mappings
@@ -616,6 +1965,13 @@ paths:
       x-addp-required-permissions:
       - standard.document.read
     put:
+      parameters:
+      - description: 关联映射及当前文档版本 | Mappings with current document version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.SetDocumentMappingsRequest'
       produces:
       - application/json
       responses:
@@ -623,6 +1979,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -634,6 +2008,19 @@ paths:
       - standard.document.update
   /documents/{id}/upload:
     post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: 当前文档资源版本 | Current document resource version
+        in: formData
+        name: version
+        required: true
+        type: integer
+      - description: 文档文件 | Document file
+        in: formData
+        name: file
+        required: true
+        type: file
       produces:
       - application/json
       responses:
@@ -641,6 +2028,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
         "413":
           description: Request Entity Too Large
@@ -670,7 +2075,20 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            items:
+              $ref: '#/definitions/github_com_addp_standard_internal_service.DomainTree'
+            type: array
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -689,6 +2107,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 创建业务域 | Create business domain
@@ -706,6 +2136,18 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
         "409":
           description: Conflict
@@ -730,6 +2172,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取业务域详情 | Get business domain detail
@@ -739,6 +2193,13 @@ paths:
       x-addp-required-permissions:
       - standard.domain.read
     put:
+      parameters:
+      - description: 更新业务域 | Update business domain
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateDomainRequest'
       produces:
       - application/json
       responses:
@@ -746,6 +2207,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -757,13 +2236,37 @@ paths:
       - standard.domain.update
   /elements:
     get:
+      parameters:
+      - description: 数据元 ID 集合，逗号分隔，最多 100 个 | Data element IDs, comma-separated,
+          maximum 100
+        in: query
+        name: ids
+        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_standard_internal_models.QualityRulesResponse'
+            $ref: '#/definitions/github_com_addp_standard_internal_models.PaginatedElementResponse'
+        "400":
+          description: 无效的 ID 集合 | Invalid ID collection
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取数据元列表 | List data elements
@@ -780,6 +2283,18 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -799,6 +2314,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 删除数据元 | Delete data element
@@ -816,6 +2343,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取数据元详情 | Get data element detail
@@ -825,6 +2364,13 @@ paths:
       x-addp-required-permissions:
       - standard.element.read
     put:
+      parameters:
+      - description: 更新数据元 | Update data element
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateElementRequest'
       produces:
       - application/json
       responses:
@@ -832,6 +2378,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -843,6 +2407,13 @@ paths:
       - standard.element.update
   /elements/{id}/approve:
     post:
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.VersionRequest'
       produces:
       - application/json
       responses:
@@ -850,6 +2421,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -867,7 +2456,20 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            items:
+              $ref: '#/definitions/github_com_addp_standard_internal_models.Document'
+            type: array
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -879,6 +2481,13 @@ paths:
       - standard.element.read
       - standard.document.read
     post:
+      parameters:
+      - description: 文档信息及当前数据元版本 | Document with current element version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CreateLinkedDocumentRequest'
       produces:
       - application/json
       responses:
@@ -886,6 +2495,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -898,6 +2525,13 @@ paths:
       - standard.document.create
   /elements/{id}/documents/{doc_id}:
     delete:
+      parameters:
+      - description: 当前数据元版本 | Current element version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.VersionRequest'
       produces:
       - application/json
       responses:
@@ -905,6 +2539,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -917,6 +2569,13 @@ paths:
       - standard.document.update
   /elements/{id}/documents/link:
     post:
+      parameters:
+      - description: 文档 ID 及当前数据元版本 | Document ID with current element version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.LinkDocumentRequest'
       produces:
       - application/json
       responses:
@@ -924,6 +2583,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -944,6 +2621,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取数据元质量规则 | Get data element quality rules
@@ -960,7 +2649,18 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/github_com_addp_standard_internal_models.PaginatedGlossaryResponse'
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -978,6 +2678,18 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -997,6 +2709,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 删除业务术语 | Delete glossary
@@ -1014,6 +2738,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取业务术语详情 | Get glossary detail
@@ -1023,6 +2759,13 @@ paths:
       x-addp-required-permissions:
       - standard.glossary.read
     put:
+      parameters:
+      - description: 更新业务术语及关联数据元 | Update glossary and related elements
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateGlossaryRequest'
       produces:
       - application/json
       responses:
@@ -1030,6 +2773,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1041,6 +2802,13 @@ paths:
       - standard.glossary.update
   /glossaries/{id}/approve:
     post:
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.VersionRequest'
       produces:
       - application/json
       responses:
@@ -1048,6 +2816,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1059,6 +2845,13 @@ paths:
       - standard.glossary.approve
   /glossaries/{id}/deprecate:
     post:
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.VersionRequest'
       produces:
       - application/json
       responses:
@@ -1066,6 +2859,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1083,7 +2894,20 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            items:
+              $ref: '#/definitions/github_com_addp_standard_internal_models.Document'
+            type: array
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1095,6 +2919,13 @@ paths:
       - standard.glossary.read
       - standard.document.read
     post:
+      parameters:
+      - description: 文档信息及当前术语版本 | Document with current glossary version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CreateLinkedDocumentRequest'
       produces:
       - application/json
       responses:
@@ -1102,6 +2933,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1114,6 +2963,13 @@ paths:
       - standard.document.create
   /glossaries/{id}/documents/{doc_id}:
     delete:
+      parameters:
+      - description: 当前术语版本 | Current glossary version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.VersionRequest'
       produces:
       - application/json
       responses:
@@ -1121,6 +2977,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1133,6 +3007,13 @@ paths:
       - standard.document.update
   /glossaries/{id}/documents/link:
     post:
+      parameters:
+      - description: 文档 ID 及当前术语版本 | Document ID with current glossary version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.LinkDocumentRequest'
       produces:
       - application/json
       responses:
@@ -1140,6 +3021,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1160,6 +3059,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取术语关联的数据元 | Get element mappings of glossary
@@ -1169,24 +3080,6 @@ paths:
       x-addp-required-permissions:
       - standard.glossary.read
       - standard.element.read
-    put:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 设置术语关联的数据元 | Set element mappings of glossary
-      tags:
-      - Standard
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - standard.glossary.update
-      - standard.element.read
   /grading-levels:
     get:
       produces:
@@ -1195,7 +3088,20 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            items:
+              $ref: '#/definitions/github_com_addp_standard_internal_models.GradingLevel'
+            type: array
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1207,6 +3113,13 @@ paths:
       - standard.classification.read
   /grading-levels/{id}:
     put:
+      parameters:
+      - description: 更新数据分级 | Update data grading level
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateGradingLevelRequest'
       produces:
       - application/json
       responses:
@@ -1214,6 +3127,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1231,7 +3162,20 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            items:
+              $ref: '#/definitions/github_com_addp_standard_internal_models.MeasurementCategory'
+            type: array
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1245,10 +3189,21 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/github_com_addp_standard_internal_models.MeasurementCategory'
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1268,6 +3223,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
         "409":
           description: Conflict
           schema:
@@ -1283,6 +3250,13 @@ paths:
       x-addp-required-permissions:
       - standard.unit.delete
     put:
+      parameters:
+      - description: 更新度量类别 | Update measurement category
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateMeasurementCategoryRequest'
       produces:
       - application/json
       responses:
@@ -1290,6 +3264,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1307,7 +3299,20 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            items:
+              $ref: '#/definitions/github_com_addp_standard_internal_models.MetricCategory'
+            type: array
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1321,10 +3326,21 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/github_com_addp_standard_internal_models.MetricCategory'
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1344,6 +3360,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
         "409":
           description: Conflict
           schema:
@@ -1359,6 +3387,13 @@ paths:
       x-addp-required-permissions:
       - standard.metric.delete
     put:
+      parameters:
+      - description: 更新指标分类 | Update metric category
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateMetricCategoryRequest'
       produces:
       - application/json
       responses:
@@ -1366,6 +3401,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1383,7 +3436,18 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/github_com_addp_standard_internal_models.PaginatedMetricResponse'
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1402,6 +3466,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 创建指标 | Create metric
@@ -1419,6 +3495,18 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
         "409":
           description: Conflict
@@ -1443,6 +3531,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取指标详情 | Get metric detail
@@ -1452,6 +3552,13 @@ paths:
       x-addp-required-permissions:
       - standard.metric.read
     put:
+      parameters:
+      - description: 更新指标 | Update metric
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateMetricRequest'
       produces:
       - application/json
       responses:
@@ -1459,6 +3566,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1470,6 +3595,13 @@ paths:
       - standard.metric.update
   /metrics/{id}/approve:
     post:
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.VersionRequest'
       produces:
       - application/json
       responses:
@@ -1477,6 +3609,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1488,6 +3638,13 @@ paths:
       - standard.metric.approve
   /metrics/{id}/deprecate:
     post:
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.VersionRequest'
       produces:
       - application/json
       responses:
@@ -1495,6 +3652,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1512,7 +3687,20 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            items:
+              $ref: '#/definitions/github_com_addp_standard_internal_models.Document'
+            type: array
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1524,6 +3712,13 @@ paths:
       - standard.metric.read
       - standard.document.read
     post:
+      parameters:
+      - description: 文档信息及当前指标版本 | Document with current metric version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CreateLinkedDocumentRequest'
       produces:
       - application/json
       responses:
@@ -1531,6 +3726,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1543,6 +3756,13 @@ paths:
       - standard.document.create
   /metrics/{id}/documents/{doc_id}:
     delete:
+      parameters:
+      - description: 当前指标版本 | Current metric version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.VersionRequest'
       produces:
       - application/json
       responses:
@@ -1550,6 +3770,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1562,6 +3800,13 @@ paths:
       - standard.document.update
   /metrics/{id}/documents/link:
     post:
+      parameters:
+      - description: 文档 ID 及当前指标版本 | Document ID with current metric version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.LinkDocumentRequest'
       produces:
       - application/json
       responses:
@@ -1569,6 +3814,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1587,7 +3850,20 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            items:
+              $ref: '#/definitions/github_com_addp_standard_internal_models.Unit'
+            type: array
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1606,6 +3882,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 创建计量单位 | Create unit
@@ -1623,6 +3911,18 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
             type: object
         "409":
           description: Conflict
@@ -1647,6 +3947,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取计量单位详情 | Get unit detail
@@ -1656,6 +3968,13 @@ paths:
       x-addp-required-permissions:
       - standard.unit.read
     put:
+      parameters:
+      - description: 更新计量单位 | Update unit
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateUnitRequest'
       produces:
       - application/json
       responses:
@@ -1663,6 +3982,24 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []

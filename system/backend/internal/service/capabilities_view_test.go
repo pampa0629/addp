@@ -223,6 +223,33 @@ func TestBuildCapabilitiesViewFormatsSpatialWorkspaces(t *testing.T) {
 	assertCapabilityTag(t, *arcgis, "evidence_sdeTableCount")
 }
 
+func TestBuildCapabilitiesViewRendersOracleArcGISSDEAsReadOnlyWorkspace(t *testing.T) {
+	caps := engineplugin.NewTabularCapabilities("oracle", "schema", engineplugin.TabularCapabilityOptions{})
+	engineplugin.SetSpatialWorkspacesExtension(&caps, []engineplugin.SpatialWorkspaceFact{{
+		Ecosystem:         "arcgis",
+		Kind:              engineplugin.SpatialWorkspaceArcGISSDE,
+		State:             engineplugin.SpatialWorkspaceStateNotDetected,
+		BackendEngineType: "oracle",
+		CanEnable:         false,
+		RiskLevel:         engineplugin.SpatialWorkspaceRiskHigh,
+		Evidence: map[string]interface{}{
+			"required_registry_count": 0,
+		},
+	}})
+	payload, err := engineplugin.MarshalEngineCapabilities(caps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := systemModels.JSONString(payload)
+	view := BuildCapabilitiesView(&value, "oracle")
+	item := findCapabilityItem(view, "extensions", "spatial_workspace_arcgis_sde_0")
+	if item == nil || item.LabelKey != "system.engine.capabilityView.extensions.arcgisSde" || item.Status != capabilityStatusNotInstalled {
+		t.Fatalf("oracle ArcGIS SDE item = %#v", item)
+	}
+	assertCapabilityTag(t, *item, "backend_engine_type")
+	assertCapabilityTag(t, *item, "state_notDetected")
+}
+
 func findCapabilityItem(view *commonModels.CapabilitiesView, sectionID, itemID string) *commonModels.CapabilityViewItem {
 	for _, section := range view.Sections {
 		if section.ID != sectionID {

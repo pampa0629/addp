@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/addp/common/buildinfo"
 	"github.com/addp/common/engine/plugin"
 	authmiddleware "github.com/addp/common/middleware/auth"
 	"github.com/addp/engines/duckdb/internal/runtime"
@@ -25,7 +26,7 @@ func NewRouter(cfg RouterConfig, executor *runtime.Executor) (*gin.Engine, error
 	}
 	router := gin.New()
 	router.Use(gin.Recovery())
-	router.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "healthy"}) })
+	router.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, buildinfo.Health("duckdb")) })
 	queries := router.Group("/api/v1/queries", authn)
 	queries.POST("", func(c *gin.Context) {
 		authContext, ok := authmiddleware.AuthContextFromGin(c)

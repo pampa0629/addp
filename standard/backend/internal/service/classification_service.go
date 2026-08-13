@@ -58,10 +58,10 @@ func (s *ClassificationService) UpdateClassification(id, tenantID, userID int64,
 	c.ParentID = req.ParentID
 	c.SortOrder = req.SortOrder
 	c.UpdatedBy = &userID
-	if err := s.repo.Update(c); err != nil {
+	if err := s.repo.Update(c, req.Version); err != nil {
 		return nil, err
 	}
-	return c, nil
+	return s.repo.GetByID(id, tenantID)
 }
 
 func (s *ClassificationService) validateParent(id, tenantID int64, parentID *int64) error {

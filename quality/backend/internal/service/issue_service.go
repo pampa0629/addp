@@ -18,10 +18,6 @@ func (s *IssueService) List(tenantID int64, status string, engineID int64, page,
 	return s.issueRepo.List(tenantID, status, engineID, page, pageSize)
 }
 
-func (s *IssueService) ListByExecution(executionID string) ([]models.Issue, error) {
-	return s.issueRepo.ListByExecution(executionID)
-}
-
 func (s *IssueService) Get(id, tenantID int64) (*models.Issue, error) {
 	return s.issueRepo.Get(id, tenantID)
 }

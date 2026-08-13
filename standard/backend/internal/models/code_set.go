@@ -12,6 +12,7 @@ type CodeSet struct {
 	Description string    `gorm:"type:text" json:"description"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	Version     int64     `gorm:"not null;default:1" json:"version"`
 }
 
 func (CodeSet) TableName() string {
@@ -46,6 +47,7 @@ type CreateCodeSetRequest struct {
 
 // UpdateCodeSetRequest 更新码值集请求
 type UpdateCodeSetRequest struct {
+	Version     int64  `json:"version" binding:"required"`
 	Name        string `json:"name" binding:"required"`
 	Type        string `json:"type"`
 	Description string `json:"description"`
@@ -53,6 +55,7 @@ type UpdateCodeSetRequest struct {
 
 // CreateCodeItemRequest 创建码值项请求
 type CreateCodeItemRequest struct {
+	Version     int64  `json:"version" binding:"required"`
 	Code        string `json:"code" binding:"required"`
 	Value       string `json:"value" binding:"required"`
 	Description string `json:"description"`
@@ -62,8 +65,14 @@ type CreateCodeItemRequest struct {
 
 // UpdateCodeItemRequest 更新码值项请求
 type UpdateCodeItemRequest struct {
+	Version     int64  `json:"version" binding:"required"`
 	Value       string `json:"value" binding:"required"`
 	Description string `json:"description"`
 	SortOrder   int    `json:"sort_order"`
 	IsActive    bool   `json:"is_active"`
+}
+
+type CodeItemMutationResponse struct {
+	Item    *CodeItem `json:"item"`
+	Version int64     `json:"version"`
 }

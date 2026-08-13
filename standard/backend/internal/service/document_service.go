@@ -122,13 +122,13 @@ func newDocument(req *models.CreateDocumentRequest, tenantID, userID int64) *mod
 		docType = "reference"
 	}
 	return &models.Document{
-		TenantID:    tenantID,
-		Name:        req.Name,
-		DocType:     docType,
-		SourceOrg:   req.SourceOrg,
-		Version:     req.Version,
-		Description: req.Description,
-		CreatedBy:   userID,
+		TenantID:        tenantID,
+		Name:            req.Name,
+		DocType:         docType,
+		SourceOrg:       req.SourceOrg,
+		DocumentVersion: req.DocumentVersion,
+		Description:     req.Description,
+		CreatedBy:       userID,
 	}
 }
 
@@ -144,13 +144,13 @@ func (s *DocumentService) UpdateDocument(id, tenantID, userID int64, req *models
 		doc.DocType = req.DocType
 	}
 	doc.SourceOrg = req.SourceOrg
-	doc.Version = req.Version
+	doc.DocumentVersion = req.DocumentVersion
 	doc.Description = req.Description
 	doc.UpdatedBy = &userID
-	if err := s.repo.Update(doc); err != nil {
+	if err := s.repo.Update(doc, req.Version); err != nil {
 		return nil, err
 	}
-	return doc, nil
+	return s.repo.GetByID(id, tenantID)
 }
 
 func (s *DocumentService) DeleteDocument(id, tenantID int64) error {
@@ -166,20 +166,20 @@ func (s *DocumentService) DeleteDocument(id, tenantID int64) error {
 }
 
 // UploadFile 上传文件到 MinIO 并更新文档记录
-func (s *DocumentService) UploadFile(docID, tenantID int64, fileName string, content io.Reader, size int64, contentType string) error {
+func (s *DocumentService) UploadFile(docID, tenantID, version int64, fileName string, content io.Reader, size int64, contentType string) (*models.Document, error) {
 	if s.objectStore == nil {
-		return ErrDocumentStorageUnavailable
+		return nil, ErrDocumentStorageUnavailable
 	}
 	if size < 0 || size > s.maxFileSize {
-		return ErrDocumentFileTooLarge
+		return nil, ErrDocumentFileTooLarge
 	}
 	doc, err := s.repo.GetByID(docID, tenantID)
 	if err != nil {
-		return commonapi.ErrNotFound
+		return nil, commonapi.ErrNotFound
 	}
 	fileName, err = sanitizeDocumentFileName(fileName)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	extension := strings.ToLower(filepath.Ext(fileName))
 	fileKey := fmt.Sprintf("tenant_%d/documents/%d/%s%s", tenantID, docID, uuid.NewString(), extension)
@@ -192,22 +192,22 @@ func (s *DocumentService) UploadFile(docID, tenantID int64, fileName string, con
 		minio.PutObjectOptions{ContentType: contentType})
 	cancel()
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrDocumentFileUpload, err)
+		return nil, fmt.Errorf("%w: %v", ErrDocumentFileUpload, err)
 	}
 
-	cleanup, err := s.repo.ReplaceFile(doc.ID, tenantID, fileKey, fileName, size)
+	cleanup, err := s.repo.ReplaceFile(doc.ID, tenantID, version, fileKey, fileName, size)
 	if err != nil {
 		if cleanupErr := s.removeObject(fileKey); cleanupErr != nil {
 			if _, queueErr := s.repo.EnqueueFileCleanup(fileKey); queueErr != nil {
 				log.Printf("standard document new file cleanup failed and enqueue failed, key=%q: cleanup=%v enqueue=%v", fileKey, cleanupErr, queueErr)
 			}
 		}
-		return err
+		return nil, err
 	}
 	if cleanup != nil {
 		s.tryFileCleanup(*cleanup)
 	}
-	return nil
+	return s.repo.GetByID(docID, tenantID)
 }
 
 // DownloadFile 从 MinIO 获取文件内容，返回 ReadCloser 和内容类型
@@ -342,7 +342,7 @@ func (s *DocumentService) SetMappings(docID, tenantID int64, req *models.SetDocu
 	if locations == nil {
 		locations = map[string]string{}
 	}
-	return s.repo.SetMappings(docID, req.ElementIDs, req.GlossaryIDs, req.MetricIDs, locations)
+	return s.repo.SetMappings(docID, tenantID, req.Version, req.ElementIDs, req.GlossaryIDs, req.MetricIDs, locations)
 }
 
 // ===== 反向查询：按标准项列出关联文档 =====
@@ -370,45 +370,45 @@ func (s *DocumentService) ListByMetric(tenantID, metricID int64) ([]models.Docum
 
 // ===== 创建文档并关联到标准项（原子操作） =====
 
-func (s *DocumentService) CreateAndLinkElement(req *models.CreateDocumentRequest, tenantID, userID, elementID int64) (*models.Document, error) {
+func (s *DocumentService) CreateAndLinkElement(req *models.CreateLinkedDocumentRequest, tenantID, userID, elementID int64) (*models.LinkedDocumentMutationResponse, error) {
 	if err := s.refs.RequireElement(tenantID, elementID); err != nil {
 		return nil, err
 	}
-	doc := newDocument(req, tenantID, userID)
+	doc := newDocument(&req.CreateDocumentRequest, tenantID, userID)
 	mapping := &models.DocumentElementMapping{DocumentID: doc.ID, ElementID: elementID}
-	if err := s.repo.CreateWithMapping(doc, mapping); err != nil {
+	if err := s.repo.CreateWithMappingVersioned(doc, mapping, &models.Element{}, elementID, tenantID, req.Version); err != nil {
 		return nil, err
 	}
-	return doc, nil
+	return &models.LinkedDocumentMutationResponse{Document: doc, Version: req.Version + 1}, nil
 }
 
-func (s *DocumentService) CreateAndLinkGlossary(req *models.CreateDocumentRequest, tenantID, userID, glossaryID int64) (*models.Document, error) {
+func (s *DocumentService) CreateAndLinkGlossary(req *models.CreateLinkedDocumentRequest, tenantID, userID, glossaryID int64) (*models.LinkedDocumentMutationResponse, error) {
 	if err := s.refs.RequireGlossary(tenantID, glossaryID); err != nil {
 		return nil, err
 	}
-	doc := newDocument(req, tenantID, userID)
+	doc := newDocument(&req.CreateDocumentRequest, tenantID, userID)
 	mapping := &models.DocumentGlossaryMapping{DocumentID: doc.ID, GlossaryID: glossaryID}
-	if err := s.repo.CreateWithMapping(doc, mapping); err != nil {
+	if err := s.repo.CreateWithMappingVersioned(doc, mapping, &models.Glossary{}, glossaryID, tenantID, req.Version); err != nil {
 		return nil, err
 	}
-	return doc, nil
+	return &models.LinkedDocumentMutationResponse{Document: doc, Version: req.Version + 1}, nil
 }
 
-func (s *DocumentService) CreateAndLinkMetric(req *models.CreateDocumentRequest, tenantID, userID, metricID int64) (*models.Document, error) {
+func (s *DocumentService) CreateAndLinkMetric(req *models.CreateLinkedDocumentRequest, tenantID, userID, metricID int64) (*models.LinkedDocumentMutationResponse, error) {
 	if err := s.refs.RequireMetric(tenantID, &metricID); err != nil {
 		return nil, err
 	}
-	doc := newDocument(req, tenantID, userID)
+	doc := newDocument(&req.CreateDocumentRequest, tenantID, userID)
 	mapping := &models.DocumentMetricMapping{DocumentID: doc.ID, MetricID: metricID}
-	if err := s.repo.CreateWithMapping(doc, mapping); err != nil {
+	if err := s.repo.CreateWithMappingVersioned(doc, mapping, &models.Metric{}, metricID, tenantID, req.Version); err != nil {
 		return nil, err
 	}
-	return doc, nil
+	return &models.LinkedDocumentMutationResponse{Document: doc, Version: req.Version + 1}, nil
 }
 
 // ===== 关联已有文档到标准项 =====
 
-func (s *DocumentService) LinkDocToElement(docID, tenantID, elementID int64) error {
+func (s *DocumentService) LinkDocToElement(docID, tenantID, elementID, version int64) error {
 	// 验证文档存在且属于该租户
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
 		return commonapi.ErrNotFound
@@ -416,57 +416,60 @@ func (s *DocumentService) LinkDocToElement(docID, tenantID, elementID int64) err
 	if err := s.refs.RequireElement(tenantID, elementID); err != nil {
 		return err
 	}
-	return s.repo.AddElementMapping(docID, elementID)
+	mapping := &models.DocumentElementMapping{DocumentID: docID, ElementID: elementID}
+	return s.repo.MutateMappingVersioned(&models.Element{}, elementID, tenantID, version, mapping, true, "document_id = ? AND element_id = ?", docID, elementID)
 }
 
-func (s *DocumentService) LinkDocToGlossary(docID, tenantID, glossaryID int64) error {
+func (s *DocumentService) LinkDocToGlossary(docID, tenantID, glossaryID, version int64) error {
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
 		return commonapi.ErrNotFound
 	}
 	if err := s.refs.RequireGlossary(tenantID, glossaryID); err != nil {
 		return err
 	}
-	return s.repo.AddGlossaryMapping(docID, glossaryID)
+	mapping := &models.DocumentGlossaryMapping{DocumentID: docID, GlossaryID: glossaryID}
+	return s.repo.MutateMappingVersioned(&models.Glossary{}, glossaryID, tenantID, version, mapping, true, "document_id = ? AND glossary_id = ?", docID, glossaryID)
 }
 
-func (s *DocumentService) LinkDocToMetric(docID, tenantID, metricID int64) error {
+func (s *DocumentService) LinkDocToMetric(docID, tenantID, metricID, version int64) error {
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
 		return commonapi.ErrNotFound
 	}
 	if err := s.refs.RequireMetric(tenantID, &metricID); err != nil {
 		return err
 	}
-	return s.repo.AddMetricMapping(docID, metricID)
+	mapping := &models.DocumentMetricMapping{DocumentID: docID, MetricID: metricID}
+	return s.repo.MutateMappingVersioned(&models.Metric{}, metricID, tenantID, version, mapping, true, "document_id = ? AND metric_id = ?", docID, metricID)
 }
 
 // ===== 解除文档与标准项的关联 =====
 
-func (s *DocumentService) UnlinkDocFromElement(docID, tenantID, elementID int64) error {
+func (s *DocumentService) UnlinkDocFromElement(docID, tenantID, elementID, version int64) error {
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
 		return commonapi.ErrNotFound
 	}
 	if err := s.refs.RequireElement(tenantID, elementID); err != nil {
 		return err
 	}
-	return s.repo.RemoveElementMapping(docID, elementID)
+	return s.repo.MutateMappingVersioned(&models.Element{}, elementID, tenantID, version, &models.DocumentElementMapping{}, false, "document_id = ? AND element_id = ?", docID, elementID)
 }
 
-func (s *DocumentService) UnlinkDocFromGlossary(docID, tenantID, glossaryID int64) error {
+func (s *DocumentService) UnlinkDocFromGlossary(docID, tenantID, glossaryID, version int64) error {
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
 		return commonapi.ErrNotFound
 	}
 	if err := s.refs.RequireGlossary(tenantID, glossaryID); err != nil {
 		return err
 	}
-	return s.repo.RemoveGlossaryMapping(docID, glossaryID)
+	return s.repo.MutateMappingVersioned(&models.Glossary{}, glossaryID, tenantID, version, &models.DocumentGlossaryMapping{}, false, "document_id = ? AND glossary_id = ?", docID, glossaryID)
 }
 
-func (s *DocumentService) UnlinkDocFromMetric(docID, tenantID, metricID int64) error {
+func (s *DocumentService) UnlinkDocFromMetric(docID, tenantID, metricID, version int64) error {
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
 		return commonapi.ErrNotFound
 	}
 	if err := s.refs.RequireMetric(tenantID, &metricID); err != nil {
 		return err
 	}
-	return s.repo.RemoveMetricMapping(docID, metricID)
+	return s.repo.MutateMappingVersioned(&models.Metric{}, metricID, tenantID, version, &models.DocumentMetricMapping{}, false, "document_id = ? AND metric_id = ?", docID, metricID)
 }

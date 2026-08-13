@@ -76,10 +76,10 @@ func (s *CodeSetService) UpdateCodeSet(id, tenantID int64, req *models.UpdateCod
 	}
 	codeSet.Description = req.Description
 
-	if err := s.repo.Update(codeSet); err != nil {
+	if err := s.repo.Update(codeSet, req.Version); err != nil {
 		return nil, err
 	}
-	return codeSet, nil
+	return s.repo.GetByID(id, tenantID)
 }
 
 // DeleteCodeSet 删除码值集
@@ -109,7 +109,7 @@ func (s *CodeSetService) GetCodeItems(codeSetID, tenantID int64) ([]models.CodeI
 }
 
 // CreateCodeItem 创建码值项
-func (s *CodeSetService) CreateCodeItem(codeSetID, tenantID int64, req *models.CreateCodeItemRequest) (*models.CodeItem, error) {
+func (s *CodeSetService) CreateCodeItem(codeSetID, tenantID int64, req *models.CreateCodeItemRequest) (*models.CodeItemMutationResponse, error) {
 	// 验证码值集是否属于当前租户
 	_, err := s.repo.GetByID(codeSetID, tenantID)
 	if err != nil {
@@ -134,15 +134,14 @@ func (s *CodeSetService) CreateCodeItem(codeSetID, tenantID int64, req *models.C
 		IsActive:    req.IsActive,
 	}
 
-	if err := s.repo.CreateItem(item); err != nil {
+	if err := s.repo.CreateItem(item, tenantID, req.Version); err != nil {
 		return nil, err
 	}
-
-	return item, nil
+	return &models.CodeItemMutationResponse{Item: item, Version: req.Version + 1}, nil
 }
 
 // UpdateCodeItem 更新码值项
-func (s *CodeSetService) UpdateCodeItem(codeSetID, itemID, tenantID int64, req *models.UpdateCodeItemRequest) (*models.CodeItem, error) {
+func (s *CodeSetService) UpdateCodeItem(codeSetID, itemID, tenantID int64, req *models.UpdateCodeItemRequest) (*models.CodeItemMutationResponse, error) {
 	// 验证码值集是否属于当前租户
 	_, err := s.repo.GetByID(codeSetID, tenantID)
 	if err != nil {
@@ -159,14 +158,14 @@ func (s *CodeSetService) UpdateCodeItem(codeSetID, itemID, tenantID int64, req *
 	item.SortOrder = req.SortOrder
 	item.IsActive = req.IsActive
 
-	if err := s.repo.UpdateItem(item); err != nil {
+	if err := s.repo.UpdateItem(item, tenantID, req.Version); err != nil {
 		return nil, err
 	}
-	return item, nil
+	return &models.CodeItemMutationResponse{Item: item, Version: req.Version + 1}, nil
 }
 
 // DeleteCodeItem 删除码值项
-func (s *CodeSetService) DeleteCodeItem(codeSetID, itemID, tenantID int64) error {
+func (s *CodeSetService) DeleteCodeItem(codeSetID, itemID, tenantID, version int64) error {
 	// 验证码值集是否属于当前租户
 	_, err := s.repo.GetByID(codeSetID, tenantID)
 	if err != nil {
@@ -178,5 +177,5 @@ func (s *CodeSetService) DeleteCodeItem(codeSetID, itemID, tenantID int64) error
 		return err
 	}
 
-	return mapDeleteConflict(s.repo.DeleteItem(itemID, codeSetID), ErrCodeItemReferenced)
+	return mapDeleteConflict(s.repo.DeleteItem(itemID, codeSetID, tenantID, version), ErrCodeItemReferenced)
 }

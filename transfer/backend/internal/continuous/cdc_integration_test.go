@@ -20,6 +20,7 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/kafka"
 	mysqlplugin "github.com/addp/common/engine/plugins/mysql"
+	oracleplugin "github.com/addp/common/engine/plugins/oracle"
 	"github.com/addp/common/engine/plugins/postgresql"
 	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
@@ -258,6 +259,8 @@ func runIntegrationPostgreSQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T,
 				return &postgresql.PostgreSQLPlugin{}, nil
 			case "mysql":
 				return &mysqlplugin.MySQLPlugin{}, nil
+			case "oracle":
+				return &oracleplugin.OraclePlugin{}, nil
 			default:
 				return nil, fmt.Errorf("unexpected engine type %q", engineType)
 			}

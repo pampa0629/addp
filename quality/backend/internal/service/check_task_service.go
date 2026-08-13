@@ -38,6 +38,9 @@ func (s *CheckTaskService) Create(ctx context.Context, tenantID, userID int64, r
 	if req.Name == "" || req.SchemaName == "" || req.TableName == "" {
 		return nil, fmt.Errorf("%w: name, schema_name and table_name are required", commonAPI.ErrBadRequest)
 	}
+	if _, err := requirePostgreSQLCatalogTable(ctx, s.systemClient, tenantID, req.EngineID, req.SchemaName, req.TableName); err != nil {
+		return nil, err
+	}
 	task := &models.CheckTask{
 		TenantID:    tenantID,
 		Name:        req.Name,
@@ -69,6 +72,9 @@ func (s *CheckTaskService) Update(ctx context.Context, id, tenantID, userID int6
 	task.UpdatedBy = &userID
 	if task.Name == "" || task.SchemaName == "" || task.Table == "" {
 		return nil, fmt.Errorf("%w: name, schema_name and table_name are required", commonAPI.ErrBadRequest)
+	}
+	if _, err := requirePostgreSQLCatalogTable(ctx, s.systemClient, tenantID, req.EngineID, task.SchemaName, task.Table); err != nil {
+		return nil, err
 	}
 	if err := s.repo.Replace(ctx, task); err != nil {
 		return nil, err

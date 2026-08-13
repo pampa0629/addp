@@ -15,9 +15,18 @@
       <el-button link type="danger" @click="reload">{{ t('model.common.retry') }}</el-button>
     </el-alert>
 
-    <el-row v-else :gutter="16" style="margin-top:12px">
+    <el-alert
+      v-if="!loadError && referenceError"
+      class="load-error"
+      type="warning"
+      :title="referenceError"
+      show-icon
+      :closable="false"
+    />
+
+    <el-row v-if="!loadError" :gutter="16" style="margin-top:12px">
       <!-- 左侧：事实表选择器 -->
-      <el-col :span="6">
+      <el-col :xs="24" :md="6">
         <el-card shadow="never" class="fact-list-card">
           <template #header>
             <span class="card-title">{{ t('model.star_schema.fact_tables') }}</span>
@@ -40,7 +49,7 @@
       </el-col>
 
       <!-- 右侧：星型图 -->
-      <el-col :span="18">
+      <el-col :xs="24" :md="18">
         <div v-if="!selectedTable" class="empty-placeholder">
           <el-empty :description="t('model.star_schema.select_fact_table')" />
         </div>
@@ -84,7 +93,7 @@
           <!-- 关联维度表 + 关联指标 -->
           <el-row :gutter="16" style="margin-top:12px">
             <!-- 关联维度表 -->
-            <el-col :span="12">
+            <el-col :xs="24" :lg="12">
               <el-card shadow="never" v-loading="loadingRelated">
                 <template #header>
                   <div class="card-header-with-action">
@@ -104,7 +113,6 @@
                   </div>
                   <div class="dim-item-actions">
                     <el-button
-                      v-if="canModifyDimensionRelation(rel)"
                       link
                       type="primary"
                       size="small"
@@ -127,12 +135,12 @@
             </el-col>
 
             <!-- 关联指标 -->
-            <el-col :span="12">
+            <el-col :xs="24" :lg="12">
               <el-card shadow="never" v-loading="loadingMetrics">
                 <template #header>
                   <span class="card-title">{{ t('model.metric.title') }}</span>
                 </template>
-                <div v-if="factMetrics.length === 0" class="empty-hint">{{ t('model.star_schema.no_dimensions') }}</div>
+                <div v-if="factMetrics.length === 0" class="empty-hint">{{ t('model.star_schema.no_metrics') }}</div>
                 <div v-for="m in factMetrics" :key="m.id" class="metric-item">
                   <span class="metric-name">{{ metricNameMap[m.metric_id] || `指标#${m.metric_id}` }}</span>
                   <el-tag :type="metricTypeTagType(metricTypeMap[m.metric_id])" size="small">
@@ -155,7 +163,7 @@
     </el-row>
 
     <!-- 添加维度关联对话框 -->
-    <el-dialog v-model="addDimDialogVisible" :title="t('model.star_schema.add_dim_title')" width="480px" :close-on-click-modal="false">
+    <el-dialog v-model="addDimDialogVisible" :title="t('model.star_schema.add_dim_title')" width="min(480px, calc(100vw - 32px))" :close-on-click-modal="false">
       <el-form :model="addDimForm" label-width="100px" ref="addDimFormRef">
         <el-form-item :label="t('model.star_schema.dim_table')" prop="target_table" :rules="[{ required: true, message: t('model.star_schema.dim_table_required') }]">
           <el-select
@@ -245,6 +253,7 @@ const loadingTables = ref(false)
 const loadingRelated = ref(false)
 const loadingMetrics = ref(false)
 const loadError = ref('')
+const referenceError = ref('')
 
 const factTables = ref([])
 const factTablesReady = ref(false)
@@ -373,7 +382,8 @@ const loadAllDimensionTables = async () => {
     const res = await logicalTableAPI.listAll({ table_type: 'dimension' })
     allDimensionTables.value = res
   } catch (err) {
-    loadError.value = getModelErrorMessage(err, t, 'model.common.load_failed')
+    allDimensionTables.value = []
+    referenceError.value = t('model.common.reference_data_unavailable')
   }
 }
 
@@ -483,10 +493,21 @@ const onDimTableChange = async (dimTableId) => {
 }
 
 const handleAddDimRelation = async () => {
+  if (!canEditSelectedTable.value) {
+    ElMessage.error(t('model.common.permission_denied'))
+    return
+  }
   if (!addDimFormRef.value) return
   try {
     await addDimFormRef.value.validate()
   } catch {
+    return
+  }
+  const targetTableIsEditable = editableDimensionTables.value.some(
+    table => table.id === addDimForm.value.target_table
+  )
+  if (!targetTableIsEditable) {
+    ElMessage.error(t('model.common.permission_denied'))
     return
   }
   addingDim.value = true
@@ -509,6 +530,10 @@ const handleAddDimRelation = async () => {
 }
 
 const handleRemoveDimRelation = async (rel) => {
+  if (!canModifyDimensionRelation(rel)) {
+    ElMessage.error(t('model.common.permission_denied'))
+    return
+  }
   try {
     await ElMessageBox.confirm(
       t('model.star_schema.remove_confirm', { name: rel.target_table_name }),
@@ -547,6 +572,7 @@ watch(() => route.query.table_id, syncSelectedTableFromRoute)
 const reload = async () => {
   clearSelection()
   loadError.value = ''
+  referenceError.value = ''
   if (!authStore.hasPermission('model.logical_model.read')) {
     loadError.value = t('model.common.permission_denied')
     return
@@ -556,12 +582,12 @@ const reload = async () => {
   await syncSelectedTableFromRoute()
   if (loadError.value) return
   await loadAllDimensionTables()
-  if (loadError.value) return
   try {
     const res = await standardMetricAPI.listAll()
     allMetrics.value = res
   } catch (err) {
-    loadError.value = getModelErrorMessage(err, t, 'model.common.load_failed')
+    allMetrics.value = []
+    referenceError.value = t('model.common.reference_data_unavailable')
   }
 }
 
@@ -757,5 +783,19 @@ onBeforeUnmount(() => stopThemeObserver?.())
 
 .load-error {
   margin-top: 12px;
+}
+
+@media (max-width: 767px) {
+  .star-schema-view {
+    padding: 12px;
+  }
+
+  .fact-list-card {
+    margin-bottom: 16px;
+  }
+
+  .fact-detail-header {
+    flex-wrap: wrap;
+  }
 }
 </style>

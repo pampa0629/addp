@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"sort"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dataquality"
 	"github.com/addp/common/dbbridge"
@@ -23,10 +25,42 @@ import (
 )
 
 const (
-	qualityExecutionResultSchemaVersion = "addp.quality.execution-result/v1"
-	qualityWorkerLease                  = 30 * time.Minute
-	qualityWorkerPoll                   = 500 * time.Millisecond
+	qualityExecutionResultSchemaVersion    = "addp.quality.execution-result/v1"
+	qualityExecutionFailedCode             = "quality.execution.failed"
+	qualityExecutionAuthorizationMissing   = "quality.execution.authorization_missing"
+	qualityExecutionAuthorizationFailed    = "quality.execution.authorization_failed"
+	qualityExecutionEngineUnsupported      = "quality.execution.unsupported_engine"
+	qualityExecutionTargetConnectionFailed = "quality.execution.target_connection_failed"
+	qualityExecutionRuleSnapshotInvalid    = "quality.execution.rule_snapshot_invalid"
+	qualityExecutionNoRules                = "quality.execution.no_rule_applications"
+	qualityExecutionRuleCompileFailed      = "quality.execution.rule_compile_failed"
+	qualityExecutionSQLFailed              = "quality.execution.sql_execution_failed"
+	qualityExecutionResultInvalid          = "quality.execution.result_invalid"
+	qualityExecutionIssueReconcileFailed   = "quality.issue.reconcile_failed"
+	qualityWorkerLease                     = 30 * time.Minute
+	qualityWorkerPoll                      = 500 * time.Millisecond
 )
+
+type executionFailure struct {
+	code string
+	err  error
+}
+
+func (e *executionFailure) Error() string { return e.err.Error() }
+func (e *executionFailure) Unwrap() error { return e.err }
+func failExecution(code string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &executionFailure{code: code, err: err}
+}
+func executionFailureCode(err error) string {
+	var failure *executionFailure
+	if errors.As(err, &failure) && failure.code != "" {
+		return failure.code
+	}
+	return qualityExecutionFailedCode
+}
 
 type CheckExecutor struct {
 	systemClient           *commonClient.SystemServiceClient
@@ -104,7 +138,7 @@ func (e *CheckExecutor) RunCheckWithContext(
 		return "", err
 	}
 	if normalizedTriggerType != commonExecution.TriggerTypeManual {
-		return "", fmt.Errorf("quality check only supports manual trigger_type")
+		return "", fmt.Errorf("%w: quality check only supports manual trigger_type", commonAPI.ErrBadRequest)
 	}
 	normalizedSource := strings.TrimSpace(source)
 	if normalizedSource == "" {
@@ -113,11 +147,6 @@ func (e *CheckExecutor) RunCheckWithContext(
 	if userID <= 0 && parentExecutionID == nil {
 		return "", fmt.Errorf("quality check requires a user principal")
 	}
-	task, err := e.checkTaskRepo.Get(taskID, tenantID)
-	if err != nil {
-		return "", fmt.Errorf("load quality check task: %w", err)
-	}
-
 	executionID := uuid.NewString()
 	now := time.Now().UTC()
 	taskExec := &commonExecution.TaskExecution{
@@ -129,7 +158,8 @@ func (e *CheckExecutor) RunCheckWithContext(
 	if userID > 0 {
 		taskExec.TriggeredBy = intPtr(int(userID))
 	}
-	if _, err := e.checkTaskRepo.ClaimExecution(ctx, taskID, tenantID, taskExec); err != nil {
+	task, err := e.checkTaskRepo.ClaimExecution(ctx, taskID, tenantID, taskExec)
+	if err != nil {
 		return "", fmt.Errorf("claim quality check execution: %w", err)
 	}
 	authorization, err := e.issueExecutionAuthorization(ctx, tenantID, executionID, task.EngineID, userAccessToken, parentExecutionID)
@@ -273,13 +303,13 @@ func (e *CheckExecutor) processPending(ctx context.Context) {
 	if execErr != nil {
 		log.Printf("quality execution %s failed: %v", execution.ExecutionID, execErr)
 		fields["status"] = commonExecution.ExecutionStatusFailed
-		fields["error_details"] = commonModels.JSONMap{"code": "quality.execution.failed", "message": "quality check execution failed"}
+		fields["error_details"] = commonModels.JSONMap{"code": executionFailureCode(execErr), "message": "quality check execution failed"}
 	} else {
 		if err := e.issueRepo.Reconcile(ctx, int64(task.TenantID), execution.ExecutionID, observations, completedAt); err != nil {
 			execErr = fmt.Errorf("reconcile quality issues: %w", err)
 			log.Printf("quality execution %s issue reconciliation failed: %v", execution.ExecutionID, err)
 			fields["status"] = commonExecution.ExecutionStatusFailed
-			fields["error_details"] = commonModels.JSONMap{"code": "quality.issue.reconcile_failed", "message": "quality issue reconciliation failed"}
+			fields["error_details"] = commonModels.JSONMap{"code": qualityExecutionIssueReconcileFailed, "message": "quality issue reconciliation failed"}
 		} else {
 			fields["status"] = commonExecution.ExecutionStatusSuccess
 			fields["metadata"] = executionResultMetadata(result)
@@ -330,27 +360,27 @@ func executionResultMetadata(result *ExecutionResult) commonModels.JSONMap {
 
 func (e *CheckExecutor) doCheck(ctx context.Context, task *models.CheckTask, execution *commonExecution.TaskExecution) (*ExecutionResult, []models.IssueObservation, error) {
 	if execution.ExecutionAuthorizationID == nil {
-		return nil, nil, fmt.Errorf("execution authorization is missing")
+		return nil, nil, failExecution(qualityExecutionAuthorizationMissing, fmt.Errorf("execution authorization is missing"))
 	}
 	engineAccess, err := e.systemClient.WithTenantID(uint(task.TenantID)).GetExecutionEngineAccess(ctx, strconv.FormatInt(*execution.ExecutionAuthorizationID, 10), commonClient.ExecutionEngineAccessRequest{
 		ExecutionID: execution.ExecutionID, EngineID: strconv.FormatInt(task.EngineID, 10), RequiredEffects: []string{"read"},
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("get authorized engine access: %w", err)
+		return nil, nil, failExecution(qualityExecutionAuthorizationFailed, fmt.Errorf("get authorized engine access: %w", err))
 	}
 	if engineAccess.Engine == nil || !strings.EqualFold(engineAccess.Engine.EngineType, "postgresql") {
-		return nil, nil, fmt.Errorf("quality v1 only supports PostgreSQL engines")
+		return nil, nil, failExecution(qualityExecutionEngineUnsupported, fmt.Errorf("quality v1 only supports PostgreSQL engines"))
 	}
 	targetDB, err := dbbridge.GetOrCreatePool(engineAccess.Engine, dbbridge.DefaultPoolConfig())
 	if err != nil {
-		return nil, nil, fmt.Errorf("connect to authorized engine: %w", err)
+		return nil, nil, failExecution(qualityExecutionTargetConnectionFailed, fmt.Errorf("connect to authorized engine: %w", err))
 	}
 	ruleApps, err := snapshotRuleApplications(execution.ExecutionConfig)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, failExecution(qualityExecutionRuleSnapshotInvalid, err)
 	}
 	if len(ruleApps) == 0 {
-		return nil, nil, fmt.Errorf("quality check has no enabled rule applications")
+		return nil, nil, failExecution(qualityExecutionNoRules, fmt.Errorf("quality check has no enabled rule applications"))
 	}
 
 	ruleDetails := make([]RuleResult, 0)
@@ -358,20 +388,20 @@ func (e *CheckExecutor) doCheck(ctx context.Context, task *models.CheckTask, exe
 	for _, application := range ruleApps {
 		document, parseErr := dataquality.Parse(application.RuleConfig)
 		if parseErr != nil {
-			return nil, nil, fmt.Errorf("rule application %d has invalid snapshot: %w", application.ID, parseErr)
+			return nil, nil, failExecution(qualityExecutionRuleSnapshotInvalid, fmt.Errorf("rule application %d has invalid snapshot: %w", application.ID, parseErr))
 		}
 		for _, rule := range document.EnabledRules() {
 			compiled, compileErr := e.sqlGen.GenerateCheckSQL(application.SchemaName, application.Table, application.ColumnName, rule)
 			if compileErr != nil {
-				return nil, nil, fmt.Errorf("compile rule application %d (%s): %w", application.ID, rule.Type, compileErr)
+				return nil, nil, failExecution(qualityExecutionRuleCompileFailed, fmt.Errorf("compile rule application %d (%s): %w", application.ID, rule.Type, compileErr))
 			}
 			var counts CheckCounts
 			if queryErr := targetDB.WithContext(ctx).Raw(compiled.SQL, compiled.Args...).Scan(&counts).Error; queryErr != nil {
-				return nil, nil, fmt.Errorf("execute rule application %d (%s): %w", application.ID, rule.Type, queryErr)
+				return nil, nil, failExecution(qualityExecutionSQLFailed, fmt.Errorf("execute rule application %d (%s): %w", application.ID, rule.Type, queryErr))
 			}
 			passRate, passed, countErr := evaluateCheckCounts(counts)
 			if countErr != nil {
-				return nil, nil, fmt.Errorf("rule application %d (%s) returned invalid counts: %w", application.ID, rule.Type, countErr)
+				return nil, nil, failExecution(qualityExecutionResultInvalid, fmt.Errorf("rule application %d (%s) returned invalid counts: %w", application.ID, rule.Type, countErr))
 			}
 			detail := RuleResult{RuleApplicationID: application.ID, Type: rule.Type, Severity: rule.Severity, Message: rule.Message, Column: application.ColumnName, Table: application.Table, Schema: application.SchemaName, PassRate: passRate, FailedCount: counts.FailedCount, TotalCount: counts.TotalCount, Passed: passed}
 			ruleDetails = append(ruleDetails, detail)
@@ -380,7 +410,7 @@ func (e *CheckExecutor) doCheck(ctx context.Context, task *models.CheckTask, exe
 	}
 	result, err := aggregateExecutionResult(ruleDetails)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, failExecution(qualityExecutionResultInvalid, err)
 	}
 	return result, observations, nil
 }

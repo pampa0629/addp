@@ -10,11 +10,12 @@
         <el-tag :type="typeTagType(metric.type)" size="small" v-if="metric.type">
           {{ typeLabel(metric.type) }}
         </el-tag>
+        <el-tag v-if="isDirty" type="warning" size="small">{{ $t('standard.common.unsaved') }}</el-tag>
       </div>
       <div class="header-right">
-        <el-button type="primary" @click="saveChanges" :loading="saving">{{ $t('standard.common.save') }}</el-button>
-        <el-button type="success" @click="handleApprove" v-if="metric.status === 'draft'" :disabled="saving">{{ $t('standard.common.approve') }}</el-button>
-        <el-button type="warning" @click="handleDeprecate" v-if="metric.status === 'approved'" :disabled="saving">{{ $t('standard.common.deprecate') }}</el-button>
+        <el-button v-if="canUpdate" type="primary" @click="saveChanges" :loading="saving">{{ $t('standard.common.save') }}</el-button>
+        <el-button v-if="canApprove && metric.status === 'draft'" type="success" @click="handleApprove" :loading="isActionLocked(actionKey)" :disabled="saving">{{ $t('standard.common.approve') }}</el-button>
+        <el-button v-if="canOffline && metric.status === 'approved'" type="warning" @click="handleDeprecate" :loading="isActionLocked(actionKey)" :disabled="saving">{{ $t('standard.common.deprecate') }}</el-button>
       </div>
     </div>
 
@@ -23,7 +24,7 @@
         <!-- 基本信息 -->
         <el-card class="section-card">
           <template #header><h3>{{ $t('standard.metric.basicInfo') }}</h3></template>
-          <el-form :model="metric" label-width="100px" size="default">
+          <el-form :model="metric" label-width="100px" size="default" :disabled="!canUpdate">
             <el-row :gutter="20">
               <el-col :span="12">
                 <el-form-item :label="$t('standard.metric.nameLabel')">
@@ -79,7 +80,7 @@
         </el-card>
 
         <!-- 关联文档 -->
-        <DocumentPanel v-if="metric.id" entity-type="metric" :entity-id="metric.id" />
+        <DocumentPanel v-if="metric.id" entity-type="metric" :entity-id="metric.id" v-model:entity-version="metric.version" />
       </el-col>
 
       <el-col :span="8">
@@ -117,21 +118,40 @@ import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { metricAPI, metricCategoryAPI } from '../api/standard'
+import { elementAPI, metricAPI, metricCategoryAPI } from '../api/standard'
 import DocumentPanel from '../components/DocumentPanel.vue'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 import { formatStandardDateTime } from '../utils/dateTime'
+import { useStandardPermissions } from '../composables/useStandardPermissions'
+import { useActionLock } from '../composables/useActionLock'
+import { useUnsavedChanges } from '../composables/useUnsavedChanges'
 
 const { t, locale } = useI18n()
+const { canUpdate, canApprove, canOffline } = useStandardPermissions('metric')
+const { isLocked: isActionLocked, runLocked } = useActionLock()
 const router = useRouter()
 const route = useRoute()
 const loading = ref(false)
 const saving = ref(false)
+const actionKey = computed(() => `metric:${route.params.id}`)
 const metric = ref({})
 const categories = ref([])
 const atomicMetrics = ref([])
 const relatedElements = ref([])
+const editableState = computed(() => {
+  const {
+    id,
+    status,
+    created_at,
+    updated_at,
+    created_by,
+    updated_by,
+    ...editable
+  } = metric.value
+  return editable
+})
+const { isDirty, markSaved } = useUnsavedChanges({ state: editableState, t })
 
 const categoryTree = computed(() => buildTree(categories.value))
 function buildTree(list, parentId = null) {
@@ -155,12 +175,27 @@ const loadMetric = async () => {
     const res = await metricAPI.get(route.params.id)
     metric.value = res || {}
     if (!metric.value.tags) metric.value.tags = []
+    await loadRelatedElements(metric.value.element_ids || [])
+    markSaved()
   } catch (e) {
     ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
     goBack()
   } finally {
     loading.value = false
   }
+}
+
+async function loadRelatedElements(elementIDs) {
+  relatedElements.value = []
+  if (!elementIDs.length) return
+  const results = await Promise.all(elementIDs.map(async id => {
+    try {
+      return await elementAPI.get(id)
+    } catch {
+      return null
+    }
+  }))
+  relatedElements.value = results.filter(Boolean)
 }
 
 const loadCategories = async () => {
@@ -182,6 +217,7 @@ const loadAtomicMetrics = async () => {
 }
 
 const saveChanges = async () => {
+  if (saving.value) return
   saving.value = true
   try {
     await metricAPI.update(route.params.id, metric.value)
@@ -195,25 +231,37 @@ const saveChanges = async () => {
 }
 
 const handleApprove = async () => {
-  try {
-    await ElMessageBox.confirm(t('standard.metric.confirmApprove'), t('standard.common.hint'), { type: 'info' })
-    await metricAPI.approve(route.params.id)
-    ElMessage.success(t('standard.common.approveSuccess'))
-    await loadMetric()
-  } catch (e) {
-    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.approveFailed'))
+  if (isDirty.value) {
+    ElMessage.warning(t('standard.common.saveBeforeAction'))
+    return
   }
+  await runLocked(actionKey.value, async () => {
+    try {
+      await ElMessageBox.confirm(t('standard.metric.confirmApprove'), t('standard.common.hint'), { type: 'info' })
+      await metricAPI.approve(route.params.id, metric.value.version)
+      ElMessage.success(t('standard.common.approveSuccess'))
+      await loadMetric()
+    } catch (e) {
+      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.approveFailed'))
+    }
+  })
 }
 
 const handleDeprecate = async () => {
-  try {
-    await ElMessageBox.confirm(t('standard.metric.confirmDeprecate'), t('standard.common.hint'), { type: 'warning' })
-    await metricAPI.deprecate(route.params.id)
-    ElMessage.success(t('standard.common.deprecated'))
-    await loadMetric()
-  } catch (e) {
-    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t))
+  if (isDirty.value) {
+    ElMessage.warning(t('standard.common.saveBeforeAction'))
+    return
   }
+  await runLocked(actionKey.value, async () => {
+    try {
+      await ElMessageBox.confirm(t('standard.metric.confirmDeprecate'), t('standard.common.hint'), { type: 'warning' })
+      await metricAPI.deprecate(route.params.id, metric.value.version)
+      ElMessage.success(t('standard.common.deprecated'))
+      await loadMetric()
+    } catch (e) {
+      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t))
+    }
+  })
 }
 
 watch(() => route.params.id, () => {

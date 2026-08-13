@@ -10,7 +10,7 @@
           <el-radio-button value="composite">{{ $t('standard.metric.composite') }}</el-radio-button>
         </el-radio-group>
       </div>
-      <el-button type="primary" @click="openCreateDialog">{{ $t('standard.metric.create') }}</el-button>
+      <el-button v-if="canCreate" type="primary" @click="openCreateDialog">{{ $t('standard.metric.create') }}</el-button>
     </div>
 
     <el-row :gutter="16">
@@ -20,7 +20,7 @@
           <template #header>
             <div class="card-header">
               <span>{{ $t('standard.metric.categoryTitle') }}</span>
-              <el-button link size="small" @click="showCategoryDialog = true">{{ $t('standard.metric.categoryManageBtn') }}</el-button>
+              <el-button v-if="canManageCategories" link size="small" @click="showCategoryDialog = true">{{ $t('standard.metric.categoryManageBtn') }}</el-button>
             </div>
           </template>
           <div class="category-item" :class="{ active: !selectedCategoryID }" @click="selectCategory(null)">
@@ -72,8 +72,8 @@
               <template #default="{ row }">
                 <div class="table-actions">
                 <el-button link size="small" @click.stop="openDetail(row)">{{ $t('standard.common.detail') }}</el-button>
-                <el-button link size="small" type="success" v-if="row.status === 'draft'" @click.stop="approveMetric(row)">{{ $t('standard.common.approve') }}</el-button>
-                <el-button link size="small" type="danger" @click.stop="deleteMetric(row)">{{ $t('standard.common.delete') }}</el-button>
+                <el-button v-if="canApprove && row.status === 'draft'" link size="small" type="success" :loading="isActionLocked(`metric:${row.id}`)" @click.stop="approveMetric(row)">{{ $t('standard.common.approve') }}</el-button>
+                <el-button v-if="canDelete" link size="small" type="danger" :disabled="isActionLocked(`metric:${row.id}`)" @click.stop="deleteMetric(row)">{{ $t('standard.common.delete') }}</el-button>
                 </div>
               </template>
             </el-table-column>
@@ -161,14 +161,14 @@
               <span class="tree-name">{{ data.name }}</span>
               <span class="tree-code">{{ data.code }}</span>
               <div class="tree-actions">
-                <el-button link size="small" @click.stop="addSubCategory(data.id)">{{ $t('standard.metric.addSubCategory') }}</el-button>
-                <el-button link size="small" type="danger" @click.stop="deleteCategory(data)">{{ $t('standard.common.delete') }}</el-button>
+                <el-button v-if="canCreate" link size="small" @click.stop="addSubCategory(data.id)">{{ $t('standard.metric.addSubCategory') }}</el-button>
+                <el-button v-if="canDelete" link size="small" type="danger" :loading="isActionLocked(`metric-category:${data.id}`)" @click.stop="deleteCategory(data)">{{ $t('standard.common.delete') }}</el-button>
               </div>
             </div>
           </template>
         </el-tree>
         <el-divider />
-        <el-form :model="categoryForm" label-width="80px" size="small">
+        <el-form v-if="canCreate" :model="categoryForm" label-width="80px" size="small">
           <el-row :gutter="12">
             <el-col :span="12">
               <el-form-item :label="$t('standard.common.name')">
@@ -207,8 +207,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { metricAPI, metricCategoryAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
+import { useStandardPermissions } from '../composables/useStandardPermissions'
+import { useActionLock } from '../composables/useActionLock'
+import { createLatestRequestCoordinator } from '@common-ui'
 
 const { t } = useI18n()
+const { canCreate, canDelete, canApprove } = useStandardPermissions('metric')
+const { isLocked: isActionLocked, runLocked } = useActionLock()
+const canManageCategories = computed(() => canCreate.value || canDelete.value)
 const router = useRouter()
 const route = useRoute()
 const metrics = ref([])
@@ -227,6 +233,7 @@ const selectedCategoryID = ref(route.query.category_id ? Number(route.query.cate
 const showCreateDialog = ref(false)
 const showCategoryDialog = ref(false)
 const formRef = ref(null)
+const listRequests = createLatestRequestCoordinator()
 
 const form = ref({ name: '', code: '', type: 'atomic', definition: '', formula: '', category_id: null, base_metric_id: null })
 const categoryForm = ref({ name: '', code: '', parent_id: null })
@@ -247,19 +254,22 @@ const statusLabel = (s) => ({ draft: t('standard.common.draft'), approved: t('st
 const statusType = (s) => ({ draft: 'info', approved: 'success', deprecated: 'warning' }[s] || '')
 
 const loadMetrics = async () => {
+  const params = { page: page.value, page_size: pageSize.value, keyword: keyword.value, type: filterType.value, status: filterStatus.value }
+  if (selectedCategoryID.value) params.category_id = selectedCategoryID.value
+  const request = listRequests.begin(JSON.stringify(params))
   loading.value = true
   try {
-    const params = { page: page.value, page_size: pageSize.value, keyword: keyword.value, type: filterType.value, status: filterStatus.value }
-    if (selectedCategoryID.value) params.category_id = selectedCategoryID.value
     const res = await metricAPI.list(params)
+    if (!listRequests.isCurrent(request, JSON.stringify(params))) return
     metrics.value = res.data || []
     total.value = res.total || 0
   } catch (e) {
+    if (!listRequests.isCurrent(request, JSON.stringify(params))) return
     metrics.value = []
     total.value = 0
     ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
   } finally {
-    loading.value = false
+    if (listRequests.isCurrent(request, JSON.stringify(params))) loading.value = false
   }
 }
 
@@ -312,13 +322,14 @@ const selectCategory = (id) => {
 }
 
 const createMetric = async () => {
-  if (!formRef.value) return
+  if (saving.value || !formRef.value) return
+  saving.value = true
   try {
     await formRef.value.validate()
   } catch {
+    saving.value = false
     return
   }
-  saving.value = true
   try {
     await metricAPI.create(form.value)
     ElMessage.success(t('standard.common.createSuccess'))
@@ -342,28 +353,33 @@ const openDetail = (row) => {
 }
 
 const approveMetric = async (row) => {
-  try {
-    await ElMessageBox.confirm(t('standard.metric.confirmApprove'), t('standard.common.hint'), { type: 'info' })
-    await metricAPI.approve(row.id)
-    ElMessage.success(t('standard.common.approveSuccess'))
-    loadMetrics()
-  } catch (e) {
-    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.approveFailed'))
-  }
+  await runLocked(`metric:${row.id}`, async () => {
+    try {
+      await ElMessageBox.confirm(t('standard.metric.confirmApprove'), t('standard.common.hint'), { type: 'info' })
+      await metricAPI.approve(row.id, row.version)
+      ElMessage.success(t('standard.common.approveSuccess'))
+      await loadMetrics()
+    } catch (e) {
+      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.approveFailed'))
+    }
+  })
 }
 
 const deleteMetric = async (row) => {
-  try {
-    await ElMessageBox.confirm(t('standard.metric.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
-    await metricAPI.delete(row.id)
-    ElMessage.success(t('standard.common.deleteSuccess'))
-    loadMetrics()
-  } catch (e) {
-    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
-  }
+  await runLocked(`metric:${row.id}`, async () => {
+    try {
+      await ElMessageBox.confirm(t('standard.metric.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
+      await metricAPI.delete(row.id)
+      ElMessage.success(t('standard.common.deleteSuccess'))
+      await loadMetrics()
+    } catch (e) {
+      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
+    }
+  })
 }
 
 const createCategory = async () => {
+  if (saving.value) return
   saving.value = true
   try {
     await metricCategoryAPI.create(categoryForm.value)
@@ -382,14 +398,16 @@ const addSubCategory = (parentId) => {
 }
 
 const deleteCategory = async (data) => {
-  try {
-    await ElMessageBox.confirm(t('standard.metric.confirmDeleteCategory', { name: data.name }), t('standard.common.hint'), { type: 'warning' })
-    await metricCategoryAPI.delete(data.id)
-    ElMessage.success(t('standard.common.deleteSuccess'))
-    await loadCategories()
-  } catch (e) {
-    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
-  }
+  await runLocked(`metric-category:${data.id}`, async () => {
+    try {
+      await ElMessageBox.confirm(t('standard.metric.confirmDeleteCategory', { name: data.name }), t('standard.common.hint'), { type: 'warning' })
+      await metricCategoryAPI.delete(data.id)
+      ElMessage.success(t('standard.common.deleteSuccess'))
+      await loadCategories()
+    } catch (e) {
+      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
+    }
+  })
 }
 
 onMounted(async () => {

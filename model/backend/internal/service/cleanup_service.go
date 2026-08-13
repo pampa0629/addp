@@ -214,6 +214,7 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 }
 
 type modelCleanupCandidates struct {
+	TenantID           int64
 	dwLayers           []models.DWLayer
 	entities           []models.Entity
 	entityAttributes   []models.EntityAttribute
@@ -252,7 +253,7 @@ func (s *CleanupService) listCandidates(ctx context.Context, tenantID uint, clea
 }
 
 func (s *CleanupService) listTenantCandidates(ctx context.Context, tenantID int64) (modelCleanupCandidates, error) {
-	var candidates modelCleanupCandidates
+	candidates := modelCleanupCandidates{TenantID: tenantID}
 	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&candidates.dwLayers).Error; err != nil {
 		return candidates, err
 	}
@@ -298,7 +299,9 @@ func (s *CleanupService) logicalCleanup(ctx context.Context, candidates modelCle
 			stats.SkippedItems++
 			continue
 		}
-		if err := s.db.WithContext(ctx).Model(&models.Entity{}).Where("id = ?", entity.ID).Update("status", "draft").Error; err != nil {
+		if err := s.db.WithContext(ctx).Model(&models.Entity{}).
+			Where("id = ? AND tenant_id = ?", entity.ID, entity.TenantID).
+			Update("status", "draft").Error; err != nil {
 			stats.Errors = append(stats.Errors, fmt.Sprintf("draft entity %d failed: %v", entity.ID, err))
 			continue
 		}
@@ -309,7 +312,9 @@ func (s *CleanupService) logicalCleanup(ctx context.Context, candidates modelCle
 			stats.SkippedItems++
 			continue
 		}
-		if err := s.db.WithContext(ctx).Model(&models.LogicalTable{}).Where("id = ?", table.ID).Update("status", "draft").Error; err != nil {
+		if err := s.db.WithContext(ctx).Model(&models.LogicalTable{}).
+			Where("id = ? AND tenant_id = ?", table.ID, table.TenantID).
+			Update("status", "draft").Error; err != nil {
 			stats.Errors = append(stats.Errors, fmt.Sprintf("draft logical table %d failed: %v", table.ID, err))
 			continue
 		}
@@ -319,25 +324,30 @@ func (s *CleanupService) logicalCleanup(ctx context.Context, candidates modelCle
 
 func (s *CleanupService) physicalCleanup(ctx context.Context, candidates modelCleanupCandidates, stats *ModelCleanupStats) {
 	batches := []struct {
-		model interface{}
-		ids   []int64
-		name  string
+		model        interface{}
+		ids          []int64
+		name         string
+		tenantScoped bool
 	}{
-		{model: &models.FactMetricMapping{}, ids: factMetricMappingIDs(candidates.factMetricMappings), name: "fact metric mappings"},
-		{model: &models.TableRelation{}, ids: tableRelationIDs(candidates.tableRelations), name: "table relations"},
+		{model: &models.FactMetricMapping{}, ids: factMetricMappingIDs(candidates.factMetricMappings), name: "fact metric mappings", tenantScoped: true},
+		{model: &models.TableRelation{}, ids: tableRelationIDs(candidates.tableRelations), name: "table relations", tenantScoped: true},
 		{model: &models.LogicalField{}, ids: logicalFieldIDs(candidates.logicalFields), name: "logical fields"},
-		{model: &models.LogicalTable{}, ids: logicalTableIDs(candidates.logicalTables), name: "logical tables"},
-		{model: &models.EntityRelation{}, ids: entityRelationIDs(candidates.entityRelations), name: "entity relations"},
+		{model: &models.LogicalTable{}, ids: logicalTableIDs(candidates.logicalTables), name: "logical tables", tenantScoped: true},
+		{model: &models.EntityRelation{}, ids: entityRelationIDs(candidates.entityRelations), name: "entity relations", tenantScoped: true},
 		{model: &models.EntityAttribute{}, ids: entityAttributeIDs(candidates.entityAttributes), name: "entity attributes"},
-		{model: &models.Entity{}, ids: entityIDs(candidates.entities), name: "entities"},
-		{model: &models.DWLayer{}, ids: dwLayerIDs(candidates.dwLayers), name: "dw layers"},
+		{model: &models.Entity{}, ids: entityIDs(candidates.entities), name: "entities", tenantScoped: true},
+		{model: &models.DWLayer{}, ids: dwLayerIDs(candidates.dwLayers), name: "dw layers", tenantScoped: true},
 	}
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, batch := range batches {
 			if len(batch.ids) == 0 {
 				continue
 			}
-			if err := tx.Unscoped().Delete(batch.model, batch.ids).Error; err != nil {
+			query := tx.Unscoped()
+			if batch.tenantScoped {
+				query = query.Where("tenant_id = ?", candidates.TenantID)
+			}
+			if err := query.Delete(batch.model, batch.ids).Error; err != nil {
 				return fmt.Errorf("delete %s failed: %w", batch.name, err)
 			}
 		}

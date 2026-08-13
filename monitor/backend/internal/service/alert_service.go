@@ -21,6 +21,7 @@ var ErrAlertNotActive = errors.New("alert incident is not active")
 var supportedAlertCodes = []string{
 	"recovery_circuit_open", "recovery_half_open", "recovery_waiting", "recovery_ready",
 	"retention_critical", "retention_degraded", "checkpoint_stalled", "diagnostics_error", "schema_change_blocked",
+	"source_recovery_critical", "source_recovery_unavailable", "source_transactions_unavailable",
 }
 
 type observationSignal struct {
@@ -85,66 +86,37 @@ func (s *AlertService) Evaluate(ctx context.Context, now time.Time) error {
 }
 
 func (s *AlertService) evaluateContinuousSignals(ctx context.Context, now time.Time) ([]activeAlertSignal, error) {
-	var executions []commonExecution.TaskExecution
-	err := s.db.WithContext(ctx).
+	latestIDs := s.db.WithContext(ctx).Table("common.task_executions").Select("MAX(id)").
 		Where("module = ? AND task_type = ?", commonExecution.ModuleTransfer, commonExecution.TaskTypeSync).
 		Where("source_task_id IS NOT NULL AND source_task_id <> ''").
 		Where("parent_execution_id IS NULL").
-		Where("status IN ?", []string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning}).
+		Group("tenant_id, module, task_type, source_task_id")
+	var executions []commonExecution.TaskExecution
+	err := s.db.WithContext(ctx).
+		Where("id IN (?)", latestIDs).
 		Order("id DESC").Find(&executions).Error
 	if err != nil {
 		return nil, err
 	}
 	signals := make([]activeAlertSignal, 0)
-	seenTasks := make(map[string]struct{})
 	for i := range executions {
 		if executions[i].SourceTaskID == nil || !isContinuousExecution(executions[i]) {
 			continue
 		}
-		taskKey := fmt.Sprintf("%d\x00%s\x00%s\x00%s", executions[i].TenantID, executions[i].Module, executions[i].TaskType, *executions[i].SourceTaskID)
-		if _, exists := seenTasks[taskKey]; exists {
-			continue
-		}
-		seenTasks[taskKey] = struct{}{}
 		for _, observation := range deriveObservationSignals(executions[i], now) {
+			if executions[i].Status == commonExecution.ExecutionStatusFailed && observation.Code != "schema_change_blocked" {
+				continue
+			}
+			if executions[i].Status != commonExecution.ExecutionStatusPending &&
+				executions[i].Status != commonExecution.ExecutionStatusRunning &&
+				executions[i].Status != commonExecution.ExecutionStatusFailed {
+				continue
+			}
 			signals = append(signals, activeAlertSignal{
 				TenantID: executions[i].TenantID, Module: executions[i].Module, TaskType: executions[i].TaskType,
 				SourceTaskID: *executions[i].SourceTaskID, ExecutionID: executions[i].ExecutionID,
 				Code: observation.Code, Severity: observation.Severity, Details: observation.Details,
 				Fingerprint: alertFingerprint(executions[i], observation.Code),
-			})
-		}
-	}
-	var blockedExecutions []commonExecution.TaskExecution
-	err = s.db.WithContext(ctx).
-		Where("module = ? AND task_type = ?", commonExecution.ModuleTransfer, commonExecution.TaskTypeSync).
-		Where("source_task_id IS NOT NULL AND source_task_id <> ''").
-		Where("parent_execution_id IS NULL").
-		Where("status = ?", commonExecution.ExecutionStatusFailed).
-		Where(schemaChangePendingCondition(s.db)).
-		Order("id DESC").Find(&blockedExecutions).Error
-	if err != nil {
-		return nil, err
-	}
-	seenBlockedTasks := make(map[string]struct{})
-	for i := range blockedExecutions {
-		if blockedExecutions[i].SourceTaskID == nil || !isContinuousExecution(blockedExecutions[i]) {
-			continue
-		}
-		taskKey := fmt.Sprintf("%d\x00%s\x00%s\x00%s", blockedExecutions[i].TenantID, blockedExecutions[i].Module, blockedExecutions[i].TaskType, *blockedExecutions[i].SourceTaskID)
-		if _, exists := seenBlockedTasks[taskKey]; exists {
-			continue
-		}
-		seenBlockedTasks[taskKey] = struct{}{}
-		for _, observation := range deriveObservationSignals(blockedExecutions[i], now) {
-			if observation.Code != "schema_change_blocked" {
-				continue
-			}
-			signals = append(signals, activeAlertSignal{
-				TenantID: blockedExecutions[i].TenantID, Module: blockedExecutions[i].Module, TaskType: blockedExecutions[i].TaskType,
-				SourceTaskID: *blockedExecutions[i].SourceTaskID, ExecutionID: blockedExecutions[i].ExecutionID,
-				Code: observation.Code, Severity: observation.Severity, Details: observation.Details,
-				Fingerprint: alertFingerprint(blockedExecutions[i], observation.Code),
 			})
 		}
 	}
@@ -436,7 +408,7 @@ func deriveObservationSignals(execution commonExecution.TaskExecution, now time.
 	metadata := map[string]interface{}(execution.Metadata)
 	continuous, _ := metadata["continuous"].(map[string]interface{})
 	diagnostics, _ := continuous["diagnostics"].(map[string]interface{})
-	signals := make([]observationSignal, 0, 4)
+	signals := make([]observationSignal, 0, 7)
 	circuit, _ := metadata["recovery_circuit_state"].(string)
 	notBefore, _ := metadata["recovery_not_before"].(string)
 	if circuit == "open" {
@@ -462,6 +434,25 @@ func deriveObservationSignals(execution commonExecution.TaskExecution, now time.
 	if message, _ := diagnostics["error"].(string); message != "" {
 		signals = append(signals, observationSignal{"diagnostics_error", monitorModels.AlertSeverityWarning, commonModels.JSONMap{"error": message}})
 	}
+	capture, _ := continuous["capture"].(map[string]interface{})
+	generation := capture["generation"]
+	sourceRecovery, _ := capture["source_recovery"].(map[string]interface{})
+	if health, _ := sourceRecovery["health"].(string); health == "critical" {
+		signals = append(signals, observationSignal{"source_recovery_critical", monitorModels.AlertSeverityCritical, captureObservationDetails(generation, sourceRecovery, []string{
+			"schema_version", "provider", "health", "capture_position", "current_position", "earliest_available_position",
+			"position_headroom", "earliest_available_at", "window_seconds", "fra_used_percent", "fra_reclaimable_percent", "sampled_at",
+		})})
+	} else if health == "unknown" {
+		signals = append(signals, observationSignal{"source_recovery_unavailable", monitorModels.AlertSeverityWarning, captureObservationDetails(generation, sourceRecovery, []string{
+			"schema_version", "provider", "health", "sampled_at",
+		})})
+	}
+	sourceTransactions, _ := capture["source_transactions"].(map[string]interface{})
+	if status, _ := sourceTransactions["status"].(string); status == "unavailable" {
+		signals = append(signals, observationSignal{"source_transactions_unavailable", monitorModels.AlertSeverityWarning, captureObservationDetails(generation, sourceTransactions, []string{
+			"schema_version", "provider", "status", "sampled_at",
+		})})
+	}
 	schemaChange, _ := continuous["schema_change"].(map[string]interface{})
 	if status, _ := schemaChange["status"].(string); status == "pending" {
 		details := commonModels.JSONMap{}
@@ -475,11 +466,17 @@ func deriveObservationSignals(execution commonExecution.TaskExecution, now time.
 	return signals
 }
 
-func schemaChangePendingCondition(db *gorm.DB) string {
-	if db.Dialector.Name() == "postgres" {
-		return "metadata #>> '{continuous,schema_change,status}' = 'pending'"
+func captureObservationDetails(generation interface{}, facts map[string]interface{}, allowed []string) commonModels.JSONMap {
+	details := commonModels.JSONMap{}
+	if generation != nil {
+		details["generation"] = generation
 	}
-	return "json_extract(metadata, '$.continuous.schema_change.status') = 'pending'"
+	for _, key := range allowed {
+		if value, exists := facts[key]; exists {
+			details[key] = value
+		}
+	}
+	return details
 }
 
 func alertFingerprint(execution commonExecution.TaskExecution, code string) string {

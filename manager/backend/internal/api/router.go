@@ -1,8 +1,10 @@
 package api
 
 import (
+	"net/http"
 	"strings"
 
+	"github.com/addp/common/buildinfo"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
 	"github.com/addp/common/middleware/auth"
@@ -65,10 +67,7 @@ func SetupRouter(
 
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"status":  "ok",
-			"service": "manager",
-		})
+		c.JSON(http.StatusOK, buildinfo.Health("manager"))
 	})
 
 	// 根路由

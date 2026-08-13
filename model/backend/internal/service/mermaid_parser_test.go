@@ -1,6 +1,10 @@
 package service
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
 
 func TestParseMermaidERRejectsUnsupportedOrIncompleteInput(t *testing.T) {
 	tests := []string{
@@ -53,5 +57,20 @@ customer {
 	attribute := entity.Attributes[0]
 	if attribute.DisplayName != "Display Name" || attribute.Nullable {
 		t.Fatalf("unexpected attribute metadata: %+v", attribute)
+	}
+}
+
+func TestParseMermaidERRejectsValuesBeyondDatabaseLengths(t *testing.T) {
+	longCode := strings.Repeat("a", 101)
+	longName := strings.Repeat("界", 201)
+	tests := []string{
+		fmt.Sprintf("erDiagram\n%s {\n bigint id PK\n}", longCode),
+		fmt.Sprintf("erDiagram\n%%%% addp:entity {\"code\":\"customer\",\"name\":\"%s\"}\ncustomer {\n bigint id PK\n}", longName),
+		fmt.Sprintf("erDiagram\ncustomer {\n bigint id PK\n}\norder {\n bigint order_id PK\n}\ncustomer ||--o{ order : %s", longName),
+	}
+	for _, input := range tests {
+		if _, err := ParseMermaidER(input); err == nil {
+			t.Fatal("expected parser to reject overlong value")
+		}
 	}
 }

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   buildContinuousPartitionRows,
   buildContinuousSignals,
+  getContinuousCapture,
   hasContinuousExecutionMetadata
 } from '../../../common-frontend/basic/src/utils/continuousExecution.js'
 
@@ -80,4 +81,34 @@ test('derives schema change blocked only from the owner pending projection', () 
   for (const status of ['applied', 'stopped']) {
     assert.equal(buildContinuousSignals({ continuous: { schema_change: { status } } }, 'failed', now).length, 0)
   }
+})
+
+test('derives source recovery and observation availability signals without transaction thresholds', () => {
+  const critical = buildContinuousSignals({
+    continuous: {
+      capture: {
+        generation: 1,
+        source_recovery: { health: 'critical', capture_position: '100', earliest_available_position: '110' },
+        source_transactions: { status: 'available', active_count: 3, oldest_duration_seconds: 86400, used_undo_blocks: '999999' }
+      }
+    }
+  }, 'running', now)
+  assert.deepEqual(critical.map(signal => [signal.code, signal.severity]), [['source_recovery_critical', 'critical']])
+
+  const unavailable = buildContinuousSignals({
+    continuous: {
+      capture: {
+        source_recovery: { health: 'unknown' },
+        source_transactions: { status: 'unavailable' }
+      }
+    }
+  }, 'running', now)
+  assert.deepEqual(unavailable.map(signal => [signal.code, signal.severity]), [
+    ['source_recovery_unavailable', 'warning'],
+    ['source_transactions_unavailable', 'warning']
+  ])
+
+  assert.equal(buildContinuousSignals({ continuous: { capture: { generation: 1 } } }, 'running', now).length, 0)
+  assert.deepEqual(getContinuousCapture({ continuous: { capture: { generation: 1 } } }), { generation: 1 })
+  assert.deepEqual(getContinuousCapture({ continuous: { capture: [] } }), {})
 })

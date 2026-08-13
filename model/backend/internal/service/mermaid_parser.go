@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 var mermaidIdentifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
@@ -187,7 +188,29 @@ func ParseMermaidER(code string) (*MermaidERParser, error) {
 			}
 		}
 	}
+	if err := validateMermaidStorageLengths(parser); err != nil {
+		return nil, err
+	}
 	return parser, nil
+}
+
+func validateMermaidStorageLengths(parser *MermaidERParser) error {
+	for _, entity := range parser.Entities {
+		if utf8.RuneCountInString(entity.Name) > 100 || utf8.RuneCountInString(entity.DisplayName) > 200 {
+			return fmt.Errorf("实体名称超过存储长度限制: %s", entity.Name)
+		}
+		for _, attribute := range entity.Attributes {
+			if utf8.RuneCountInString(attribute.Name) > 200 || utf8.RuneCountInString(attribute.DisplayName) > 200 {
+				return fmt.Errorf("实体 %s 的属性名称超过存储长度限制: %s", entity.Name, attribute.Name)
+			}
+		}
+	}
+	for _, relation := range parser.Relations {
+		if utf8.RuneCountInString(relation.Label) > 200 {
+			return fmt.Errorf("关系名称超过存储长度限制: %s", relation.Label)
+		}
+	}
+	return nil
 }
 
 func validateMermaidER(parser *MermaidERParser) error {

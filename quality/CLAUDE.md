@@ -135,12 +135,15 @@ quality/
 
 ### 规则应用
 ```
-GET    /api/v1/quality/rule-applications          # 列表（支持过滤：engine_id, schema_name, table_name）
+GET    /api/v1/quality/rule-applications          # 列表（支持过滤：engine_id, schema_name, table_name；返回 Standard 当前数据元摘要投影）
+GET    /api/v1/quality/rule-applications/element-candidates # 创建页数据元候选（Quality 服务身份投影）
 POST   /api/v1/quality/rule-applications          # 创建（传入 element_id，后端自动获取质量规则快照）
 GET    /api/v1/quality/rule-applications/:id      # 详情
-PUT    /api/v1/quality/rule-applications/:id      # 更新
+PUT    /api/v1/quality/rule-applications/:id      # 显式启停，请求体必须为 {"enabled": true|false}
 DELETE /api/v1/quality/rule-applications/:id      # 删除
 ```
+
+规则应用创建页不得由浏览器直连 Standard 搜索数据元；候选统一通过 Quality API 返回 `id/name/code/quality_rules`，权限只依赖 `quality.rule_application.create`。
 
 ### 检查任务
 ```
@@ -151,6 +154,8 @@ PUT    /api/v1/quality/check-tasks/:id            # 更新
 DELETE /api/v1/quality/check-tasks/:id            # 删除
 POST   /api/v1/quality/check-tasks/:id/run        # 手动触发执行（异步，立即返回 execution_id）
 ```
+
+检查任务创建和更新必须通过 System 实时 Catalog 选择并校验 PostgreSQL Schema/表；Quality 只持久化 `engine_id + schema_name + table_name`，不保存 CatalogPath，也不依赖 Meta 扫描状态。
 
 ### TaskProvider 标准入口
 ```
@@ -298,6 +303,10 @@ Quality 的执行历史是 `common.task_executions` 的跨模块统一投影，�
 
 创建 RuleApplication 时，后端从 Standard 拉取严格版本化的 `addp.quality.rules/v1` 文档，只保留启用规则并写入 `rule_config`。触发任务时再次把当前启用 RuleApplication 冻结到 execution 的 `execution_config`；worker 只消费 execution 快照，不回读实时配置。
 
+RuleApplication 只保存 `element_id` 和规则快照，不复制数据元名称或编码。列表 API 使用 Quality 租户服务身份按当前页 ID 集合从 Standard 批量解析 `element: {id, name, code}`；这是当前展示投影，不是历史事实。浏览器不直接调用 Standard 来补全列表，也不保留搜索缓存到裸 ID 的展示旁路。
+
+规则应用与检查任务前端都读取 `active,disabled` PostgreSQL 用于历史绑定名称回显，表格同时显示引擎名称和 ID；创建或更新表单只允许 `active` 引擎，提交前再次校验生命周期。`deleting` 不进入正常展示或选择。
+
 ### 问题工单状态流转
 
 ```
@@ -309,6 +318,12 @@ open（待处理）
 同一租户、同一 RuleApplication 始终只有一个当前问题。规则失败时创建或重开为 `open`，后续检查通过时自动变为 `resolved`。人工只能将 `open` 更新为 `resolved` 或 `ignored`，且必须提交处理说明；终态之间不可互转。
 
 RuleApplication 是当前配置，execution metadata 才是历史事实。存在已冻结该规则应用的 `pending|running` execution 时禁止删除；其余删除必须在同一事务中清理对应 Issue，并保留已完成 execution 历史。
+
+规则应用创建使用 System 实时 Catalog 级联选择 schema、table 和 column；表字段通过 Catalog facts 按需读取，后端保存前按当前 Tenant 和 Engine 再次校验三者归属。Catalog 只是创建时选择与校验来源，持久身份仍是 `engine_id + schema_name + table_name + column_name`，不保存第二套 `item_id` 或 ResourceLocator，也不依赖 Meta 扫描快照。
+
+规则应用启停只影响未来 execution；已有 `pending|running` execution 继续消费冻结快照。手动停用不改变已有 Issue，停止检查不等于问题已解决或已忽略。重新启用前必须重新校验绑定 Engine 仍为当前 Tenant 的 active PostgreSQL Engine，停用不依赖 Engine 可用性。更新请求必须显式提供布尔 `enabled`，repository 只更新启用状态与审计字段，不使用整行 `Save`。
+
+failed execution 必须在 `error_details.code` 写数据质量规范定义的稳定领域错误码；原始数据库、SQL、连接和外部服务错误只写服务日志。前端按错误码本地化展示失败原因，不显示持久化的英文安全摘要或内部错误。
 
 ### 异步检查，立即返回
 
@@ -345,6 +360,7 @@ RuleApplication 是当前配置，execution metadata 才是历史事实。存在
 
 - 模块内 Router 使用 `/rule-applications`、`/check-tasks`、`/executions`、`/issues` 等无模块前缀路径；Console 公开 URL 统一加 `/quality` 前缀。
 - 执行详情唯一使用 `/executions/:execution_id`，参数名与 Task Execution 领域身份一致，不接受 `id` 别名。
-- 列表进入详情使用 `push`，详情返回 `/executions` 使用 `replace`。
+- 规则应用列表使用 `engine_id`、`schema_name`、`table_name`、`page`、`page_size` 恢复筛选和分页，默认值省略。
+- 执行记录列表使用 `status`、`page`、`page_size` 恢复筛选和分页；列表进入详情使用 `push` 并保留同名 query，详情返回 `/executions` 使用 `replace` 恢复原列表上下文。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`。
-- 检查任务列表使用 `create=1` 恢复创建弹窗、使用 `task_id` 恢复编辑弹窗；默认列表省略 query，TaskProvider `create_url` / `edit_url` 必须使用同一契约。
+- 检查任务列表使用 `page`、`page_size` 恢复分页，使用 `create=1` 恢复创建弹窗、使用 `task_id` 恢复编辑弹窗；创建和编辑保留分页上下文，默认列表省略 query，TaskProvider `create_url` / `edit_url` 必须使用同一契约。

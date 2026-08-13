@@ -3,28 +3,28 @@
     <!-- 搜索区 -->
     <el-card shadow="never" class="search-card">
       <el-row :gutter="12" align="middle">
-        <el-col :span="5">
+        <el-col :xs="24" :sm="12" :md="5">
           <el-input v-model="searchForm.keyword" :placeholder="t('model.logical_table.search_placeholder')" clearable @change="handleSearch">
             <template #prefix><el-icon><Search /></el-icon></template>
           </el-input>
         </el-col>
-        <el-col :span="4">
+        <el-col :xs="24" :sm="12" :md="4">
           <el-select v-model="searchForm.domain_id" :placeholder="t('model.logical_table.domain_placeholder')" clearable @change="handleSearch" style="width:100%">
             <el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" />
           </el-select>
         </el-col>
-        <el-col :span="4">
+        <el-col :xs="24" :sm="12" :md="4">
           <el-select v-model="searchForm.layer" :placeholder="t('model.logical_table.layer_placeholder')" clearable @change="handleSearch" style="width:100%">
             <el-option v-for="layer in layers" :key="layer.layer_code" :label="layer.layer_name" :value="layer.layer_code" />
           </el-select>
         </el-col>
-        <el-col :span="4">
+        <el-col :xs="24" :sm="12" :md="4">
           <el-select v-model="searchForm.status" :placeholder="t('model.logical_table.status_placeholder')" clearable @change="handleSearch" style="width:100%">
             <el-option :label="t('model.common.status_draft')" value="draft" />
             <el-option :label="t('model.common.status_approved')" value="approved" />
           </el-select>
         </el-col>
-        <el-col :span="4">
+        <el-col :xs="24" :sm="12" :md="4" class="search-action">
           <el-button v-if="can('model.logical_model.create')" type="primary" @click="openCreateDialog">
             <el-icon><Plus /></el-icon>
             {{ t('model.logical_table.new') }}
@@ -44,8 +44,17 @@
       <el-button link type="danger" @click="reload">{{ t('model.common.retry') }}</el-button>
     </el-alert>
 
+    <el-alert
+      v-if="!loadError && referenceError"
+      class="load-error"
+      type="warning"
+      :title="referenceError"
+      show-icon
+      :closable="false"
+    />
+
     <!-- 逻辑表列表 -->
-    <el-card v-else shadow="never" style="margin-top:12px">
+    <el-card v-if="!loadError" shadow="never" style="margin-top:12px">
       <el-table :data="tables" v-loading="loading" stripe>
         <el-table-column :label="t('model.logical_table.name')" prop="name" min-width="160">
           <template #default="{ row }">
@@ -101,13 +110,13 @@
     </el-card>
 
     <!-- 新建对话框 -->
-    <el-dialog v-model="createDialogVisible" :title="t('model.logical_table.new')" width="540px">
+    <el-dialog v-model="createDialogVisible" :title="t('model.logical_table.new')" width="min(540px, calc(100vw - 32px))">
       <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-width="100px">
         <el-form-item :label="t('model.logical_table.name')" prop="name">
-          <el-input v-model="createForm.name" :placeholder="t('model.logical_table.name_placeholder')" />
+          <el-input v-model="createForm.name" maxlength="200" :placeholder="t('model.logical_table.name_placeholder')" />
         </el-form-item>
         <el-form-item :label="t('model.logical_table.code')" prop="code">
-          <el-input v-model="createForm.code" :placeholder="t('model.logical_table.code_placeholder')" />
+          <el-input v-model="createForm.code" maxlength="200" :placeholder="t('model.logical_table.code_placeholder')" />
         </el-form-item>
         <el-form-item :label="t('model.entity.domain')">
           <el-select v-model="createForm.domain_id" :placeholder="t('model.logical_table.domain_select_placeholder')" clearable style="width:100%">
@@ -158,6 +167,7 @@ const authStore = useAuthStore()
 const can = permission => authStore.hasPermission(permission)
 const loading = ref(false)
 const loadError = ref('')
+const referenceError = ref('')
 const creating = ref(false)
 const tables = ref([])
 const domains = ref([])
@@ -212,6 +222,13 @@ const syncRoute = () => navigateModelRoute(router, {
 const loadTables = async () => {
   loading.value = true
   loadError.value = ''
+  if (!can('model.logical_model.read')) {
+    tables.value = []
+    pagination.total = 0
+    loadError.value = t('model.common.permission_denied')
+    loading.value = false
+    return
+  }
   try {
     const params = {
       page: pagination.page,
@@ -250,6 +267,10 @@ const openCreateDialog = () => {
 }
 
 const handleCreate = async () => {
+  if (!can('model.logical_model.create')) {
+    ElMessage.error(t('model.common.permission_denied'))
+    return
+  }
   try {
     await createFormRef.value.validate()
   } catch {
@@ -272,6 +293,10 @@ const handleCreate = async () => {
 }
 
 const handleDelete = async (id) => {
+  if (!can('model.logical_model.delete')) {
+    ElMessage.error(t('model.common.permission_denied'))
+    return
+  }
   try {
     await logicalTableAPI.delete(id)
     ElMessage.success(t('model.common.delete_success'))
@@ -290,17 +315,18 @@ const goToDetail = (row) => {
 
 const reload = async () => {
   loadError.value = ''
+  referenceError.value = ''
   if (!can('model.logical_model.read')) {
     loadError.value = t('model.common.permission_denied')
     return
   }
-  try {
-    const [domainRes, layerRes] = await Promise.all([domainAPI.list(), dwLayerAPI.list()])
-    domains.value = domainRes || []
-    layers.value = layerRes || []
-  } catch (err) {
-    loadError.value = getModelErrorMessage(err, t, 'model.common.load_failed')
-    return
+  const [domainResult, layerResult] = await Promise.allSettled([domainAPI.list(), dwLayerAPI.list()])
+  if (domainResult.status === 'fulfilled') domains.value = domainResult.value || []
+  else domains.value = []
+  if (layerResult.status === 'fulfilled') layers.value = layerResult.value || []
+  else layers.value = []
+  if (domainResult.status === 'rejected' || layerResult.status === 'rejected') {
+    referenceError.value = t('model.common.reference_data_unavailable')
   }
   await loadTables()
 }
@@ -332,6 +358,14 @@ onMounted(async () => {
 
 .search-card {
   margin-bottom: 0;
+}
+
+.search-card :deep(.el-row) {
+  row-gap: 12px;
+}
+
+.search-action :deep(.el-button) {
+  width: 100%;
 }
 
 .load-error {

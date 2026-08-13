@@ -1,8 +1,10 @@
 package api
 
 import (
+	"net/http"
 	"strings"
 
+	"github.com/addp/common/buildinfo"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
 	authMiddleware "github.com/addp/common/middleware/auth"
@@ -48,7 +50,7 @@ func SetupRouter(
 
 	// 健康检查端点（无需认证）
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "healthy", "service": "service"})
+		c.JSON(http.StatusOK, buildinfo.Health("service"))
 	})
 
 	// 查询服务端点（支持公开访问，handler内部会检查权限）

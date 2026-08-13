@@ -609,7 +609,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建 bounded、业务 Kafka continuous 或数据库 CDC 任务。业务 Kafka continuous 必须显式使用 runtime.record_failure.mode=block|dead_letter；dead_letter 只处理确定性记录级数据错误。数据库 CDC 支持 PostgreSQL/MySQL/Oracle 单表 initial_snapshot、block 和 PostgreSQL/MySQL 新目标表 upsert_delete；Oracle Spatial 由 generation-owned WKB 镜像捕获，普通 Oracle LOB/RAC 与 ArcGIS SDE 不支持。旧 mode/write_mode 字段会被拒绝。| Create a bounded, business Kafka continuous, or database CDC task. Business Kafka continuous tasks must explicitly use runtime.record_failure.mode=block|dead_letter; dead_letter only handles deterministic record-level data errors. Database CDC supports a single PostgreSQL, MySQL, or Oracle source table with initial_snapshot, block policy, and a new PostgreSQL or MySQL upsert_delete target; Oracle Spatial uses a generation-owned WKB mirror, while regular Oracle LOB/RAC and ArcGIS SDE remain unsupported. Legacy mode/write_mode fields are rejected.",
+                "description": "创建 bounded、业务 Kafka continuous 或数据库 CDC 任务。业务 Kafka continuous 必须显式使用 runtime.record_failure.mode=block|dead_letter；dead_letter 只处理确定性记录级数据错误。数据库 CDC 支持 PostgreSQL/MySQL/Oracle 单表 initial_snapshot、block 和 PostgreSQL/MySQL/Oracle 新目标表 upsert_delete；Oracle Spatial 由 generation-owned WKB 镜像捕获，Oracle 目标首期支持 XY geometry，普通 Oracle LOB/RAC 与 ArcGIS SDE 不支持。旧 mode/write_mode 字段会被拒绝。| Create a bounded, business Kafka continuous, or database CDC task. Business Kafka continuous tasks must explicitly use runtime.record_failure.mode=block|dead_letter; dead_letter only handles deterministic record-level data errors. Database CDC supports a single PostgreSQL, MySQL, or Oracle source table with initial_snapshot, block policy, and a new PostgreSQL, MySQL, or Oracle upsert_delete target; Oracle Spatial uses a generation-owned WKB mirror, Oracle targets initially support XY geometry, while regular Oracle LOB/RAC and ArcGIS SDE remain unsupported. Legacy mode/write_mode fields are rejected.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1937,6 +1937,79 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_transfer_internal_models.CaptureSourceRecovery": {
+            "type": "object",
+            "properties": {
+                "capture_position": {
+                    "type": "string"
+                },
+                "current_position": {
+                    "type": "string"
+                },
+                "earliest_available_at": {
+                    "type": "string"
+                },
+                "earliest_available_position": {
+                    "type": "string"
+                },
+                "fra_reclaimable_percent": {
+                    "type": "number"
+                },
+                "fra_used_percent": {
+                    "type": "number"
+                },
+                "health": {
+                    "type": "string"
+                },
+                "position_headroom": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "sampled_at": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "window_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.CaptureSourceTransactions": {
+            "type": "object",
+            "properties": {
+                "active_count": {
+                    "type": "integer"
+                },
+                "oldest_duration_seconds": {
+                    "type": "integer"
+                },
+                "oldest_start_position": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "sampled_at": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "used_undo_blocks": {
+                    "type": "string"
+                },
+                "used_undo_records": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_transfer_internal_models.CaptureStatus": {
             "type": "string",
             "enum": [
@@ -1967,6 +2040,15 @@ const docTemplate = `{
                 },
                 "last_observed_at": {
                     "type": "string"
+                },
+                "source_recovery": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.CaptureSourceRecovery"
+                },
+                "source_status": {
+                    "type": "string"
+                },
+                "source_transactions": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.CaptureSourceTransactions"
                 },
                 "status": {
                     "$ref": "#/definitions/github_com_addp_transfer_internal_models.CaptureStatus"

@@ -378,7 +378,8 @@ func (s *CleanupService) logicalCleanup(ctx context.Context, candidates standard
 			stats.SkippedItems++
 			continue
 		}
-		if err := s.db.WithContext(ctx).Model(&models.Glossary{}).Where("id = ?", glossary.ID).Update("status", "deprecated").Error; err != nil {
+		if err := s.db.WithContext(ctx).Model(&models.Glossary{}).Where("id = ?", glossary.ID).
+			Updates(map[string]interface{}{"status": "deprecated", "version": gorm.Expr("version + 1")}).Error; err != nil {
 			stats.Errors = append(stats.Errors, fmt.Sprintf("deprecate glossary %d failed: %v", glossary.ID, err))
 			continue
 		}
@@ -389,7 +390,8 @@ func (s *CleanupService) logicalCleanup(ctx context.Context, candidates standard
 			stats.SkippedItems++
 			continue
 		}
-		if err := s.db.WithContext(ctx).Model(&models.Element{}).Where("id = ?", element.ID).Update("status", "deprecated").Error; err != nil {
+		if err := s.db.WithContext(ctx).Model(&models.Element{}).Where("id = ?", element.ID).
+			Updates(map[string]interface{}{"status": "deprecated", "version": gorm.Expr("version + 1")}).Error; err != nil {
 			stats.Errors = append(stats.Errors, fmt.Sprintf("deprecate element %d failed: %v", element.ID, err))
 			continue
 		}
@@ -400,7 +402,8 @@ func (s *CleanupService) logicalCleanup(ctx context.Context, candidates standard
 			stats.SkippedItems++
 			continue
 		}
-		if err := s.db.WithContext(ctx).Model(&models.Metric{}).Where("id = ?", metric.ID).Update("status", "deprecated").Error; err != nil {
+		if err := s.db.WithContext(ctx).Model(&models.Metric{}).Where("id = ?", metric.ID).
+			Updates(map[string]interface{}{"status": "deprecated", "version": gorm.Expr("version + 1")}).Error; err != nil {
 			stats.Errors = append(stats.Errors, fmt.Sprintf("deprecate metric %d failed: %v", metric.ID, err))
 			continue
 		}

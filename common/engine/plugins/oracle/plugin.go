@@ -23,8 +23,13 @@ type OraclePlugin struct{}
 // Catalog listing filters this exact ownership marker instead of relying on object names.
 const InternalCaptureTableCommentPrefix = "ADDP CDC spatial capture "
 
+// InternalTransferApplyTableComment marks the target-side CDC apply ledger.
+// Catalog filtering uses this ownership marker rather than the private table name.
+const InternalTransferApplyTableComment = "ADDP transfer apply positions v1"
+
 var (
 	_ plugin.ConnectionIdentityProvider           = (*OraclePlugin)(nil)
+	_ plugin.InstanceCapabilitiesResolver         = (*OraclePlugin)(nil)
 	_ plugin.DSNProvider                          = (*OraclePlugin)(nil)
 	_ plugin.ConnectionPoolPlugin                 = (*OraclePlugin)(nil)
 	_ plugin.CatalogModelProvider                 = (*OraclePlugin)(nil)
@@ -35,6 +40,7 @@ var (
 	_ plugin.BatchReadableProvider                = (*OraclePlugin)(nil)
 	_ plugin.TableReadSessionProvider             = (*OraclePlugin)(nil)
 	_ plugin.SpatialFeatureReadProvider           = (*OraclePlugin)(nil)
+	_ plugin.PartitionedTableChangeApplyProvider  = (*OraclePlugin)(nil)
 )
 
 var oracleSystemSchemas = map[string]struct{}{
@@ -89,8 +95,14 @@ func (p *OraclePlugin) Capabilities() plugin.EngineCapabilities {
 		Constraints:        true,
 		Partitioning:       true,
 		SpatialFacts:       true,
+		PartitionedTableChangeApplyOperations: []string{
+			plugin.TableChangeOperationUpsert,
+			plugin.TableChangeOperationDelete,
+			plugin.TableChangeOperationSkip,
+		},
 		TableSpatialEncoding: &plugin.NativeTableSpatialEncodingCapability{
 			GeometryReadEncodings:  []string{string(format.GeometryEncodingEWKB)},
+			GeometryWriteEncodings: []string{string(format.GeometryEncodingEWKB)},
 			NativeSpatialFunctions: true,
 		},
 	})
@@ -233,13 +245,13 @@ func (p *OraclePlugin) listNamespaces(ctx context.Context, db *gorm.DB, root plu
 		         SELECT 1 FROM all_tab_comments internal_comment
 		          WHERE internal_comment.owner = o.owner
 		            AND internal_comment.table_name = o.object_name
-		            AND internal_comment.comments LIKE ?
+		            AND (internal_comment.comments LIKE ? OR internal_comment.comments = ?)
 		       )
 		 WHERE u.oracle_maintained = 'N'
 		 GROUP BY u.username
 		HAVING u.username = USER OR COUNT(o.object_name) > 0
 		 ORDER BY u.username
-	`, InternalCaptureTableCommentPrefix+"%").Scan(&rows).Error
+	`, InternalCaptureTableCommentPrefix+"%", InternalTransferApplyTableComment).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Oracle schemas: %w", err)
 	}
@@ -300,10 +312,10 @@ func (p *OraclePlugin) listTables(ctx context.Context, db *gorm.DB, schema strin
 		         SELECT 1 FROM all_tab_comments internal_comment
 		          WHERE internal_comment.owner = o.owner
 		            AND internal_comment.table_name = o.object_name
-		            AND internal_comment.comments LIKE ?
+		            AND (internal_comment.comments LIKE ? OR internal_comment.comments = ?)
 		       )
 		 ORDER BY o.object_name
-	`, schema, InternalCaptureTableCommentPrefix+"%").Scan(&rows).Error
+	`, schema, InternalCaptureTableCommentPrefix+"%", InternalTransferApplyTableComment).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Oracle tables: %w", err)
 	}

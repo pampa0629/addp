@@ -2,6 +2,7 @@ package models
 
 import (
 	"database/sql/driver"
+	"encoding/json"
 	"time"
 
 	commonModels "github.com/addp/common/models"
@@ -203,6 +204,12 @@ type CaptureResource struct {
 	Status                      CaptureStatus              `gorm:"type:varchar(32);not null;index" json:"status"`
 	ConnectorStatus             string                     `gorm:"type:varchar(32)" json:"connector_status,omitempty"`
 	ConnectorError              string                     `gorm:"type:text" json:"connector_error,omitempty"`
+	SourceStatus                string                     `gorm:"type:varchar(32)" json:"source_status,omitempty"`
+	SourceError                 string                     `gorm:"type:text" json:"source_error,omitempty"`
+	SourceRecovery              JSONMap                    `gorm:"type:jsonb;not null;default:'{}'" json:"source_recovery,omitempty"`
+	SourceRecoveryError         string                     `gorm:"type:text" json:"-"`
+	SourceTransactions          JSONMap                    `gorm:"type:jsonb;not null;default:'{}'" json:"source_transactions,omitempty"`
+	SourceTransactionsError     string                     `gorm:"type:text" json:"-"`
 	TopicCreated                bool                       `gorm:"not null;default:false" json:"topic_created"`
 	ConnectorCreated            bool                       `gorm:"not null;default:false" json:"connector_created"`
 	ResourceVersion             uint64                     `gorm:"not null;default:1" json:"resource_version"`
@@ -341,11 +348,41 @@ type SchemaChangeRequestView struct {
 
 // CaptureSummary 是任务 API 可展示的捕获状态；内部资源名称和连接身份不对外暴露。
 type CaptureSummary struct {
-	Generation      uint64        `json:"generation"`
-	Status          CaptureStatus `json:"status"`
-	ConnectorStatus string        `json:"connector_status,omitempty"`
-	LastObservedAt  *time.Time    `json:"last_observed_at,omitempty"`
-	StoppedAt       *time.Time    `json:"stopped_at,omitempty"`
+	Generation         uint64                     `json:"generation"`
+	Status             CaptureStatus              `json:"status"`
+	ConnectorStatus    string                     `json:"connector_status,omitempty"`
+	SourceStatus       string                     `json:"source_status,omitempty"`
+	SourceRecovery     *CaptureSourceRecovery     `json:"source_recovery,omitempty"`
+	SourceTransactions *CaptureSourceTransactions `json:"source_transactions,omitempty"`
+	LastObservedAt     *time.Time                 `json:"last_observed_at,omitempty"`
+	StoppedAt          *time.Time                 `json:"stopped_at,omitempty"`
+}
+
+type CaptureSourceRecovery struct {
+	SchemaVersion             string     `json:"schema_version"`
+	Provider                  string     `json:"provider"`
+	Health                    string     `json:"health"`
+	CapturePosition           string     `json:"capture_position,omitempty"`
+	CurrentPosition           string     `json:"current_position,omitempty"`
+	EarliestAvailablePosition string     `json:"earliest_available_position,omitempty"`
+	PositionHeadroom          string     `json:"position_headroom,omitempty"`
+	EarliestAvailableAt       *time.Time `json:"earliest_available_at,omitempty"`
+	WindowSeconds             *int64     `json:"window_seconds,omitempty"`
+	FRAUsedPercent            *float64   `json:"fra_used_percent,omitempty"`
+	FRAReclaimablePercent     *float64   `json:"fra_reclaimable_percent,omitempty"`
+	SampledAt                 time.Time  `json:"sampled_at"`
+}
+
+type CaptureSourceTransactions struct {
+	SchemaVersion         string    `json:"schema_version"`
+	Provider              string    `json:"provider"`
+	Status                string    `json:"status"`
+	ActiveCount           uint64    `json:"active_count"`
+	OldestStartPosition   string    `json:"oldest_start_position,omitempty"`
+	OldestDurationSeconds *int64    `json:"oldest_duration_seconds,omitempty"`
+	UsedUndoBlocks        string    `json:"used_undo_blocks,omitempty"`
+	UsedUndoRecords       string    `json:"used_undo_records,omitempty"`
+	SampledAt             time.Time `json:"sampled_at"`
 }
 
 func NewCaptureSummary(resource *CaptureResource) *CaptureSummary {
@@ -354,9 +391,42 @@ func NewCaptureSummary(resource *CaptureResource) *CaptureSummary {
 	}
 	return &CaptureSummary{
 		Generation: resource.Generation, Status: resource.Status,
-		ConnectorStatus: resource.ConnectorStatus,
-		LastObservedAt:  resource.LastObservedAt, StoppedAt: resource.StoppedAt,
+		ConnectorStatus:    resource.ConnectorStatus,
+		SourceStatus:       resource.SourceStatus,
+		SourceRecovery:     captureSourceRecoverySummary(resource.SourceRecovery),
+		SourceTransactions: captureSourceTransactionsSummary(resource.SourceTransactions),
+		LastObservedAt:     resource.LastObservedAt, StoppedAt: resource.StoppedAt,
 	}
+}
+
+func captureSourceTransactionsSummary(value JSONMap) *CaptureSourceTransactions {
+	if len(value) == 0 {
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var summary CaptureSourceTransactions
+	if err := json.Unmarshal(data, &summary); err != nil || summary.SchemaVersion == "" || summary.Status == "" {
+		return nil
+	}
+	return &summary
+}
+
+func captureSourceRecoverySummary(value JSONMap) *CaptureSourceRecovery {
+	if len(value) == 0 {
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var summary CaptureSourceRecovery
+	if err := json.Unmarshal(data, &summary); err != nil || summary.SchemaVersion == "" || summary.Health == "" {
+		return nil
+	}
+	return &summary
 }
 
 // TableName 指定表名（带 schema 前缀）

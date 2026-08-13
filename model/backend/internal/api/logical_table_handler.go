@@ -26,54 +26,61 @@ func NewLogicalTableHandler(svc *service.LogicalTableService) *LogicalTableHandl
 // @Tags Model
 // @Produce json
 // @Param layer query string false "数仓分层 | DW layer"
-// @Param table_type query string false "表类型 | Table type"
-// @Param status query string false "状态过滤 | Filter by status"
+// @Param table_type query string false "表类型 | Table type" Enums(entity, fact, dimension)
+// @Param status query string false "状态过滤 | Filter by status" Enums(draft, approved)
 // @Param keyword query string false "关键词搜索 | Keyword search"
-// @Param domain_id query int false "业务域ID | Domain ID"
-// @Param page query int false "页码 | Page number"
-// @Param page_size query int false "每页数量 | Page size"
+// @Param domain_id query int false "业务域ID | Domain ID" minimum(1)
+// @Param page query int false "页码 | Page number" default(1) minimum(1)
+// @Param page_size query int false "每页数量 | Page size" default(20) minimum(1) maximum(100)
 // @Success 200 {object} map[string]interface{} "逻辑表列表 | Logical table list"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 400 {object} models.ErrorResponse "查询参数无效 | Invalid query parameters"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.logical_model.read"]
 // @Router /logical-tables [get]
 // @Security BearerAuth
 func (h *LogicalTableHandler) ListLogicalTables(c *gin.Context) {
 	tenantID := getTenantID(c)
+	query, err := parseModelListQuery(c.Request.URL.Query())
+	if err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
+	status, err := parseOptionalEnum(c.Request.URL.Query()["status"], "draft", "approved")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
+	tableType, err := parseOptionalEnum(c.Request.URL.Query()["table_type"], "entity", "fact", "dimension")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
+	layer, err := parseOptionalString(c.Request.URL.Query()["layer"])
+	if err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
+	keyword, err := parseOptionalString(c.Request.URL.Query()["keyword"])
+	if err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
 
 	opts := repository.ListLogicalTableOptions{
-		Layer:     c.Query("layer"),
-		TableType: c.Query("table_type"),
-		Status:    c.Query("status"),
-		Keyword:   c.Query("keyword"),
-	}
-	if domainIDStr := c.Query("domain_id"); domainIDStr != "" {
-		if id, err := strconv.ParseInt(domainIDStr, 10, 64); err == nil {
-			opts.DomainID = &id
-		}
-	}
-	if pageStr := c.Query("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil {
-			opts.Page = p
-		}
-	}
-	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
-		if ps, err := strconv.Atoi(pageSizeStr); err == nil {
-			opts.PageSize = ps
-		}
-	}
-	if opts.Page <= 0 {
-		opts.Page = 1
-	}
-	if opts.PageSize <= 0 {
-		opts.PageSize = 20
-	}
-	if opts.PageSize > 100 {
-		opts.PageSize = 100
+		DomainID:  query.DomainID,
+		Layer:     layer,
+		TableType: tableType,
+		Status:    status,
+		Keyword:   keyword,
+		Page:      query.Page,
+		PageSize:  query.PageSize,
 	}
 
 	tables, total, err := h.svc.ListLogicalTables(tenantID, opts)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, operationFailedResponse(c))
+		writeServiceError(c, err)
 		return
 	}
 	totalPages := 0
@@ -99,6 +106,8 @@ func (h *LogicalTableHandler) ListLogicalTables(c *gin.Context) {
 // @Produce json
 // @Param body body models.CreateLogicalTableRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的逻辑表 | Created logical table"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "请求无效 | Invalid request"
 // @Failure 404 {object} models.ErrorResponse "引用的业务域不存在 | Referenced business domain not found"
 // @Failure 409 {object} models.ErrorResponse "逻辑表编码冲突 | Logical table code conflict"
@@ -131,6 +140,10 @@ func (h *LogicalTableHandler) CreateLogicalTable(c *gin.Context) {
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Success 200 {object} map[string]interface{} "逻辑表详情 | Logical table details"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 400 {object} models.ErrorResponse "逻辑表 ID 无效 | Invalid logical table ID"
+// @Failure 404 {object} models.ErrorResponse "逻辑表不存在 | Logical table not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.logical_model.read"]
 // @Router /logical-tables/{id} [get]
@@ -159,8 +172,12 @@ func (h *LogicalTableHandler) GetLogicalTable(c *gin.Context) {
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Param body body models.UpdateLogicalTableRequest true "更新请求 | Update request"
 // @Success 200 {object} map[string]interface{} "已更新的逻辑表 | Updated logical table"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 400 {object} models.ErrorResponse "请求或逻辑表 ID 无效 | Invalid request or logical table ID"
 // @Failure 404 {object} models.ErrorResponse "逻辑表不存在 | Logical table not found"
-// @Failure 409 {object} models.ErrorResponse "逻辑表状态冲突 | Logical table state conflict"
+// @Failure 409 {object} models.ErrorResponse "逻辑表状态或字段列名冲突 | Logical table state or field column name conflict"
+// @Failure 503 {object} models.ErrorResponse "数据标准服务不可用 | Data Standard service unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.logical_model.update"]
 // @Router /logical-tables/{id} [put]
@@ -195,6 +212,9 @@ func (h *LogicalTableHandler) UpdateLogicalTable(c *gin.Context) {
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 400 {object} models.ErrorResponse "逻辑表 ID 无效 | Invalid logical table ID"
 // @Failure 404 {object} models.ErrorResponse "逻辑表不存在 | Logical table not found"
 // @Failure 409 {object} models.ErrorResponse "逻辑表状态或关联冲突 | Logical table state or relation conflict"
 // @x-addp-auth-mode "permission"
@@ -222,7 +242,9 @@ func (h *LogicalTableHandler) DeleteLogicalTable(c *gin.Context) {
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Success 200 {object} models.MessageResponse "审批成功 | Approved successfully"
-// @Failure 400 {object} models.ErrorResponse "逻辑表不满足审批条件 | Logical table is not ready for approval"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 400 {object} models.ErrorResponse "逻辑表缺少字段或主键 | Logical table has no fields or primary key"
 // @Failure 404 {object} models.ErrorResponse "逻辑表不存在 | Logical table not found"
 // @Failure 409 {object} models.ErrorResponse "逻辑表状态冲突 | Logical table state conflict"
 // @x-addp-auth-mode "permission"
@@ -248,6 +270,9 @@ func (h *LogicalTableHandler) ApproveLogicalTable(c *gin.Context) {
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Success 200 {object} models.MessageResponse "重新打开成功 | Reopened successfully"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 400 {object} models.ErrorResponse "逻辑表 ID 无效 | Invalid logical table ID"
 // @Failure 404 {object} models.ErrorResponse "逻辑表不存在 | Logical table not found"
 // @Failure 409 {object} models.ErrorResponse "逻辑表状态冲突 | Logical table state conflict"
 // @x-addp-auth-mode "permission"
@@ -273,6 +298,10 @@ func (h *LogicalTableHandler) ReopenLogicalTable(c *gin.Context) {
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Success 200 {object} map[string]interface{} "字段列表 | Field list"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 400 {object} models.ErrorResponse "逻辑表 ID 无效 | Invalid logical table ID"
+// @Failure 404 {object} models.ErrorResponse "逻辑表不存在 | Logical table not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.logical_model.read"]
 // @Router /logical-tables/{id}/fields [get]
@@ -301,9 +330,12 @@ func (h *LogicalTableHandler) GetFields(c *gin.Context) {
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Param body body models.CreateLogicalFieldRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的字段 | Created field"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "字段定义无效 | Invalid field definition"
 // @Failure 404 {object} models.ErrorResponse "逻辑表或引用资源不存在 | Logical table or referenced resource not found"
 // @Failure 409 {object} models.ErrorResponse "逻辑表状态冲突 | Logical table state conflict"
+// @Failure 503 {object} models.ErrorResponse "数据标准服务不可用 | Data Standard service unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.logical_model.create"]
 // @Router /logical-tables/{id}/fields [post]
@@ -339,6 +371,12 @@ func (h *LogicalTableHandler) CreateField(c *gin.Context) {
 // @Param fid path int true "字段ID | Field ID"
 // @Param body body models.UpdateLogicalFieldRequest true "更新请求 | Update request"
 // @Success 200 {object} map[string]interface{} "已更新的字段 | Updated field"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 400 {object} models.ErrorResponse "字段定义无效 | Invalid field definition"
+// @Failure 404 {object} models.ErrorResponse "逻辑表或字段不存在 | Logical table or field not found"
+// @Failure 409 {object} models.ErrorResponse "逻辑表状态或字段列名冲突 | Logical table state or field column name conflict"
+// @Failure 503 {object} models.ErrorResponse "数据标准服务不可用 | Data Standard service unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.logical_model.update"]
 // @Router /logical-tables/{id}/fields/{fid} [put]
@@ -377,6 +415,11 @@ func (h *LogicalTableHandler) UpdateField(c *gin.Context) {
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Param fid path int true "字段ID | Field ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 400 {object} models.ErrorResponse "逻辑表或字段 ID 无效 | Invalid logical table or field ID"
+// @Failure 404 {object} models.ErrorResponse "逻辑表或字段不存在 | Logical table or field not found"
+// @Failure 409 {object} models.ErrorResponse "逻辑表状态冲突 | Logical table state conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.logical_model.delete"]
 // @Router /logical-tables/{id}/fields/{fid} [delete]
@@ -409,6 +452,8 @@ func (h *LogicalTableHandler) DeleteField(c *gin.Context) {
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Param body body models.PreviewLogicalTableDDLRequest true "当前物化配置 | Current materialization configuration"
 // @Success 200 {object} map[string]interface{} "DDL 预览 | DDL preview"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "请求或物化配置无效 | Invalid request or materialization configuration"
 // @Failure 404 {object} models.ErrorResponse "逻辑表不存在 | Logical table not found"
 // @x-addp-auth-mode "permission"

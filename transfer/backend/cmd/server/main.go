@@ -189,7 +189,7 @@ func main() {
 				ConnectKafkaSASLMechanism:    cfg.KafkaConnectKafkaSASLMechanism,
 				ConnectKafkaTLSCACertFile:    cfg.KafkaConnectKafkaTLSCACertFile,
 				ProvisioningTimeout:          cfg.CaptureProvisioningTimeout, StatusPollInterval: cfg.CaptureStatusPollInterval,
-				MonitorInterval: cfg.CaptureMonitorInterval,
+				MonitorInterval: cfg.CaptureMonitorInterval, SourceProbeTimeout: cfg.KafkaConnectTimeout,
 			},
 			logger.With("component", "capture_supervisor"),
 		)

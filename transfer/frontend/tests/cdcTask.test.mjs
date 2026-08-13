@@ -5,6 +5,7 @@ import {
 	buildCDCStopRequest,
 	continuousStartDisabledReason,
 	getCDCCaptureHealthWarning,
+	getCDCSourceRecoveryWarning,
 	isCDCSchemaBlocked,
 	isDatabaseCDCTask
 } from '../src/utils/cdcTask.mjs'
@@ -19,6 +20,19 @@ test('detects the provider-neutral database CDC task shape', () => {
   assert.equal(isDatabaseCDCTask({
     config: { runtime: { boundary: 'continuous' }, load: { mode: 'incremental', change_detection: { type: 'kafka' } } }
   }), false)
+})
+
+test('reports only confirmed critical source recovery loss', () => {
+	const config = {
+		runtime: { boundary: 'continuous' },
+		load: { mode: 'incremental', change_detection: { type: 'cdc', bootstrap: 'initial_snapshot' } }
+	}
+	assert.deepEqual(getCDCSourceRecoveryWarning({
+		config,
+		capture: { source_recovery: { health: 'critical', capture_position: '100', earliest_available_position: '110' } }
+	}), { capturePosition: '100', earliestAvailablePosition: '110' })
+	assert.equal(getCDCSourceRecoveryWarning({ config, capture: { source_recovery: { health: 'unknown' } } }), null)
+	assert.equal(getCDCSourceRecoveryWarning({ config, capture: { source_recovery: { health: 'healthy' } } }), null)
 })
 
 test('builds irreversible stop confirmation payload', () => {
@@ -47,8 +61,8 @@ test('reports unhealthy active CDC capture without warning for stopped capture',
 	}
 	assert.deepEqual(getCDCCaptureHealthWarning({
 		config,
-		capture: { status: 'failed', connector_status: 'FAILED' }
-	}), { status: 'failed', connectorStatus: 'FAILED' })
+		capture: { status: 'failed', connector_status: 'RUNNING', source_status: 'OFFLINE' }
+	}), { status: 'failed', connectorStatus: 'RUNNING', sourceStatus: 'OFFLINE' })
 	assert.equal(getCDCCaptureHealthWarning({
 		config,
 		capture: { status: 'stopped', connector_status: 'DELETED' }

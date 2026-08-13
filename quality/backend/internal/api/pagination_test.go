@@ -31,3 +31,14 @@ func TestOptionalPositiveID(t *testing.T) {
 		t.Fatal("optionalPositiveID(0) error = nil")
 	}
 }
+
+func TestRequiredPositiveID(t *testing.T) {
+	if got, err := requiredPositiveID("12"); err != nil || got != 12 {
+		t.Fatalf("requiredPositiveID(12) = %d/%v, want 12/nil", got, err)
+	}
+	for _, value := range []string{"", "0", "-1", "not-an-id"} {
+		if _, err := requiredPositiveID(value); err == nil {
+			t.Fatalf("requiredPositiveID(%q) error = nil", value)
+		}
+	}
+}

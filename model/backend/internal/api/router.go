@@ -1,6 +1,9 @@
 package api
 
 import (
+	"net/http"
+
+	"github.com/addp/common/buildinfo"
 	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/model/docs"
@@ -148,7 +151,7 @@ func SetupRouter(
 
 	// 健康检查（无认证）
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
+		c.JSON(http.StatusOK, buildinfo.Health("model"))
 	})
 
 	return router

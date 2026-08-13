@@ -22,7 +22,7 @@ func (FactMetricMapping) TableName() string {
 
 // CreateFactMetricMappingRequest 关联指标请求
 type CreateFactMetricMappingRequest struct {
-	MetricID int64  `json:"metric_id" binding:"required"`
-	FieldID  *int64 `json:"field_id,omitempty"`
+	MetricID int64  `json:"metric_id" binding:"required,gt=0" minimum:"1"`
+	FieldID  *int64 `json:"field_id,omitempty" binding:"omitempty,gt=0" minimum:"1"`
 	Note     string `json:"note"`
 }

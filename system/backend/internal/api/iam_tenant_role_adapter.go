@@ -50,8 +50,10 @@ type IAMTenantRoleAssignmentResponse struct {
 	ID                   string     `json:"id"`
 	MembershipID         string     `json:"membership_id"`
 	PrincipalID          string     `json:"principal_id"`
+	PrincipalType        string     `json:"principal_type"`
 	DisplayName          string     `json:"display_name"`
 	Username             *string    `json:"username"`
+	ServicePrincipalName *string    `json:"service_principal_name,omitempty"`
 	RoleID               string     `json:"role_id"`
 	RoleKey              string     `json:"role_key"`
 	RoleName             *string    `json:"role_name"`
@@ -435,8 +437,10 @@ func mapIAMTenantRole(role iam.TenantRole) IAMTenantRoleResponse {
 func mapIAMManagedTenantRoleAssignment(assignment iam.ManagedTenantRoleAssignment) IAMTenantRoleAssignmentResponse {
 	response := mapIAMRoleAssignment(assignment.RoleAssignment)
 	response.MembershipID = strconv.FormatInt(assignment.MembershipID, 10)
+	response.PrincipalType = string(assignment.PrincipalType)
 	response.DisplayName = assignment.DisplayName
 	response.Username = assignment.Username
+	response.ServicePrincipalName = assignment.ServicePrincipalName
 	response.RoleKey = assignment.RoleKey
 	response.RoleName = assignment.RoleName
 	response.RoleNameI18nKey = assignment.RoleNameI18nKey

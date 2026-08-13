@@ -22,19 +22,19 @@ func (DWLayer) TableName() string {
 
 // CreateDWLayerRequest 创建数仓分层请求
 type CreateDWLayerRequest struct {
-	LayerCode   string                 `json:"layer_code" binding:"required"`
-	LayerName   string                 `json:"layer_name" binding:"required"`
+	LayerCode   string                 `json:"layer_code" binding:"required,max=20" maxLength:"20"`
+	LayerName   string                 `json:"layer_name" binding:"required,max=100" maxLength:"100"`
 	Description string                 `json:"description"`
 	NamingRule  string                 `json:"naming_rule"`
 	QualitySLA  map[string]interface{} `json:"quality_sla"`
-	SortOrder   int                    `json:"sort_order"`
+	SortOrder   int                    `json:"sort_order" binding:"gte=0" minimum:"0"`
 }
 
 // UpdateDWLayerRequest 更新数仓分层请求
 type UpdateDWLayerRequest struct {
-	LayerName   string                 `json:"layer_name"`
+	LayerName   string                 `json:"layer_name" binding:"required,max=100" maxLength:"100"`
 	Description string                 `json:"description"`
 	NamingRule  string                 `json:"naming_rule"`
-	QualitySLA  map[string]interface{} `json:"quality_sla"`
-	SortOrder   *int                   `json:"sort_order,omitempty"`
+	QualitySLA  map[string]interface{} `json:"quality_sla" extensions:"x-nullable"`
+	SortOrder   *int                   `json:"sort_order" binding:"required,gte=0" minimum:"0"`
 }

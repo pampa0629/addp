@@ -50,6 +50,7 @@ type CapturePlan struct {
 type PlanResolver interface {
 	Resolve(ctx context.Context, task *models.TransferTask) (*CapturePlan, error)
 	ResolveForCleanup(ctx context.Context, task *models.TransferTask) (*CapturePlan, error)
+	ResolveForObservation(ctx context.Context, resource *models.CaptureResource) (*CapturePlan, error)
 }
 
 type DatabasePlanResolver struct {
@@ -149,6 +150,47 @@ func (r *DatabasePlanResolver) ResolveForCleanup(_ context.Context, task *models
 		return nil, fmt.Errorf("database CDC source database is required")
 	}
 	return plan, nil
+}
+
+// ResolveForObservation rebuilds the frozen source identity used by a capture generation.
+// It never mutates the task definition or generation state.
+func (r *DatabasePlanResolver) ResolveForObservation(ctx context.Context, resource *models.CaptureResource) (*CapturePlan, error) {
+	if resource == nil || r == nil || r.engines == nil {
+		return nil, fmt.Errorf("database CDC observation requires capture resource and engine resolver")
+	}
+	ref := planner.EngineRef{ID: resource.SourceEngineID, Type: string(resource.SourceType)}
+	binding, err := planner.BindEngineResolver(r.engines, resource.TenantID).ResolveEngine(ref)
+	if err != nil {
+		return nil, fmt.Errorf("resolve capture source engine for observation: %w", err)
+	}
+	plan := &CapturePlan{
+		SourceType: resource.SourceType, SourceConnInfo: binding.ConnInfo, SourceEngineID: resource.SourceEngineID,
+		SourceDatabase: resource.SourceDatabase, SourceSchema: resource.SourceSchema, SourceTable: resource.SourceTable,
+		SourceConnectionFingerprint: resource.SourceConnectionFingerprint,
+	}
+	if resource.SourceType == models.CaptureSourceOracle {
+		plan.CDCConnInfo = oracleCDCConnectionInfo(binding.ConnInfo)
+	}
+	if captureConnectionFingerprint(plan) != resource.SourceConnectionFingerprint {
+		return nil, fmt.Errorf("capture source connection identity changed after generation creation")
+	}
+	return plan, nil
+}
+
+func captureConnectionFingerprint(plan *CapturePlan) string {
+	if plan == nil {
+		return ""
+	}
+	switch plan.SourceType {
+	case models.CaptureSourcePostgreSQL:
+		return postgresConnectionFingerprint(plan.SourceConnInfo)
+	case models.CaptureSourceMySQL:
+		return mysqlConnectionFingerprint(plan.SourceConnInfo, plan.SourceDatabase)
+	case models.CaptureSourceOracle:
+		return oracleConnectionFingerprint(plan.SourceConnInfo)
+	default:
+		return ""
+	}
 }
 
 func (r *DatabasePlanResolver) resolveBindings(task *models.TransferTask) (*CapturePlan, error) {

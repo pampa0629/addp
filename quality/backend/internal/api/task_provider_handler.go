@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"strconv"
 	"strings"
 
 	commonAPI "github.com/addp/common/api"
@@ -120,7 +119,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 		return
 	}
 
-	taskID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	taskID, err := requiredPositiveID(c.Param("id"))
 	if err != nil {
 		respondInvalidRequest(c, "")
 		return
@@ -159,7 +158,7 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 		return
 	}
 
-	taskID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	taskID, err := requiredPositiveID(c.Param("id"))
 	if err != nil {
 		respondInvalidRequest(c, "")
 		return

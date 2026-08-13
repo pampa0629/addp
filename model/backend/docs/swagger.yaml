@@ -5,8 +5,10 @@ definitions:
       description:
         type: string
       layer_code:
+        maxLength: 20
         type: string
       layer_name:
+        maxLength: 100
         type: string
       naming_rule:
         type: string
@@ -14,6 +16,7 @@ definitions:
         additionalProperties: true
         type: object
       sort_order:
+        minimum: 0
         type: integer
     required:
     - layer_code
@@ -22,20 +25,36 @@ definitions:
   github_com_addp_model_internal_models.CreateEntityAttributeRequest:
     properties:
       column_name:
+        maxLength: 200
         type: string
       data_type:
+        enum:
+        - string
+        - int
+        - bigint
+        - float
+        - decimal
+        - date
+        - datetime
+        - bool
+        - json
+        - text
+        - geometry
         type: string
       description:
         type: string
       element_id:
+        minimum: 1
         type: integer
       is_pk:
         type: boolean
       name:
+        maxLength: 200
         type: string
       nullable:
         type: boolean
       sort_order:
+        minimum: 0
         type: integer
     required:
     - column_name
@@ -47,6 +66,7 @@ definitions:
       description:
         type: string
       name:
+        maxLength: 200
         type: string
       relation_type:
         enum:
@@ -55,8 +75,10 @@ definitions:
         - many_to_many
         type: string
       source_entity:
+        minimum: 1
         type: integer
       target_entity:
+        minimum: 1
         type: integer
     required:
     - relation_type
@@ -66,12 +88,15 @@ definitions:
   github_com_addp_model_internal_models.CreateEntityRequest:
     properties:
       code:
+        maxLength: 100
         type: string
       description:
         type: string
       domain_id:
+        minimum: 1
         type: integer
       name:
+        maxLength: 200
         type: string
     required:
     - code
@@ -80,8 +105,10 @@ definitions:
   github_com_addp_model_internal_models.CreateFactMetricMappingRequest:
     properties:
       field_id:
+        minimum: 1
         type: integer
       metric_id:
+        minimum: 1
         type: integer
       note:
         type: string
@@ -91,32 +118,58 @@ definitions:
   github_com_addp_model_internal_models.CreateLogicalFieldRequest:
     properties:
       column_name:
+        maxLength: 200
         type: string
       data_type:
+        enum:
+        - string
+        - int
+        - bigint
+        - float
+        - decimal
+        - date
+        - datetime
+        - bool
+        - json
+        - text
+        - geometry
         type: string
       default_value:
         type: string
       description:
         type: string
       element_id:
+        minimum: 1
         type: integer
       field_role:
+        enum:
+        - regular
+        - measure_additive
+        - measure_semi
+        - measure_non
+        - dimension_fk
+        - degenerate_dim
         type: string
       hierarchy_id:
+        minimum: 1
         type: integer
       hierarchy_level:
+        minimum: 0
         type: integer
       is_partition:
         type: boolean
       is_pk:
         type: boolean
       length:
+        minimum: 1
         type: integer
       name:
+        maxLength: 200
         type: string
       nullable:
         type: boolean
       sort_order:
+        minimum: 0
         type: integer
     required:
     - column_name
@@ -126,28 +179,38 @@ definitions:
   github_com_addp_model_internal_models.CreateLogicalTableRequest:
     properties:
       code:
+        maxLength: 200
         type: string
       description:
         type: string
       domain_id:
+        minimum: 1
         type: integer
       entity_id:
+        minimum: 1
         type: integer
       grain_description:
         type: string
       layer:
+        maxLength: 20
         type: string
       materialization:
         additionalProperties: true
         type: object
       name:
+        maxLength: 200
         type: string
       scd_type:
         type: integer
       table_type:
+        enum:
+        - entity
+        - fact
+        - dimension
         type: string
     required:
     - code
+    - layer
     - name
     - table_type
     type: object
@@ -155,12 +218,18 @@ definitions:
     properties:
       relation_type:
         description: fk/join，默认 fk
+        enum:
+        - fk
+        - join
         type: string
       source_field:
+        minimum: 1
         type: integer
       target_field:
+        minimum: 1
         type: integer
       target_table:
+        minimum: 1
         type: integer
     required:
     - source_field
@@ -202,104 +271,201 @@ definitions:
       description:
         type: string
       layer_name:
+        maxLength: 100
         type: string
       naming_rule:
         type: string
       quality_sla:
         additionalProperties: true
         type: object
+        x-nullable: true
       sort_order:
+        minimum: 0
         type: integer
+    required:
+    - layer_name
+    - sort_order
     type: object
   github_com_addp_model_internal_models.UpdateEntityAttributeRequest:
     properties:
       column_name:
+        maxLength: 200
         type: string
       data_type:
+        enum:
+        - string
+        - int
+        - bigint
+        - float
+        - decimal
+        - date
+        - datetime
+        - bool
+        - json
+        - text
+        - geometry
         type: string
       description:
         type: string
       element_id:
+        minimum: 1
         type: integer
+        x-nullable: true
       is_pk:
         type: boolean
       name:
+        maxLength: 200
         type: string
       nullable:
         type: boolean
       sort_order:
+        minimum: 0
         type: integer
+    required:
+    - column_name
+    - data_type
+    - is_pk
+    - name
+    - nullable
+    - sort_order
     type: object
   github_com_addp_model_internal_models.UpdateEntityRelationRequest:
     properties:
       description:
         type: string
       name:
+        maxLength: 200
         type: string
       relation_type:
+        enum:
+        - one_to_one
+        - one_to_many
+        - many_to_many
         type: string
+    required:
+    - relation_type
     type: object
   github_com_addp_model_internal_models.UpdateEntityRequest:
     properties:
       description:
         type: string
       domain_id:
+        minimum: 1
         type: integer
+        x-nullable: true
       name:
+        maxLength: 200
         type: string
+    required:
+    - name
     type: object
   github_com_addp_model_internal_models.UpdateLogicalFieldRequest:
     properties:
       column_name:
+        maxLength: 200
         type: string
       data_type:
+        enum:
+        - string
+        - int
+        - bigint
+        - float
+        - decimal
+        - date
+        - datetime
+        - bool
+        - json
+        - text
+        - geometry
         type: string
       default_value:
         type: string
       description:
         type: string
       element_id:
+        minimum: 1
         type: integer
+        x-nullable: true
       field_role:
+        enum:
+        - regular
+        - measure_additive
+        - measure_semi
+        - measure_non
+        - dimension_fk
+        - degenerate_dim
         type: string
       hierarchy_id:
+        minimum: 1
         type: integer
+        x-nullable: true
       hierarchy_level:
+        minimum: 0
         type: integer
+        x-nullable: true
       is_partition:
         type: boolean
       is_pk:
         type: boolean
       length:
+        minimum: 1
         type: integer
+        x-nullable: true
       name:
+        maxLength: 200
         type: string
       nullable:
         type: boolean
       sort_order:
+        minimum: 0
         type: integer
+    required:
+    - column_name
+    - data_type
+    - field_role
+    - is_partition
+    - is_pk
+    - name
+    - nullable
+    - sort_order
     type: object
   github_com_addp_model_internal_models.UpdateLogicalTableRequest:
     properties:
       description:
         type: string
       domain_id:
+        minimum: 1
         type: integer
+        x-nullable: true
       entity_id:
+        minimum: 1
         type: integer
+        x-nullable: true
       grain_description:
         type: string
       layer:
+        maxLength: 20
         type: string
       materialization:
         additionalProperties: true
         type: object
       name:
+        maxLength: 200
         type: string
       scd_type:
         type: integer
       table_type:
+        enum:
+        - entity
+        - fact
+        - dimension
         type: string
+    required:
+    - layer
+    - materialization
+    - name
+    - scd_type
+    - table_type
     type: object
 host: localhost:8181
 info:
@@ -317,6 +483,14 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 查询数仓分层列表 | List DW layers
@@ -343,6 +517,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 请求无效 | Invalid request
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "409":
           description: 分层编码冲突 | DW layer code conflict
           schema:
@@ -371,6 +557,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 分层 ID 无效 | Invalid DW layer ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "404":
           description: 数仓分层不存在 | DW layer not found
           schema:
@@ -402,6 +600,22 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 分层 ID 无效 | Invalid DW layer ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "404":
+          description: 数仓分层不存在 | DW layer not found
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 获取数仓分层详情 | Get DW layer details
@@ -433,6 +647,26 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 请求或分层 ID 无效 | Invalid request or DW layer ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "404":
+          description: 数仓分层不存在 | DW layer not found
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "409":
+          description: 分层编码冲突 | DW layer code conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 更新数仓分层 | Update DW layer
@@ -446,9 +680,13 @@ paths:
       parameters:
       - description: 业务域ID | Domain ID
         in: query
+        minimum: 1
         name: domain_id
         type: integer
       - description: 状态过滤 | Filter by status
+        enum:
+        - draft
+        - approved
         in: query
         name: status
         type: string
@@ -456,12 +694,17 @@ paths:
         in: query
         name: keyword
         type: string
-      - description: 页码 | Page number
+      - default: 1
+        description: 页码 | Page number
         in: query
+        minimum: 1
         name: page
         type: integer
-      - description: 每页数量 | Page size
+      - default: 20
+        description: 每页数量 | Page size
         in: query
+        maximum: 100
+        minimum: 1
         name: page_size
         type: integer
       produces:
@@ -472,6 +715,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 查询参数无效 | Invalid query parameters
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 查询实体列表 | List entities
@@ -500,6 +755,14 @@ paths:
             type: object
         "400":
           description: 请求无效 | Invalid request
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "404":
@@ -538,6 +801,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 实体 ID 无效 | Invalid entity ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "404":
           description: 实体不存在 | Entity not found
           schema:
@@ -569,6 +844,22 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 实体 ID 无效 | Invalid entity ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "404":
+          description: 实体不存在 | Entity not found
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 获取实体详情 | Get entity details
@@ -600,12 +891,28 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 请求或实体 ID 无效 | Invalid request or entity ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "404":
           description: 实体不存在 | Entity not found
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "409":
-          description: 实体状态冲突 | Entity state conflict
+          description: 实体状态或属性列名冲突 | Entity state or attribute column name conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "503":
+          description: 数据标准服务不可用 | Data Standard service unavailable
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
@@ -633,7 +940,16 @@ paths:
             additionalProperties: true
             type: object
         "400":
-          description: 实体不满足审批条件 | Entity is not ready for approval
+          description: 实体缺少属性、主键或属性定义不完整 | Entity has no attributes, no primary key,
+            or an incomplete attribute definition
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "404":
@@ -668,6 +984,22 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 实体 ID 无效 | Invalid entity ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "404":
+          description: 实体不存在 | Entity not found
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 获取实体属性列表 | Get entity attributes
@@ -699,12 +1031,28 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 请求或实体 ID 无效 | Invalid request or entity ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "404":
           description: 实体或引用资源不存在 | Entity or referenced resource not found
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "409":
           description: 实体状态冲突 | Entity state conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "503":
+          description: 数据标准服务不可用 | Data Standard service unavailable
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
@@ -736,6 +1084,26 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 实体或属性 ID 无效 | Invalid entity or attribute ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "404":
+          description: 实体或属性不存在 | Entity or attribute not found
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "409":
+          description: 实体状态冲突 | Entity state conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 删除实体属性 | Delete entity attribute
@@ -772,6 +1140,30 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 请求、实体或属性 ID 无效 | Invalid request, entity, or attribute ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "404":
+          description: 实体或属性不存在 | Entity or attribute not found
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "409":
+          description: 实体状态或属性列名冲突 | Entity state or attribute column name conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "503":
+          description: 数据标准服务不可用 | Data Standard service unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 更新实体属性 | Update entity attribute
@@ -795,6 +1187,18 @@ paths:
           description: 重新打开成功 | Reopened successfully
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.MessageResponse'
+        "400":
+          description: 实体 ID 无效 | Invalid entity ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "404":
           description: 实体不存在 | Entity not found
           schema:
@@ -821,6 +1225,14 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 导出 Mermaid ER 图 | Export Mermaid ER diagram
@@ -853,6 +1265,14 @@ paths:
           description: Mermaid 内容无效 | Invalid Mermaid content
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "409":
           description: 存在已审批实体 | Approved entities exist
           schema:
@@ -883,6 +1303,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 实体 ID 过滤无效 | Invalid entity ID filter
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 查询实体关系列表 | List entity relations
@@ -909,12 +1341,24 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 请求无效 | Invalid request
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "404":
           description: 关系实体不存在 | Referenced entity not found
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "409":
-          description: 关系状态或自关联冲突 | Relation state or self-reference conflict
+          description: 关系重复、状态或自关联冲突 | Duplicate, state, or self-reference conflict
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
@@ -941,6 +1385,26 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 关系 ID 无效 | Invalid relation ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "404":
+          description: 实体关系不存在 | Entity relation not found
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "409":
+          description: 关系实体状态冲突 | Relation entity state conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 删除实体关系 | Delete entity relation
@@ -964,6 +1428,22 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 关系 ID 无效 | Invalid relation ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "404":
+          description: 实体关系不存在 | Entity relation not found
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 获取实体关系详情 | Get entity relation details
@@ -995,12 +1475,24 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 请求或关系 ID 无效 | Invalid request or relation ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "404":
           description: 实体关系或关系实体不存在 | Entity relation or referenced entity not found
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "409":
-          description: 关系状态冲突 | Relation state conflict
+          description: 关系重复或状态冲突 | Duplicate or relation state conflict
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
@@ -1019,10 +1511,17 @@ paths:
         name: layer
         type: string
       - description: 表类型 | Table type
+        enum:
+        - entity
+        - fact
+        - dimension
         in: query
         name: table_type
         type: string
       - description: 状态过滤 | Filter by status
+        enum:
+        - draft
+        - approved
         in: query
         name: status
         type: string
@@ -1032,14 +1531,20 @@ paths:
         type: string
       - description: 业务域ID | Domain ID
         in: query
+        minimum: 1
         name: domain_id
         type: integer
-      - description: 页码 | Page number
+      - default: 1
+        description: 页码 | Page number
         in: query
+        minimum: 1
         name: page
         type: integer
-      - description: 每页数量 | Page size
+      - default: 20
+        description: 每页数量 | Page size
         in: query
+        maximum: 100
+        minimum: 1
         name: page_size
         type: integer
       produces:
@@ -1050,6 +1555,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 查询参数无效 | Invalid query parameters
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 查询逻辑表列表 | List logical tables
@@ -1078,6 +1595,14 @@ paths:
             type: object
         "400":
           description: 请求无效 | Invalid request
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "404":
@@ -1116,6 +1641,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 逻辑表 ID 无效 | Invalid logical table ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "404":
           description: 逻辑表不存在 | Logical table not found
           schema:
@@ -1147,6 +1684,22 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 逻辑表 ID 无效 | Invalid logical table ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "404":
+          description: 逻辑表不存在 | Logical table not found
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 获取逻辑表详情 | Get logical table details
@@ -1178,12 +1731,28 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 请求或逻辑表 ID 无效 | Invalid request or logical table ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "404":
           description: 逻辑表不存在 | Logical table not found
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "409":
-          description: 逻辑表状态冲突 | Logical table state conflict
+          description: 逻辑表状态或字段列名冲突 | Logical table state or field column name conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "503":
+          description: 数据标准服务不可用 | Data Standard service unavailable
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
@@ -1210,7 +1779,15 @@ paths:
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.MessageResponse'
         "400":
-          description: 逻辑表不满足审批条件 | Logical table is not ready for approval
+          description: 逻辑表缺少字段或主键 | Logical table has no fields or primary key
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "404":
@@ -1245,6 +1822,22 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 事实表 ID 或表类型无效 | Invalid fact table ID or table type
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "404":
+          description: 逻辑表不存在 | Logical table not found
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 查询维度关联列表 | List dimension relations
@@ -1278,6 +1871,14 @@ paths:
             type: object
         "400":
           description: 表或字段类型无效 | Invalid table or field type
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "404":
@@ -1317,6 +1918,26 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 事实表或关联 ID 无效 | Invalid fact table or relation ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "404":
+          description: 逻辑表或维度关联不存在 | Logical table or dimension relation not found
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "409":
+          description: 逻辑表状态冲突 | Logical table state conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 删除维度关联 | Remove dimension relation
@@ -1341,6 +1962,22 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 逻辑表 ID 无效 | Invalid logical table ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "404":
+          description: 逻辑表不存在 | Logical table not found
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 获取逻辑表字段列表 | Get logical table fields
@@ -1376,12 +2013,24 @@ paths:
           description: 字段定义无效 | Invalid field definition
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "404":
           description: 逻辑表或引用资源不存在 | Logical table or referenced resource not found
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "409":
           description: 逻辑表状态冲突 | Logical table state conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "503":
+          description: 数据标准服务不可用 | Data Standard service unavailable
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
@@ -1413,6 +2062,26 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 逻辑表或字段 ID 无效 | Invalid logical table or field ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "404":
+          description: 逻辑表或字段不存在 | Logical table or field not found
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "409":
+          description: 逻辑表状态冲突 | Logical table state conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 删除逻辑表字段 | Delete logical table field
@@ -1449,6 +2118,30 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 字段定义无效 | Invalid field definition
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "404":
+          description: 逻辑表或字段不存在 | Logical table or field not found
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "409":
+          description: 逻辑表状态或字段列名冲突 | Logical table state or field column name conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "503":
+          description: 数据标准服务不可用 | Data Standard service unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 更新逻辑表字段 | Update logical table field
@@ -1473,6 +2166,22 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 事实表 ID 或表类型无效 | Invalid fact table ID or table type
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "404":
+          description: 逻辑表不存在 | Logical table not found
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 查询事实表关联指标列表 | List fact table metric mappings
@@ -1506,6 +2215,14 @@ paths:
             type: object
         "400":
           description: 请求的表类型无效 | Invalid table type
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "404":
@@ -1549,6 +2266,26 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 事实表或关联 ID 无效 | Invalid fact table or mapping ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "404":
+          description: 逻辑表或指标关联不存在 | Logical table or metric mapping not found
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "409":
+          description: 逻辑表状态冲突 | Logical table state conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 删除事实表指标关联 | Remove fact table metric mapping
@@ -1585,6 +2322,14 @@ paths:
           description: 请求或物化配置无效 | Invalid request or materialization configuration
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "404":
           description: 逻辑表不存在 | Logical table not found
           schema:
@@ -1612,6 +2357,18 @@ paths:
           description: 重新打开成功 | Reopened successfully
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.MessageResponse'
+        "400":
+          description: 逻辑表 ID 无效 | Invalid logical table ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "404":
           description: 逻辑表不存在 | Logical table not found
           schema:

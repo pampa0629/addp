@@ -674,7 +674,7 @@
           "spatialWorkspace": "Spatial workspace",
           "supermapSdxPostgis": "SuperMap SDX+ for PostGIS",
           "supermapSdxPostgresql": "SuperMap SDX+ for PostgreSQL",
-          "arcgisSde": "ArcGIS SDE for PostgreSQL",
+          "arcgisSde": "ArcGIS Enterprise Geodatabase (SDE)",
           "postgresqlExtraExtensions": "Other installed extensions",
           "pgvector": "pgvector vector extension"
         },

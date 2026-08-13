@@ -16,6 +16,9 @@ func NewDWLayerService(repo *repository.DWLayerRepository) *DWLayerService {
 }
 
 func (s *DWLayerService) CreateDWLayer(req *models.CreateDWLayerRequest, tenantID int64) (*models.DWLayer, error) {
+	if err := validateCreateDWLayerRequest(req); err != nil {
+		return nil, err
+	}
 	exists, err := s.repo.ExistsByCode(req.LayerCode, tenantID, 0)
 	if err != nil {
 		return nil, err
@@ -57,18 +60,15 @@ func (s *DWLayerService) UpdateDWLayer(id, tenantID int64, req *models.UpdateDWL
 	if err != nil {
 		return nil, modelResourceError(err, "dw_layer_not_found", i18n.MsgLayerNotFound)
 	}
-
-	if req.LayerName != "" {
-		layer.LayerName = req.LayerName
+	if req == nil || !validRequiredString(req.LayerName, 100) || req.SortOrder == nil || *req.SortOrder < 0 {
+		return nil, apperrors.Validation("invalid_request", i18n.MsgValidationFailed)
 	}
+
+	layer.LayerName = req.LayerName
 	layer.Description = req.Description
 	layer.NamingRule = req.NamingRule
-	if req.QualitySLA != nil {
-		layer.QualitySLA = req.QualitySLA
-	}
-	if req.SortOrder != nil {
-		layer.SortOrder = *req.SortOrder
-	}
+	layer.QualitySLA = req.QualitySLA
+	layer.SortOrder = *req.SortOrder
 
 	if err := s.repo.Update(layer); err != nil {
 		return nil, err

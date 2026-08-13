@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 
+	"github.com/addp/common/buildinfo"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
 	commonAuth "github.com/addp/common/middleware/auth"
@@ -45,12 +46,7 @@ func SetupRouter(
 
 	// 健康检查（无需认证）
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status":  "ok",
-			"service": "develop",
-			"message": "Develop 数据开发模块运行正常",
-			"phase":   "3",
-		})
+		c.JSON(http.StatusOK, buildinfo.Health("develop"))
 	})
 
 	taskListHandler := NewTaskListHandler(devTaskService.(*service.DevTaskService))

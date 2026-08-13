@@ -37,8 +37,20 @@ other = "实体编码已存在"
 [model.entity.state_conflict]
 other = "实体当前状态不允许此操作"
 
+[model.entity.approval_attributes_required]
+other = "实体至少需要一个属性才能审批"
+
+[model.entity.approval_primary_key_required]
+other = "实体至少需要一个主键属性才能审批"
+
+[model.entity.approval_attribute_invalid]
+other = "实体包含定义不完整的属性，请补充列名和数据类型"
+
 [model.entity.attribute_not_found]
 other = "实体属性不存在"
+
+[model.entity.attribute_column_conflict]
+other = "实体属性列名已存在"
 
 [model.entity_relation.not_found]
 other = "实体关系不存在"
@@ -51,6 +63,9 @@ other = "实体关系两端必须处于草稿状态"
 
 [model.entity_relation.self_conflict]
 other = "不允许创建自关联关系"
+
+[model.entity_relation.conflict]
+other = "相同的实体关系已存在"
 
 [model.logical_table.not_found]
 other = "逻辑表不存在"
@@ -67,8 +82,17 @@ other = "逻辑表编码已存在"
 [model.logical_table.state_conflict]
 other = "逻辑表当前状态不允许此操作"
 
+[model.logical_table.approval_fields_required]
+other = "逻辑表至少需要一个字段才能审批"
+
+[model.logical_table.approval_primary_key_required]
+other = "逻辑表至少需要一个主键字段才能审批"
+
 [model.logical_table.field_not_found]
 other = "逻辑表字段不存在"
+
+[model.logical_table.field_column_conflict]
+other = "逻辑表字段列名已存在"
 
 [model.dw_layer.not_found]
 other = "数仓分层不存在"

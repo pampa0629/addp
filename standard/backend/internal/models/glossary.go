@@ -75,6 +75,7 @@ type Glossary struct {
 	UpdatedBy  *int64      `json:"updated_by,omitempty"`
 	CreatedAt  time.Time   `json:"created_at"`
 	UpdatedAt  time.Time   `json:"updated_at"`
+	Version    int64       `gorm:"not null;default:1" json:"version"`
 }
 
 func (Glossary) TableName() string {
@@ -105,6 +106,7 @@ type CreateGlossaryRequest struct {
 
 // UpdateGlossaryRequest 更新业务术语请求
 type UpdateGlossaryRequest struct {
+	Version    int64    `json:"version" binding:"required"`
 	DomainID   *int64   `json:"domain_id,omitempty"`
 	Name       string   `json:"name"`
 	Alias      []string `json:"alias"`
@@ -113,4 +115,9 @@ type UpdateGlossaryRequest struct {
 	Note       string   `json:"note"`
 	StewardID  *int64   `json:"steward_id,omitempty"`
 	Tags       []string `json:"tags"`
+	ElementIDs []int64  `json:"element_ids"`
+}
+
+type VersionRequest struct {
+	Version int64 `json:"version" binding:"required"`
 }

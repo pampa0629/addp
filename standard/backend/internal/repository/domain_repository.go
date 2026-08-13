@@ -32,8 +32,15 @@ func (r *DomainRepository) List(tenantID int64) ([]models.Domain, error) {
 	return domains, err
 }
 
-func (r *DomainRepository) Update(domain *models.Domain) error {
-	return wrapDBError(r.db.Save(domain).Error)
+func (r *DomainRepository) Update(domain *models.Domain, expectedVersion int64) error {
+	if err := updateVersioned(r.db, domain, domain.ID, domain.TenantID, expectedVersion, map[string]interface{}{
+		"name": domain.Name, "description": domain.Description, "parent_id": domain.ParentID,
+		"icon": domain.Icon, "sort_order": domain.SortOrder, "updated_by": domain.UpdatedBy,
+	}); err != nil {
+		return err
+	}
+	domain.Version = expectedVersion + 1
+	return nil
 }
 
 func (r *DomainRepository) Delete(id, tenantID int64) error {

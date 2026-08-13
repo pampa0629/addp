@@ -73,13 +73,13 @@ func (TableRelation) TableName() string {
 
 // CreateLogicalTableRequest 创建逻辑表请求
 type CreateLogicalTableRequest struct {
-	DomainID         *int64                 `json:"domain_id,omitempty"`
-	EntityID         *int64                 `json:"entity_id,omitempty"`
-	Name             string                 `json:"name" binding:"required"`
-	Code             string                 `json:"code" binding:"required"`
+	DomainID         *int64                 `json:"domain_id,omitempty" binding:"omitempty,gt=0" minimum:"1"`
+	EntityID         *int64                 `json:"entity_id,omitempty" binding:"omitempty,gt=0" minimum:"1"`
+	Name             string                 `json:"name" binding:"required,max=200" maxLength:"200"`
+	Code             string                 `json:"code" binding:"required,max=200" maxLength:"200"`
 	Description      string                 `json:"description"`
-	TableType        string                 `json:"table_type" binding:"required"`
-	Layer            string                 `json:"layer"`
+	TableType        string                 `json:"table_type" binding:"required,oneof=entity fact dimension" enums:"entity,fact,dimension"`
+	Layer            string                 `json:"layer" binding:"required,max=20" maxLength:"20"`
 	GrainDescription string                 `json:"grain_description"`
 	SCDType          int                    `json:"scd_type"`
 	Materialization  map[string]interface{} `json:"materialization"`
@@ -87,15 +87,15 @@ type CreateLogicalTableRequest struct {
 
 // UpdateLogicalTableRequest 更新逻辑表请求
 type UpdateLogicalTableRequest struct {
-	DomainID         *int64                 `json:"domain_id,omitempty"`
-	EntityID         *int64                 `json:"entity_id,omitempty"`
-	Name             string                 `json:"name"`
+	DomainID         *int64                 `json:"domain_id" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
+	EntityID         *int64                 `json:"entity_id" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
+	Name             string                 `json:"name" binding:"required,max=200" maxLength:"200"`
 	Description      string                 `json:"description"`
-	TableType        string                 `json:"table_type"`
-	Layer            string                 `json:"layer"`
+	TableType        string                 `json:"table_type" binding:"required,oneof=entity fact dimension" enums:"entity,fact,dimension"`
+	Layer            string                 `json:"layer" binding:"required,max=20" maxLength:"20"`
 	GrainDescription string                 `json:"grain_description"`
-	SCDType          int                    `json:"scd_type"`
-	Materialization  map[string]interface{} `json:"materialization"`
+	SCDType          *int                   `json:"scd_type" binding:"required"`
+	Materialization  map[string]interface{} `json:"materialization" binding:"required"`
 }
 
 // PreviewLogicalTableDDLRequest 使用当前页面中的物化配置生成 DDL，不持久化配置。
@@ -105,44 +105,44 @@ type PreviewLogicalTableDDLRequest struct {
 
 // CreateTableRelationRequest 创建逻辑表关联请求
 type CreateTableRelationRequest struct {
-	TargetTable  int64  `json:"target_table" binding:"required"`
-	SourceField  int64  `json:"source_field" binding:"required"`
-	TargetField  int64  `json:"target_field" binding:"required"`
-	RelationType string `json:"relation_type"` // fk/join，默认 fk
+	TargetTable  int64  `json:"target_table" binding:"required,gt=0" minimum:"1"`
+	SourceField  int64  `json:"source_field" binding:"required,gt=0" minimum:"1"`
+	TargetField  int64  `json:"target_field" binding:"required,gt=0" minimum:"1"`
+	RelationType string `json:"relation_type" binding:"omitempty,oneof=fk join" enums:"fk,join"` // fk/join，默认 fk
 }
 
 // CreateLogicalFieldRequest 创建逻辑表字段请求
 type CreateLogicalFieldRequest struct {
-	ElementID      *int64 `json:"element_id,omitempty"`
-	Name           string `json:"name" binding:"required"`
-	ColumnName     string `json:"column_name" binding:"required"`
-	DataType       string `json:"data_type" binding:"required"`
-	Length         *int   `json:"length,omitempty"`
+	ElementID      *int64 `json:"element_id,omitempty" binding:"omitempty,gt=0" minimum:"1"`
+	Name           string `json:"name" binding:"required,max=200" maxLength:"200"`
+	ColumnName     string `json:"column_name" binding:"required,max=200" maxLength:"200"`
+	DataType       string `json:"data_type" binding:"required,oneof=string int bigint float decimal date datetime bool json text geometry" enums:"string,int,bigint,float,decimal,date,datetime,bool,json,text,geometry"`
+	Length         *int   `json:"length,omitempty" binding:"omitempty,gt=0" minimum:"1"`
 	Nullable       bool   `json:"nullable"`
 	IsPK           bool   `json:"is_pk"`
 	IsPartition    bool   `json:"is_partition"`
 	DefaultValue   string `json:"default_value"`
 	Description    string `json:"description"`
-	SortOrder      int    `json:"sort_order"`
-	FieldRole      string `json:"field_role"`
-	HierarchyID    *int64 `json:"hierarchy_id,omitempty"`
-	HierarchyLevel *int   `json:"hierarchy_level,omitempty"`
+	SortOrder      int    `json:"sort_order" binding:"gte=0" minimum:"0"`
+	FieldRole      string `json:"field_role" binding:"omitempty,oneof=regular measure_additive measure_semi measure_non dimension_fk degenerate_dim" enums:"regular,measure_additive,measure_semi,measure_non,dimension_fk,degenerate_dim"`
+	HierarchyID    *int64 `json:"hierarchy_id,omitempty" binding:"omitempty,gt=0" minimum:"1"`
+	HierarchyLevel *int   `json:"hierarchy_level,omitempty" binding:"omitempty,gte=0" minimum:"0"`
 }
 
 // UpdateLogicalFieldRequest 更新逻辑表字段请求
 type UpdateLogicalFieldRequest struct {
-	ElementID      *int64 `json:"element_id,omitempty"`
-	Name           string `json:"name"`
-	ColumnName     string `json:"column_name"`
-	DataType       string `json:"data_type"`
-	Length         *int   `json:"length,omitempty"`
-	Nullable       *bool  `json:"nullable,omitempty"`
-	IsPK           *bool  `json:"is_pk,omitempty"`
-	IsPartition    *bool  `json:"is_partition,omitempty"`
+	ElementID      *int64 `json:"element_id" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
+	Name           string `json:"name" binding:"required,max=200" maxLength:"200"`
+	ColumnName     string `json:"column_name" binding:"required,max=200" maxLength:"200"`
+	DataType       string `json:"data_type" binding:"required,oneof=string int bigint float decimal date datetime bool json text geometry" enums:"string,int,bigint,float,decimal,date,datetime,bool,json,text,geometry"`
+	Length         *int   `json:"length" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
+	Nullable       *bool  `json:"nullable" binding:"required"`
+	IsPK           *bool  `json:"is_pk" binding:"required"`
+	IsPartition    *bool  `json:"is_partition" binding:"required"`
 	DefaultValue   string `json:"default_value"`
 	Description    string `json:"description"`
-	SortOrder      *int   `json:"sort_order,omitempty"`
-	FieldRole      string `json:"field_role"`
-	HierarchyID    *int64 `json:"hierarchy_id,omitempty"`
-	HierarchyLevel *int   `json:"hierarchy_level,omitempty"`
+	SortOrder      *int   `json:"sort_order" binding:"required,gte=0" minimum:"0"`
+	FieldRole      string `json:"field_role" binding:"required,oneof=regular measure_additive measure_semi measure_non dimension_fk degenerate_dim" enums:"regular,measure_additive,measure_semi,measure_non,dimension_fk,degenerate_dim"`
+	HierarchyID    *int64 `json:"hierarchy_id" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
+	HierarchyLevel *int   `json:"hierarchy_level" binding:"omitempty,gte=0" minimum:"0" extensions:"x-nullable"`
 }

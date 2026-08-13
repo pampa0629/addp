@@ -15,7 +15,7 @@
           </el-select>
         </el-col>
         <el-col :span="4">
-          <el-button type="primary" @click="openCreateDialog">
+          <el-button v-if="canCreate" type="primary" @click="openCreateDialog">
             <el-icon><Plus /></el-icon>
             {{ $t('standard.codeSet.create') }}
           </el-button>
@@ -49,7 +49,7 @@
           <template #default="{ row }">
             <div class="table-actions">
               <el-button link type="primary" @click="goToDetail(row)">{{ $t('standard.common.edit') }}</el-button>
-              <el-button link type="danger" :disabled="row.type === 'system'" @click="handleDelete(row)">{{ $t('standard.common.delete') }}</el-button>
+              <el-button v-if="canDelete" link type="danger" :loading="isActionLocked(`code-set:${row.id}`)" :disabled="row.type === 'system'" @click="handleDelete(row)">{{ $t('standard.common.delete') }}</el-button>
             </div>
           </template>
         </el-table-column>
@@ -104,15 +104,21 @@ import { codeSetAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 import { formatStandardDateTime } from '../utils/dateTime'
+import { useStandardPermissions } from '../composables/useStandardPermissions'
+import { createLatestRequestCoordinator } from '@common-ui'
+import { useActionLock } from '../composables/useActionLock'
 
 const router = useRouter()
 const route = useRoute()
 const { t, locale } = useI18n()
+const { canCreate, canDelete } = useStandardPermissions('code_set')
+const { isLocked: isActionLocked, runLocked } = useActionLock()
 const loading = ref(false)
 const creating = ref(false)
 const codeSets = ref([])
 const createDialogVisible = ref(false)
 const createFormRef = ref(null)
+const listRequests = createLatestRequestCoordinator()
 
 const searchForm = reactive({
   keyword: typeof route.query.keyword === 'string' ? route.query.keyword : '',
@@ -131,23 +137,26 @@ const createRules = computed(() => ({
 }))
 
 const loadCodeSets = async () => {
+  const params = {
+    page: pagination.page,
+    page_size: pagination.pageSize,
+    keyword: searchForm.keyword || undefined,
+    type: searchForm.type || undefined
+  }
+  const request = listRequests.begin(JSON.stringify(params))
   loading.value = true
   try {
-    const params = {
-      page: pagination.page,
-      page_size: pagination.pageSize,
-      keyword: searchForm.keyword || undefined,
-      type: searchForm.type || undefined
-    }
     const res = await codeSetAPI.list(params)
+    if (!listRequests.isCurrent(request, JSON.stringify(params))) return
     codeSets.value = res.data || []
     pagination.total = res.total || 0
   } catch (err) {
+    if (!listRequests.isCurrent(request, JSON.stringify(params))) return
     codeSets.value = []
     pagination.total = 0
     ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.loadFailed'))
   } finally {
-    loading.value = false
+    if (listRequests.isCurrent(request, JSON.stringify(params))) loading.value = false
   }
 }
 
@@ -177,9 +186,11 @@ const openCreateDialog = () => {
 }
 
 const handleCreate = async () => {
-  await createFormRef.value.validate()
+  if (creating.value) return
   creating.value = true
   try {
+    const valid = await createFormRef.value.validate().catch(() => false)
+    if (!valid) return
     const res = await codeSetAPI.create(createForm)
     ElMessage.success(t('standard.common.createSuccess'))
     createDialogVisible.value = false
@@ -192,14 +203,16 @@ const handleCreate = async () => {
 }
 
 const handleDelete = async (row) => {
-  try {
-    await ElMessageBox.confirm(t('standard.codeSet.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
-    await codeSetAPI.delete(row.id)
-    ElMessage.success(t('standard.common.deleteSuccess'))
-    loadCodeSets()
-  } catch (err) {
-    if (!isCanceledInteraction(err)) ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.deleteFailed'))
-  }
+  await runLocked(`code-set:${row.id}`, async () => {
+    try {
+      await ElMessageBox.confirm(t('standard.codeSet.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
+      await codeSetAPI.delete(row.id)
+      ElMessage.success(t('standard.common.deleteSuccess'))
+      await loadCodeSets()
+    } catch (err) {
+      if (!isCanceledInteraction(err)) ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.deleteFailed'))
+    }
+  })
 }
 
 const goToDetail = (row) => {

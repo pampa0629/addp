@@ -224,7 +224,8 @@ standard/
 | name | string | 文档名 |
 | doc_type | string | `national` / `industry` / `internal` / `reference` |
 | source_org | string | 来源机构 |
-| version / publish_date | string | 版本 / 发布日期 |
+| document_version / publish_date | string | 文档版次 / 发布日期 |
+| version | int64 | 资源并发版本，创建时为 1，成功更新后递增 |
 | file_key | string | MinIO 存储路径（bucket: standard） |
 | file_name / file_size | string/int64 | 原始文件名 / 大小 |
 
@@ -265,7 +266,7 @@ GET/PUT /api/standard/glossaries/:id/elements # 关联数据元
 
 ### 数据元
 ```
-GET/POST /api/standard/elements
+GET/POST /api/standard/elements              # GET 支持 ids=1,2,3 精确筛选，最多 100 个去重 ID
 GET/PUT/DELETE /api/standard/elements/:id
 POST /api/standard/elements/:id/approve
 GET/PUT /api/standard/elements/:id/quality-rules

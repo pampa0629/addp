@@ -68,10 +68,10 @@ func (s *DimensionHierarchyService) Update(id, tenantID, userID int64, req *mode
 	h.DomainID = req.DomainID
 	h.Description = req.Description
 	h.UpdatedBy = &userID
-	if err := s.repo.Update(h); err != nil {
+	if err := s.repo.Update(h, req.Version); err != nil {
 		return nil, err
 	}
-	return h, nil
+	return s.repo.GetByID(id, tenantID)
 }
 
 func (s *DimensionHierarchyService) Delete(id, tenantID int64) error {
@@ -84,7 +84,7 @@ func (s *DimensionHierarchyService) GetLevels(hierarchyID, tenantID int64) ([]mo
 	return s.repo.GetLevels(hierarchyID, tenantID)
 }
 
-func (s *DimensionHierarchyService) CreateLevel(hierarchyID, tenantID int64, req *models.UpsertHierarchyLevelRequest) (*models.DimensionHierarchyLevel, error) {
+func (s *DimensionHierarchyService) CreateLevel(hierarchyID, tenantID int64, req *models.UpsertHierarchyLevelRequest) (*models.HierarchyLevelMutationResponse, error) {
 	if _, err := s.repo.GetByID(hierarchyID, tenantID); err != nil {
 		return nil, err
 	}
@@ -111,13 +111,13 @@ func (s *DimensionHierarchyService) CreateLevel(hierarchyID, tenantID int64, req
 		Description: req.Description,
 		SortOrder:   req.SortOrder,
 	}
-	if err := s.repo.CreateLevel(level); err != nil {
+	if err := s.repo.CreateLevel(level, tenantID, req.Version); err != nil {
 		return nil, err
 	}
-	return level, nil
+	return &models.HierarchyLevelMutationResponse{Level: level, Version: req.Version + 1}, nil
 }
 
-func (s *DimensionHierarchyService) UpdateLevel(levelID, hierarchyID, tenantID int64, req *models.UpsertHierarchyLevelRequest) (*models.DimensionHierarchyLevel, error) {
+func (s *DimensionHierarchyService) UpdateLevel(levelID, hierarchyID, tenantID int64, req *models.UpsertHierarchyLevelRequest) (*models.HierarchyLevelMutationResponse, error) {
 	level, err := s.repo.GetLevelByID(levelID, hierarchyID, tenantID)
 	if err != nil {
 		return nil, err
@@ -146,12 +146,12 @@ func (s *DimensionHierarchyService) UpdateLevel(levelID, hierarchyID, tenantID i
 	level.ElementID = req.ElementID
 	level.Description = req.Description
 	level.SortOrder = req.SortOrder
-	if err := s.repo.UpdateLevel(level); err != nil {
+	if err := s.repo.UpdateLevel(level, tenantID, req.Version); err != nil {
 		return nil, err
 	}
-	return level, nil
+	return &models.HierarchyLevelMutationResponse{Level: level, Version: req.Version + 1}, nil
 }
 
-func (s *DimensionHierarchyService) DeleteLevel(levelID, hierarchyID, tenantID int64) error {
-	return s.repo.DeleteLevel(levelID, hierarchyID, tenantID)
+func (s *DimensionHierarchyService) DeleteLevel(levelID, hierarchyID, tenantID, version int64) error {
+	return s.repo.DeleteLevel(levelID, hierarchyID, tenantID, version)
 }

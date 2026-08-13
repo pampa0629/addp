@@ -24,6 +24,8 @@ func NewDWLayerHandler(svc *service.DWLayerService) *DWLayerHandler {
 // @Tags Model
 // @Produce json
 // @Success 200 {object} map[string]interface{} "数仓分层列表 | DW layer list"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.dw_layer.read"]
 // @Router /dw-layers [get]
@@ -46,6 +48,9 @@ func (h *DWLayerHandler) ListDWLayers(c *gin.Context) {
 // @Produce json
 // @Param body body models.CreateDWLayerRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的分层 | Created DW layer"
+// @Failure 400 {object} models.ErrorResponse "请求无效 | Invalid request"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 409 {object} models.ErrorResponse "分层编码冲突 | DW layer code conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.dw_layer.create"]
@@ -73,6 +78,10 @@ func (h *DWLayerHandler) CreateDWLayer(c *gin.Context) {
 // @Produce json
 // @Param id path int true "分层ID | DW layer ID"
 // @Success 200 {object} map[string]interface{} "分层详情 | DW layer details"
+// @Failure 400 {object} models.ErrorResponse "分层 ID 无效 | Invalid DW layer ID"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 404 {object} models.ErrorResponse "数仓分层不存在 | DW layer not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.dw_layer.read"]
 // @Router /dw-layers/{id} [get]
@@ -101,6 +110,11 @@ func (h *DWLayerHandler) GetDWLayer(c *gin.Context) {
 // @Param id path int true "分层ID | DW layer ID"
 // @Param body body models.UpdateDWLayerRequest true "更新请求 | Update request"
 // @Success 200 {object} map[string]interface{} "已更新的分层 | Updated DW layer"
+// @Failure 400 {object} models.ErrorResponse "请求或分层 ID 无效 | Invalid request or DW layer ID"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 404 {object} models.ErrorResponse "数仓分层不存在 | DW layer not found"
+// @Failure 409 {object} models.ErrorResponse "分层编码冲突 | DW layer code conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.dw_layer.update"]
 // @Router /dw-layers/{id} [put]
@@ -133,6 +147,9 @@ func (h *DWLayerHandler) UpdateDWLayer(c *gin.Context) {
 // @Produce json
 // @Param id path int true "分层ID | DW layer ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Failure 400 {object} models.ErrorResponse "分层 ID 无效 | Invalid DW layer ID"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 404 {object} models.ErrorResponse "数仓分层不存在 | DW layer not found"
 // @Failure 409 {object} models.ErrorResponse "数仓分层仍被引用 | DW layer is still referenced"
 // @x-addp-auth-mode "permission"

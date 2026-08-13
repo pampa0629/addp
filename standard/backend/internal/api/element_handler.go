@@ -1,8 +1,10 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/standard/i18n"
@@ -24,15 +26,29 @@ func NewElementHandler(svc *service.ElementService) *ElementHandler {
 // @Summary 获取数据元列表 | List data elements
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} models.QualityRulesResponse
+// @Param ids query string false "数据元 ID 集合，逗号分隔，最多 100 个 | Data element IDs, comma-separated, maximum 100"
+// @Success 200 {object} models.PaginatedElementResponse
+// @Failure 400 {object} map[string]string "无效的 ID 集合 | Invalid ID collection"
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.read"]
 // @Router /elements [get]
 // @Security BearerAuth
 func (h *ElementHandler) ListElements(c *gin.Context) {
 	tenantID := getTenantID(c)
+	if len(c.Request.URL.Query()["ids"]) > 1 {
+		respondError(c, http.StatusBadRequest, fmt.Errorf("duplicate element ids filter"))
+		return
+	}
+	ids, err := parseElementIDs(c.Query("ids"))
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
 
 	opts := repository.ListElementOptions{
+		IDs:     ids,
 		Status:  c.Query("status"),
 		Keyword: c.Query("keyword"),
 	}
@@ -72,11 +88,40 @@ func (h *ElementHandler) ListElements(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": elements, "total": total, "page": page, "page_size": pageSize, "total_pages": totalPages})
 }
 
+func parseElementIDs(value string) ([]int64, error) {
+	if value == "" {
+		return nil, nil
+	}
+	parts := strings.Split(value, ",")
+	if len(parts) > 100 {
+		return nil, fmt.Errorf("too many element ids")
+	}
+	ids := make([]int64, 0, len(parts))
+	seen := make(map[int64]struct{}, len(parts))
+	for _, part := range parts {
+		if part == "" || strings.TrimSpace(part) != part {
+			return nil, fmt.Errorf("invalid element ids")
+		}
+		id, err := strconv.ParseInt(part, 10, 64)
+		if err != nil || id <= 0 {
+			return nil, fmt.Errorf("invalid element ids")
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
 // CreateElement POST /api/model/elements
 // @Summary 创建数据元 | Create data element
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.create"]
 // @Router /elements [post]
@@ -104,6 +149,8 @@ func (h *ElementHandler) CreateElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.read"]
 // @Router /elements/{id} [get]
@@ -114,7 +161,6 @@ func (h *ElementHandler) GetElement(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
-
 	tenantID := getTenantID(c)
 	element, err := h.svc.GetElement(id, tenantID)
 	if err != nil {
@@ -128,7 +174,11 @@ func (h *ElementHandler) GetElement(c *gin.Context) {
 // @Summary 更新数据元 | Update data element
 // @Tags Standard
 // @Produce json
+// @Param request body models.UpdateElementRequest true "更新数据元 | Update data element"
 // @Success 200 {object} map[string]interface{}
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.update"]
 // @Router /elements/{id} [put]
@@ -162,6 +212,8 @@ func (h *ElementHandler) UpdateElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.delete"]
 // @Router /elements/{id} [delete]
@@ -172,7 +224,6 @@ func (h *ElementHandler) DeleteElement(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
-
 	tenantID := getTenantID(c)
 	if err := h.svc.DeleteElement(id, tenantID); err != nil {
 		respondError(c, http.StatusInternalServerError, err)
@@ -185,7 +236,11 @@ func (h *ElementHandler) DeleteElement(c *gin.Context) {
 // @Summary 审批数据元 | Approve data element
 // @Tags Standard
 // @Produce json
+// @Param request body models.VersionRequest true "当前资源版本 | Current resource version"
 // @Success 200 {object} map[string]interface{}
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.approve"]
 // @Router /elements/{id}/approve [post]
@@ -196,11 +251,16 @@ func (h *ElementHandler) ApproveElement(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
 
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
 
-	if err := h.svc.ApproveElement(id, tenantID, userID); err != nil {
+	if err := h.svc.ApproveElement(id, tenantID, userID, req.Version); err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
@@ -212,6 +272,8 @@ func (h *ElementHandler) ApproveElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.read"]
 // @Router /elements/{id}/quality-rules [get]

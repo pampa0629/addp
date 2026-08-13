@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
 
 	"github.com/addp/common/dataquality"
 )
@@ -35,6 +38,28 @@ type ElementResponse struct {
 	DataType     string               `json:"data_type"`
 	CodeSetID    *int64               `json:"code_set_id"`
 	QualityRules dataquality.Document `json:"quality_rules"`
+}
+
+type ElementSummary struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	Code string `json:"code"`
+}
+
+type ElementCandidate struct {
+	ID           int64                `json:"id"`
+	Name         string               `json:"name"`
+	Code         string               `json:"code"`
+	QualityRules dataquality.Document `json:"quality_rules"`
+}
+
+type elementListResponse struct {
+	Data []ElementSummary `json:"data"`
+}
+
+type elementCandidateListResponse struct {
+	Data  []ElementCandidate `json:"data"`
+	Total int64              `json:"total"`
 }
 
 type tenantReferenceResponse struct {
@@ -70,6 +95,47 @@ func (c *StandardClient) GetElement(ctx context.Context, elementID int64) (*Elem
 		return nil, fmt.Errorf("standard get element: %w", err)
 	}
 	return &element, nil
+}
+
+func (c *StandardClient) ListElementSummaries(ctx context.Context, elementIDs []int64) ([]ElementSummary, error) {
+	if len(elementIDs) == 0 {
+		return []ElementSummary{}, nil
+	}
+	values := make([]string, len(elementIDs))
+	for index, elementID := range elementIDs {
+		if elementID <= 0 {
+			return nil, errors.New("standard list elements requires positive ids")
+		}
+		values[index] = strconv.FormatInt(elementID, 10)
+	}
+	query := url.Values{
+		"ids":       []string{strings.Join(values, ",")},
+		"page":      []string{"1"},
+		"page_size": []string{"100"},
+	}
+	var response elementListResponse
+	if err := c.doJSON(ctx, http.MethodGet, "/api/v1/standard/elements?"+query.Encode(), nil, &response); err != nil {
+		return nil, fmt.Errorf("standard list elements: %w", err)
+	}
+	return response.Data, nil
+}
+
+func (c *StandardClient) ListElementCandidates(ctx context.Context, keyword string, page, pageSize int) ([]ElementCandidate, int64, error) {
+	query := url.Values{
+		"keyword":   []string{keyword},
+		"page":      []string{strconv.Itoa(page)},
+		"page_size": []string{strconv.Itoa(pageSize)},
+	}
+	var response elementCandidateListResponse
+	if err := c.doJSON(ctx, http.MethodGet, "/api/v1/standard/elements?"+query.Encode(), nil, &response); err != nil {
+		return nil, 0, fmt.Errorf("standard list element candidates: %w", err)
+	}
+	for index := range response.Data {
+		if err := response.Data[index].QualityRules.Validate(); err != nil {
+			return nil, 0, fmt.Errorf("standard returned invalid element candidate quality rules: %w", err)
+		}
+	}
+	return response.Data, response.Total, nil
 }
 
 func (c *StandardClient) GetElementQualityRules(ctx context.Context, elementID int64) (*dataquality.Document, error) {

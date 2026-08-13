@@ -11,6 +11,7 @@ import (
 	"github.com/addp/model/internal/repository"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"unicode/utf8"
 )
 
 type EntityService struct {
@@ -46,6 +47,9 @@ func NewEntityService(repo *repository.EntityRepository, relationRepo *repositor
 }
 
 func (s *EntityService) CreateEntity(req *models.CreateEntityRequest, tenantID, userID int64) (*models.Entity, error) {
+	if err := validateCreateEntityRequest(req); err != nil {
+		return nil, err
+	}
 	if err := s.validateReferences(tenantID, req.DomainID, nil); err != nil {
 		return nil, err
 	}
@@ -82,6 +86,9 @@ func (s *EntityService) GetEntity(id, tenantID int64) (*models.Entity, error) {
 }
 
 func (s *EntityService) ListEntities(tenantID int64, opts repository.ListEntityOptions) ([]models.Entity, int64, error) {
+	if !validOptionalID(opts.DomainID) || !validListStatus(opts.Status) {
+		return nil, 0, invalidRequest()
+	}
 	return s.repo.List(tenantID, opts)
 }
 
@@ -93,16 +100,15 @@ func (s *EntityService) UpdateEntity(id, tenantID, userID int64, req *models.Upd
 	if entity.Status != "draft" {
 		return nil, apperrors.Conflict("entity_state_conflict", i18n.MsgEntityStateConflict)
 	}
+	if req == nil || !validOptionalID(req.DomainID) || !validRequiredString(req.Name, 200) {
+		return nil, apperrors.Validation("invalid_request", i18n.MsgValidationFailed)
+	}
 
-	if req.Name != "" {
-		entity.Name = req.Name
+	if err := s.validateReferences(tenantID, req.DomainID, nil); err != nil {
+		return nil, err
 	}
-	if req.DomainID != nil {
-		if err := s.validateReferences(tenantID, req.DomainID, nil); err != nil {
-			return nil, err
-		}
-		entity.DomainID = req.DomainID
-	}
+	entity.Name = req.Name
+	entity.DomainID = req.DomainID
 	entity.Description = req.Description
 	entity.UpdatedBy = &userID
 
@@ -153,7 +159,7 @@ func (s *EntityService) ApproveEntity(id, tenantID, userID int64) error {
 		return err
 	}
 	if len(attributes) == 0 {
-		return apperrors.Validation("entity_approval_invalid", i18n.MsgValidationFailed)
+		return apperrors.Validation("entity_approval_attributes_required", i18n.MsgEntityAttributesRequired)
 	}
 	hasPrimaryKey := false
 	for _, attribute := range attributes {
@@ -161,11 +167,11 @@ func (s *EntityService) ApproveEntity(id, tenantID, userID int64) error {
 			hasPrimaryKey = true
 		}
 		if attribute.ColumnName == "" || attribute.DataType == "" {
-			return apperrors.Validation("entity_approval_invalid", i18n.MsgValidationFailed)
+			return apperrors.Validation("entity_approval_attribute_invalid", i18n.MsgEntityAttributeInvalid)
 		}
 	}
 	if !hasPrimaryKey {
-		return apperrors.Validation("entity_approval_invalid", i18n.MsgValidationFailed)
+		return apperrors.Validation("entity_approval_primary_key_required", i18n.MsgEntityPrimaryKeyRequired)
 	}
 	return s.repo.UpdateStatus(id, tenantID, "approved", userID)
 }
@@ -200,6 +206,12 @@ func (s *EntityService) CreateAttribute(entityID, tenantID int64, req *models.Cr
 	if entity.Status != "draft" {
 		return nil, apperrors.Conflict("entity_state_conflict", i18n.MsgEntityStateConflict)
 	}
+	if req == nil {
+		return nil, apperrors.Validation("invalid_request", i18n.MsgValidationFailed)
+	}
+	if err := validateCreateEntityAttributeRequest(req); err != nil {
+		return nil, err
+	}
 	if err := s.validateReferences(tenantID, nil, req.ElementID); err != nil {
 		return nil, err
 	}
@@ -217,7 +229,7 @@ func (s *EntityService) CreateAttribute(entityID, tenantID int64, req *models.Cr
 	}
 
 	if err := s.repo.CreateAttribute(attr); err != nil {
-		return nil, err
+		return nil, modelResourceError(err, "entity_attribute_column", i18n.MsgAttributeColumnConflict)
 	}
 	return attr, nil
 }
@@ -231,6 +243,9 @@ func (s *EntityService) UpdateAttribute(attrID, entityID, tenantID int64, req *m
 	if entity.Status != "draft" {
 		return nil, apperrors.Conflict("entity_state_conflict", i18n.MsgEntityStateConflict)
 	}
+	if req == nil {
+		return nil, invalidRequest()
+	}
 	if err := s.validateReferences(tenantID, nil, req.ElementID); err != nil {
 		return nil, err
 	}
@@ -239,30 +254,23 @@ func (s *EntityService) UpdateAttribute(attrID, entityID, tenantID int64, req *m
 	if err != nil {
 		return nil, apperrors.NotFound("attribute_not_found", i18n.MsgAttributeNotFound)
 	}
+	if !validRequiredString(req.Name, 200) || !modelCodePattern.MatchString(req.ColumnName) || utf8.RuneCountInString(req.ColumnName) > 200 ||
+		!validValue(req.DataType, modelDataTypes...) || !validOptionalID(req.ElementID) ||
+		req.IsPK == nil || req.Nullable == nil || req.SortOrder == nil || *req.SortOrder < 0 {
+		return nil, apperrors.Validation("invalid_request", i18n.MsgValidationFailed)
+	}
 
-	if req.Name != "" {
-		attr.Name = req.Name
-	}
-	if req.ColumnName != "" {
-		attr.ColumnName = req.ColumnName
-	}
-	if req.DataType != "" {
-		attr.DataType = req.DataType
-	}
+	attr.Name = req.Name
+	attr.ColumnName = req.ColumnName
+	attr.DataType = req.DataType
 	attr.ElementID = req.ElementID
-	if req.IsPK != nil {
-		attr.IsPK = *req.IsPK
-	}
-	if req.Nullable != nil {
-		attr.Nullable = *req.Nullable
-	}
+	attr.IsPK = *req.IsPK
+	attr.Nullable = *req.Nullable
 	attr.Description = req.Description
-	if req.SortOrder != nil {
-		attr.SortOrder = *req.SortOrder
-	}
+	attr.SortOrder = *req.SortOrder
 
 	if err := s.repo.UpdateAttribute(attr); err != nil {
-		return nil, err
+		return nil, modelResourceError(err, "entity_attribute_column", i18n.MsgAttributeColumnConflict)
 	}
 	return attr, nil
 }

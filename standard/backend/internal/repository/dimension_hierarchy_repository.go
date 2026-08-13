@@ -18,6 +18,9 @@ func NewDimensionHierarchyRepository(db *gorm.DB) *DimensionHierarchyRepository 
 func (r *DimensionHierarchyRepository) List(tenantID int64) ([]models.DimensionHierarchy, error) {
 	var list []models.DimensionHierarchy
 	err := r.db.Where("tenant_id = ?", tenantID).
+		Preload("Levels", func(db *gorm.DB) *gorm.DB {
+			return db.Order("sort_order ASC, level_num ASC")
+		}).
 		Order("created_at DESC").
 		Find(&list).Error
 	return list, err
@@ -37,8 +40,14 @@ func (r *DimensionHierarchyRepository) Create(h *models.DimensionHierarchy) erro
 	return wrapDBError(r.db.Create(h).Error)
 }
 
-func (r *DimensionHierarchyRepository) Update(h *models.DimensionHierarchy) error {
-	return wrapDBError(r.db.Save(h).Error)
+func (r *DimensionHierarchyRepository) Update(h *models.DimensionHierarchy, expectedVersion int64) error {
+	if err := updateVersioned(r.db, h, h.ID, h.TenantID, expectedVersion, map[string]interface{}{
+		"domain_id": h.DomainID, "name": h.Name, "description": h.Description, "updated_by": h.UpdatedBy,
+	}); err != nil {
+		return err
+	}
+	h.Version = expectedVersion + 1
+	return nil
 }
 
 func (r *DimensionHierarchyRepository) Delete(id, tenantID int64) error {
@@ -67,8 +76,13 @@ func (r *DimensionHierarchyRepository) GetLevels(hierarchyID, tenantID int64) ([
 	return levels, err
 }
 
-func (r *DimensionHierarchyRepository) CreateLevel(level *models.DimensionHierarchyLevel) error {
-	return wrapDBError(r.db.Create(level).Error)
+func (r *DimensionHierarchyRepository) CreateLevel(level *models.DimensionHierarchyLevel, tenantID, expectedVersion int64) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		if err := updateVersioned(tx, &models.DimensionHierarchy{}, level.HierarchyID, tenantID, expectedVersion, map[string]interface{}{}); err != nil {
+			return err
+		}
+		return tx.Create(level).Error
+	}))
 }
 
 func (r *DimensionHierarchyRepository) GetLevelByID(levelID, hierarchyID, tenantID int64) (*models.DimensionHierarchyLevel, error) {
@@ -80,15 +94,25 @@ func (r *DimensionHierarchyRepository) GetLevelByID(levelID, hierarchyID, tenant
 	return &level, commonrepo.WrapDBError(err)
 }
 
-func (r *DimensionHierarchyRepository) UpdateLevel(level *models.DimensionHierarchyLevel) error {
-	return wrapDBError(r.db.Save(level).Error)
+func (r *DimensionHierarchyRepository) UpdateLevel(level *models.DimensionHierarchyLevel, tenantID, expectedVersion int64) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		if err := updateVersioned(tx, &models.DimensionHierarchy{}, level.HierarchyID, tenantID, expectedVersion, map[string]interface{}{}); err != nil {
+			return err
+		}
+		return requireAffectedRow(tx.Model(&models.DimensionHierarchyLevel{}).Where("id = ? AND hierarchy_id = ?", level.ID, level.HierarchyID).Updates(map[string]interface{}{
+			"level_num": level.LevelNum, "name": level.Name, "element_id": level.ElementID,
+			"description": level.Description, "sort_order": level.SortOrder,
+		}))
+	}))
 }
 
-func (r *DimensionHierarchyRepository) DeleteLevel(levelID, hierarchyID, tenantID int64) error {
-	if _, err := r.GetLevelByID(levelID, hierarchyID, tenantID); err != nil {
-		return err
-	}
-	return deleteInTransaction(r.db, &models.DimensionHierarchyLevel{}, "id = ? AND hierarchy_id = ?", levelID, hierarchyID)
+func (r *DimensionHierarchyRepository) DeleteLevel(levelID, hierarchyID, tenantID, expectedVersion int64) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		if err := updateVersioned(tx, &models.DimensionHierarchy{}, hierarchyID, tenantID, expectedVersion, map[string]interface{}{}); err != nil {
+			return err
+		}
+		return requireAffectedRow(tx.Where("id = ? AND hierarchy_id = ?", levelID, hierarchyID).Delete(&models.DimensionHierarchyLevel{}))
+	}))
 }
 
 func (r *DimensionHierarchyRepository) ExistsLevelNum(hierarchyID, tenantID int64, levelNum int, excludeID int64) (bool, error) {

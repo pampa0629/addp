@@ -177,7 +177,7 @@ replace / append / upsert / upsert_delete 是 Transfer apply policy；upsert 和
 | `replace` | 写入前由 Transfer 规划删除目标资源或重建目标，再执行写入。 |
 | `append` | 追加写入；失败 retry 当前拒绝 append，避免重复写。 |
 | `upsert` | 按稳定键幂等新增或更新；第一版仅 PostgreSQL native table。 |
-| `upsert_delete` | 按稳定键新增、更新和物理删除；数据库 CDC 支持 PostgreSQL/MySQL/Oracle 源到 PostgreSQL/MySQL 新目标表。 |
+| `upsert_delete` | 按稳定键新增、更新和物理删除；数据库 CDC 支持 PostgreSQL/MySQL/Oracle 源到 PostgreSQL/MySQL/Oracle 新目标表。 |
 
 `TableWritePreparer` 只做 ensure / create table / schema evolution，不承载 replace / append 策略。DeleteResource 是 common engine 提供的原子删除能力；watermark upsert 使用独立强类型 Provider。
 
@@ -234,7 +234,7 @@ Business Kafka topic
   -> ChangeStreamReaderProvider
   -> keyed JSON ChangeEvent(operation=upsert)
   -> Transfer ChangeApplyWriter
-  -> PostgreSQL/MySQL PartitionedTableChangeApplyProvider
+  -> PostgreSQL/MySQL/Oracle PartitionedTableChangeApplyProvider
   -> business target apply ledger + table upsert (one transaction)
   -> per-partition kafka_offset/v1 next_offset CAS
 ```
@@ -247,7 +247,7 @@ PostgreSQL 单表
   -> Infra Kafka 单分区 CDC topic
   -> 同一个 Transfer Continuous Worker
   -> snapshot/upsert/delete ChangeEvent
-  -> PostgreSQL/MySQL PartitionedTableChangeApplyProvider
+  -> PostgreSQL/MySQL/Oracle PartitionedTableChangeApplyProvider
   -> business target apply ledger + table upsert/delete (one transaction)
   -> per-partition kafka_offset/v1 next_offset CAS
 ```
@@ -260,7 +260,7 @@ MySQL 8.0 单表
   -> Infra Kafka 单分区 CDC data topic
   -> 同一个 Transfer Continuous Worker
   -> snapshot/upsert/delete ChangeEvent
-  -> PostgreSQL/MySQL PartitionedTableChangeApplyProvider
+  -> PostgreSQL/MySQL/Oracle PartitionedTableChangeApplyProvider
   -> business target apply ledger + table upsert/delete (one transaction)
   -> per-partition kafka_offset/v1 next_offset CAS
 ```
@@ -273,7 +273,7 @@ Oracle 普通单表
   -> Infra Kafka 单分区 CDC data topic
   -> 同一个 Transfer Continuous Worker
   -> snapshot/upsert/delete ChangeEvent
-  -> PostgreSQL/MySQL PartitionedTableChangeApplyProvider
+  -> PostgreSQL/MySQL/Oracle PartitionedTableChangeApplyProvider
   -> business target apply ledger + table upsert/delete (one transaction)
   -> per-partition kafka_offset/v1 next_offset CAS
 
@@ -281,5 +281,7 @@ Oracle Spatial 单表
   -> source schema 内 generation-owned trigger + WKB/GeoJSON mirror table
   -> 同一个 Debezium Oracle Connector / Infra Kafka / Continuous Worker / target apply 主路径
 ```
+
+Oracle target 只实现 `PartitionedTableChangeApplyProvider`，不开放普通 bounded table write。目标 schema 必须等于连接用户，业务行与 `_ADDP_TRANSFER_APPLY_POSITIONS` 在同一 Oracle 事务提交；ledger 使用 ownership comment 从 Catalog 隐藏。目标字段拒绝独立 `time`、decimal precision > 38 和非 XY geometry，EWKB 由 Provider 校验冻结 SRID/type/dimension 后通过 `SDO_UTIL.FROM_WKBGEOMETRY` 写入 `MDSYS.SDO_GEOMETRY`。
 
 continuous worker 是 Transfer 独立长驻进程角色，一个进程承载多个 runtime session；它通过 `transfer.runtime_leases` claim owner/lease/heartbeat/fencing，不使用 Asynq 承载无限循环。业务 Kafka 与 PostgreSQL/MySQL/Oracle CDC 复用同一个 consumer/apply/CAS 主循环，不建立第二套 CDC consumer。Oracle Spatial 由 capture Provider 在源 schema 内维护 generation-owned WKB 镜像表，再进入相同 Debezium 主路径。业务 Kafka 已支持显式 `block|dead_letter`；bounded replay 通过独立 Asynq execution 从原业务 Kafka 读取显式 offset ranges，并只写不存在的新 PostgreSQL 隔离表。当前仍不支持无 key append、Kafka target、Schema Registry、Avro、Protobuf、数据库 CDC replay、普通 Oracle LOB/RAC、ArcGIS SDE 或自动 schema evolution。

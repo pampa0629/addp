@@ -39,23 +39,32 @@
 
     <template v-else>
 
+    <el-alert
+      v-if="referenceError"
+      class="reference-warning"
+      type="warning"
+      :title="referenceError"
+      show-icon
+      :closable="false"
+    />
+
     <!-- Tab 标签页 -->
     <el-tabs v-model="activeTab" type="border-card" @tab-change="handleTabChange">
       <!-- 基本信息标签页 -->
       <el-tab-pane :label="t('model.logical_table.basic_info')" name="basic">
         <el-form :model="form" label-width="90px">
           <el-row :gutter="16">
-            <el-col :span="12">
+            <el-col :xs="24" :md="12">
               <el-form-item :label="t('model.entity.name')">
-                <el-input v-model="form.name" :disabled="!canEditEntity" />
+                <el-input v-model="form.name" maxlength="200" :disabled="!canEditEntity" />
               </el-form-item>
             </el-col>
-            <el-col :span="12">
+            <el-col :xs="24" :md="12">
               <el-form-item :label="t('model.entity.code')">
                 <el-input :value="entity.code" disabled />
               </el-form-item>
             </el-col>
-            <el-col :span="12">
+            <el-col :xs="24" :md="12">
               <el-form-item :label="t('model.entity.domain')">
                 <el-select v-model="form.domain_id" :disabled="!canEditEntity" clearable style="width:100%">
                   <el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" />
@@ -74,7 +83,7 @@
       <!-- 属性列表标签页 -->
       <el-tab-pane :label="t('model.attribute.title')" name="attributes">
         <div class="tab-header">
-          <el-button v-if="canEditEntity && can('model.entity.create')" type="primary" size="small" @click="openAttrDialog()">
+          <el-button v-if="canCreateAttribute" type="primary" size="small" @click="openAttrDialog()">
             <el-icon><Plus /></el-icon>
             {{ t('model.attribute.add') }}
           </el-button>
@@ -107,7 +116,7 @@
           <el-table-column :label="t('model.attribute.actions')" width="130" fixed="right">
             <template #default="{ row }">
               <el-button v-if="canEditEntity" link type="primary" @click="openAttrDialog(row)">{{ t('model.common.edit') }}</el-button>
-              <el-popconfirm v-if="canEditEntity && can('model.entity.delete')" :title="t('model.attribute.delete_confirm')" @confirm="deleteAttr(row.id)">
+              <el-popconfirm v-if="canDeleteAttribute" :title="t('model.attribute.delete_confirm')" @confirm="deleteAttr(row.id)">
                 <template #reference>
                   <el-button link type="danger">{{ t('model.common.delete') }}</el-button>
                 </template>
@@ -159,7 +168,7 @@
             <el-table-column :label="t('model.relation.actions')" width="130" fixed="right">
               <template #default="{ row }">
                 <el-button v-if="canModifyRelation(row, 'model.entity_relation.update')" link type="primary" @click="openRelationDialog(row)">{{ t('model.common.edit') }}</el-button>
-                <el-popconfirm v-if="canModifyRelation(row, 'model.entity_relation.delete')" :title="t('model.relation.delete_confirm')" @confirm="deleteRelation(row.id)">
+                <el-popconfirm v-if="canModifyRelation(row, 'model.entity_relation.delete')" :title="t('model.relation.delete_confirm')" @confirm="deleteRelation(row)">
                   <template #reference>
                     <el-button link type="danger">{{ t('model.common.delete') }}</el-button>
                   </template>
@@ -198,14 +207,14 @@
     <el-dialog
       v-model="attrDialogVisible"
       :title="editingAttr ? t('model.attribute.edit') : t('model.attribute.add')"
-      width="480px"
+      width="min(480px, calc(100vw - 32px))"
     >
       <el-form ref="attrFormRef" :model="attrForm" :rules="attrRules" label-width="100px">
         <el-form-item :label="t('model.attribute.name')" prop="name">
-          <el-input v-model="attrForm.name" :placeholder="t('model.attribute.name_placeholder')" />
+          <el-input v-model="attrForm.name" maxlength="200" :placeholder="t('model.attribute.name_placeholder')" />
         </el-form-item>
 		<el-form-item :label="t('model.attribute.column_name')" prop="column_name">
-		  <el-input v-model="attrForm.column_name" :placeholder="t('model.attribute.column_name_placeholder')" />
+		  <el-input v-model="attrForm.column_name" maxlength="200" :placeholder="t('model.attribute.column_name_placeholder')" />
 		</el-form-item>
 		<el-form-item :label="t('model.attribute.data_type')" prop="data_type">
 		  <el-select v-model="attrForm.data_type" style="width:100%">
@@ -250,7 +259,7 @@
     <el-dialog
       v-model="relationDialogVisible"
       :title="editingRelation ? t('model.relation.edit') : t('model.relation.add')"
-      width="600px"
+      width="min(600px, calc(100vw - 32px))"
     >
       <el-form ref="relationFormRef" :model="relationForm" :rules="relationRules" label-width="100px">
         <el-form-item :label="t('model.relation.direction')">
@@ -291,7 +300,8 @@
         <el-form-item :label="t('model.relation.name')">
           <el-input
             v-model="relationForm.name"
-            placeholder="如：places, belongs_to, has"
+            maxlength="200"
+            :placeholder="t('model.relation.name_placeholder')"
           />
         </el-form-item>
 
@@ -329,7 +339,7 @@ import { navigateModelRoute } from '../utils/moduleNavigation'
 import { resolveEntityListRouteState } from '../utils/routeState'
 import { initializeMermaidTheme, observeThemeChange } from '../utils/mermaidTheme'
 import { getModelErrorMessage } from '../utils/apiError'
-import { isEditableDraft, resolvePositiveRouteId } from '../utils/modelDetailState'
+import { buildEntityAttributeUpdateRequest, canPerformDraftAction, isEditableDraft, resolvePositiveRouteId } from '../utils/modelDetailState'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -354,6 +364,7 @@ let routeDataReady = false
 const saving = ref(false)
 const pageLoading = ref(false)
 const pageError = ref('')
+const referenceError = ref('')
 const attrLoading = ref(false)
 const relationLoading = ref(false)
 const mermaidLoading = ref(false)
@@ -370,6 +381,8 @@ const mermaidContainer = ref(null)
 const entity = ref({})
 const entityIsDraft = computed(() => entity.value.status === 'draft')
 const canEditEntity = computed(() => isEditableDraft(entity.value.status, can('model.entity.update')))
+const canCreateAttribute = computed(() => canPerformDraftAction(entity.value.status, can('model.entity.create')))
+const canDeleteAttribute = computed(() => canPerformDraftAction(entity.value.status, can('model.entity.delete')))
 const canCreateRelation = computed(() => entityIsDraft.value && can('model.entity_relation.create'))
 const form = reactive({ name: '', domain_id: null, description: '' })
 const attributes = ref([])
@@ -381,7 +394,7 @@ const localMermaidCode = ref('erDiagram\n  ENTITY {\n  }\n')
 let stopThemeObserver = null
 
 const attributeDataTypes = ['string', 'int', 'bigint', 'float', 'decimal', 'date', 'datetime', 'bool', 'json', 'text', 'geometry']
-const attrForm = reactive({ name: '', column_name: '', data_type: 'string', element_id: null, is_pk: false, nullable: true, description: '' })
+const attrForm = reactive({ name: '', column_name: '', data_type: 'string', element_id: null, is_pk: false, nullable: true, description: '', sort_order: 0 })
 const attrRules = {
   name: [{ required: true, message: t('model.attribute.name_required'), trigger: 'blur' }],
   column_name: [{ required: true, message: t('model.attribute.column_name_required'), trigger: 'blur' }],
@@ -486,6 +499,10 @@ const loadRelations = async () => {
 }
 
 const handleSave = async () => {
+  if (!canEditEntity.value) {
+    ElMessage.error(t('model.common.permission_denied'))
+    return
+  }
   saving.value = true
   try {
     await entityAPI.update(entityId.value, form)
@@ -499,6 +516,10 @@ const handleSave = async () => {
 }
 
 const handleApprove = async () => {
+  if (!can('model.entity.approve')) {
+    ElMessage.error(t('model.common.permission_denied'))
+    return
+  }
   try {
     await entityAPI.approve(entityId.value)
     ElMessage.success(t('model.entity.approve_success'))
@@ -509,7 +530,11 @@ const handleApprove = async () => {
 }
 
 const handleReopen = async () => {
-  try {
+  if (!can('model.entity.update')) {
+    ElMessage.error(t('model.common.permission_denied'))
+    return
+  }
+	try {
 	await entityAPI.reopen(entityId.value)
 	ElMessage.success(t('model.common.reopen_success'))
 	loadEntity()
@@ -525,18 +550,24 @@ const openAttrDialog = (attr = null) => {
       name: attr.name,
 	  column_name: attr.column_name,
 	  data_type: attr.data_type,
-      element_id: attr.element_id || null,
+      element_id: attr.element_id ?? null,
       is_pk: attr.is_pk,
       nullable: attr.nullable,
-      description: attr.description || ''
+      description: attr.description || '',
+      sort_order: attr.sort_order ?? 0
     })
   } else {
-	Object.assign(attrForm, { name: '', column_name: '', data_type: 'string', element_id: null, is_pk: false, nullable: true, description: '' })
+	Object.assign(attrForm, { name: '', column_name: '', data_type: 'string', element_id: null, is_pk: false, nullable: true, description: '', sort_order: 0 })
   }
   attrDialogVisible.value = true
 }
 
 const handleAttrSubmit = async () => {
+  const requiredPermission = editingAttr.value ? 'model.entity.update' : 'model.entity.create'
+  if (!canPerformDraftAction(entity.value.status, can(requiredPermission))) {
+    ElMessage.error(t('model.common.permission_denied'))
+    return
+  }
   try {
     await attrFormRef.value.validate()
   } catch {
@@ -545,7 +576,7 @@ const handleAttrSubmit = async () => {
   attrSubmitting.value = true
   try {
     if (editingAttr.value) {
-      await entityAPI.updateAttribute(entityId.value, editingAttr.value.id, attrForm)
+      await entityAPI.updateAttribute(entityId.value, editingAttr.value.id, buildEntityAttributeUpdateRequest(attrForm))
       ElMessage.success(t('model.common.update_success'))
     } else {
       await entityAPI.createAttribute(entityId.value, attrForm)
@@ -561,6 +592,10 @@ const handleAttrSubmit = async () => {
 }
 
 const deleteAttr = async (attrId) => {
+  if (!canDeleteAttribute.value) {
+    ElMessage.error(t('model.common.permission_denied'))
+    return
+  }
   try {
     await entityAPI.deleteAttribute(entityId.value, attrId)
     ElMessage.success(t('model.common.delete_success'))
@@ -593,6 +628,16 @@ const openRelationDialog = (relation = null) => {
 }
 
 const handleRelationSubmit = async () => {
+  const requiredPermission = editingRelation.value
+    ? 'model.entity_relation.update'
+    : 'model.entity_relation.create'
+  const relationCanBeModified = editingRelation.value
+    ? canModifyRelation(editingRelation.value, requiredPermission)
+    : entityIsDraft.value && can(requiredPermission)
+  if (!relationCanBeModified) {
+    ElMessage.error(t('model.common.permission_denied'))
+    return
+  }
   try {
     await relationFormRef.value.validate()
   } catch {
@@ -625,9 +670,13 @@ const handleRelationSubmit = async () => {
   }
 }
 
-const deleteRelation = async (relationId) => {
+const deleteRelation = async (relation) => {
+  if (!canModifyRelation(relation, 'model.entity_relation.delete')) {
+    ElMessage.error(t('model.common.permission_denied'))
+    return
+  }
   try {
-    await entityRelationAPI.delete(relationId)
+    await entityRelationAPI.delete(relation.id)
     ElMessage.success(t('model.common.delete_success'))
     loadRelations()
   } catch (err) {
@@ -784,6 +833,7 @@ const loadPage = async () => {
   const version = ++loadVersion
   pageLoading.value = true
   pageError.value = ''
+  referenceError.value = ''
   routeDataReady = false
   entity.value = {}
   attributes.value = []
@@ -796,13 +846,18 @@ const loadPage = async () => {
   try {
     await loadEntity()
     if (version !== loadVersion) return
-    const [domainsRes, elementsRes, entitiesRes] = await Promise.all([
-      domainAPI.list(), elementAPI.listAll(), entityAPI.listAll(), loadAttributes()
+    await loadAttributes()
+    if (version !== loadVersion) return
+    const [domainsResult, elementsResult, entitiesResult] = await Promise.allSettled([
+      domainAPI.list(), elementAPI.listAll(), entityAPI.listAll()
     ])
     if (version !== loadVersion) return
-    domains.value = domainsRes || []
-    elements.value = elementsRes || []
-    allEntities.value = entitiesRes || []
+    domains.value = domainsResult.status === 'fulfilled' ? domainsResult.value || [] : []
+    elements.value = elementsResult.status === 'fulfilled' ? elementsResult.value || [] : []
+    allEntities.value = entitiesResult.status === 'fulfilled' ? entitiesResult.value || [] : []
+    if ([domainsResult, elementsResult, entitiesResult].some(result => result.status === 'rejected')) {
+      referenceError.value = t('model.common.reference_data_unavailable')
+    }
     routeDataReady = true
   } catch (error) {
     if (version === loadVersion) pageError.value = getModelErrorMessage(error, t, 'model.common.load_failed')
@@ -843,6 +898,8 @@ onBeforeUnmount(() => stopThemeObserver?.())
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-bottom: 16px;
 }
 
@@ -854,7 +911,33 @@ onBeforeUnmount(() => stopThemeObserver?.())
 
 .header-right {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.reference-warning {
+  margin-bottom: 16px;
+}
+
+@media (max-width: 767px) {
+  .entity-detail {
+    padding: 12px;
+  }
+
+  .header-left,
+  .header-right {
+    width: 100%;
+  }
+
+  .header-right :deep(.el-button) {
+    flex: 1 1 auto;
+    margin-left: 0;
+  }
+
+  .diagram-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 .entity-name {

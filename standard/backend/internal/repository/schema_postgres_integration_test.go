@@ -84,6 +84,70 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 	}
 }
 
+func TestMigrateRenamesLegacyDocumentVersion(t *testing.T) {
+	dsn := os.Getenv("STANDARD_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("STANDARD_POSTGRES_TEST_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatalf("begin transaction: %v", tx.Error)
+	}
+	defer tx.Rollback()
+
+	if err := tx.Exec(`DROP SCHEMA IF EXISTS standard CASCADE`).Error; err != nil {
+		t.Fatalf("drop standard schema in test transaction: %v", err)
+	}
+	if err := tx.Exec(`CREATE SCHEMA standard`).Error; err != nil {
+		t.Fatalf("create standard schema in test transaction: %v", err)
+	}
+	if err := tx.Exec(`CREATE TABLE standard.documents (
+		id BIGSERIAL PRIMARY KEY,
+		tenant_id BIGINT NOT NULL,
+		name VARCHAR(200) NOT NULL,
+		version VARCHAR(50)
+	)`).Error; err != nil {
+		t.Fatalf("create legacy documents table: %v", err)
+	}
+	if err := tx.Exec(`INSERT INTO standard.documents (tenant_id, name, version) VALUES (7, 'Legacy document', '2025-R2')`).Error; err != nil {
+		t.Fatalf("insert legacy document: %v", err)
+	}
+
+	if err := Migrate(tx); err != nil {
+		t.Fatalf("Migrate() legacy documents error = %v", err)
+	}
+
+	var columns []struct {
+		ColumnName string
+		DataType   string
+	}
+	if err := tx.Raw(`SELECT column_name, data_type
+		FROM information_schema.columns
+		WHERE table_schema = 'standard' AND table_name = 'documents'
+		AND column_name IN ('document_version', 'version')
+		ORDER BY column_name`).Scan(&columns).Error; err != nil {
+		t.Fatalf("query migrated document columns: %v", err)
+	}
+	if len(columns) != 2 || columns[0].ColumnName != "document_version" || columns[0].DataType != "character varying" || columns[1].ColumnName != "version" || columns[1].DataType != "bigint" {
+		t.Fatalf("migrated document columns = %#v", columns)
+	}
+
+	var migrated struct {
+		DocumentVersion string
+		Version         int64
+	}
+	if err := tx.Raw(`SELECT document_version, version FROM standard.documents WHERE tenant_id = 7`).Scan(&migrated).Error; err != nil {
+		t.Fatalf("load migrated document: %v", err)
+	}
+	if migrated.DocumentVersion != "2025-R2" || migrated.Version != 1 {
+		t.Fatalf("migrated document = %#v, want document_version 2025-R2 and version 1", migrated)
+	}
+}
+
 func TestPostgresDeletePolicies(t *testing.T) {
 	dsn := os.Getenv("STANDARD_POSTGRES_TEST_DSN")
 	if dsn == "" {

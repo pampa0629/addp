@@ -1,5 +1,40 @@
 basePath: /api/v1/quality
 definitions:
+  dataquality.Document:
+    properties:
+      rules:
+        items:
+          $ref: '#/definitions/dataquality.Rule'
+        type: array
+      schema_version:
+        type: string
+    type: object
+  dataquality.Parameters:
+    properties:
+      max:
+        type: string
+      min:
+        type: string
+      pattern:
+        type: string
+      values:
+        items:
+          type: string
+        type: array
+    type: object
+  dataquality.Rule:
+    properties:
+      enabled:
+        type: boolean
+      message:
+        type: string
+      params:
+        $ref: '#/definitions/dataquality.Parameters'
+      severity:
+        type: string
+      type:
+        type: string
+    type: object
   execution.TaskExecution:
     properties:
       actor_principal_id:
@@ -188,39 +223,6 @@ definitions:
       updated_at:
         type: string
     type: object
-  github_com_addp_quality_internal_models.RuleApplication:
-    properties:
-      column_name:
-        type: string
-      created_at:
-        type: string
-      created_by:
-        type: integer
-      element_id:
-        description: standard.elements.id
-        type: integer
-      enabled:
-        type: boolean
-      engine_id:
-        type: integer
-      id:
-        type: integer
-      rule_config:
-        description: 质量规则快照
-        items:
-          type: integer
-        type: array
-      schema_name:
-        type: string
-      table_name:
-        type: string
-      tenant_id:
-        type: integer
-      updated_at:
-        type: string
-      updated_by:
-        type: integer
-    type: object
   github_com_addp_quality_internal_service.CreateCheckTaskRequest:
     properties:
       description:
@@ -258,6 +260,61 @@ definitions:
     - schema_name
     - table_name
     type: object
+  github_com_addp_quality_internal_service.RuleApplicationElementCandidate:
+    properties:
+      code:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      quality_rules:
+        $ref: '#/definitions/dataquality.Document'
+    type: object
+  github_com_addp_quality_internal_service.RuleApplicationElementSummary:
+    properties:
+      code:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+    type: object
+  github_com_addp_quality_internal_service.RuleApplicationListItem:
+    properties:
+      column_name:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      element:
+        $ref: '#/definitions/github_com_addp_quality_internal_service.RuleApplicationElementSummary'
+      element_id:
+        description: standard.elements.id
+        type: integer
+      enabled:
+        type: boolean
+      engine_id:
+        type: integer
+      id:
+        type: integer
+      rule_config:
+        description: 质量规则快照
+        items:
+          type: integer
+        type: array
+      schema_name:
+        type: string
+      table_name:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+    type: object
   github_com_addp_quality_internal_service.UpdateCheckTaskRequest:
     properties:
       description:
@@ -280,6 +337,8 @@ definitions:
     properties:
       enabled:
         type: boolean
+    required:
+    - enabled
     type: object
   internal_api.issueStatusRequest:
     properties:
@@ -341,6 +400,21 @@ definitions:
       updated_at:
         type: string
       updated_by:
+        type: integer
+    type: object
+  internal_api.qualityElementCandidateListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_quality_internal_service.RuleApplicationElementCandidate'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
         type: integer
     type: object
   internal_api.qualityErrorResponse:
@@ -545,7 +619,7 @@ definitions:
     properties:
       data:
         items:
-          $ref: '#/definitions/github_com_addp_quality_internal_models.RuleApplication'
+          $ref: '#/definitions/github_com_addp_quality_internal_service.RuleApplicationListItem'
         type: array
       page:
         type: integer
@@ -707,6 +781,8 @@ paths:
     post:
       consumes:
       - application/json
+      description: 创建前校验目标 PostgreSQL Schema 和数据表属于当前租户引擎 | Validate the target PostgreSQL
+        schema and table against the tenant engine before creation
       parameters:
       - description: 任务信息 | Task info
         in: body
@@ -813,6 +889,8 @@ paths:
     put:
       consumes:
       - application/json
+      description: 更新前校验目标 PostgreSQL Schema 和数据表属于当前租户引擎 | Validate the target PostgreSQL
+        schema and table against the tenant engine before update
       parameters:
       - description: 任务ID | Task ID
         in: path
@@ -1296,6 +1374,48 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - quality.rule_application.update
+  /rule-applications/element-candidates:
+    get:
+      parameters:
+      - description: 名称、编码或定义关键字 | Name, code, or definition keyword
+        in: query
+        name: keyword
+        required: true
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        maximum: 100
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.qualityElementCandidateListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 搜索规则应用数据元候选 | Search data element candidates for rule applications
+      tags:
+      - RuleApplication
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.rule_application.create
   /tasks:
     get:
       description: 按标准 TaskProvider 协议列出 Quality 检查任务；task_type 仅支持 check。| List Quality

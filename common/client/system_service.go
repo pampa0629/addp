@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
 )
 
@@ -86,6 +87,26 @@ func (c *SystemServiceClient) GetEngine(ctx context.Context, engineID uint) (*mo
 	var engine models.Engine
 	err := c.doTenantJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v1/system/engines/%d", engineID), nil, &engine)
 	return &engine, err
+}
+
+// ListCatalogChildren lists live catalog entries using the tenant service
+// access token. The System catalog endpoint is also used by service modules
+// when they need to validate a user-selected resource before persisting it.
+func (c *SystemServiceClient) ListCatalogChildren(ctx context.Context, engineID uint, req EngineCatalogListChildrenRequest) ([]EngineCatalogEntry, error) {
+	var response EngineCatalogListChildrenResponse
+	if err := c.doTenantJSON(ctx, http.MethodPost, fmt.Sprintf("/api/v1/system/engines/%d/catalog/children", engineID), req, &response); err != nil {
+		return nil, err
+	}
+	return response.Nodes, nil
+}
+
+// DescribeCatalogFacts reads the live structural facts for one catalog leaf.
+func (c *SystemServiceClient) DescribeCatalogFacts(ctx context.Context, engineID uint, req EngineCatalogDescribeFactsRequest) (*plugin.CatalogFacts, error) {
+	var facts plugin.CatalogFacts
+	if err := c.doTenantJSON(ctx, http.MethodPost, fmt.Sprintf("/api/v1/system/engines/%d/catalog/facts", engineID), req, &facts); err != nil {
+		return nil, err
+	}
+	return &facts, nil
 }
 
 func (c *SystemServiceClient) ListEngines(ctx context.Context) ([]models.Engine, error) {

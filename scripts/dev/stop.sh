@@ -5,6 +5,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 source "${SCRIPT_DIR}/../utils/colors.sh"
 
+cd "${ROOT_DIR}"
+source "${SCRIPT_DIR}/lifecycle-lock.sh"
+addp_acquire_lifecycle_lock stop "$@"
+
 echo "🛑 停止 ADDP 开发环境"
 
 # 卸载由 launchd KeepAlive 托管的当前工作区服务，避免进程被杀死后立即重启。

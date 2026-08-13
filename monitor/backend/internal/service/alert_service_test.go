@@ -266,10 +266,8 @@ func TestAlertEvaluationOpensResolvesAndReopensIncident(t *testing.T) {
 		schemaIncident.ExecutionID != "schema-blocked" || schemaIncident.Details["request_id"] != float64(17) {
 		t.Fatalf("schema change incident = %#v", schemaIncident)
 	}
-	schemaMetadata["continuous"].(map[string]interface{})["schema_change"].(map[string]interface{})["status"] = "applied"
-	if err := db.Exec("UPDATE common.task_executions SET metadata = ? WHERE execution_id = ?", schemaMetadata, "schema-blocked").Error; err != nil {
-		t.Fatal(err)
-	}
+	insertAlertExecution(t, db, 7, "schema-recovered", "102", commonExecution.ExecutionStatusRunning,
+		commonModels.JSONMap{"continuous": map[string]interface{}{"diagnostics": map[string]interface{}{"health": "healthy"}}}, nil, now.Add(9*time.Minute))
 	if err := alertService.Evaluate(context.Background(), now.Add(9*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +275,37 @@ func TestAlertEvaluationOpensResolvesAndReopensIncident(t *testing.T) {
 		t.Fatal(err)
 	}
 	if schemaIncident.Status != monitorModels.AlertStatusResolved || schemaIncident.ResolvedAt == nil {
-		t.Fatalf("approved schema change did not resolve incident = %#v", schemaIncident)
+		t.Fatalf("newer healthy execution did not resolve historical schema change incident = %#v", schemaIncident)
+	}
+
+	schemaMetadata = commonModels.JSONMap{"continuous": map[string]interface{}{"schema_change": map[string]interface{}{
+		"request_id": 18, "status": "pending", "from_revision": 1, "to_revision": 2,
+		"source_partition": "0", "source_offset": 24, "unexpected_fields": []interface{}{"another_field"},
+	}}}
+	insertAlertExecution(t, db, 7, "schema-blocked-latest", "103", commonExecution.ExecutionStatusFailed, schemaMetadata, nil, now.Add(10*time.Minute))
+	if err := alertService.Evaluate(context.Background(), now.Add(10*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	var latestSchemaIncident monitorModels.AlertIncident
+	if err := db.Where("signal_code = ? AND source_task_id = ?", "schema_change_blocked", "103").First(&latestSchemaIncident).Error; err != nil {
+		t.Fatal(err)
+	}
+	if latestSchemaIncident.Status != monitorModels.AlertStatusOpen || latestSchemaIncident.ExecutionID != "schema-blocked-latest" {
+		t.Fatalf("latest schema change incident = %#v", latestSchemaIncident)
+	}
+
+	schemaMetadata["continuous"].(map[string]interface{})["schema_change"].(map[string]interface{})["status"] = "applied"
+	if err := db.Exec("UPDATE common.task_executions SET metadata = ? WHERE execution_id = ?", schemaMetadata, "schema-blocked-latest").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := alertService.Evaluate(context.Background(), now.Add(11*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&latestSchemaIncident, latestSchemaIncident.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if latestSchemaIncident.Status != monitorModels.AlertStatusResolved || latestSchemaIncident.ResolvedAt == nil {
+		t.Fatalf("approved schema change did not resolve incident = %#v", latestSchemaIncident)
 	}
 }
 
@@ -339,6 +367,70 @@ func TestDeriveObservationSignalsUsesPendingSchemaChangeProjection(t *testing.T)
 	execution.Metadata["continuous"].(map[string]interface{})["schema_change"].(map[string]interface{})["status"] = "stopped"
 	if signals := deriveObservationSignals(execution, time.Now()); len(signals) != 0 {
 		t.Fatalf("stopped schema change signals = %#v", signals)
+	}
+}
+
+func TestDeriveObservationSignalsUsesOnlyTypedCaptureHealthFacts(t *testing.T) {
+	taskID := "64"
+	execution := commonExecution.TaskExecution{Status: commonExecution.ExecutionStatusRunning, SourceTaskID: &taskID, Metadata: commonModels.JSONMap{
+		"continuous": map[string]interface{}{
+			"capture": map[string]interface{}{
+				"generation": float64(1),
+				"source_recovery": map[string]interface{}{
+					"schema_version": "capture.source_recovery/v1", "provider": "oracle", "health": "critical",
+					"capture_position": "100", "earliest_available_position": "110", "private_error": "must-not-leak",
+				},
+				"source_transactions": map[string]interface{}{
+					"schema_version": "capture.source_transactions/v1", "provider": "oracle", "status": "available",
+					"active_count": float64(3), "oldest_duration_seconds": float64(86400), "used_undo_blocks": "999999",
+				},
+			},
+		},
+	}}
+
+	signals := deriveObservationSignals(execution, time.Now())
+	if len(signals) != 1 || signals[0].Code != "source_recovery_critical" || signals[0].Severity != monitorModels.AlertSeverityCritical {
+		t.Fatalf("signals = %#v", signals)
+	}
+	if signals[0].Details["generation"] != float64(1) || signals[0].Details["capture_position"] != "100" || signals[0].Details["earliest_available_position"] != "110" {
+		t.Fatalf("source recovery details = %#v", signals[0].Details)
+	}
+	for _, forbidden := range []string{"private_error", "active_count", "oldest_duration_seconds", "used_undo_blocks"} {
+		if _, exists := signals[0].Details[forbidden]; exists {
+			t.Fatalf("capture signal leaked or interpreted %q: %#v", forbidden, signals[0].Details)
+		}
+	}
+}
+
+func TestDeriveObservationSignalsReportsExplicitCaptureObservationUnavailable(t *testing.T) {
+	taskID := "64"
+	execution := commonExecution.TaskExecution{Status: commonExecution.ExecutionStatusRunning, SourceTaskID: &taskID, Metadata: commonModels.JSONMap{
+		"continuous": map[string]interface{}{
+			"capture": map[string]interface{}{
+				"generation": float64(1),
+				"source_recovery": map[string]interface{}{
+					"schema_version": "capture.source_recovery/v1", "provider": "oracle", "health": "unknown", "sampled_at": "2026-08-13T12:00:00Z",
+				},
+				"source_transactions": map[string]interface{}{
+					"schema_version": "capture.source_transactions/v1", "provider": "oracle", "status": "unavailable", "sampled_at": "2026-08-13T12:00:00Z",
+				},
+			},
+		},
+	}}
+
+	signals := deriveObservationSignals(execution, time.Now())
+	if len(signals) != 2 || signals[0].Code != "source_recovery_unavailable" || signals[1].Code != "source_transactions_unavailable" {
+		t.Fatalf("signals = %#v", signals)
+	}
+	for _, signal := range signals {
+		if signal.Severity != monitorModels.AlertSeverityWarning || signal.Details["generation"] != float64(1) {
+			t.Fatalf("unavailable signal = %#v", signal)
+		}
+	}
+
+	execution.Metadata = commonModels.JSONMap{"continuous": map[string]interface{}{"capture": map[string]interface{}{"generation": float64(1)}}}
+	if signals := deriveObservationSignals(execution, time.Now()); len(signals) != 0 {
+		t.Fatalf("missing capture facts produced signals = %#v", signals)
 	}
 }
 

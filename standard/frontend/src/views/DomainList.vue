@@ -2,7 +2,7 @@
   <div class="domain-list">
     <div class="page-header">
       <h2>{{ $t('standard.domain.title') }}</h2>
-      <el-button type="primary" :icon="Plus" @click="openCreateDialog">{{ $t('standard.domain.create') }}</el-button>
+      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreateDialog">{{ $t('standard.domain.create') }}</el-button>
     </div>
 
     <el-card class="main-card">
@@ -24,9 +24,9 @@
               <el-tag size="small" type="info" class="node-code">{{ data.code }}</el-tag>
             </div>
             <div class="node-actions">
-              <el-button link type="primary" @click.stop="openCreateChildDialog(data)">{{ $t('standard.domain.createChild') }}</el-button>
-              <el-button link type="primary" @click.stop="openEditDialog(data)">{{ $t('standard.common.edit') }}</el-button>
-              <el-button link type="danger" @click.stop="handleDelete(data)">{{ $t('standard.common.delete') }}</el-button>
+              <el-button v-if="canCreate" link type="primary" @click.stop="openCreateChildDialog(data)">{{ $t('standard.domain.createChild') }}</el-button>
+              <el-button v-if="canUpdate" link type="primary" @click.stop="openEditDialog(data)">{{ $t('standard.common.edit') }}</el-button>
+              <el-button v-if="canDelete" link type="danger" :loading="isActionLocked(`domain:${data.id}`)" @click.stop="handleDelete(data)">{{ $t('standard.common.delete') }}</el-button>
             </div>
           </div>
         </template>
@@ -74,8 +74,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { domainAPI } from '../api/standard'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
+import { useStandardPermissions } from '../composables/useStandardPermissions'
+import { useActionLock } from '../composables/useActionLock'
 
 const { t } = useI18n()
+const { canCreate, canUpdate, canDelete } = useStandardPermissions('domain')
+const { isLocked: isActionLocked, runLocked } = useActionLock()
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -139,7 +143,8 @@ const openEditDialog = (domain) => {
     description: domain.description || '',
     icon: domain.icon || '',
     sort_order: domain.sort_order || 0,
-    parent_id: domain.parent_id || null
+    parent_id: domain.parent_id || null,
+    version: domain.version
   }
   dialogVisible.value = true
 }
@@ -149,39 +154,40 @@ const focusNameInput = () => {
 }
 
 const handleSubmit = async () => {
-  if (!formRef.value) return
-  await formRef.value.validate(async valid => {
+  if (submitting.value || !formRef.value) return
+  submitting.value = true
+  try {
+    const valid = await formRef.value.validate().catch(() => false)
     if (!valid) return
-    submitting.value = true
-    try {
-      if (editMode.value) {
-        await domainAPI.update(editingId.value, form.value)
-        ElMessage.success(t('standard.common.updateSuccess'))
-      } else {
-        await domainAPI.create(form.value)
-        ElMessage.success(t('standard.common.createSuccess'))
-      }
-      dialogVisible.value = false
-      await loadDomains()
-    } catch (e) {
-      ElMessage.error(getStandardErrorMessage(e, t))
-    } finally {
-      submitting.value = false
+    if (editMode.value) {
+      await domainAPI.update(editingId.value, form.value)
+      ElMessage.success(t('standard.common.updateSuccess'))
+    } else {
+      await domainAPI.create(form.value)
+      ElMessage.success(t('standard.common.createSuccess'))
     }
-  })
+    dialogVisible.value = false
+    await loadDomains()
+  } catch (e) {
+    ElMessage.error(getStandardErrorMessage(e, t))
+  } finally {
+    submitting.value = false
+  }
 }
 
 const handleDelete = async (domain) => {
-  try {
-    await ElMessageBox.confirm(t('standard.domain.confirmDelete', { name: domain.name }), t('standard.common.hint'), {
-      type: 'warning'
-    })
-    await domainAPI.delete(domain.id)
-    ElMessage.success(t('standard.common.deleteSuccess'))
-    await loadDomains()
-  } catch (e) {
-    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
-  }
+  await runLocked(`domain:${domain.id}`, async () => {
+    try {
+      await ElMessageBox.confirm(t('standard.domain.confirmDelete', { name: domain.name }), t('standard.common.hint'), {
+        type: 'warning'
+      })
+      await domainAPI.delete(domain.id)
+      ElMessage.success(t('standard.common.deleteSuccess'))
+      await loadDomains()
+    } catch (e) {
+      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
+    }
+  })
 }
 
 onMounted(loadDomains)

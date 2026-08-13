@@ -2,6 +2,7 @@ package capture
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -36,10 +37,11 @@ type SupervisorConfig struct {
 	ProvisioningTimeout          time.Duration
 	StatusPollInterval           time.Duration
 	MonitorInterval              time.Duration
+	SourceProbeTimeout           time.Duration
 }
 
 func (c SupervisorConfig) Validate() error {
-	if c.TopicRetention <= 0 || c.TopicReplication <= 0 || c.ProvisioningTimeout <= 0 || c.StatusPollInterval <= 0 || c.MonitorInterval <= 0 {
+	if c.TopicRetention <= 0 || c.TopicReplication <= 0 || c.ProvisioningTimeout <= 0 || c.StatusPollInterval <= 0 || c.MonitorInterval <= 0 || c.SourceProbeTimeout <= 0 {
 		return fmt.Errorf("capture supervisor durations and replication factor must be greater than zero")
 	}
 	return nil
@@ -60,6 +62,9 @@ type Supervisor struct {
 func NewSupervisor(store ResourceStore, plans PlanResolver, connect ConnectControl, topics TopicControl, source SourceResourceControl, config SupervisorConfig, logger *slog.Logger) (*Supervisor, error) {
 	if store == nil || plans == nil || connect == nil || topics == nil || source == nil {
 		return nil, fmt.Errorf("capture supervisor dependencies are required")
+	}
+	if config.SourceProbeTimeout == 0 {
+		config.SourceProbeTimeout = 3 * time.Second
 	}
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -148,11 +153,17 @@ func (s *Supervisor) Start(ctx context.Context, task *models.TransferTask) (*mod
 		s.fail(ctx, resource, err)
 		return nil, err
 	}
+	if err := s.probeSource(ctx, plan, resource); err != nil {
+		s.failSource(ctx, resource, status, err)
+		return nil, err
+	}
 	now := time.Now()
-	if err := s.advance(ctx, resource, map[string]interface{}{
+	fields := map[string]interface{}{
 		"status": models.CaptureStatusRunning, "connector_status": status.ConnectorState,
-		"connector_error": "", "last_observed_at": now,
-	}); err != nil {
+		"connector_error": "", "source_status": "ONLINE", "source_error": "", "last_observed_at": now,
+	}
+	s.observeSource(ctx, plan, resource, now, fields)
+	if err := s.advance(ctx, resource, fields); err != nil {
 		return nil, err
 	}
 	return resource, nil
@@ -184,29 +195,22 @@ func (s *Supervisor) Resume(ctx context.Context, task *models.TransferTask) erro
 	}
 	status, err := s.connect.Status(ctx, resource.ConnectorName)
 	if err != nil {
-		s.fail(ctx, resource, err)
+		s.failConnector(ctx, resource, nil, err)
 		return err
 	}
 	if status.ConnectorState == "PAUSED" {
 		if err := s.connect.Resume(ctx, resource.ConnectorName); err != nil {
-			s.fail(ctx, resource, err)
+			s.failConnector(ctx, resource, status, err)
 			return err
 		}
 		status, err = s.waitRunning(ctx, resource.ConnectorName)
 		if err != nil {
-			s.fail(ctx, resource, err)
+			s.failConnector(ctx, resource, status, err)
 			return err
 		}
 	}
-	if !connectorHealthy(status) {
-		err := fmt.Errorf("Kafka Connect connector is not healthy: connector=%s tasks=%v", status.ConnectorState, status.TaskStates)
-		s.fail(ctx, resource, err)
-		return err
-	}
-	return s.advance(ctx, resource, map[string]interface{}{
-		"status": models.CaptureStatusRunning, "connector_status": status.ConnectorState,
-		"connector_error": "", "last_observed_at": time.Now(),
-	})
+	_, err = s.Refresh(ctx, resource)
+	return err
 }
 
 func (s *Supervisor) Stop(ctx context.Context, task *models.TransferTask) error {
@@ -302,26 +306,119 @@ func (s *Supervisor) Get(ctx context.Context, taskID, tenantID uint) (*models.Ca
 func (s *Supervisor) Refresh(ctx context.Context, resource *models.CaptureResource) (*ConnectorStatus, error) {
 	status, err := s.connect.Status(ctx, resource.ConnectorName)
 	if err != nil {
-		s.fail(ctx, resource, err)
+		s.failConnector(ctx, resource, nil, err)
 		return nil, err
 	}
-	state := models.CaptureStatusFailed
 	connectorError := strings.TrimSpace(status.Error)
-	if connectorHealthy(status) {
-		state = models.CaptureStatusRunning
-	} else if connectorError == "" {
+	if !connectorHealthy(status) {
+		if connectorError == "" {
+			connectorError = fmt.Sprintf("connector=%s tasks=%v", status.ConnectorState, status.TaskStates)
+		}
+		err := fmt.Errorf("Kafka Connect connector is not healthy: %s", connectorError)
+		s.failConnector(ctx, resource, status, err)
+		return status, err
+	}
+	plan, err := s.plans.ResolveForObservation(ctx, resource)
+	if err != nil {
+		s.failSource(ctx, resource, status, err)
+		return status, err
+	}
+	if err := s.probeSource(ctx, plan, resource); err != nil {
+		s.failSource(ctx, resource, status, err)
+		return status, err
+	}
+	if connectorError == "" {
+		connectorError = ""
+	} else {
 		connectorError = fmt.Sprintf("connector=%s tasks=%v", status.ConnectorState, status.TaskStates)
 	}
-	if err := s.advance(ctx, resource, map[string]interface{}{
-		"status": state, "connector_status": status.ConnectorState,
-		"connector_error": connectorError, "last_observed_at": time.Now(),
-	}); err != nil {
+	now := time.Now()
+	fields := map[string]interface{}{
+		"status": models.CaptureStatusRunning, "connector_status": status.ConnectorState,
+		"connector_error": connectorError, "source_status": "ONLINE", "source_error": "", "last_observed_at": now,
+	}
+	s.observeSource(ctx, plan, resource, now, fields)
+	if err := s.advance(ctx, resource, fields); err != nil {
 		return nil, err
 	}
-	if state != models.CaptureStatusRunning {
-		return status, fmt.Errorf("Kafka Connect connector is not healthy: %s", connectorError)
-	}
 	return status, nil
+}
+
+func (s *Supervisor) observeSource(ctx context.Context, plan *CapturePlan, resource *models.CaptureResource, sampledAt time.Time, fields map[string]interface{}) {
+	if plan == nil || resource == nil || plan.SourceType != models.CaptureSourceOracle {
+		return
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, s.config.SourceProbeTimeout)
+	defer cancel()
+	offsets, offsetsErr := s.connect.Offsets(probeCtx, resource.ConnectorName)
+	observation, err := s.source.Observe(probeCtx, plan, resource, offsets, sampledAt)
+	if err != nil {
+		markSourceObservationsUnavailable(resource, err, sampledAt, fields)
+		s.logger.Warn("capture source observation failed", "task_id", resource.TaskID, "provider", plan.SourceType, "error", err)
+		return
+	}
+	if observation == nil {
+		observation = &SourceObservation{}
+	}
+	if offsetsErr != nil {
+		observation.Recovery = nil
+		observation.RecoveryError = offsetsErr
+	}
+	writeSourceRecoveryObservation(s, resource, observation.Recovery, observation.RecoveryError, sampledAt, fields)
+	writeSourceTransactionsObservation(s, resource, observation.Transactions, observation.TransactionsError, sampledAt, fields)
+}
+
+func writeSourceRecoveryObservation(s *Supervisor, resource *models.CaptureResource, observation *models.CaptureSourceRecovery, observationErr error, sampledAt time.Time, fields map[string]interface{}) {
+	if observationErr == nil && observation != nil {
+		fields["source_recovery"] = sourceObservationMap(observation)
+		fields["source_recovery_error"] = ""
+		return
+	}
+	if observationErr == nil {
+		observationErr = fmt.Errorf("capture source recovery observation returned no facts")
+	}
+	fields["source_recovery"] = sourceObservationMap(&models.CaptureSourceRecovery{
+		SchemaVersion: "capture.source_recovery/v1", Provider: string(resource.SourceType), Health: "unknown", SampledAt: sampledAt,
+	})
+	fields["source_recovery_error"] = observationErr.Error()
+	s.logger.Warn("capture source recovery observation failed", "task_id", resource.TaskID, "provider", resource.SourceType, "error", observationErr)
+}
+
+func writeSourceTransactionsObservation(s *Supervisor, resource *models.CaptureResource, observation *models.CaptureSourceTransactions, observationErr error, sampledAt time.Time, fields map[string]interface{}) {
+	if observationErr == nil && observation != nil {
+		fields["source_transactions"] = sourceObservationMap(observation)
+		fields["source_transactions_error"] = ""
+		return
+	}
+	if observationErr == nil {
+		observationErr = fmt.Errorf("capture source transaction observation returned no facts")
+	}
+	fields["source_transactions"] = sourceObservationMap(&models.CaptureSourceTransactions{
+		SchemaVersion: "capture.source_transactions/v1", Provider: string(resource.SourceType), Status: "unavailable", SampledAt: sampledAt,
+	})
+	fields["source_transactions_error"] = observationErr.Error()
+	s.logger.Warn("capture source transaction observation failed", "task_id", resource.TaskID, "provider", resource.SourceType, "error", observationErr)
+}
+
+func sourceObservationMap(observation interface{}) models.JSONMap {
+	if observation == nil {
+		return models.JSONMap{}
+	}
+	data, err := json.Marshal(observation)
+	if err != nil {
+		return models.JSONMap{}
+	}
+	var result models.JSONMap
+	if err := json.Unmarshal(data, &result); err != nil {
+		return models.JSONMap{}
+	}
+	return result
+}
+
+func (s *Supervisor) probeSource(ctx context.Context, plan *CapturePlan, resource *models.CaptureResource) error {
+	probeCtx, cancel := context.WithTimeout(ctx, s.config.SourceProbeTimeout)
+	defer cancel()
+	return s.source.Probe(probeCtx, plan, resource)
 }
 
 func (s *Supervisor) Run(ctx context.Context) error {
@@ -410,9 +507,64 @@ func (s *Supervisor) fail(ctx context.Context, resource *models.CaptureResource,
 	if resource == nil || cause == nil {
 		return
 	}
-	if err := s.store.Update(ctx, resource.ID, resource.ResourceVersion, map[string]interface{}{
+	fields := map[string]interface{}{
 		"status": models.CaptureStatusFailed, "connector_error": cause.Error(), "last_observed_at": time.Now(),
-	}); err == nil {
+	}
+	markSourceObservationsUnavailable(resource, cause, time.Now(), fields)
+	if err := s.store.Update(ctx, resource.ID, resource.ResourceVersion, fields); err == nil {
+		resource.ResourceVersion++
+		resource.Status = models.CaptureStatusFailed
+	}
+}
+
+func (s *Supervisor) failConnector(ctx context.Context, resource *models.CaptureResource, status *ConnectorStatus, cause error) {
+	if resource == nil || cause == nil {
+		return
+	}
+	connectorStatus := "UNKNOWN"
+	if status != nil && strings.TrimSpace(status.ConnectorState) != "" {
+		connectorStatus = status.ConnectorState
+	}
+	fields := map[string]interface{}{
+		"status": models.CaptureStatusFailed, "connector_status": connectorStatus, "connector_error": cause.Error(),
+		"last_observed_at": time.Now(),
+	}
+	markSourceObservationsUnavailable(resource, cause, time.Now(), fields)
+	s.failWithFields(ctx, resource, fields)
+}
+
+func (s *Supervisor) failSource(ctx context.Context, resource *models.CaptureResource, status *ConnectorStatus, cause error) {
+	if resource == nil || cause == nil {
+		return
+	}
+	connectorStatus := "UNKNOWN"
+	if status != nil && strings.TrimSpace(status.ConnectorState) != "" {
+		connectorStatus = status.ConnectorState
+	}
+	fields := map[string]interface{}{
+		"status": models.CaptureStatusFailed, "connector_status": connectorStatus, "connector_error": "",
+		"source_status": "OFFLINE", "source_error": cause.Error(), "last_observed_at": time.Now(),
+	}
+	markSourceObservationsUnavailable(resource, cause, time.Now(), fields)
+	s.failWithFields(ctx, resource, fields)
+}
+
+func markSourceObservationsUnavailable(resource *models.CaptureResource, cause error, sampledAt time.Time, fields map[string]interface{}) {
+	if resource == nil || resource.SourceType != models.CaptureSourceOracle || cause == nil {
+		return
+	}
+	fields["source_recovery"] = sourceObservationMap(&models.CaptureSourceRecovery{
+		SchemaVersion: "capture.source_recovery/v1", Provider: string(resource.SourceType), Health: "unknown", SampledAt: sampledAt,
+	})
+	fields["source_recovery_error"] = cause.Error()
+	fields["source_transactions"] = sourceObservationMap(&models.CaptureSourceTransactions{
+		SchemaVersion: "capture.source_transactions/v1", Provider: string(resource.SourceType), Status: "unavailable", SampledAt: sampledAt,
+	})
+	fields["source_transactions_error"] = cause.Error()
+}
+
+func (s *Supervisor) failWithFields(ctx context.Context, resource *models.CaptureResource, fields map[string]interface{}) {
+	if err := s.store.Update(ctx, resource.ID, resource.ResourceVersion, fields); err == nil {
 		resource.ResourceVersion++
 		resource.Status = models.CaptureStatusFailed
 	}

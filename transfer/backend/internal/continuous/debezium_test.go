@@ -118,7 +118,7 @@ func TestDecodeMySQLDebeziumRecordNormalizesAndValidatesExactSource(t *testing.T
 func TestDecodeDebeziumSnapshotNotifications(t *testing.T) {
 	plan := mysqlCDCAdapterPlan()
 	plan.CDC.ConnectorName = "addp-cdc-task42-g1"
-	for _, notificationType := range []string{"STARTED", "IN_PROGRESS", "TABLE_SCAN_COMPLETED", "COMPLETED"} {
+	for _, notificationType := range []string{"STARTED", "IN_PROGRESS", "TABLE_SCAN_COMPLETED", "COMPLETED", "SKIPPED"} {
 		t.Run(notificationType, func(t *testing.T) {
 			value := fmt.Sprintf(`{"id":"notification-1","type":%q,"aggregate_type":"Initial Snapshot","additional_data":{"connector_name":"addp-cdc-task42-g1"},"timestamp":1786528984676}`, notificationType)
 			event, err := decodeMySQLDebeziumRecord(plugin.ChangeRecord{Value: []byte(value)}, plan)
@@ -132,6 +132,43 @@ func TestDecodeDebeziumSnapshotNotifications(t *testing.T) {
 				t.Fatalf("SnapshotComplete = %v for %s", event.SnapshotComplete, notificationType)
 			}
 		})
+	}
+}
+
+func TestDecodeDebeziumSnapshotNotificationAcceptsProgressAdditionalData(t *testing.T) {
+	plan := mysqlCDCAdapterPlan()
+	plan.CDC.ConnectorName = "addp-cdc-task42-g1"
+	value := `{"id":"notification-1","type":"IN_PROGRESS","aggregate_type":"Initial Snapshot","additional_data":{"connector_name":"addp-cdc-task42-g1","current_collection_in_progress":"BUSINESS.SPATIAL_FEATURES","data_collections":"BUSINESS.SPATIAL_FEATURES"},"timestamp":1786528984676}`
+	event, err := decodeMySQLDebeziumRecord(plugin.ChangeRecord{Value: []byte(value)}, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Operation != changeEventOperationSkip || event.SnapshotComplete {
+		t.Fatalf("event = %#v", event)
+	}
+}
+
+func TestDecodeDebeziumSnapshotNotificationRejectsInvalidProgressAdditionalData(t *testing.T) {
+	plan := mysqlCDCAdapterPlan()
+	plan.CDC.ConnectorName = "expected"
+	value := `{"id":"1","type":"IN_PROGRESS","aggregate_type":"Initial Snapshot","additional_data":{"connector_name":"expected","data_collections":["BUSINESS.SPATIAL_FEATURES"]},"timestamp":1}`
+	_, err := decodeMySQLDebeziumRecord(plugin.ChangeRecord{Value: []byte(value)}, plan)
+	var schemaErr *SchemaChangeError
+	if !errors.As(err, &schemaErr) || !containsTestString(schemaErr.IncompatibleFields, "data_collections") {
+		t.Fatalf("error = %#v", err)
+	}
+}
+
+func TestDecodeDebeziumSnapshotNotificationAcceptsTableScanCompletionAdditionalData(t *testing.T) {
+	plan := mysqlCDCAdapterPlan()
+	plan.CDC.ConnectorName = "expected"
+	value := `{"id":"1","type":"TABLE_SCAN_COMPLETED","aggregate_type":"Initial Snapshot","additional_data":{"connector_name":"expected","scanned_collection":"BUSINESS.SPATIAL_FEATURES","total_rows_scanned":"6","status":"SUCCEEDED","data_collections":"BUSINESS.SPATIAL_FEATURES"},"timestamp":1}`
+	event, err := decodeMySQLDebeziumRecord(plugin.ChangeRecord{Value: []byte(value)}, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Operation != changeEventOperationSkip || event.SnapshotComplete {
+		t.Fatalf("event = %#v", event)
 	}
 }
 
@@ -245,6 +282,51 @@ func TestDecodeOracleDebeziumRecordAcceptsDebezium36LogMinerDiagnostics(t *testi
 	}
 	if event.Operation != changeEventOperationUpsert || event.Row["id"] != int64(2) || event.Row["name"] != "stream" {
 		t.Fatalf("Oracle streaming event = %#v", event)
+	}
+}
+
+func TestDecodeOracleDebeziumRecordBlocksSourceFieldDrift(t *testing.T) {
+	plan := oracleCDCAdapterPlan()
+	tests := []struct {
+		name        string
+		op          string
+		after       string
+		before      string
+		wantMissing string
+		wantExtra   string
+	}{
+		{
+			name:      "unexpected after field",
+			op:        "c",
+			after:     `{"ID":"2","NAME":"stream","CREATED_AT":1768435200000,"NEW_FIELD":"blocked"}`,
+			before:    `null`,
+			wantExtra: "NEW_FIELD",
+		},
+		{
+			name:        "missing before field",
+			op:          "d",
+			after:       `null`,
+			before:      `{"ID":"2","CREATED_AT":1768435200000}`,
+			wantMissing: "NAME",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := decodeOracleDebeziumRecord(plugin.ChangeRecord{
+				Key:   []byte(`{"ID":"2"}`),
+				Value: []byte(oracleDebeziumEnvelope(test.op, test.before, test.after, "FREEPDB1", "BUSINESS", "CUSTOMERS")),
+			}, plan)
+			var schemaErr *SchemaChangeError
+			if !errors.As(err, &schemaErr) || schemaErr.Scope == "" {
+				t.Fatalf("error = %#v, want SchemaChangeError", err)
+			}
+			if test.wantMissing != "" && !containsTestString(schemaErr.MissingFields, test.wantMissing) {
+				t.Fatalf("missing fields = %#v, want %q", schemaErr.MissingFields, test.wantMissing)
+			}
+			if test.wantExtra != "" && !containsTestString(schemaErr.UnexpectedFields, test.wantExtra) {
+				t.Fatalf("unexpected fields = %#v, want %q", schemaErr.UnexpectedFields, test.wantExtra)
+			}
+		})
 	}
 }
 

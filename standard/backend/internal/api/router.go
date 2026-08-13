@@ -1,8 +1,10 @@
 package api
 
 import (
+	"net/http"
 	"strings"
 
+	"github.com/addp/common/buildinfo"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/standard/docs"
@@ -96,7 +98,6 @@ func SetupRouter(
 			glossaries.POST("/:id/approve", permission(standardauthorization.PermissionStandardGlossaryApprove), glossaryHandler.ApproveGlossary)
 			glossaries.POST("/:id/deprecate", permission(standardauthorization.PermissionStandardGlossaryOffline), glossaryHandler.DeprecateGlossary)
 			glossaries.GET("/:id/elements", permission(standardauthorization.PermissionStandardGlossaryRead, standardauthorization.PermissionStandardElementRead), glossaryHandler.GetElementMappings)
-			glossaries.PUT("/:id/elements", permission(standardauthorization.PermissionStandardGlossaryUpdate, standardauthorization.PermissionStandardElementRead), glossaryHandler.SetElementMappings)
 			glossaries.GET("/:id/documents", permission(standardauthorization.PermissionStandardGlossaryRead, standardauthorization.PermissionStandardDocumentRead), documentHandler.ListDocsByGlossary)
 			glossaries.POST("/:id/documents", permission(standardauthorization.PermissionStandardGlossaryUpdate, standardauthorization.PermissionStandardDocumentCreate), documentHandler.CreateAndLinkGlossary)
 			glossaries.POST("/:id/documents/link", permission(standardauthorization.PermissionStandardGlossaryUpdate, standardauthorization.PermissionStandardDocumentUpdate), documentHandler.LinkDocToGlossary)
@@ -214,7 +215,7 @@ func SetupRouter(
 	}
 
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
+		c.JSON(http.StatusOK, buildinfo.Health("standard"))
 	})
 
 	return router

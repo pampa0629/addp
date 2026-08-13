@@ -1,6 +1,9 @@
 package api
 
 import (
+	"net/http"
+
+	"github.com/addp/common/buildinfo"
 	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
@@ -65,6 +68,7 @@ func SetupRouter(
 		ruleApps := api.Group("/rule-applications")
 		{
 			ruleApps.GET("", permission(qualityauthorization.PermissionQualityRuleApplicationRead), ruleAppHandler.List)
+			ruleApps.GET("/element-candidates", permission(qualityauthorization.PermissionQualityRuleApplicationCreate), ruleAppHandler.ListElementCandidates)
 			ruleApps.POST("", permission(qualityauthorization.PermissionQualityRuleApplicationCreate), ruleAppHandler.Create)
 			ruleApps.GET("/:id", permission(qualityauthorization.PermissionQualityRuleApplicationRead), ruleAppHandler.Get)
 			ruleApps.PUT("/:id", permission(qualityauthorization.PermissionQualityRuleApplicationUpdate), ruleAppHandler.Update)
@@ -107,7 +111,7 @@ func SetupRouter(
 	}
 
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
+		c.JSON(http.StatusOK, buildinfo.Health("quality"))
 	})
 
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

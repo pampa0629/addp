@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"strconv"
 
 	commonAPI "github.com/addp/common/api"
 	commoni18n "github.com/addp/common/middleware/i18n"
@@ -46,7 +45,31 @@ func (h *RuleApplicationHandler) List(c *gin.Context) {
 	tableName := c.Query("table_name")
 
 	page, pageSize := pageParams(c.Query("page"), c.Query("page_size"))
-	items, total, err := h.svc.ListRuleApplications(repository.RuleApplicationListOptions{TenantID: tenantID, EngineID: engineID, SchemaName: schemaName, TableName: tableName, Page: page, PageSize: pageSize})
+	items, total, err := h.svc.ListRuleApplications(c.Request.Context(), repository.RuleApplicationListOptions{TenantID: tenantID, EngineID: engineID, SchemaName: schemaName, TableName: tableName, Page: page, PageSize: pageSize})
+	if err != nil {
+		respondQualityServiceError(c, err, "", qualityi18n.MsgInternal)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": items, "total": total, "page": page, "page_size": pageSize, "total_pages": totalPages(total, pageSize)})
+}
+
+// @Summary 搜索规则应用数据元候选 | Search data element candidates for rule applications
+// @Tags RuleApplication
+// @Produce json
+// @Param keyword query string true "名称、编码或定义关键字 | Name, code, or definition keyword"
+// @Param page query int false "页码 | Page" default(1)
+// @Param page_size query int false "每页数量 | Page size" default(20) maximum(100)
+// @Success 200 {object} qualityElementCandidateListResponse
+// @Failure 400 {object} qualityErrorResponse
+// @Failure 500 {object} qualityErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["quality.rule_application.create"]
+// @Router /rule-applications/element-candidates [get]
+// @Security BearerAuth
+func (h *RuleApplicationHandler) ListElementCandidates(c *gin.Context) {
+	tenantID := getTenantID(c)
+	page, pageSize := pageParams(c.Query("page"), c.Query("page_size"))
+	items, total, err := h.svc.ListElementCandidates(c.Request.Context(), tenantID, c.Query("keyword"), page, pageSize)
 	if err != nil {
 		respondQualityServiceError(c, err, "", qualityi18n.MsgInternal)
 		return
@@ -68,7 +91,7 @@ func (h *RuleApplicationHandler) List(c *gin.Context) {
 // @Security BearerAuth
 func (h *RuleApplicationHandler) Get(c *gin.Context) {
 	tenantID := getTenantID(c)
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := requiredPositiveID(c.Param("id"))
 	if err != nil {
 		respondInvalidRequest(c, "")
 		return
@@ -129,7 +152,7 @@ func (h *RuleApplicationHandler) Create(c *gin.Context) {
 func (h *RuleApplicationHandler) Update(c *gin.Context) {
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := requiredPositiveID(c.Param("id"))
 	if err != nil {
 		respondInvalidRequest(c, "")
 		return
@@ -139,7 +162,7 @@ func (h *RuleApplicationHandler) Update(c *gin.Context) {
 		respondInvalidRequest(c, err.Error())
 		return
 	}
-	item, err := h.svc.UpdateRuleApplication(id, tenantID, userID, &req)
+	item, err := h.svc.UpdateRuleApplication(c.Request.Context(), id, tenantID, userID, &req)
 	if err != nil {
 		respondQualityServiceError(c, err, qualityi18n.MsgRuleAppNotFound, qualityi18n.MsgRuleAppUpdateFailed)
 		return
@@ -161,7 +184,7 @@ func (h *RuleApplicationHandler) Update(c *gin.Context) {
 // @Security BearerAuth
 func (h *RuleApplicationHandler) Delete(c *gin.Context) {
 	tenantID := getTenantID(c)
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := requiredPositiveID(c.Param("id"))
 	if err != nil {
 		respondInvalidRequest(c, "")
 		return

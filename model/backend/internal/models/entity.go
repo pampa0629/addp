@@ -60,56 +60,56 @@ func (EntityRelation) TableName() string {
 
 // CreateEntityRequest 创建实体请求
 type CreateEntityRequest struct {
-	DomainID    *int64 `json:"domain_id,omitempty"`
-	Name        string `json:"name" binding:"required"`
-	Code        string `json:"code" binding:"required"`
+	DomainID    *int64 `json:"domain_id,omitempty" binding:"omitempty,gt=0" minimum:"1"`
+	Name        string `json:"name" binding:"required,max=200" maxLength:"200"`
+	Code        string `json:"code" binding:"required,max=100" maxLength:"100"`
 	Description string `json:"description"`
 }
 
 // UpdateEntityRequest 更新实体请求
 type UpdateEntityRequest struct {
-	DomainID    *int64 `json:"domain_id,omitempty"`
-	Name        string `json:"name"`
+	DomainID    *int64 `json:"domain_id" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
+	Name        string `json:"name" binding:"required,max=200" maxLength:"200"`
 	Description string `json:"description"`
 }
 
 // CreateEntityAttributeRequest 创建实体属性请求
 type CreateEntityAttributeRequest struct {
-	ElementID   *int64 `json:"element_id,omitempty"`
-	Name        string `json:"name" binding:"required"`
-	ColumnName  string `json:"column_name" binding:"required"`
-	DataType    string `json:"data_type" binding:"required"`
+	ElementID   *int64 `json:"element_id,omitempty" binding:"omitempty,gt=0" minimum:"1"`
+	Name        string `json:"name" binding:"required,max=200" maxLength:"200"`
+	ColumnName  string `json:"column_name" binding:"required,max=200" maxLength:"200"`
+	DataType    string `json:"data_type" binding:"required,oneof=string int bigint float decimal date datetime bool json text geometry" enums:"string,int,bigint,float,decimal,date,datetime,bool,json,text,geometry"`
 	IsPK        bool   `json:"is_pk"`
 	Nullable    bool   `json:"nullable"`
 	Description string `json:"description"`
-	SortOrder   int    `json:"sort_order"`
+	SortOrder   int    `json:"sort_order" binding:"gte=0" minimum:"0"`
 }
 
 // UpdateEntityAttributeRequest 更新实体属性请求
 type UpdateEntityAttributeRequest struct {
-	ElementID   *int64 `json:"element_id,omitempty"`
-	Name        string `json:"name"`
-	ColumnName  string `json:"column_name"`
-	DataType    string `json:"data_type"`
-	IsPK        *bool  `json:"is_pk,omitempty"`
-	Nullable    *bool  `json:"nullable,omitempty"`
+	ElementID   *int64 `json:"element_id" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
+	Name        string `json:"name" binding:"required,max=200" maxLength:"200"`
+	ColumnName  string `json:"column_name" binding:"required,max=200" maxLength:"200"`
+	DataType    string `json:"data_type" binding:"required,oneof=string int bigint float decimal date datetime bool json text geometry" enums:"string,int,bigint,float,decimal,date,datetime,bool,json,text,geometry"`
+	IsPK        *bool  `json:"is_pk" binding:"required"`
+	Nullable    *bool  `json:"nullable" binding:"required"`
 	Description string `json:"description"`
-	SortOrder   *int   `json:"sort_order,omitempty"`
+	SortOrder   *int   `json:"sort_order" binding:"required,gte=0" minimum:"0"`
 }
 
 // CreateEntityRelationRequest 创建实体关系请求
 type CreateEntityRelationRequest struct {
-	SourceEntity int64  `json:"source_entity" binding:"required"`
-	TargetEntity int64  `json:"target_entity" binding:"required"`
+	SourceEntity int64  `json:"source_entity" binding:"required,gt=0" minimum:"1"`
+	TargetEntity int64  `json:"target_entity" binding:"required,gt=0" minimum:"1"`
 	RelationType string `json:"relation_type" binding:"required,oneof=one_to_one one_to_many many_to_many"`
-	Name         string `json:"name"`
+	Name         string `json:"name" binding:"max=200" maxLength:"200"`
 	Description  string `json:"description"`
 }
 
 // UpdateEntityRelationRequest 更新实体关系请求
 type UpdateEntityRelationRequest struct {
-	RelationType string `json:"relation_type"`
-	Name         string `json:"name"`
+	RelationType string `json:"relation_type" binding:"required,oneof=one_to_one one_to_many many_to_many"`
+	Name         string `json:"name" binding:"max=200" maxLength:"200"`
 	Description  string `json:"description"`
 }
 

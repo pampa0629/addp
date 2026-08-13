@@ -11,7 +11,7 @@
           <template #header>
             <div class="card-header">
               <span>{{ $t('standard.classification.classificationTitle') }}</span>
-              <el-button size="small" type="primary" @click="openAddClassification(null)">{{ $t('standard.classification.addClassification') }}</el-button>
+              <el-button v-if="canCreate" size="small" type="primary" @click="openAddClassification(null)">{{ $t('standard.classification.addClassification') }}</el-button>
             </div>
           </template>
           <el-tree
@@ -27,9 +27,9 @@
                 <span class="tree-name">{{ data.name }}</span>
                 <span class="tree-code">{{ data.code }}</span>
                 <div class="tree-actions">
-                  <el-button link size="small" @click.stop="openAddClassification(data.id)">{{ $t('standard.classification.addChild') }}</el-button>
-                  <el-button link size="small" @click.stop="editClassification(data)">{{ $t('standard.common.edit') }}</el-button>
-                  <el-button link size="small" type="danger" @click.stop="deleteClassification(data)">{{ $t('standard.common.delete') }}</el-button>
+                  <el-button v-if="canCreate" link size="small" @click.stop="openAddClassification(data.id)">{{ $t('standard.classification.addChild') }}</el-button>
+                  <el-button v-if="canUpdate" link size="small" @click.stop="editClassification(data)">{{ $t('standard.common.edit') }}</el-button>
+                  <el-button v-if="canDelete" link size="small" type="danger" :loading="isActionLocked(`classification:${data.id}`)" @click.stop="deleteClassification(data)">{{ $t('standard.common.delete') }}</el-button>
                 </div>
               </div>
             </template>
@@ -60,7 +60,7 @@
                   <div class="grading-desc">{{ level.description }}</div>
                 </div>
               </div>
-              <el-button size="small" @click="editGradingLevel(level)">{{ $t('standard.common.edit') }}</el-button>
+              <el-button v-if="canUpdate" size="small" @click="editGradingLevel(level)">{{ $t('standard.common.edit') }}</el-button>
             </div>
           </div>
         </el-card>
@@ -131,8 +131,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { classificationAPI, gradingLevelAPI } from '../api/standard'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
+import { useStandardPermissions } from '../composables/useStandardPermissions'
+import { useActionLock } from '../composables/useActionLock'
 
 const { t } = useI18n()
+const { canCreate, canUpdate, canDelete } = useStandardPermissions('classification')
+const { isLocked: isActionLocked, runLocked } = useActionLock()
 const classifications = ref([])
 const gradingLevels = ref([])
 const loadingClassifications = ref(false)
@@ -190,11 +194,12 @@ const openAddClassification = (parentId) => {
 
 const editClassification = (data) => {
   editingClassification.value = data
-  classificationForm.value = { name: data.name, code: data.code, parent_id: data.parent_id, description: data.description, sort_order: data.sort_order }
+  classificationForm.value = { name: data.name, code: data.code, parent_id: data.parent_id, description: data.description, sort_order: data.sort_order, version: data.version }
   showClassificationDialog.value = true
 }
 
 const saveClassification = async () => {
+  if (saving.value) return
   saving.value = true
   try {
     if (editingClassification.value) {
@@ -214,23 +219,26 @@ const saveClassification = async () => {
 }
 
 const deleteClassification = async (data) => {
-  try {
-    await ElMessageBox.confirm(t('standard.classification.confirmDelete', { name: data.name }), t('standard.common.hint'), { type: 'warning' })
-    await classificationAPI.delete(data.id)
-    ElMessage.success(t('standard.common.deleteSuccess'))
-    await loadClassifications()
-  } catch (e) {
-    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
-  }
+  await runLocked(`classification:${data.id}`, async () => {
+    try {
+      await ElMessageBox.confirm(t('standard.classification.confirmDelete', { name: data.name }), t('standard.common.hint'), { type: 'warning' })
+      await classificationAPI.delete(data.id)
+      ElMessage.success(t('standard.common.deleteSuccess'))
+      await loadClassifications()
+    } catch (e) {
+      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
+    }
+  })
 }
 
 const editGradingLevel = (level) => {
   editingGrading.value = level
-  gradingForm.value = { name: level.name, description: level.description, color: level.color }
+  gradingForm.value = { name: level.name, description: level.description, color: level.color, version: level.version }
   showGradingDialog.value = true
 }
 
 const saveGradingLevel = async () => {
+  if (saving.value) return
   saving.value = true
   try {
     await gradingLevelAPI.update(editingGrading.value.id, gradingForm.value)

@@ -267,6 +267,76 @@
               {{ formatContinuousDurationSeconds(continuousDiagnostics.checkpoint_stale_after_seconds) }}
             </el-descriptions-item>
           </el-descriptions>
+          <template v-if="hasContinuousCapture">
+            <h5 class="continuous-subheading">{{ t('monitor.execution.detail.continuous.capture.title') }}</h5>
+            <el-descriptions :column="2" border class="continuous-summary">
+              <el-descriptions-item :label="t('monitor.execution.detail.continuous.capture.generation')">
+                {{ continuousMetric(continuousCapture.generation) }}
+              </el-descriptions-item>
+              <el-descriptions-item :label="t('monitor.execution.detail.continuous.capture.provider')">
+                {{ continuousSourceProvider }}
+              </el-descriptions-item>
+              <template v-if="hasContinuousSourceRecovery">
+                <el-descriptions-item :label="t('monitor.execution.detail.continuous.capture.recovery_health')">
+                  <el-tag :type="continuousHealthTagType(continuousSourceRecovery.health)" size="small">
+                    {{ continuousHealthText(continuousSourceRecovery.health) }}
+                  </el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('monitor.execution.detail.continuous.capture.recovery_sampled_at')">
+                  {{ formatDate(continuousSourceRecovery.sampled_at) }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('monitor.execution.detail.continuous.capture.capture_position')">
+                  {{ continuousMetric(continuousSourceRecovery.capture_position) }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('monitor.execution.detail.continuous.capture.current_position')">
+                  {{ continuousMetric(continuousSourceRecovery.current_position) }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('monitor.execution.detail.continuous.capture.earliest_position')">
+                  {{ continuousMetric(continuousSourceRecovery.earliest_available_position) }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('monitor.execution.detail.continuous.capture.position_headroom')">
+                  {{ continuousMetric(continuousSourceRecovery.position_headroom) }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('monitor.execution.detail.continuous.capture.window')">
+                  {{ formatContinuousDurationSeconds(continuousSourceRecovery.window_seconds) }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('monitor.execution.detail.continuous.capture.earliest_available_at')">
+                  {{ formatDate(continuousSourceRecovery.earliest_available_at) }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('monitor.execution.detail.continuous.capture.fra_used')">
+                  {{ formatPercent(continuousSourceRecovery.fra_used_percent) }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('monitor.execution.detail.continuous.capture.fra_reclaimable')">
+                  {{ formatPercent(continuousSourceRecovery.fra_reclaimable_percent) }}
+                </el-descriptions-item>
+              </template>
+              <template v-if="hasContinuousSourceTransactions">
+                <el-descriptions-item :label="t('monitor.execution.detail.continuous.capture.transactions_status')">
+                  <el-tag :type="continuousSourceTransactions.status === 'available' ? 'success' : 'warning'" size="small">
+                    {{ continuousTransactionStatusText(continuousSourceTransactions.status) }}
+                  </el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('monitor.execution.detail.continuous.capture.transactions_sampled_at')">
+                  {{ formatDate(continuousSourceTransactions.sampled_at) }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('monitor.execution.detail.continuous.capture.active_transactions')">
+                  {{ continuousMetric(continuousSourceTransactions.active_count) }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('monitor.execution.detail.continuous.capture.oldest_transaction_position')">
+                  {{ continuousMetric(continuousSourceTransactions.oldest_start_position) }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('monitor.execution.detail.continuous.capture.oldest_transaction_duration')">
+                  {{ formatContinuousDurationSeconds(continuousSourceTransactions.oldest_duration_seconds) }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('monitor.execution.detail.continuous.capture.used_undo_blocks')">
+                  {{ continuousMetric(continuousSourceTransactions.used_undo_blocks) }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('monitor.execution.detail.continuous.capture.used_undo_records')">
+                  {{ continuousMetric(continuousSourceTransactions.used_undo_records) }}
+                </el-descriptions-item>
+              </template>
+            </el-descriptions>
+          </template>
           <el-table v-if="continuousPartitionRows.length" :data="continuousPartitionRows" border size="small" class="continuous-table">
             <el-table-column prop="partition" :label="t('monitor.execution.detail.continuous.partition')" width="90" />
             <el-table-column :label="t('monitor.execution.detail.continuous.health')" width="110">
@@ -402,6 +472,7 @@ import {
   continuousSignalTagType,
   formatContinuousDurationSeconds,
   formatContinuousRate,
+  getContinuousCapture,
   getContinuousDiagnostics,
   hasContinuousExecutionMetadata,
   resolveTaskTypeDisplayName
@@ -533,13 +604,20 @@ const workflowResultColumns = computed(() => {
 })
 const workflowResultText = computed(() => JSON.stringify(workflowResultPreview.value, null, 2))
 const continuousDiagnostics = computed(() => getContinuousDiagnostics(currentExecutionMetadata.value))
+const continuousCapture = computed(() => getContinuousCapture(currentExecutionMetadata.value))
+const continuousSourceRecovery = computed(() => normalizeObject(continuousCapture.value.source_recovery))
+const continuousSourceTransactions = computed(() => normalizeObject(continuousCapture.value.source_transactions))
+const continuousSourceProvider = computed(() => continuousSourceRecovery.value.provider || continuousSourceTransactions.value.provider || '-')
+const hasContinuousSourceRecovery = computed(() => Object.keys(continuousSourceRecovery.value).length > 0)
+const hasContinuousSourceTransactions = computed(() => Object.keys(continuousSourceTransactions.value).length > 0)
+const hasContinuousCapture = computed(() => Object.keys(continuousCapture.value).length > 0)
 const continuousPartitionRows = computed(() => buildContinuousPartitionRows(currentExecutionMetadata.value))
 const continuousSignals = computed(() => buildContinuousSignals(
   currentExecutionMetadata.value,
   currentExecution.value?.status
 ))
 const hasContinuousObservability = computed(() => continuousPartitionRows.value.length > 0 ||
-  Object.keys(continuousDiagnostics.value).length > 0 || continuousSignals.value.length > 0)
+  Object.keys(continuousDiagnostics.value).length > 0 || hasContinuousCapture.value || continuousSignals.value.length > 0)
 
 function isContinuousExecution(execution) {
   return hasContinuousExecutionMetadata(normalizeObject(execution?.metadata))
@@ -565,6 +643,18 @@ function continuousSignalDescription(signal) {
 
 function continuousSignalAlertType(severity) {
   return severity === 'critical' ? 'error' : continuousSignalTagType(severity)
+}
+
+function continuousTransactionStatusText(status) {
+  if (!status) return '-'
+  const key = `monitor.execution.detail.continuous.capture.transaction_status_values.${status}`
+  const translated = t(key)
+  return translated === key ? status : translated
+}
+
+function formatPercent(value) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? `${numeric.toFixed(2)}%` : '-'
 }
 
 function parseTaskCapabilities(capabilities) {
@@ -1162,6 +1252,13 @@ watch(detailDialogVisible, async visible => {
 
 .continuous-heading h4 {
   margin: 0;
+}
+
+.continuous-subheading {
+  margin: 18px 0 0;
+  color: var(--addp-text-primary);
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .continuous-heading-tags {

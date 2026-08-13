@@ -57,14 +57,14 @@ func (r *EntityRepository) List(tenantID int64, opts ListEntityOptions) ([]model
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
+		return nil, 0, commonrepo.WrapDBError(err)
 	}
 
 	offset := (opts.Page - 1) * opts.PageSize
 
 	var entities []models.Entity
 	err := query.Order("created_at DESC, id DESC").Offset(offset).Limit(opts.PageSize).Find(&entities).Error
-	return entities, total, err
+	return entities, total, commonrepo.WrapDBError(err)
 }
 
 func (r *EntityRepository) Update(entity *models.Entity) error {
@@ -102,14 +102,14 @@ func (r *EntityRepository) ExistsByCode(code string, tenantID int64, excludeID i
 		query = query.Where("id != ?", excludeID)
 	}
 	err := query.Count(&count).Error
-	return count > 0, err
+	return count > 0, commonrepo.WrapDBError(err)
 }
 
 // GetAttributes 获取实体属性列表
 func (r *EntityRepository) GetAttributes(entityID int64) ([]models.EntityAttribute, error) {
 	var attrs []models.EntityAttribute
 	err := r.db.Where("entity_id = ?", entityID).Order("sort_order ASC, id ASC").Find(&attrs).Error
-	return attrs, err
+	return attrs, commonrepo.WrapDBError(err)
 }
 
 // CreateAttribute 创建实体属性
@@ -152,12 +152,12 @@ func (r *EntityRepository) GetByCode(tenantID int64, code string) (*models.Entit
 func (r *EntityRepository) ListByTenantID(tenantID int64) ([]models.Entity, error) {
 	var entities []models.Entity
 	err := r.db.Where("tenant_id = ?", tenantID).Order("created_at DESC").Find(&entities).Error
-	return entities, err
+	return entities, commonrepo.WrapDBError(err)
 }
 
 // DeleteByEntityID 删除实体的所有属性
 func (r *EntityRepository) DeleteByEntityID(entityID int64) error {
-	return r.db.Where("entity_id = ?", entityID).Delete(&models.EntityAttribute{}).Error
+	return commonrepo.WrapDBError(r.db.Where("entity_id = ?", entityID).Delete(&models.EntityAttribute{}).Error)
 }
 
 func (r *EntityRepository) DB() *gorm.DB { return r.db }

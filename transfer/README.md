@@ -2,7 +2,7 @@
 
 Transfer 是 ADDP 的数据传输中枢，负责传输任务配置、执行编排、字段映射、异步 worker、checkpoint 观测、执行日志、指标和写后 Meta 扫描触发。
 
-当前已实现 bounded snapshot、PostgreSQL/MySQL bounded watermark incremental、业务 Kafka keyed JSON continuous upsert + DLQ、业务 Kafka bounded replay，以及 PostgreSQL/MySQL/Oracle 单表 CDC initial snapshot + upsert/delete。continuous worker 已接通严格 record/Debezium adapter、业务库 apply ledger、Infra `transfer.sync_states` CAS、lease/fencing、真实 pause/resume/stop，以及分区 latest offset、lag、retention horizon 和 degraded/critical 告警；Console Wizard 已开放业务 Kafka和数据库 CDC 两类 continuous 路线，数据库目标支持 PostgreSQL/MySQL。Oracle CDC 包含 generation-owned Spatial 镜像：XY 使用 WKB BLOB，XYZ 使用保留 Z 值的 GeoJSON CLOB，Transfer 统一归一化为标准 EWKB；仍不包含普通业务 LOB、RAC 和 ArcGIS SDE。
+当前已实现 bounded snapshot、PostgreSQL/MySQL bounded watermark incremental、业务 Kafka keyed JSON continuous upsert + DLQ、业务 Kafka bounded replay，以及 PostgreSQL/MySQL/Oracle 单表 CDC initial snapshot + upsert/delete。continuous worker 已接通严格 record/Debezium adapter、业务库 apply ledger、Infra `transfer.sync_states` CAS、lease/fencing、真实 pause/resume/stop，以及分区 latest offset、lag、retention horizon 和 degraded/critical 告警；Console Wizard 已开放业务 Kafka和数据库 CDC 两类 continuous 路线，数据库 CDC 目标支持 PostgreSQL/MySQL/Oracle。Oracle CDC 包含 generation-owned Spatial 镜像：XY 使用 WKB BLOB，XYZ 使用保留 Z 值的 GeoJSON CLOB，Transfer 统一归一化为标准 EWKB；Oracle 目标当前只接受 XY geometry，不支持独立 `TIME`，仍不包含普通业务 LOB、RAC 和 ArcGIS SDE。
 
 当前主路径采用 clean break：Transfer 不再维护私有 reader / writer 插件体系，不再兼容旧 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type` 等任务 JSON 字段。具体读写能力来自 `common/engine`、`common/format`、`common/contentio` 和 `common/engine/contentadapter`。
 
@@ -80,9 +80,9 @@ non-table raw copy 已形成第一版最小闭环：`document`、`media`、`cad`
 
 `target.policy.apply_mode` 支持 snapshot 的 `replace` / `append`、PostgreSQL/MySQL watermark 和业务 Kafka 的幂等 `upsert`，以及数据库 CDC 的 `upsert_delete`。旧 `write_mode` 不兼容。snapshot replace 失败执行可按 restartable 从头 retry；watermark 和未阻塞的 continuous/CDC 从 `transfer.sync_states` committed position resume；append retry 被拒绝。数据库 CDC schema drift 会把任务置为 `status=blocked` 且不推进当前 offset。PostgreSQL/MySQL 中只有当前消息新增的 nullable 非 geometry 字段可由用户逐字段审批，平台复用目标 Provider 幂等加列并把任务置为 paused；Oracle 第一期的任何 schema drift 和其他不可审批变化均只能 Stop 后创建新任务和新目标表。
 
-continuous 当前有两类实现路径：业务 Kafka keyed JSON record -> PostgreSQL/MySQL upsert，以及 PostgreSQL/MySQL/Oracle 单表 -> Debezium -> Infra Kafka -> PostgreSQL/MySQL snapshot/upsert/delete。Oracle Spatial 在 connector 前由 capture Provider 将源行同步到 generation-owned 镜像表：XY 使用 WKB BLOB，XYZ 使用 Oracle `TO_GEOJSON` CLOB，adapter 先校验冻结的空间事实，再输出 EWKB；之后完全复用同一条 CDC 主路径。它们复用同一个 Transfer continuous worker 和 `PartitionedTableChangeApplyProvider`；Provider 在业务目标库将目标变化与目标 apply ledger 的 `next_offset` 原子提交，Infra PostgreSQL 的 `transfer.sync_states` 保存任务 committed position。业务 Kafka 已支持显式 `block|dead_letter` 和显式 offset ranges 到新 PostgreSQL 隔离表的 bounded replay。交付保证是 at-least-once + 目标 monotonic 幂等应用，不宣称分布式 exactly-once。当前仍不支持无 key append、Schema Registry、Avro、Protobuf、Kafka target、数据库 CDC replay/DLQ、普通 Oracle LOB/RAC、ArcGIS SDE 或自动 schema evolution。Infra Kafka 不进入 System engines 或用户任务配置。
+continuous 当前有两类实现路径：业务 Kafka keyed JSON record -> PostgreSQL/MySQL upsert，以及 PostgreSQL/MySQL/Oracle 单表 -> Debezium -> Infra Kafka -> PostgreSQL/MySQL/Oracle snapshot/upsert/delete。Oracle Spatial 在 connector 前由 capture Provider 将源行同步到 generation-owned 镜像表：XY 使用 WKB BLOB，XYZ 使用 Oracle `TO_GEOJSON` CLOB，adapter 先校验冻结的空间事实，再输出 EWKB；之后完全复用同一条 CDC 主路径。它们复用同一个 Transfer continuous worker 和 `PartitionedTableChangeApplyProvider`；Provider 在业务目标库将目标变化与目标 apply ledger 的 `next_offset` 原子提交，Infra PostgreSQL 的 `transfer.sync_states` 保存任务 committed position。Oracle 目标 ledger 位于连接用户 schema 的 `_ADDP_TRANSFER_APPLY_POSITIONS`，并通过 ownership comment 从 Catalog 隐藏；只开放 CDC apply，不开放普通 bounded table write。业务 Kafka已支持显式 `block|dead_letter` 和显式 offset ranges 到新 PostgreSQL 隔离表的 bounded replay。交付保证是 at-least-once + 目标 monotonic 幂等应用，不宣称分布式 exactly-once。当前仍不支持无 key append、Schema Registry、Avro、Protobuf、Kafka target、数据库 CDC replay/DLQ、普通 Oracle LOB/RAC、ArcGIS SDE 或自动 schema evolution。Infra Kafka 不进入 System engines 或用户任务配置。
 
-恢复 continuous task 时，Kafka Provider 会先验证 committed `next_offset` 是否仍处于 topic partition 的 earliest/latest 范围。位置已被 retention 清除时 execution 明确失败，不允许静默重置。PostgreSQL/MySQL 目标锁等待响应 runtime context 取消，未完成事务会同时回滚业务表和对应目标 apply ledger。
+恢复 continuous task 时，Kafka Provider 会先验证 committed `next_offset` 是否仍处于 topic partition 的 earliest/latest 范围。位置已被 retention 清除时 execution 明确失败，不允许静默重置。PostgreSQL/MySQL/Oracle 目标锁等待响应 runtime context 取消，未完成事务会同时回滚业务表和对应目标 apply ledger。
 
 ## API
 
@@ -157,6 +157,15 @@ cd transfer/backend
 ADDP_TEST_POSTGRES_DATABASE=addp_test \
 ADDP_ORACLE_SPATIAL_CDC_DATA_E2E=1 \
 go test ./internal/continuous -run TestIntegrationOracleSpatialCDCGeometryMatrixAndRecovery -count=1 -v
+```
+
+PostgreSQL/MySQL/Oracle 三类源到 Oracle 目标的生命周期矩阵：
+
+```bash
+cd transfer/backend
+ADDP_TEST_POSTGRES_DATABASE=addp_test \
+ADDP_DATABASE_CDC_ORACLE_TARGET_E2E=1 \
+go test ./internal/continuous -run TestIntegrationDatabaseCDCToOracleTargetLifecycle -count=1 -v
 ```
 
 追加 `ADDP_ORACLE_SPATIAL_CDC_CONTAINER_FAULT=1` 才会暂停并恢复 `business-oracle` 容器验证 Oracle 中断；测试结束会自动 unpause，普通回归不启用该开关。

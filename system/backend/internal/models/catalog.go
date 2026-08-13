@@ -18,6 +18,11 @@ type CatalogListChildrenResponse struct {
 	Nodes []CatalogEntry `json:"nodes"`
 }
 
+// CatalogDescribeFactsRequest 实时 catalog 叶子事实请求。
+type CatalogDescribeFactsRequest struct {
+	Path CatalogPath `json:"path"`
+}
+
 // CatalogPath 表达跨引擎的结构化 catalog 路径。
 type CatalogPath struct {
 	Version  string           `json:"version,omitempty" example:"catalog.path/v1"`

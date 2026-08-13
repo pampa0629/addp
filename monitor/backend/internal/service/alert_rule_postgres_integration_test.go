@@ -220,8 +220,14 @@ func TestIntegrationPostgresSchemaChangeBlockedIncidentLifecycle(t *testing.T) {
 		t.Fatalf("opened schema change incident = %#v", incident)
 	}
 
-	metadata["continuous"].(map[string]interface{})["schema_change"].(map[string]interface{})["status"] = "applied"
-	if err := db.Model(&execution).Updates(map[string]interface{}{"metadata": metadata, "updated_at": now.Add(2 * time.Second)}).Error; err != nil {
+	recoveredExecution := commonExecution.TaskExecution{
+		TenantID: tenantID, ExecutionID: uuid.NewString(), Module: commonExecution.ModuleTransfer,
+		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleTransfer, SourceTaskID: &taskID,
+		Status: commonExecution.ExecutionStatusRunning, TriggerType: commonExecution.TriggerTypeManual,
+		Metadata:  commonModels.JSONMap{"continuous": map[string]interface{}{"diagnostics": map[string]interface{}{"health": "healthy"}}},
+		CreatedAt: now.Add(2 * time.Second), UpdatedAt: now.Add(2 * time.Second),
+	}
+	if err := db.Create(&recoveredExecution).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := alertService.Evaluate(context.Background(), now.Add(3*time.Second)); err != nil {
@@ -231,7 +237,7 @@ func TestIntegrationPostgresSchemaChangeBlockedIncidentLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	if incident.Status != monitorModels.AlertStatusResolved || incident.ResolvedAt == nil {
-		t.Fatalf("resolved schema change incident = %#v", incident)
+		t.Fatalf("newer healthy execution did not resolve historical schema change incident = %#v", incident)
 	}
 }
 

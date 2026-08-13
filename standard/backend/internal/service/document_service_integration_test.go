@@ -47,14 +47,14 @@ func TestDocumentFileLifecycleAgainstPostgresAndMinIO(t *testing.T) {
 	}
 	defer db.Exec("DELETE FROM standard.documents WHERE id = ?", doc.ID)
 
-	if err := svc.UploadFile(doc.ID, tenantID, "first.pdf", bytes.NewReader([]byte("first")), 5, "application/pdf"); err != nil {
+	if _, err := svc.UploadFile(doc.ID, tenantID, doc.Version, "first.pdf", bytes.NewReader([]byte("first")), 5, "application/pdf"); err != nil {
 		t.Fatalf("upload first file: %v", err)
 	}
 	first, err := repo.GetByID(doc.ID, tenantID)
 	if err != nil {
 		t.Fatalf("load first file metadata: %v", err)
 	}
-	if err := svc.UploadFile(doc.ID, tenantID, "second.pdf", bytes.NewReader([]byte("second")), 6, "application/pdf"); err != nil {
+	if _, err := svc.UploadFile(doc.ID, tenantID, first.Version, "second.pdf", bytes.NewReader([]byte("second")), 6, "application/pdf"); err != nil {
 		t.Fatalf("replace file: %v", err)
 	}
 	if _, err := client.StatObject(context.Background(), minioBucket, first.FileKey, minio.StatObjectOptions{}); err == nil {

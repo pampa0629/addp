@@ -32,7 +32,7 @@ type ContinuousStateStore interface {
 
 type ContinuousProgressStore interface {
 	RecordProgress(ctx context.Context, claim repository.RuntimeLeaseClaim, progress repository.ContinuousProgress) error
-	RecordDiagnostics(ctx context.Context, claim repository.RuntimeLeaseClaim, diagnostics repository.ContinuousDiagnostics) error
+	RecordDiagnostics(ctx context.Context, claim repository.RuntimeLeaseClaim, diagnostics repository.ContinuousDiagnostics, capture *repository.ContinuousCaptureFacts) error
 }
 
 type ContinuousCaptureStore interface {
@@ -198,7 +198,11 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 				ctx, reader, committed, committedAtByPartition, latestSamples,
 				currentTime, degradedHorizon, criticalHorizon, checkpointStaleAfter,
 			)
-			if err := r.Progress.RecordDiagnostics(ctx, claim, diagnostics); err != nil {
+			captureFacts, err := r.captureFacts(ctx, claim, plan)
+			if err != nil {
+				return fmt.Errorf("load continuous capture facts: %w", err)
+			}
+			if err := r.Progress.RecordDiagnostics(ctx, claim, diagnostics, captureFacts); err != nil {
 				return fmt.Errorf("record continuous diagnostics: %w", err)
 			}
 			latestSamples = nextSamples
@@ -305,6 +309,25 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 			}
 		}
 	}
+}
+
+func (r *DataSessionRunner) captureFacts(ctx context.Context, claim repository.RuntimeLeaseClaim, plan *planner.ContinuousPlan) (*repository.ContinuousCaptureFacts, error) {
+	if plan.CDC == nil {
+		return nil, nil
+	}
+	if r.Captures == nil {
+		return nil, fmt.Errorf("database CDC data runner requires capture resource store")
+	}
+	resource, err := r.Captures.GetLatest(ctx, claim.Task.ID, claim.Task.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	summary := models.NewCaptureSummary(resource)
+	return &repository.ContinuousCaptureFacts{
+		Generation:         summary.Generation,
+		SourceRecovery:     summary.SourceRecovery,
+		SourceTransactions: summary.SourceTransactions,
+	}, nil
 }
 
 const databaseCDCInitialSnapshotCommittedKey = "initial_snapshot_completed"

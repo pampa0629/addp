@@ -42,6 +42,9 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 cd "${ROOT_DIR}"
 
+source "${SCRIPT_DIR}/lifecycle-lock.sh"
+addp_acquire_lifecycle_lock keepalive "${MODE}" "$@"
+
 case "${MODE}" in
   -h|--help)
     show_usage
@@ -62,13 +65,18 @@ case "${MODE}" in
 esac
 
 cleanup() {
-  trap - INT TERM EXIT
+  local exit_code=$?
+  trap - INT TERM
   echo ""
   echo "🛑 keepalive 退出，停止 ADDP 开发环境..."
-  "${SCRIPT_DIR}/stop.sh"
+  "${SCRIPT_DIR}/stop.sh" || true
+  addp_release_lifecycle_lock || true
+  exit "$exit_code"
 }
 
-trap cleanup INT TERM EXIT
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 echo ""
 echo "✅ ADDP 开发环境已启动，keepalive 正在前台保活。"

@@ -5,7 +5,7 @@
         <h2>{{ $t('standard.document.title') }}</h2>
         <p class="page-subtitle">{{ $t('standard.document.subtitle') }}</p>
       </div>
-      <el-button type="primary" @click="openCreateDialog">{{ $t('standard.document.create') }}</el-button>
+      <el-button v-if="canCreate" type="primary" @click="openCreateDialog">{{ $t('standard.document.create') }}</el-button>
     </div>
 
     <el-card>
@@ -27,7 +27,7 @@
           </template>
         </el-table-column>
         <el-table-column :label="$t('standard.document.sourceLabel')" prop="source_org" width="160" show-overflow-tooltip />
-        <el-table-column :label="$t('standard.document.versionLabel')" prop="version" width="80" />
+        <el-table-column :label="$t('standard.document.versionLabel')" prop="document_version" width="80" />
         <el-table-column :label="$t('standard.document.attachment')" width="120">
           <template #default="{ row }">
             <span v-if="row.file_name" class="file-name" :title="row.file_name">
@@ -43,7 +43,7 @@
           <template #default="{ row }">
             <div class="table-actions">
             <el-button link size="small" type="primary" v-if="row.file_name" @click.stop="downloadFile(row)">{{ $t('standard.document.download') }}</el-button>
-            <el-button link size="small" type="danger" @click.stop="deleteDocument(row)">{{ $t('standard.common.delete') }}</el-button>
+            <el-button v-if="canDelete" link size="small" type="danger" :loading="isActionLocked(`document:${row.id}`)" @click.stop="deleteDocument(row)">{{ $t('standard.common.delete') }}</el-button>
             </div>
           </template>
         </el-table-column>
@@ -79,13 +79,14 @@
           <el-input v-model="form.source_org" :placeholder="$t('standard.document.sourcePlaceholder')" />
         </el-form-item>
         <el-form-item :label="$t('standard.document.versionLabel')">
-          <el-input v-model="form.version" :placeholder="$t('standard.document.versionPlaceholder')" />
+          <el-input v-model="form.document_version" :placeholder="$t('standard.document.versionPlaceholder')" />
         </el-form-item>
         <el-form-item :label="$t('standard.document.descriptionLabel')">
           <el-input v-model="form.description" type="textarea" :rows="2" />
         </el-form-item>
         <el-form-item :label="$t('standard.document.fileLabel')">
           <el-upload
+            v-if="canUpdate"
             ref="uploadRef"
             :auto-upload="false"
             :limit="1"
@@ -107,14 +108,14 @@
     </el-dialog>
 
     <!-- 文档详情抽屉（只读） -->
-    <el-drawer v-model="showDetail" :title="currentDoc?.name" size="480px">
+    <el-drawer v-model="showDetail" :title="currentDoc?.name" size="480px" @closed="handleDetailClosed">
       <div v-if="currentDoc" class="doc-detail">
         <el-descriptions :column="2" border size="small">
           <el-descriptions-item :label="$t('standard.common.type')">
             <el-tag size="small" :type="docTypeTagType(currentDoc.doc_type)">{{ docTypeLabel(currentDoc.doc_type) }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item :label="$t('standard.document.source')">{{ currentDoc.source_org || '-' }}</el-descriptions-item>
-          <el-descriptions-item :label="$t('standard.document.version')">{{ currentDoc.version || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="$t('standard.document.version')">{{ currentDoc.document_version || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="$t('standard.document.entryTime')">{{ formatTime(currentDoc.created_at) }}</el-descriptions-item>
           <el-descriptions-item :label="$t('standard.document.descriptionLabel')" :span="2">{{ currentDoc.description || '-' }}</el-descriptions-item>
         </el-descriptions>
@@ -126,12 +127,13 @@
           <span class="file-info">{{ currentDoc.file_name }}（{{ formatFileSize(currentDoc.file_size) }}）</span>
           <el-button link type="primary" size="small" @click="downloadFile(currentDoc)">{{ $t('standard.document.download') }}</el-button>
           <el-upload
+            v-if="canUpdate"
             :auto-upload="false"
             :show-file-list="false"
             :on-change="(f) => uploadToExisting(currentDoc, f)"
             style="display:inline-block;margin-left:8px"
           >
-            <el-button link size="small">{{ $t('standard.document.reupload') }}</el-button>
+            <el-button link size="small" :loading="isActionLocked(`document-upload:${currentDoc.id}`)">{{ $t('standard.document.reupload') }}</el-button>
           </el-upload>
         </div>
         <div v-else class="file-section no-file-section">
@@ -142,7 +144,7 @@
             :on-change="(f) => uploadToExisting(currentDoc, f)"
             style="display:inline-block;margin-left:12px"
           >
-            <el-button size="small" type="primary" plain>{{ $t('standard.document.uploadFile') }}</el-button>
+            <el-button size="small" type="primary" plain :loading="isActionLocked(`document-upload:${currentDoc.id}`)">{{ $t('standard.document.uploadFile') }}</el-button>
           </el-upload>
         </div>
 
@@ -181,7 +183,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -191,8 +193,13 @@ import { saveBlob } from '../utils/download'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 import { formatStandardDate } from '../utils/dateTime'
+import { useStandardPermissions } from '../composables/useStandardPermissions'
+import { useActionLock } from '../composables/useActionLock'
+import { createLatestRequestCoordinator } from '@common-ui'
 
 const { t, locale } = useI18n()
+const { canCreate, canUpdate, canDelete } = useStandardPermissions('document')
+const { isLocked: isActionLocked, runLocked } = useActionLock()
 const router = useRouter()
 const route = useRoute()
 
@@ -211,8 +218,10 @@ const currentDoc = ref(null)
 const mappings = ref({ elements: [], glossaries: [], metrics: [] })
 let selectedFile = null
 const uploadRef = ref(null)
+const listRequests = createLatestRequestCoordinator()
+const detailRequests = createLatestRequestCoordinator()
 
-const form = ref({ name: '', doc_type: 'reference', source_org: '', version: '', description: '' })
+const form = ref({ name: '', doc_type: 'reference', source_org: '', document_version: '', description: '' })
 
 const docTypeLabel = (type) => ({
   national: t('standard.document.national'),
@@ -235,7 +244,7 @@ const openCreateDialog = () => {
 }
 
 const resetForm = () => {
-  form.value = { name: '', doc_type: 'reference', source_org: '', version: '', description: '' }
+  form.value = { name: '', doc_type: 'reference', source_org: '', document_version: '', description: '' }
   selectedFile = null
   uploadRef.value?.clearFiles()
 }
@@ -245,18 +254,21 @@ const onFileChange = (file) => {
 }
 
 const loadDocuments = async () => {
+  const params = { page: page.value, page_size: pageSize.value, keyword: keyword.value, doc_type: filterType.value }
+  const request = listRequests.begin(JSON.stringify(params))
   loading.value = true
   try {
-    const params = { page: page.value, page_size: pageSize.value, keyword: keyword.value, doc_type: filterType.value }
     const res = await documentAPI.list(params)
+    if (!listRequests.isCurrent(request, JSON.stringify(params))) return
     documents.value = res.data || []
     total.value = res.total || 0
   } catch (e) {
+    if (!listRequests.isCurrent(request, JSON.stringify(params))) return
     documents.value = []
     total.value = 0
     ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
   } finally {
-    loading.value = false
+    if (listRequests.isCurrent(request, JSON.stringify(params))) loading.value = false
   }
 }
 
@@ -281,6 +293,7 @@ const handlePageChange = () => {
 }
 
 const createDocument = async () => {
+  if (saving.value) return
   if (!form.value.name) {
     ElMessage.warning(t('standard.document.nameRequired'))
     return
@@ -292,7 +305,7 @@ const createDocument = async () => {
     if (selectedFile && docId) {
       const fd = new FormData()
       fd.append('file', selectedFile)
-      await documentAPI.uploadFile(docId, fd)
+      await documentAPI.uploadFile(docId, fd, res.version)
     }
     ElMessage.success(t('standard.common.createSuccess'))
     showCreateDialog.value = false
@@ -304,15 +317,35 @@ const createDocument = async () => {
   }
 }
 
-const openDetail = async (row) => {
-  currentDoc.value = row
-  showDetail.value = true
+const loadDetail = async (id) => {
+  const request = detailRequests.begin(id)
   try {
-    const res = await documentAPI.getMappings(row.id)
-    mappings.value = res || { elements: [], glossaries: [], metrics: [] }
+    const [document, documentMappings] = await Promise.all([
+      documentAPI.get(id),
+      documentAPI.getMappings(id)
+    ])
+    if (!detailRequests.isCurrent(request, id)) return
+    currentDoc.value = document
+    mappings.value = documentMappings || { elements: [], glossaries: [], metrics: [] }
+    showDetail.value = true
   } catch (e) {
+    if (!detailRequests.isCurrent(request, id)) return
+    currentDoc.value = null
     mappings.value = { elements: [], glossaries: [], metrics: [] }
+    showDetail.value = false
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
+    await navigateStandardRoute(router, { path: '/documents', query: route.query }, { history: 'replace' })
   }
+}
+
+const openDetail = row => navigateStandardRoute(router, {
+  path: `/documents/${row.id}`,
+  query: route.query
+})
+
+const handleDetailClosed = () => {
+  if (!route.params.id) return
+  navigateStandardRoute(router, { path: '/documents', query: route.query }, { history: 'replace' })
 }
 
 const downloadFile = async (row) => {
@@ -327,30 +360,46 @@ const downloadFile = async (row) => {
 const openRelated = (resource, id) => navigateStandardRoute(router, `/${resource}/${id}`)
 
 const uploadToExisting = async (doc, file) => {
-  const fd = new FormData()
-  fd.append('file', file.raw)
-  try {
-    await documentAPI.uploadFile(doc.id, fd)
-    ElMessage.success(t('standard.document.uploadSuccess'))
-    const res = await documentAPI.get(doc.id)
-    currentDoc.value = res
-    const idx = documents.value.findIndex(d => d.id === doc.id)
-    if (idx !== -1) documents.value[idx] = res
-  } catch (e) {
-    ElMessage.error(getStandardErrorMessage(e, t))
-  }
+  await runLocked(`document-upload:${doc.id}`, async () => {
+    const fd = new FormData()
+    fd.append('file', file.raw)
+    try {
+      await documentAPI.uploadFile(doc.id, fd, doc.version)
+      ElMessage.success(t('standard.document.uploadSuccess'))
+      const res = await documentAPI.get(doc.id)
+      currentDoc.value = res
+      const idx = documents.value.findIndex(d => d.id === doc.id)
+      if (idx !== -1) documents.value[idx] = res
+    } catch (e) {
+      ElMessage.error(getStandardErrorMessage(e, t))
+    }
+  })
 }
 
 const deleteDocument = async (row) => {
-  try {
-    await ElMessageBox.confirm(t('standard.document.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
-    await documentAPI.delete(row.id)
-    ElMessage.success(t('standard.common.deleteSuccess'))
-    loadDocuments()
-  } catch (e) {
-    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
-  }
+  await runLocked(`document:${row.id}`, async () => {
+    try {
+      await ElMessageBox.confirm(t('standard.document.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
+      await documentAPI.delete(row.id)
+      ElMessage.success(t('standard.common.deleteSuccess'))
+      await loadDocuments()
+    } catch (e) {
+      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
+    }
+  })
 }
+
+watch(() => route.params.id, id => {
+  const documentID = Number(id)
+  if (Number.isInteger(documentID) && documentID > 0) {
+    loadDetail(documentID)
+    return
+  }
+  detailRequests.invalidate()
+  showDetail.value = false
+  currentDoc.value = null
+  mappings.value = { elements: [], glossaries: [], metrics: [] }
+}, { immediate: true })
 
 onMounted(loadDocuments)
 </script>

@@ -38,6 +38,9 @@ func NewEntityRelationService(relationRepo *repository.EntityRelationRepository,
 
 // Create 创建实体关系
 func (s *EntityRelationService) Create(tenantID int64, req *models.CreateEntityRelationRequest) (*models.EntityRelation, error) {
+	if err := validateCreateEntityRelationRequest(req); err != nil {
+		return nil, err
+	}
 	sourceEntity, targetEntity, err := s.requireDraftEntities(tenantID, req.SourceEntity, req.TargetEntity)
 	if err != nil {
 		return nil, err
@@ -61,9 +64,12 @@ func (s *EntityRelationService) Create(tenantID int64, req *models.CreateEntityR
 	if relation.Name == "" {
 		relation.Name = fmt.Sprintf("%s_%s", sourceEntity.Code, targetEntity.Code)
 	}
+	if !validOptionalStringLength(relation.Name, 200) {
+		return nil, invalidRequest()
+	}
 
 	if err := s.relationRepo.Create(relation); err != nil {
-		return nil, err
+		return nil, modelResourceError(err, "entity_relation", i18n.MsgRelationConflict)
 	}
 
 	return relation, nil
@@ -103,18 +109,18 @@ func (s *EntityRelationService) Update(id, tenantID int64, req *models.UpdateEnt
 	if _, _, err := s.requireDraftEntities(tenantID, relation.SourceEntity, relation.TargetEntity); err != nil {
 		return nil, err
 	}
+	if req == nil || (req.RelationType != "one_to_one" && req.RelationType != "one_to_many" && req.RelationType != "many_to_many") ||
+		!validOptionalStringLength(req.Name, 200) {
+		return nil, apperrors.Validation("invalid_request", i18n.MsgValidationFailed)
+	}
 
-	// 更新字段
-	if req.RelationType != "" {
-		relation.RelationType = req.RelationType
-	}
-	if req.Name != "" {
-		relation.Name = req.Name
-	}
+	// PUT 覆盖完整可编辑状态；关系端点在当前契约中不可变。
+	relation.RelationType = req.RelationType
+	relation.Name = req.Name
 	relation.Description = req.Description
 
 	if err := s.relationRepo.Update(relation); err != nil {
-		return nil, err
+		return nil, modelResourceError(err, "entity_relation", i18n.MsgRelationConflict)
 	}
 
 	return relation, nil

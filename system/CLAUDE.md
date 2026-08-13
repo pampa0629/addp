@@ -361,6 +361,7 @@ frontend/src/
 - `POST /api/v1/system/engines/:id/test` - 测试已有引擎连接
 - `POST /api/v1/system/engines/test-connection` - 创建前测试连接
 - `POST /api/v1/system/engines/:id/catalog/children` - 统一列出实时 catalog 子节点，支持数据库、对象存储、文件系统和图数据库等多层目录发现
+- `POST /api/v1/system/engines/:id/catalog/facts` - 按结构化 CatalogPath 读取单个叶子的实时结构事实；列表省略的字段等详情从这里按需读取
 
 `GET /engines` 对 User 和 Service Principal 都返回脱敏列表。`GET /engines/:id` 对 User 返回脱敏连接信息；具有 `system.engine.read` 的 Tenant Service Principal 返回同 Tenant 的解密连接信息，跨 Tenant 返回 403。
 

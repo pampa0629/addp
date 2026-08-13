@@ -9,6 +9,7 @@
 ```text
 common/
 ├── api/            # 统一响应、错误和 handler 辅助
+├── buildinfo/      # Go 服务统一构建身份和健康响应
 ├── authorization/  # Permission/内置 Role Manifest Schema、共享授权契约及 authtest
 ├── client/         # System、Meta、Asset、Service 等模块客户端
 ├── middleware/auth/ # System AuthContext 消费、Gin 上下文注入和租户隔离 helper

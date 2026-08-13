@@ -61,6 +61,8 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ORIGINAL_ARGS=("$@")
 
 cd "${ROOT_DIR}"
+source "${SCRIPT_DIR}/lifecycle-lock.sh"
+addp_acquire_lifecycle_lock restart "$@"
 source "${SCRIPT_DIR}/jupyter-env.sh"
 
 # 加载 .env 配置

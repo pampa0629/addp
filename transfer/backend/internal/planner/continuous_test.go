@@ -7,6 +7,7 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/kafka"
 	"github.com/addp/common/engine/plugins/mysql"
+	"github.com/addp/common/engine/plugins/oracle"
 	"github.com/addp/common/engine/plugins/postgresql"
 )
 
@@ -278,6 +279,69 @@ func TestBuildDatabaseCDCContinuousPlanAcceptsMySQLTarget(t *testing.T) {
 	}
 	if plan.TargetType != "mysql" || plan.Target.Path.StringPath() != "business/orders_cdc" {
 		t.Fatalf("MySQL database CDC target plan = %#v", plan)
+	}
+}
+
+func TestBuildDatabaseCDCContinuousPlanAcceptsOracleTarget(t *testing.T) {
+	config := validPostgreSQLCDCConfig()
+	config["target"].(map[string]interface{})["parent_locator"] = "addp://engine/20/path/BUSINESS?type=schema"
+	spec, err := ParseDatabaseCDCTaskSpec(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetCaps := (&oracle.OraclePlugin{}).Capabilities()
+	plan, err := BuildDatabaseCDCContinuousPlan(spec, StaticEngineResolver{
+		12: {Type: "postgresql", ConnInfo: engineplugin.ConnectionInfo{"database": "business"}},
+		20: {Type: "oracle", Capabilities: &targetCaps},
+	}, DatabaseCDCStreamBinding{
+		Provider: "postgresql", ConnectorName: "connector", ConnInfo: engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
+		ConsumerGroup: "group", SourceIdentity: "addp://engine/12/path/public/orders?type=table",
+		Database: "business", Schema: "public", Table: "orders",
+	}, 100)
+	if err != nil {
+		t.Fatalf("BuildDatabaseCDCContinuousPlan() error = %v", err)
+	}
+	if plan.TargetType != "oracle" || plan.Target.Path.StringPath() != "BUSINESS/orders_cdc" {
+		t.Fatalf("Oracle database CDC target plan = %#v", plan)
+	}
+}
+
+func TestBuildDatabaseCDCContinuousPlanRejectsUnsupportedOracleTargetTypes(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		fieldType string
+		precision int
+		scale     int
+	}{
+		{name: "time", fieldType: "time"},
+		{name: "decimal precision", fieldType: "decimal", precision: 39, scale: 2},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			config := validPostgreSQLCDCConfig()
+			config["target"].(map[string]interface{})["parent_locator"] = "addp://engine/20/path/BUSINESS?type=schema"
+			field := config["transforms"].([]interface{})[0].(map[string]interface{})["fields"].([]interface{})[0].(map[string]interface{})
+			field["target_type"] = testCase.fieldType
+			if testCase.precision > 0 {
+				field["precision"] = testCase.precision
+				field["scale"] = testCase.scale
+			}
+			spec, err := ParseDatabaseCDCTaskSpec(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			targetCaps := (&oracle.OraclePlugin{}).Capabilities()
+			_, err = BuildDatabaseCDCContinuousPlan(spec, StaticEngineResolver{
+				12: {Type: "postgresql", ConnInfo: engineplugin.ConnectionInfo{"database": "business"}},
+				20: {Type: "oracle", Capabilities: &targetCaps},
+			}, DatabaseCDCStreamBinding{
+				Provider: "postgresql", ConnectorName: "connector", ConnInfo: engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
+				ConsumerGroup: "group", SourceIdentity: "addp://engine/12/path/public/orders?type=table",
+				Database: "business", Schema: "public", Table: "orders",
+			}, 100)
+			if err == nil {
+				t.Fatal("unsupported Oracle target type was accepted")
+			}
+		})
 	}
 }
 

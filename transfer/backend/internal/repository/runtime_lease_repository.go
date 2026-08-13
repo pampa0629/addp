@@ -56,6 +56,13 @@ type ContinuousDiagnostics struct {
 	Error                       string                                    `json:"error,omitempty"`
 }
 
+// ContinuousCaptureFacts 是 capture owner 面向公共 execution metadata 的安全投影。
+type ContinuousCaptureFacts struct {
+	Generation         uint64                            `json:"generation"`
+	SourceRecovery     *models.CaptureSourceRecovery     `json:"source_recovery,omitempty"`
+	SourceTransactions *models.CaptureSourceTransactions `json:"source_transactions,omitempty"`
+}
+
 type ContinuousSchemaChange struct {
 	DetectedAt         time.Time `json:"detected_at"`
 	Scope              string    `json:"scope"`
@@ -679,7 +686,7 @@ func updateInitialMetadataScanExecutionTx(tx *gorm.DB, executionID string, task 
 	return tx.Model(&execution).Updates(map[string]interface{}{"metadata": metadata, "updated_at": task.UpdatedAt}).Error
 }
 
-func (r *RuntimeLeaseRepository) RecordDiagnostics(ctx context.Context, claim RuntimeLeaseClaim, diagnostics ContinuousDiagnostics) error {
+func (r *RuntimeLeaseRepository) RecordDiagnostics(ctx context.Context, claim RuntimeLeaseClaim, diagnostics ContinuousDiagnostics, capture *ContinuousCaptureFacts) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var leaseCount int64
 		if err := tx.Model(&models.RuntimeLease{}).
@@ -700,20 +707,29 @@ func (r *RuntimeLeaseRepository) RecordDiagnostics(ctx context.Context, claim Ru
 			}
 			return err
 		}
-		metadata := execution.Metadata
-		if metadata == nil {
-			metadata = commonModels.JSONMap{}
-		}
-		continuousMeta, _ := metadata["continuous"].(map[string]interface{})
-		if continuousMeta == nil {
-			continuousMeta = map[string]interface{}{}
-		}
-		continuousMeta["diagnostics"] = diagnostics
-		metadata["continuous"] = continuousMeta
+		metadata := mergeContinuousDiagnosticsMetadata(execution.Metadata, diagnostics, capture)
 		return tx.Model(&execution).Updates(map[string]interface{}{
 			"metadata": metadata, "updated_at": diagnostics.SampledAt,
 		}).Error
 	})
+}
+
+func mergeContinuousDiagnosticsMetadata(metadata commonModels.JSONMap, diagnostics ContinuousDiagnostics, capture *ContinuousCaptureFacts) commonModels.JSONMap {
+	if metadata == nil {
+		metadata = commonModels.JSONMap{}
+	}
+	continuousMeta, _ := metadata["continuous"].(map[string]interface{})
+	if continuousMeta == nil {
+		continuousMeta = map[string]interface{}{}
+	}
+	continuousMeta["diagnostics"] = diagnostics
+	if capture == nil {
+		delete(continuousMeta, "capture")
+	} else {
+		continuousMeta["capture"] = capture
+	}
+	metadata["continuous"] = continuousMeta
+	return metadata
 }
 
 func (r *RuntimeLeaseRepository) RecordSchemaChange(ctx context.Context, claim RuntimeLeaseClaim, change ContinuousSchemaChange) error {

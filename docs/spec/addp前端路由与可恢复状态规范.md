@@ -82,12 +82,15 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Modeling | ER 图业务域筛选 | `domain_id` |
 | Modeling | 实体详情 Tab、星型模型事实表 | `tab`、`table_id` |
 | Quality | 执行详情 | path parameter `execution_id` |
+| Quality | 执行记录列表筛选与分页 | `status`、`page`、`page_size`；进入详情时以同名 query 保留列表返回上下文 |
+| Quality | 规则应用列表筛选与分页 | `engine_id`、`schema_name`、`table_name`、`page`、`page_size` |
 | Quality | 问题工单详情 | path `/issues/:id` |
 | Quality | 问题工单列表筛选与分页 | `status`、`engine_id`、`page`、`page_size` |
-| Quality | 检查任务创建与编辑 | `create=1`、`task_id`；默认列表省略 |
+| Quality | 检查任务列表、创建与编辑 | `page`、`page_size`、`create=1`、`task_id`；创建和编辑保留分页上下文，默认列表省略 |
 | Asset | 资产目录、申请与反馈 Tab | `catalog_id`、`tab` |
 | Meta | 扫描引擎与扫描任务入口 | `engine_id`、`task_id`；二者并存时任务所属引擎为事实源 |
 | System | IAM、引擎详情与审计筛选 | `tab`、path `/engines/:id`、`event_name`、`result`、`risk_level`、`module_name`、`entity_type`、`entity_id`、`page` |
+| Standard | 标准文档详情 | path `/documents/:id`；列表筛选 query 原样保留 |
 | Portal | 搜索、目录分页与资产详情 | `keyword`、`type_id`、`page`、path `/portal/catalogs/:id`、`/portal/assets/:id` |
 | Agent | 当前会话 | path `/sessions/:session_id`，Console 公开 URL 为 `/agent/sessions/:session_id` |
 

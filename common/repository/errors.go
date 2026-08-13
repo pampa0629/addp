@@ -19,5 +19,8 @@ func WrapDBError(err error) error {
 	if errors.Is(err, gorm.ErrDuplicatedKey) {
 		return commonapi.ErrConflict
 	}
+	if errors.Is(err, gorm.ErrForeignKeyViolated) {
+		return commonapi.ErrConflict
+	}
 	return err
 }

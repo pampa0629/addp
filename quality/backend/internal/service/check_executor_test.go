@@ -3,14 +3,25 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
+	commonExecution "github.com/addp/common/execution"
 )
+
+func TestRunCheckRejectsNonManualTriggerAsBadRequest(t *testing.T) {
+	executor := NewCheckExecutor(nil, nil, nil, nil)
+	_, err := executor.RunCheckWithContext(context.Background(), 1, 7, 11, "", commonExecution.TriggerTypeScheduled, "quality", nil)
+	if !errors.Is(err, commonAPI.ErrBadRequest) {
+		t.Fatalf("RunCheckWithContext error = %v, want bad request", err)
+	}
+}
 
 func TestEvaluateCheckCounts(t *testing.T) {
 	tests := []struct {
@@ -74,6 +85,16 @@ func TestAggregateExecutionResult(t *testing.T) {
 func TestAggregateExecutionResultRejectsNoRules(t *testing.T) {
 	if _, err := aggregateExecutionResult(nil); err == nil {
 		t.Fatal("aggregateExecutionResult() error = nil, want no-rules error")
+	}
+}
+
+func TestExecutionFailureCodeKeepsStableDomainReasons(t *testing.T) {
+	wrapped := failExecution(qualityExecutionNoRules, errors.New("internal detail"))
+	if got := executionFailureCode(wrapped); got != qualityExecutionNoRules {
+		t.Fatalf("executionFailureCode() = %q, want %q", got, qualityExecutionNoRules)
+	}
+	if got := executionFailureCode(errors.New("unknown")); got != qualityExecutionFailedCode {
+		t.Fatalf("unknown executionFailureCode() = %q, want %q", got, qualityExecutionFailedCode)
 	}
 }
 

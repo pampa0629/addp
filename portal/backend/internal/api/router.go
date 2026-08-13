@@ -1,6 +1,9 @@
 package api
 
 import (
+	"net/http"
+
+	"github.com/addp/common/buildinfo"
 	commonClient "github.com/addp/common/client"
 	commonAuth "github.com/addp/common/middleware/auth"
 	_ "github.com/addp/portal/docs"
@@ -33,7 +36,7 @@ func SetupRouter(
 
 	// 健康检查（无需认证）
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok", "module": "portal"})
+		c.JSON(http.StatusOK, buildinfo.Health("portal"))
 	})
 
 	// Swagger 文档

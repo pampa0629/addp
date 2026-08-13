@@ -1,8 +1,10 @@
 package api
 
 import (
+	"net/http"
 	"time"
 
+	"github.com/addp/common/buildinfo"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/middleware/audit"
@@ -48,7 +50,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "healthy"})
+		c.JSON(http.StatusOK, buildinfo.Health("meta"))
 	})
 
 	// API路由组（需要认证）

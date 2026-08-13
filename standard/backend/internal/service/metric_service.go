@@ -64,10 +64,10 @@ func (s *MetricService) UpdateCategory(id, tenantID, userID int64, req *models.U
 	c.ParentID = req.ParentID
 	c.SortOrder = req.SortOrder
 	c.UpdatedBy = &userID
-	if err := s.catRepo.Update(c); err != nil {
+	if err := s.catRepo.Update(c, req.Version); err != nil {
 		return nil, err
 	}
-	return c, nil
+	return s.catRepo.GetByID(id, tenantID)
 }
 
 func (s *MetricService) validateCategoryParent(id, tenantID int64, parentID *int64) error {
@@ -168,23 +168,23 @@ func (s *MetricService) UpdateMetric(id, tenantID, userID int64, req *models.Upd
 	}
 	metric.UpdatedBy = &userID
 
-	if err := s.metricRepo.UpdateWithRelations(metric, req.ElementIDs, req.DependencyIDs); err != nil {
+	if err := s.metricRepo.UpdateWithRelations(metric, req.ElementIDs, req.DependencyIDs, req.Version); err != nil {
 		return nil, err
 	}
 
-	return metric, nil
+	return s.metricRepo.GetByID(id, tenantID)
 }
 
 func (s *MetricService) DeleteMetric(id, tenantID int64) error {
 	return mapDeleteConflict(s.metricRepo.Delete(id, tenantID), ErrMetricReferenced)
 }
 
-func (s *MetricService) ApproveMetric(id, tenantID, userID int64) error {
-	return s.metricRepo.UpdateStatus(id, tenantID, "approved", userID)
+func (s *MetricService) ApproveMetric(id, tenantID, userID, version int64) error {
+	return s.metricRepo.UpdateStatus(id, tenantID, version, "approved", userID)
 }
 
-func (s *MetricService) DeprecateMetric(id, tenantID, userID int64) error {
-	return s.metricRepo.UpdateStatus(id, tenantID, "deprecated", userID)
+func (s *MetricService) DeprecateMetric(id, tenantID, userID, version int64) error {
+	return s.metricRepo.UpdateStatus(id, tenantID, version, "deprecated", userID)
 }
 
 func (s *MetricService) GetElementMappings(metricID, tenantID int64) ([]models.MetricElementMapping, error) {

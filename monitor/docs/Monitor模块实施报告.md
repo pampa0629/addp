@@ -383,7 +383,7 @@ ws.On("execution_updated", func(exec *TaskExecution) {
 
 当前已实现：
 
-- Monitor 从最新 active execution 的公共 metadata 派生 continuous 运行观测信号，并从最新 `metadata.continuous.schema_change.status=pending` 的终态 execution 派生数据库 CDC schema blocked 信号；Monitor 不读取 Transfer 私表。
+- Monitor 对每个 continuous 任务只消费最新根 execution 的公共 metadata：最新 execution 为 `pending|running` 时派生运行观测信号；仅当该最新 execution 自身为 `failed` 且 `metadata.continuous.schema_change.status=pending` 时派生数据库 CDC schema blocked 信号。更晚的 execution 会覆盖历史失败事实并使旧告警自动恢复。数据库 CDC 源恢复窗口和事务观测只消费 `metadata.continuous.capture`。源恢复窗口 `critical` 产生严重告警，显式 `unknown`/`unavailable` 产生观测不可用警告；不对活跃事务数、持续时间或 Undo 用量内置阈值。Monitor 不读取 Transfer 私表，也不直连源数据库。
 - `monitor.alert_incidents` 保存 `open|acknowledged|resolved` 告警生命周期。
 - `monitor.alert_events` 保存不可变 `opened|escalated|resolved` 生命周期事件。
 - `monitor.webhook_destinations` 保存租户级 Webhook 目标；HMAC secret 使用平台 `ENCRYPTION_KEY` 做 AES-256-GCM 加密，API 不返回 secret。

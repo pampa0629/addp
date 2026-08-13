@@ -26,11 +26,20 @@ export function getCDCCaptureHealthWarning(task) {
 	if (!isDatabaseCDCTask(task) || !task?.capture) return null
 	const status = String(task.capture.status || '').toLowerCase()
 	const connectorStatus = String(task.capture.connector_status || '').toUpperCase()
+	const sourceStatus = String(task.capture.source_status || '').toUpperCase()
 	if (status === 'stopped') return null
-	if (['failed', 'cleanup_failed'].includes(status) || (status === 'running' && connectorStatus && connectorStatus !== 'RUNNING')) {
-		return { status, connectorStatus: connectorStatus || '-' }
+	if (['failed', 'cleanup_failed'].includes(status) || (status === 'running' && ((connectorStatus && connectorStatus !== 'RUNNING') || (sourceStatus && sourceStatus !== 'ONLINE')))) {
+		return { status, connectorStatus: connectorStatus || '-', sourceStatus: sourceStatus || '-' }
 	}
 	return null
+}
+
+export function getCDCSourceRecoveryWarning(task) {
+	if (!isDatabaseCDCTask(task) || task?.capture?.source_recovery?.health !== 'critical') return null
+	return {
+		capturePosition: task.capture.source_recovery.capture_position || '-',
+		earliestAvailablePosition: task.capture.source_recovery.earliest_available_position || '-'
+	}
 }
 
 export function buildCDCStopRequest(taskName, confirmationText) {

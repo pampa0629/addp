@@ -90,6 +90,12 @@ const routes = [
         meta: { requiresAuth: true, title: '全局文档库' }
       },
       {
+        path: 'documents/:id',
+        name: 'DocumentDetail',
+        component: () => import('../views/DocumentList.vue'),
+        meta: { requiresAuth: true, title: '标准文档详情' }
+      },
+      {
         path: 'dimension-hierarchies',
         name: 'DimensionHierarchyList',
         component: () => import('../views/DimensionHierarchyList.vue'),

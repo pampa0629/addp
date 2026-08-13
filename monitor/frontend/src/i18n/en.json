@@ -129,6 +129,32 @@
             "critical": "Critical",
             "unknown": "Unknown"
           },
+          "capture": {
+            "title": "CDC Source Observability",
+            "generation": "Capture Generation",
+            "provider": "Source Provider",
+            "recovery_health": "Source Recovery Window",
+            "recovery_sampled_at": "Recovery Sampled At",
+            "capture_position": "Capture Position",
+            "current_position": "Current Source Position",
+            "earliest_position": "Earliest Available Position",
+            "position_headroom": "Position Headroom",
+            "window": "Observed Log Window",
+            "earliest_available_at": "Earliest Available Log Time",
+            "fra_used": "FRA Used",
+            "fra_reclaimable": "FRA Reclaimable",
+            "transactions_status": "Transaction Observation",
+            "transactions_sampled_at": "Transactions Sampled At",
+            "active_transactions": "Active Transactions",
+            "oldest_transaction_position": "Oldest Transaction Start Position",
+            "oldest_transaction_duration": "Oldest Transaction Duration",
+            "used_undo_blocks": "Undo Blocks",
+            "used_undo_records": "Undo Records",
+            "transaction_status_values": {
+              "available": "Available",
+              "unavailable": "Unavailable"
+            }
+          },
           "signals": {
             "recovery_circuit_open": {
               "title": "Automatic Recovery Circuit Open",
@@ -161,6 +187,18 @@
             "diagnostics_error": {
               "title": "Continuous Diagnostics Failed",
               "description": "Transfer could not complete the latest diagnostics sample: {error}"
+            },
+            "source_recovery_critical": {
+              "title": "Source Log Recovery Window Lost",
+              "description": "The capture position is older than the source database's available log boundary, so this capture generation cannot resume continuously from its current position."
+            },
+            "source_recovery_unavailable": {
+              "title": "Source Log Recovery Window Unavailable",
+              "description": "Transfer currently lacks the complete facts required to assess the source log recovery window. This does not mean the source is offline."
+            },
+            "source_transactions_unavailable": {
+              "title": "Source Transaction Pressure Unavailable",
+              "description": "Transfer cannot currently observe uncommitted transaction pressure. Source recovery and source connectivity remain independent facts."
             },
             "schema_change_blocked": {
               "title": "Database Schema Change Blocked Sync",

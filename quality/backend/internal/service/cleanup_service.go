@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/addp/common/events"
@@ -145,7 +144,14 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 		}
 		stats := candidates.stats()
 		if event.CauseEvent == events.CleanupCauseEngineDeleting {
-			impact, err := qualityEngineDeletionImpact(candidates)
+			activeTaskIDs, err := s.listActiveQualityCleanupTaskIDs(ctx, candidates.checkTasks)
+			if err != nil {
+				result.Status = events.CleanupResultFailed
+				result.Errors = []string{err.Error()}
+				result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
+				return
+			}
+			impact, err := qualityEngineDeletionImpact(candidates, activeTaskIDs)
 			if err != nil {
 				result.Status = events.CleanupResultFailed
 				result.Errors = []string{err.Error()}
@@ -199,15 +205,6 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 
 	stats := candidates.stats()
 	if _, hasEngineID := qualityCleanupContextInt64(cleanupContext, "engine_id"); hasEngineID {
-		for _, task := range candidates.checkTasks {
-			switch strings.ToLower(strings.TrimSpace(task.LastExecutionStatus)) {
-			case commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning:
-				stats.Errors = append(stats.Errors, fmt.Sprintf("quality check task %d is running", task.ID))
-			}
-		}
-		if len(stats.Errors) > 0 {
-			return stats, nil
-		}
 		applied, err := s.disableCandidates(ctx, candidates)
 		if err != nil {
 			stats.Errors = append(stats.Errors, err.Error())
@@ -235,7 +232,7 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 	return stats, nil
 }
 
-func qualityEngineDeletionImpact(candidates qualityCleanupCandidates) (events.CleanupImpactData, error) {
+func qualityEngineDeletionImpact(candidates qualityCleanupCandidates, activeTaskIDs map[int64]struct{}) (events.CleanupImpactData, error) {
 	items := make([]events.CleanupImpactItem, 0, len(candidates.ruleApplications)+len(candidates.checkTasks)*2+len(candidates.issues))
 	for _, item := range candidates.ruleApplications {
 		items = append(items, events.CleanupImpactItem{StableRef: fmt.Sprintf("quality_rule_application:%d", item.ID), Disposition: events.CleanupImpactWillDisable})
@@ -243,8 +240,7 @@ func qualityEngineDeletionImpact(candidates qualityCleanupCandidates) (events.Cl
 	for _, item := range candidates.checkTasks {
 		stableRef := fmt.Sprintf("quality_check_task:%d", item.ID)
 		items = append(items, events.CleanupImpactItem{StableRef: stableRef, Disposition: events.CleanupImpactRebindable})
-		switch strings.ToLower(strings.TrimSpace(item.LastExecutionStatus)) {
-		case commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning:
+		if _, active := activeTaskIDs[item.ID]; active {
 			items = append(items, events.CleanupImpactItem{StableRef: stableRef, Disposition: events.CleanupImpactRunning})
 		}
 	}
@@ -252,6 +248,37 @@ func qualityEngineDeletionImpact(candidates qualityCleanupCandidates) (events.Cl
 		items = append(items, events.CleanupImpactItem{StableRef: fmt.Sprintf("quality_issue:%d", item.ID), Disposition: events.CleanupImpactWillDisable})
 	}
 	return events.BuildCleanupImpactData(items, "/quality/check-tasks")
+}
+
+func (s *CleanupService) listActiveQualityCleanupTaskIDs(ctx context.Context, tasks []models.CheckTask) (map[int64]struct{}, error) {
+	activeTaskIDs := make(map[int64]struct{})
+	if len(tasks) == 0 {
+		return activeTaskIDs, nil
+	}
+	sourceTaskIDs := make([]string, 0, len(tasks))
+	taskIDBySource := make(map[string]int64, len(tasks))
+	for _, task := range tasks {
+		sourceTaskID := strconv.FormatInt(task.ID, 10)
+		sourceTaskIDs = append(sourceTaskIDs, sourceTaskID)
+		taskIDBySource[sourceTaskID] = task.ID
+	}
+	var executions []commonExecution.TaskExecution
+	if err := s.db.WithContext(ctx).Select("source_task_id").
+		Where("tenant_id = ? AND module = ? AND task_type = ? AND source_task_id IN ? AND status IN ?",
+			tasks[0].TenantID, commonExecution.ModuleQuality, commonExecution.TaskTypeQualityCheck, sourceTaskIDs,
+			[]string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning}).
+		Find(&executions).Error; err != nil {
+		return nil, fmt.Errorf("inspect active quality executions failed: %w", err)
+	}
+	for _, execution := range executions {
+		if execution.SourceTaskID == nil {
+			continue
+		}
+		if taskID, ok := taskIDBySource[*execution.SourceTaskID]; ok {
+			activeTaskIDs[taskID] = struct{}{}
+		}
+	}
+	return activeTaskIDs, nil
 }
 
 type qualityCleanupCandidates struct {
@@ -320,6 +347,7 @@ func (s *CleanupService) listEngineCandidates(ctx context.Context, tenantID int6
 func (s *CleanupService) disableCandidates(ctx context.Context, candidates qualityCleanupCandidates) (QualityCleanupStats, error) {
 	var applied QualityCleanupStats
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		candidates.sortByID()
 		if err := lockQualityCleanupTasks(tx, candidates.checkTasks); err != nil {
 			return err
 		}
@@ -335,6 +363,7 @@ func (s *CleanupService) disableCandidates(ctx context.Context, candidates quali
 			}
 			applied.DisabledRuleApps++
 		}
+		resolvedAt := time.Now().UTC()
 		for _, item := range candidates.issues {
 			if item.Status != "open" {
 				applied.SkippedIssues++
@@ -342,7 +371,10 @@ func (s *CleanupService) disableCandidates(ctx context.Context, candidates quali
 			}
 			result := tx.Model(&models.Issue{}).
 				Where("id = ? AND tenant_id = ? AND status = ?", item.ID, item.TenantID, "open").
-				Update("status", "ignored")
+				Updates(map[string]interface{}{
+					"status": "ignored", "resolved_at": resolvedAt, "resolved_by": nil,
+					"resolution_note": "", "updated_at": resolvedAt,
+				})
 			if result.Error != nil {
 				return fmt.Errorf("ignore issue %d failed: %w", item.ID, result.Error)
 			}
@@ -360,18 +392,33 @@ func (s *CleanupService) disableCandidates(ctx context.Context, candidates quali
 }
 
 func lockQualityCleanupTasks(tx *gorm.DB, tasks []models.CheckTask) error {
-	ordered := append([]models.CheckTask(nil), tasks...)
-	sort.Slice(ordered, func(i, j int) bool { return ordered[i].ID < ordered[j].ID })
-	for _, item := range ordered {
+	if len(tasks) == 0 {
+		return nil
+	}
+	tenantID := tasks[0].TenantID
+	sourceTaskIDs := make([]string, 0, len(tasks))
+	for _, item := range tasks {
+		if item.TenantID != tenantID {
+			return fmt.Errorf("quality cleanup task candidates span multiple tenants")
+		}
 		var current models.CheckTask
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND tenant_id = ?", item.ID, item.TenantID).First(&current).Error; err != nil {
 			return fmt.Errorf("lock check task %d failed: %w", item.ID, err)
 		}
-		switch strings.ToLower(strings.TrimSpace(current.LastExecutionStatus)) {
-		case commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning:
-			return fmt.Errorf("quality check task %d is running", item.ID)
-		}
+		sourceTaskIDs = append(sourceTaskIDs, strconv.FormatInt(current.ID, 10))
+	}
+	var active commonExecution.TaskExecution
+	result := tx.Select("source_task_id").
+		Where("tenant_id = ? AND module = ? AND task_type = ? AND source_task_id IN ? AND status IN ?",
+			tenantID, commonExecution.ModuleQuality, commonExecution.TaskTypeQualityCheck, sourceTaskIDs,
+			[]string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning}).
+		Order("source_task_id ASC").Limit(1).Find(&active)
+	if result.Error != nil {
+		return fmt.Errorf("inspect active quality executions failed: %w", result.Error)
+	}
+	if result.RowsAffected > 0 && active.SourceTaskID != nil {
+		return fmt.Errorf("quality check task %s has an active execution", *active.SourceTaskID)
 	}
 	return nil
 }
@@ -391,24 +438,37 @@ func mergeQualityCleanupStats(target, applied *QualityCleanupStats) {
 func (s *CleanupService) deleteCandidates(ctx context.Context, candidates qualityCleanupCandidates) (QualityCleanupStats, error) {
 	var applied QualityCleanupStats
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		candidates.sortByID()
 		if err := lockQualityCleanupTasks(tx, candidates.checkTasks); err != nil {
 			return err
 		}
 		for _, item := range candidates.issues {
-			if err := tx.Unscoped().Delete(&models.Issue{}, item.ID).Error; err != nil {
-				return fmt.Errorf("delete issue %d failed: %w", item.ID, err)
+			result := tx.Unscoped().Where("id = ? AND tenant_id = ?", item.ID, item.TenantID).Delete(&models.Issue{})
+			if result.Error != nil {
+				return fmt.Errorf("delete issue %d failed: %w", item.ID, result.Error)
+			}
+			if result.RowsAffected != 1 {
+				return fmt.Errorf("delete issue %d failed: resource changed during cleanup", item.ID)
 			}
 			applied.DeletedIssues++
 		}
 		for _, item := range candidates.checkTasks {
-			if err := tx.Unscoped().Delete(&models.CheckTask{}, item.ID).Error; err != nil {
-				return fmt.Errorf("delete check task %d failed: %w", item.ID, err)
+			result := tx.Unscoped().Where("id = ? AND tenant_id = ?", item.ID, item.TenantID).Delete(&models.CheckTask{})
+			if result.Error != nil {
+				return fmt.Errorf("delete check task %d failed: %w", item.ID, result.Error)
+			}
+			if result.RowsAffected != 1 {
+				return fmt.Errorf("delete check task %d failed: resource changed during cleanup", item.ID)
 			}
 			applied.DeletedCheckTasks++
 		}
 		for _, item := range candidates.ruleApplications {
-			if err := tx.Unscoped().Delete(&models.RuleApplication{}, item.ID).Error; err != nil {
-				return fmt.Errorf("delete rule application %d failed: %w", item.ID, err)
+			result := tx.Unscoped().Where("id = ? AND tenant_id = ?", item.ID, item.TenantID).Delete(&models.RuleApplication{})
+			if result.Error != nil {
+				return fmt.Errorf("delete rule application %d failed: %w", item.ID, result.Error)
+			}
+			if result.RowsAffected != 1 {
+				return fmt.Errorf("delete rule application %d failed: resource changed during cleanup", item.ID)
 			}
 			applied.DeletedRuleApplications++
 		}
@@ -418,6 +478,15 @@ func (s *CleanupService) deleteCandidates(ctx context.Context, candidates qualit
 		return QualityCleanupStats{}, err
 	}
 	return applied, nil
+}
+
+func (c *qualityCleanupCandidates) sortByID() {
+	if c == nil {
+		return
+	}
+	sort.Slice(c.ruleApplications, func(i, j int) bool { return c.ruleApplications[i].ID < c.ruleApplications[j].ID })
+	sort.Slice(c.checkTasks, func(i, j int) bool { return c.checkTasks[i].ID < c.checkTasks[j].ID })
+	sort.Slice(c.issues, func(i, j int) bool { return c.issues[i].ID < c.issues[j].ID })
 }
 
 func qualityCleanupContextInt64(cleanupContext map[string]interface{}, key string) (int64, bool) {

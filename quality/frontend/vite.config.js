@@ -1,10 +1,15 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import Components from 'unplugin-vue-components/vite'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import path from 'path'
 import { resolve } from 'path'
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    Components({ resolvers: [ElementPlusResolver({ importStyle: false })] })
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
@@ -40,5 +45,20 @@ export default defineConfig({
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/quality/'
+  base: process.env.NODE_ENV === 'development' ? '/' : '/quality/',
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/node_modules/@element-plus/icons-vue/')) return 'element-icons'
+          if (
+            id.includes('/node_modules/vue/') ||
+            id.includes('/node_modules/vue-router/') ||
+            id.includes('/node_modules/pinia/') ||
+            id.includes('/node_modules/vue-i18n/')
+          ) return 'vue-vendor'
+        }
+      }
+    }
+  }
 })

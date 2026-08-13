@@ -46,6 +46,9 @@ other = "Resource not found"
 [standard.common.resource_conflict]
 other = "Resource code or relation already exists"
 
+[standard.common.version_conflict]
+other = "The resource was modified by another user. Refresh and try again"
+
 [standard.common.invalid_resource_reference]
 other = "A referenced resource does not exist or belongs to another tenant"
 

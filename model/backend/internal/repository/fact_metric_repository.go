@@ -20,7 +20,7 @@ func (r *FactMetricRepository) ListByFactTable(factTableID, tenantID int64) ([]m
 	err := r.db.Where("fact_table_id = ? AND tenant_id = ?", factTableID, tenantID).
 		Order("created_at ASC").
 		Find(&mappings).Error
-	return mappings, err
+	return mappings, commonrepo.WrapDBError(err)
 }
 
 // Create 创建关联
@@ -34,7 +34,7 @@ func (r *FactMetricRepository) Exists(factTableID, metricID, tenantID int64) (bo
 	err := r.db.Model(&models.FactMetricMapping{}).
 		Where("fact_table_id = ? AND metric_id = ? AND tenant_id = ?", factTableID, metricID, tenantID).
 		Count(&count).Error
-	return count > 0, err
+	return count > 0, commonrepo.WrapDBError(err)
 }
 
 // Delete 删除关联（按 ID）

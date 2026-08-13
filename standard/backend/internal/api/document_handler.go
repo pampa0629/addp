@@ -27,7 +27,9 @@ func NewDocumentHandler(svc *service.DocumentService) *DocumentHandler {
 // @Summary 获取标准文档列表 | List standard documents
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} models.PaginatedDocumentResponse
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.document.read"]
 // @Router /documents [get]
@@ -71,7 +73,9 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 // @Summary 获取标准文档详情 | Get standard document detail
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} models.Document
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.document.read"]
 // @Router /documents/{id} [get]
@@ -94,7 +98,9 @@ func (h *DocumentHandler) GetDocument(c *gin.Context) {
 // @Summary 创建标准文档 | Create standard document
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 201 {object} models.Document
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.document.create"]
 // @Router /documents [post]
@@ -117,8 +123,12 @@ func (h *DocumentHandler) CreateDocument(c *gin.Context) {
 
 // @Summary 更新标准文档 | Update standard document
 // @Tags Standard
+// @Param request body models.UpdateDocumentRequest true "更新标准文档 | Update standard document"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} models.Document
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.document.update"]
 // @Router /documents/{id} [put]
@@ -148,6 +158,8 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.document.delete"]
 // @Router /documents/{id} [delete]
@@ -169,10 +181,16 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 // UploadFile 上传文档文件（multipart/form-data, field: "file"）
 // @Summary 上传文档文件 | Upload document file
 // @Tags Standard
+// @Accept multipart/form-data
+// @Param version formData int true "当前文档资源版本 | Current document resource version"
+// @Param file formData file true "文档文件 | Document file"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Failure 413 {object} map[string]string
 // @Failure 502 {object} map[string]string
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.document.update"]
 // @Router /documents/{id}/upload [post]
@@ -184,6 +202,11 @@ func (h *DocumentHandler) UploadFile(c *gin.Context) {
 		return
 	}
 	tenantID := getTenantID(c)
+	version, err := strconv.ParseInt(c.PostForm("version"), 10, 64)
+	if err != nil || version <= 0 {
+		respondError(c, http.StatusBadRequest, errors.New("version is required"))
+		return
+	}
 	// 为 multipart 边界预留少量头部空间，文件本体仍由 Service 按精确大小校验。
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, h.svc.MaxFileSize()+1024*1024)
 
@@ -206,19 +229,16 @@ func (h *DocumentHandler) UploadFile(c *gin.Context) {
 	defer f.Close()
 
 	contentType := file.Header.Get("Content-Type")
-	if err := h.svc.UploadFile(id, tenantID, file.Filename, f, file.Size, contentType); err != nil {
-		respondDocumentFileError(c, err)
-		return
-	}
-	doc, err := h.svc.GetDocument(id, tenantID)
+	doc, err := h.svc.UploadFile(id, tenantID, version, file.Filename, f, file.Size, contentType)
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, err)
+		respondDocumentFileError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"message":   commoni18n.T(c, sysi18n.MsgUploadSuccess),
 		"file_name": doc.FileName,
 		"file_size": doc.FileSize,
+		"version":   doc.Version,
 	})
 }
 
@@ -229,6 +249,8 @@ func (h *DocumentHandler) UploadFile(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Failure 404 {object} map[string]string
 // @Failure 502 {object} map[string]string
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "resource_ticket"
 // @x-addp-required-permissions ["standard.document.read"]
 // @Router /documents/{id}/download [get]
@@ -263,6 +285,8 @@ func (h *DocumentHandler) DownloadFile(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.document.read"]
 // @Router /documents/{id}/mappings [get]
@@ -283,8 +307,12 @@ func (h *DocumentHandler) GetMappings(c *gin.Context) {
 
 // @Summary 设置文档关联映射 | Set document mappings
 // @Tags Standard
+// @Param request body models.SetDocumentMappingsRequest true "关联映射及当前文档版本 | Mappings with current document version"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.document.update"]
 // @Router /documents/{id}/mappings [put]
@@ -304,7 +332,12 @@ func (h *DocumentHandler) SetMappings(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgUpdateSuccess)})
+	doc, err := h.svc.GetDocument(id, getTenantID(c))
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, models.ResourceVersionResponse{Version: doc.Version})
 }
 
 // ===== 反向查询：从标准项维度列出关联文档 =====
@@ -312,7 +345,9 @@ func (h *DocumentHandler) SetMappings(c *gin.Context) {
 // @Summary 查询数据元关联的文档 | List documents by element
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {array} models.Document
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.read","standard.document.read"]
 // @Router /elements/{id}/documents [get]
@@ -334,7 +369,9 @@ func (h *DocumentHandler) ListDocsByElement(c *gin.Context) {
 // @Summary 查询术语关联的文档 | List documents by glossary
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {array} models.Document
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.glossary.read","standard.document.read"]
 // @Router /glossaries/{id}/documents [get]
@@ -356,7 +393,9 @@ func (h *DocumentHandler) ListDocsByGlossary(c *gin.Context) {
 // @Summary 查询指标关联的文档 | List documents by metric
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {array} models.Document
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.read","standard.document.read"]
 // @Router /metrics/{id}/documents [get]
@@ -379,8 +418,12 @@ func (h *DocumentHandler) ListDocsByMetric(c *gin.Context) {
 
 // @Summary 创建文档并关联到数据元 | Create and link document to element
 // @Tags Standard
+// @Param request body models.CreateLinkedDocumentRequest true "文档信息及当前数据元版本 | Document with current element version"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.update","standard.document.create"]
 // @Router /elements/{id}/documents [post]
@@ -391,7 +434,7 @@ func (h *DocumentHandler) CreateAndLinkElement(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
-	var req models.CreateDocumentRequest
+	var req models.CreateLinkedDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
@@ -406,8 +449,12 @@ func (h *DocumentHandler) CreateAndLinkElement(c *gin.Context) {
 
 // @Summary 创建文档并关联到术语 | Create and link document to glossary
 // @Tags Standard
+// @Param request body models.CreateLinkedDocumentRequest true "文档信息及当前术语版本 | Document with current glossary version"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.glossary.update","standard.document.create"]
 // @Router /glossaries/{id}/documents [post]
@@ -418,7 +465,7 @@ func (h *DocumentHandler) CreateAndLinkGlossary(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
-	var req models.CreateDocumentRequest
+	var req models.CreateLinkedDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
@@ -433,8 +480,12 @@ func (h *DocumentHandler) CreateAndLinkGlossary(c *gin.Context) {
 
 // @Summary 创建文档并关联到指标 | Create and link document to metric
 // @Tags Standard
+// @Param request body models.CreateLinkedDocumentRequest true "文档信息及当前指标版本 | Document with current metric version"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.update","standard.document.create"]
 // @Router /metrics/{id}/documents [post]
@@ -445,7 +496,7 @@ func (h *DocumentHandler) CreateAndLinkMetric(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
-	var req models.CreateDocumentRequest
+	var req models.CreateLinkedDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
@@ -462,8 +513,12 @@ func (h *DocumentHandler) CreateAndLinkMetric(c *gin.Context) {
 
 // @Summary 关联已有文档到数据元 | Link document to element
 // @Tags Standard
+// @Param request body models.LinkDocumentRequest true "文档 ID 及当前数据元版本 | Document ID with current element version"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.update","standard.document.update"]
 // @Router /elements/{id}/documents/link [post]
@@ -474,24 +529,26 @@ func (h *DocumentHandler) LinkDocToElement(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
-	var body struct {
-		DocID int64 `json:"doc_id"`
-	}
+	var body models.LinkDocumentRequest
 	if err := c.ShouldBindJSON(&body); err != nil || body.DocID == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgDocIDRequired)})
 		return
 	}
-	if err := h.svc.LinkDocToElement(body.DocID, getTenantID(c), entityID); err != nil {
+	if err := h.svc.LinkDocToElement(body.DocID, getTenantID(c), entityID, body.Version); err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgLinkSuccess)})
+	c.JSON(http.StatusOK, models.ResourceVersionResponse{Version: body.Version + 1})
 }
 
 // @Summary 关联已有文档到术语 | Link document to glossary
 // @Tags Standard
+// @Param request body models.LinkDocumentRequest true "文档 ID 及当前术语版本 | Document ID with current glossary version"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.glossary.update","standard.document.update"]
 // @Router /glossaries/{id}/documents/link [post]
@@ -502,24 +559,26 @@ func (h *DocumentHandler) LinkDocToGlossary(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
-	var body struct {
-		DocID int64 `json:"doc_id"`
-	}
+	var body models.LinkDocumentRequest
 	if err := c.ShouldBindJSON(&body); err != nil || body.DocID == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgDocIDRequired)})
 		return
 	}
-	if err := h.svc.LinkDocToGlossary(body.DocID, getTenantID(c), entityID); err != nil {
+	if err := h.svc.LinkDocToGlossary(body.DocID, getTenantID(c), entityID, body.Version); err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgLinkSuccess)})
+	c.JSON(http.StatusOK, models.ResourceVersionResponse{Version: body.Version + 1})
 }
 
 // @Summary 关联已有文档到指标 | Link document to metric
 // @Tags Standard
+// @Param request body models.LinkDocumentRequest true "文档 ID 及当前指标版本 | Document ID with current metric version"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.update","standard.document.update"]
 // @Router /metrics/{id}/documents/link [post]
@@ -530,26 +589,28 @@ func (h *DocumentHandler) LinkDocToMetric(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
-	var body struct {
-		DocID int64 `json:"doc_id"`
-	}
+	var body models.LinkDocumentRequest
 	if err := c.ShouldBindJSON(&body); err != nil || body.DocID == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgDocIDRequired)})
 		return
 	}
-	if err := h.svc.LinkDocToMetric(body.DocID, getTenantID(c), entityID); err != nil {
+	if err := h.svc.LinkDocToMetric(body.DocID, getTenantID(c), entityID, body.Version); err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgLinkSuccess)})
+	c.JSON(http.StatusOK, models.ResourceVersionResponse{Version: body.Version + 1})
 }
 
 // ===== 解除关联 =====
 
 // @Summary 解除文档与数据元的关联 | Unlink document from element
 // @Tags Standard
+// @Param request body models.VersionRequest true "当前数据元版本 | Current element version"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.update","standard.document.update"]
 // @Router /elements/{id}/documents/{doc_id} [delete]
@@ -565,17 +626,26 @@ func (h *DocumentHandler) UnlinkDocFromElement(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
-	if err := h.svc.UnlinkDocFromElement(docID, getTenantID(c), entityID); err != nil {
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgUnlinkSuccess)})
+	if err := h.svc.UnlinkDocFromElement(docID, getTenantID(c), entityID, req.Version); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	c.JSON(http.StatusOK, models.ResourceVersionResponse{Version: req.Version + 1})
 }
 
 // @Summary 解除文档与术语的关联 | Unlink document from glossary
 // @Tags Standard
+// @Param request body models.VersionRequest true "当前术语版本 | Current glossary version"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.glossary.update","standard.document.update"]
 // @Router /glossaries/{id}/documents/{doc_id} [delete]
@@ -591,17 +661,26 @@ func (h *DocumentHandler) UnlinkDocFromGlossary(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
-	if err := h.svc.UnlinkDocFromGlossary(docID, getTenantID(c), entityID); err != nil {
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgUnlinkSuccess)})
+	if err := h.svc.UnlinkDocFromGlossary(docID, getTenantID(c), entityID, req.Version); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	c.JSON(http.StatusOK, models.ResourceVersionResponse{Version: req.Version + 1})
 }
 
 // @Summary 解除文档与指标的关联 | Unlink document from metric
 // @Tags Standard
+// @Param request body models.VersionRequest true "当前指标版本 | Current metric version"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.update","standard.document.update"]
 // @Router /metrics/{id}/documents/{doc_id} [delete]
@@ -617,9 +696,14 @@ func (h *DocumentHandler) UnlinkDocFromMetric(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
-	if err := h.svc.UnlinkDocFromMetric(docID, getTenantID(c), entityID); err != nil {
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgUnlinkSuccess)})
+	if err := h.svc.UnlinkDocFromMetric(docID, getTenantID(c), entityID, req.Version); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	c.JSON(http.StatusOK, models.ResourceVersionResponse{Version: req.Version + 1})
 }

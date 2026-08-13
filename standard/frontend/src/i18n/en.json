@@ -41,7 +41,13 @@
       "selectDomain": "Select Domain",
       "selectStatus": "Select Status",
       "domainOptional": "Select Domain (optional)",
-      "remove": "Remove"
+      "remove": "Remove",
+      "unsaved": "Unsaved",
+      "unsavedTitle": "Unsaved changes",
+      "unsavedConfirm": "Your changes have not been saved and will be lost if you leave. Leave this page?",
+      "leave": "Leave",
+      "continueEditing": "Continue editing",
+      "saveBeforeAction": "Save the current changes before changing status"
     },
     "layout": {
       "title": "Data Standards & Modeling",

@@ -55,8 +55,14 @@ func (r *CodeSetRepository) List(tenantID int64, keyword, codeSetType string, pa
 }
 
 // Update 更新码值集
-func (r *CodeSetRepository) Update(codeSet *models.CodeSet) error {
-	return wrapDBError(r.db.Save(codeSet).Error)
+func (r *CodeSetRepository) Update(codeSet *models.CodeSet, expectedVersion int64) error {
+	if err := updateVersioned(r.db, codeSet, codeSet.ID, codeSet.TenantID, expectedVersion, map[string]interface{}{
+		"name": codeSet.Name, "type": codeSet.Type, "description": codeSet.Description,
+	}); err != nil {
+		return err
+	}
+	codeSet.Version = expectedVersion + 1
+	return nil
 }
 
 // Delete 删除码值集
@@ -87,8 +93,13 @@ func (r *CodeSetRepository) GetItems(codeSetID int64) ([]models.CodeItem, error)
 }
 
 // CreateItem 创建码值项
-func (r *CodeSetRepository) CreateItem(item *models.CodeItem) error {
-	return wrapDBError(r.db.Create(item).Error)
+func (r *CodeSetRepository) CreateItem(item *models.CodeItem, tenantID, expectedVersion int64) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		if err := updateVersioned(tx, &models.CodeSet{}, item.CodeSetID, tenantID, expectedVersion, map[string]interface{}{}); err != nil {
+			return err
+		}
+		return tx.Create(item).Error
+	}))
 }
 
 // GetItemByID 根据 ID 获取码值项
@@ -101,13 +112,25 @@ func (r *CodeSetRepository) GetItemByID(id, codeSetID int64) (*models.CodeItem, 
 }
 
 // UpdateItem 更新码值项
-func (r *CodeSetRepository) UpdateItem(item *models.CodeItem) error {
-	return wrapDBError(r.db.Save(item).Error)
+func (r *CodeSetRepository) UpdateItem(item *models.CodeItem, tenantID, expectedVersion int64) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		if err := updateVersioned(tx, &models.CodeSet{}, item.CodeSetID, tenantID, expectedVersion, map[string]interface{}{}); err != nil {
+			return err
+		}
+		return requireAffectedRow(tx.Model(&models.CodeItem{}).Where("id = ? AND code_set_id = ?", item.ID, item.CodeSetID).Updates(map[string]interface{}{
+			"value": item.Value, "description": item.Description, "sort_order": item.SortOrder, "is_active": item.IsActive,
+		}))
+	}))
 }
 
 // DeleteItem 删除码值项
-func (r *CodeSetRepository) DeleteItem(id, codeSetID int64) error {
-	return deleteInTransaction(r.db, &models.CodeItem{}, "id = ? AND code_set_id = ?", id, codeSetID)
+func (r *CodeSetRepository) DeleteItem(id, codeSetID, tenantID, expectedVersion int64) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		if err := updateVersioned(tx, &models.CodeSet{}, codeSetID, tenantID, expectedVersion, map[string]interface{}{}); err != nil {
+			return err
+		}
+		return requireAffectedRow(tx.Where("id = ? AND code_set_id = ?", id, codeSetID).Delete(&models.CodeItem{}))
+	}))
 }
 
 // ExistsItemByCode 检查码值项 code 是否存在

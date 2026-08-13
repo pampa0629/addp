@@ -88,10 +88,10 @@ func TestUploadFileReplacesObjectAfterDatabaseUpdate(t *testing.T) {
 	store := &fakeDocumentObjectStore{objects: map[string][]byte{doc.FileKey: []byte("old")}}
 	svc := &DocumentService{repo: repo, objectStore: store, maxFileSize: 10, timeout: time.Second}
 
-	if err := svc.UploadFile(doc.ID, doc.TenantID, "../new.pdf", strings.NewReader("new content"), 11, "application/pdf"); !errors.Is(err, ErrDocumentFileTooLarge) {
+	if _, err := svc.UploadFile(doc.ID, doc.TenantID, doc.Version, "../new.pdf", strings.NewReader("new content"), 11, "application/pdf"); !errors.Is(err, ErrDocumentFileTooLarge) {
 		t.Fatalf("oversized upload error = %v, want ErrDocumentFileTooLarge", err)
 	}
-	if err := svc.UploadFile(doc.ID, doc.TenantID, "../new.pdf", strings.NewReader("new"), 3, "application/pdf"); err != nil {
+	if _, err := svc.UploadFile(doc.ID, doc.TenantID, doc.Version, "../new.pdf", strings.NewReader("new"), 3, "application/pdf"); err != nil {
 		t.Fatalf("replacement upload: %v", err)
 	}
 	updated, err := repo.GetByID(doc.ID, doc.TenantID)
@@ -120,7 +120,7 @@ func TestUploadFileRollsBackNewObjectWhenDatabaseUpdateFails(t *testing.T) {
 	}
 	store := &fakeDocumentObjectStore{objects: map[string][]byte{doc.FileKey: []byte("old")}}
 	svc := &DocumentService{repo: repo, objectStore: store, maxFileSize: 10, timeout: time.Second}
-	if err := svc.UploadFile(doc.ID, doc.TenantID, "new.pdf", strings.NewReader("new"), 3, "application/pdf"); err == nil {
+	if _, err := svc.UploadFile(doc.ID, doc.TenantID, doc.Version, "new.pdf", strings.NewReader("new"), 3, "application/pdf"); err == nil {
 		t.Fatal("UploadFile() should return database update error")
 	}
 	if len(store.putKeys) != 1 || len(store.removedKeys) != 1 || store.removedKeys[0] != store.putKeys[0] {
@@ -171,7 +171,8 @@ func openDocumentServiceTestDB(t *testing.T) *gorm.DB {
 		name TEXT NOT NULL,
 		doc_type TEXT,
 		source_org TEXT,
-		version TEXT,
+		document_version TEXT,
+		version INTEGER NOT NULL DEFAULT 1,
 		publish_date DATETIME,
 		description TEXT,
 		file_key TEXT,

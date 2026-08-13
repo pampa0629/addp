@@ -52,7 +52,7 @@ func (r *TableRelationRepository) ListByFactTable(factTableID, tenantID int64) (
 		WHERE tr.source_table = ? AND tr.tenant_id = ?
 		ORDER BY tr.created_at ASC
 	`, factTableID, tenantID).Scan(&results).Error
-	return results, err
+	return results, commonrepo.WrapDBError(err)
 }
 
 // Create 创建关联
@@ -70,7 +70,7 @@ func (r *TableRelationRepository) ListByTable(tableID, tenantID int64) ([]models
 	var relations []models.TableRelation
 	err := r.db.Where("tenant_id = ? AND (source_table = ? OR target_table = ?)", tenantID, tableID, tableID).
 		Find(&relations).Error
-	return relations, err
+	return relations, commonrepo.WrapDBError(err)
 }
 
 // Exists 检查同一对字段间关联是否已存在
@@ -80,7 +80,7 @@ func (r *TableRelationRepository) Exists(sourceTable, sourceField, targetTable, 
 		Where("source_table = ? AND source_field = ? AND target_table = ? AND target_field = ? AND tenant_id = ?",
 			sourceTable, sourceField, targetTable, targetField, tenantID).
 		Count(&count).Error
-	return count > 0, err
+	return count > 0, commonrepo.WrapDBError(err)
 }
 
 // Delete 删除关联（按 ID，并验证归属）

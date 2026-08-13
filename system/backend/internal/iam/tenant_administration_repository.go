@@ -37,12 +37,14 @@ type TenantAssignablePermission struct {
 
 type ManagedTenantRoleAssignment struct {
 	RoleAssignment
-	MembershipID    int64
-	DisplayName     string
-	Username        *string
-	RoleKey         string
-	RoleName        *string
-	RoleNameI18nKey *string
+	MembershipID         int64
+	PrincipalType        PrincipalType
+	DisplayName          string
+	Username             *string
+	ServicePrincipalName *string
+	RoleKey              string
+	RoleName             *string
+	RoleNameI18nKey      *string
 }
 
 type BuiltinServiceRuntimeBinding struct {
@@ -376,12 +378,16 @@ func (r *Repository) ListTenantRoleAssignments(ctx context.Context, tenantID int
 		return nil, 0, wrapRepositoryError(err)
 	}
 	var assignments []ManagedTenantRoleAssignment
-	err := base.Select(`assignment.*, membership.id AS membership_id, user_profile.display_name, account.username,
+	err := base.Select(`assignment.*, membership.id AS membership_id, principal.principal_type,
+		COALESCE(user_profile.display_name, service_principal.name) AS display_name, account.username,
+		service_principal.name AS service_principal_name,
 		role.role_key, role.name AS role_name, role.name_i18n_key AS role_name_i18n_key`).
 		Joins("JOIN system.roles role ON role.id = assignment.role_id").
 		Joins("JOIN system.tenant_memberships membership ON membership.tenant_id = assignment.tenant_id AND membership.principal_id = assignment.principal_id").
+		Joins("JOIN system.principals principal ON principal.id = assignment.principal_id").
 		Joins("LEFT JOIN system.users user_profile ON user_profile.id = assignment.principal_id").
 		Joins("LEFT JOIN system.local_accounts account ON account.user_id = assignment.principal_id").
+		Joins("LEFT JOIN system.service_principals service_principal ON service_principal.id = assignment.principal_id").
 		Order("assignment.id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Scan(&assignments).Error
 	return assignments, total, wrapRepositoryError(err)
 }
@@ -393,12 +399,16 @@ func (r *Repository) GetManagedTenantRoleAssignment(
 ) (*ManagedTenantRoleAssignment, error) {
 	var assignment ManagedTenantRoleAssignment
 	err := r.db.WithContext(ctx).Table("system.role_assignments assignment").
-		Select(`assignment.*, membership.id AS membership_id, user_profile.display_name, account.username,
+		Select(`assignment.*, membership.id AS membership_id, principal.principal_type,
+			COALESCE(user_profile.display_name, service_principal.name) AS display_name, account.username,
+			service_principal.name AS service_principal_name,
 			role.role_key, role.name AS role_name, role.name_i18n_key AS role_name_i18n_key`).
 		Joins("JOIN system.roles role ON role.id = assignment.role_id").
 		Joins("JOIN system.tenant_memberships membership ON membership.tenant_id = assignment.tenant_id AND membership.principal_id = assignment.principal_id").
+		Joins("JOIN system.principals principal ON principal.id = assignment.principal_id").
 		Joins("LEFT JOIN system.users user_profile ON user_profile.id = assignment.principal_id").
 		Joins("LEFT JOIN system.local_accounts account ON account.user_id = assignment.principal_id").
+		Joins("LEFT JOIN system.service_principals service_principal ON service_principal.id = assignment.principal_id").
 		Where("assignment.id = ? AND assignment.tenant_id = ?", assignmentID, tenantID).
 		Limit(1).
 		Scan(&assignment).Error

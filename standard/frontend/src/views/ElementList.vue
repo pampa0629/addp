@@ -2,7 +2,7 @@
   <div class="element-list">
     <div class="page-header">
       <h2>{{ $t('standard.element.title') }}</h2>
-      <el-button type="primary" :icon="Plus" @click="openCreateDialog">{{ $t('standard.element.create') }}</el-button>
+      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreateDialog">{{ $t('standard.element.create') }}</el-button>
     </div>
 
     <!-- 筛选栏 -->
@@ -71,8 +71,8 @@
           <template #default="{ row }">
             <div class="table-actions">
             <el-button link type="primary" @click="goToDetail(row)">{{ $t('standard.common.detail') }}</el-button>
-            <el-button link type="success" @click="handleApprove(row)" v-if="row.status === 'draft'">{{ $t('standard.common.approve') }}</el-button>
-            <el-button link type="danger" @click="handleDelete(row)">{{ $t('standard.common.delete') }}</el-button>
+            <el-button v-if="canApprove && row.status === 'draft'" link type="success" :loading="isActionLocked(`element:${row.id}`)" @click="handleApprove(row)">{{ $t('standard.common.approve') }}</el-button>
+            <el-button v-if="canDelete" link type="danger" :disabled="isActionLocked(`element:${row.id}`)" @click="handleDelete(row)">{{ $t('standard.common.delete') }}</el-button>
             </div>
           </template>
         </el-table-column>
@@ -147,10 +147,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { domainAPI, elementAPI, unitAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
+import { useStandardPermissions } from '../composables/useStandardPermissions'
+import { useActionLock } from '../composables/useActionLock'
+import { createLatestRequestCoordinator } from '@common-ui'
 
 const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
+const { canCreate, canDelete, canApprove } = useStandardPermissions('element')
+const { isLocked: isActionLocked, runLocked } = useActionLock()
 const loading = ref(false)
 const submitting = ref(false)
 const dialogVisible = ref(false)
@@ -159,6 +164,7 @@ const domainList = ref([])
 const units = ref([])
 const total = ref(0)
 const formRef = ref(null)
+const listRequests = createLatestRequestCoordinator()
 
 const unitsByCategory = computed(() => {
   const map = {}
@@ -240,20 +246,22 @@ const loadUnits = async () => {
 }
 
 const loadElements = async () => {
+  const params = { page: filters.page, page_size: filters.page_size }
+  if (filters.keyword) params.keyword = filters.keyword
+  if (filters.domain_id) params.domain_id = filters.domain_id
+  if (filters.status) params.status = filters.status
+  const request = listRequests.begin(JSON.stringify(params))
   loading.value = true
   try {
-    const params = { page: filters.page, page_size: filters.page_size }
-    if (filters.keyword) params.keyword = filters.keyword
-    if (filters.domain_id) params.domain_id = filters.domain_id
-    if (filters.status) params.status = filters.status
-
     const res = await elementAPI.list(params)
+    if (!listRequests.isCurrent(request, JSON.stringify(params))) return
     elements.value = res.data || []
     total.value = res.total || 0
   } catch (e) {
+    if (!listRequests.isCurrent(request, JSON.stringify(params))) return
     ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
   } finally {
-    loading.value = false
+    if (listRequests.isCurrent(request, JSON.stringify(params))) loading.value = false
   }
 }
 
@@ -292,13 +300,14 @@ const openCreateDialog = () => {
 }
 
 const handleSubmit = async () => {
-  if (!formRef.value) return
+  if (submitting.value || !formRef.value) return
+  submitting.value = true
   try {
     await formRef.value.validate()
   } catch {
+    submitting.value = false
     return
   }
-  submitting.value = true
   try {
     await elementAPI.create(form.value)
     ElMessage.success(t('standard.common.createSuccess'))
@@ -312,24 +321,28 @@ const handleSubmit = async () => {
 }
 
 const handleApprove = async (row) => {
-  try {
-    await elementAPI.approve(row.id)
-    ElMessage.success(t('standard.common.approveSuccess'))
-    await loadElements()
-  } catch (e) {
-    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.approveFailed'))
-  }
+  await runLocked(`element:${row.id}`, async () => {
+    try {
+      await elementAPI.approve(row.id, row.version)
+      ElMessage.success(t('standard.common.approveSuccess'))
+      await loadElements()
+    } catch (e) {
+      ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.approveFailed'))
+    }
+  })
 }
 
 const handleDelete = async (row) => {
-  try {
-    await ElMessageBox.confirm(t('standard.element.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
-    await elementAPI.delete(row.id)
-    ElMessage.success(t('standard.common.deleteSuccess'))
-    await loadElements()
-  } catch (e) {
-    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
-  }
+  await runLocked(`element:${row.id}`, async () => {
+    try {
+      await ElMessageBox.confirm(t('standard.element.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
+      await elementAPI.delete(row.id)
+      ElMessage.success(t('standard.common.deleteSuccess'))
+      await loadElements()
+    } catch (e) {
+      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
+    }
+  })
 }
 
 onMounted(async () => {

@@ -24,7 +24,9 @@ func NewGlossaryHandler(svc *service.GlossaryService) *GlossaryHandler {
 // @Summary 获取业务术语列表 | List glossaries
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} models.PaginatedGlossaryResponse
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.glossary.read"]
 // @Router /glossaries [get]
@@ -89,6 +91,8 @@ func (h *GlossaryHandler) ListGlossaries(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.glossary.create"]
 // @Router /glossaries [post]
@@ -116,6 +120,8 @@ func (h *GlossaryHandler) CreateGlossary(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.glossary.read"]
 // @Router /glossaries/{id} [get]
@@ -140,7 +146,11 @@ func (h *GlossaryHandler) GetGlossary(c *gin.Context) {
 // @Summary 更新业务术语 | Update glossary
 // @Tags Standard
 // @Produce json
+// @Param request body models.UpdateGlossaryRequest true "更新业务术语及关联数据元 | Update glossary and related elements"
 // @Success 200 {object} map[string]interface{}
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.glossary.update"]
 // @Router /glossaries/{id} [put]
@@ -174,6 +184,8 @@ func (h *GlossaryHandler) UpdateGlossary(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.glossary.delete"]
 // @Router /glossaries/{id} [delete]
@@ -197,7 +209,11 @@ func (h *GlossaryHandler) DeleteGlossary(c *gin.Context) {
 // @Summary 审批业务术语 | Approve glossary
 // @Tags Standard
 // @Produce json
+// @Param request body models.VersionRequest true "当前资源版本 | Current resource version"
 // @Success 200 {object} map[string]interface{}
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.glossary.approve"]
 // @Router /glossaries/{id}/approve [post]
@@ -209,10 +225,15 @@ func (h *GlossaryHandler) ApproveGlossary(c *gin.Context) {
 		return
 	}
 
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
 
-	if err := h.svc.ApproveGlossary(id, tenantID, userID); err != nil {
+	if err := h.svc.ApproveGlossary(id, tenantID, userID, req.Version); err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
@@ -223,7 +244,11 @@ func (h *GlossaryHandler) ApproveGlossary(c *gin.Context) {
 // @Summary 废弃业务术语 | Deprecate glossary
 // @Tags Standard
 // @Produce json
+// @Param request body models.VersionRequest true "当前资源版本 | Current resource version"
 // @Success 200 {object} map[string]interface{}
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.glossary.offline"]
 // @Router /glossaries/{id}/deprecate [post]
@@ -235,10 +260,15 @@ func (h *GlossaryHandler) DeprecateGlossary(c *gin.Context) {
 		return
 	}
 
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
 
-	if err := h.svc.DeprecateGlossary(id, tenantID, userID); err != nil {
+	if err := h.svc.DeprecateGlossary(id, tenantID, userID, req.Version); err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
@@ -250,6 +280,8 @@ func (h *GlossaryHandler) DeprecateGlossary(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.glossary.read","standard.element.read"]
 // @Router /glossaries/{id}/elements [get]
@@ -268,36 +300,4 @@ func (h *GlossaryHandler) GetElementMappings(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, elements)
-}
-
-// SetElementMappings PUT /glossaries/:id/elements
-// @Summary 设置术语关联的数据元 | Set element mappings of glossary
-// @Tags Standard
-// @Produce json
-// @Success 200 {object} map[string]interface{}
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["standard.glossary.update","standard.element.read"]
-// @Router /glossaries/{id}/elements [put]
-// @Security BearerAuth
-func (h *GlossaryHandler) SetElementMappings(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
-		return
-	}
-
-	var req struct {
-		ElementIDs []int64 `json:"element_ids"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, err)
-		return
-	}
-
-	tenantID := getTenantID(c)
-	if err := h.svc.SetElementMappings(id, tenantID, req.ElementIDs); err != nil {
-		respondError(c, http.StatusInternalServerError, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgUpdateSuccess)})
 }

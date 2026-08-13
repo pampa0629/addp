@@ -1,12 +1,61 @@
 package repository
 
 import (
+	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/transfer/internal/models"
 )
+
+func TestMergeContinuousDiagnosticsMetadataPreservesRuntimeAndProjectsSafeCaptureFacts(t *testing.T) {
+	sampledAt := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+	metadata := commonModels.JSONMap{
+		"root_fact": "preserved",
+		"continuous": map[string]interface{}{
+			"owner_instance_id": "worker-a",
+			"fencing_token":     uint64(7),
+			"schema_change":     map[string]interface{}{"status": "pending"},
+			"capture":           map[string]interface{}{"stale": true},
+		},
+	}
+	diagnostics := ContinuousDiagnostics{SampledAt: sampledAt, Health: "healthy"}
+	capture := &ContinuousCaptureFacts{
+		Generation: 4,
+		SourceRecovery: &models.CaptureSourceRecovery{
+			SchemaVersion: "capture.source_recovery/v1", Provider: "oracle", Health: "healthy", SampledAt: sampledAt,
+		},
+		SourceTransactions: &models.CaptureSourceTransactions{
+			SchemaVersion: "capture.source_transactions/v1", Provider: "oracle", Status: "available", ActiveCount: 0, SampledAt: sampledAt,
+		},
+	}
+
+	merged := mergeContinuousDiagnosticsMetadata(metadata, diagnostics, capture)
+	continuousMeta, _ := merged["continuous"].(map[string]interface{})
+	if merged["root_fact"] != "preserved" || continuousMeta["owner_instance_id"] != "worker-a" || continuousMeta["fencing_token"] != uint64(7) || continuousMeta["schema_change"] == nil {
+		t.Fatalf("metadata fields were overwritten: %#v", merged)
+	}
+	if !reflect.DeepEqual(continuousMeta["diagnostics"], diagnostics) || continuousMeta["capture"] != capture {
+		t.Fatalf("observation fields = %#v", continuousMeta)
+	}
+
+	withoutCapture := mergeContinuousDiagnosticsMetadata(merged, diagnostics, nil)
+	continuousMeta, _ = withoutCapture["continuous"].(map[string]interface{})
+	if _, exists := continuousMeta["capture"]; exists {
+		t.Fatalf("non-CDC metadata retained capture: %#v", continuousMeta)
+	}
+	data, err := json.Marshal(withoutCapture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), `"stale":true`) {
+		t.Fatalf("stale capture leaked after removal: %s", data)
+	}
+}
 
 func TestBuildContinuousRecoveryPlan(t *testing.T) {
 	policy := ContinuousRecoveryPolicy{

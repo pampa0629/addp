@@ -3,9 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/addp/common/events"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/quality/internal/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -75,6 +78,9 @@ func TestQualityCleanupLogicalDisablesEngineBoundState(t *testing.T) {
 	if updatedIssue.Status != "ignored" {
 		t.Fatalf("issue status = %q, want ignored", updatedIssue.Status)
 	}
+	if updatedIssue.ResolvedAt == nil || updatedIssue.ResolvedBy != nil || updatedIssue.ResolutionNote != "" {
+		t.Fatalf("ignored issue audit fields = %#v, want automatic cleanup timestamp", updatedIssue)
+	}
 	var unchangedIssue models.Issue
 	if err := db.First(&unchangedIssue, resolvedIssue.ID).Error; err != nil {
 		t.Fatalf("load resolved issue: %v", err)
@@ -92,7 +98,7 @@ func TestQualityEngineDeletionImpactKeepsCheckTaskRebindable(t *testing.T) {
 		checkTasks:       []models.CheckTask{{ID: 2}},
 		issues:           []models.Issue{{ID: 3}},
 	}
-	impact, err := qualityEngineDeletionImpact(candidates)
+	impact, err := qualityEngineDeletionImpact(candidates, nil)
 	if err != nil {
 		t.Fatalf("qualityEngineDeletionImpact() error = %v", err)
 	}
@@ -101,6 +107,25 @@ func TestQualityEngineDeletionImpactKeepsCheckTaskRebindable(t *testing.T) {
 	}
 	if impact.ManagementPath != "/quality/check-tasks" {
 		t.Fatalf("management path = %q", impact.ManagementPath)
+	}
+}
+
+func TestQualityEngineDeletionImpactUsesExecutionFacts(t *testing.T) {
+	db := newQualityCleanupTestDB(t)
+	svc := NewCleanupService(db, nil, nil)
+	task := createQualityCleanupCheckTask(t, db, 7, 12, "task-match")
+	createQualityCleanupExecution(t, db, task, commonExecution.ExecutionStatusRunning)
+
+	activeTaskIDs, err := svc.listActiveQualityCleanupTaskIDs(context.Background(), []models.CheckTask{task})
+	if err != nil {
+		t.Fatalf("listActiveQualityCleanupTaskIDs() error = %v", err)
+	}
+	impact, err := qualityEngineDeletionImpact(qualityCleanupCandidates{checkTasks: []models.CheckTask{task}}, activeTaskIDs)
+	if err != nil {
+		t.Fatalf("qualityEngineDeletionImpact() error = %v", err)
+	}
+	if impact.Summary.Rebindable != 1 || impact.Summary.Running != 1 {
+		t.Fatalf("impact summary = %#v, want rebindable and running facts", impact.Summary)
 	}
 }
 
@@ -139,14 +164,12 @@ func TestQualityCleanupLogicalRollsBackWhenIssueUpdateFails(t *testing.T) {
 	}
 }
 
-func TestQualityCleanupLogicalRejectsTaskThatBecameRunning(t *testing.T) {
+func TestQualityCleanupLogicalRejectsActiveExecutionWhenSummaryIsStale(t *testing.T) {
 	db := newQualityCleanupTestDB(t)
 	svc := NewCleanupService(db, nil, nil)
 	rule := createQualityCleanupRuleApplication(t, db, 7, 12, "rule-match")
 	task := createQualityCleanupCheckTask(t, db, 7, 12, "task-match")
-	if err := db.Model(&models.CheckTask{}).Where("id = ?", task.ID).Update("last_execution_status", "running").Error; err != nil {
-		t.Fatalf("mark task running: %v", err)
-	}
+	createQualityCleanupExecution(t, db, task, commonExecution.ExecutionStatusPending)
 
 	stats, err := svc.ExecuteCleanup(context.Background(), 7, events.CleanupModeLogical, map[string]interface{}{"tenant_id": uint(7)})
 	if err != nil {
@@ -161,6 +184,31 @@ func TestQualityCleanupLogicalRejectsTaskThatBecameRunning(t *testing.T) {
 	}
 	if !storedRule.Enabled {
 		t.Fatal("rule application was disabled while task was running")
+	}
+}
+
+func TestQualityCleanupLogicalIgnoresStaleRunningSummary(t *testing.T) {
+	db := newQualityCleanupTestDB(t)
+	svc := NewCleanupService(db, nil, nil)
+	rule := createQualityCleanupRuleApplication(t, db, 7, 12, "rule-match")
+	task := createQualityCleanupCheckTask(t, db, 7, 12, "task-match")
+	if err := db.Model(&models.CheckTask{}).Where("id = ?", task.ID).Update("last_execution_status", "running").Error; err != nil {
+		t.Fatalf("mark task summary running: %v", err)
+	}
+
+	stats, err := svc.ExecuteCleanup(context.Background(), 7, events.CleanupModeLogical, map[string]interface{}{"tenant_id": uint(7)})
+	if err != nil {
+		t.Fatalf("ExecuteCleanup() error = %v", err)
+	}
+	if len(stats.Errors) != 0 || stats.DisabledRuleApps != 1 {
+		t.Fatalf("stats = %#v, want cleanup driven by execution facts", stats)
+	}
+	var storedRule models.RuleApplication
+	if err := db.First(&storedRule, rule.ID).Error; err != nil {
+		t.Fatalf("load rule application: %v", err)
+	}
+	if storedRule.Enabled {
+		t.Fatal("stale task summary incorrectly blocked cleanup")
 	}
 }
 
@@ -256,6 +304,9 @@ func newQualityCleanupTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS quality").Error; err != nil {
 		t.Fatalf("attach quality schema: %v", err)
 	}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
+		t.Fatalf("attach common schema: %v", err)
+	}
 	statements := []string{
 		`CREATE TABLE quality.rule_applications (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -310,6 +361,21 @@ func newQualityCleanupTestDB(t *testing.T) *gorm.DB {
 			resolved_by INTEGER,
 			resolution_note TEXT,
 			last_observed_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE common.task_executions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			tenant_id INTEGER NOT NULL,
+			execution_id TEXT NOT NULL UNIQUE,
+			module TEXT NOT NULL,
+			task_type TEXT NOT NULL,
+			source TEXT NOT NULL DEFAULT '',
+			source_task_id TEXT,
+			status TEXT NOT NULL,
+			trigger_type TEXT NOT NULL,
+			attempt INTEGER NOT NULL DEFAULT 0,
+			max_attempts INTEGER NOT NULL DEFAULT 3,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -376,6 +442,21 @@ func createQualityCleanupIssue(t *testing.T, db *gorm.DB, tenantID int64, engine
 	}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatalf("create issue: %v", err)
+	}
+	return item
+}
+
+func createQualityCleanupExecution(t *testing.T, db *gorm.DB, task models.CheckTask, status string) commonExecution.TaskExecution {
+	t.Helper()
+	now := time.Now().UTC()
+	sourceTaskID := strconv.FormatInt(task.ID, 10)
+	item := commonExecution.TaskExecution{TenantID: int(task.TenantID), ExecutionID: "execution-" + sourceTaskID, SourceTaskID: &sourceTaskID, Status: status}
+	if err := db.Exec(`INSERT INTO common.task_executions
+		(tenant_id, execution_id, module, task_type, source, source_task_id, status, trigger_type, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		task.TenantID, item.ExecutionID, commonExecution.ModuleQuality, commonExecution.TaskTypeQualityCheck,
+		commonExecution.ModuleQuality, sourceTaskID, status, commonExecution.TriggerTypeManual, now, now).Error; err != nil {
+		t.Fatalf("create task execution: %v", err)
 	}
 	return item
 }

@@ -7,9 +7,10 @@
         </el-button>
         <span class="title">{{ hierarchy.name || $t('standard.common.loadFailed') }}</span>
         <el-tag type="info" size="small">{{ hierarchy.code }}</el-tag>
+        <el-tag v-if="isDirty" type="warning" size="small">{{ $t('standard.common.unsaved') }}</el-tag>
       </div>
       <div class="header-right">
-        <el-button type="primary" @click="handleSave" :loading="saving">{{ $t('standard.dimHierarchy.saveBasicInfo') }}</el-button>
+        <el-button v-if="canUpdate" type="primary" @click="handleSave" :loading="saving">{{ $t('standard.dimHierarchy.saveBasicInfo') }}</el-button>
       </div>
     </div>
 
@@ -18,7 +19,7 @@
       <el-col :span="24">
         <el-card shadow="never" class="info-card">
           <template #header><span class="card-title">{{ $t('standard.dimHierarchy.basicInfo') }}</span></template>
-          <el-form :model="form" label-width="90px">
+          <el-form :model="form" label-width="90px" :disabled="!canUpdate">
             <el-row :gutter="16">
               <el-col :span="12">
                 <el-form-item :label="$t('standard.dimHierarchy.nameLabel')">
@@ -41,7 +42,7 @@
           <template #header>
             <div class="card-header-with-action">
               <span class="card-title">{{ $t('standard.dimHierarchy.levelDefinition') }}</span>
-              <el-button type="primary" size="small" @click="openLevelDialog()">
+              <el-button v-if="canUpdate" type="primary" size="small" @click="openLevelDialog()">
                 <el-icon><Plus /></el-icon>{{ $t('standard.dimHierarchy.addLevel') }}
               </el-button>
             </div>
@@ -63,11 +64,11 @@
               </template>
             </el-table-column>
             <el-table-column :label="$t('standard.common.description')" prop="description" min-width="160" show-overflow-tooltip />
-            <el-table-column :label="$t('standard.common.actions')" width="150" fixed="right">
+            <el-table-column v-if="canUpdate" :label="$t('standard.common.actions')" width="150" fixed="right">
               <template #default="{ row }">
                 <div class="table-actions">
                   <el-button link type="primary" @click="openLevelDialog(row)">{{ $t('standard.common.edit') }}</el-button>
-                  <el-button link type="danger" @click="handleDeleteLevel(row)">{{ $t('standard.common.delete') }}</el-button>
+                  <el-button link type="danger" :loading="isActionLocked(`dimension-level:${row.id}`)" @click="handleDeleteLevel(row)">{{ $t('standard.common.delete') }}</el-button>
                 </div>
               </template>
             </el-table-column>
@@ -123,8 +124,13 @@ import { ArrowLeft, Plus } from '@element-plus/icons-vue'
 import { dimensionHierarchyAPI, elementAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
+import { useStandardPermissions } from '../composables/useStandardPermissions'
+import { useActionLock } from '../composables/useActionLock'
+import { useUnsavedChanges } from '../composables/useUnsavedChanges'
 
 const { t } = useI18n()
+const { canUpdate } = useStandardPermissions('dimension_hierarchy')
+const { isLocked: isActionLocked, runLocked } = useActionLock()
 const route = useRoute()
 const router = useRouter()
 const hierarchyId = computed(() => Number(route.params.id))
@@ -136,6 +142,8 @@ const goBack = () => navigateStandardRoute(router, {
 const hierarchy = ref({})
 const form = reactive({ name: '', description: '', domain_id: null })
 const saving = ref(false)
+const editableState = computed(() => ({ ...form }))
+const { isDirty, markSaved } = useUnsavedChanges({ state: editableState, t })
 
 const levels = ref([])
 const elementNames = reactive({})
@@ -165,6 +173,7 @@ async function loadHierarchy() {
     form.domain_id = data.domain_id
     levels.value = data.levels || []
     await Promise.all([loadElementOptions(), loadElementNames(levels.value)])
+    markSaved()
   } catch (e) {
     ElMessage.error(getStandardErrorMessage(e, t, 'standard.dimHierarchy.loadFailed'))
   }
@@ -200,11 +209,17 @@ function openElement(id) {
 }
 
 async function handleSave() {
+  if (saving.value) return
   saving.value = true
   try {
-    await dimensionHierarchyAPI.update(hierarchyId.value, { name: form.name, description: form.description, domain_id: form.domain_id })
+    await dimensionHierarchyAPI.update(hierarchyId.value, {
+      name: form.name,
+      description: form.description,
+      domain_id: form.domain_id,
+      version: hierarchy.value.version
+    })
     ElMessage.success(t('standard.dimHierarchy.saveSuccess'))
-    hierarchy.value.name = form.name
+    await loadHierarchy()
   } catch (e) {
     ElMessage.error(getStandardErrorMessage(e, t, 'standard.dimHierarchy.saveFailed'))
   } finally {
@@ -235,17 +250,21 @@ function openLevelDialog(level = null) {
 }
 
 async function handleSaveLevel() {
-  await levelFormRef.value.validate()
+  if (levelSaving.value) return
   levelSaving.value = true
   try {
+    const valid = await levelFormRef.value.validate().catch(() => false)
+    if (!valid) return
     if (editingLevel.value) {
-      const res = await dimensionHierarchyAPI.updateLevel(hierarchyId.value, editingLevel.value.id, { ...levelForm })
+      const res = await dimensionHierarchyAPI.updateLevel(hierarchyId.value, editingLevel.value.id, { ...levelForm, version: hierarchy.value.version })
       const idx = levels.value.findIndex(l => l.id === editingLevel.value.id)
-      if (idx >= 0) levels.value[idx] = res
+      if (idx >= 0) levels.value[idx] = res.level
+      hierarchy.value.version = res.version
     } else {
-      const res = await dimensionHierarchyAPI.createLevel(hierarchyId.value, { ...levelForm })
-      levels.value.push(res)
-      await loadElementNames([res])
+      const res = await dimensionHierarchyAPI.createLevel(hierarchyId.value, { ...levelForm, version: hierarchy.value.version })
+      levels.value.push(res.level)
+      hierarchy.value.version = res.version
+      await loadElementNames([res.level])
     }
     levelVisible.value = false
     ElMessage.success(t('standard.dimHierarchy.saveSuccess'))
@@ -257,14 +276,17 @@ async function handleSaveLevel() {
 }
 
 async function handleDeleteLevel(level) {
-  try {
-    await ElMessageBox.confirm(t('standard.dimHierarchy.confirmDeleteLevel', { name: level.name }), t('standard.common.hint'), { type: 'warning' })
-    await dimensionHierarchyAPI.deleteLevel(hierarchyId.value, level.id)
-    levels.value = levels.value.filter(l => l.id !== level.id)
-    ElMessage.success(t('standard.dimHierarchy.levelDeleted'))
-  } catch (e) {
-    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.dimHierarchy.levelDeleteFailed'))
-  }
+  await runLocked(`dimension-level:${level.id}`, async () => {
+    try {
+      await ElMessageBox.confirm(t('standard.dimHierarchy.confirmDeleteLevel', { name: level.name }), t('standard.common.hint'), { type: 'warning' })
+      const res = await dimensionHierarchyAPI.deleteLevel(hierarchyId.value, level.id, hierarchy.value.version)
+      hierarchy.value.version = res.version
+      levels.value = levels.value.filter(l => l.id !== level.id)
+      ElMessage.success(t('standard.dimHierarchy.levelDeleted'))
+    } catch (e) {
+      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.dimHierarchy.levelDeleteFailed'))
+    }
+  })
 }
 
 watch(() => route.params.id, loadHierarchy, { immediate: true })

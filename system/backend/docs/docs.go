@@ -1670,6 +1670,80 @@ const docTemplate = `{
                 ]
             }
         },
+        "/engines/{id}/catalog/facts": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "基于 System 管理的引擎连接读取一个 catalog 叶子的结构事实；普通列表不会携带的字段详情通过此接口按需读取。| Read structural facts for one catalog leaf using the System-managed engine connection. Field details omitted from list responses are loaded here on demand.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "引擎管理 | Engine Management"
+                ],
+                "summary": "获取实时 catalog 叶子事实 | Describe live catalog leaf facts",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Catalog 叶子路径 | Catalog leaf path",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogDescribeFactsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/plugin.CatalogFacts"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine.read"
+                ]
+            }
+        },
         "/engines/{id}/deletion-assessments": {
             "post": {
                 "security": [
@@ -6680,6 +6754,23 @@ const docTemplate = `{
                 }
             }
         },
+        "datatype.CRSDefinition": {
+            "type": "object",
+            "properties": {
+                "definition": {
+                    "type": "string"
+                },
+                "definition_encoding": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
         "datatype.FieldInfo": {
             "type": "object",
             "properties": {
@@ -6770,6 +6861,173 @@ const docTemplate = `{
                 "FieldTypeUUID",
                 "FieldTypeGeometry"
             ]
+        },
+        "datatype.GeometryColumnInfo": {
+            "type": "object",
+            "properties": {
+                "crs_ref": {
+                    "type": "string"
+                },
+                "dimension": {
+                    "type": "integer"
+                },
+                "geometry_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "srid": {
+                    "type": "integer"
+                }
+            }
+        },
+        "datatype.GraphEndpointInfo": {
+            "type": "object",
+            "properties": {
+                "labels": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "shape_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "datatype.GraphInfo": {
+            "type": "object",
+            "properties": {
+                "directed": {
+                    "type": "boolean"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "node_count": {
+                    "type": "integer"
+                },
+                "node_shapes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.GraphNodeShapeInfo"
+                    }
+                },
+                "relationship_count": {
+                    "type": "integer"
+                },
+                "relationship_shapes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.GraphRelationshipShapeInfo"
+                    }
+                }
+            }
+        },
+        "datatype.GraphNodeShapeInfo": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "labels": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "properties": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.FieldInfo"
+                    }
+                }
+            }
+        },
+        "datatype.GraphRelationshipPatternInfo": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "from": {
+                    "$ref": "#/definitions/datatype.GraphEndpointInfo"
+                },
+                "to": {
+                    "$ref": "#/definitions/datatype.GraphEndpointInfo"
+                }
+            }
+        },
+        "datatype.GraphRelationshipShapeInfo": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "patterns": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.GraphRelationshipPatternInfo"
+                    }
+                },
+                "properties": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.FieldInfo"
+                    }
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "datatype.SpatialInfo": {
+            "type": "object",
+            "properties": {
+                "crs_definitions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.CRSDefinition"
+                    }
+                },
+                "crs_ref": {
+                    "type": "string"
+                },
+                "extent": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "geometry_columns": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.GeometryColumnInfo"
+                    }
+                },
+                "has_spatial_index": {
+                    "type": "boolean"
+                },
+                "index_name": {
+                    "type": "string"
+                },
+                "primary_geometry_column": {
+                    "type": "string"
+                },
+                "srid": {
+                    "type": "integer"
+                }
+            }
         },
         "datatype.TableInfo": {
             "type": "object",
@@ -7325,6 +7583,14 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_addp_common_models.CapabilityViewBadge"
                     }
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.CatalogDescribeFactsRequest": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogPath"
                 }
             }
         },
@@ -9607,6 +9873,9 @@ const docTemplate = `{
                 "principal_id": {
                     "type": "string"
                 },
+                "principal_type": {
+                    "type": "string"
+                },
                 "project_group_id": {
                     "type": "string"
                 },
@@ -9632,6 +9901,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "scope_type": {
+                    "type": "string"
+                },
+                "service_principal_name": {
                     "type": "string"
                 },
                 "status": {
@@ -9896,6 +10168,81 @@ const docTemplate = `{
                 }
             }
         },
+        "plugin.CatalogFacts": {
+            "type": "object",
+            "properties": {
+                "constraints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.ConstraintFacts"
+                    }
+                },
+                "graph": {
+                    "$ref": "#/definitions/datatype.GraphInfo"
+                },
+                "indexes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.IndexFacts"
+                    }
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "partitioning": {
+                    "$ref": "#/definitions/plugin.TablePartitioningFacts"
+                },
+                "path": {
+                    "$ref": "#/definitions/plugin.CatalogPath"
+                },
+                "spatial": {
+                    "$ref": "#/definitions/datatype.SpatialInfo"
+                },
+                "storage": {
+                    "$ref": "#/definitions/plugin.CatalogStorageFacts"
+                },
+                "table": {
+                    "$ref": "#/definitions/datatype.TableInfo"
+                },
+                "topic": {
+                    "$ref": "#/definitions/plugin.TopicFacts"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.CatalogPath": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.CatalogSegment"
+                    }
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.CatalogSegment": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "term": {
+                    "type": "string"
+                }
+            }
+        },
         "plugin.CatalogStorageFacts": {
             "type": "object",
             "properties": {
@@ -9916,6 +10263,127 @@ const docTemplate = `{
                 },
                 "size_bytes": {
                     "type": "integer"
+                }
+            }
+        },
+        "plugin.ConstraintFacts": {
+            "type": "object",
+            "properties": {
+                "constraint_type": {
+                    "type": "string"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "referenced_fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "referenced_namespace": {
+                    "type": "string"
+                },
+                "referenced_table": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.IndexFacts": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "index_type": {
+                    "type": "string"
+                },
+                "is_unique": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.TablePartitioningFacts": {
+            "type": "object",
+            "properties": {
+                "key_fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "partition_count": {
+                    "type": "integer"
+                },
+                "strategy": {
+                    "type": "string"
+                },
+                "subpartition_key_fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "subpartition_strategy": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.TopicFacts": {
+            "type": "object",
+            "properties": {
+                "partition_count": {
+                    "type": "integer"
+                },
+                "partitions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.TopicPartitionFacts"
+                    }
+                },
+                "replication_factor": {
+                    "type": "integer"
+                }
+            }
+        },
+        "plugin.TopicPartitionFacts": {
+            "type": "object",
+            "properties": {
+                "earliest_offset": {
+                    "type": "integer"
+                },
+                "isr": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "latest_offset": {
+                    "type": "integer"
+                },
+                "leader": {
+                    "type": "integer"
+                },
+                "partition": {
+                    "type": "integer"
+                },
+                "replicas": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 }
             }
         }

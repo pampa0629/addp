@@ -55,6 +55,10 @@ func respondError(c *gin.Context, status int, err error) {
 		message = commoni18n.T(c, sysi18n.MsgSystemCodeSetImmutable)
 	case errors.Is(err, repository.ErrInvalidTenantReference):
 		message = commoni18n.T(c, sysi18n.MsgInvalidResourceReference)
+	case errors.Is(err, repository.ErrVersionConflict):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgVersionConflict)
+		useGenericMessage = false
 	case errors.Is(err, commonapi.ErrNotFound):
 		message = commoni18n.T(c, sysi18n.MsgResourceNotFound)
 	case errors.Is(err, commonapi.ErrConflict):
@@ -91,6 +95,10 @@ func respondError(c *gin.Context, status int, err error) {
 }
 
 func respondDocumentFileError(c *gin.Context, err error) {
+	if errors.Is(err, repository.ErrVersionConflict) {
+		respondError(c, http.StatusConflict, err)
+		return
+	}
 	status := http.StatusInternalServerError
 	switch {
 	case errors.Is(err, service.ErrDocumentFileTooLarge):

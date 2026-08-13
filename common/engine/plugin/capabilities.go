@@ -9,6 +9,7 @@ const (
 	EngineExtensionSpatialWorkspaces      = "spatial_workspaces"
 	SpatialWorkspaceSuperMapSDXPostGIS    = "sdx_postgis"
 	SpatialWorkspaceSuperMapSDXPostgreSQL = "sdx_postgresql"
+	SpatialWorkspaceArcGISSDE             = "sde"
 
 	SpatialWorkspaceStateNotDetected      = "not_detected"
 	SpatialWorkspaceStateDetected         = "detected"

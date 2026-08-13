@@ -24,51 +24,48 @@ func NewEntityHandler(svc *service.EntityService) *EntityHandler {
 // @Summary 查询实体列表 | List entities
 // @Tags Model
 // @Produce json
-// @Param domain_id query int false "业务域ID | Domain ID"
-// @Param status query string false "状态过滤 | Filter by status"
+// @Param domain_id query int false "业务域ID | Domain ID" minimum(1)
+// @Param status query string false "状态过滤 | Filter by status" Enums(draft, approved)
 // @Param keyword query string false "关键词搜索 | Keyword search"
-// @Param page query int false "页码 | Page number"
-// @Param page_size query int false "每页数量 | Page size"
+// @Param page query int false "页码 | Page number" default(1) minimum(1)
+// @Param page_size query int false "每页数量 | Page size" default(20) minimum(1) maximum(100)
 // @Success 200 {object} map[string]interface{} "实体列表 | Entity list"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 400 {object} models.ErrorResponse "查询参数无效 | Invalid query parameters"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.entity.read"]
 // @Router /entities [get]
 // @Security BearerAuth
 func (h *EntityHandler) ListEntities(c *gin.Context) {
 	tenantID := getTenantID(c)
+	query, err := parseModelListQuery(c.Request.URL.Query())
+	if err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
+	status, err := parseOptionalEnum(c.Request.URL.Query()["status"], "draft", "approved")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
+	keyword, err := parseOptionalString(c.Request.URL.Query()["keyword"])
+	if err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
 
 	opts := repository.ListEntityOptions{
-		Status:  c.Query("status"),
-		Keyword: c.Query("keyword"),
-	}
-	if domainIDStr := c.Query("domain_id"); domainIDStr != "" {
-		if id, err := strconv.ParseInt(domainIDStr, 10, 64); err == nil {
-			opts.DomainID = &id
-		}
-	}
-	if pageStr := c.Query("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil {
-			opts.Page = p
-		}
-	}
-	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
-		if ps, err := strconv.Atoi(pageSizeStr); err == nil {
-			opts.PageSize = ps
-		}
-	}
-	if opts.Page <= 0 {
-		opts.Page = 1
-	}
-	if opts.PageSize <= 0 {
-		opts.PageSize = 20
-	}
-	if opts.PageSize > 100 {
-		opts.PageSize = 100
+		DomainID: query.DomainID,
+		Status:   status,
+		Keyword:  keyword,
+		Page:     query.Page,
+		PageSize: query.PageSize,
 	}
 
 	entities, total, err := h.svc.ListEntities(tenantID, opts)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, operationFailedResponse(c))
+		writeServiceError(c, err)
 		return
 	}
 	totalPages := 0
@@ -94,6 +91,8 @@ func (h *EntityHandler) ListEntities(c *gin.Context) {
 // @Produce json
 // @Param body body models.CreateEntityRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的实体 | Created entity"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "请求无效 | Invalid request"
 // @Failure 404 {object} models.ErrorResponse "引用的业务域不存在 | Referenced business domain not found"
 // @Failure 409 {object} models.ErrorResponse "实体编码冲突 | Entity code conflict"
@@ -126,6 +125,10 @@ func (h *EntityHandler) CreateEntity(c *gin.Context) {
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Success 200 {object} map[string]interface{} "实体详情 | Entity details"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 400 {object} models.ErrorResponse "实体 ID 无效 | Invalid entity ID"
+// @Failure 404 {object} models.ErrorResponse "实体不存在 | Entity not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.entity.read"]
 // @Router /entities/{id} [get]
@@ -154,8 +157,12 @@ func (h *EntityHandler) GetEntity(c *gin.Context) {
 // @Param id path int true "实体ID | Entity ID"
 // @Param body body models.UpdateEntityRequest true "更新请求 | Update request"
 // @Success 200 {object} map[string]interface{} "已更新的实体 | Updated entity"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 400 {object} models.ErrorResponse "请求或实体 ID 无效 | Invalid request or entity ID"
 // @Failure 404 {object} models.ErrorResponse "实体不存在 | Entity not found"
-// @Failure 409 {object} models.ErrorResponse "实体状态冲突 | Entity state conflict"
+// @Failure 409 {object} models.ErrorResponse "实体状态或属性列名冲突 | Entity state or attribute column name conflict"
+// @Failure 503 {object} models.ErrorResponse "数据标准服务不可用 | Data Standard service unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.entity.update"]
 // @Router /entities/{id} [put]
@@ -190,6 +197,9 @@ func (h *EntityHandler) UpdateEntity(c *gin.Context) {
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 400 {object} models.ErrorResponse "实体 ID 无效 | Invalid entity ID"
 // @Failure 404 {object} models.ErrorResponse "实体不存在 | Entity not found"
 // @Failure 409 {object} models.ErrorResponse "实体状态冲突 | Entity state conflict"
 // @x-addp-auth-mode "permission"
@@ -217,7 +227,9 @@ func (h *EntityHandler) DeleteEntity(c *gin.Context) {
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Success 200 {object} map[string]interface{} "审批成功 | Approved successfully"
-// @Failure 400 {object} models.ErrorResponse "实体不满足审批条件 | Entity is not ready for approval"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 400 {object} models.ErrorResponse "实体缺少属性、主键或属性定义不完整 | Entity has no attributes, no primary key, or an incomplete attribute definition"
 // @Failure 404 {object} models.ErrorResponse "实体不存在 | Entity not found"
 // @Failure 409 {object} models.ErrorResponse "实体状态冲突 | Entity state conflict"
 // @x-addp-auth-mode "permission"
@@ -247,6 +259,9 @@ func (h *EntityHandler) ApproveEntity(c *gin.Context) {
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Success 200 {object} models.MessageResponse "重新打开成功 | Reopened successfully"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 400 {object} models.ErrorResponse "实体 ID 无效 | Invalid entity ID"
 // @Failure 404 {object} models.ErrorResponse "实体不存在 | Entity not found"
 // @Failure 409 {object} models.ErrorResponse "实体状态冲突 | Entity state conflict"
 // @x-addp-auth-mode "permission"
@@ -272,6 +287,10 @@ func (h *EntityHandler) ReopenEntity(c *gin.Context) {
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Success 200 {object} map[string]interface{} "属性列表 | Attribute list"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 400 {object} models.ErrorResponse "实体 ID 无效 | Invalid entity ID"
+// @Failure 404 {object} models.ErrorResponse "实体不存在 | Entity not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.entity.read"]
 // @Router /entities/{id}/attributes [get]
@@ -300,8 +319,12 @@ func (h *EntityHandler) GetAttributes(c *gin.Context) {
 // @Param id path int true "实体ID | Entity ID"
 // @Param body body models.CreateEntityAttributeRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的属性 | Created attribute"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 400 {object} models.ErrorResponse "请求或实体 ID 无效 | Invalid request or entity ID"
 // @Failure 404 {object} models.ErrorResponse "实体或引用资源不存在 | Entity or referenced resource not found"
 // @Failure 409 {object} models.ErrorResponse "实体状态冲突 | Entity state conflict"
+// @Failure 503 {object} models.ErrorResponse "数据标准服务不可用 | Data Standard service unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.entity.create"]
 // @Router /entities/{id}/attributes [post]
@@ -337,6 +360,12 @@ func (h *EntityHandler) CreateAttribute(c *gin.Context) {
 // @Param aid path int true "属性ID | Attribute ID"
 // @Param body body models.UpdateEntityAttributeRequest true "更新请求 | Update request"
 // @Success 200 {object} map[string]interface{} "已更新的属性 | Updated attribute"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 400 {object} models.ErrorResponse "请求、实体或属性 ID 无效 | Invalid request, entity, or attribute ID"
+// @Failure 404 {object} models.ErrorResponse "实体或属性不存在 | Entity or attribute not found"
+// @Failure 409 {object} models.ErrorResponse "实体状态或属性列名冲突 | Entity state or attribute column name conflict"
+// @Failure 503 {object} models.ErrorResponse "数据标准服务不可用 | Data Standard service unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.entity.update"]
 // @Router /entities/{id}/attributes/{aid} [put]
@@ -375,6 +404,11 @@ func (h *EntityHandler) UpdateAttribute(c *gin.Context) {
 // @Param id path int true "实体ID | Entity ID"
 // @Param aid path int true "属性ID | Attribute ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 400 {object} models.ErrorResponse "实体或属性 ID 无效 | Invalid entity or attribute ID"
+// @Failure 404 {object} models.ErrorResponse "实体或属性不存在 | Entity or attribute not found"
+// @Failure 409 {object} models.ErrorResponse "实体状态冲突 | Entity state conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.entity.delete"]
 // @Router /entities/{id}/attributes/{aid} [delete]
@@ -406,6 +440,8 @@ func (h *EntityHandler) DeleteAttribute(c *gin.Context) {
 // @Produce json
 // @Param body body models.MermaidImportRequest true "导入请求 | Import request"
 // @Success 200 {object} map[string]interface{} "导入结果 | Import result"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "Mermaid 内容无效 | Invalid Mermaid content"
 // @Failure 409 {object} models.ErrorResponse "存在已审批实体 | Approved entities exist"
 // @x-addp-auth-mode "permission"
@@ -436,6 +472,8 @@ func (h *EntityHandler) ImportMermaid(c *gin.Context) {
 // @Tags Model
 // @Produce json
 // @Success 200 {object} map[string]interface{} "Mermaid ER 图代码 | Mermaid ER diagram code"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.entity.read","model.entity_relation.read"]
 // @Router /entities/export-mermaid [get]

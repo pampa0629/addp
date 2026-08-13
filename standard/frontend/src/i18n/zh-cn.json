@@ -41,7 +41,13 @@
       "selectDomain": "选择业务域",
       "selectStatus": "选择状态",
       "domainOptional": "选择业务域（可选）",
-      "remove": "移除"
+      "remove": "移除",
+      "unsaved": "未保存",
+      "unsavedTitle": "未保存的修改",
+      "unsavedConfirm": "当前修改尚未保存，离开后将丢失。确定离开吗？",
+      "leave": "离开",
+      "continueEditing": "继续编辑",
+      "saveBeforeAction": "请先保存当前修改，再执行状态操作"
     },
     "layout": {
       "title": "数据标准与建模",

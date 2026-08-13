@@ -108,3 +108,60 @@ func TestStandardClientRejectsLegacyQualityRuleEnvelope(t *testing.T) {
 		t.Fatalf("GetElementQualityRules() error = %v, want legacy envelope rejection", err)
 	}
 }
+
+func TestStandardClientListsElementSummariesByCanonicalIDs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/standard/elements" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.URL.Query().Get("ids"); got != "12,7" {
+			t.Fatalf("ids = %q, want %q", got, "12,7")
+		}
+		if r.URL.Query().Get("page") != "1" || r.URL.Query().Get("page_size") != "100" {
+			t.Fatalf("pagination query = %q", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":12,"name":"Order ID","code":"order_id"},{"id":7,"name":"Customer ID","code":"customer_id"}],"total":2,"page":1,"page_size":100,"total_pages":1}`))
+	}))
+	defer server.Close()
+
+	client := NewStandardClient(server.URL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "tenant-token", nil
+	}), server.Client()).WithTenantID(7)
+	elements, err := client.ListElementSummaries(context.Background(), []int64{12, 7})
+	if err != nil {
+		t.Fatalf("ListElementSummaries() error = %v", err)
+	}
+	if len(elements) != 2 || elements[0].ID != 12 || elements[0].Code != "order_id" {
+		t.Fatalf("elements = %#v", elements)
+	}
+}
+
+func TestStandardClientListsElementCandidates(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/standard/elements" || r.URL.Query().Get("keyword") != "gender" {
+			t.Fatalf("unexpected Standard request: %s", r.URL.String())
+		}
+		if r.URL.Query().Get("page") != "2" || r.URL.Query().Get("page_size") != "20" {
+			t.Fatalf("pagination query = %q", r.URL.RawQuery)
+		}
+		if r.Header.Get("Authorization") != "Bearer tenant-token" {
+			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":12,"name":"Gender","code":"gender","quality_rules":{"schema_version":"addp.quality.rules/v1","rules":[{"type":"not_null","enabled":true,"severity":"error","message":"required","params":{}}]}}],"total":1,"page":2,"page_size":20,"total_pages":1}`))
+	}))
+	defer server.Close()
+
+	client := NewStandardClient(server.URL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "tenant-token", nil
+	}), server.Client()).WithTenantID(7)
+	elements, total, err := client.ListElementCandidates(context.Background(), "gender", 2, 20)
+	if err != nil {
+		t.Fatalf("ListElementCandidates() error = %v", err)
+	}
+	if total != 1 || len(elements) != 1 || elements[0].ID != 12 || len(elements[0].QualityRules.EnabledRules()) != 1 {
+		t.Fatalf("element candidates = %#v, total=%d", elements, total)
+	}
+}

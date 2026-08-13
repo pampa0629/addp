@@ -141,6 +141,47 @@ func TestSystemServiceClientUsesTenantAndPlatformBearerWithoutLegacyHeaders(t *t
 	}
 }
 
+func TestSystemServiceClientListsCatalogChildrenWithTenantBearer(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/system/engines/12/catalog/children" || r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer tenant-token" {
+			t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))
+		}
+		var request EngineCatalogListChildrenRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Path.EngineID != 12 || request.Path.Version != "catalog.path/v1" || len(request.Path.Segments) != 1 || request.Path.Segments[0].Name != "public" {
+			t.Fatalf("catalog request = %#v", request)
+		}
+		_ = json.NewEncoder(w).Encode(EngineCatalogListChildrenResponse{Nodes: []EngineCatalogEntry{{Name: "orders", Role: "leaf"}}})
+	}))
+	defer server.Close()
+
+	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("tenant-token"), server.Client()).WithTenantID(7)
+	nodes, err := client.ListCatalogChildren(context.Background(), 12, EngineCatalogListChildrenRequest{Path: EngineCatalogPath{
+		Version: "catalog.path/v1", EngineID: 12, Segments: []EngineCatalogSegment{{Term: "schema", Kind: "namespace", Name: "public"}},
+	}})
+	if err != nil || len(nodes) != 1 || nodes[0].Name != "orders" {
+		t.Fatalf("ListCatalogChildren() nodes=%#v error=%v", nodes, err)
+	}
+}
+
+type staticSystemServiceTokenSource string
+
+func (s staticSystemServiceTokenSource) Token(context.Context, uint) (string, error) {
+	return string(s), nil
+}
+
+func (s staticSystemServiceTokenSource) PlatformToken(context.Context) (string, error) {
+	return string(s), nil
+}
+
 func TestSystemServiceClientListsEveryEngine(t *testing.T) {
 	t.Parallel()
 

@@ -3,8 +3,10 @@ package continuous
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -552,10 +554,52 @@ func (p *fakeChangeStreamProvider) OpenChangeStream(_ context.Context, _ plugin.
 	return p.reader, nil
 }
 
-type fakeCaptureStore struct{ resource *models.CaptureResource }
+type fakeCaptureStore struct {
+	resource *models.CaptureResource
+	calls    int
+}
 
 func (s *fakeCaptureStore) GetLatest(context.Context, uint, uint) (*models.CaptureResource, error) {
+	s.calls++
 	return s.resource, nil
+}
+
+func TestDataSessionRunnerProjectsTypedDatabaseCDCCaptureFacts(t *testing.T) {
+	store := &fakeCaptureStore{resource: &models.CaptureResource{
+		Generation: 3,
+		SourceRecovery: models.JSONMap{
+			"schema_version": "capture.source_recovery/v1", "provider": "oracle", "health": "healthy",
+			"capture_position": "6240469", "private_error": "must-not-leak",
+		},
+		SourceTransactions: models.JSONMap{
+			"schema_version": "capture.source_transactions/v1", "provider": "oracle", "status": "available",
+			"active_count": 1, "used_undo_blocks": "1", "private_error": "must-not-leak",
+		},
+	}}
+	runner := &DataSessionRunner{Captures: store}
+	facts, err := runner.captureFacts(context.Background(), continuousRunnerClaim(), &planner.ContinuousPlan{CDC: &planner.DatabaseCDCSourcePlan{}})
+	if err != nil {
+		t.Fatalf("captureFacts() error = %v", err)
+	}
+	if facts == nil || facts.Generation != 3 || facts.SourceRecovery == nil || facts.SourceRecovery.CapturePosition != "6240469" || facts.SourceTransactions == nil || facts.SourceTransactions.ActiveCount != 1 {
+		t.Fatalf("capture facts = %#v", facts)
+	}
+	data, err := json.Marshal(facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "must-not-leak") || strings.Contains(string(data), "private_error") {
+		t.Fatalf("capture facts leaked private fields: %s", data)
+	}
+}
+
+func TestDataSessionRunnerOmitsCaptureFactsForBusinessKafka(t *testing.T) {
+	store := &fakeCaptureStore{resource: &models.CaptureResource{Generation: 3}}
+	runner := &DataSessionRunner{Captures: store}
+	facts, err := runner.captureFacts(context.Background(), continuousRunnerClaim(), &planner.ContinuousPlan{})
+	if err != nil || facts != nil || store.calls != 0 {
+		t.Fatalf("captureFacts() facts=%#v calls=%d error=%v", facts, store.calls, err)
+	}
 }
 
 type fakeChangeStreamReader struct {
@@ -678,6 +722,12 @@ func (r *fakeDeadLetterRecorder) Record(_ context.Context, request deadletter.Re
 type fakeContinuousProgressStore struct {
 	committed    chan repository.ContinuousProgress
 	schemaChange chan repository.ContinuousSchemaChange
+	diagnostics  chan recordedContinuousDiagnostics
+}
+
+type recordedContinuousDiagnostics struct {
+	diagnostics repository.ContinuousDiagnostics
+	capture     *repository.ContinuousCaptureFacts
 }
 
 func (s *fakeContinuousProgressStore) RecordProgress(_ context.Context, _ repository.RuntimeLeaseClaim, progress repository.ContinuousProgress) error {
@@ -685,7 +735,10 @@ func (s *fakeContinuousProgressStore) RecordProgress(_ context.Context, _ reposi
 	return nil
 }
 
-func (s *fakeContinuousProgressStore) RecordDiagnostics(context.Context, repository.RuntimeLeaseClaim, repository.ContinuousDiagnostics) error {
+func (s *fakeContinuousProgressStore) RecordDiagnostics(_ context.Context, _ repository.RuntimeLeaseClaim, diagnostics repository.ContinuousDiagnostics, capture *repository.ContinuousCaptureFacts) error {
+	if s.diagnostics != nil {
+		s.diagnostics <- recordedContinuousDiagnostics{diagnostics: diagnostics, capture: capture}
+	}
 	return nil
 }
 

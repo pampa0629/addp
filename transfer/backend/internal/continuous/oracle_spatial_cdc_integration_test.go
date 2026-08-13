@@ -3,12 +3,14 @@ package continuous
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -17,6 +19,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/kafka"
+	mysqlplugin "github.com/addp/common/engine/plugins/mysql"
 	oracleplugin "github.com/addp/common/engine/plugins/oracle"
 	"github.com/addp/common/engine/plugins/postgresql"
 	commonExecution "github.com/addp/common/execution"
@@ -30,6 +33,7 @@ import (
 	"github.com/lib/pq"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twpayne/go-geom/encoding/wkt"
 	postgresdriver "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -82,13 +86,425 @@ func TestIntegrationOracleSpatialCDCGeometryMatrixAndRecovery(t *testing.T) {
 		},
 	}
 	for _, testCase := range cases {
-		t.Run(testCase.name, func(t *testing.T) {
-			runIntegrationOracleSpatialCDCGeometryCase(t, testCase)
+		for _, targetType := range []string{"postgresql", "mysql", "oracle"} {
+			if targetType != "postgresql" && testCase.dimension != 2 {
+				continue
+			}
+			t.Run(testCase.name+"/target="+targetType, func(t *testing.T) {
+				runIntegrationOracleSpatialCDCGeometryCase(t, testCase, targetType)
+			})
+		}
+	}
+}
+
+// TestIntegrationOracleSpatialCDCSchemaDriftBlocksAndStops injects an external
+// change into the generation-owned mirror table. The source-table DDL guard is
+// intentionally bypassed because normal Oracle Spatial CDC operation freezes
+// the source schema by design.
+func TestIntegrationOracleSpatialCDCSchemaDriftBlocksAndStops(t *testing.T) {
+	if os.Getenv("ADDP_ORACLE_SPATIAL_CDC_SCHEMA_DRIFT_E2E") != "1" {
+		t.Skip("set ADDP_ORACLE_SPATIAL_CDC_SCHEMA_DRIFT_E2E=1 to run Oracle Spatial CDC schema drift integration test")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+	defer cancel()
+
+	infraInfo := testpg.ConnInfoFromEnv(t)
+	infraDSN, err := (&postgresql.PostgreSQLPlugin{}).BuildDSN(infraInfo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	infraDB, err := gorm.Open(postgresdriver.Open(infraDSN), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := infraDB.Exec("CREATE SCHEMA IF NOT EXISTS transfer").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := commonExecution.EnsureStore(infraDB); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.MigrateCaptureProviderResources(infraDB); err != nil {
+		t.Fatalf("migrate capture resources: %v", err)
+	}
+	if err := infraDB.AutoMigrate(
+		&models.TransferTask{}, &models.SyncState{}, &models.RuntimeLease{}, &models.CaptureResource{},
+		&models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{}, &models.OracleCaptureResource{}, &models.SchemaChangeRequest{},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	suffix := time.Now().UnixNano()
+	tableName := fmt.Sprintf("ADDP_SD_%012d", suffix%1_000_000_000_000)
+	indexName := fmt.Sprintf("ADDP_SDI_%012d", suffix%1_000_000_000_000)
+	targetSchema := fmt.Sprintf("cdc_oracle_drift_%d", suffix)
+	targetTable := "features_target"
+	sourceInfo := oracleSpatialCDCConnectionInfo()
+	sourceDB := openOracleSpatialCDCDB(t, sourceInfo)
+	defer sourceDB.Close()
+	createOracleSpatialCDCTestTable(t, ctx, sourceDB, tableName, indexName, 2, oracleSpatialCDCPolygon(0, 0, 10, 10))
+	defer dropOracleSpatialCDCTestTable(t, sourceDB, tableName)
+	target := openCDCDataE2ETarget(t, ctx, "postgresql", targetSchema, targetTable, nil, nil)
+	defer target.Close()
+
+	resolver := planner.StaticEngineResolver{
+		22:              {Type: "oracle", EngineID: 22, ConnInfo: sourceInfo},
+		target.EngineID: {Type: target.Type, EngineID: target.EngineID, ConnInfo: target.ConnInfo, Capabilities: ptrEngineCapabilities(target.Plugin.Capabilities())},
+	}
+	captureRepo := repository.NewCaptureRepository(infraDB)
+	topicAdmin, err := capture.NewKafkaTopicAdmin(capture.KafkaAdminConfig{
+		BootstrapServers: cdcDataEnv("ADDP_TEST_INFRA_KAFKA_BOOTSTRAP_SERVERS", "localhost:19092"),
+		Username:         cdcDataEnv("ADDP_TEST_INFRA_KAFKA_ADMIN_USERNAME", "admin"), Password: cdcDataEnv("ADDP_TEST_INFRA_KAFKA_ADMIN_PASSWORD", "addp_kafka_admin"),
+		SecurityProtocol: cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SECURITY_PROTOCOL", "sasl_plaintext"), SASLMechanism: cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SASL_MECHANISM", "scram-sha-256"),
+		TLSCACertFile: cdcDataEnv("ADDP_TEST_INFRA_KAFKA_TLS_CA_CERT_FILE", ""),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer topicAdmin.Close()
+	connectClient, err := capture.NewConnectClient(cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_URL", "http://localhost:18083"), "", "", 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capturePlanResolver := capture.NewDatabasePlanResolver(resolver)
+	captureSupervisor, err := capture.NewSupervisor(captureRepo, capturePlanResolver, connectClient, topicAdmin, capture.DatabaseSourceResources{}, capture.SupervisorConfig{
+		TopicRetention: time.Hour, TopicReplication: cdcDataEnvInt16("ADDP_TEST_INFRA_KAFKA_REPLICATION_FACTOR", 1),
+		ConnectLoopbackHost:     cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_LOOPBACK_HOST", "host.docker.internal"),
+		ConnectBootstrapServers: cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_BOOTSTRAP_SERVERS", "redpanda:29092"), ConnectKafkaUsername: cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_USERNAME", "connect"), ConnectKafkaPassword: cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_PASSWORD", "addp_kafka_connect"),
+		ConnectKafkaSecurityProtocol: cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_SECURITY_PROTOCOL", "sasl_plaintext"), ConnectKafkaSASLMechanism: cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SASL_MECHANISM", "scram-sha-256"), ConnectKafkaTLSCACertFile: cdcDataEnv("ADDP_TEST_INFRA_KAFKA_TLS_CA_CERT_FILE", ""),
+		ProvisioningTimeout: 2 * time.Minute, StatusPollInterval: 500 * time.Millisecond, MonitorInterval: time.Second,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaseRepo := repository.NewRuntimeLeaseRepository(infraDB, repository.ContinuousRecoveryPolicy{InitialBackoff: time.Second, MaxBackoff: 4 * time.Second, MaxFailures: 3, CircuitOpenTime: 10 * time.Second, StabilityWindow: 30 * time.Second})
+	stateRepo := repository.NewSyncStateRepository(infraDB)
+	executionService := service.NewExecutionService(infraDB, commonExecution.NewTaskExecutionRepository(infraDB))
+	taskService := service.NewTaskService(infraDB, nil, &transferconfig.Config{ContinuousRuntimeStopTimeout: 5 * time.Second, ContinuousRuntimeStopPollInterval: 50 * time.Millisecond}, nil)
+	taskService.SetEngineResolver(resolver)
+	taskService.SetExecutionService(executionService)
+	taskService.SetCaptureControl(captureSupervisor)
+	taskService.SetSchemaChangeInspector(capturePlanResolver)
+	apiRouter := cdcDataAPIRouter(t, taskService, uint(910000+suffix%80000), 910001)
+	task := cdcDataCreateTaskViaAPI(t, apiRouter, oracleSpatialCDCDataTaskConfig(tableName, target))
+	defer cleanupCDCDataInfraRows(infraDB, task.ID)
+	if err := infraDB.Model(&models.TransferTask{}).Where("id = ?", task.ID).Update("auto_scan_metadata", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	execution := cdcDataStartTaskViaAPI(t, apiRouter, task.ID)
+	resource, err := captureRepo.GetLatest(ctx, task.ID, task.TenantID)
+	if err != nil || resource.Oracle == nil || !resource.Oracle.SpatialArtifactsOwned {
+		t.Fatalf("Oracle Spatial capture resource=%#v err=%v", resource, err)
+	}
+	captureStopped := false
+	defer func() {
+		if !captureStopped {
+			_ = captureSupervisor.Stop(context.Background(), &task)
+		}
+	}()
+	claim, err := leaseRepo.ClaimNext(ctx, "oracle-schema-drift-worker", time.Now(), 30*time.Second)
+	if err != nil || claim == nil || claim.Execution.ExecutionID != execution.ExecutionID {
+		t.Fatalf("Oracle schema drift claim=%#v err=%v", claim, err)
+	}
+	task.ApplyIdentity = claim.Task.ApplyIdentity
+	runner := &DataSessionRunner{Resolver: resolver, States: stateRepo, Progress: leaseRepo, Captures: captureRepo, InfraKafkaConnection: cdcDataTransferKafkaConnection(), PollTimeout: 500 * time.Millisecond, DiagnosticsInterval: time.Second,
+		GetPlugin: func(engineType string) (engineplugin.EnginePlugin, error) {
+			switch engineType {
+			case "kafka":
+				return &kafka.KafkaPlugin{}, nil
+			case "oracle":
+				return &oracleplugin.OraclePlugin{}, nil
+			case "postgresql":
+				return &postgresql.PostgreSQLPlugin{}, nil
+			default:
+				return nil, fmt.Errorf("unexpected engine type %q", engineType)
+			}
+		},
+	}
+	runnerCtx, cancelRunner := context.WithCancel(ctx)
+	runnerDone := make(chan error, 1)
+	go func() { runnerDone <- runner.Run(runnerCtx, *claim) }()
+	waitOracleSpatialCDCTargetGeometry(t, ctx, runnerDone, target, 1, "snapshot", oracleSpatialCDCGeometryCase{geometryType: "POLYGON", dimension: 2}, "SRID=4326;POLYGON((0 0,10 0,10 10,0 10,0 0))")
+	waitOracleSpatialCDCOffsetsConverged(t, ctx, stateRepo, target, task.ID, resource.SourceIdentity, task.ApplyIdentity)
+	committed, err := oracleSpatialCDCCommittedOffset(ctx, stateRepo, task.ID, resource.SourceIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	quotedMirror := oracleSpatialCDCQuoteIdentifier(resource.Oracle.SpatialMirrorTableName)
+	execOracleSpatialCDC(t, ctx, sourceDB, `ALTER TABLE `+quotedMirror+` ADD "EXTRA_FIELD" VARCHAR2(100 CHAR)`)
+	execOracleSpatialCDC(t, ctx, sourceDB, `INSERT INTO `+quotedMirror+` ("ID", "NAME", "SHAPE", "EXTRA_FIELD") SELECT 2, 'drifted', SDO_UTIL.TO_WKBGEOMETRY("SHAPE"), 'external drift' FROM `+oracleSpatialCDCQuoteIdentifier(tableName)+` WHERE "ID" = 1`)
+	var runnerErr error
+	select {
+	case runnerErr = <-runnerDone:
+	case <-time.After(30 * time.Second):
+		cancelRunner()
+		t.Fatal("Oracle schema drift runner did not stop")
+	}
+	var schemaErr *SchemaChangeError
+	if !errors.As(runnerErr, &schemaErr) || !containsTestString(schemaErr.UnexpectedFields, "EXTRA_FIELD") {
+		t.Fatalf("Oracle schema drift runner error=%v schema=%#v", runnerErr, schemaErr)
+	}
+	after, err := oracleSpatialCDCCommittedOffset(ctx, stateRepo, task.ID, resource.SourceIdentity)
+	if err != nil || after != committed {
+		t.Fatalf("Oracle schema drift advanced offset: before=%d after=%d err=%v", committed, after, err)
+	}
+	target.AssertRowAbsent(t, ctx, 2)
+	if err := leaseRepo.Finish(context.Background(), *claim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", runnerErr.Error(), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	var blockedTask models.TransferTask
+	if err := infraDB.First(&blockedTask, task.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if blockedTask.Status != models.TaskStatusBlocked || blockedTask.DesiredState != models.TaskDesiredStateRunning {
+		t.Fatalf("Oracle schema-blocked task status=%q desired=%q", blockedTask.Status, blockedTask.DesiredState)
+	}
+	var blockedExecution commonExecution.TaskExecution
+	if err := infraDB.Where("execution_id = ?", claim.Execution.ExecutionID).First(&blockedExecution).Error; err != nil {
+		t.Fatal(err)
+	}
+	continuousMetadata, _ := blockedExecution.Metadata["continuous"].(map[string]interface{})
+	schemaChange, _ := continuousMetadata["schema_change"].(map[string]interface{})
+	if fmt.Sprint(schemaChange["unexpected_fields"]) != "[EXTRA_FIELD]" || schemaChange["status"] != "pending" ||
+		schemaChange["request_id"] == nil || blockedExecution.Metadata["stop_reason"] != "schema_change_blocked" {
+		t.Fatalf("Oracle schema-blocked execution metadata=%#v", blockedExecution.Metadata)
+	}
+	startResponse := cdcDataAPIRequest(t, apiRouter, http.MethodPost, fmt.Sprintf("/api/v1/transfer/task-definitions/%d/start", task.ID), nil)
+	if startResponse.Code != http.StatusConflict {
+		t.Fatalf("blocked Oracle start status=%d body=%s", startResponse.Code, startResponse.Body.String())
+	}
+	if _, err := taskService.ResumeTask(ctx, task.ID, task.TenantID, 910001); !errors.Is(err, service.ErrCDCSchemaChangeBlocked) {
+		t.Fatalf("blocked Oracle resume error=%v", err)
+	}
+	if _, err := executionService.RetryExecution(ctx, uint(blockedExecution.ID), task.TenantID, 910001); !errors.Is(err, service.ErrCDCSchemaChangeBlocked) {
+		t.Fatalf("blocked Oracle retry error=%v", err)
+	}
+	cancelRunner()
+	cddStop := cdcDataAPIRequest(t, apiRouter, http.MethodPost, fmt.Sprintf("/api/v1/transfer/task-definitions/%d/stop", task.ID), models.StopTaskRequest{Confirmed: true, ConfirmationText: task.Name})
+	if cddStop.Code != http.StatusOK {
+		t.Fatalf("stop Oracle schema drift task status=%d body=%s", cddStop.Code, cddStop.Body.String())
+	}
+	captureStopped = true
+	adminClient, err := oracleSpatialCDCKafkaAdminClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adminClient.Close()
+	assertOracleSpatialCDCCleanup(t, ctx, sourceDB, captureRepo, connectClient, kadm.NewClient(adminClient), task, resource)
+}
+
+func TestIntegrationOracleCDCNativeTypeMatrix(t *testing.T) {
+	if os.Getenv("ADDP_ORACLE_CDC_DATA_E2E") != "1" {
+		t.Skip("set ADDP_ORACLE_CDC_DATA_E2E=1 to run Oracle CDC native type matrix integration test")
+	}
+	for _, targetType := range []string{"postgresql", "mysql", "oracle"} {
+		t.Run("target="+targetType, func(t *testing.T) {
+			runIntegrationOracleCDCNativeTypeMatrix(t, targetType)
 		})
 	}
 }
 
-func runIntegrationOracleSpatialCDCGeometryCase(t *testing.T, geometryCase oracleSpatialCDCGeometryCase) {
+func runIntegrationOracleCDCNativeTypeMatrix(t *testing.T, targetType string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+	defer cancel()
+
+	infraInfo := testpg.ConnInfoFromEnv(t)
+	infraDSN, err := (&postgresql.PostgreSQLPlugin{}).BuildDSN(infraInfo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	infraDB, err := gorm.Open(postgresdriver.Open(infraDSN), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := infraDB.Exec("CREATE SCHEMA IF NOT EXISTS transfer").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := commonExecution.EnsureStore(infraDB); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.MigrateCaptureProviderResources(infraDB); err != nil {
+		t.Fatalf("migrate capture resources: %v", err)
+	}
+	if err := infraDB.AutoMigrate(
+		&models.TransferTask{}, &models.SyncState{}, &models.RuntimeLease{}, &models.CaptureResource{},
+		&models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{}, &models.OracleCaptureResource{}, &models.SchemaChangeRequest{},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	suffix := time.Now().UnixNano()
+	tableName := fmt.Sprintf("ADDP_NT_%012d", suffix%1_000_000_000_000)
+	targetSchema := fmt.Sprintf("cdc_oracle_native_%d", suffix)
+	targetTable := "native_target"
+	sourceInfo := oracleSpatialCDCConnectionInfo()
+	sourceDB := openOracleSpatialCDCDB(t, sourceInfo)
+	defer sourceDB.Close()
+	createOracleCDCNativeTypeTable(t, ctx, sourceDB, tableName)
+	defer dropOracleSpatialCDCTestTable(t, sourceDB, tableName)
+	var mysqlRootInfo engineplugin.ConnectionInfo
+	var mysqlRootDB *sql.DB
+	if targetType == "mysql" {
+		mysqlRootInfo = mysqlCDCConnInfo(
+			cdcDataEnv("ADDP_TEST_BUSINESS_MYSQL_ROOT_USER", "root"),
+			cdcDataEnv("ADDP_TEST_BUSINESS_MYSQL_ROOT_PASSWORD", "password"),
+			"mysql",
+		)
+		mysqlRootDB = openMySQLIntegrationDB(t, mysqlRootInfo)
+		defer mysqlRootDB.Close()
+	}
+	target := openCDCDataE2ETarget(t, ctx, targetType, targetSchema, targetTable, mysqlRootInfo, mysqlRootDB)
+	defer target.Close()
+
+	resolver := planner.StaticEngineResolver{
+		22:              {Type: "oracle", EngineID: 22, ConnInfo: sourceInfo},
+		target.EngineID: {Type: target.Type, EngineID: target.EngineID, ConnInfo: target.ConnInfo, Capabilities: ptrEngineCapabilities(target.Plugin.Capabilities())},
+	}
+	captureRepo := repository.NewCaptureRepository(infraDB)
+	topicAdmin, err := capture.NewKafkaTopicAdmin(capture.KafkaAdminConfig{
+		BootstrapServers: cdcDataEnv("ADDP_TEST_INFRA_KAFKA_BOOTSTRAP_SERVERS", "localhost:19092"),
+		Username:         cdcDataEnv("ADDP_TEST_INFRA_KAFKA_ADMIN_USERNAME", "admin"),
+		Password:         cdcDataEnv("ADDP_TEST_INFRA_KAFKA_ADMIN_PASSWORD", "addp_kafka_admin"),
+		SecurityProtocol: cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SECURITY_PROTOCOL", "sasl_plaintext"),
+		SASLMechanism:    cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SASL_MECHANISM", "scram-sha-256"),
+		TLSCACertFile:    cdcDataEnv("ADDP_TEST_INFRA_KAFKA_TLS_CA_CERT_FILE", ""),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer topicAdmin.Close()
+	connectClient, err := capture.NewConnectClient(cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_URL", "http://localhost:18083"), "", "", 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capturePlanResolver := capture.NewDatabasePlanResolver(resolver)
+	captureSupervisor, err := capture.NewSupervisor(captureRepo, capturePlanResolver, connectClient, topicAdmin, capture.DatabaseSourceResources{}, capture.SupervisorConfig{
+		TopicRetention: time.Hour, TopicReplication: cdcDataEnvInt16("ADDP_TEST_INFRA_KAFKA_REPLICATION_FACTOR", 1),
+		ConnectLoopbackHost:          cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_LOOPBACK_HOST", "host.docker.internal"),
+		ConnectBootstrapServers:      cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_BOOTSTRAP_SERVERS", "redpanda:29092"),
+		ConnectKafkaUsername:         cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_USERNAME", "connect"),
+		ConnectKafkaPassword:         cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_PASSWORD", "addp_kafka_connect"),
+		ConnectKafkaSecurityProtocol: cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_SECURITY_PROTOCOL", "sasl_plaintext"),
+		ConnectKafkaSASLMechanism:    cdcDataEnv("ADDP_TEST_INFRA_KAFKA_SASL_MECHANISM", "scram-sha-256"),
+		ConnectKafkaTLSCACertFile:    cdcDataEnv("ADDP_TEST_INFRA_KAFKA_TLS_CA_CERT_FILE", ""),
+		ProvisioningTimeout:          2 * time.Minute, StatusPollInterval: 500 * time.Millisecond, MonitorInterval: time.Second,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaseRepo := repository.NewRuntimeLeaseRepository(infraDB, repository.ContinuousRecoveryPolicy{InitialBackoff: time.Second, MaxBackoff: 4 * time.Second, MaxFailures: 3, CircuitOpenTime: 10 * time.Second, StabilityWindow: 30 * time.Second})
+	stateRepo := repository.NewSyncStateRepository(infraDB)
+	executionService := service.NewExecutionService(infraDB, commonExecution.NewTaskExecutionRepository(infraDB))
+	taskService := service.NewTaskService(infraDB, nil, &transferconfig.Config{ContinuousRuntimeStopTimeout: 5 * time.Second, ContinuousRuntimeStopPollInterval: 50 * time.Millisecond}, nil)
+	taskService.SetEngineResolver(resolver)
+	taskService.SetExecutionService(executionService)
+	taskService.SetCaptureControl(captureSupervisor)
+	taskService.SetSchemaChangeInspector(capturePlanResolver)
+	apiRouter := cdcDataAPIRouter(t, taskService, uint(930000+suffix%60000), 930001)
+	task := cdcDataCreateTaskViaAPI(t, apiRouter, oracleCDCNativeTypeTaskConfig(tableName, target))
+	defer cleanupCDCDataInfraRows(infraDB, task.ID)
+	if err := infraDB.Model(&models.TransferTask{}).Where("id = ?", task.ID).Update("auto_scan_metadata", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	execution := cdcDataStartTaskViaAPI(t, apiRouter, task.ID)
+	resource, err := captureRepo.GetLatest(ctx, task.ID, task.TenantID)
+	if err != nil || resource.SourceType != models.CaptureSourceOracle || resource.Oracle == nil || resource.Oracle.SpatialArtifactsOwned {
+		t.Fatalf("ordinary Oracle capture resource=%#v err=%v", resource, err)
+	}
+	captureStopped := false
+	defer func() {
+		if !captureStopped {
+			_ = captureSupervisor.Stop(context.Background(), &task)
+		}
+	}()
+	claim, err := leaseRepo.ClaimNext(ctx, "oracle-native-worker", time.Now(), 5*time.Minute)
+	if err != nil || claim == nil || claim.Execution.ExecutionID != execution.ExecutionID {
+		t.Fatalf("ordinary Oracle claim=%#v err=%v", claim, err)
+	}
+	task.ApplyIdentity = claim.Task.ApplyIdentity
+	runner := &DataSessionRunner{Resolver: resolver, States: stateRepo, Progress: leaseRepo, Captures: captureRepo, InfraKafkaConnection: cdcDataTransferKafkaConnection(), PollTimeout: 500 * time.Millisecond, DiagnosticsInterval: time.Second,
+		GetPlugin: func(engineType string) (engineplugin.EnginePlugin, error) {
+			switch engineType {
+			case "kafka":
+				return &kafka.KafkaPlugin{}, nil
+			case "mysql":
+				return &mysqlplugin.MySQLPlugin{}, nil
+			case "oracle":
+				return &oracleplugin.OraclePlugin{}, nil
+			case "postgresql":
+				return &postgresql.PostgreSQLPlugin{}, nil
+			default:
+				return nil, fmt.Errorf("unexpected engine type %q", engineType)
+			}
+		},
+	}
+	runnerCtx, cancelRunner := context.WithCancel(ctx)
+	runnerDone := make(chan error, 1)
+	go func() { runnerDone <- runner.Run(runnerCtx, *claim) }()
+	target.WaitRow(t, ctx, runnerDone, 1, "snapshot", true)
+	assertOracleCDCNativeTypeTarget(t, ctx, target, 1, "snapshot")
+	waitOracleSpatialCDCOffsetsConverged(t, ctx, stateRepo, target, task.ID, resource.SourceIdentity, task.ApplyIdentity)
+	if target.Type == "postgresql" {
+		assertOracleCDCRecoveryWindowObservation(t, ctx, capturePlanResolver, connectClient, resource)
+	}
+	committedBeforeLongTransaction, err := oracleSpatialCDCCommittedOffset(ctx, stateRepo, task.ID, resource.SourceIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	longTransaction := beginOracleCDCNativeTypeBatch(t, ctx, sourceDB, tableName, 1000, 128, "long-transaction")
+	defer longTransaction.Rollback()
+	waitOracleCDCSourceTransactionObservation(t, ctx, capturePlanResolver, connectClient, resource, 128)
+	time.Sleep(1500 * time.Millisecond)
+	assertOracleCDCTargetCount(t, ctx, target, 1000, 1127, 0)
+	if committed, err := oracleSpatialCDCCommittedOffset(ctx, stateRepo, task.ID, resource.SourceIdentity); err != nil || committed != committedBeforeLongTransaction {
+		t.Fatalf("uncommitted Oracle transaction advanced position: before=%d after=%d err=%v", committedBeforeLongTransaction, committed, err)
+	}
+	if err := longTransaction.Commit(); err != nil {
+		t.Fatalf("commit Oracle CDC long transaction: %v", err)
+	}
+	waitOracleSpatialCDCTargetCount(t, ctx, runnerDone, target, 1000, 1127, 128)
+	target.WaitRow(t, ctx, runnerDone, 1000, "long-transaction-1000", true)
+	target.WaitRow(t, ctx, runnerDone, 1127, "long-transaction-1127", true)
+	waitOracleSpatialCDCOffsetsConverged(t, ctx, stateRepo, target, task.ID, resource.SourceIdentity, task.ApplyIdentity)
+	committedAfterLongTransaction, err := oracleSpatialCDCCommittedOffset(ctx, stateRepo, task.ID, resource.SourceIdentity)
+	if err != nil || committedAfterLongTransaction <= committedBeforeLongTransaction {
+		t.Fatalf("committed Oracle transaction position: before=%d after=%d err=%v", committedBeforeLongTransaction, committedAfterLongTransaction, err)
+	}
+	rolledBackTransaction := beginOracleCDCNativeTypeBatch(t, ctx, sourceDB, tableName, 2000, 128, "rolled-back")
+	if err := rolledBackTransaction.Rollback(); err != nil {
+		t.Fatalf("rollback Oracle CDC long transaction: %v", err)
+	}
+	time.Sleep(1500 * time.Millisecond)
+	assertOracleCDCTargetCount(t, ctx, target, 2000, 2127, 0)
+	if committed, err := oracleSpatialCDCCommittedOffset(ctx, stateRepo, task.ID, resource.SourceIdentity); err != nil || committed != committedAfterLongTransaction {
+		t.Fatalf("rolled-back Oracle transaction advanced position: before=%d after=%d err=%v", committedAfterLongTransaction, committed, err)
+	}
+	execOracleSpatialCDC(t, ctx, sourceDB, oracleCDCNativeTypeInsertSQL(tableName, 2, "inserted"))
+	target.WaitRow(t, ctx, runnerDone, 2, "inserted", true)
+	assertOracleCDCNativeTypeTarget(t, ctx, target, 2, "inserted")
+	execOracleSpatialCDC(t, ctx, sourceDB, `UPDATE `+oracleSpatialCDCQuoteIdentifier(tableName)+` SET "NAME" = 'updated', "AMOUNT" = 98765432109876543210.4321, "CHANGED_AT" = TIMESTAMP '2026-02-03 04:05:06.789' WHERE "ID" = 2`)
+	target.WaitRow(t, ctx, runnerDone, 2, "updated", true)
+	assertOracleCDCNativeTypeUpdatedTarget(t, ctx, target)
+	execOracleSpatialCDC(t, ctx, sourceDB, `DELETE FROM `+oracleSpatialCDCQuoteIdentifier(tableName)+` WHERE "ID" = 2`)
+	target.WaitRow(t, ctx, runnerDone, 2, "", false)
+	waitOracleSpatialCDCOffsetsConverged(t, ctx, stateRepo, target, task.ID, resource.SourceIdentity, task.ApplyIdentity)
+	cancelRunner()
+	if err := <-runnerDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("ordinary Oracle final runner error=%v", err)
+	}
+	if err := leaseRepo.Finish(context.Background(), *claim, commonExecution.ExecutionStatusCancelled, "test_complete", "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	cdcDataStopTaskViaAPI(t, apiRouter, task.ID, task.Name)
+	captureStopped = true
+	adminClient, err := oracleSpatialCDCKafkaAdminClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adminClient.Close()
+	assertOracleCDCCleanup(t, ctx, captureRepo, connectClient, kadm.NewClient(adminClient), task, resource)
+}
+
+func runIntegrationOracleSpatialCDCGeometryCase(t *testing.T, geometryCase oracleSpatialCDCGeometryCase, targetType string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 	defer cancel()
 
@@ -128,7 +544,18 @@ func runIntegrationOracleSpatialCDCGeometryCase(t *testing.T, geometryCase oracl
 	createOracleSpatialCDCTestTable(t, ctx, sourceDB, tableName, indexName, geometryCase.dimension, geometryCase.initialGeometry)
 	defer dropOracleSpatialCDCTestTable(t, sourceDB, tableName)
 
-	target := openCDCDataE2ETarget(t, ctx, "postgresql", targetSchema, targetTable, nil, nil)
+	var mysqlRootInfo engineplugin.ConnectionInfo
+	var mysqlRootDB *sql.DB
+	if targetType == "mysql" {
+		mysqlRootInfo = mysqlCDCConnInfo(
+			cdcDataEnv("ADDP_TEST_BUSINESS_MYSQL_ROOT_USER", "root"),
+			cdcDataEnv("ADDP_TEST_BUSINESS_MYSQL_ROOT_PASSWORD", "password"),
+			"mysql",
+		)
+		mysqlRootDB = openMySQLIntegrationDB(t, mysqlRootInfo)
+		defer mysqlRootDB.Close()
+	}
+	target := openCDCDataE2ETarget(t, ctx, targetType, targetSchema, targetTable, mysqlRootInfo, mysqlRootDB)
 	defer target.Close()
 	resolver := planner.StaticEngineResolver{
 		22: {Type: "oracle", EngineID: 22, ConnInfo: sourceInfo},
@@ -240,6 +667,8 @@ func runIntegrationOracleSpatialCDCGeometryCase(t *testing.T, geometryCase oracl
 				return &kafka.KafkaPlugin{}, nil
 			case "oracle":
 				return &oracleplugin.OraclePlugin{}, nil
+			case "mysql":
+				return &mysqlplugin.MySQLPlugin{}, nil
 			case "postgresql":
 				return &postgresql.PostgreSQLPlugin{}, nil
 			default:
@@ -252,9 +681,10 @@ func runIntegrationOracleSpatialCDCGeometryCase(t *testing.T, geometryCase oracl
 	runnerCtx, cancelRunner := context.WithCancel(ctx)
 	runnerDone := make(chan error, 1)
 	go func(current repository.RuntimeLeaseClaim) { runnerDone <- runner.Run(runnerCtx, current) }(*claim)
-	waitOracleSpatialCDCTargetGeometry(t, ctx, runnerDone, target.DB, target.Namespace, target.Table, 1, "snapshot", geometryCase, geometryCase.initialEWKT)
+	waitOracleSpatialCDCTargetGeometry(t, ctx, runnerDone, target, 1, "snapshot", geometryCase, geometryCase.initialEWKT)
 
-	if geometryCase.injectRecoveries {
+	injectRecoveries := geometryCase.injectRecoveries && target.Type == "postgresql"
+	if injectRecoveries {
 		cancelRunner()
 		if err := <-runnerDone; !errors.Is(err, context.Canceled) {
 			t.Fatalf("Oracle Spatial service-interruption runner error=%v", err)
@@ -287,22 +717,42 @@ func runIntegrationOracleSpatialCDCGeometryCase(t *testing.T, geometryCase oracl
 			t.Fatal(err)
 		}
 		waitOracleSpatialCDCConnectorHealthy(t, ctx, connectClient, resource.ConnectorName)
-		waitOracleSpatialCDCTargetGeometry(t, ctx, runnerDone, target.DB, target.Namespace, target.Table, 2, "connect-backlog", geometryCase, geometryCase.insertedEWKT)
+		waitOracleSpatialCDCTargetGeometry(t, ctx, runnerDone, target, 2, "connect-backlog", geometryCase, geometryCase.insertedEWKT)
 
 		if os.Getenv("ADDP_ORACLE_SPATIAL_CDC_CONTAINER_FAULT") == "1" {
 			injectOracleSpatialCDCContainerFault(t, ctx, sourceInfo, connectClient, resource.ConnectorName)
 			execOracleSpatialCDC(t, ctx, sourceDB, `INSERT INTO `+oracleSpatialCDCQuoteIdentifier(tableName)+` ("ID", "NAME", "SHAPE") VALUES (3, 'oracle-recovered', `+geometryCase.insertedGeometry+`)`)
-			waitOracleSpatialCDCTargetGeometry(t, ctx, runnerDone, target.DB, target.Namespace, target.Table, 3, "oracle-recovered", geometryCase, geometryCase.insertedEWKT)
+			waitOracleSpatialCDCTargetGeometry(t, ctx, runnerDone, target, 3, "oracle-recovered", geometryCase, geometryCase.insertedEWKT)
 		}
 	} else {
 		execOracleSpatialCDC(t, ctx, sourceDB, `INSERT INTO `+oracleSpatialCDCQuoteIdentifier(tableName)+` ("ID", "NAME", "SHAPE") VALUES (2, 'inserted', `+geometryCase.insertedGeometry+`)`)
-		waitOracleSpatialCDCTargetGeometry(t, ctx, runnerDone, target.DB, target.Namespace, target.Table, 2, "inserted", geometryCase, geometryCase.insertedEWKT)
+		waitOracleSpatialCDCTargetGeometry(t, ctx, runnerDone, target, 2, "inserted", geometryCase, geometryCase.insertedEWKT)
 	}
 
 	execOracleSpatialCDC(t, ctx, sourceDB, `UPDATE `+oracleSpatialCDCQuoteIdentifier(tableName)+` SET "SHAPE" = `+geometryCase.updatedGeometry+` WHERE "ID" = 1`)
-	waitOracleSpatialCDCTargetGeometry(t, ctx, runnerDone, target.DB, target.Namespace, target.Table, 1, "snapshot", geometryCase, geometryCase.updatedEWKT)
+	waitOracleSpatialCDCTargetGeometry(t, ctx, runnerDone, target, 1, "snapshot", geometryCase, geometryCase.updatedEWKT)
 	execOracleSpatialCDC(t, ctx, sourceDB, `DELETE FROM `+oracleSpatialCDCQuoteIdentifier(tableName)+` WHERE "ID" = 2`)
 	target.WaitRow(t, ctx, runnerDone, 2, "", false)
+	if injectRecoveries {
+		rollbackOracleSpatialCDCInsert(t, ctx, sourceDB, tableName, 2000)
+		insertOracleSpatialCDCBatch(t, ctx, sourceDB, tableName, 100, 32)
+		assertOracleSpatialCDCMirrorCount(t, ctx, sourceDB, resource.Oracle.SpatialMirrorTableName, 100, 131, 32)
+		waitOracleSpatialCDCTargetCount(t, ctx, runnerDone, target, 100, 131, 32)
+		assertOracleSpatialCDCMirrorCount(t, ctx, sourceDB, resource.Oracle.SpatialMirrorTableName, 2000, 2000, 0)
+		target.AssertRowAbsent(t, ctx, 2000)
+		insertOracleSpatialCDCConcurrentBatches(t, ctx, sourceDB, tableName, 300, 4, 8)
+		assertOracleSpatialCDCMirrorCount(t, ctx, sourceDB, resource.Oracle.SpatialMirrorTableName, 300, 331, 32)
+		waitOracleSpatialCDCTargetCount(t, ctx, runnerDone, target, 300, 331, 32)
+
+		execOracleSpatialCDC(t, ctx, sourceDB, `UPDATE `+oracleSpatialCDCQuoteIdentifier(tableName)+` SET "ID" = 1000, "NAME" = 'primary-key-updated' WHERE "ID" = 100`)
+		target.WaitRow(t, ctx, runnerDone, 100, "", false)
+		waitOracleSpatialCDCTargetGeometry(t, ctx, runnerDone, target, 1000, "primary-key-updated", geometryCase, geometryCase.updatedEWKT)
+		assertOracleSpatialCDCMirrorCount(t, ctx, sourceDB, resource.Oracle.SpatialMirrorTableName, 100, 131, 31)
+
+		execOracleSpatialCDC(t, ctx, sourceDB, `DELETE FROM `+oracleSpatialCDCQuoteIdentifier(tableName)+` WHERE ("ID" BETWEEN 101 AND 131) OR ("ID" BETWEEN 300 AND 331) OR "ID" = 1000`)
+		waitOracleSpatialCDCTargetCount(t, ctx, runnerDone, target, 100, 1000, 0)
+		assertOracleSpatialCDCMirrorCount(t, ctx, sourceDB, resource.Oracle.SpatialMirrorTableName, 100, 1000, 0)
+	}
 	waitOracleSpatialCDCOffsetsConverged(t, ctx, stateRepo, target, task.ID, resource.SourceIdentity, task.ApplyIdentity)
 	if calls := metadataScanCalls.Load(); calls != 1 {
 		t.Fatalf("Oracle Spatial target metadata scan calls=%d, want 1", calls)
@@ -395,6 +845,227 @@ func dropOracleSpatialCDCTestTable(t *testing.T, db *sql.DB, tableName string) {
 	}
 }
 
+func createOracleCDCNativeTypeTable(t *testing.T, ctx context.Context, db *sql.DB, tableName string) {
+	t.Helper()
+	quotedTable := oracleSpatialCDCQuoteIdentifier(tableName)
+	execOracleSpatialCDC(t, ctx, db, `CREATE TABLE `+quotedTable+` (
+		"ID" NUMBER(18,0) NOT NULL,
+		"NAME" VARCHAR2(100 CHAR) NOT NULL,
+		"SMALL_COUNT" NUMBER(9,0) NOT NULL,
+		"LARGE_COUNT" NUMBER(18,0) NOT NULL,
+		"AMOUNT" NUMBER(30,4) NOT NULL,
+		"SCORE_FLOAT" BINARY_FLOAT NOT NULL,
+		"SCORE_DOUBLE" BINARY_DOUBLE NOT NULL,
+		"CREATED_AT" DATE NOT NULL,
+		"CHANGED_AT" TIMESTAMP(3) NOT NULL,
+		CONSTRAINT `+oracleSpatialCDCQuoteIdentifier(tableName+"_PK")+` PRIMARY KEY ("ID")
+	)`)
+	execOracleSpatialCDC(t, ctx, db, `ALTER TABLE `+quotedTable+` ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS`)
+	execOracleSpatialCDC(t, ctx, db, oracleCDCNativeTypeInsertSQL(tableName, 1, "snapshot"))
+}
+
+func oracleCDCNativeTypeInsertSQL(tableName string, id int, name string) string {
+	return fmt.Sprintf(`INSERT INTO %s ("ID", "NAME", "SMALL_COUNT", "LARGE_COUNT", "AMOUNT", "SCORE_FLOAT", "SCORE_DOUBLE", "CREATED_AT", "CHANGED_AT") VALUES (%d, '%s', 123456789, 123456789012345678, 12345678901234567890.1234, 12.5, 12345.6789, DATE '2026-01-02', TIMESTAMP '2026-01-02 03:04:05.678')`,
+		oracleSpatialCDCQuoteIdentifier(tableName), id, strings.ReplaceAll(name, "'", "''"))
+}
+
+func beginOracleCDCNativeTypeBatch(t *testing.T, ctx context.Context, db *sql.DB, tableName string, firstID, count int, namePrefix string) *sql.Tx {
+	t.Helper()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statement := `INSERT INTO ` + oracleSpatialCDCQuoteIdentifier(tableName) + `
+		("ID", "NAME", "SMALL_COUNT", "LARGE_COUNT", "AMOUNT", "SCORE_FLOAT", "SCORE_DOUBLE", "CREATED_AT", "CHANGED_AT")
+		VALUES (:1, :2, 123456789, 123456789012345678, 12345678901234567890.1234, 12.5, 12345.6789, DATE '2026-01-02', TIMESTAMP '2026-01-02 03:04:05.678')`
+	prepared, err := tx.PrepareContext(ctx, statement)
+	if err != nil {
+		_ = tx.Rollback()
+		t.Fatal(err)
+	}
+	defer prepared.Close()
+	for id := firstID; id < firstID+count; id++ {
+		if _, err := prepared.ExecContext(ctx, id, fmt.Sprintf("%s-%d", namePrefix, id)); err != nil {
+			_ = tx.Rollback()
+			t.Fatalf("insert Oracle CDC transaction row %d: %v", id, err)
+		}
+	}
+	return tx
+}
+
+func waitOracleCDCSourceTransactionObservation(
+	t *testing.T,
+	ctx context.Context,
+	plans *capture.DatabasePlanResolver,
+	connectClient *capture.ConnectClient,
+	resource *models.CaptureResource,
+	minimumUndoRecords uint64,
+) {
+	t.Helper()
+	plan, err := plans.ResolveForObservation(ctx, resource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var transactions *models.CaptureSourceTransactions
+		var undoRecords uint64
+		offsets, offsetsErr := connectClient.Offsets(ctx, resource.ConnectorName)
+		observation, observationErr := (capture.DatabaseSourceResources{}).Observe(ctx, plan, resource, offsets, time.Now())
+		if observationErr == nil && observation != nil && observation.TransactionsError == nil {
+			transactions = observation.Transactions
+		}
+		if transactions != nil {
+			undoRecords, _ = strconv.ParseUint(transactions.UsedUndoRecords, 10, 64)
+		}
+		if transactions != nil && transactions.Status == "available" && transactions.ActiveCount > 0 &&
+			transactions.OldestStartPosition != "" && transactions.OldestDurationSeconds != nil && undoRecords >= minimumUndoRecords {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("wait Oracle source transaction observation: transactions=%#v undo_records=%d offsets_err=%v observation_err=%v", transactions, undoRecords, offsetsErr, observationErr)
+		case <-ticker.C:
+		}
+	}
+}
+
+func assertOracleCDCRecoveryWindowObservation(
+	t *testing.T,
+	ctx context.Context,
+	plans *capture.DatabasePlanResolver,
+	connectClient *capture.ConnectClient,
+	resource *models.CaptureResource,
+) {
+	t.Helper()
+	plan, err := plans.ResolveForObservation(ctx, resource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var healthy *models.CaptureSourceRecovery
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for healthy == nil {
+		offsets, offsetsErr := connectClient.Offsets(ctx, resource.ConnectorName)
+		observation, observationErr := (capture.DatabaseSourceResources{}).Observe(ctx, plan, resource, offsets, time.Now())
+		if offsetsErr == nil && observationErr == nil && observation != nil && observation.RecoveryError == nil {
+			healthy = observation.Recovery
+		}
+		if healthy != nil {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("wait Oracle recovery window observation: offsets_err=%v observation_err=%v", offsetsErr, observationErr)
+		case <-ticker.C:
+		}
+	}
+	if healthy.Health != "healthy" || healthy.CapturePosition == "" || healthy.CurrentPosition == "" ||
+		healthy.EarliestAvailablePosition == "" || healthy.PositionHeadroom == "" || healthy.EarliestAvailableAt == nil || healthy.WindowSeconds == nil {
+		t.Fatalf("Oracle healthy recovery observation=%#v", healthy)
+	}
+	staleOffsets := &capture.ConnectorOffsets{Offsets: []capture.ConnectorOffset{{
+		Offset: map[string]json.RawMessage{"scn": json.RawMessage(`"0"`)},
+	}}}
+	staleObservation, err := (capture.DatabaseSourceResources{}).Observe(ctx, plan, resource, staleOffsets, time.Now())
+	if err != nil || staleObservation == nil || staleObservation.RecoveryError != nil || staleObservation.Recovery == nil {
+		t.Fatalf("Oracle stale recovery observation=%#v err=%v", staleObservation, err)
+	}
+	if staleObservation.Recovery.Health != "critical" || !strings.HasPrefix(staleObservation.Recovery.PositionHeadroom, "-") ||
+		staleObservation.Recovery.CapturePosition != "0" {
+		t.Fatalf("Oracle stale recovery facts=%#v", staleObservation.Recovery)
+	}
+}
+
+func oracleCDCNativeTypeTaskConfig(sourceTable string, target *cdcDataE2ETarget) models.JSONMap {
+	return models.JSONMap{
+		"runtime": map[string]interface{}{"boundary": "continuous", "record_failure": map[string]interface{}{"mode": "block"}},
+		"load":    map[string]interface{}{"mode": "incremental", "change_detection": map[string]interface{}{"type": "cdc", "bootstrap": "initial_snapshot"}},
+		"source": map[string]interface{}{
+			"locator": fmt.Sprintf("addp://engine/22/path/BUSINESS/%s?type=table", sourceTable), "data_type": "table", "representation": "native",
+		},
+		"target": map[string]interface{}{
+			"parent_locator": target.ParentLocator(), "name": target.Table, "data_type": "table", "representation": "native",
+			"policy": map[string]interface{}{"apply_mode": "upsert_delete", "keys": []interface{}{"id"}},
+		},
+		"transforms": []interface{}{map[string]interface{}{
+			"type": "field_mapping", "version": "v1", "mode": "project",
+			"fields": []interface{}{
+				map[string]interface{}{"source": "ID", "target": "id", "target_type": "bigint", "nullable": false},
+				map[string]interface{}{"source": "NAME", "target": "name", "target_type": "string", "nullable": false},
+				map[string]interface{}{"source": "SMALL_COUNT", "target": "small_count", "target_type": "int", "nullable": false},
+				map[string]interface{}{"source": "LARGE_COUNT", "target": "large_count", "target_type": "bigint", "nullable": false},
+				map[string]interface{}{"source": "AMOUNT", "target": "amount", "target_type": "decimal", "precision": 30, "scale": 4, "nullable": false},
+				map[string]interface{}{"source": "SCORE_FLOAT", "target": "score_float", "target_type": "float", "nullable": false},
+				map[string]interface{}{"source": "SCORE_DOUBLE", "target": "score_double", "target_type": "double", "nullable": false},
+				map[string]interface{}{"source": "CREATED_AT", "target": "created_at", "target_type": "timestamp", "nullable": false},
+				map[string]interface{}{"source": "CHANGED_AT", "target": "changed_at", "target_type": "timestamp", "nullable": false},
+			},
+		}},
+	}
+}
+
+func assertOracleCDCNativeTypeTarget(t *testing.T, ctx context.Context, target *cdcDataE2ETarget, id int64, name string) {
+	t.Helper()
+	var actualName, amount, createdAt, changedAt string
+	var smallCount int32
+	var largeCount int64
+	var scoreFloat float32
+	var scoreDouble float64
+	var err error
+	if target.Type == "postgresql" {
+		err = target.DB.QueryRowContext(ctx, `SELECT name, small_count, large_count, amount::text, score_float, score_double,
+			to_char(created_at, 'YYYY-MM-DD HH24:MI:SS.MS'), to_char(changed_at, 'YYYY-MM-DD HH24:MI:SS.MS')
+			FROM `+pq.QuoteIdentifier(target.Namespace)+`.`+pq.QuoteIdentifier(target.Table)+` WHERE id=$1`, id).
+			Scan(&actualName, &smallCount, &largeCount, &amount, &scoreFloat, &scoreDouble, &createdAt, &changedAt)
+	} else if target.Type == "mysql" {
+		err = target.DB.QueryRowContext(ctx, "SELECT name, small_count, large_count, CAST(amount AS CHAR), score_float, score_double, "+
+			"DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s.%f'), DATE_FORMAT(changed_at, '%Y-%m-%d %H:%i:%s.%f') FROM "+
+			mysqlCDCQuoteIdentifier(target.Namespace)+"."+mysqlCDCQuoteIdentifier(target.Table)+" WHERE id = ?", id).
+			Scan(&actualName, &smallCount, &largeCount, &amount, &scoreFloat, &scoreDouble, &createdAt, &changedAt)
+		createdAt = strings.TrimSuffix(createdAt, "000")
+		changedAt = strings.TrimSuffix(changedAt, "000")
+	} else {
+		err = target.DB.QueryRowContext(ctx, `SELECT "name", "small_count", "large_count", TO_CHAR("amount", 'FM99999999999999999999999999999999999999D9999', 'NLS_NUMERIC_CHARACTERS=''.,'''),
+			"score_float", "score_double", TO_CHAR("created_at", 'YYYY-MM-DD HH24:MI:SS.FF3'), TO_CHAR("changed_at", 'YYYY-MM-DD HH24:MI:SS.FF3')
+			FROM `+oracleSpatialCDCQuoteIdentifier(target.Namespace)+`.`+oracleSpatialCDCQuoteIdentifier(target.Table)+` WHERE "id"=:1`, id).
+			Scan(&actualName, &smallCount, &largeCount, &amount, &scoreFloat, &scoreDouble, &createdAt, &changedAt)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actualName != name || smallCount != 123456789 || largeCount != 123456789012345678 || amount != "12345678901234567890.1234" ||
+		scoreFloat != 12.5 || scoreDouble != 12345.6789 || createdAt != "2026-01-02 00:00:00.000" || changedAt != "2026-01-02 03:04:05.678" {
+		t.Fatalf("ordinary Oracle CDC type matrix mismatch: name=%q small=%d large=%d amount=%q float=%v double=%v created=%q changed=%q",
+			actualName, smallCount, largeCount, amount, scoreFloat, scoreDouble, createdAt, changedAt)
+	}
+}
+
+func assertOracleCDCNativeTypeUpdatedTarget(t *testing.T, ctx context.Context, target *cdcDataE2ETarget) {
+	t.Helper()
+	var amount, changedAt string
+	var err error
+	if target.Type == "postgresql" {
+		err = target.DB.QueryRowContext(ctx, `SELECT amount::text, to_char(changed_at, 'YYYY-MM-DD HH24:MI:SS.MS') FROM `+
+			pq.QuoteIdentifier(target.Namespace)+`.`+pq.QuoteIdentifier(target.Table)+` WHERE id=2`).Scan(&amount, &changedAt)
+	} else if target.Type == "mysql" {
+		err = target.DB.QueryRowContext(ctx, "SELECT CAST(amount AS CHAR), DATE_FORMAT(changed_at, '%Y-%m-%d %H:%i:%s.%f') FROM "+
+			mysqlCDCQuoteIdentifier(target.Namespace)+"."+mysqlCDCQuoteIdentifier(target.Table)+" WHERE id = ?", 2).Scan(&amount, &changedAt)
+		changedAt = strings.TrimSuffix(changedAt, "000")
+	} else {
+		err = target.DB.QueryRowContext(ctx, `SELECT TO_CHAR("amount", 'FM99999999999999999999999999999999999999D9999', 'NLS_NUMERIC_CHARACTERS=''.,'''),
+			TO_CHAR("changed_at", 'YYYY-MM-DD HH24:MI:SS.FF3') FROM `+
+			oracleSpatialCDCQuoteIdentifier(target.Namespace)+`.`+oracleSpatialCDCQuoteIdentifier(target.Table)+` WHERE "id"=:1`, 2).Scan(&amount, &changedAt)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if amount != "98765432109876543210.4321" || changedAt != "2026-02-03 04:05:06.789" {
+		t.Fatalf("ordinary Oracle CDC update mismatch: amount=%q changed=%q", amount, changedAt)
+	}
+}
+
 func oracleSpatialCDCDataTaskConfig(sourceTable string, target *cdcDataE2ETarget) models.JSONMap {
 	return models.JSONMap{
 		"runtime": map[string]interface{}{"boundary": "continuous", "record_failure": map[string]interface{}{"mode": "block"}},
@@ -421,8 +1092,7 @@ func waitOracleSpatialCDCTargetGeometry(
 	t *testing.T,
 	ctx context.Context,
 	runnerDone <-chan error,
-	db *sql.DB,
-	schema, table string,
+	target *cdcDataE2ETarget,
 	id int64,
 	wantName string,
 	geometryCase oracleSpatialCDCGeometryCase,
@@ -431,23 +1101,77 @@ func waitOracleSpatialCDCTargetGeometry(
 	t.Helper()
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
-	qualified := pq.QuoteIdentifier(schema) + "." + pq.QuoteIdentifier(table)
 	for {
-		var name, geometryType, ewkt string
-		var srid, dimension int
-		err := db.QueryRowContext(ctx, `SELECT name, GeometryType(geometry), ST_SRID(geometry), ST_NDims(geometry), ST_AsEWKT(geometry) FROM `+qualified+` WHERE id=$1`, id).
-			Scan(&name, &geometryType, &srid, &dimension, &ewkt)
-		if err == nil && name == wantName && strings.EqualFold(geometryType, geometryCase.geometryType) && srid == 4326 && dimension == geometryCase.dimension && ewkt == wantEWKT {
+		name, geometryType, geometryText, srid, dimension, err := oracleSpatialCDCTargetGeometry(ctx, target, id)
+		wantGeometryText := wantEWKT
+		if target.Type == "mysql" {
+			wantGeometryText = strings.TrimPrefix(wantEWKT, "SRID=4326;")
+		}
+		geometryMatches := geometryText == wantGeometryText
+		if target.Type == "oracle" {
+			wantGeometryText = strings.TrimPrefix(wantEWKT, "SRID=4326;")
+			geometryMatches = oracleSpatialCDCGeometryTextEqual(geometryText, wantGeometryText)
+		}
+		if err == nil && name == wantName && strings.EqualFold(geometryType, geometryCase.geometryType) && srid == 4326 && dimension == geometryCase.dimension && geometryMatches {
 			return
 		}
 		select {
 		case runnerErr := <-runnerDone:
-			t.Fatalf("Oracle Spatial runner exited before target geometry converged: %v (last query error=%v type=%q srid=%d dimension=%d ewkt=%q)", runnerErr, err, geometryType, srid, dimension, ewkt)
+			t.Fatalf("Oracle Spatial runner exited before %s target geometry converged: %v (last query error=%v type=%q srid=%d dimension=%d geometry=%q)", target.Type, runnerErr, err, geometryType, srid, dimension, geometryText)
 		case <-ctx.Done():
-			t.Fatalf("wait Oracle Spatial target id=%d geometry=%q: %v (last query error=%v type=%q srid=%d dimension=%d ewkt=%q)", id, wantEWKT, ctx.Err(), err, geometryType, srid, dimension, ewkt)
+			t.Fatalf("wait Oracle Spatial %s target id=%d geometry=%q: %v (last query error=%v type=%q srid=%d dimension=%d geometry=%q)", target.Type, id, wantGeometryText, ctx.Err(), err, geometryType, srid, dimension, geometryText)
 		case <-ticker.C:
 		}
 	}
+}
+
+func oracleSpatialCDCGeometryTextEqual(actual, expected string) bool {
+	actualGeometry, err := wkt.Unmarshal(actual)
+	if err != nil {
+		return false
+	}
+	expectedGeometry, err := wkt.Unmarshal(expected)
+	if err != nil {
+		return false
+	}
+	if actualGeometry.Layout() != expectedGeometry.Layout() || len(actualGeometry.FlatCoords()) != len(expectedGeometry.FlatCoords()) {
+		return false
+	}
+	for index, coordinate := range actualGeometry.FlatCoords() {
+		if coordinate != expectedGeometry.FlatCoords()[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func oracleSpatialCDCTargetGeometry(ctx context.Context, target *cdcDataE2ETarget, id int64) (name, geometryType, geometryText string, srid, dimension int, err error) {
+	if target.Type == "postgresql" {
+		err = target.DB.QueryRowContext(ctx,
+			`SELECT name, GeometryType(geometry), ST_SRID(geometry), ST_NDims(geometry), ST_AsEWKT(geometry) FROM `+
+				pq.QuoteIdentifier(target.Namespace)+`.`+pq.QuoteIdentifier(target.Table)+` WHERE id=$1`, id,
+		).Scan(&name, &geometryType, &srid, &dimension, &geometryText)
+		return
+	}
+	if target.Type == "oracle" {
+		dimension = 2
+		err = target.DB.QueryRowContext(ctx, `SELECT target_row."name",
+			CASE MOD(target_row."geometry".SDO_GTYPE, 1000)
+				WHEN 1 THEN 'POINT' WHEN 3 THEN 'POLYGON' WHEN 7 THEN 'MULTIPOLYGON'
+			END,
+			target_row."geometry".SDO_SRID, SDO_UTIL.TO_WKTGEOMETRY(target_row."geometry") FROM (
+				SELECT "name", "geometry" FROM `+
+			oracleSpatialCDCQuoteIdentifier(target.Namespace)+`.`+oracleSpatialCDCQuoteIdentifier(target.Table)+` WHERE "id"=:1
+			) target_row`, id,
+		).Scan(&name, &geometryType, &srid, &geometryText)
+		return
+	}
+	dimension = 2
+	err = target.DB.QueryRowContext(ctx,
+		"SELECT name, ST_GeometryType(geometry), ST_SRID(geometry), ST_AsText(geometry) FROM "+
+			mysqlCDCQuoteIdentifier(target.Namespace)+"."+mysqlCDCQuoteIdentifier(target.Table)+" WHERE id = ?", id,
+	).Scan(&name, &geometryType, &srid, &geometryText)
+	return
 }
 
 func waitOracleSpatialCDCConnectorState(t *testing.T, ctx context.Context, client *capture.ConnectClient, name, want string) {
@@ -484,6 +1208,139 @@ func waitOracleSpatialCDCConnectorHealthy(t *testing.T, ctx context.Context, cli
 	}
 }
 
+func insertOracleSpatialCDCBatch(t *testing.T, ctx context.Context, db *sql.DB, tableName string, firstID, count int) {
+	t.Helper()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	statement := `INSERT INTO ` + oracleSpatialCDCQuoteIdentifier(tableName) + ` ("ID", "NAME", "SHAPE") ` +
+		`SELECT :1, :2, "SHAPE" FROM ` + oracleSpatialCDCQuoteIdentifier(tableName) + ` WHERE "ID" = 1`
+	prepared, err := tx.PrepareContext(ctx, statement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prepared.Close()
+	for id := firstID; id < firstID+count; id++ {
+		if _, err := prepared.ExecContext(ctx, id, fmt.Sprintf("batch-%d", id)); err != nil {
+			t.Fatalf("insert Oracle Spatial CDC batch row %d: %v", id, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit Oracle Spatial CDC batch: %v", err)
+	}
+}
+
+func rollbackOracleSpatialCDCInsert(t *testing.T, ctx context.Context, db *sql.DB, tableName string, id int) {
+	t.Helper()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO `+oracleSpatialCDCQuoteIdentifier(tableName)+` ("ID", "NAME", "SHAPE") SELECT :1, 'rolled-back', "SHAPE" FROM `+oracleSpatialCDCQuoteIdentifier(tableName)+` WHERE "ID" = 1`, id); err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("insert rolled-back Oracle Spatial CDC row: %v", err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatalf("rollback Oracle Spatial CDC transaction: %v", err)
+	}
+}
+
+func insertOracleSpatialCDCConcurrentBatches(t *testing.T, ctx context.Context, db *sql.DB, tableName string, firstID, workers, rowsPerWorker int) {
+	t.Helper()
+	errorsByWorker := make(chan error, workers)
+	for worker := 0; worker < workers; worker++ {
+		go func(worker int) {
+			tx, err := db.BeginTx(ctx, nil)
+			if err != nil {
+				errorsByWorker <- err
+				return
+			}
+			defer tx.Rollback()
+			statement := `INSERT INTO ` + oracleSpatialCDCQuoteIdentifier(tableName) + ` ("ID", "NAME", "SHAPE") ` +
+				`SELECT :1, :2, "SHAPE" FROM ` + oracleSpatialCDCQuoteIdentifier(tableName) + ` WHERE "ID" = 1`
+			for row := 0; row < rowsPerWorker; row++ {
+				id := firstID + worker*rowsPerWorker + row
+				if _, err := tx.ExecContext(ctx, statement, id, fmt.Sprintf("concurrent-%d", id)); err != nil {
+					errorsByWorker <- fmt.Errorf("worker %d row %d: %w", worker, id, err)
+					return
+				}
+			}
+			errorsByWorker <- tx.Commit()
+		}(worker)
+	}
+	for worker := 0; worker < workers; worker++ {
+		if err := <-errorsByWorker; err != nil {
+			t.Fatalf("commit concurrent Oracle Spatial CDC batch: %v", err)
+		}
+	}
+}
+
+func assertOracleSpatialCDCMirrorCount(t *testing.T, ctx context.Context, db *sql.DB, mirrorTable string, firstID, lastID, want int) {
+	t.Helper()
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+oracleSpatialCDCQuoteIdentifier(mirrorTable)+` WHERE "ID" BETWEEN :1 AND :2`, firstID, lastID).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != want {
+		t.Fatalf("Oracle Spatial mirror rows in [%d,%d]=%d, want %d", firstID, lastID, count, want)
+	}
+}
+
+func waitOracleSpatialCDCTargetCount(
+	t *testing.T,
+	ctx context.Context,
+	runnerDone <-chan error,
+	target *cdcDataE2ETarget,
+	firstID, lastID int,
+	want int,
+) {
+	t.Helper()
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var count int
+		var err error
+		if target.Type == "postgresql" {
+			err = target.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+pq.QuoteIdentifier(target.Namespace)+`.`+pq.QuoteIdentifier(target.Table)+` WHERE id BETWEEN $1 AND $2`, firstID, lastID).Scan(&count)
+		} else if target.Type == "mysql" {
+			err = target.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+mysqlCDCQuoteIdentifier(target.Namespace)+"."+mysqlCDCQuoteIdentifier(target.Table)+" WHERE id BETWEEN ? AND ?", firstID, lastID).Scan(&count)
+		} else {
+			err = target.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+oracleSpatialCDCQuoteIdentifier(target.Namespace)+"."+oracleSpatialCDCQuoteIdentifier(target.Table)+" WHERE \"id\" BETWEEN :1 AND :2", firstID, lastID).Scan(&count)
+		}
+		if err == nil && count == want {
+			return
+		}
+		select {
+		case runnerErr := <-runnerDone:
+			t.Fatalf("Oracle Spatial runner exited before %s target count converged: %v (range=[%d,%d] count=%d query_error=%v)", target.Type, runnerErr, firstID, lastID, count, err)
+		case <-ctx.Done():
+			t.Fatalf("wait Oracle Spatial %s target count range=[%d,%d] want=%d: %v (count=%d query_error=%v)", target.Type, firstID, lastID, want, ctx.Err(), count, err)
+		case <-ticker.C:
+		}
+	}
+}
+
+func assertOracleCDCTargetCount(t *testing.T, ctx context.Context, target *cdcDataE2ETarget, firstID, lastID, want int) {
+	t.Helper()
+	var count int
+	var err error
+	if target.Type == "postgresql" {
+		err = target.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+pq.QuoteIdentifier(target.Namespace)+`.`+pq.QuoteIdentifier(target.Table)+` WHERE id BETWEEN $1 AND $2`, firstID, lastID).Scan(&count)
+	} else if target.Type == "mysql" {
+		err = target.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+mysqlCDCQuoteIdentifier(target.Namespace)+"."+mysqlCDCQuoteIdentifier(target.Table)+" WHERE id BETWEEN ? AND ?", firstID, lastID).Scan(&count)
+	} else {
+		err = target.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+oracleSpatialCDCQuoteIdentifier(target.Namespace)+"."+oracleSpatialCDCQuoteIdentifier(target.Table)+" WHERE \"id\" BETWEEN :1 AND :2", firstID, lastID).Scan(&count)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != want {
+		t.Fatalf("Oracle CDC %s target rows in [%d,%d]=%d, want %d", target.Type, firstID, lastID, count, want)
+	}
+}
+
 func waitOracleSpatialCDCOffsetsConverged(
 	t *testing.T,
 	ctx context.Context,
@@ -497,8 +1354,7 @@ func waitOracleSpatialCDCOffsetsConverged(
 	defer ticker.Stop()
 	for {
 		committed, committedErr := oracleSpatialCDCCommittedOffset(ctx, states, taskID, sourceIdentity)
-		var ledger int64
-		ledgerErr := target.DB.QueryRowContext(ctx, `SELECT next_offset FROM addp_transfer.apply_positions WHERE apply_identity=$1::uuid AND partition='0'`, applyIdentity).Scan(&ledger)
+		ledger, ledgerErr := target.ledgerOffset(ctx, applyIdentity)
 		if committedErr == nil && ledgerErr == nil && committed > 0 && ledger == committed {
 			return
 		}
@@ -647,6 +1503,56 @@ func assertOracleSpatialCDCCleanup(
 	for _, result := range aclResults {
 		if len(result.Described) != 0 {
 			t.Fatalf("Oracle Spatial CDC ACLs remain after Stop: %+v", result.Described)
+		}
+	}
+}
+
+func assertOracleCDCCleanup(
+	t *testing.T,
+	ctx context.Context,
+	captures *repository.CaptureRepository,
+	connectClient *capture.ConnectClient,
+	admin *kadm.Client,
+	task models.TransferTask,
+	resource *models.CaptureResource,
+) {
+	t.Helper()
+	stopped, err := captures.GetLatest(ctx, task.ID, task.TenantID)
+	if err != nil || stopped.Status != models.CaptureStatusStopped {
+		t.Fatalf("stopped ordinary Oracle capture=%#v err=%v", stopped, err)
+	}
+	if _, err := connectClient.Status(ctx, resource.ConnectorName); !errors.Is(err, capture.ErrConnectorNotFound) {
+		t.Fatalf("ordinary Oracle connector still exists: %v", err)
+	}
+	if resource.Oracle == nil || resource.Oracle.SpatialArtifactsOwned || resource.Oracle.SpatialMirrorTableName != "" || resource.Oracle.SpatialRowTriggerName != "" || resource.Oracle.SpatialDDLGuardName != "" {
+		t.Fatalf("ordinary Oracle capture owns Spatial artifacts: %#v", resource.Oracle)
+	}
+	details, err := admin.ListTopics(ctx, resource.TopicName, resource.Oracle.SchemaHistoryTopicName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, topic := range []string{resource.TopicName, resource.Oracle.SchemaHistoryTopicName} {
+		if detail, ok := details[topic]; ok && detail.Err == nil {
+			t.Fatalf("ordinary Oracle CDC topic %q still exists", topic)
+		}
+	}
+	groups, err := admin.ListGroups(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := groups[resource.ConsumerGroup]; ok {
+		t.Fatalf("ordinary Oracle CDC consumer group %q still exists", resource.ConsumerGroup)
+	}
+	aclResults, err := admin.DescribeACLs(ctx,
+		kadm.NewACLs().Topics(resource.TopicName, resource.Oracle.SchemaHistoryTopicName).Groups(resource.ConsumerGroup).
+			ResourcePatternType(kadm.ACLPatternLiteral).Allow().AllowHosts().Operations(kadm.OpAny),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range aclResults {
+		if len(result.Described) != 0 {
+			t.Fatalf("ordinary Oracle CDC ACLs remain after Stop: %+v", result.Described)
 		}
 	}
 }

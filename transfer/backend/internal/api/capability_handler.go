@@ -98,7 +98,7 @@ func (h *TransferCapabilityHandler) Get(c *gin.Context) {
 func buildContinuousCapabilities() TransferContinuousCapabilities {
 	return TransferContinuousCapabilities{
 		DatabaseCDC: TransferDatabaseCDCCapability{
-			Sources: []string{"postgresql", "mysql", "oracle"}, Targets: []string{"postgresql", "mysql"},
+			Sources: []string{"postgresql", "mysql", "oracle"}, Targets: []string{"postgresql", "mysql", "oracle"},
 			Bootstrap: []string{"initial_snapshot"}, ApplyMode: "upsert_delete",
 		},
 		BusinessKafka: TransferBusinessKafkaCapabilities{

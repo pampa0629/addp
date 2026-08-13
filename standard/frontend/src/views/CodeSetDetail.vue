@@ -11,9 +11,10 @@
         <el-tag :type="codeSet.type === 'system' ? 'success' : 'info'" size="small">
           {{ codeSet.type === 'system' ? $t('standard.codeSet.typeSystem') : $t('standard.codeSet.typeCustom') }}
         </el-tag>
+        <el-tag v-if="isDirty" type="warning" size="small">{{ $t('standard.common.unsaved') }}</el-tag>
       </div>
       <div class="header-right">
-        <el-button type="primary" @click="handleSave" :loading="saving">{{ $t('standard.common.save') }}</el-button>
+        <el-button v-if="canModifyCodeSet" type="primary" @click="handleSave" :loading="saving">{{ $t('standard.common.save') }}</el-button>
       </div>
     </div>
 
@@ -22,7 +23,7 @@
       <el-col :span="24">
         <el-card shadow="never" class="info-card">
           <template #header><span class="card-title">{{ $t('standard.codeSet.basicInfo') }}</span></template>
-          <el-form :model="form" label-width="90px">
+          <el-form :model="form" label-width="90px" :disabled="!canModifyCodeSet">
             <el-row :gutter="16">
               <el-col :span="12">
                 <el-form-item :label="$t('standard.codeSet.codeLabel')">
@@ -58,7 +59,7 @@
           <template #header>
             <div class="card-header-with-action">
               <span class="card-title">{{ $t('standard.codeSet.items') }}</span>
-              <el-button type="primary" size="small" @click="openItemDialog()">
+              <el-button v-if="canModifyCodeSet" type="primary" size="small" @click="openItemDialog()">
                 <el-icon><Plus /></el-icon>
                 {{ $t('standard.codeSet.addItem') }}
               </el-button>
@@ -78,11 +79,11 @@
               </template>
             </el-table-column>
             <el-table-column :label="$t('standard.common.description')" prop="description" show-overflow-tooltip />
-            <el-table-column :label="$t('standard.common.actions')" width="150" fixed="right">
+            <el-table-column v-if="canModifyCodeSet" :label="$t('standard.common.actions')" width="150" fixed="right">
               <template #default="{ row }">
                 <div class="table-actions">
                   <el-button link type="primary" @click="openItemDialog(row)">{{ $t('standard.common.edit') }}</el-button>
-                  <el-button link type="danger" @click="deleteItem(row)">{{ $t('standard.common.delete') }}</el-button>
+                  <el-button link type="danger" :loading="isActionLocked(`code-item:${row.id}`)" @click="deleteItem(row)">{{ $t('standard.common.delete') }}</el-button>
                 </div>
               </template>
             </el-table-column>
@@ -133,11 +134,17 @@ import { ArrowLeft, Plus } from '@element-plus/icons-vue'
 import { codeSetAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
+import { useStandardPermissions } from '../composables/useStandardPermissions'
+import { useActionLock } from '../composables/useActionLock'
+import { useUnsavedChanges } from '../composables/useUnsavedChanges'
 
 const route = useRoute()
 const router = useRouter()
 const goBack = () => navigateStandardRoute(router, { path: '/code-sets', query: route.query }, { history: 'replace' })
 const { t } = useI18n()
+const { canUpdate } = useStandardPermissions('code_set')
+const { isLocked: isActionLocked, runLocked } = useActionLock()
+const canModifyCodeSet = computed(() => canUpdate.value && codeSet.value.type !== 'system')
 const codeSetId = computed(() => Number(route.params.id))
 
 const saving = ref(false)
@@ -150,6 +157,8 @@ const itemFormRef = ref(null)
 const codeSet = ref({})
 const form = reactive({ name: '', type: 'custom', description: '' })
 const items = ref([])
+const editableState = computed(() => ({ ...form }))
+const { isDirty, markSaved } = useUnsavedChanges({ state: editableState, t })
 
 const itemForm = reactive({ code: '', value: '', description: '', sort_order: 0, is_active: true })
 const itemRules = computed(() => ({
@@ -166,6 +175,7 @@ const loadCodeSet = async () => {
       type: codeSet.value.type || 'custom',
       description: codeSet.value.description || ''
     })
+    markSaved()
   } catch (err) {
     ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.loadFailed'))
     goBack()
@@ -186,11 +196,12 @@ const loadItems = async () => {
 }
 
 const handleSave = async () => {
+  if (saving.value) return
   saving.value = true
   try {
-    await codeSetAPI.update(codeSetId.value, form)
+    await codeSetAPI.update(codeSetId.value, { ...form, version: codeSet.value.version })
     ElMessage.success(t('standard.common.saveSuccess'))
-    loadCodeSet()
+    await loadCodeSet()
   } catch (err) {
     ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.saveFailed'))
   } finally {
@@ -215,14 +226,18 @@ const openItemDialog = (item = null) => {
 }
 
 const handleItemSubmit = async () => {
-  await itemFormRef.value.validate()
+  if (itemSubmitting.value) return
   itemSubmitting.value = true
   try {
+    const valid = await itemFormRef.value.validate().catch(() => false)
+    if (!valid) return
     if (editingItem.value) {
-      await codeSetAPI.updateItem(codeSetId.value, editingItem.value.id, itemForm)
+      const res = await codeSetAPI.updateItem(codeSetId.value, editingItem.value.id, { ...itemForm, version: codeSet.value.version })
+      codeSet.value.version = res.version
       ElMessage.success(t('standard.common.updateSuccess'))
     } else {
-      await codeSetAPI.createItem(codeSetId.value, itemForm)
+      const res = await codeSetAPI.createItem(codeSetId.value, { ...itemForm, version: codeSet.value.version })
+      codeSet.value.version = res.version
       ElMessage.success(t('standard.common.createSuccess'))
     }
     itemDialogVisible.value = false
@@ -235,14 +250,17 @@ const handleItemSubmit = async () => {
 }
 
 const deleteItem = async (item) => {
-  try {
-    await ElMessageBox.confirm(t('standard.codeSet.confirmDeleteItem', { name: item.value }), t('standard.common.hint'), { type: 'warning' })
-    await codeSetAPI.deleteItem(codeSetId.value, item.id)
-    ElMessage.success(t('standard.common.deleteSuccess'))
-    loadItems()
-  } catch (err) {
-    if (!isCanceledInteraction(err)) ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.deleteFailed'))
-  }
+  await runLocked(`code-item:${item.id}`, async () => {
+    try {
+      await ElMessageBox.confirm(t('standard.codeSet.confirmDeleteItem', { name: item.value }), t('standard.common.hint'), { type: 'warning' })
+      const res = await codeSetAPI.deleteItem(codeSetId.value, item.id, codeSet.value.version)
+      codeSet.value.version = res.version
+      ElMessage.success(t('standard.common.deleteSuccess'))
+      await loadItems()
+    } catch (err) {
+      if (!isCanceledInteraction(err)) ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.deleteFailed'))
+    }
+  })
 }
 
 watch(() => route.params.id, () => {

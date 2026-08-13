@@ -45,6 +45,9 @@ func (s *TableRelationService) ListDimensionRelations(factTableID, tenantID int6
 
 // AddDimensionRelation 为事实表添加维度表关联
 func (s *TableRelationService) AddDimensionRelation(factTableID, tenantID int64, req *models.CreateTableRelationRequest) (*models.TableRelation, error) {
+	if err := validateCreateTableRelationRequest(req); err != nil {
+		return nil, err
+	}
 	factTable, dimensionTable, err := s.requireDraftTables(tenantID, factTableID, req.TargetTable)
 	if err != nil {
 		return nil, err

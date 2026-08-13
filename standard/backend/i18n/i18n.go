@@ -27,6 +27,7 @@ const (
 	MsgOperationFailed            = "standard.common.operation_failed"
 	MsgResourceNotFound           = "standard.common.resource_not_found"
 	MsgResourceConflict           = "standard.common.resource_conflict"
+	MsgVersionConflict            = "standard.common.version_conflict"
 	MsgInvalidResourceReference   = "standard.common.invalid_resource_reference"
 	MsgInvalidCodeSetType         = "standard.code_set.invalid_type"
 	MsgDomainParentCycle          = "standard.domain.parent_cycle"

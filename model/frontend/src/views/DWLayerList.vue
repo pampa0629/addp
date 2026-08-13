@@ -60,18 +60,19 @@
     <el-dialog
       v-model="dialogVisible"
       :title="editingLayer ? t('model.dw_layer.edit') : t('model.dw_layer.new')"
-      width="520px"
+      width="min(520px, calc(100vw - 32px))"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <el-form-item :label="t('model.dw_layer.layer_code')" prop="layer_code">
           <el-input
             v-model="form.layer_code"
+            maxlength="20"
             :disabled="!!editingLayer"
             :placeholder="t('model.dw_layer.code_placeholder')"
           />
         </el-form-item>
         <el-form-item :label="t('model.dw_layer.layer_name')" prop="layer_name">
-          <el-input v-model="form.layer_name" :placeholder="t('model.dw_layer.name_placeholder')" />
+          <el-input v-model="form.layer_name" maxlength="100" :placeholder="t('model.dw_layer.name_placeholder')" />
         </el-form-item>
         <el-form-item :label="t('model.dw_layer.naming_rule')">
           <el-input
@@ -104,6 +105,7 @@ import { dwLayerAPI } from '../api/model'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
 import { getModelErrorMessage } from '../utils/apiError'
+import { buildDWLayerUpdateRequest } from '../utils/modelDetailState'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -175,6 +177,11 @@ const openDialog = (layer = null) => {
 }
 
 const handleSubmit = async () => {
+  const requiredPermission = editingLayer.value ? 'model.dw_layer.update' : 'model.dw_layer.create'
+  if (!can(requiredPermission)) {
+    ElMessage.error(t('model.common.permission_denied'))
+    return
+  }
   try {
     await formRef.value.validate()
   } catch {
@@ -183,7 +190,7 @@ const handleSubmit = async () => {
   submitting.value = true
   try {
     if (editingLayer.value) {
-      await dwLayerAPI.update(editingLayer.value.id, form.value)
+      await dwLayerAPI.update(editingLayer.value.id, buildDWLayerUpdateRequest(form.value, editingLayer.value))
       ElMessage.success(t('model.common.update_success'))
     } else {
       await dwLayerAPI.create(form.value)
@@ -199,6 +206,10 @@ const handleSubmit = async () => {
 }
 
 const handleDelete = async (id) => {
+  if (!can('model.dw_layer.delete')) {
+    ElMessage.error(t('model.common.permission_denied'))
+    return
+  }
   try {
     await dwLayerAPI.delete(id)
     ElMessage.success(t('model.common.delete_success'))
@@ -209,6 +220,10 @@ const handleDelete = async (id) => {
 }
 
 const handleInitDefault = async () => {
+  if (!can('model.dw_layer.create')) {
+    ElMessage.error(t('model.common.permission_denied'))
+    return
+  }
   const defaults = [
     { layer_code: 'ods', layer_name: '贴源层', naming_rule: 'ods_{domain}_{entity}', description: '原始数据，不做任何加工，保留业务系统原貌', sort_order: 1 },
     { layer_code: 'dwd', layer_name: '明细层', naming_rule: 'dwd_{domain}_{entity}_d', description: '清洗、标准化、建立维度关联的明细数据', sort_order: 2 },

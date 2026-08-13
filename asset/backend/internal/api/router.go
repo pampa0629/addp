@@ -5,6 +5,7 @@ import (
 
 	assetauthorization "github.com/addp/asset/internal/authorization"
 	"github.com/addp/asset/internal/service"
+	"github.com/addp/common/buildinfo"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/gin-gonic/gin"
@@ -28,7 +29,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 	})
 	router.Use(commoni18n.I18nMiddleware())
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "module": "asset"})
+		c.JSON(http.StatusOK, buildinfo.Health("asset"))
 	})
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 

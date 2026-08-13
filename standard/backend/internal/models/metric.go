@@ -15,6 +15,7 @@ type MetricCategory struct {
 	UpdatedBy   *int64    `json:"updated_by,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	Version     int64     `gorm:"not null;default:1" json:"version"`
 }
 
 func (MetricCategory) TableName() string {
@@ -42,6 +43,7 @@ type Metric struct {
 	UpdatedBy        *int64      `json:"updated_by,omitempty"`
 	CreatedAt        time.Time   `json:"created_at"`
 	UpdatedAt        time.Time   `json:"updated_at"`
+	Version          int64       `gorm:"not null;default:1" json:"version"`
 }
 
 func (Metric) TableName() string {
@@ -86,6 +88,7 @@ type CreateMetricCategoryRequest struct {
 
 // UpdateMetricCategoryRequest 更新指标目录请求
 type UpdateMetricCategoryRequest struct {
+	Version     int64  `json:"version" binding:"required"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	ParentID    *int64 `json:"parent_id,omitempty"`
@@ -112,6 +115,7 @@ type CreateMetricRequest struct {
 
 // UpdateMetricRequest 更新指标请求
 type UpdateMetricRequest struct {
+	Version          int64                  `json:"version" binding:"required"`
 	CategoryID       *int64                 `json:"category_id,omitempty"`
 	DomainID         *int64                 `json:"domain_id,omitempty"`
 	Name             string                 `json:"name"`

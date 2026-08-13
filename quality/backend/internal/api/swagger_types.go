@@ -3,14 +3,23 @@ package api
 import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/quality/internal/models"
+	"github.com/addp/quality/internal/service"
 )
 
 type qualityRuleApplicationListResponse struct {
-	Data       []models.RuleApplication `json:"data"`
-	Total      int64                    `json:"total"`
-	Page       int                      `json:"page"`
-	PageSize   int                      `json:"page_size"`
-	TotalPages int                      `json:"total_pages"`
+	Data       []service.RuleApplicationListItem `json:"data"`
+	Total      int64                             `json:"total"`
+	Page       int                               `json:"page"`
+	PageSize   int                               `json:"page_size"`
+	TotalPages int                               `json:"total_pages"`
+}
+
+type qualityElementCandidateListResponse struct {
+	Data       []service.RuleApplicationElementCandidate `json:"data"`
+	Total      int64                                     `json:"total"`
+	Page       int                                       `json:"page"`
+	PageSize   int                                       `json:"page_size"`
+	TotalPages int                                       `json:"total_pages"`
 }
 
 type qualityCheckTaskListResponse struct {

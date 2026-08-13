@@ -45,6 +45,7 @@
 - API 响应中的 `capabilities_view` 是 System 后端根据 `capabilities` 派生的展示模型，定义在 `common/models` 供各模块客户端复用；它不是 `system.engines` 表字段，也不写入数据库。
 - `capabilities.compute.query.parameters` 声明查询值参数能力：`supported` 表示是否支持，`languages` 限定可参数化的查询语言，`types` 固定声明可绑定的标量类型；Develop 查询工作台只能按该声明开放参数定义和执行覆盖。
 - `capabilities.extensions.spatial_workspaces` 用于承载数据库实例中可识别的厂商空间工作区事实，例如 SuperMap `sdx_postgis`、`sdx_postgresql` 或 ArcGIS `sde`；System 应自动探测并在详情页展示，高危启用入口和实例级 Provider 选择应基于这一事实自动收口。
+- Oracle 上的 ArcGIS `sde` 只在 `SDE` repository owner 同时可见 `TABLE_REGISTRY`、`GDB_ITEMS`、`GDB_ITEMTYPES`、`GEOMETRY_COLUMNS` 四张正式核心表时标记为 `detected`；仅存在 SDE 用户、同名普通表或 SDO_GEOMETRY 列不构成工作区。第一期固定 `can_enable=false`、`risk_level=high`，字典可见但核心表读取被拒绝时标记 `permission_denied`，不提供启用按钮或普通 Oracle CDC 路由。
 - System 提供显性的高危操作入口 `POST /api/v1/system/engines/{id}/spatial-workspaces/{ecosystem}/{kind}/enable`。`supermap/sdx_postgis` 与 `supermap/sdx_postgresql` 分别按 direct-only 启用算子发现兼容 Workflow Runtime；只有持续通过 SDK 读写私有 Geometry 的 `sdx_postgresql` 持久化 `bound_runtime_engine_id`，`sdx_postgis` 仅在启用动作中临时使用 Runtime，不按固定 `engine_type` 选择；同一 PostgreSQL 实例不得并存或互相回退。
 
 ### 2.3 最近连接检测字段

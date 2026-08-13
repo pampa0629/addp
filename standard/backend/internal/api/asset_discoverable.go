@@ -24,6 +24,8 @@ func newAssetDiscoverableHandler(db *gorm.DB) *assetDiscoverableHandler {
 // @Tags AssetDiscoverable
 // @Produce json
 // @Success 200 {array} commonClient.DiscoverableAsset
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @Failure 500 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.read"]

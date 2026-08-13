@@ -32,7 +32,8 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			created_by INTEGER NOT NULL,
 			updated_by INTEGER,
 			created_at DATETIME,
-			updated_at DATETIME
+			updated_at DATETIME,
+			version INTEGER NOT NULL DEFAULT 1
 		)`,
 		`CREATE TABLE standard.glossaries (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,7 +51,8 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			created_by INTEGER NOT NULL,
 			updated_by INTEGER,
 			created_at DATETIME,
-			updated_at DATETIME
+			updated_at DATETIME,
+			version INTEGER NOT NULL DEFAULT 1
 		)`,
 		`CREATE TABLE standard.glossary_element_mappings (
 			glossary_id INTEGER NOT NULL,
@@ -84,7 +86,8 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			created_by INTEGER NOT NULL,
 			updated_by INTEGER,
 			created_at DATETIME,
-			updated_at DATETIME
+			updated_at DATETIME,
+			version INTEGER NOT NULL DEFAULT 1
 		)`,
 		`CREATE TABLE standard.code_sets (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -94,7 +97,8 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			type TEXT,
 			description TEXT,
 			created_at DATETIME,
-			updated_at DATETIME
+			updated_at DATETIME,
+			version INTEGER NOT NULL DEFAULT 1
 		)`,
 		`CREATE TABLE standard.code_items (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -117,7 +121,8 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			sort_order INTEGER,
 			is_system BOOLEAN,
 			created_at DATETIME,
-			updated_at DATETIME
+			updated_at DATETIME,
+			version INTEGER NOT NULL DEFAULT 1
 		)`,
 		`CREATE TABLE standard.units (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -129,7 +134,8 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			sort_order INTEGER,
 			is_system BOOLEAN,
 			created_at DATETIME,
-			updated_at DATETIME
+			updated_at DATETIME,
+			version INTEGER NOT NULL DEFAULT 1
 		)`,
 		`CREATE TABLE standard.classifications (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -142,7 +148,8 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			created_by INTEGER NOT NULL,
 			updated_by INTEGER,
 			created_at DATETIME,
-			updated_at DATETIME
+			updated_at DATETIME,
+			version INTEGER NOT NULL DEFAULT 1
 		)`,
 		`CREATE TABLE standard.grading_levels (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -152,7 +159,8 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			description TEXT,
 			color TEXT,
 			sort_order INTEGER,
-			updated_at DATETIME
+			updated_at DATETIME,
+			version INTEGER NOT NULL DEFAULT 1
 		)`,
 		`CREATE TABLE standard.metric_categories (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,7 +173,8 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			created_by INTEGER NOT NULL,
 			updated_by INTEGER,
 			created_at DATETIME,
-			updated_at DATETIME
+			updated_at DATETIME,
+			version INTEGER NOT NULL DEFAULT 1
 		)`,
 		`CREATE TABLE standard.metrics (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -186,7 +195,8 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			created_by INTEGER NOT NULL,
 			updated_by INTEGER,
 			created_at DATETIME,
-			updated_at DATETIME
+			updated_at DATETIME,
+			version INTEGER NOT NULL DEFAULT 1
 		)`,
 		`CREATE TABLE standard.metric_element_mappings (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -209,7 +219,8 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			name TEXT NOT NULL,
 			doc_type TEXT,
 			source_org TEXT,
-			version TEXT,
+			document_version TEXT,
+			version INTEGER NOT NULL DEFAULT 1,
 			publish_date DATETIME,
 			description TEXT,
 			file_key TEXT,
@@ -251,7 +262,8 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			created_by INTEGER NOT NULL,
 			updated_by INTEGER,
 			created_at DATETIME,
-			updated_at DATETIME
+			updated_at DATETIME,
+			version INTEGER NOT NULL DEFAULT 1
 		)`,
 		`CREATE TABLE standard.dimension_hierarchy_levels (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,

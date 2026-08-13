@@ -40,12 +40,6 @@ func (r *IssueRepository) List(tenantID int64, status string, engineID int64, pa
 	return items, total, commonRepository.WrapDBError(err)
 }
 
-func (r *IssueRepository) ListByExecution(executionID string) ([]models.Issue, error) {
-	var items []models.Issue
-	err := r.db.Where("execution_id = ?", executionID).Find(&items).Error
-	return items, commonRepository.WrapDBError(err)
-}
-
 func (r *IssueRepository) Get(id, tenantID int64) (*models.Issue, error) {
 	var item models.Issue
 	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&item).Error

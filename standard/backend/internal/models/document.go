@@ -4,21 +4,22 @@ import "time"
 
 // Document 标准文档
 type Document struct {
-	ID          int64      `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID    int64      `gorm:"not null;index" json:"tenant_id"`
-	Name        string     `gorm:"size:200;not null" json:"name"`
-	DocType     string     `gorm:"column:doc_type;size:50;default:'reference'" json:"doc_type"` // national/industry/internal/reference
-	SourceOrg   string     `gorm:"size:200" json:"source_org"`
-	Version     string     `gorm:"size:50" json:"version"`
-	PublishDate *time.Time `json:"publish_date,omitempty"`
-	Description string     `gorm:"type:text" json:"description"`
-	FileKey     string     `gorm:"type:text" json:"file_key"` // MinIO 存储路径
-	FileName    string     `gorm:"size:200" json:"file_name"`
-	FileSize    int64      `json:"file_size"`
-	CreatedBy   int64      `gorm:"not null" json:"created_by"`
-	UpdatedBy   *int64     `json:"updated_by,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID              int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	TenantID        int64      `gorm:"not null;index" json:"tenant_id"`
+	Name            string     `gorm:"size:200;not null" json:"name"`
+	DocType         string     `gorm:"column:doc_type;size:50;default:'reference'" json:"doc_type"` // national/industry/internal/reference
+	SourceOrg       string     `gorm:"size:200" json:"source_org"`
+	DocumentVersion string     `gorm:"column:document_version;size:50" json:"document_version"`
+	PublishDate     *time.Time `json:"publish_date,omitempty"`
+	Description     string     `gorm:"type:text" json:"description"`
+	FileKey         string     `gorm:"type:text" json:"file_key"` // MinIO 存储路径
+	FileName        string     `gorm:"size:200" json:"file_name"`
+	FileSize        int64      `json:"file_size"`
+	CreatedBy       int64      `gorm:"not null" json:"created_by"`
+	UpdatedBy       *int64     `json:"updated_by,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	Version         int64      `gorm:"not null;default:1" json:"version"`
 }
 
 // DocumentFileCleanup records obsolete objects that still require physical deletion.
@@ -84,26 +85,47 @@ func (DocumentMetricMapping) TableName() string {
 
 // CreateDocumentRequest 创建文档请求
 type CreateDocumentRequest struct {
-	Name        string `json:"name" binding:"required"`
-	DocType     string `json:"doc_type"`
-	SourceOrg   string `json:"source_org"`
-	Version     string `json:"version"`
-	Description string `json:"description"`
+	Name            string `json:"name" binding:"required"`
+	DocType         string `json:"doc_type"`
+	SourceOrg       string `json:"source_org"`
+	DocumentVersion string `json:"document_version"`
+	Description     string `json:"description"`
 }
 
 // UpdateDocumentRequest 更新文档请求
 type UpdateDocumentRequest struct {
-	Name        string `json:"name"`
-	DocType     string `json:"doc_type"`
-	SourceOrg   string `json:"source_org"`
-	Version     string `json:"version"`
-	Description string `json:"description"`
+	Version         int64  `json:"version" binding:"required"`
+	Name            string `json:"name"`
+	DocType         string `json:"doc_type"`
+	SourceOrg       string `json:"source_org"`
+	DocumentVersion string `json:"document_version"`
+	Description     string `json:"description"`
 }
 
 // SetDocumentMappingsRequest 设置文档关联请求
 type SetDocumentMappingsRequest struct {
+	Version     int64             `json:"version" binding:"required"`
 	ElementIDs  []int64           `json:"element_ids"`
 	GlossaryIDs []int64           `json:"glossary_ids"`
 	MetricIDs   []int64           `json:"metric_ids"`
 	Locations   map[string]string `json:"locations"` // key: "element_1" / "glossary_2" / "metric_3"
+}
+
+type CreateLinkedDocumentRequest struct {
+	CreateDocumentRequest
+	Version int64 `json:"version" binding:"required"`
+}
+
+type LinkDocumentRequest struct {
+	DocID   int64 `json:"doc_id" binding:"required"`
+	Version int64 `json:"version" binding:"required"`
+}
+
+type ResourceVersionResponse struct {
+	Version int64 `json:"version"`
+}
+
+type LinkedDocumentMutationResponse struct {
+	Document *Document `json:"document"`
+	Version  int64     `json:"version"`
 }

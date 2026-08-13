@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const standardSchemaLockID int64 = 2026081002
+const standardSchemaLockID int64 = 2026081003
 
 // Migrate 在同一 advisory transaction lock 内完成表字段迁移和约束收紧。
 func Migrate(db *gorm.DB) error {
@@ -17,6 +17,9 @@ func Migrate(db *gorm.DB) error {
 
 	return db.Transaction(func(tx *gorm.DB) error {
 		if err := acquireStandardSchemaLock(tx); err != nil {
+			return err
+		}
+		if err := prepareStandardSchemaMigration(tx); err != nil {
 			return err
 		}
 		if err := tx.AutoMigrate(
@@ -46,6 +49,28 @@ func Migrate(db *gorm.DB) error {
 		}
 		return applyStandardSchemaStatements(tx)
 	})
+}
+
+func prepareStandardSchemaMigration(db *gorm.DB) error {
+	if db.Dialector.Name() != "postgres" {
+		return nil
+	}
+	statement := `DO $do$ BEGIN
+		IF EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = 'standard' AND table_name = 'documents' AND column_name = 'version'
+			AND data_type IN ('character varying', 'text')
+		) AND NOT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = 'standard' AND table_name = 'documents' AND column_name = 'document_version'
+		) THEN
+			ALTER TABLE standard.documents RENAME COLUMN version TO document_version;
+		END IF;
+	END $do$`
+	if err := db.Exec(statement).Error; err != nil {
+		return fmt.Errorf("prepare standard schema migration: %w", err)
+	}
+	return nil
 }
 
 // EnsureSchema 仅收紧 AutoMigrate 无法可靠变更的唯一索引和 CHECK 约束，供约束测试使用。

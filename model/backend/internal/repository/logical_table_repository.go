@@ -69,14 +69,14 @@ func (r *LogicalTableRepository) List(tenantID int64, opts ListLogicalTableOptio
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
+		return nil, 0, commonrepo.WrapDBError(err)
 	}
 
 	offset := (opts.Page - 1) * opts.PageSize
 
 	var tables []models.LogicalTable
 	err := query.Order("created_at DESC, id DESC").Offset(offset).Limit(opts.PageSize).Find(&tables).Error
-	return tables, total, err
+	return tables, total, commonrepo.WrapDBError(err)
 }
 
 func (r *LogicalTableRepository) Update(table *models.LogicalTable) error {
@@ -90,17 +90,17 @@ func (r *LogicalTableRepository) Delete(id, tenantID int64) error {
 			return commonrepo.WrapDBError(err)
 		}
 		if err := tx.Where("fact_table_id = ? AND tenant_id = ?", id, tenantID).Delete(&models.FactMetricMapping{}).Error; err != nil {
-			return err
+			return commonrepo.WrapDBError(err)
 		}
 		if err := tx.Where("tenant_id = ? AND (source_table = ? OR target_table = ?)", tenantID, id, id).Delete(&models.TableRelation{}).Error; err != nil {
-			return err
+			return commonrepo.WrapDBError(err)
 		}
 		if err := tx.Where("table_id = ?", id).Delete(&models.LogicalField{}).Error; err != nil {
-			return err
+			return commonrepo.WrapDBError(err)
 		}
 		result := tx.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.LogicalTable{})
 		if result.Error != nil {
-			return result.Error
+			return commonrepo.WrapDBError(result.Error)
 		}
 		if result.RowsAffected == 0 {
 			return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
@@ -129,14 +129,14 @@ func (r *LogicalTableRepository) ExistsByCode(code string, tenantID int64, exclu
 		query = query.Where("id != ?", excludeID)
 	}
 	err := query.Count(&count).Error
-	return count > 0, err
+	return count > 0, commonrepo.WrapDBError(err)
 }
 
 // GetFields 获取逻辑表字段列表
 func (r *LogicalTableRepository) GetFields(tableID int64) ([]models.LogicalField, error) {
 	var fields []models.LogicalField
 	err := r.db.Where("table_id = ?", tableID).Order("sort_order ASC, id ASC").Find(&fields).Error
-	return fields, err
+	return fields, commonrepo.WrapDBError(err)
 }
 
 // CreateField 创建字段

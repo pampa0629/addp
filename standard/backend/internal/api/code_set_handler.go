@@ -23,7 +23,9 @@ func NewCodeSetHandler(codeSetService *service.CodeSetService) *CodeSetHandler {
 // @Summary 获取码值集列表 | List code sets
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} models.PaginatedCodeSetResponse
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.read"]
 // @Router /code-sets [get]
@@ -60,6 +62,8 @@ func (h *CodeSetHandler) ListCodeSets(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.create"]
 // @Router /code-sets [post]
@@ -87,6 +91,8 @@ func (h *CodeSetHandler) CreateCodeSet(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.read"]
 // @Router /code-sets/{id} [get]
@@ -108,7 +114,11 @@ func (h *CodeSetHandler) GetCodeSet(c *gin.Context) {
 // @Summary 更新码值集 | Update code set
 // @Tags Standard
 // @Produce json
+// @Param request body models.UpdateCodeSetRequest true "更新码值集 | Update code set"
 // @Success 200 {object} map[string]interface{}
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.update"]
 // @Router /code-sets/{id} [put]
@@ -138,6 +148,8 @@ func (h *CodeSetHandler) UpdateCodeSet(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Failure 409 {object} map[string]string
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.delete"]
 // @Router /code-sets/{id} [delete]
@@ -158,7 +170,9 @@ func (h *CodeSetHandler) DeleteCodeSet(c *gin.Context) {
 // @Summary 获取码值项列表 | List code items
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {array} models.CodeItem
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.read"]
 // @Router /code-sets/{id}/items [get]
@@ -179,8 +193,12 @@ func (h *CodeSetHandler) GetCodeItems(c *gin.Context) {
 // CreateCodeItem 创建码值项
 // @Summary 创建码值项 | Create code item
 // @Tags Standard
+// @Param request body models.CreateCodeItemRequest true "创建码值项及当前码值集版本 | Create code item with current code-set version"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.update"]
 // @Router /code-sets/{id}/items [post]
@@ -207,8 +225,12 @@ func (h *CodeSetHandler) CreateCodeItem(c *gin.Context) {
 // UpdateCodeItem 更新码值项
 // @Summary 更新码值项 | Update code item
 // @Tags Standard
+// @Param request body models.UpdateCodeItemRequest true "更新码值项及当前码值集版本 | Update code item with current code-set version"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.update"]
 // @Router /code-sets/{id}/items/{iid} [put]
@@ -236,9 +258,12 @@ func (h *CodeSetHandler) UpdateCodeItem(c *gin.Context) {
 // DeleteCodeItem 删除码值项
 // @Summary 删除码值项 | Delete code item
 // @Tags Standard
+// @Param request body models.VersionRequest true "当前码值集版本 | Current code-set version"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Failure 409 {object} map[string]string
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.update"]
 // @Router /code-sets/{id}/items/{iid} [delete]
@@ -247,11 +272,16 @@ func (h *CodeSetHandler) DeleteCodeItem(c *gin.Context) {
 	tenantID := c.GetInt64("tenant_id")
 	codeSetID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	itemID, _ := strconv.ParseInt(c.Param("iid"), 10, 64)
-
-	if err := h.codeSetService.DeleteCodeItem(codeSetID, itemID, tenantID); err != nil {
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
+	if err := h.codeSetService.DeleteCodeItem(codeSetID, itemID, tenantID, req.Version); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, models.ResourceVersionResponse{Version: req.Version + 1})
 }

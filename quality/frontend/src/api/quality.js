@@ -1,18 +1,32 @@
 import client from './client'
 
-// 跨模块: 数据元列表（Standard 模块）
-export const standardElementAPI = {
-  list: (params) => client.get('/standard/elements', { params })
-}
-
 // 跨模块: 引擎列表（System 模块）
 export const systemEngineAPI = {
   list: (params) => client.get('/system/engines', { params })
 }
 
+export const systemCatalogAPI = {
+  listChildren: (engineId, path = { segments: [] }, options = {}) => client.post(`/system/engines/${engineId}/catalog/children`, {
+    path: {
+      version: 'catalog.path/v1',
+      engine_id: engineId,
+      segments: Array.isArray(path?.segments) ? path.segments : []
+    },
+    options
+  }),
+  describeFacts: (engineId, path) => client.post(`/system/engines/${engineId}/catalog/facts`, {
+    path: {
+      version: 'catalog.path/v1',
+      engine_id: engineId,
+      segments: Array.isArray(path?.segments) ? path.segments : []
+    }
+  })
+}
+
 // 规则应用
 export const ruleApplicationAPI = {
   list: (params) => client.get('/quality/rule-applications', { params }),
+  listElementCandidates: (params) => client.get('/quality/rule-applications/element-candidates', { params }),
   get: (id) => client.get(`/quality/rule-applications/${id}`),
   create: (data) => client.post('/quality/rule-applications', data),
   update: (id, data) => client.put(`/quality/rule-applications/${id}`, data),

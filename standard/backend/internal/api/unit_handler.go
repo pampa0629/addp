@@ -25,7 +25,9 @@ func NewUnitHandler(svc *service.UnitService) *UnitHandler {
 // @Summary 获取度量类别列表 | List measurement categories
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {array} models.MeasurementCategory
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.unit.read"]
 // @Router /measurement-categories [get]
@@ -43,7 +45,9 @@ func (h *UnitHandler) ListCategories(c *gin.Context) {
 // @Summary 创建度量类别 | Create measurement category
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 201 {object} models.MeasurementCategory
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.unit.create"]
 // @Router /measurement-categories [post]
@@ -65,8 +69,12 @@ func (h *UnitHandler) CreateCategory(c *gin.Context) {
 
 // @Summary 更新度量类别 | Update measurement category
 // @Tags Standard
+// @Param request body models.UpdateMeasurementCategoryRequest true "更新度量类别 | Update measurement category"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.unit.update"]
 // @Router /measurement-categories/{id} [put]
@@ -96,6 +104,8 @@ func (h *UnitHandler) UpdateCategory(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Failure 409 {object} map[string]string
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.unit.delete"]
 // @Router /measurement-categories/{id} [delete]
@@ -119,7 +129,9 @@ func (h *UnitHandler) DeleteCategory(c *gin.Context) {
 // @Summary 获取计量单位列表 | List units
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {array} models.Unit
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.unit.read"]
 // @Router /units [get]
@@ -144,6 +156,8 @@ func (h *UnitHandler) ListUnits(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.unit.read"]
 // @Router /units/{id} [get]
@@ -167,6 +181,8 @@ func (h *UnitHandler) GetUnit(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.unit.create"]
 // @Router /units [post]
@@ -188,8 +204,12 @@ func (h *UnitHandler) CreateUnit(c *gin.Context) {
 
 // @Summary 更新计量单位 | Update unit
 // @Tags Standard
+// @Param request body models.UpdateUnitRequest true "更新计量单位 | Update unit"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.unit.update"]
 // @Router /units/{id} [put]
@@ -219,6 +239,8 @@ func (h *UnitHandler) UpdateUnit(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Failure 409 {object} map[string]string
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.unit.delete"]
 // @Router /units/{id} [delete]

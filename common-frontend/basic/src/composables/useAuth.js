@@ -87,12 +87,15 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
   })
   let boundStore = null
   let unsubscribe = null
+  let observedToken = null
 
   function bindStore(store) {
     if (boundStore === store) return
     unsubscribe?.()
     boundStore = store
     unsubscribe = subscribeAccessToken(({ token, expiresAt }) => {
+      const previousToken = observedToken
+      observedToken = token
       const wasAuthenticated = Boolean(store.token)
       store.token = token
       store.tokenExpiresAt = expiresAt
@@ -104,10 +107,29 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
         if (wasAuthenticated && store.sessionInitialized && !authSession.isEmbedded() && typeof window !== 'undefined') {
           redirectToLogin()
         }
+        return
+      }
+      if (
+        token !== previousToken &&
+        store.sessionInitialized &&
+        store.sessionStatus === 'authenticated'
+      ) {
+        const authorizationToken = token
+        store.authContext = null
+        store.fetchAuthContext({ force: true }).catch((error) => {
+          const currentToken = getAccessToken() || store.token
+          if (currentToken !== authorizationToken) return
+          if (isAuthenticationFailure(error)) {
+            store.clearLocalSession()
+            return
+          }
+          console.warn(`[${storeName}] Authorization refresh failed:`, error)
+        })
       }
     })
     store.token = getAccessToken()
     store.tokenExpiresAt = getAccessTokenExpiresAt()
+    observedToken = store.token
   }
 
   async function acceptLoginResult(store, payload) {
@@ -157,6 +179,7 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
       isLoadingUser: false,
       userLoadPromise: null,
       authContextLoadPromise: null,
+      authContextRequestId: 0,
       sessionInitialized: false,
       sessionInitPromise: null,
       sessionStatus: 'idle',
@@ -304,23 +327,33 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
         return this.userLoadPromise
       },
 
-      async fetchAuthContext() {
-        if (this.authContextLoadPromise) return this.authContextLoadPromise
+      async fetchAuthContext({ force = false } = {}) {
+        if (this.authContextLoadPromise && !force) return this.authContextLoadPromise
         const token = getAccessToken() || this.token
         if (!token) {
           this.authContext = null
           return null
         }
 
-        this.authContextLoadPromise = authAPI.getAuthContext(token)
+        const requestId = this.authContextRequestId + 1
+        this.authContextRequestId = requestId
+        const request = authAPI.getAuthContext(token)
           .then((response) => {
+            const currentToken = getAccessToken() || this.token
+            if (requestId !== this.authContextRequestId || currentToken !== token) return null
             this.authContext = response.data || response
             return this.authContext
           })
-          .finally(() => {
-            this.authContextLoadPromise = null
+          .catch((error) => {
+            const currentToken = getAccessToken() || this.token
+            if (requestId !== this.authContextRequestId || currentToken !== token) return null
+            throw error
           })
-        return this.authContextLoadPromise
+          .finally(() => {
+            if (this.authContextRequestId === requestId) this.authContextLoadPromise = null
+          })
+        this.authContextLoadPromise = request
+        return request
       },
 
       async fetchSessionState() {

@@ -25,7 +25,9 @@ func NewClassificationHandler(svc *service.ClassificationService) *Classificatio
 // @Summary 获取数据分类列表 | List data classifications
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {array} models.Classification
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.classification.read"]
 // @Router /classifications [get]
@@ -43,7 +45,9 @@ func (h *ClassificationHandler) ListClassifications(c *gin.Context) {
 // @Summary 创建数据分类 | Create data classification
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 201 {object} models.Classification
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.classification.create"]
 // @Router /classifications [post]
@@ -66,8 +70,12 @@ func (h *ClassificationHandler) CreateClassification(c *gin.Context) {
 
 // @Summary 更新数据分类 | Update data classification
 // @Tags Standard
+// @Param request body models.UpdateClassificationRequest true "更新数据分类 | Update data classification"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.classification.update"]
 // @Router /classifications/{id} [put]
@@ -98,6 +106,8 @@ func (h *ClassificationHandler) UpdateClassification(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Failure 409 {object} map[string]string
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.classification.delete"]
 // @Router /classifications/{id} [delete]
@@ -121,7 +131,9 @@ func (h *ClassificationHandler) DeleteClassification(c *gin.Context) {
 // @Summary 获取数据分级列表 | List data grading levels
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {array} models.GradingLevel
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.classification.read"]
 // @Router /grading-levels [get]
@@ -138,8 +150,12 @@ func (h *ClassificationHandler) ListGradingLevels(c *gin.Context) {
 
 // @Summary 更新数据分级 | Update data grading level
 // @Tags Standard
+// @Param request body models.UpdateGradingLevelRequest true "更新数据分级 | Update data grading level"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.classification.update"]
 // @Router /grading-levels/{id} [put]

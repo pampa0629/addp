@@ -15,6 +15,7 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/kafka"
 	mysqlplugin "github.com/addp/common/engine/plugins/mysql"
+	oracleplugin "github.com/addp/common/engine/plugins/oracle"
 	"github.com/addp/common/engine/plugins/postgresql"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/transfer/internal/capture"
@@ -211,6 +212,8 @@ func runIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T, targ
 				return &postgresql.PostgreSQLPlugin{}, nil
 			case "mysql":
 				return &mysqlplugin.MySQLPlugin{}, nil
+			case "oracle":
+				return &oracleplugin.OraclePlugin{}, nil
 			default:
 				return nil, fmt.Errorf("unexpected engine type %q", engineType)
 			}
@@ -448,6 +451,14 @@ func openCDCDataE2ETarget(
 			EngineID: 21, Type: "mysql", Namespace: namespace, NamespaceTerm: "database", Table: table,
 			ConnInfo: connInfo, DB: db, Plugin: &mysqlplugin.MySQLPlugin{},
 		}
+	case "oracle":
+		connInfo := oracleSpatialCDCConnectionInfo()
+		db := openOracleSpatialCDCDB(t, connInfo)
+		table = fmt.Sprintf("ADDP_CDC_T_%012d", time.Now().UnixNano()%1_000_000_000_000)
+		return &cdcDataE2ETarget{
+			EngineID: 23, Type: "oracle", Namespace: "BUSINESS", NamespaceTerm: "schema", Table: table,
+			ConnInfo: connInfo, DB: db, Plugin: &oracleplugin.OraclePlugin{},
+		}
 	default:
 		t.Fatalf("unsupported MySQL CDC E2E target %q", targetType)
 		return nil
@@ -463,6 +474,8 @@ func (target *cdcDataE2ETarget) Close() {
 		_, _ = target.DB.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS `+pq.QuoteIdentifier(target.Namespace)+` CASCADE`)
 	case "mysql":
 		_, _ = target.DB.ExecContext(context.Background(), "DROP DATABASE IF EXISTS "+mysqlCDCQuoteIdentifier(target.Namespace))
+	case "oracle":
+		_, _ = target.DB.ExecContext(context.Background(), "DROP TABLE "+oracleSpatialCDCQuoteIdentifier(target.Table)+" PURGE")
 	}
 	_ = target.DB.Close()
 }
@@ -487,9 +500,14 @@ func (target *cdcDataE2ETarget) WaitRow(
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 	qualified := mysqlCDCQuoteIdentifier(target.Namespace) + "." + mysqlCDCQuoteIdentifier(target.Table)
+	query := "SELECT name FROM " + qualified + " WHERE id = ?"
+	if target.Type == "oracle" {
+		qualified = oracleSpatialCDCQuoteIdentifier(target.Namespace) + "." + oracleSpatialCDCQuoteIdentifier(target.Table)
+		query = "SELECT \"name\" FROM " + qualified + " WHERE \"id\" = :1"
+	}
 	for {
 		var name sql.NullString
-		err := target.DB.QueryRowContext(ctx, "SELECT name FROM "+qualified+" WHERE id = ?", id).Scan(&name)
+		err := target.DB.QueryRowContext(ctx, query, id).Scan(&name)
 		if wantExists && err == nil && name.Valid && name.String == wantName {
 			return
 		}
@@ -513,9 +531,11 @@ func (target *cdcDataE2ETarget) AssertRowAbsent(t *testing.T, ctx context.Contex
 		return
 	}
 	var count int
-	err := target.DB.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM "+mysqlCDCQuoteIdentifier(target.Namespace)+"."+mysqlCDCQuoteIdentifier(target.Table)+" WHERE id = ?", id,
-	).Scan(&count)
+	query := "SELECT COUNT(*) FROM " + mysqlCDCQuoteIdentifier(target.Namespace) + "." + mysqlCDCQuoteIdentifier(target.Table) + " WHERE id = ?"
+	if target.Type == "oracle" {
+		query = "SELECT COUNT(*) FROM " + oracleSpatialCDCQuoteIdentifier(target.Namespace) + "." + oracleSpatialCDCQuoteIdentifier(target.Table) + " WHERE \"id\" = :1"
+	}
+	err := target.DB.QueryRowContext(ctx, query, id).Scan(&count)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -622,6 +642,14 @@ func (target *cdcDataE2ETarget) HasNullableColumn(ctx context.Context, column st
 			)`, target.Namespace, target.Table, column).Scan(&exists)
 		return exists, err
 	}
+	if target.Type == "oracle" {
+		var count int
+		err := target.DB.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM all_tab_columns
+			WHERE owner=:1 AND table_name=:2 AND column_name=:3 AND nullable='Y'
+		`, target.Namespace, target.Table, column).Scan(&count)
+		return count == 1, err
+	}
 	err := target.DB.QueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM information_schema.columns
@@ -632,28 +660,45 @@ func (target *cdcDataE2ETarget) HasNullableColumn(ctx context.Context, column st
 
 func (target *cdcDataE2ETarget) LedgerOffset(t *testing.T, ctx context.Context, applyIdentity string) int64 {
 	t.Helper()
-	var offset int64
-	var err error
-	if target.Type == "postgresql" {
-		err = target.DB.QueryRowContext(ctx, `
-			SELECT next_offset FROM addp_transfer.apply_positions
-			WHERE apply_identity=$1::uuid AND partition='0'`, applyIdentity).Scan(&offset)
-	} else {
-		err = target.DB.QueryRowContext(ctx,
-			"SELECT next_offset FROM "+mysqlCDCQuoteIdentifier(target.Namespace)+".`_addp_transfer_apply_positions` WHERE apply_identity = ? AND partition_key = ?",
-			applyIdentity, "0",
-		).Scan(&offset)
-	}
+	offset, err := target.ledgerOffset(ctx, applyIdentity)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return offset
 }
 
+func (target *cdcDataE2ETarget) ledgerOffset(ctx context.Context, applyIdentity string) (int64, error) {
+	var offset int64
+	if target.Type == "postgresql" {
+		err := target.DB.QueryRowContext(ctx, `
+			SELECT next_offset FROM addp_transfer.apply_positions
+			WHERE apply_identity=$1::uuid AND partition='0'`, applyIdentity).Scan(&offset)
+		return offset, err
+	}
+	if target.Type == "oracle" {
+		err := target.DB.QueryRowContext(ctx,
+			"SELECT next_offset FROM "+oracleSpatialCDCQuoteIdentifier(target.Namespace)+"."+oracleSpatialCDCQuoteIdentifier("_ADDP_TRANSFER_APPLY_POSITIONS")+" WHERE apply_identity = :1 AND partition_key = :2",
+			applyIdentity, "0",
+		).Scan(&offset)
+		return offset, err
+	}
+	err := target.DB.QueryRowContext(ctx,
+		"SELECT next_offset FROM "+mysqlCDCQuoteIdentifier(target.Namespace)+".`_addp_transfer_apply_positions` WHERE apply_identity = ? AND partition_key = ?",
+		applyIdentity, "0",
+	).Scan(&offset)
+	return offset, err
+}
+
 func (target *cdcDataE2ETarget) AdditiveValue(ctx context.Context, id int64) (string, error) {
 	var value string
 	if target.Type == "postgresql" {
 		err := target.DB.QueryRowContext(ctx, `SELECT schema_drift FROM `+pq.QuoteIdentifier(target.Namespace)+`.`+pq.QuoteIdentifier(target.Table)+` WHERE id=$1`, id).Scan(&value)
+		return value, err
+	}
+	if target.Type == "oracle" {
+		err := target.DB.QueryRowContext(ctx,
+			"SELECT \"schema_drift\" FROM "+oracleSpatialCDCQuoteIdentifier(target.Namespace)+"."+oracleSpatialCDCQuoteIdentifier(target.Table)+" WHERE \"id\" = :1", id,
+		).Scan(&value)
 		return value, err
 	}
 	err := target.DB.QueryRowContext(ctx,

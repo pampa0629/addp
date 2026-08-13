@@ -22,7 +22,8 @@ func TestAssetDiscoverableRouteAuthenticationAndTenantContract(t *testing.T) {
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL,
 			name TEXT NOT NULL, code TEXT NOT NULL, type TEXT NOT NULL,
 			definition TEXT, formula TEXT, status TEXT, tags JSON,
-			created_by INTEGER NOT NULL, created_at DATETIME, updated_at DATETIME
+			created_by INTEGER NOT NULL, created_at DATETIME, updated_at DATETIME,
+			version INTEGER NOT NULL DEFAULT 1
 		)
 	`).Error; err != nil {
 		t.Fatalf("create standard.metrics: %v", err)

@@ -26,6 +26,8 @@ engine.capabilities/v1
 - `extensions.spatial_workspaces[].can_enable` 只表示实例在当前条件下具备被显性启用的可能性；是否真的执行启用动作，由 System 的高危操作入口统一触发，不由前端或业务模块直接改写能力 JSON。
 - Oracle Engine 当前声明普通 tabular 的 Catalog、Facts、SQL 参数查询、BatchRead、TableReadSession 和基础 Spatial Facts/空间行读取；不得因为底层数据库可产生 redo、Transfer 已支持 Oracle CDC 或存在 ArcGIS SDE 表就声明 `change_stream_read` 或 SDE 逻辑变化源。Oracle CDC 是 Transfer-owned capture Provider，ArcGIS SDE 仍是后续独立逻辑变化源，两者不得并入 Oracle Engine 的普通 Store 能力。
 
+ArcGIS workspace kind 固定为 `arcgis/sde`。Oracle 实例能力解析器只能通过只读 Oracle data dictionary 探测 `SDE` repository owner 的企业级地理数据库正式核心系统表组合：同一 `SDE` owner 至少同时可见 `TABLE_REGISTRY`、`GDB_ITEMS`、`GDB_ITEMTYPES`、`GEOMETRY_COLUMNS` 四张注册表；`STATES`、`STATE_LINEAGES`、`VERSIONS`、`LAYERS` 等表作为版本化和要素类证据单独记录。仅存在 `SDE` schema、单张同名表或普通 `SDO_GEOMETRY` 列不得判定为 SDE workspace。探测结果写入 `extensions.spatial_workspaces[]`，使用 `backend_engine_type=oracle`、`can_enable=false`、`risk_level=high`；没有正式组合写入 `state=not_detected`，字典可见但核心表读取被拒绝时写入 `state=permission_denied`。本阶段不改变 `storage.store`，不声明 `change_stream_read`，不提供启用入口；后续 SDE 数据面必须由独立 logical change source / table provider 消费该 workspace fact。
+
 SuperMap workspace kind 固定如下：
 
 | `ecosystem/kind` | 前置条件 | geometry 存储 | ADDP table Provider |

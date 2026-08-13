@@ -37,8 +37,20 @@ other = "Entity code already exists"
 [model.entity.state_conflict]
 other = "The entity state does not allow this operation"
 
+[model.entity.approval_attributes_required]
+other = "The entity must have at least one attribute before approval"
+
+[model.entity.approval_primary_key_required]
+other = "The entity must have at least one primary key attribute before approval"
+
+[model.entity.approval_attribute_invalid]
+other = "The entity contains an incomplete attribute. Provide its column name and data type"
+
 [model.entity.attribute_not_found]
 other = "Entity attribute not found"
+
+[model.entity.attribute_column_conflict]
+other = "Entity attribute column name already exists"
 
 [model.entity_relation.not_found]
 other = "Entity relation not found"
@@ -51,6 +63,9 @@ other = "Both ends of the entity relation must be drafts"
 
 [model.entity_relation.self_conflict]
 other = "Self-referencing entity relations are not allowed"
+
+[model.entity_relation.conflict]
+other = "The same entity relation already exists"
 
 [model.logical_table.not_found]
 other = "Logical table not found"
@@ -67,8 +82,17 @@ other = "Logical table code already exists"
 [model.logical_table.state_conflict]
 other = "The logical table state does not allow this operation"
 
+[model.logical_table.approval_fields_required]
+other = "The logical table must have at least one field before approval"
+
+[model.logical_table.approval_primary_key_required]
+other = "The logical table must have at least one primary key field before approval"
+
 [model.logical_table.field_not_found]
 other = "Logical table field not found"
+
+[model.logical_table.field_column_conflict]
+other = "Logical table field column name already exists"
 
 [model.dw_layer.not_found]
 other = "DW layer not found"

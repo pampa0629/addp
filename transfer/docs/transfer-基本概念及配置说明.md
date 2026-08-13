@@ -268,7 +268,7 @@ Kafka Provider 通过 `ChangeStreamReaderProvider` 返回原始 ChangeRecord 和
 
 任务创建或编辑时可以显式请求 Manager 对 Topic 当前保留范围尾部做一次有界预览，并从返回的 JSON object 样本生成顶层字段、目标类型和可空性的候选建议。样本建议不是 Topic schema，不写入 Meta attributes，也不能自动进入任务配置；用户必须在确认对话框中检查建议，确认后才合并为正式 `field_mapping`。已有手工映射始终保留，样本未覆盖的字段不能据此删除。运行时仍只认已确认的完整映射，并继续按未知字段、缺失必填字段和类型不匹配的严格规则处理记录。
 
-目标必须声明原子、单调且覆盖任务所需 operation 的 `PartitionedTableChangeApplyProvider`，当前支持 PostgreSQL 与 MySQL。每个 task 由服务端生成不可变 `apply_identity`；PostgreSQL Provider 在业务目标库维护 `addp_transfer.apply_positions`，MySQL Provider 在目标业务数据库维护 `_addp_transfer_apply_positions` InnoDB 私有表，并把单 partition 的目标变更与 `next_offset` 在同一事务提交。MySQL 不跨数据库创建私有账本；同名表结构不符合唯一规范时直接失败。poll batch 必须先按 partition 拆分；同一批中相同目标 key 的有效记录保留最高 offset 的最后状态。普通 `TableUpsertProvider`、Infra state CAS 和 runtime lease 都不能替代该目标侧原子应用契约。
+目标必须声明原子、单调且覆盖任务所需 operation 的 `PartitionedTableChangeApplyProvider`，当前支持 PostgreSQL、MySQL 与 Oracle。每个 task 由服务端生成不可变 `apply_identity`；PostgreSQL Provider 在业务目标库维护 `addp_transfer.apply_positions`，MySQL Provider 在目标业务数据库维护 `_addp_transfer_apply_positions` InnoDB 私有表，Oracle Provider 在连接用户 schema 内维护 `_ADDP_TRANSFER_APPLY_POSITIONS`，并把单 partition 的目标变更与 `next_offset` 在同一事务提交。MySQL 不跨数据库创建私有账本；Oracle 目标 schema 必须等于连接用户，ledger 通过 ownership comment 从 Catalog 隐藏。任一同名 ledger 结构不符合唯一规范时直接失败。poll batch 必须先按 partition 拆分；同一批中相同目标 key 的有效记录保留最高 offset 的最后状态。普通 `TableUpsertProvider`、Infra state CAS 和 runtime lease 都不能替代该目标侧原子应用契约。
 
 每个 partition 的主状态继续存储在 `transfer.sync_states`，position 固定为 `type=kafka_offset`、`version=v1`、`next_offset`。consumer auto commit 禁用；目标提交后才允许以 runtime fencing token + state version 做 CAS。首次无状态 partition 必须显式选择 `earliest|latest`。
 
@@ -278,7 +278,7 @@ continuous worker 是 Transfer 独立进程角色，不使用 Asynq。`desired_s
 
 业务 Kafka bounded replay 使用唯一 `POST /task-definitions/:id/replay`。请求只能提交显式 per-partition `[start_offset,end_offset)` 与新 PostgreSQL 目标的 `parent_locator + name`；source、mapping、key、policy 和原目标全部继承 owner task 且不可覆盖。API 在创建 execution 前冻结并校验请求时 retention、拒绝原目标或已有目标；bounded worker 再次校验 retention 和目标不存在后，以 execution-scoped apply identity 写入隔离表。replay 不读写 `transfer.sync_states`、主 lease、主 apply identity、主目标或任务 `desired_state/status/last_execution*`，因此可与主 continuous runtime 并行。
 
-resume 前必须确认 committed `next_offset` 仍在 Kafka partition 的保留范围内。若 retention 已删除该位置，任务明确失败并要求人工决定如何处理，不能自动跳到 earliest。PostgreSQL/MySQL 目标锁等待必须响应 context 取消；取消事务不得留下业务行或目标 ledger 的半提交状态。数据库 CDC 遇到 schema drift 时，当前 execution 失败且任务进入 `blocked`；业务 Kafka record 路线按显式 `block|dead_letter` 处理确定性记录错误，不复用 CDC 的 schema change request 语义。
+resume 前必须确认 committed `next_offset` 仍在 Kafka partition 的保留范围内。若 retention 已删除该位置，任务明确失败并要求人工决定如何处理，不能自动跳到 earliest。PostgreSQL/MySQL/Oracle 目标锁等待必须响应 context 取消；Oracle 使用 `FOR UPDATE NOWAIT` 有界重试，取消事务不得留下业务行或目标 ledger 的半提交状态。数据库 CDC 遇到 schema drift 时，当前 execution 失败且任务进入 `blocked`；业务 Kafka record 路线按显式 `block|dead_letter` 处理确定性记录错误，不复用 CDC 的 schema change request 语义。
 
 continuous worker 按 Transfer 配置管理页面“连续任务策略”中的 diagnostics 采样间隔读取每分区 earliest/latest offset，用目标已成功应用的 committed `next_offset` 计算 lag 和 retention 恢复余量。时间余量使用连续 latest 样本的增长率估算；冷启动、无 committed position 或写入速率为零时显示 unknown。degraded/critical retention 阈值、checkpoint 停滞阈值均由同一配置页统一控制。`transfer.sync_states.position_committed_at` 单独保存真实 position commit 时间；只有存在 source lag 且 commit age 超过配置的 checkpoint 停滞阈值时 checkpoint health 才进入 degraded，lag 为 0 时保持 healthy。所有阈值均不进入任务 JSON。诊断结果写入 `common.task_executions.metadata.continuous.diagnostics`，Monitor 只读取 execution metadata，不直连业务 Kafka 或 Transfer 私有状态表。
 
@@ -295,12 +295,12 @@ PostgreSQL/MySQL/Oracle 单表
   -> 对应 Debezium Connector
   -> Infra Kafka
   -> Transfer Continuous Worker
-  -> PostgreSQL/MySQL 新目标表
+  -> PostgreSQL/MySQL/Oracle 新目标表
 ```
 
 公开任务只保存 `runtime.boundary=continuous`、`load.mode=incremental`、`load.change_detection.type=cdc`、`bootstrap=initial_snapshot`、源表 locator、目标表和 field mapping。source provider 只能由 locator 对应的 System Engine 解析结果决定，不进入任务 JSON。connector、provider 专属捕获资源、Infra Kafka topic 和 consumer group 都由服务端生成，不进入 System Engine 或 Meta 资源树。
 
-第一版只支持有稳定主键的单表。Debezium `op=r` 作为 snapshot upsert，`op=c|u` 作为 upsert，`op=d` 使用 record key 做物理 delete；目标固定为 `apply_mode=upsert_delete`，可选择声明完整原子应用能力的 PostgreSQL 或 MySQL。目标必须是不存在的新表，由 bootstrap 创建；不清空或接管已有目标表。捕获位点由 Kafka Connect 管理，Transfer 只在 `transfer.sync_states` 保存目标已应用的 Infra Kafka `next_offset`，两类位点不能互相代替。
+第一版只支持有稳定主键的单表。Debezium `op=r` 作为 snapshot upsert，`op=c|u` 作为 upsert，`op=d` 使用 record key 做物理 delete；目标固定为 `apply_mode=upsert_delete`，可选择声明完整原子应用能力的 PostgreSQL、MySQL 或 Oracle。目标必须是不存在的新表，由 bootstrap 创建；不清空或接管已有目标表。Oracle 目标只开放该 CDC apply 路线，字段不允许独立 `time`，decimal precision 最大 38，geometry 必须冻结为 XY dimension=2；不为这些限制保留兼容映射或旁路。捕获位点由 Kafka Connect 管理，Transfer 只在 `transfer.sync_states` 保存目标已应用的 Infra Kafka `next_offset`，两类位点不能互相代替。
 
 PostgreSQL CDC 在创建 capture 前核对完整源表字段和真实类型，开放 `string|bool|int|bigint|float|double|decimal|date|time|timestamp|json|uuid|geometry`。PostGIS geometry 必须固定 OGC type、正 SRID和 XY/XYZ 维度；Transfer 将 Debezium `{wkb,srid}` 解码为 EWKB，按源空间事实创建目标 geometry 列，不做坐标转换，geometry 也不能作为主键。connector 固定 Decimal 字符串和 Connect 毫秒时间编码；`time` 和无时区 `timestamp` 仅允许精度 `0..3`。`bytea`、数组、geography、未约束 geometry、M/ZM geometry、interval、枚举及其他用户定义类型明确拒绝。
 
@@ -308,7 +308,7 @@ Debezium 的 geometry 属性名是 `wkb`，真实 PostGIS connector 可能在该
 
 MySQL CDC 固定支持 MySQL 8.0、有稳定非空主键的单表、`log_bin=ON`、`binlog_format=ROW`、`binlog_row_image=FULL` 和非零 server id。v1 接受有符号整数、字符/文本、Decimal、浮点、毫秒精度日期时间、JSON 和 binary/BLOB；拒绝 unsigned、`TINYINT(1)`/BOOL、BIT、ENUM/SET、YEAR、空间类型、超过毫秒的时间精度和 zero date。每个 generation 拥有唯一 connector server id、data topic 和 `cleanup.policy=delete + retention.ms=-1` 的 schema-history topic，Stop 时统一清理。
 
-Oracle CDC 固定支持有稳定非空主键的普通单表，并要求独立 `cdc_database_name`、`cdc_user`、`cdc_password`、ARCHIVELOG、FORCE LOGGING、minimal supplemental logging 以及源表 `SUPPLEMENTAL LOG DATA (ALL) COLUMNS`。接受字符、布尔、整数、浮点、Decimal、毫秒精度时间戳和 `MDSYS.SDO_GEOMETRY`；`NUMBER` 按十进制字符串严格转换，`DATE/TIMESTAMP(0..3)` 按 Connect 毫秒时间解码。由于 LogMiner 不能直接稳定交付 `SDO_GEOMETRY`，Transfer 使用源 schema owner 账号创建 generation-owned 镜像表、行级同步触发器和 DDL guard：XY 转为 WKB BLOB，XYZ 转为保留 Z 值的 GeoJSON CLOB，再由同一 connector/consumer 主路径捕获；运行期间对逻辑源表的 ALTER/DROP/RENAME 会被明确拒绝，Stop 后才允许 DDL。空间事实从 Oracle Catalog Facts 冻结，adapter 严格校验 base64 WKB 或 GeoJSON 的 SRID、拓扑和 XY/XYZ 维度，统一输出标准 EWKB；内部镜像列不等于开放用户 LOB CDC。普通 LOB/binary、JSON/XML、超过毫秒精度的 timestamp 及其他不稳定类型在创建 capture 前拒绝。每个 generation 拥有 data topic 和独立 schema-history topic；表级 ALL COLUMN LOGGING 是共享 source readiness，Stop 不删除，Spatial 镜像表、行级触发器和 DDL guard 则在 Stop 核对身份后删除。
+Oracle CDC 固定支持有稳定非空主键的普通单表，并要求独立 `cdc_database_name`、`cdc_user`、`cdc_password`、ARCHIVELOG、FORCE LOGGING、minimal supplemental logging 以及源表 `SUPPLEMENTAL LOG DATA (ALL) COLUMNS`。接受字符、整数、浮点、Decimal、毫秒精度时间戳和 `MDSYS.SDO_GEOMETRY`；`NUMBER` 按十进制字符串严格转换，`DATE/TIMESTAMP(0..3)` 按 Connect 毫秒时间解码。Oracle 原生 `BOOLEAN` 虽可被 Debezium 初始快照读取，但 Debezium 3.6 LogMiner 不能稳定交付包含该列的流式 DML，因此和普通 LOB/binary、JSON/XML、超过毫秒精度的 timestamp 一样在创建 capture 前拒绝，不能以快照成功推断增量可用。由于 LogMiner 不能直接稳定交付 `SDO_GEOMETRY`，Transfer 使用源 schema owner 账号创建 generation-owned 镜像表、行级同步触发器和 DDL guard：XY 转为 WKB BLOB，XYZ 转为保留 Z 值的 GeoJSON CLOB，再由同一 connector/consumer 主路径捕获；运行期间对逻辑源表的 ALTER/DROP/RENAME 会被明确拒绝，Stop 后才允许 DDL。空间事实从 Oracle Catalog Facts 冻结，adapter 严格校验 base64 WKB 或 GeoJSON 的 SRID、拓扑和 XY/XYZ 维度，统一输出标准 EWKB；内部镜像列不等于开放用户 LOB CDC。真实 E2E 已覆盖 PostgreSQL/MySQL/Oracle 三类源到 Oracle 目标的 snapshot/insert/update/delete 与 offset/ledger 收敛；Oracle 源还覆盖跨 consumer batch 的 128 行事务提交、未提交不可见和回滚隔离。Oracle Spatial 的 XY Polygon/MultiPolygon 已覆盖 PostgreSQL/MySQL/Oracle 目标，XYZ 当前只覆盖 PostgreSQL，MySQL 与 Oracle 目标仍明确只支持二维 geometry。每个 generation 拥有 data topic 和独立 schema-history topic；表级 ALL COLUMN LOGGING 是共享 source readiness，Stop 不删除，Spatial 镜像表、行级触发器和 DDL guard 则在 Stop 核对身份后删除。
 
 类型不兼容与字段增删、envelope/source 结构变化一样进入 `schema_change_blocked`，execution metadata 会记录 missing/unexpected/incompatible 字段，当前 Kafka 消息不会被跳过。任务同时进入 `status=blocked`，禁止直接启动、恢复或重试；connector 仍会继续采集，因此 backlog、Kafka retention 和磁盘风险继续存在。
 

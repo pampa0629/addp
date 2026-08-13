@@ -16,6 +16,7 @@ type Domain struct {
 	UpdatedBy   *int64    `json:"updated_by,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	Version     int64     `gorm:"not null;default:1" json:"version"`
 }
 
 func (Domain) TableName() string {
@@ -34,6 +35,7 @@ type CreateDomainRequest struct {
 
 // UpdateDomainRequest 更新业务域请求
 type UpdateDomainRequest struct {
+	Version     int64  `json:"version" binding:"required"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	ParentID    *int64 `json:"parent_id,omitempty"`

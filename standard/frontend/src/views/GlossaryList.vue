@@ -2,7 +2,7 @@
   <div class="glossary-list">
     <div class="page-header">
       <h2>{{ $t('standard.glossary.title') }}</h2>
-      <el-button type="primary" :icon="Plus" @click="openCreateDialog">{{ $t('standard.glossary.create') }}</el-button>
+      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreateDialog">{{ $t('standard.glossary.create') }}</el-button>
     </div>
 
     <!-- 筛选栏 -->
@@ -66,10 +66,12 @@
         </el-table-column>
         <el-table-column :label="$t('standard.common.actions')" width="220" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="goToDetail(row)">{{ $t('standard.common.detail') }}</el-button>
-            <el-button link type="success" @click="handleApprove(row)" v-if="row.status === 'draft'">{{ $t('standard.common.approve') }}</el-button>
-            <el-button link type="warning" @click="handleDeprecate(row)" v-if="row.status === 'approved'">{{ $t('standard.common.deprecate') }}</el-button>
-            <el-button link type="danger" @click="handleDelete(row)">{{ $t('standard.common.delete') }}</el-button>
+            <div class="table-actions">
+              <el-button link type="primary" @click="goToDetail(row)">{{ $t('standard.common.detail') }}</el-button>
+              <el-button v-if="canApprove && row.status === 'draft'" link type="success" :loading="isActionLocked(`glossary:${row.id}`)" @click="handleApprove(row)">{{ $t('standard.common.approve') }}</el-button>
+              <el-button v-if="canOffline && row.status === 'approved'" link type="warning" :loading="isActionLocked(`glossary:${row.id}`)" @click="handleDeprecate(row)">{{ $t('standard.common.deprecate') }}</el-button>
+              <el-button v-if="canDelete" link type="danger" :disabled="isActionLocked(`glossary:${row.id}`)" @click="handleDelete(row)">{{ $t('standard.common.delete') }}</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -139,6 +141,9 @@ import { useI18n } from 'vue-i18n'
 import { domainAPI, glossaryAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
+import { useStandardPermissions } from '../composables/useStandardPermissions'
+import { useActionLock } from '../composables/useActionLock'
+import { createLatestRequestCoordinator } from '@common-ui'
 import {
   buildGlossaryFilterQuery,
   createGlossaryForm,
@@ -146,6 +151,8 @@ import {
 } from '../utils/glossaryRouteState'
 
 const { t } = useI18n()
+const { canCreate, canDelete, canApprove, canOffline } = useStandardPermissions('glossary')
+const { isLocked: isActionLocked, runLocked } = useActionLock()
 
 const router = useRouter()
 const route = useRoute()
@@ -159,6 +166,7 @@ const domainList = ref([])
 const total = ref(0)
 const editingId = ref(null)
 const formRef = ref(null)
+const listRequests = createLatestRequestCoordinator()
 
 const filters = reactive({
   keyword: '',
@@ -213,20 +221,22 @@ const loadDomains = async () => {
 }
 
 const loadGlossaries = async () => {
+  const params = { page: filters.page, page_size: filters.page_size }
+  if (filters.keyword) params.keyword = filters.keyword
+  if (filters.domain_id) params.domain_id = filters.domain_id
+  if (filters.status) params.status = filters.status
+  const request = listRequests.begin(JSON.stringify(params))
   loading.value = true
   try {
-    const params = { page: filters.page, page_size: filters.page_size }
-    if (filters.keyword) params.keyword = filters.keyword
-    if (filters.domain_id) params.domain_id = filters.domain_id
-    if (filters.status) params.status = filters.status
-
     const res = await glossaryAPI.list(params)
+    if (!listRequests.isCurrent(request, JSON.stringify(params))) return
     glossaries.value = res.data || []
     total.value = res.total || 0
   } catch (e) {
+    if (!listRequests.isCurrent(request, JSON.stringify(params))) return
     ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
   } finally {
-    loading.value = false
+    if (listRequests.isCurrent(request, JSON.stringify(params))) loading.value = false
   }
 }
 
@@ -257,6 +267,7 @@ const openEditDialog = (row) => {
   editMode.value = true
   editingId.value = row.id
   form.value = {
+    version: row.version,
     name: row.name,
     alias: row.alias || [],
     domain_id: row.domain_id || null,
@@ -269,58 +280,63 @@ const openEditDialog = (row) => {
 }
 
 const handleSubmit = async () => {
-  if (!formRef.value) return
-  await formRef.value.validate(async valid => {
+  if (submitting.value || !formRef.value) return
+  submitting.value = true
+  try {
+    const valid = await formRef.value.validate().catch(() => false)
     if (!valid) return
-    submitting.value = true
+    if (editMode.value) {
+      await glossaryAPI.update(editingId.value, form.value)
+      ElMessage.success(t('standard.common.updateSuccess'))
+    } else {
+      await glossaryAPI.create(form.value)
+      ElMessage.success(t('standard.common.createSuccess'))
+    }
+    dialogVisible.value = false
+    await loadGlossaries()
+  } catch (e) {
+    ElMessage.error(getStandardErrorMessage(e, t))
+  } finally {
+    submitting.value = false
+  }
+}
+
+const handleApprove = async (row) => {
+  await runLocked(`glossary:${row.id}`, async () => {
     try {
-      if (editMode.value) {
-        await glossaryAPI.update(editingId.value, form.value)
-        ElMessage.success(t('standard.common.updateSuccess'))
-      } else {
-        await glossaryAPI.create(form.value)
-        ElMessage.success(t('standard.common.createSuccess'))
-      }
-      dialogVisible.value = false
+      await glossaryAPI.approve(row.id, row.version)
+      ElMessage.success(t('standard.common.approveSuccess'))
       await loadGlossaries()
     } catch (e) {
-      ElMessage.error(getStandardErrorMessage(e, t))
-    } finally {
-      submitting.value = false
+      ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.approveFailed'))
     }
   })
 }
 
-const handleApprove = async (row) => {
-  try {
-    await glossaryAPI.approve(row.id)
-    ElMessage.success(t('standard.common.approveSuccess'))
-    await loadGlossaries()
-  } catch (e) {
-    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.approveFailed'))
-  }
-}
-
 const handleDeprecate = async (row) => {
-  try {
-    await ElMessageBox.confirm(t('standard.glossary.confirmDeprecate', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
-    await glossaryAPI.deprecate(row.id)
-    ElMessage.success(t('standard.common.deprecated'))
-    await loadGlossaries()
-  } catch (e) {
-    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t))
-  }
+  await runLocked(`glossary:${row.id}`, async () => {
+    try {
+      await ElMessageBox.confirm(t('standard.glossary.confirmDeprecate', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
+      await glossaryAPI.deprecate(row.id, row.version)
+      ElMessage.success(t('standard.common.deprecated'))
+      await loadGlossaries()
+    } catch (e) {
+      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t))
+    }
+  })
 }
 
 const handleDelete = async (row) => {
-  try {
-    await ElMessageBox.confirm(t('standard.glossary.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
-    await glossaryAPI.delete(row.id)
-    ElMessage.success(t('standard.common.deleteSuccess'))
-    await loadGlossaries()
-  } catch (e) {
-    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
-  }
+  await runLocked(`glossary:${row.id}`, async () => {
+    try {
+      await ElMessageBox.confirm(t('standard.glossary.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
+      await glossaryAPI.delete(row.id)
+      ElMessage.success(t('standard.common.deleteSuccess'))
+      await loadGlossaries()
+    } catch (e) {
+      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
+    }
+  })
 }
 
 watch(
@@ -355,7 +371,7 @@ onMounted(async () => {
 .page-header h2 {
   margin: 0;
   font-size: 18px;
-  color: var(--el-text-color-primary);
+  color: var(--addp-text-primary);
 }
 
 .filter-card {
@@ -368,7 +384,19 @@ onMounted(async () => {
 
 .term-name {
   font-weight: 500;
-  color: var(--el-text-color-primary);
+  color: var(--addp-text-primary);
+}
+
+.table-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: max-content;
+  white-space: nowrap;
+}
+
+.table-actions :deep(.el-button) {
+  white-space: nowrap;
 }
 
 .alias-list {

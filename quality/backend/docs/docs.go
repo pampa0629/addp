@@ -71,6 +71,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "创建前校验目标 PostgreSQL Schema 和数据表属于当前租户引擎 | Validate the target PostgreSQL schema and table against the tenant engine before creation",
                 "consumes": [
                     "application/json"
                 ],
@@ -184,6 +185,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "更新前校验目标 PostgreSQL Schema 和数据表属于当前租户引擎 | Validate the target PostgreSQL schema and table against the tenant engine before update",
                 "consumes": [
                     "application/json"
                 ],
@@ -805,6 +807,70 @@ const docTemplate = `{
                 ]
             }
         },
+        "/rule-applications/element-candidates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "RuleApplication"
+                ],
+                "summary": "搜索规则应用数据元候选 | Search data element candidates for rule applications",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "名称、编码或定义关键字 | Name, code, or definition keyword",
+                        "name": "keyword",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 100,
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityElementCandidateListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.rule_application.create"
+                ]
+            }
+        },
         "/rule-applications/{id}": {
             "get": {
                 "security": [
@@ -1172,6 +1238,60 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "dataquality.Document": {
+            "type": "object",
+            "properties": {
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataquality.Rule"
+                    }
+                },
+                "schema_version": {
+                    "type": "string"
+                }
+            }
+        },
+        "dataquality.Parameters": {
+            "type": "object",
+            "properties": {
+                "max": {
+                    "type": "string"
+                },
+                "min": {
+                    "type": "string"
+                },
+                "pattern": {
+                    "type": "string"
+                },
+                "values": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "dataquality.Rule": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "params": {
+                    "$ref": "#/definitions/dataquality.Parameters"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "execution.TaskExecution": {
             "type": "object",
             "properties": {
@@ -1447,55 +1567,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_quality_internal_models.RuleApplication": {
-            "type": "object",
-            "properties": {
-                "column_name": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
-                "element_id": {
-                    "description": "standard.elements.id",
-                    "type": "integer"
-                },
-                "enabled": {
-                    "type": "boolean"
-                },
-                "engine_id": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "rule_config": {
-                    "description": "质量规则快照",
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "schema_name": {
-                    "type": "string"
-                },
-                "table_name": {
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "integer"
-                }
-            }
-        },
         "github_com_addp_quality_internal_service.CreateCheckTaskRequest": {
             "type": "object",
             "required": [
@@ -1549,6 +1620,89 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_quality_internal_service.RuleApplicationElementCandidate": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "quality_rules": {
+                    "$ref": "#/definitions/dataquality.Document"
+                }
+            }
+        },
+        "github_com_addp_quality_internal_service.RuleApplicationElementSummary": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_quality_internal_service.RuleApplicationListItem": {
+            "type": "object",
+            "properties": {
+                "column_name": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "element": {
+                    "$ref": "#/definitions/github_com_addp_quality_internal_service.RuleApplicationElementSummary"
+                },
+                "element_id": {
+                    "description": "standard.elements.id",
+                    "type": "integer"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "rule_config": {
+                    "description": "质量规则快照",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "schema_name": {
+                    "type": "string"
+                },
+                "table_name": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_quality_internal_service.UpdateCheckTaskRequest": {
             "type": "object",
             "required": [
@@ -1577,6 +1731,9 @@ const docTemplate = `{
         },
         "github_com_addp_quality_internal_service.UpdateRuleApplicationRequest": {
             "type": "object",
+            "required": [
+                "enabled"
+            ],
             "properties": {
                 "enabled": {
                     "type": "boolean"
@@ -1671,6 +1828,29 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_by": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.qualityElementCandidateListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_quality_internal_service.RuleApplicationElementCandidate"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
                     "type": "integer"
                 }
             }
@@ -1973,7 +2153,7 @@ const docTemplate = `{
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_quality_internal_models.RuleApplication"
+                        "$ref": "#/definitions/github_com_addp_quality_internal_service.RuleApplicationListItem"
                     }
                 },
                 "page": {
