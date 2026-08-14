@@ -3,7 +3,6 @@ package repository
 import (
 	"errors"
 	"os"
-	"regexp"
 	"testing"
 
 	commonapi "github.com/addp/common/api"
@@ -29,11 +28,15 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 	}
 
 	tenantID := int64(9_800_000_001)
-	if err := db.Exec("DELETE FROM standard.elements WHERE tenant_id = ?", tenantID).Error; err != nil {
+	elementID := int64(9_800_000_001)
+	if err := db.Exec("DELETE FROM standard.elements WHERE id = ? OR tenant_id = ?", elementID, tenantID).Error; err != nil {
 		t.Fatalf("clear quality rule migration test data: %v", err)
 	}
-	if err := db.Exec(`INSERT INTO standard.elements (tenant_id, name, code, data_type, quality_rules, status, created_by, version)
-		VALUES (?, 'legacy quality rule', 'legacy-quality-rule-key', 'string', ?::jsonb, 'draft', 1, 1)`, tenantID,
+	if err := db.Exec("DELETE FROM standard.data_migrations WHERE version = 2026081401").Error; err != nil {
+		t.Fatalf("reset quality rule identity migration marker: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO standard.elements (id, tenant_id, name, code, data_type, quality_rules, status, created_by, version)
+			VALUES (?, ?, 'legacy quality rule', 'legacy-quality-rule-key', 'string', ?::jsonb, 'draft', 1, 1)`, elementID, tenantID,
 		`{"schema_version":"addp.quality.rules/v1","rules":[{"type":"not_null","enabled":true,"severity":"error","message":"","params":{}}]}`).Error; err != nil {
 		t.Fatalf("insert legacy quality rule: %v", err)
 	}
@@ -44,8 +47,35 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 	if err := db.Raw("SELECT quality_rules->'rules'->0->>'rule_key' FROM standard.elements WHERE tenant_id = ?", tenantID).Scan(&ruleKey).Error; err != nil {
 		t.Fatalf("load migrated rule key: %v", err)
 	}
-	if !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`).MatchString(ruleKey) || ruleKey == "00000000-0000-0000-0000-000000000000" {
-		t.Fatalf("migrated rule key = %q", ruleKey)
+	if ruleKey != "c0c3083c-9caf-8f5b-8f55-0811305fdee6" {
+		t.Fatalf("migrated rule key = %q, want shared backfill vector", ruleKey)
+	}
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate() after identity backfill should be idempotent: %v", err)
+	}
+	var stableRuleKey string
+	if err := db.Raw("SELECT quality_rules->'rules'->0->>'rule_key' FROM standard.elements WHERE id = ?", elementID).Scan(&stableRuleKey).Error; err != nil {
+		t.Fatalf("load stable migrated rule key: %v", err)
+	}
+	if stableRuleKey != ruleKey {
+		t.Fatalf("second migration changed rule key from %q to %q", ruleKey, stableRuleKey)
+	}
+	randomRuleElementID := elementID + 1
+	randomRuleKey := "00000000-0000-4000-8000-000000000001"
+	if err := db.Exec(`INSERT INTO standard.elements (id, tenant_id, name, code, data_type, quality_rules, status, created_by, version)
+		VALUES (?, ?, 'new quality rule', 'new-quality-rule-key', 'string', ?::jsonb, 'draft', 1, 1)`, randomRuleElementID, tenantID,
+		`{"schema_version":"addp.quality.rules/v1","rules":[{"rule_key":"`+randomRuleKey+`","type":"not_null","enabled":true,"severity":"error","message":"new","params":{}}]}`).Error; err != nil {
+		t.Fatalf("insert post-migration quality rule: %v", err)
+	}
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate() after new rule error: %v", err)
+	}
+	var preservedRuleKey string
+	if err := db.Raw("SELECT quality_rules->'rules'->0->>'rule_key' FROM standard.elements WHERE id = ?", randomRuleElementID).Scan(&preservedRuleKey).Error; err != nil {
+		t.Fatalf("load post-migration rule key: %v", err)
+	}
+	if preservedRuleKey != randomRuleKey {
+		t.Fatalf("post-migration rule key changed from %q to %q", randomRuleKey, preservedRuleKey)
 	}
 	if err := db.Exec("DELETE FROM standard.elements WHERE tenant_id = ?", tenantID).Error; err != nil {
 		t.Fatalf("delete quality rule migration test data: %v", err)

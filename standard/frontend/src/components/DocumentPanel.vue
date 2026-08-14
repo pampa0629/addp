@@ -128,6 +128,7 @@ import { useI18n } from 'vue-i18n'
 import { elementDocumentAPI, glossaryDocumentAPI, metricDocumentAPI, documentAPI } from '../api/standard'
 import { saveBlob } from '../utils/download'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
+import { getDocumentTypeTagType } from '../utils/documentType'
 import { useStandardPermissions } from '../composables/useStandardPermissions'
 import { useActionLock } from '../composables/useActionLock'
 
@@ -191,7 +192,7 @@ const docTypeLabel = (type) => ({
   internal: t('standard.document.internal'),
   reference: t('standard.document.reference')
 }[type] || type)
-const docTypeTagType = (type) => ({ national: 'danger', industry: 'warning', internal: 'success', reference: '' }[type] || '')
+const docTypeTagType = getDocumentTypeTagType
 
 const loadDocs = async () => {
   if (!props.entityId) return

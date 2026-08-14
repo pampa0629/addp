@@ -59,6 +59,11 @@ func migrateStandardQualityRuleKeys(db *gorm.DB) error {
 		return nil
 	}
 	statements := []string{
+		`CREATE TABLE IF NOT EXISTS standard.data_migrations (
+			version BIGINT PRIMARY KEY,
+			name TEXT NOT NULL,
+			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
 		`DO $do$ BEGIN
 			IF EXISTS (
 				SELECT 1 FROM standard.elements
@@ -80,33 +85,59 @@ func migrateStandardQualityRuleKeys(db *gorm.DB) error {
 				RAISE EXCEPTION 'standard.elements contains non-object quality rules';
 			END IF;
 		END $do$`,
-		`UPDATE standard.elements AS element
-		SET quality_rules = jsonb_set(
-			element.quality_rules,
-			'{rules}',
-			(
-				SELECT COALESCE(jsonb_agg(
-					CASE WHEN rule ? 'rule_key' THEN rule ELSE jsonb_set(
-						rule,
-						'{rule_key}',
-						to_jsonb(
-							substr(hash, 1, 8) || '-' || substr(hash, 9, 4) || '-' || substr(hash, 13, 4) || '-' || substr(hash, 17, 4) || '-' || substr(hash, 21, 12)
-						),
-						true
-					) END
-					ORDER BY ordinal
-				), '[]'::jsonb)
-				FROM (
-					SELECT rule, ordinal, md5('standard.element:' || element.tenant_id::text || ':' || element.id::text || ':' || ordinal::text) AS hash
-					FROM jsonb_array_elements(element.quality_rules->'rules') WITH ORDINALITY AS rules(rule, ordinal)
-				) AS keyed_rules
-			)
+		`WITH expanded AS (
+			SELECT
+				element.id AS element_id,
+				element.tenant_id,
+				rules.rule,
+				rules.ordinal,
+				encode(sha256(convert_to((rules.rule - 'rule_key')::text, 'UTF8')), 'hex') AS fingerprint
+			FROM standard.elements AS element
+			CROSS JOIN LATERAL jsonb_array_elements(element.quality_rules->'rules') WITH ORDINALITY AS rules(rule, ordinal)
+			WHERE element.quality_rules IS NOT NULL
+			  AND NOT EXISTS (SELECT 1 FROM standard.data_migrations WHERE version = 2026081401)
+		), numbered AS (
+			SELECT *, row_number() OVER (
+				PARTITION BY element_id, fingerprint
+				ORDER BY ordinal
+			) AS duplicate_occurrence
+			FROM expanded
+		), digested AS (
+			SELECT *, sha256(
+				decode(replace('f3889a4a-1675-4623-b6e3-773f9125a04d', '-', ''), 'hex') ||
+				convert_to(
+					format(
+						'addp.quality.rule-backfill/v1|tenant_id=%s|element_id=%s|rule_fingerprint=%s|duplicate_occurrence=%s',
+						tenant_id, element_id, fingerprint, duplicate_occurrence
+					),
+					'UTF8'
+				)
+			) AS digest
+			FROM numbered
+		), keyed AS (
+			SELECT *,
+				substr(encode(digest, 'hex'), 1, 8) || '-' ||
+				substr(encode(digest, 'hex'), 9, 4) || '-8' ||
+				substr(encode(digest, 'hex'), 14, 3) || '-' ||
+				substr('89ab', (((get_byte(digest, 8) >> 4) & 3) + 1), 1) ||
+				substr(encode(digest, 'hex'), 18, 3) || '-' ||
+				substr(encode(digest, 'hex'), 21, 12) AS rule_key
+			FROM digested
+		), documents AS (
+			SELECT element_id, jsonb_agg(
+				jsonb_set(rule, '{rule_key}', to_jsonb(rule_key), true)
+				ORDER BY ordinal
+			) AS rules
+			FROM keyed
+			GROUP BY element_id
 		)
-		WHERE element.quality_rules IS NOT NULL
-		AND EXISTS (
-			SELECT 1 FROM jsonb_array_elements(element.quality_rules->'rules') AS rules(rule)
-			WHERE NOT (rule ? 'rule_key')
-		)`,
+		UPDATE standard.elements AS element
+		SET quality_rules = jsonb_set(element.quality_rules, '{rules}', documents.rules)
+		FROM documents
+		WHERE element.id = documents.element_id`,
+		`INSERT INTO standard.data_migrations (version, name)
+		VALUES (2026081401, 'quality_rule_key_identity_v2')
+		ON CONFLICT (version) DO NOTHING`,
 		`DO $do$ BEGIN
 			IF EXISTS (
 				SELECT 1

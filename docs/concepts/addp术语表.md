@@ -124,10 +124,11 @@
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | quality rule | 质量规则 | Standard 数据元上使用版本化契约定义的、可复用的字段质量约束。 | 规则只描述语义，不绑定物理字段，也不包含自定义 SQL。 |
+| rule key | 规则身份 | Standard 为每条质量规则持有的稳定 UUID，API 字段为 `rule_key`。 | 新规则创建时生成并在编辑时保留；Quality 只能继承该身份，不得按规则应用或物理目标生成第二套身份。 |
 | RuleApplication | 规则应用 | Quality 将一份数据元质量规则快照绑定到确定 Engine Instance、schema、table 和 column 的持久事实。 | Standard 规则变化不静默改写已有快照。 |
 | quality check | 质量检查 | Quality 在一次持久 execution 中对确定表的全部有效规则应用进行完整求值的过程。 | v1 只支持 PostgreSQL；任一规则执行错误时整次 execution 失败。 |
 | quality score | 质量分 | 一次成功质量检查中各规则通过率的算术平均。 | 不按 severity 或行数加权；无有效规则不能产生质量分。 |
-| quality issue | 质量问题 | 某条规则应用当前仍存在未通过事实的可治理状态。 | 稳定身份为 Tenant + RuleApplication；历史发生记录保留在 execution 结果中。 |
+| quality issue | 质量问题 | 某条规则应用中的某条规则当前仍存在未通过事实的可治理状态。 | 稳定身份为 Tenant + RuleApplication + rule key；历史发生记录保留在 execution 结果中。 |
 
 ## 任务与执行
 

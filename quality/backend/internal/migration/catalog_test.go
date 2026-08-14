@@ -11,8 +11,8 @@ func TestEmbeddedCatalogContainsQualityQueryIndexes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog: %v", err)
 	}
-	if catalog.LatestVersion != 5 {
-		t.Fatalf("latest migration version = %d, want 5", catalog.LatestVersion)
+	if catalog.LatestVersion != 6 {
+		t.Fatalf("latest migration version = %d, want 6", catalog.LatestVersion)
 	}
 	queryIndexes := catalog.Files[2]
 	if queryIndexes.Name != "000003_quality_query_indexes.up.sql" {
@@ -55,6 +55,21 @@ func TestEmbeddedCatalogContainsQualityQueryIndexes(t *testing.T) {
 	} {
 		if !strings.Contains(ruleKeyIdentity.Contents, required) {
 			t.Fatalf("rule key migration missing %q", required)
+		}
+	}
+	ruleKeyIdentityV2 := catalog.Files[5]
+	if ruleKeyIdentityV2.Name != "000006_quality_rule_key_identity_v2.up.sql" {
+		t.Fatalf("rule key identity v2 migration = %q", ruleKeyIdentityV2.Name)
+	}
+	for _, required := range []string{
+		"f3889a4a-1675-4623-b6e3-773f9125a04d",
+		"addp.quality.rule-backfill/v1|tenant_id=%s|element_id=%s|rule_fingerprint=%s|duplicate_occurrence=%s",
+		"quality_rule_key_remap",
+		"SET rule_key = remap.new_rule_key::UUID",
+		"SET rule_config = jsonb_set",
+	} {
+		if !strings.Contains(ruleKeyIdentityV2.Contents, required) {
+			t.Fatalf("rule key identity v2 migration missing %q", required)
 		}
 	}
 }

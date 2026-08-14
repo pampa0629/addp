@@ -84,7 +84,7 @@ func (i *WorkflowContainerInspector) resolveRuntime(
 	tenantID uint,
 	operators []string,
 ) (*commonModels.Engine, engineplugin.WorkflowRuntimeProvider, engineplugin.ConnectionInfo, error) {
-	engines, err := i.engineService.GetEnginesByTenant(tenantID)
+	engines, err := i.engineService.GetWorkflowRuntimesByTenant(ctx, tenantID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -102,20 +102,15 @@ func (i *WorkflowContainerInspector) resolveRuntime(
 		if _, providerErr := dbbridge.WorkflowRuntimeProviderForEngine(candidate); providerErr != nil {
 			continue
 		}
-		engine, loadErr := i.engineService.GetResourceByID(candidate.ID, tenantID)
-		if loadErr != nil {
-			failures = append(failures, fmt.Sprintf("%s: %v", candidate.Name, loadErr))
-			continue
-		}
-		runtime, providerErr := dbbridge.WorkflowRuntimeProviderForEngine(engine)
+		runtime, providerErr := dbbridge.WorkflowRuntimeProviderForEngine(candidate)
 		if providerErr != nil {
 			continue
 		}
-		if requireErr := dbbridge.RequireDirectWorkflowOperators(ctx, engine, operators...); requireErr != nil {
-			failures = append(failures, fmt.Sprintf("%s: %v", engine.Name, requireErr))
+		if requireErr := dbbridge.RequireDirectWorkflowOperators(ctx, candidate, operators...); requireErr != nil {
+			failures = append(failures, fmt.Sprintf("%s: %v", candidate.Name, requireErr))
 			continue
 		}
-		return engine, runtime, engineplugin.ConnectionInfo(engine.ConnectionInfo), nil
+		return candidate, runtime, engineplugin.ConnectionInfo(candidate.ConnectionInfo), nil
 	}
 	message := fmt.Sprintf("no active workflow runtime provides direct operators %s", strings.Join(operators, ", "))
 	if len(failures) > 0 {

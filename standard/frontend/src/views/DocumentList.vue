@@ -193,6 +193,7 @@ import { saveBlob } from '../utils/download'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 import { formatStandardDate } from '../utils/dateTime'
+import { getDocumentTypeTagType } from '../utils/documentType'
 import { useStandardPermissions } from '../composables/useStandardPermissions'
 import { useActionLock } from '../composables/useActionLock'
 import { createLatestRequestCoordinator } from '@common-ui'
@@ -229,7 +230,7 @@ const docTypeLabel = (type) => ({
   internal: t('standard.document.internal'),
   reference: t('standard.document.reference')
 }[type] || type)
-const docTypeTagType = (type) => ({ national: 'danger', industry: 'warning', internal: 'primary', reference: 'info' }[type] || 'info')
+const docTypeTagType = getDocumentTypeTagType
 const formatTime = time => formatStandardDate(time, locale.value)
 const formatFileSize = (bytes) => {
   if (!bytes) return '0 B'

@@ -70,6 +70,31 @@ func (s *EngineService) GetEnginesByTenant(tenantID uint) ([]*commonModels.Engin
 	return engines, nil
 }
 
+// GetWorkflowRuntimesByTenant returns active workflow runtimes visible to the
+// tenant through System's non-secret Runtime Descriptor control plane.
+func (s *EngineService) GetWorkflowRuntimesByTenant(ctx context.Context, tenantID uint) ([]*commonModels.Engine, error) {
+	if tenantID == 0 {
+		return nil, errors.New("tenant ID is required to list workflow runtimes")
+	}
+	if s == nil || s.systemClient == nil {
+		return nil, errors.New("System service client is not configured")
+	}
+	descriptors, err := s.systemClient.WithTenantID(tenantID).ListEngineRuntimeDescriptors(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list tenant workflow runtime descriptors from System: %w", err)
+	}
+	runtimes := make([]*commonModels.Engine, 0, len(descriptors))
+	for index := range descriptors {
+		runtime := descriptors[index].AsEngine()
+		if !runtime.IsUsable() || !engineselection.SupportsComputeEntrypoint(runtime, "workflow") {
+			continue
+		}
+		runtimes = append(runtimes, runtime)
+	}
+	s.log.Info("从 System 获取租户工作流 Runtime Descriptor 成功", "tenant_id", tenantID, "count", len(runtimes))
+	return runtimes, nil
+}
+
 // GetResourceByID returns decrypted connection details through System's
 // Service Principal branch after enforcing the execution Tenant Context.
 func (s *EngineService) GetResourceByID(engineID, tenantID uint) (*commonModels.Engine, error) {

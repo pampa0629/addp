@@ -265,11 +265,17 @@ func seedModelCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64) (int
 	if err := db.Create(&entityRelation).Error; err != nil {
 		t.Fatalf("create entity relation: %v", err)
 	}
-	factTable := models.LogicalTable{TenantID: tenantID, Name: "Fact Order", Code: "fact_order", TableType: "fact", Status: "approved", CreatedBy: 1}
+	factTable := models.LogicalTable{
+		TenantID: tenantID, Name: "Fact Order", Code: "fact_order", TableType: "fact", Layer: layer.LayerCode,
+		Status: "approved", GrainDescription: "one row per order", CreatedBy: 1,
+	}
 	if err := db.Create(&factTable).Error; err != nil {
 		t.Fatalf("create fact table: %v", err)
 	}
-	dimTable := models.LogicalTable{TenantID: tenantID, Name: "Dim Customer", Code: "dim_customer", TableType: "dimension", Status: "approved", CreatedBy: 1}
+	dimTable := models.LogicalTable{
+		TenantID: tenantID, Name: "Dim Customer", Code: "dim_customer", TableType: "dimension", Layer: layer.LayerCode,
+		Status: "approved", CreatedBy: 1,
+	}
 	if err := db.Create(&dimTable).Error; err != nil {
 		t.Fatalf("create dim table: %v", err)
 	}

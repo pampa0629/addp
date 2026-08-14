@@ -261,6 +261,11 @@ func (p *runtimeProvider) invoke(ctx context.Context, operator string, params ma
 	if result == nil {
 		return nil, fmt.Errorf("GDAL vector operator %s returned no result", operator)
 	}
+	payload, ok := result.Result["result"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("GDAL vector operator %s returned a non-object result", operator)
+	}
+	result.Result = payload
 	return result, nil
 }
 

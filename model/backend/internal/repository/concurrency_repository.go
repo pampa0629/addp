@@ -23,6 +23,15 @@ func LockLogicalTable(db *gorm.DB, id, tenantID int64) (*models.LogicalTable, er
 	return &table, commonrepo.WrapDBError(err)
 }
 
+func LockLogicalTablesByTenant(db *gorm.DB, tenantID int64) ([]models.LogicalTable, error) {
+	var tables []models.LogicalTable
+	err := db.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("tenant_id = ?", tenantID).
+		Order("id ASC").
+		Find(&tables).Error
+	return tables, commonrepo.WrapDBError(err)
+}
+
 func LockDWLayer(db *gorm.DB, id, tenantID int64) (*models.DWLayer, error) {
 	var layer models.DWLayer
 	err := db.Clauses(clause.Locking{Strength: "UPDATE"}).

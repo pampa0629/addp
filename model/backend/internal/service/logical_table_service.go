@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -246,9 +245,20 @@ func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req
 
 func (s *LogicalTableService) DeleteLogicalTable(id, tenantID, version int64) error {
 	return s.repo.DB().Transaction(func(tx *gorm.DB) error {
-		table, err := repository.LockLogicalTable(tx, id, tenantID)
+		// Relation mutations lock both endpoints by ID. Locking the tenant table set
+		// in the same order prevents delete-vs-relation deadlocks and closes the
+		// window in which a new relation could escape aggregate version advancement.
+		lockedTables, err := repository.LockLogicalTablesByTenant(tx, tenantID)
 		if err != nil {
-			return modelResourceError(err, "logical_table_not_found", i18n.MsgTableNotFound)
+			return err
+		}
+		tablesByID := make(map[int64]*models.LogicalTable, len(lockedTables))
+		for index := range lockedTables {
+			tablesByID[lockedTables[index].ID] = &lockedTables[index]
+		}
+		table, ok := tablesByID[id]
+		if !ok {
+			return apperrors.NotFound("logical_table_not_found", i18n.MsgTableNotFound)
 		}
 		if err := requireVersion(table.Version, version); err != nil {
 			return err
@@ -260,44 +270,32 @@ func (s *LogicalTableService) DeleteLogicalTable(id, tenantID, version int64) er
 		if err != nil {
 			return err
 		}
-		otherTableIDs := make(map[int64]struct{}, len(relations))
 		survivingFactIDs := make(map[int64]struct{}, len(relations))
 		for _, relation := range relations {
 			otherTableID := relation.SourceTable
 			if otherTableID == id {
 				otherTableID = relation.TargetTable
 			}
-			otherTableIDs[otherTableID] = struct{}{}
-			if relation.SourceTable != id {
-				survivingFactIDs[relation.SourceTable] = struct{}{}
-			}
-		}
-
-		orderedOtherTableIDs := make([]int64, 0, len(otherTableIDs))
-		for otherTableID := range otherTableIDs {
-			orderedOtherTableIDs = append(orderedOtherTableIDs, otherTableID)
-		}
-		sort.Slice(orderedOtherTableIDs, func(i, j int) bool { return orderedOtherTableIDs[i] < orderedOtherTableIDs[j] })
-
-		lockedVersions := make(map[int64]int64, len(orderedOtherTableIDs))
-		for _, otherTableID := range orderedOtherTableIDs {
-			otherTable, err := repository.LockLogicalTable(tx, otherTableID, tenantID)
-			if err != nil {
-				return err
+			otherTable, exists := tablesByID[otherTableID]
+			if !exists {
+				return apperrors.NotFound("logical_table_not_found", i18n.MsgTableRelationTargetNotFound)
 			}
 			if otherTable.Status != "draft" {
 				return apperrors.Conflict("logical_table_relation_state_conflict", i18n.MsgTableRelationStateConflict)
 			}
-			lockedVersions[otherTableID] = otherTable.Version
+			if relation.SourceTable != id {
+				survivingFactIDs[relation.SourceTable] = struct{}{}
+			}
 		}
 		if err := repository.NewLogicalTableRepository(tx).Delete(id, tenantID, version); err != nil {
 			return err
 		}
-		for _, otherTableID := range orderedOtherTableIDs {
-			if _, survivesAsFact := survivingFactIDs[otherTableID]; !survivesAsFact {
+		for index := range lockedTables {
+			lockedTable := &lockedTables[index]
+			if _, survivesAsFact := survivingFactIDs[lockedTable.ID]; !survivesAsFact {
 				continue
 			}
-			if _, err := repository.AdvanceLogicalTableVersion(tx, otherTableID, tenantID, lockedVersions[otherTableID]); err != nil {
+			if _, err := repository.AdvanceLogicalTableVersion(tx, lockedTable.ID, tenantID, lockedTable.Version); err != nil {
 				return err
 			}
 		}

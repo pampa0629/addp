@@ -37,31 +37,37 @@ func TestRuntimeProviderReadAndWriteScope(t *testing.T) {
 		switch operator {
 		case operatorInspect:
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":         "success",
-				"schema_version": ContainerInspectionSchema,
-				"format":         "filegdb",
-				"container": datatype.ContainerInfo{
-					ChildCount: 1, DefaultChild: "regions", ResourceCount: 1,
-					Children: []datatype.ContainerChildInfo{{
-						Name: "regions", ChildKind: "feature_class", DataType: datatype.Table,
-						Native: map[string]interface{}{"table": "regions"},
-					}},
+				"status": "success",
+				"result": map[string]interface{}{
+					"schema_version": ContainerInspectionSchema,
+					"format":         "filegdb",
+					"container": datatype.ContainerInfo{
+						ChildCount: 1, DefaultChild: "regions", ResourceCount: 1,
+						Children: []datatype.ContainerChildInfo{{
+							Name: "regions", ChildKind: "feature_class", DataType: datatype.Table,
+							Native: map[string]interface{}{"table": "regions"},
+						}},
+					},
+					"format_info": map[string]interface{}{"driver": "OpenFileGDB"},
 				},
-				"format_info": map[string]interface{}{"driver": "OpenFileGDB"},
 			})
 		case operatorReadOpen:
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":  "success",
-				"fields":  []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}, {Name: "SHAPE", Type: datatype.FieldTypeGeometry, Nullable: true}},
-				"spatial": datatype.SpatialInfoPayload(datatype.NewSingleGeometrySpatialInfo("SHAPE", "MultiPolygon", 3424, 2)),
+				"status": "success",
+				"result": map[string]interface{}{
+					"fields":  []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}, {Name: "SHAPE", Type: datatype.FieldTypeGeometry, Nullable: true}},
+					"spatial": datatype.SpatialInfoPayload(datatype.NewSingleGeometrySpatialInfo("SHAPE", "MultiPolygon", 3424, 2)),
+				},
 			})
 		case operatorReadBatch:
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"status": "success",
-				"rows":   []map[string]interface{}{{"id": 1, "SHAPE": []byte{1, 2, 3}}},
+				"result": map[string]interface{}{
+					"rows": []map[string]interface{}{{"id": 1, "SHAPE": []byte{1, 2, 3}}},
+				},
 			})
 		default:
-			_, _ = w.Write([]byte(`{"status":"success"}`))
+			_, _ = w.Write([]byte(`{"status":"success","result":{"protocol":"gdal.vector-batch/v1"}}`))
 		}
 	}))
 	defer server.Close()

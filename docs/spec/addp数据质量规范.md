@@ -78,7 +78,27 @@ Model、Asset、Portal 等模块后续若消费质量结果，应读取 Quality 
 - `allowed_values.values` 只允许非空字符串，且值不得重复。
 - `data_type`、`custom` 不是 v1 规则类型，前后端和执行器均不得保留入口或兼容分支。
 
-`rule_key` 由 Standard 在首次创建规则时生成。规则重排、类型修改、参数修改、级别修改和说明修改都必须保留原 key；删除规则时 key 一并删除。Standard 更新请求必须提交完整规则文档，服务端不得根据数组位置补 key 或在编辑时重新生成 key。存量规则在迁移时一次性生成 UUID 并写回 Standard 数据元；迁移完成后不再接受无 key 文档。
+`rule_key` 的唯一 owner 是 Standard。新规则由 Standard 在首次创建时生成随机 UUID；规则重排、类型修改、参数修改、级别修改和说明修改都必须保留原 key，删除规则时 key 一并删除。Quality 只能从 Standard 规则快照继承 key，不得基于 RuleApplication、Engine 或物理字段生成第二套规则身份。Standard 更新请求必须提交完整规则文档，服务端不得根据数组位置补 key 或在编辑时重新生成 key；迁移完成后不再接受无 key 文档。
+
+引入 `rule_key` 前没有可恢复的规则身份事实。存量回填只允许使用以下一次性确定性算法，不得按整个规则数组位置、规则类型或模糊相似度猜测：
+
+```text
+namespace = f3889a4a-1675-4623-b6e3-773f9125a04d
+canonical_rule = PostgreSQL jsonb 文本表示(rule 删除 rule_key 后)
+rule_fingerprint = SHA-256(UTF-8(canonical_rule))
+duplicate_occurrence = 相同 rule_fingerprint 规则组内按当前数组顺序从 1 开始的序号
+name = addp.quality.rule-backfill/v1
+     + |tenant_id={tenant_id}
+     + |element_id={element_id}
+     + |rule_fingerprint={rule_fingerprint 小写十六进制}
+     + |duplicate_occurrence={duplicate_occurrence}
+digest = SHA-256(namespace UUID 的 16 字节网络序表示 + UTF-8(name))
+rule_key = digest 前 128 位，并按 RFC 9562 设置 version=8、variant=10
+```
+
+该算法覆盖 `type + enabled + severity + message + params` 的完整规则结构，不包含 RuleApplication ID、Engine、schema、table、column，也不包含规则在整个数组中的位置。内容完全相同的 Standard 规则与 Quality 快照得到相同 key；完全相同的重复规则通过组内序号区分。历史快照内容已经不同或无法唯一映射时必须保留为不同身份或拒绝迁移，不能伪造连续性。
+
+确定性算法只用于一次性存量回填。回填后的正常创建和编辑仍使用并保留 Standard 持有的随机 UUID，不得根据规则内容重新计算身份。Standard 与 Quality 的迁移实现必须使用同一固定测试向量校验输出；旧的数组位置 MD5 算法必须被覆盖，不保留运行时兼容分支。
 
 ### 3.3 保存与快照
 
@@ -86,7 +106,7 @@ Standard 在创建和更新数据元时校验完整规则文档。Quality 创建
 
 规则应用快照是后续 execution 的事实来源。Standard 数据元规则改变后，不得静默修改已有规则应用；用户必须显式重新创建或刷新规则应用。每次 execution 还必须把实际使用的规则应用 ID、规则快照和目标范围写入 `execution_config`，保证历史可审计。
 
-`rule_key` 引入迁移只更新 Standard 当前规则定义、Quality 当前 RuleApplication 快照和可唯一映射的当前 Issue。已完成 execution 的 `execution_config` 与 `metadata` 是不可变历史，不做回写；迁移前已经冻结且尚未完成的无 key execution 按非法快照失败，用户必须基于迁移后的当前配置重新执行。若旧 Issue 对应的 RuleApplication 中存在多个同类型规则，旧二元身份无法唯一还原，迁移必须拒绝启动并报告冲突，不能猜测映射或合并问题。
+`rule_key` 引入及身份算法修正迁移只更新 Standard 当前规则定义、Quality 当前 RuleApplication 快照和可按旧 key 唯一映射的当前 Issue。已完成 execution 的 `execution_config` 与 `metadata` 是不可变历史，不做回写；迁移时不得存在已经冻结旧身份的 `pending|running` Quality execution。若旧 Issue 无法按其 RuleApplication 内的旧 key 唯一映射到规则，迁移必须拒绝启动并报告冲突，不能按类型、数组位置或相似内容猜测、合并问题。
 
 ## 4. 规则应用与检查任务
 
