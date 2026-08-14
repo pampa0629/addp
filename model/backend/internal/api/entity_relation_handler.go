@@ -19,7 +19,7 @@ func NewEntityRelationHandler(svc *service.EntityRelationService) *EntityRelatio
 	return &EntityRelationHandler{svc: svc}
 }
 
-// CreateRelation POST /api/model/entity-relations
+// CreateRelation POST /api/v1/model/entity-relations
 // @Summary 创建实体关系 | Create entity relation
 // @Tags Model
 // @Accept json
@@ -52,7 +52,7 @@ func (h *EntityRelationHandler) CreateRelation(c *gin.Context) {
 	c.JSON(http.StatusCreated, relation)
 }
 
-// ListRelations GET /api/model/entity-relations?entity_id=123
+// ListRelations GET /api/v1/model/entity-relations?entity_id=123
 // @Summary 查询实体关系列表 | List entity relations
 // @Tags Model
 // @Produce json
@@ -91,7 +91,7 @@ func (h *EntityRelationHandler) ListRelations(c *gin.Context) {
 	c.JSON(http.StatusOK, relations)
 }
 
-// GetRelation GET /api/model/entity-relations/:id
+// GetRelation GET /api/v1/model/entity-relations/:id
 // @Summary 获取实体关系详情 | Get entity relation details
 // @Tags Model
 // @Produce json
@@ -122,7 +122,7 @@ func (h *EntityRelationHandler) GetRelation(c *gin.Context) {
 	c.JSON(http.StatusOK, relation)
 }
 
-// UpdateRelation PUT /api/model/entity-relations/:id
+// UpdateRelation PUT /api/v1/model/entity-relations/:id
 // @Summary 更新实体关系 | Update entity relation
 // @Tags Model
 // @Accept json
@@ -162,7 +162,7 @@ func (h *EntityRelationHandler) UpdateRelation(c *gin.Context) {
 	c.JSON(http.StatusOK, relation)
 }
 
-// DeleteRelation DELETE /api/model/entity-relations/:id
+// DeleteRelation DELETE /api/v1/model/entity-relations/:id
 // @Summary 删除实体关系 | Delete entity relation
 // @Tags Model
 // @Produce json

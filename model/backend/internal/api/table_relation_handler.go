@@ -19,7 +19,7 @@ func NewTableRelationHandler(svc *service.TableRelationService) *TableRelationHa
 	return &TableRelationHandler{svc: svc}
 }
 
-// ListDimensionRelations GET /api/model/logical-tables/:id/dimension-relations
+// ListDimensionRelations GET /api/v1/model/logical-tables/:id/dimension-relations
 // @Summary 查询维度关联列表 | List dimension relations
 // @Tags Model
 // @Produce json
@@ -48,7 +48,7 @@ func (h *TableRelationHandler) ListDimensionRelations(c *gin.Context) {
 	c.JSON(http.StatusOK, relations)
 }
 
-// AddDimensionRelation POST /api/model/logical-tables/:id/dimension-relations
+// AddDimensionRelation POST /api/v1/model/logical-tables/:id/dimension-relations
 // @Summary 添加维度关联 | Add dimension relation
 // @Tags Model
 // @Accept json
@@ -85,7 +85,7 @@ func (h *TableRelationHandler) AddDimensionRelation(c *gin.Context) {
 	c.JSON(http.StatusCreated, rel)
 }
 
-// RemoveDimensionRelation DELETE /api/model/logical-tables/:id/dimension-relations/:rid
+// RemoveDimensionRelation DELETE /api/v1/model/logical-tables/:id/dimension-relations/:rid
 // @Summary 删除维度关联 | Remove dimension relation
 // @Tags Model
 // @Produce json

@@ -19,7 +19,7 @@ func NewFactMetricHandler(svc *service.FactMetricService) *FactMetricHandler {
 	return &FactMetricHandler{svc: svc}
 }
 
-// ListMetrics GET /api/model/logical-tables/:id/metrics
+// ListMetrics GET /api/v1/model/logical-tables/:id/metrics
 // @Summary 查询事实表关联指标列表 | List fact table metric mappings
 // @Tags Model
 // @Produce json
@@ -49,7 +49,7 @@ func (h *FactMetricHandler) ListMetrics(c *gin.Context) {
 	c.JSON(http.StatusOK, mappings)
 }
 
-// AddMetric POST /api/model/logical-tables/:id/metrics
+// AddMetric POST /api/v1/model/logical-tables/:id/metrics
 // @Summary 添加事实表指标关联 | Add fact table metric mapping
 // @Tags Model
 // @Accept json
@@ -91,7 +91,7 @@ func (h *FactMetricHandler) AddMetric(c *gin.Context) {
 	c.JSON(http.StatusCreated, mapping)
 }
 
-// RemoveMetric DELETE /api/model/logical-tables/:id/metrics/:mid
+// RemoveMetric DELETE /api/v1/model/logical-tables/:id/metrics/:mid
 // @Summary 删除事实表指标关联 | Remove fact table metric mapping
 // @Tags Model
 // @Produce json

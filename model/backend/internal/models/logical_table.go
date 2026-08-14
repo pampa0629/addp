@@ -12,7 +12,7 @@ type LogicalTable struct {
 	Code             string    `gorm:"size:200;not null" json:"code"` // 英文表名（物化时使用）
 	Description      string    `gorm:"type:text" json:"description"`
 	TableType        string    `gorm:"size:30;not null" json:"table_type"`                // 建模角色：entity/fact/dimension
-	Layer            string    `gorm:"size:20" json:"layer"`                              // ods/dwd/dws/ads
+	Layer            string    `gorm:"size:20" json:"layer"`                              // 当前 Tenant 中已存在的 DWLayer 编码
 	Status           string    `gorm:"size:20;default:'draft'" json:"status"`             // draft/approved
 	GrainDescription string    `gorm:"type:text" json:"grain_description"`                // 仅 fact 表：粒度声明（如"每行代表一笔支付事务"）
 	SCDType          int       `gorm:"default:0" json:"scd_type"`                         // 仅 dimension 表：缓慢变化维类型 0=静态/1=覆盖/2=拉链/3=混合

@@ -19,7 +19,7 @@ func NewDWLayerHandler(svc *service.DWLayerService) *DWLayerHandler {
 	return &DWLayerHandler{svc: svc}
 }
 
-// ListDWLayers GET /api/model/dw-layers
+// ListDWLayers GET /api/v1/model/dw-layers
 // @Summary 查询数仓分层列表 | List DW layers
 // @Tags Model
 // @Produce json
@@ -41,7 +41,7 @@ func (h *DWLayerHandler) ListDWLayers(c *gin.Context) {
 	c.JSON(http.StatusOK, layers)
 }
 
-// CreateDWLayer POST /api/model/dw-layers
+// CreateDWLayer POST /api/v1/model/dw-layers
 // @Summary 创建数仓分层 | Create DW layer
 // @Tags Model
 // @Accept json
@@ -72,7 +72,7 @@ func (h *DWLayerHandler) CreateDWLayer(c *gin.Context) {
 	c.JSON(http.StatusCreated, layer)
 }
 
-// GetDWLayer GET /api/model/dw-layers/:id
+// GetDWLayer GET /api/v1/model/dw-layers/:id
 // @Summary 获取数仓分层详情 | Get DW layer details
 // @Tags Model
 // @Produce json
@@ -102,7 +102,7 @@ func (h *DWLayerHandler) GetDWLayer(c *gin.Context) {
 	c.JSON(http.StatusOK, layer)
 }
 
-// UpdateDWLayer PUT /api/model/dw-layers/:id
+// UpdateDWLayer PUT /api/v1/model/dw-layers/:id
 // @Summary 更新数仓分层 | Update DW layer
 // @Tags Model
 // @Accept json
@@ -141,7 +141,7 @@ func (h *DWLayerHandler) UpdateDWLayer(c *gin.Context) {
 	c.JSON(http.StatusOK, layer)
 }
 
-// DeleteDWLayer DELETE /api/model/dw-layers/:id
+// DeleteDWLayer DELETE /api/v1/model/dw-layers/:id
 // @Summary 删除数仓分层 | Delete DW layer
 // @Tags Model
 // @Produce json

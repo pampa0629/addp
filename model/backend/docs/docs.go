@@ -3492,7 +3492,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "layer_code": {
-                    "description": "ods/dwd/dws/ads",
+                    "description": "Tenant 内唯一的自定义分层编码",
                     "type": "string"
                 },
                 "layer_name": {
@@ -3842,7 +3842,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "layer": {
-                    "description": "ods/dwd/dws/ads",
+                    "description": "当前 Tenant 中已存在的 DWLayer 编码",
                     "type": "string"
                 },
                 "materialization": {

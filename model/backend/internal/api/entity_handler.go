@@ -20,7 +20,7 @@ func NewEntityHandler(svc *service.EntityService) *EntityHandler {
 	return &EntityHandler{svc: svc}
 }
 
-// ListEntities GET /api/model/entities
+// ListEntities GET /api/v1/model/entities
 // @Summary 查询实体列表 | List entities
 // @Tags Model
 // @Produce json
@@ -84,7 +84,7 @@ func (h *EntityHandler) ListEntities(c *gin.Context) {
 	})
 }
 
-// CreateEntity POST /api/model/entities
+// CreateEntity POST /api/v1/model/entities
 // @Summary 创建实体 | Create entity
 // @Tags Model
 // @Accept json
@@ -119,7 +119,7 @@ func (h *EntityHandler) CreateEntity(c *gin.Context) {
 	c.JSON(http.StatusCreated, entity)
 }
 
-// GetEntity GET /api/model/entities/:id
+// GetEntity GET /api/v1/model/entities/:id
 // @Summary 获取实体详情 | Get entity details
 // @Tags Model
 // @Produce json
@@ -149,7 +149,7 @@ func (h *EntityHandler) GetEntity(c *gin.Context) {
 	c.JSON(http.StatusOK, entity)
 }
 
-// UpdateEntity PUT /api/model/entities/:id
+// UpdateEntity PUT /api/v1/model/entities/:id
 // @Summary 更新实体 | Update entity
 // @Tags Model
 // @Accept json
@@ -191,7 +191,7 @@ func (h *EntityHandler) UpdateEntity(c *gin.Context) {
 	c.JSON(http.StatusOK, entity)
 }
 
-// DeleteEntity DELETE /api/model/entities/:id
+// DeleteEntity DELETE /api/v1/model/entities/:id
 // @Summary 删除实体 | Delete entity
 // @Tags Model
 // @Produce json
@@ -227,7 +227,7 @@ func (h *EntityHandler) DeleteEntity(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
-// ApproveEntity POST /api/model/entities/:id/approve
+// ApproveEntity POST /api/v1/model/entities/:id/approve
 // @Summary 审批通过实体 | Approve entity
 // @Tags Model
 // @Produce json
@@ -266,7 +266,7 @@ func (h *EntityHandler) ApproveEntity(c *gin.Context) {
 	c.JSON(http.StatusOK, entity)
 }
 
-// ReopenEntity POST /api/model/entities/:id/reopen
+// ReopenEntity POST /api/v1/model/entities/:id/reopen
 // @Summary 重新打开实体 | Reopen entity
 // @Tags Model
 // @Produce json
@@ -301,7 +301,7 @@ func (h *EntityHandler) ReopenEntity(c *gin.Context) {
 	c.JSON(http.StatusOK, entity)
 }
 
-// GetAttributes GET /api/model/entities/:id/attributes
+// GetAttributes GET /api/v1/model/entities/:id/attributes
 // @Summary 获取实体属性列表 | Get entity attributes
 // @Tags Model
 // @Produce json
@@ -331,7 +331,7 @@ func (h *EntityHandler) GetAttributes(c *gin.Context) {
 	c.JSON(http.StatusOK, attrs)
 }
 
-// CreateAttribute POST /api/model/entities/:id/attributes
+// CreateAttribute POST /api/v1/model/entities/:id/attributes
 // @Summary 创建实体属性 | Create entity attribute
 // @Tags Model
 // @Accept json
@@ -371,7 +371,7 @@ func (h *EntityHandler) CreateAttribute(c *gin.Context) {
 	c.JSON(http.StatusCreated, attr)
 }
 
-// UpdateAttribute PUT /api/model/entities/:id/attributes/:aid
+// UpdateAttribute PUT /api/v1/model/entities/:id/attributes/:aid
 // @Summary 更新实体属性 | Update entity attribute
 // @Tags Model
 // @Accept json
@@ -417,7 +417,7 @@ func (h *EntityHandler) UpdateAttribute(c *gin.Context) {
 	c.JSON(http.StatusOK, attr)
 }
 
-// DeleteAttribute DELETE /api/model/entities/:id/attributes/:aid
+// DeleteAttribute DELETE /api/v1/model/entities/:id/attributes/:aid
 // @Summary 删除实体属性 | Delete entity attribute
 // @Tags Model
 // @Produce json
@@ -460,7 +460,7 @@ func (h *EntityHandler) DeleteAttribute(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// ImportMermaid POST /api/model/entities/import-mermaid
+// ImportMermaid POST /api/v1/model/entities/import-mermaid
 // @Summary 从 Mermaid ER 图导入实体 | Import entities from Mermaid ER diagram
 // @Tags Model
 // @Accept json
@@ -494,7 +494,7 @@ func (h *EntityHandler) ImportMermaid(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// ExportMermaid GET /api/model/entities/export-mermaid
+// ExportMermaid GET /api/v1/model/entities/export-mermaid
 // @Summary 导出 Mermaid ER 图 | Export Mermaid ER diagram
 // @Tags Model
 // @Produce json

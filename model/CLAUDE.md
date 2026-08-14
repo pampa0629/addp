@@ -108,7 +108,7 @@ model/
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | table_type | string | `entity` / `fact` / `dimension` |
-| layer | string | `ods` / `dwd` / `dws` / `ads` |
+| layer | string | 当前 Tenant 中已存在的 DWLayer 编码 |
 | status | string | `draft` / `approved` |
 | grain_description | text | 粒度声明（仅 fact 表） |
 | scd_type | int | 缓慢变化维类型 0=静态/1=覆盖/2=拉链/3=混合（仅 dimension 表） |
@@ -147,7 +147,7 @@ model/
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| layer_code | string | `ods` / `dwd` / `dws` / `ads` |
+| layer_code | string | Tenant 内唯一的自定义分层编码 |
 | layer_name | string | 分层名称 |
 | naming_rule | text | 命名规范 |
 | quality_sla | JSONB | 质量 SLA 配置 |
@@ -166,15 +166,15 @@ model/
 ### 业务实体
 
 ```
-GET    /api/model/entities               # 列表，支持 domain_id/status 过滤
-POST   /api/model/entities               # 创建
-GET    /api/model/entities/:id           # 详情
-PUT    /api/model/entities/:id           # 更新
-DELETE /api/model/entities/:id           # 删除
-POST   /api/model/entities/:id/approve   # 审批通过（status: draft → approved）
+GET    /api/v1/model/entities               # 列表，支持 domain_id/status 过滤
+POST   /api/v1/model/entities               # 创建
+GET    /api/v1/model/entities/:id           # 详情
+PUT    /api/v1/model/entities/:id           # 更新
+DELETE /api/v1/model/entities/:id           # 删除
+POST   /api/v1/model/entities/:id/approve   # 审批通过（status: draft → approved）
 GET/POST/PUT/DELETE .../attributes       # 实体属性 CRUD
-POST   /api/model/entities/import-mermaid # 从 Mermaid ER 图导入
-GET    /api/model/entities/export-mermaid # 导出 Mermaid ER 图
+POST   /api/v1/model/entities/import-mermaid # 从 Mermaid ER 图导入
+GET    /api/v1/model/entities/export-mermaid # 导出 Mermaid ER 图
 ```
 
 Entity、LogicalTable、DWLayer 和 EntityRelation 是独立并发版本主体。EntityAttribute 使用父 Entity 版本；LogicalField、TableRelation 和 FactMetricMapping 使用父 LogicalTable 版本。已有资源及聚合子资源的所有写操作都在 JSON body 中携带对应 `version`，成功后返回新版本；不接受 query、Header 或服务端版本兜底。
@@ -186,18 +186,18 @@ Tenant 实体模型集合的 `revision` 由所有 Entity、EntityAttribute、Ent
 ### 实体关系
 
 ```
-GET/POST /api/model/entity-relations
-GET/PUT/DELETE /api/model/entity-relations/:id
+GET/POST /api/v1/model/entity-relations
+GET/PUT/DELETE /api/v1/model/entity-relations/:id
 ```
 
 ### 逻辑表
 
 ```
-GET    /api/model/logical-tables                          # 列表，支持 table_type/status/domain_id 过滤
-POST   /api/model/logical-tables                          # 创建
-GET/PUT/DELETE /api/model/logical-tables/:id              # 详情/更新/删除
-GET/POST/PUT/DELETE /api/model/logical-tables/:id/fields  # 字段 CRUD
-POST   /api/model/logical-tables/:id/preview-ddl          # 预览 DDL
+GET    /api/v1/model/logical-tables                          # 列表，支持 table_type/status/domain_id 过滤
+POST   /api/v1/model/logical-tables                          # 创建
+GET/PUT/DELETE /api/v1/model/logical-tables/:id              # 详情/更新/删除
+GET/POST/PUT/DELETE /api/v1/model/logical-tables/:id/fields  # 字段 CRUD
+POST   /api/v1/model/logical-tables/:id/preview-ddl          # 预览 DDL
 GET/POST/DELETE .../metrics                               # 事实表关联指标
 GET/POST/DELETE .../dimension-relations                   # 事实表关联维度表（含字段映射）
 ```
@@ -265,7 +265,7 @@ draft ⇄ approved
 
 ### `dimension-relations` 查询返回 JOIN 结果
 
-`GET /api/model/logical-tables/:id/dimension-relations` 返回的是带字段名的详情（通过 Raw SQL JOIN），而非原始 ID，前端可直接展示，无需二次请求：
+`GET /api/v1/model/logical-tables/:id/dimension-relations` 返回的是带字段名的详情（通过 Raw SQL JOIN），而非原始 ID，前端可直接展示，无需二次请求：
 
 ```json
 {
@@ -303,6 +303,16 @@ draft ⇄ approved
 3. **跨模块验证**: Service 层通过 `cfg.StandardURL` 和 `addp-model` Tenant Service Access Token 调用 Standard API。如果 Standard 服务未启动，相关创建操作会失败。
 
 4. **前端 API 统一入口**: Model API 调用集中在 [frontend/src/api/model.js](frontend/src/api/model.js)；Standard API 使用 Standard 的唯一公开路径。
+
+5. **后端测试**:
+
+   ```bash
+   cd model/backend
+   go test ./...
+   ADDP_TEST_MODEL_POSTGRES_DSN='postgres://addp:addp_password@localhost:15432/addp_test?sslmode=disable' \
+     go test ./internal/service -run 'TestPostgres' -count=1 -v
+   ```
+   PostgreSQL 集成测试未设置 `ADDP_TEST_MODEL_POSTGRES_DSN` 时会跳过；并发、事务和迁移相关改动必须显式执行第二条命令。
 
 ## 前端公开路由
 

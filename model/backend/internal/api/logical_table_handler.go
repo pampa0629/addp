@@ -21,7 +21,7 @@ func NewLogicalTableHandler(svc *service.LogicalTableService) *LogicalTableHandl
 	return &LogicalTableHandler{svc: svc}
 }
 
-// ListLogicalTables GET /api/model/logical-tables
+// ListLogicalTables GET /api/v1/model/logical-tables
 // @Summary 查询逻辑表列表 | List logical tables
 // @Tags Model
 // @Produce json
@@ -99,7 +99,7 @@ func (h *LogicalTableHandler) ListLogicalTables(c *gin.Context) {
 	})
 }
 
-// CreateLogicalTable POST /api/model/logical-tables
+// CreateLogicalTable POST /api/v1/model/logical-tables
 // @Summary 创建逻辑表 | Create logical table
 // @Tags Model
 // @Accept json
@@ -134,7 +134,7 @@ func (h *LogicalTableHandler) CreateLogicalTable(c *gin.Context) {
 	c.JSON(http.StatusCreated, table)
 }
 
-// GetLogicalTable GET /api/model/logical-tables/:id
+// GetLogicalTable GET /api/v1/model/logical-tables/:id
 // @Summary 获取逻辑表详情 | Get logical table details
 // @Tags Model
 // @Produce json
@@ -164,7 +164,7 @@ func (h *LogicalTableHandler) GetLogicalTable(c *gin.Context) {
 	c.JSON(http.StatusOK, table)
 }
 
-// UpdateLogicalTable PUT /api/model/logical-tables/:id
+// UpdateLogicalTable PUT /api/v1/model/logical-tables/:id
 // @Summary 更新逻辑表 | Update logical table
 // @Tags Model
 // @Accept json
@@ -206,7 +206,7 @@ func (h *LogicalTableHandler) UpdateLogicalTable(c *gin.Context) {
 	c.JSON(http.StatusOK, table)
 }
 
-// DeleteLogicalTable DELETE /api/model/logical-tables/:id
+// DeleteLogicalTable DELETE /api/v1/model/logical-tables/:id
 // @Summary 删除逻辑表 | Delete logical table
 // @Tags Model
 // @Produce json
@@ -242,7 +242,7 @@ func (h *LogicalTableHandler) DeleteLogicalTable(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
-// ApproveLogicalTable POST /api/model/logical-tables/:id/approve
+// ApproveLogicalTable POST /api/v1/model/logical-tables/:id/approve
 // @Summary 审批逻辑表 | Approve logical table
 // @Tags Model
 // @Produce json
@@ -277,7 +277,7 @@ func (h *LogicalTableHandler) ApproveLogicalTable(c *gin.Context) {
 	c.JSON(http.StatusOK, table)
 }
 
-// ReopenLogicalTable POST /api/model/logical-tables/:id/reopen
+// ReopenLogicalTable POST /api/v1/model/logical-tables/:id/reopen
 // @Summary 重新打开逻辑表 | Reopen logical table
 // @Tags Model
 // @Produce json
@@ -312,7 +312,7 @@ func (h *LogicalTableHandler) ReopenLogicalTable(c *gin.Context) {
 	c.JSON(http.StatusOK, table)
 }
 
-// GetFields GET /api/model/logical-tables/:id/fields
+// GetFields GET /api/v1/model/logical-tables/:id/fields
 // @Summary 获取逻辑表字段列表 | Get logical table fields
 // @Tags Model
 // @Produce json
@@ -342,7 +342,7 @@ func (h *LogicalTableHandler) GetFields(c *gin.Context) {
 	c.JSON(http.StatusOK, fields)
 }
 
-// CreateField POST /api/model/logical-tables/:id/fields
+// CreateField POST /api/v1/model/logical-tables/:id/fields
 // @Summary 创建逻辑表字段 | Create logical table field
 // @Tags Model
 // @Accept json
@@ -382,7 +382,7 @@ func (h *LogicalTableHandler) CreateField(c *gin.Context) {
 	c.JSON(http.StatusCreated, field)
 }
 
-// UpdateField PUT /api/model/logical-tables/:id/fields/:fid
+// UpdateField PUT /api/v1/model/logical-tables/:id/fields/:fid
 // @Summary 更新逻辑表字段 | Update logical table field
 // @Tags Model
 // @Accept json
@@ -428,7 +428,7 @@ func (h *LogicalTableHandler) UpdateField(c *gin.Context) {
 	c.JSON(http.StatusOK, field)
 }
 
-// DeleteField DELETE /api/model/logical-tables/:id/fields/:fid
+// DeleteField DELETE /api/v1/model/logical-tables/:id/fields/:fid
 // @Summary 删除逻辑表字段 | Delete logical table field
 // @Tags Model
 // @Produce json
@@ -471,7 +471,7 @@ func (h *LogicalTableHandler) DeleteField(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// PreviewDDL POST /api/model/logical-tables/:id/preview-ddl
+// PreviewDDL POST /api/v1/model/logical-tables/:id/preview-ddl
 // @Summary 预览 DDL | Preview DDL
 // @Tags Model
 // @Accept json
