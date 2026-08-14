@@ -168,6 +168,8 @@ const domains = ref([])
 const referenceError = ref('')
 const selectedDomainId = ref(null)
 const globalMermaidCode = ref('')
+const exportedMermaidCode = ref('')
+const entityModelRevision = ref(null)
 const diagramContainer = ref(null)
 const diagramLoading = ref(false)
 const loadError = ref('')
@@ -218,10 +220,13 @@ const refreshDiagram = async () => {
   }
   try {
     // 加载所有实体和关系
-    const [entitiesRes, relationsRes] = await Promise.all([
+    const [entitiesRes, relationsRes, exportRes] = await Promise.all([
       entityAPI.listAll(),
-      entityRelationAPI.list()
+      entityRelationAPI.list(),
+      entityAPI.exportMermaid()
     ])
+    entityModelRevision.value = exportRes.revision
+    exportedMermaidCode.value = exportRes.mermaid_code || ''
     const allEntities = entitiesRes || []
     const filteredDiagram = filterERDiagramByDomain(
       allEntities,
@@ -323,7 +328,10 @@ const renderMermaid = async () => {
 // 导出Mermaid
 const exportMermaid = async () => {
   try {
-    const blob = new Blob([globalMermaidCode.value], { type: 'text/plain' })
+    const snapshot = await entityAPI.exportMermaid()
+    entityModelRevision.value = snapshot.revision
+    exportedMermaidCode.value = snapshot.mermaid_code || ''
+    const blob = new Blob([exportedMermaidCode.value], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -378,15 +386,17 @@ const executeImport = async () => {
 
     // 调用后端API导入
     const result = await entityAPI.importMermaid({
-      mermaid_code: importMermaidCode.value
+      mermaid_code: importMermaidCode.value,
+      revision: entityModelRevision.value
     })
+    entityModelRevision.value = result.revision
 
     ElMessage.success(t('model.er_diagram.import_success', {
       created: result.created_entities,
       relations: result.created_relations
     }))
     importDialogVisible.value = false
-    refreshDiagram()
+    await refreshDiagram()
   } catch (error) {
     if (error !== 'cancel') {
       const errorMsg = getModelErrorMessage(error, t, 'model.common.op_failed')

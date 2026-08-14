@@ -106,6 +106,38 @@ func (r *ProviderRegistry) GetScopeTableReaderProvider(formatType FormatType) (S
 	return pluginCapability[ScopeTableReaderProvider](r, formatType, "scope table reader provider")
 }
 
+func GetScopeTableWriterProvider(formatType FormatType) (ScopeTableWriterProvider, error) {
+	return globalProviderRegistry.GetScopeTableWriterProvider(formatType)
+}
+
+func (r *ProviderRegistry) GetScopeTableWriterProvider(formatType FormatType) (ScopeTableWriterProvider, error) {
+	return pluginCapability[ScopeTableWriterProvider](r, formatType, "scope table writer provider")
+}
+
+func GetRuntimeContainerInfoProviderFactory(formatType FormatType) (RuntimeContainerInfoProviderFactory, error) {
+	return globalProviderRegistry.GetRuntimeContainerInfoProviderFactory(formatType)
+}
+
+func (r *ProviderRegistry) GetRuntimeContainerInfoProviderFactory(formatType FormatType) (RuntimeContainerInfoProviderFactory, error) {
+	return pluginCapability[RuntimeContainerInfoProviderFactory](r, formatType, "runtime container info provider factory")
+}
+
+func GetRuntimeScopeTableReaderFactory(formatType FormatType) (RuntimeScopeTableReaderFactory, error) {
+	return globalProviderRegistry.GetRuntimeScopeTableReaderFactory(formatType)
+}
+
+func (r *ProviderRegistry) GetRuntimeScopeTableReaderFactory(formatType FormatType) (RuntimeScopeTableReaderFactory, error) {
+	return pluginCapability[RuntimeScopeTableReaderFactory](r, formatType, "runtime scope table reader factory")
+}
+
+func GetRuntimeScopeTableWriterFactory(formatType FormatType) (RuntimeScopeTableWriterFactory, error) {
+	return globalProviderRegistry.GetRuntimeScopeTableWriterFactory(formatType)
+}
+
+func (r *ProviderRegistry) GetRuntimeScopeTableWriterFactory(formatType FormatType) (RuntimeScopeTableWriterFactory, error) {
+	return pluginCapability[RuntimeScopeTableWriterFactory](r, formatType, "runtime scope table writer factory")
+}
+
 func GetTableInfoProvider(formatType FormatType) (TableInfoProvider, error) {
 	return globalProviderRegistry.GetTableInfoProvider(formatType)
 }

@@ -21,6 +21,7 @@ from .format_operators import load_from_wkt, export_to_wkt
 from .spatial_transform_operators import vector_reproject
 from .raster_operators import build_raster_mosaic, tiff_to_cog
 from .vector_tile_operators import vector_to_pmtiles
+from .gdal_vector_dataset import OPERATORS as GDAL_VECTOR_DATASET_OPERATORS
 from .data_operations import (
     clip, voronoi, split_by_area,
     batch_buffer, batch_centroid
@@ -60,6 +61,7 @@ for ops_dict in [
     SPATIAL_TRANSFORM_OPERATORS,
     RASTER_OPERATORS,
     VECTOR_TILE_OPERATORS,
+    GDAL_VECTOR_DATASET_OPERATORS,
     DATA_OPERATORS,
     ATTRIBUTE_OPERATORS,
     FILTER_OPERATORS

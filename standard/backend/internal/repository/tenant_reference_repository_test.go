@@ -15,10 +15,10 @@ func TestTenantReferenceRepositoryRejectsCrossTenantReferences(t *testing.T) {
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS standard").Error; err != nil {
 		t.Fatalf("attach standard schema: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE standard.domains (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL)`).Error; err != nil {
+	if err := db.Exec(`CREATE TABLE standard.domains (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, lifecycle_state TEXT NOT NULL DEFAULT 'active')`).Error; err != nil {
 		t.Fatalf("create domains: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE standard.elements (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL)`).Error; err != nil {
+	if err := db.Exec(`CREATE TABLE standard.elements (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, lifecycle_state TEXT NOT NULL DEFAULT 'active')`).Error; err != nil {
 		t.Fatalf("create elements: %v", err)
 	}
 	if err := db.Exec(`INSERT INTO standard.domains (id, tenant_id) VALUES (1, 10), (2, 20)`).Error; err != nil {

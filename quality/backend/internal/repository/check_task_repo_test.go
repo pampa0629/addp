@@ -349,7 +349,7 @@ func createCheckTaskRepositoryTestRuleApplication(t *testing.T, db *gorm.DB, app
 	t.Helper()
 	enabled := application.Enabled
 	if len(application.RuleConfig) == 0 {
-		application.RuleConfig = []byte(`{"schema_version":"addp.quality.rules/v1","rules":[{"type":"not_null","enabled":true,"severity":"error","message":"","params":{}}]}`)
+		application.RuleConfig = []byte(`{"schema_version":"addp.quality.rules/v1","rules":[{"rule_key":"00000000-0000-4000-8000-000000000001","type":"not_null","enabled":true,"severity":"error","message":"","params":{}}]}`)
 	}
 	if err := db.Create(&application).Error; err != nil {
 		t.Fatalf("create rule application: %v", err)

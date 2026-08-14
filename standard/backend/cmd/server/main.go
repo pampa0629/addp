@@ -67,6 +67,7 @@ func main() {
 		log.Fatalf("Service Token Source 初始化失败: %v", err)
 	}
 	systemClient := commonClient.NewSystemServiceClient(cfg.SystemURL, serviceTokenSource, nil)
+	modelClient := commonClient.NewModelClient(cfg.ModelURL, serviceTokenSource, nil)
 
 	// 创建 Repositories
 	domainRepo := repository.NewDomainRepository(db)
@@ -82,6 +83,7 @@ func main() {
 	documentRepo := repository.NewDocumentRepository(db)
 	dimHierarchyRepo := repository.NewDimensionHierarchyRepository(db)
 	tenantReferenceRepo := repository.NewTenantReferenceRepository(db)
+	standardReferenceDeletionSvc := service.NewStandardReferenceDeletionService(db, modelClient)
 
 	// 初始化 MinIO 客户端（用于文档文件存储）
 	var minioClient *minio.Client
@@ -96,19 +98,19 @@ func main() {
 	}
 
 	// 创建 Services
-	domainSvc := service.NewDomainService(domainRepo, tenantReferenceRepo)
+	domainSvc := service.NewDomainService(domainRepo, tenantReferenceRepo, standardReferenceDeletionSvc)
 	glossarySvc := service.NewGlossaryService(glossaryRepo, tenantReferenceRepo)
-	elementSvc := service.NewElementService(elementRepo, tenantReferenceRepo)
+	elementSvc := service.NewElementService(elementRepo, tenantReferenceRepo, standardReferenceDeletionSvc)
 	codeSetSvc := service.NewCodeSetService(codeSetRepo)
 	unitSvc := service.NewUnitService(mCatRepo, unitRepo)
 	classificationSvc := service.NewClassificationService(classificationRepo, gradingRepo, tenantReferenceRepo)
-	metricSvc := service.NewMetricService(metricCatRepo, metricRepo, tenantReferenceRepo)
+	metricSvc := service.NewMetricService(metricCatRepo, metricRepo, tenantReferenceRepo, standardReferenceDeletionSvc)
 	documentSvc := service.NewDocumentService(documentRepo, tenantReferenceRepo, minioClient, service.DocumentStorageOptions{
 		MaxFileSize: cfg.DocumentMaxFileSize,
 		Timeout:     cfg.DocumentStorageTimeout,
 	})
 	defer documentSvc.Stop()
-	dimHierarchySvc := service.NewDimensionHierarchyService(dimHierarchyRepo, tenantReferenceRepo)
+	dimHierarchySvc := service.NewDimensionHierarchyService(dimHierarchyRepo, tenantReferenceRepo, standardReferenceDeletionSvc)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo, minioClient)
 	if err := cleanupSvc.Start(context.Background()); err != nil {

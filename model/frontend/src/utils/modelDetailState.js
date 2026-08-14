@@ -8,6 +8,8 @@ export const isEditableDraft = (status, canUpdate) => status === 'draft' && Bool
 export const canPerformDraftAction = (status, hasActionPermission) =>
   status === 'draft' && Boolean(hasActionPermission)
 
+export const snapshotUnsavedState = state => JSON.stringify(state ?? null)
+
 export const buildDDLPreviewRequest = materialization => ({
   materialization: {
     schema_name: String(materialization?.schema_name || '').trim(),
@@ -19,21 +21,24 @@ export const buildDDLPreviewRequest = materialization => ({
 
 export const buildLogicalTableUpdateRequest = (form, table, materialization) => ({
   ...form,
+  version: table?.version,
   domain_id: form.domain_id ?? null,
   entity_id: table?.entity_id ?? null,
   materialization: { ...materialization }
 })
 
-export const buildEntityAttributeUpdateRequest = form => ({
+export const buildEntityAttributeUpdateRequest = (form, version) => ({
   ...form,
+  version,
   element_id: form.element_id ?? null,
   is_pk: Boolean(form.is_pk),
   nullable: Boolean(form.nullable),
   sort_order: form.sort_order ?? 0
 })
 
-export const buildLogicalFieldUpdateRequest = form => ({
+export const buildLogicalFieldUpdateRequest = (form, version) => ({
   ...form,
+  version,
   element_id: form.element_id ?? null,
   length: form.length ?? null,
   nullable: Boolean(form.nullable),
@@ -46,6 +51,7 @@ export const buildLogicalFieldUpdateRequest = form => ({
 
 export const buildDWLayerUpdateRequest = (form, layer) => ({
   ...form,
+  version: layer?.version,
   quality_sla: layer?.quality_sla ?? null,
   sort_order: form.sort_order ?? 0
 })

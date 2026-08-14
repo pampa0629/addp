@@ -1170,8 +1170,8 @@ services:
 
   python-workflow-engine:
     build:
-      context: ./engines/python-workflow
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: engines/python-workflow/Dockerfile
     image: ${REGISTRY:-localhost:5001}/addp-python-workflow-engine:${IMAGE_TAG:-latest}
     container_name: python-workflow-engine
     environment:

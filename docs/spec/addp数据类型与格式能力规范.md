@@ -402,7 +402,7 @@ Transfer 模块负责根据当前进程已注册的 reader / writer provider 判
 - `MultiWrite`
 - `CommitPolicy`
 
-Format writer 负责编码格式，Engine writer 负责提交到目标存储。多文件格式必须明确提交边界，不能只写主文件。Transfer 应基于 `TableReaderProvider`、`TableWriterProvider`、`MultiTableReaderProvider`、`MultiTableWriterProvider`、`ScopeTableReaderProvider` 等具体实现状态判断可读写能力。更细的读取抽象和ref 定位规则见 [ADDP 内容 I/O 抽象规范](addp内容IO抽象规范.md)。
+Format writer 负责编码格式，Engine writer 负责提交到目标存储。多文件格式必须明确提交边界，不能只写主文件。Transfer 应基于 `TableReaderProvider`、`TableWriterProvider`、`MultiTableReaderProvider`、`MultiTableWriterProvider`、`ScopeTableReaderProvider`、`ScopeTableWriterProvider` 等具体实现状态判断可读写能力。必须由受控外部运行时解码的格式使用 `RuntimeScopeTableProviderFactory`：业务模块先按当前 Tenant 解析实际提供所需 direct 算子的 Runtime Instance，再使用 `addp.workflow.access-plan/v1` 绑定 factory；不得把固定 Runtime URL、engine id、存储凭据或本地命令塞入全局 FormatPlugin。更细的读取抽象和 ref 定位规则见 [ADDP 内容 I/O 抽象规范](addp内容IO抽象规范.md)。
 
 ## 能力诊断快照
 
@@ -451,7 +451,8 @@ info provider 和 content reader 是上层消费者面向数据类型能力的�
 | info provider | 提供对应 data type 的元数据，供 Meta 写入 `type_info.*` | `TableInfoProvider`、`DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider`、`Model3DInfoProvider`、`PointCloudInfoProvider`、`GaussianSplatInfoProvider` |
 | sample / text reader | 提供按 data type 组织后的轻量内容数据，供 Manager / Search / 轻量探查消费 | `TableSampleReader`、`DocumentTextReader`、`MediaThumbnailReader`、点云抽样 reader |
 | continuous reader provider | 打开一次连续读取会话，供 Transfer 等批处理消费 | `TableReaderProvider`、`MultiTableReaderProvider`、`ScopeTableReaderProvider` |
-| writer provider | 打开一次连续写出会话，供 Transfer 写侧消费 | `TableWriterProvider`、`MultiTableWriterProvider` |
+| writer provider | 打开一次连续写出会话，供 Transfer 写侧消费 | `TableWriterProvider`、`MultiTableWriterProvider`、`ScopeTableWriterProvider` |
+| runtime-bound provider factory | 将已授权的 workflow runtime 和执行期 access plan 绑定为具体 container info provider 或 scope reader / writer | `RuntimeContainerInfoProviderFactory`、`RuntimeScopeTableProviderFactory` |
 
 info provider 只回答对应 data type 的元数据语义；sample / text reader 只回答预览、探查和轻量片段读取；continuous reader provider / writer provider 面向全量批处理。它们都不回答格式识别，也不回答 item 归并。
 
@@ -469,6 +470,9 @@ info provider 只回答对应 data type 的元数据语义；sample / text reade
 - `MultiTableReaderProvider` / `MultiTableWriterProvider`：面向 Shapefile 等 multi table 的连续读写。
 - `ScopeTableInfoProvider` / `ScopeTableSampleReader`：面向 Parquet dataset 等 whole scope table 的类型信息与样本读取。
 - `ScopeTableReaderProvider`：面向 Parquet dataset 等 whole scope table 的连续读取。Transfer 读取 whole scope table 时必须使用连续 reader，不得用 sample reader 冒充全量读取。
+- `ScopeTableWriterProvider`：面向 FileGDB 等 whole scope table/container child 的连续写出；writer 负责整个 scope 的创建、关闭、失败清理和提交边界，不能只提交某个内部文件。
+- `RuntimeContainerInfoProviderFactory`：声明容器检查所需 direct 算子，并在执行期把已选 Runtime Instance 与 source-only access plan 绑定为 `BoundContainerInfoProvider`。父容器只接收 `ContainerDescribeResult` 中的轻量 children 与 `format_info`，不得把 child 完整字段或样本写入父 attributes。
+- `RuntimeScopeTableProviderFactory`：只声明格式需要哪些 direct 算子，并在执行期把已选 Runtime Instance 与 source-only / target-only access plan 绑定为上述 scope provider。factory 本身不是可执行 reader/writer，能力诊断必须分别显示 factory 和已绑定 provider，不能在没有可用 Runtime Instance 时宣称当前执行可用。
 
 这些能力可以由同一个格式实现同时提供，也可以分别提供。新增能力必须按 info、sample、continuous reader、writer 明确拆分，不再新增同时表达多种消费意图的组合 provider。
 
@@ -480,7 +484,7 @@ Transfer 消费 encoded table 时按 layout 选择 provider：
 |---|---|---|
 | `single` | `TableReaderProvider` / `TableWriterProvider` | 单个 file/object 通过 contentio Reader / Writer 进入格式 reader / writer。 |
 | `multi` | `MultiTableReaderProvider` / `MultiTableWriterProvider` | Shapefile 等多 ref table 必须显式传入 `[]format.RelatedRef`；读取时优先使用 Meta 已确认 refs。 |
-| `whole` | `ScopeTableReaderProvider` | Parquet dataset 等 whole scope table 从已确认 scope ref 出发，并结合 contentio Lister 递归读取；第一版不定义通用 whole scope writer。 |
+| `whole` | `ScopeTableReaderProvider` / `ScopeTableWriterProvider` | Parquet dataset 等读取从已确认 scope ref 出发并结合 contentio Lister 递归读取；FileGDB 等目录型容器写出由 scope writer 统一提交整个目录。 |
 
 Transfer planner 只根据 data type、representation、layout、format descriptor 和 provider 实现状态选择上述通用入口，不得为 NFS -> MinIO、PostgreSQL -> PostgreSQL、Shapefile -> PostgreSQL 等具体组合建立专用格式路径。
 

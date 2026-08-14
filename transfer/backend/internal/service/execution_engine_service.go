@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/engine/instanceprovider"
 	engineplugin "github.com/addp/common/engine/plugin"
 	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
+	"github.com/addp/common/engine/workflowaccess"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
@@ -347,7 +348,7 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 		s.updateExecutionError(task, executionID, wrapped)
 		return wrapped
 	}
-	if err := s.configureInstanceTableProviders(ctx, task.TenantID, buildResult, tableExecutor); err != nil {
+	if err := s.configureInstanceTableProviders(ctx, task.TenantID, spec, buildResult, tableExecutor); err != nil {
 		wrapped := fmt.Errorf("configure instance table providers: %w", err)
 		s.updateExecutionError(task, executionID, wrapped)
 		return wrapped
@@ -395,6 +396,7 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 func (s *ExecutionEngineService) configureInstanceTableProviders(
 	ctx context.Context,
 	tenantID uint,
+	spec planner.TableExportTaskSpec,
 	build *planner.TableTransferBuildResult,
 	tableExecutor *executor.TableTransferExecutor,
 ) error {
@@ -419,7 +421,129 @@ func (s *ExecutionEngineService) configureInstanceTableProviders(
 		tableExecutor.TargetNativeWriter = nil
 		tableExecutor.TargetTableSessionProvider = targetProvider
 	}
+	if err := s.configureRuntimeFormatProviders(ctx, tenantID, spec, build, tableExecutor); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (s *ExecutionEngineService) configureRuntimeFormatProviders(
+	ctx context.Context,
+	tenantID uint,
+	spec planner.TableExportTaskSpec,
+	build *planner.TableTransferBuildResult,
+	tableExecutor *executor.TableTransferExecutor,
+) error {
+	if factory, err := format.GetRuntimeScopeTableReaderFactory(build.Plan.Source.Format); err == nil {
+		runtimeEngine, runtimeProvider, runtimeConn, err := s.resolveDirectWorkflowRuntime(ctx, tenantID, factory.RequiredScopeTableReadOperators())
+		if err != nil {
+			return fmt.Errorf("resolve %s reader runtime: %w", build.Plan.Source.Format, err)
+		}
+		locator, err := spec.Source.ResourceLocator()
+		if err != nil {
+			return fmt.Errorf("parse runtime format source locator: %w", err)
+		}
+		source, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{
+			Engine: engineFromBinding(build.SourceEngine), Locator: locator,
+			Kind: runtimeFormatResourceKind(build.Plan.Source.Format), Format: string(build.Plan.Source.Format),
+		})
+		if err != nil {
+			return fmt.Errorf("resolve %s source access: %w", build.Plan.Source.Format, err)
+		}
+		plan, err := workflowaccess.NewSourcePlan(source)
+		if err != nil {
+			return err
+		}
+		provider, err := factory.BindScopeTableReader(runtimeProvider, runtimeConn, plan)
+		if err != nil {
+			return fmt.Errorf("bind %s reader to runtime %d: %w", build.Plan.Source.Format, runtimeEngine.ID, err)
+		}
+		tableExecutor.SourceScopeReadProvider = provider
+	}
+
+	if factory, err := format.GetRuntimeScopeTableWriterFactory(build.Plan.Target.Format); err == nil {
+		if !build.Plan.Target.DeleteBeforeWrite {
+			return fmt.Errorf("runtime whole-scope target format %s requires replace apply mode", build.Plan.Target.Format)
+		}
+		runtimeEngine, runtimeProvider, runtimeConn, err := s.resolveDirectWorkflowRuntime(ctx, tenantID, factory.RequiredScopeTableWriteOperators())
+		if err != nil {
+			return fmt.Errorf("resolve %s writer runtime: %w", build.Plan.Target.Format, err)
+		}
+		parent, err := spec.Target.ParentResourceLocator()
+		if err != nil {
+			return fmt.Errorf("parse runtime format target parent locator: %w", err)
+		}
+		targetName := filepath.Base(build.Plan.Target.Path.StringPath())
+		target, _, err := workflowaccess.ResolveTarget(workflowaccess.ResourceSpec{
+			Engine: engineFromBinding(build.TargetEngine), Locator: parent,
+			Kind: runtimeFormatResourceKind(build.Plan.Target.Format), Format: string(build.Plan.Target.Format),
+			Name: targetName, WriteMode: workflowaccess.WriteModeReplace,
+		})
+		if err != nil {
+			return fmt.Errorf("resolve %s target access: %w", build.Plan.Target.Format, err)
+		}
+		plan, err := workflowaccess.NewTargetPlan(target)
+		if err != nil {
+			return err
+		}
+		provider, err := factory.BindScopeTableWriter(runtimeProvider, runtimeConn, plan)
+		if err != nil {
+			return fmt.Errorf("bind %s writer to runtime %d: %w", build.Plan.Target.Format, runtimeEngine.ID, err)
+		}
+		tableExecutor.TargetScopeWriterProvider = provider
+	}
+	return nil
+}
+
+func engineFromBinding(binding planner.EngineBinding) *commonModels.Engine {
+	return &commonModels.Engine{
+		ID: binding.EngineID, EngineType: binding.Type,
+		ConnectionInfo: commonModels.ConnectionInfo(binding.ConnInfo),
+	}
+}
+
+func runtimeFormatResourceKind(formatType format.FormatType) string {
+	descriptor, ok := format.GetFormatDescriptor(formatType)
+	if ok {
+		for _, layout := range descriptor.Layouts {
+			if layout == format.LayoutWhole {
+				return workflowaccess.KindDirectory
+			}
+		}
+	}
+	return workflowaccess.KindFile
+}
+
+func (s *ExecutionEngineService) resolveDirectWorkflowRuntime(
+	ctx context.Context,
+	tenantID uint,
+	operators []string,
+) (commonModels.Engine, engineplugin.WorkflowRuntimeProvider, engineplugin.ConnectionInfo, error) {
+	if s.systemRuntime == nil {
+		return commonModels.Engine{}, nil, nil, fmt.Errorf("system client is required to resolve workflow runtime")
+	}
+	descriptors, err := s.systemRuntime.WithTenantID(tenantID).ListEngineRuntimeDescriptors(ctx)
+	if err != nil {
+		return commonModels.Engine{}, nil, nil, fmt.Errorf("list workflow runtime descriptors: %w", err)
+	}
+	failures := make([]string, 0)
+	for index := range descriptors {
+		engine := descriptors[index].AsEngine()
+		if engine == nil || engine.LifecycleState != commonModels.EngineLifecycleActive {
+			continue
+		}
+		if err := dbbridge.RequireDirectWorkflowOperators(ctx, engine, operators...); err != nil {
+			failures = append(failures, fmt.Sprintf("%s: %v", engine.Name, err))
+			continue
+		}
+		provider, err := dbbridge.WorkflowRuntimeProviderForEngine(engine)
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("%s: %v", engine.Name, err))
+			continue
+		}
+		return *engine, provider, engineplugin.ConnectionInfo(engine.ConnectionInfo), nil
+	}
+	return commonModels.Engine{}, nil, nil, fmt.Errorf("no active workflow runtime provides all required direct operators %s; %s", strings.Join(operators, ", "), strings.Join(failures, "; "))
 }
 
 func (s *ExecutionEngineService) superMapSDXPostgreSQLTableProvider(

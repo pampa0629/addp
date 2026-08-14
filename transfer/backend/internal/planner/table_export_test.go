@@ -9,6 +9,7 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/plugins/csv"
+	_ "github.com/addp/common/format/plugins/filegdb"
 	_ "github.com/addp/common/format/plugins/geojson"
 	_ "github.com/addp/common/format/plugins/json"
 	_ "github.com/addp/common/format/plugins/parquet"
@@ -990,6 +991,64 @@ func TestBuildTableTransferPlanConsumesMetaWholeSourceAttributes(t *testing.T) {
 	}
 }
 
+func TestBuildTableTransferPlanResolvesFileGDBChildFromMeta(t *testing.T) {
+	spec := minimalEncodedToNativeSpec()
+	spec.Source.Locator = fileLocator(1, "arcgis/Util_solar_county/Util_solar_county.gdb")
+	spec.Source.Format = ""
+	spec.Source.Options = map[string]interface{}{format.ChildNameParam: "Solar Counties"}
+	spec.Source.Attributes = map[string]interface{}{
+		"storage": map[string]interface{}{"physical_path": "arcgis/Util_solar_county/Util_solar_county.gdb"},
+		"item": map[string]interface{}{
+			"layout": format.LayoutWhole, "data_type": string(datatype.Container), "format": string(format.FormatFileGDB),
+		},
+		"type_info": map[string]interface{}{
+			"container": map[string]interface{}{
+				"child_count": 1,
+				"children": []map[string]interface{}{{
+					"name": "Solar Counties", "child_kind": "feature_class", "data_type": string(datatype.Table),
+					"native": map[string]interface{}{"table": "Util_solar_county"},
+				}},
+			},
+		},
+	}
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "postgresql"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := result.Plan.Source.ParseOptions
+	if options == nil || options.SheetName != "Solar Counties" {
+		t.Fatalf("parse options = %#v", options)
+	}
+	if options.ExtraParams[format.ChildNameParam] != "Solar Counties" || options.ExtraParams[format.ChildTableParam] != "Util_solar_county" {
+		t.Fatalf("parse options extra = %#v", options.ExtraParams)
+	}
+}
+
+func TestBuildTableTransferPlanRejectsFileGDBProviderLayerOption(t *testing.T) {
+	spec := minimalEncodedToNativeSpec()
+	spec.Source.Locator = fileLocator(1, "arcgis/source.gdb")
+	spec.Source.Format = ""
+	spec.Source.Options = map[string]interface{}{"layer": "roads"}
+	spec.Source.Attributes = map[string]interface{}{
+		"storage": map[string]interface{}{"physical_path": "arcgis/source.gdb"},
+		"item": map[string]interface{}{
+			"layout": format.LayoutWhole, "data_type": string(datatype.Container), "format": string(format.FormatFileGDB),
+		},
+		"type_info": map[string]interface{}{"container": map[string]interface{}{
+			"children": []map[string]interface{}{{"name": "roads", "data_type": string(datatype.Table), "native": map[string]interface{}{"table": "roads"}}},
+		}},
+	}
+
+	_, err := BuildTableTransferPlan(spec, StaticEngineResolver{1: {Type: "nfs"}, 2: {Type: "postgresql"}})
+	if err == nil || !strings.Contains(err.Error(), "provider-internal") {
+		t.Fatalf("error = %v, want provider-internal layer rejection", err)
+	}
+}
+
 func TestValidateTransformSpecsAcceptsDecimalPrecisionAndScale(t *testing.T) {
 	precision := 20
 	scale := 10
@@ -1152,6 +1211,24 @@ func TestBuildTableTransferPlanForEncodedObjectToEncodedObject(t *testing.T) {
 	}
 	if result.Plan.Target.FormatOptions == nil || result.Plan.Target.FormatOptions.ExtraParams["json_mode"] != "jsonl" {
 		t.Fatalf("write options = %#v, want json_mode passthrough", result.Plan.Target.FormatOptions)
+	}
+}
+
+func TestTabularNamespaceTermUsesCatalogModel(t *testing.T) {
+	caps := engineplugin.NewTabularCapabilities("oracle", engineplugin.CatalogTermSchema, engineplugin.TabularCapabilityOptions{})
+	binding := EngineBinding{Type: "oracle", Capabilities: &caps}
+	if got := tabularNamespaceTerm(binding); got != engineplugin.CatalogTermSchema {
+		t.Fatalf("Oracle namespace term = %q, want schema", got)
+	}
+	path, err := nativeTableTargetPath(EndpointSpec{
+		ParentLocator: schemaLocator(22, "BUSINESS"),
+		Name:          "UTIL_SOLAR_COUNTY",
+	}, binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(path.Segments) < 2 || path.Segments[len(path.Segments)-2].Term != engineplugin.CatalogTermSchema {
+		t.Fatalf("Oracle target path = %#v", path)
 	}
 }
 

@@ -468,6 +468,20 @@ active / disabled
 8. System 不读取或修改 owner 私有表；放弃语义仍通过 cleanup request 的中性 context 传递，由 owner executor 落库。
 9. 删除后重新注册产生新的 Engine Instance；cleanup 不做旧 ID 到新 ID 的自动映射。
 
+### Standard 被引用资源删除工作流
+
+Standard 的 Domain、Element、DimensionHierarchy 和 Metric 是 Standard-owned 事实，但其引用状态属于 Model 私有事实。单个资源的用户显式删除不进入 System cleanup coordinator；它使用与两阶段 cleanup 相同的“冻结后权威复扫”原则，由 Standard 直接协调 Model 的标准引用删除屏障。
+
+```text
+active
+→ deleting
+→ Model 冻结引用屏障并权威扫描
+→ 有引用：Standard 恢复 active，Model 恢复 open，返回 409
+→ 无引用：Standard 硬删除，Model 屏障终止为 deleted
+```
+
+Model 的新增引用事务和冻结事务必须锁定同一 `(tenant_id, resource_type, resource_id)` 屏障行。冻结前提交的引用进入权威扫描，冻结后到达的引用被屏障拒绝；不得用一次性 HTTP 查询、固定等待时间、跨 Schema 外键或 Standard 直读 Model 私有表替代该串行化边界。影响存在时只允许用户先在 Model 中解除引用，不自动级联清空 Model 状态。
+
 ## 十一、与任务体系的关系
 
 cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。

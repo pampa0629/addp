@@ -23,6 +23,7 @@ type Config struct {
 
 	// System 模块配置
 	SystemURL           string
+	ModelURL            string
 	ServiceClientSecret string
 
 	// MinIO 配置
@@ -51,6 +52,7 @@ func LoadConfig() (*Config, error) {
 		RedisDB:       commonConfig.GetEnvInt("REDIS_DB", 0),
 
 		SystemURL:              commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
+		ModelURL:               commonConfig.GetEnv("MODEL_URL", "http://localhost:8181"),
 		ServiceClientSecret:    os.Getenv("STANDARD_SERVICE_CLIENT_SECRET"),
 		DocumentMaxFileSize:    int64(commonConfig.GetEnvInt("STANDARD_DOCUMENT_MAX_FILE_SIZE", 100*1024*1024)),
 		DocumentStorageTimeout: commonConfig.GetEnvDuration("STANDARD_DOCUMENT_STORAGE_TIMEOUT", "30s"),

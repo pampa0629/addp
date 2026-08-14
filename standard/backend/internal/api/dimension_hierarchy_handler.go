@@ -128,11 +128,14 @@ func (h *DimensionHierarchyHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, item)
 }
 
-// Delete DELETE /api/standard/dimension-hierarchies/:id
+// Delete DELETE /api/v1/standard/dimension-hierarchies/:id
 // @Summary 删除维度层级 | Delete dimension hierarchy
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]string "维度层级不存在 | Dimension hierarchy not found"
+// @Failure 409 {object} map[string]interface{} "资源仍被 Model 引用 | Resource is still referenced by Model"
+// @Failure 503 {object} map[string]string "Model 引用删除屏障不可用 | Model reference deletion guard unavailable"
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
@@ -146,7 +149,7 @@ func (h *DimensionHierarchyHandler) Delete(c *gin.Context) {
 		return
 	}
 	tenantID := getTenantID(c)
-	if err := h.svc.Delete(id, tenantID); err != nil {
+	if err := h.svc.Delete(c.Request.Context(), id, tenantID); err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}

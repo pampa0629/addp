@@ -80,10 +80,26 @@ func (r *LogicalTableRepository) List(tenantID int64, opts ListLogicalTableOptio
 }
 
 func (r *LogicalTableRepository) Update(table *models.LogicalTable) error {
-	return commonrepo.WrapDBError(r.db.Save(table).Error)
+	result := r.db.Model(&models.LogicalTable{}).
+		Where("id = ? AND tenant_id = ? AND version = ?", table.ID, table.TenantID, table.Version).
+		Updates(map[string]interface{}{
+			"domain_id": table.DomainID, "entity_id": table.EntityID, "name": table.Name,
+			"description": table.Description, "table_type": table.TableType, "layer": table.Layer,
+			"grain_description": table.GrainDescription, "scd_type": table.SCDType,
+			"materialization": table.Materialization, "updated_by": table.UpdatedBy,
+			"version": gorm.Expr("version + 1"),
+		})
+	if result.Error != nil {
+		return commonrepo.WrapDBError(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
+	}
+	table.Version++
+	return nil
 }
 
-func (r *LogicalTableRepository) Delete(id, tenantID int64) error {
+func (r *LogicalTableRepository) Delete(id, tenantID, version int64) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		var table models.LogicalTable
 		if err := tx.Select("id").Where("id = ? AND tenant_id = ?", id, tenantID).First(&table).Error; err != nil {
@@ -98,7 +114,7 @@ func (r *LogicalTableRepository) Delete(id, tenantID int64) error {
 		if err := tx.Where("table_id = ?", id).Delete(&models.LogicalField{}).Error; err != nil {
 			return commonrepo.WrapDBError(err)
 		}
-		result := tx.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.LogicalTable{})
+		result := tx.Where("id = ? AND tenant_id = ? AND version = ?", id, tenantID, version).Delete(&models.LogicalTable{})
 		if result.Error != nil {
 			return commonrepo.WrapDBError(result.Error)
 		}
@@ -109,10 +125,10 @@ func (r *LogicalTableRepository) Delete(id, tenantID int64) error {
 	})
 }
 
-func (r *LogicalTableRepository) UpdateStatus(id, tenantID int64, status string, updatedBy int64) error {
+func (r *LogicalTableRepository) UpdateStatus(id, tenantID, version int64, status string, updatedBy int64) error {
 	result := r.db.Model(&models.LogicalTable{}).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
-		Updates(map[string]interface{}{"status": status, "updated_by": updatedBy})
+		Where("id = ? AND tenant_id = ? AND version = ?", id, tenantID, version).
+		Updates(map[string]interface{}{"status": status, "updated_by": updatedBy, "version": gorm.Expr("version + 1")})
 	if result.Error != nil {
 		return commonrepo.WrapDBError(result.Error)
 	}

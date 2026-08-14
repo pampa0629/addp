@@ -63,6 +63,13 @@ type SourcePlan struct {
 	Source        Source `json:"source"`
 }
 
+// TargetPlan is the target-only access contract used by incremental direct
+// writers that receive table batches across multiple calls.
+type TargetPlan struct {
+	SchemaVersion string `json:"schema_version"`
+	Target        Target `json:"target"`
+}
+
 func NewSourcePlan(source Source) (SourcePlan, error) {
 	plan := SourcePlan{SchemaVersion: SchemaVersion, Source: source}
 	if err := plan.Validate(); err != nil {
@@ -82,6 +89,46 @@ func (p SourcePlan) JSONMap() commonModels.JSONMap {
 	return commonModels.JSONMap{
 		"schema_version": p.SchemaVersion,
 		"source":         sourceJSONMap(p.Source, false),
+	}
+}
+
+func NewTargetPlan(target Target) (TargetPlan, error) {
+	plan := TargetPlan{SchemaVersion: SchemaVersion, Target: target}
+	if err := plan.Validate(); err != nil {
+		return TargetPlan{}, err
+	}
+	return plan, nil
+}
+
+func (p TargetPlan) Validate() error {
+	if p.SchemaVersion != SchemaVersion {
+		return fmt.Errorf("unsupported workflow access plan schema_version %q", p.SchemaVersion)
+	}
+	if err := validateResource("target", p.Target.Kind, p.Target.Format, p.Target.Access); err != nil {
+		return err
+	}
+	if strings.TrimSpace(p.Target.Name) == "" {
+		return fmt.Errorf("target name is required")
+	}
+	switch p.Target.WriteMode {
+	case WriteModeCreate, WriteModeReplace:
+	default:
+		return fmt.Errorf("target write_mode must be create or replace")
+	}
+	return nil
+}
+
+func (p TargetPlan) JSONMap() commonModels.JSONMap {
+	return commonModels.JSONMap{
+		"schema_version": p.SchemaVersion,
+		"target":         targetJSONMap(p.Target, false),
+	}
+}
+
+func (p TargetPlan) AuditJSONMap() commonModels.JSONMap {
+	return commonModels.JSONMap{
+		"schema_version": p.SchemaVersion,
+		"target":         targetJSONMap(p.Target, true),
 	}
 }
 

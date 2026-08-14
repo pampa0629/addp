@@ -14,24 +14,12 @@ func NewTableRelationRepository(db *gorm.DB) *TableRelationRepository {
 	return &TableRelationRepository{db: db}
 }
 
-// TableRelationDetail 关联关系详情（含关联表/字段名）
-type TableRelationDetail struct {
-	ID              int64  `json:"id"`
-	SourceTable     int64  `json:"source_table"`
-	SourceField     int64  `json:"source_field"`
-	SourceFieldName string `json:"source_field_name"`
-	TargetTable     int64  `json:"target_table"`
-	TargetTableName string `json:"target_table_name"`
-	TargetTableCode string `json:"target_table_code"`
-	TargetSCDType   int    `json:"target_scd_type"`
-	TargetField     int64  `json:"target_field"`
-	TargetFieldName string `json:"target_field_name"`
-	RelationType    string `json:"relation_type"`
-}
+func (r *TableRelationRepository) DB() *gorm.DB { return r.db }
 
+// TableRelationDetail 关联关系详情（含关联表/字段名）
 // ListByFactTable 获取事实表关联的维度表（含字段信息）
-func (r *TableRelationRepository) ListByFactTable(factTableID, tenantID int64) ([]TableRelationDetail, error) {
-	var results []TableRelationDetail
+func (r *TableRelationRepository) ListByFactTable(factTableID, tenantID int64) ([]models.TableRelationDetail, error) {
+	var results []models.TableRelationDetail
 	err := r.db.Raw(`
 		SELECT
 			tr.id,

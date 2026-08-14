@@ -2,6 +2,14 @@ package format
 
 import "github.com/addp/common/datatype"
 
+// ContainerDescribeResult groups parent-container facts produced by one
+// container inspection. Container maps to type_info.container and FormatInfo
+// maps to the current format's format_info.<format> namespace.
+type ContainerDescribeResult struct {
+	Container  *datatype.ContainerInfo `json:"container,omitempty"`
+	FormatInfo map[string]interface{}  `json:"format_info,omitempty"`
+}
+
 // TableDescribeResult groups facts that may be produced by one table format parse.
 //
 // The fields map to separate attributes partitions: Table to type_info.table,

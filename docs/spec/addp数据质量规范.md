@@ -38,6 +38,7 @@ Model、Asset、Portal 等模块后续若消费质量结果，应读取 Quality 
   "schema_version": "addp.quality.rules/v1",
   "rules": [
     {
+      "rule_key": "0d6c7c6a-4f0d-4d4f-9e5a-6f8e5c7a1b2c",
       "type": "not_null",
       "enabled": true,
       "severity": "error",
@@ -52,7 +53,8 @@ Model、Asset、Portal 等模块后续若消费质量结果，应读取 Quality 
 
 - `schema_version` 必须且只能为 `addp.quality.rules/v1`。
 - `rules` 必须是数组；空数组表示该数据元尚未定义质量规则。
-- `type`、`enabled`、`severity`、`message` 和 `params` 是规则唯一字段集合。
+- `rule_key`、`type`、`enabled`、`severity`、`message` 和 `params` 是规则唯一字段集合。
+- `rule_key` 必须是非空小写 UUID 字符串，同一规则文档内必须唯一；它是规则治理身份，不是数组位置或规则类型。
 - `severity` 只允许 `error`、`warning`、`info`；它用于问题分级，不改变检查真值或评分公式。
 - 所有规则参数只允许位于 `params`；不得把 `pattern`、`min`、`max` 等参数提升到规则顶层。
 - 不兼容无 `schema_version` 的旧结构，不提供旧字段解析、自动升级或双轨保存。
@@ -76,11 +78,15 @@ Model、Asset、Portal 等模块后续若消费质量结果，应读取 Quality 
 - `allowed_values.values` 只允许非空字符串，且值不得重复。
 - `data_type`、`custom` 不是 v1 规则类型，前后端和执行器均不得保留入口或兼容分支。
 
+`rule_key` 由 Standard 在首次创建规则时生成。规则重排、类型修改、参数修改、级别修改和说明修改都必须保留原 key；删除规则时 key 一并删除。Standard 更新请求必须提交完整规则文档，服务端不得根据数组位置补 key 或在编辑时重新生成 key。存量规则在迁移时一次性生成 UUID 并写回 Standard 数据元；迁移完成后不再接受无 key 文档。
+
 ### 3.3 保存与快照
 
-Standard 在创建和更新数据元时校验完整规则文档。Quality 创建规则应用时从 Standard 读取并再次校验规则文档，只保存其中 `enabled=true` 的规则快照及其 `schema_version`。
+Standard 在创建和更新数据元时校验完整规则文档。Quality 创建规则应用时从 Standard 读取并再次校验规则文档，只保存其中 `enabled=true` 的规则快照及其 `schema_version`，包括每条规则的 `rule_key`。
 
 规则应用快照是后续 execution 的事实来源。Standard 数据元规则改变后，不得静默修改已有规则应用；用户必须显式重新创建或刷新规则应用。每次 execution 还必须把实际使用的规则应用 ID、规则快照和目标范围写入 `execution_config`，保证历史可审计。
+
+`rule_key` 引入迁移只更新 Standard 当前规则定义、Quality 当前 RuleApplication 快照和可唯一映射的当前 Issue。已完成 execution 的 `execution_config` 与 `metadata` 是不可变历史，不做回写；迁移前已经冻结且尚未完成的无 key execution 按非法快照失败，用户必须基于迁移后的当前配置重新执行。若旧 Issue 对应的 RuleApplication 中存在多个同类型规则，旧二元身份无法唯一还原，迁移必须拒绝启动并报告冲突，不能猜测映射或合并问题。
 
 ## 4. 规则应用与检查任务
 
@@ -106,8 +112,8 @@ RuleApplication 是当前生效的规则快照，不是执行历史。删除时�
 
 1. 若 `pending|running` execution 已冻结该 RuleApplication，删除返回冲突；不得让执行结束后重新产生已失去 owner 的 Issue。
 2. 任务触发冻结规则快照与删除必须通过数据库行锁串行化，不能依赖请求时序规避竞态。
-3. 无活动 execution 引用时，在同一事务中删除 `tenant_id + rule_application_id` 对应的当前 Issue，再删除 RuleApplication。
-4. 已完成 execution 的 `execution_config` 和 `metadata.rule_details` 继续作为不可变历史保留，不因 RuleApplication 删除而改写或清理。
+3. 无活动 execution 引用时，在同一事务中删除该 `tenant_id + rule_application_id` 下全部 `rule_key` 对应的当前 Issue，再删除 RuleApplication。
+4. 已完成 execution 的 `execution_config` 和 `metadata.rule_details` 继续作为不可变历史保留，不因 RuleApplication 删除而改写或清理；历史记录中的 `rule_key` 是执行时冻结的事实。
 
 RuleApplication 可通过唯一 `PUT /rule-applications/{id}` 显式切换 `enabled`，请求体必须且只能包含布尔字段 `enabled`。启停只影响未来 execution 的规则冻结；已进入 `pending|running` 的 execution 继续使用其不可变快照。手动停用不改变已有 Issue 状态，因为停止检查不等于问题已解决或已忽略；问题治理仍通过 Issue 的独立人工状态流转完成。重新启用前必须确认绑定 Engine 当前仍为本 Tenant 的 active PostgreSQL Engine；停用不依赖 Engine 可用性。更新只能修改 `enabled`、`updated_by` 和 `updated_at`，不得用整行保存覆盖并发变化，也不得通过空请求隐式解释为停用。
 
@@ -211,6 +217,7 @@ tenant physical cleanup 同样必须在按 ID 稳定顺序锁定命中 CheckTask
   "rule_details": [
     {
       "rule_application_id": 12,
+      "rule_key": "0d6c7c6a-4f0d-4d4f-9e5a-6f8e5c7a1b2c",
       "type": "format",
       "severity": "error",
       "message": "",
@@ -242,12 +249,12 @@ tenant physical cleanup 同样必须在按 ID 稳定顺序锁定命中 CheckTask
 Issue 表示某个规则应用当前仍存在的质量问题，不表示一次 execution 的失败事件。稳定身份为：
 
 ```text
-tenant_id + rule_application_id
+tenant_id + rule_application_id + rule_key
 ```
 
-数据库必须建立唯一约束。每次成功检查后：
+数据库必须建立三字段唯一约束。每次成功检查后：
 
-- 规则失败：upsert 同一 Issue，更新 `last_execution_id`、计数、通过率、规则快照摘要和 `last_observed_at`；新问题为 `open`。
+- 规则失败：按 `tenant_id + rule_application_id + rule_key` upsert 同一 Issue，更新 `last_execution_id`、计数、通过率、规则快照摘要和 `last_observed_at`；新问题为 `open`。
 - 规则通过：若存在 open Issue，则自动标记为 `resolved`，记录 `resolved_at` 和本次 execution。
 - execution 失败：不改变任何 Issue 当前状态，因为没有形成完整的新质量事实。
 
@@ -282,7 +289,7 @@ ignored -> open    （后续检查再次失败）
 
 - RuleApplication 稳定身份唯一索引。
 - CheckTask 稳定身份唯一索引。
-- Issue `tenant_id + rule_application_id` 唯一索引。
+- Issue `tenant_id + rule_application_id + rule_key` 唯一索引。
 - Issue 列表的 `(tenant_id, status, updated_at DESC, id DESC)` 组合索引。
 - CheckTask 列表的 `(tenant_id, updated_at DESC, id DESC)` 组合索引。
 - pending execution 领取与 lease 恢复使用匹配过滤条件的部分索引；不为全部终态记录维护无用队列索引。
@@ -315,6 +322,6 @@ Quality 私有表只通过模块内连续、带校验和、持有数据库迁移
 3. 空表、无规则、部分失败、非法规则和目标 SQL 错误。
 4. 手动 User 授权、Orchestrator 父 execution 派生、授权过期和 Engine 越权。
 5. pending claim、并发 worker、lease 过期恢复、最大尝试失败和服务重启恢复。
-6. Issue 去重、自动 reopen/resolve、人工状态机、并发更新和 RuleApplication 删除级联。
+6. Issue 按 `tenant_id + rule_application_id + rule_key` 去重、自动 reopen/resolve、人工状态机、并发更新和 RuleApplication 删除级联。
 7. 列表分页、Tenant 隔离、HTTP 状态码、错误 envelope 和 Swagger 路由覆盖。
 8. 前端 Engine 选择、任务执行轮询、metadata 结果展示、错误反馈和路由恢复。

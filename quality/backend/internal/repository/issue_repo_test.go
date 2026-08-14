@@ -16,7 +16,7 @@ func TestIssueReconcileIsIdempotentAndReopensResolvedIssues(t *testing.T) {
 	db := newIssueRepositoryTestDB(t)
 	repo := NewIssueRepository(db)
 	failed := models.IssueObservation{
-		RuleApplicationID: 12, RuleType: "not_null", Severity: "error", Message: "required",
+		RuleApplicationID: 12, RuleKey: "00000000-0000-4000-8000-000000000001", RuleType: "not_null", Severity: "error", Message: "required",
 		ColumnName: "email", Table: "users", SchemaName: "public", EngineID: 3,
 		FailedCount: 2, TotalCount: 10, PassRate: 80,
 	}
@@ -80,10 +80,38 @@ func TestIssueReconcileIsIdempotentAndReopensResolvedIssues(t *testing.T) {
 	}
 }
 
+func TestIssueReconcileKeepsRulesInOneApplicationIndependent(t *testing.T) {
+	db := newIssueRepositoryTestDB(t)
+	repo := NewIssueRepository(db)
+	firstSeen := time.Date(2026, 8, 14, 10, 0, 0, 0, time.UTC)
+	observations := []models.IssueObservation{
+		{RuleApplicationID: 12, RuleKey: "00000000-0000-4000-8000-000000000001", RuleType: "format", Severity: "error", ColumnName: "email", Table: "users", SchemaName: "public", EngineID: 3, FailedCount: 2, TotalCount: 10, PassRate: 80},
+		{RuleApplicationID: 12, RuleKey: "00000000-0000-4000-8000-000000000002", RuleType: "format", Severity: "warning", ColumnName: "email", Table: "users", SchemaName: "public", EngineID: 3, FailedCount: 1, TotalCount: 10, PassRate: 90},
+	}
+	if err := repo.Reconcile(context.Background(), 7, "execution-1", observations, firstSeen); err != nil {
+		t.Fatalf("first Reconcile: %v", err)
+	}
+
+	observations[0].Passed = true
+	observations[0].FailedCount = 0
+	observations[0].PassRate = 100
+	if err := repo.Reconcile(context.Background(), 7, "execution-2", observations, firstSeen.Add(time.Hour)); err != nil {
+		t.Fatalf("second Reconcile: %v", err)
+	}
+
+	var issues []models.Issue
+	if err := db.Where("tenant_id = ? AND rule_application_id = ?", 7, 12).Order("rule_key ASC").Find(&issues).Error; err != nil {
+		t.Fatalf("load independent issues: %v", err)
+	}
+	if len(issues) != 2 || issues[0].Status != "resolved" || issues[1].Status != "open" {
+		t.Fatalf("independent issues = %#v", issues)
+	}
+}
+
 func TestIssueUpdateStatusRequiresNoteAndOpenState(t *testing.T) {
 	db := newIssueRepositoryTestDB(t)
 	repo := NewIssueRepository(db)
-	issue := models.Issue{TenantID: 8, ExecutionID: "execution-1", LastExecutionID: "execution-1", RuleApplicationID: 13, RuleType: "unique", Severity: "error", ColumnName: "id", Table: "users", SchemaName: "public", EngineID: 3, Status: "open"}
+	issue := models.Issue{TenantID: 8, ExecutionID: "execution-1", LastExecutionID: "execution-1", RuleApplicationID: 13, RuleKey: "00000000-0000-4000-8000-000000000001", RuleType: "unique", Severity: "error", ColumnName: "id", Table: "users", SchemaName: "public", EngineID: 3, Status: "open"}
 	if err := repo.Create(&issue); err != nil {
 		t.Fatalf("create issue: %v", err)
 	}
@@ -122,7 +150,8 @@ func newIssueRepositoryTestDB(t *testing.T) *gorm.DB {
 		tenant_id INTEGER NOT NULL,
 		execution_id TEXT NOT NULL,
 		last_execution_id TEXT NOT NULL,
-		rule_application_id INTEGER NOT NULL,
+			rule_application_id INTEGER NOT NULL,
+			rule_key TEXT NOT NULL,
 		rule_type TEXT NOT NULL,
 		severity TEXT NOT NULL DEFAULT 'error',
 		message TEXT,
@@ -141,7 +170,7 @@ func newIssueRepositoryTestDB(t *testing.T) *gorm.DB {
 		last_observed_at DATETIME,
 		created_at DATETIME,
 		updated_at DATETIME,
-		UNIQUE (tenant_id, rule_application_id)
+			UNIQUE (tenant_id, rule_application_id, rule_key)
 	)`).Error; err != nil {
 		t.Fatalf("create quality issues table: %v", err)
 	}

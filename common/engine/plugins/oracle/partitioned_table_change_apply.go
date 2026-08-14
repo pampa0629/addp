@@ -51,7 +51,7 @@ func (p *OraclePlugin) PreparePartitionedTableChangeApply(ctx context.Context, c
 		return fmt.Errorf("open Oracle partitioned change apply connection: %w", err)
 	}
 	defer db.Close()
-	if err := validateOracleApplySchema(ctx, db, schema); err != nil {
+	if err := validateOracleTargetSchema(ctx, db, schema); err != nil {
 		return err
 	}
 	exists, err := oracleBaseTableExists(ctx, db, schema, table)
@@ -66,10 +66,10 @@ func (p *OraclePlugin) PreparePartitionedTableChangeApply(ctx context.Context, c
 	}
 	fields := oracleApplyFields(opts.Fields, keys, !exists)
 	if !exists {
-		if err := createOracleApplyTable(ctx, db, schema, table, fields); err != nil {
+		if err := createOracleTable(ctx, db, schema, table, fields); err != nil {
 			return err
 		}
-	} else if err := evolveOracleApplyTable(ctx, db, schema, table, fields, opts.SpatialInfo); err != nil {
+	} else if err := evolveOracleTable(ctx, db, schema, table, fields, opts.SpatialInfo); err != nil {
 		return err
 	}
 	return validateOracleApplyTargetKeys(ctx, db, schema, table, keys)
@@ -165,7 +165,7 @@ func validateOraclePartitionedTableChangeApplyOptions(opts plugin.PartitionedTab
 	if strings.TrimSpace(opts.SourceIdentity) == "" {
 		return nil, fmt.Errorf("oracle partitioned change apply requires source identity")
 	}
-	fields, err := validateOracleApplyFields(opts.Fields, opts.SpatialInfo)
+	fields, err := validateOracleWriteFields(opts.Fields, opts.SpatialInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -206,34 +206,34 @@ func validateOraclePartitionedTableChangeApplyBatch(batch *plugin.PartitionedTab
 	return keys, nil
 }
 
-func validateOracleApplyFields(fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) ([]datatype.FieldInfo, error) {
+func validateOracleWriteFields(fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) ([]datatype.FieldInfo, error) {
 	result := make([]datatype.FieldInfo, 0, len(fields))
 	seen := map[string]bool{}
 	for _, field := range fields {
 		field.Name = strings.TrimSpace(field.Name)
 		if field.Name == "" || seen[field.Name] {
-			return nil, fmt.Errorf("oracle partitioned change apply fields must have non-empty unique names")
+			return nil, fmt.Errorf("oracle table write fields must have non-empty unique names")
 		}
 		if len([]byte(field.Name)) > 128 {
 			return nil, fmt.Errorf("oracle field name %q exceeds the 128-byte identifier limit", field.Name)
 		}
-		if _, err := oracleSQLTypeForApplyField(field); err != nil {
+		if _, err := oracleSQLTypeForField(field); err != nil {
 			return nil, err
 		}
-		if datatype.IsSpatialFieldType(field.Type) && oracleSpatialColumnForApplyField(spatialInfo, field.Name) == nil {
+		if datatype.IsSpatialFieldType(field.Type) && oracleSpatialColumnForField(spatialInfo, field.Name) == nil {
 			return nil, fmt.Errorf("oracle geometry field %q requires frozen spatial facts", field.Name)
 		}
 		if datatype.IsSpatialFieldType(field.Type) {
-			column := oracleSpatialColumnForApplyField(spatialInfo, field.Name)
+			column := oracleSpatialColumnForField(spatialInfo, field.Name)
 			if column.Dimension == nil || *column.Dimension != 2 {
-				return nil, fmt.Errorf("oracle CDC target geometry field %q requires frozen XY dimension 2", field.Name)
+				return nil, fmt.Errorf("oracle target geometry field %q requires frozen XY dimension 2", field.Name)
 			}
 		}
 		seen[field.Name] = true
 		result = append(result, field)
 	}
 	if len(result) == 0 {
-		return nil, fmt.Errorf("oracle partitioned change apply requires table fields")
+		return nil, fmt.Errorf("oracle table write requires fields")
 	}
 	return result, nil
 }
@@ -259,12 +259,12 @@ func oracleApplyFields(fields []datatype.FieldInfo, keys []string, targetAbsent 
 func oracleTablePathParts(path plugin.CatalogPath) (string, string, error) {
 	segments := plugin.CatalogPathWithoutRoot(path).Segments
 	if len(segments) < 2 {
-		return "", "", fmt.Errorf("oracle partitioned change apply requires schema/table catalog path")
+		return "", "", fmt.Errorf("oracle table operation requires schema/table catalog path")
 	}
 	schema := strings.TrimSpace(segments[len(segments)-2].Name)
 	table := strings.TrimSpace(segments[len(segments)-1].Name)
 	if schema == "" || table == "" {
-		return "", "", fmt.Errorf("oracle partitioned change apply requires non-empty schema and table")
+		return "", "", fmt.Errorf("oracle table operation requires non-empty schema and table")
 	}
 	for role, value := range map[string]string{"schema": schema, "table": table} {
 		if len([]byte(value)) > 128 {
@@ -274,7 +274,10 @@ func oracleTablePathParts(path plugin.CatalogPath) (string, string, error) {
 	return schema, table, nil
 }
 
-func validateOracleApplySchema(ctx context.Context, db *sql.DB, schema string) error {
+func validateOracleTargetSchema(ctx context.Context, db *sql.DB, schema string) error {
+	if _, system := oracleSystemSchemas[strings.ToUpper(strings.TrimSpace(schema))]; system {
+		return fmt.Errorf("oracle system schema %q cannot be used as a table write target", schema)
+	}
 	var count int
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM all_users WHERE username = :1", schema).Scan(&count); err != nil {
 		return fmt.Errorf("check Oracle target schema %s: %w", schema, err)
@@ -287,7 +290,7 @@ func validateOracleApplySchema(ctx context.Context, db *sql.DB, schema string) e
 		return fmt.Errorf("read Oracle target session user: %w", err)
 	}
 	if !strings.EqualFold(currentUser, schema) {
-		return fmt.Errorf("oracle CDC target schema %q must match the connected user %q", schema, currentUser)
+		return fmt.Errorf("oracle target schema %q must match the connected user %q", schema, currentUser)
 	}
 	return nil
 }
@@ -300,12 +303,12 @@ func oracleBaseTableExists(ctx context.Context, db *sql.DB, schema, table string
 	return count == 1, nil
 }
 
-func createOracleApplyTable(ctx context.Context, db *sql.DB, schema, table string, fields []datatype.FieldInfo) error {
+func createOracleTable(ctx context.Context, db *sql.DB, schema, table string, fields []datatype.FieldInfo) error {
 	dialect := commonquery.ForEngine("oracle")
 	definitions := make([]string, 0, len(fields)+1)
 	primaryKeys := make([]string, 0)
 	for _, field := range fields {
-		definition, err := oracleApplyColumnDefinition(field)
+		definition, err := oracleColumnDefinition(field)
 		if err != nil {
 			return err
 		}
@@ -319,12 +322,12 @@ func createOracleApplyTable(ctx context.Context, db *sql.DB, schema, table strin
 	}
 	statement := "CREATE TABLE " + dialect.QualifiedTable(schema, table) + " (" + strings.Join(definitions, ", ") + ")"
 	if _, err := db.ExecContext(ctx, statement); err != nil {
-		return fmt.Errorf("create Oracle CDC target table %s.%s: %w", schema, table, err)
+		return fmt.Errorf("create Oracle target table %s.%s: %w", schema, table, err)
 	}
 	return nil
 }
 
-func evolveOracleApplyTable(ctx context.Context, db *sql.DB, schema, table string, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) error {
+func evolveOracleTable(ctx context.Context, db *sql.DB, schema, table string, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) error {
 	existing, err := (&OraclePlugin{}).listColumnsWithSQL(ctx, db, schema, table)
 	if err != nil {
 		return err
@@ -337,8 +340,8 @@ func evolveOracleApplyTable(ctx context.Context, db *sql.DB, schema, table strin
 	for _, field := range fields {
 		current, ok := byName[field.Name]
 		if ok {
-			if !oracleApplyColumnCompatible(current, field, spatialInfo) {
-				return fmt.Errorf("oracle target column %q has type %q, expected %q", field.Name, current.NativeType, oracleExpectedApplyType(field))
+			if !oracleColumnCompatible(current, field, spatialInfo) {
+				return fmt.Errorf("oracle target column %q has type %q, expected %q", field.Name, current.NativeType, oracleExpectedType(field))
 			}
 			continue
 		}
@@ -348,7 +351,7 @@ func evolveOracleApplyTable(ctx context.Context, db *sql.DB, schema, table strin
 		if !field.Nullable {
 			return fmt.Errorf("oracle schema evolution cannot add non-null column %q", field.Name)
 		}
-		definition, err := oracleApplyColumnDefinition(field)
+		definition, err := oracleColumnDefinition(field)
 		if err != nil {
 			return err
 		}
@@ -359,8 +362,8 @@ func evolveOracleApplyTable(ctx context.Context, db *sql.DB, schema, table strin
 	return nil
 }
 
-func oracleApplyColumnDefinition(field datatype.FieldInfo) (string, error) {
-	sqlType, err := oracleSQLTypeForApplyField(field)
+func oracleColumnDefinition(field datatype.FieldInfo) (string, error) {
+	sqlType, err := oracleSQLTypeForField(field)
 	if err != nil {
 		return "", err
 	}
@@ -371,7 +374,7 @@ func oracleApplyColumnDefinition(field datatype.FieldInfo) (string, error) {
 	return definition, nil
 }
 
-func oracleSQLTypeForApplyField(field datatype.FieldInfo) (string, error) {
+func oracleSQLTypeForField(field datatype.FieldInfo) (string, error) {
 	switch datatype.ParseFieldType(string(field.Type)) {
 	case datatype.FieldTypeString:
 		return "VARCHAR2(4000 CHAR)", nil
@@ -406,20 +409,20 @@ func oracleSQLTypeForApplyField(field datatype.FieldInfo) (string, error) {
 	case datatype.FieldTypeGeometry:
 		return "MDSYS.SDO_GEOMETRY", nil
 	case datatype.FieldTypeTime:
-		return "", fmt.Errorf("oracle CDC target does not support time-only field %q", field.Name)
+		return "", fmt.Errorf("oracle target does not support time-only field %q", field.Name)
 	default:
-		return "", fmt.Errorf("oracle CDC target does not support field %q type %q", field.Name, field.Type)
+		return "", fmt.Errorf("oracle target does not support field %q type %q", field.Name, field.Type)
 	}
 }
 
-func oracleExpectedApplyType(field datatype.FieldInfo) string {
-	value, _ := oracleSQLTypeForApplyField(field)
+func oracleExpectedType(field datatype.FieldInfo) string {
+	value, _ := oracleSQLTypeForField(field)
 	return value
 }
 
-func oracleApplyColumnCompatible(current, expected datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) bool {
+func oracleColumnCompatible(current, expected datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) bool {
 	if datatype.IsSpatialFieldType(expected.Type) {
-		return datatype.IsSpatialFieldType(current.Type) && oracleSpatialColumnForApplyField(spatialInfo, expected.Name) != nil
+		return datatype.IsSpatialFieldType(current.Type) && oracleSpatialColumnForField(spatialInfo, expected.Name) != nil
 	}
 	if expected.Type == datatype.FieldTypeDecimal && current.Type == datatype.FieldTypeDecimal {
 		return expected.Precision == 0 || (current.Precision == expected.Precision && current.Scale == expected.Scale)
@@ -664,10 +667,10 @@ func oracleApplyValueExpression(field datatype.FieldInfo, value interface{}, spa
 		if !field.Nullable {
 			return "", nil, fmt.Errorf("oracle upsert field %q is NOT NULL", field.Name)
 		}
-		return "CAST(NULL AS " + oracleExpectedApplyType(field) + ")", nil, nil
+		return "CAST(NULL AS " + oracleExpectedType(field) + ")", nil, nil
 	}
 	if datatype.IsSpatialFieldType(field.Type) {
-		column := oracleSpatialColumnForApplyField(spatialInfo, field.Name)
+		column := oracleSpatialColumnForField(spatialInfo, field.Name)
 		encoded, err := oracleGeometryWKB(value, column)
 		if err != nil {
 			return "", nil, fmt.Errorf("convert Oracle geometry field %q: %w", field.Name, err)
@@ -676,20 +679,21 @@ func oracleApplyValueExpression(field datatype.FieldInfo, value interface{}, spa
 		if column.SRID != nil && *column.SRID > 0 {
 			srid = strconv.Itoa(*column.SRID)
 		}
+		gtype := oracleSDOGTypeExpression(column)
 		bind := fmt.Sprintf(":%d", bindIndex)
-		expression := "(SELECT MDSYS.SDO_GEOMETRY(decoded.raw_geom.SDO_GTYPE, " + srid +
+		expression := "(SELECT MDSYS.SDO_GEOMETRY(" + gtype + ", " + srid +
 			", decoded.raw_geom.SDO_POINT, decoded.raw_geom.SDO_ELEM_INFO, decoded.raw_geom.SDO_ORDINATES) " +
 			"FROM (SELECT SDO_UTIL.FROM_WKBGEOMETRY(" + bind + ") raw_geom FROM DUAL) decoded)"
 		return expression, []interface{}{go_ora.Blob{Data: encoded}}, nil
 	}
-	converted, err := oracleApplyScalarValue(field, value)
+	converted, err := oracleScalarWriteValue(field, value)
 	if err != nil {
 		return "", nil, err
 	}
 	return fmt.Sprintf(":%d", bindIndex), []interface{}{converted}, nil
 }
 
-func oracleApplyScalarValue(field datatype.FieldInfo, value interface{}) (interface{}, error) {
+func oracleScalarWriteValue(field datatype.FieldInfo, value interface{}) (interface{}, error) {
 	switch field.Type {
 	case datatype.FieldTypeString:
 		text, ok := value.(string)
@@ -748,12 +752,12 @@ func oracleApplyScalarValue(field datatype.FieldInfo, value interface{}) (interf
 	}
 }
 
-func oracleSpatialColumnForApplyField(spatialInfo *datatype.SpatialInfo, fieldName string) *datatype.GeometryColumnInfo {
+func oracleSpatialColumnForField(spatialInfo *datatype.SpatialInfo, fieldName string) *datatype.GeometryColumnInfo {
 	if spatialInfo == nil {
 		return nil
 	}
 	for i := range spatialInfo.GeometryColumns {
-		if spatialInfo.GeometryColumns[i].Name == fieldName {
+		if strings.EqualFold(spatialInfo.GeometryColumns[i].Name, fieldName) {
 			return &spatialInfo.GeometryColumns[i]
 		}
 	}
@@ -790,6 +794,36 @@ func oracleGeometryWKB(value interface{}, column *datatype.GeometryColumnInfo) (
 		return nil, fmt.Errorf("encode standard WKB: %w", err)
 	}
 	return standardWKB, nil
+}
+
+func oracleSDOGTypeExpression(column *datatype.GeometryColumnInfo) string {
+	if column == nil {
+		return "decoded.raw_geom.SDO_GTYPE"
+	}
+	typeCode := 0
+	switch datatype.ParseGeometryType(column.GeometryType) {
+	case datatype.GeometryTypePoint:
+		typeCode = 1
+	case datatype.GeometryTypeLineString:
+		typeCode = 2
+	case datatype.GeometryTypePolygon:
+		typeCode = 3
+	case datatype.GeometryTypeGeometryCollection:
+		typeCode = 4
+	case datatype.GeometryTypeMultiPoint:
+		typeCode = 5
+	case datatype.GeometryTypeMultiLineString:
+		typeCode = 6
+	case datatype.GeometryTypeMultiPolygon:
+		typeCode = 7
+	default:
+		return "decoded.raw_geom.SDO_GTYPE"
+	}
+	dimension := 2
+	if column.Dimension != nil && *column.Dimension > 0 {
+		dimension = *column.Dimension
+	}
+	return strconv.Itoa(dimension*1000 + typeCode)
 }
 
 func oracleApplyGeometryTypeName(geometry geom.T) string {

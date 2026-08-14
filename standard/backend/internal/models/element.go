@@ -62,6 +62,7 @@ type Element struct {
 	CreatedAt        time.Time   `json:"created_at"`
 	UpdatedAt        time.Time   `json:"updated_at"`
 	Version          int64       `gorm:"not null;default:1" json:"version"`
+	LifecycleState   string      `gorm:"size:16;not null;default:'active';check:ck_standard_elements_lifecycle_state,lifecycle_state IN ('active','deleting')" json:"lifecycle_state"`
 }
 
 func (Element) TableName() string {

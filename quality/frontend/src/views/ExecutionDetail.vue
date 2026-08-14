@@ -56,6 +56,7 @@
       <h3 style="margin-top:24px">{{ t('quality.execution.ruleDetails') }}</h3>
       <el-table :data="result.rule_details" border size="small">
         <el-table-column prop="type" :label="t('quality.execution.ruleType')" width="120" />
+        <el-table-column prop="rule_key" :label="t('quality.execution.ruleKey')" min-width="260" show-overflow-tooltip />
         <el-table-column prop="severity" :label="t('quality.execution.severity')" width="100" />
         <el-table-column prop="column" :label="t('quality.execution.column')" width="150" />
         <el-table-column prop="table" :label="t('quality.execution.table')" width="150" />

@@ -30,3 +30,22 @@ func (j *JSONB) Scan(value interface{}) error {
 	}
 	return fmt.Errorf("unsupported type: %T", value)
 }
+
+// VersionRequest 是已有主资源和聚合子资源删除、审批、重新打开的唯一版本请求。
+type VersionRequest struct {
+	Version int64 `json:"version" binding:"required,gt=0" minimum:"1"`
+}
+
+type VersionResponse struct {
+	Version int64 `json:"version"`
+}
+
+// EntityModelRevision 是 Tenant 实体模型集合的并发边界。
+type EntityModelRevision struct {
+	TenantID int64 `gorm:"primaryKey" json:"tenant_id"`
+	Revision int64 `gorm:"not null;default:1" json:"revision"`
+}
+
+func (EntityModelRevision) TableName() string {
+	return "model.entity_model_revisions"
+}

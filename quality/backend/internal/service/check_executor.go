@@ -93,6 +93,7 @@ func NewCheckExecutor(
 
 type RuleResult struct {
 	RuleApplicationID int64   `json:"rule_application_id"`
+	RuleKey           string  `json:"rule_key"`
 	Type              string  `json:"type"`
 	Severity          string  `json:"severity"`
 	Message           string  `json:"message"`
@@ -403,9 +404,9 @@ func (e *CheckExecutor) doCheck(ctx context.Context, task *models.CheckTask, exe
 			if countErr != nil {
 				return nil, nil, failExecution(qualityExecutionResultInvalid, fmt.Errorf("rule application %d (%s) returned invalid counts: %w", application.ID, rule.Type, countErr))
 			}
-			detail := RuleResult{RuleApplicationID: application.ID, Type: rule.Type, Severity: rule.Severity, Message: rule.Message, Column: application.ColumnName, Table: application.Table, Schema: application.SchemaName, PassRate: passRate, FailedCount: counts.FailedCount, TotalCount: counts.TotalCount, Passed: passed}
+			detail := RuleResult{RuleApplicationID: application.ID, RuleKey: rule.RuleKey, Type: rule.Type, Severity: rule.Severity, Message: rule.Message, Column: application.ColumnName, Table: application.Table, Schema: application.SchemaName, PassRate: passRate, FailedCount: counts.FailedCount, TotalCount: counts.TotalCount, Passed: passed}
 			ruleDetails = append(ruleDetails, detail)
-			observations = append(observations, models.IssueObservation{RuleApplicationID: detail.RuleApplicationID, RuleType: detail.Type, Severity: detail.Severity, Message: detail.Message, ColumnName: detail.Column, Table: detail.Table, SchemaName: detail.Schema, EngineID: task.EngineID, FailedCount: detail.FailedCount, TotalCount: detail.TotalCount, PassRate: detail.PassRate, Passed: detail.Passed})
+			observations = append(observations, models.IssueObservation{RuleApplicationID: detail.RuleApplicationID, RuleKey: detail.RuleKey, RuleType: detail.Type, Severity: detail.Severity, Message: detail.Message, ColumnName: detail.Column, Table: detail.Table, SchemaName: detail.Schema, EngineID: task.EngineID, FailedCount: detail.FailedCount, TotalCount: detail.TotalCount, PassRate: detail.PassRate, Passed: detail.Passed})
 		}
 	}
 	result, err := aggregateExecutionResult(ruleDetails)

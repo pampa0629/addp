@@ -42,7 +42,7 @@ func TestIntegrationPostgresQualityCleanupUsesExecutionFacts(t *testing.T) {
 	task := createQualityCleanupCheckTask(t, db, tenantID, 12, rule.Table)
 	issue := models.Issue{
 		TenantID: tenantID, ExecutionID: "exec-" + rule.Table, LastExecutionID: "exec-" + rule.Table,
-		RuleApplicationID: rule.ID, RuleType: "not_null", Severity: "error", ColumnName: rule.ColumnName,
+		RuleApplicationID: rule.ID, RuleKey: "00000000-0000-4000-8000-000000000001", RuleType: "not_null", Severity: "error", ColumnName: rule.ColumnName,
 		Table: rule.Table, SchemaName: rule.SchemaName, EngineID: rule.EngineID,
 		FailedCount: 1, TotalCount: 10, PassRate: 90, Detail: []byte(`{}`), Status: "open",
 	}

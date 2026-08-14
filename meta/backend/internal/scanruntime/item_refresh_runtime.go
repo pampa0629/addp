@@ -23,10 +23,11 @@ import (
 )
 
 type ItemRefreshRuntime struct {
-	repo         *metaRepo.ScanRepository
-	indexer      RuntimeIndexer
-	log          *slog.Logger
-	cadInspector metaenrich.CADInspector
+	repo               *metaRepo.ScanRepository
+	indexer            RuntimeIndexer
+	log                *slog.Logger
+	cadInspector       metaenrich.CADInspector
+	containerInspector metaenrich.ContainerInspector
 }
 
 func NewItemRefreshRuntime(repo *metaRepo.ScanRepository, indexer RuntimeIndexer, log *slog.Logger) *ItemRefreshRuntime {
@@ -132,7 +133,7 @@ func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
 		indexPath = scanflow.KnownItemObjectPath(descriptor, physicalPath)
 	}
 
-	return scanprocessor.New(r.repo, r.indexer, r.log).WithCADInspector(r.cadInspector).Process(ctx, scanprocessor.KnownItemInput(
+	return scanprocessor.New(r.repo, r.indexer, r.log).WithCADInspector(r.cadInspector).WithContainerInspector(r.containerInspector).Process(ctx, scanprocessor.KnownItemInput(
 		resource,
 		tenantID,
 		&parentNode,

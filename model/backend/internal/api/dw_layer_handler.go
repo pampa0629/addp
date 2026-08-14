@@ -23,7 +23,7 @@ func NewDWLayerHandler(svc *service.DWLayerService) *DWLayerHandler {
 // @Summary 查询数仓分层列表 | List DW layers
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{} "数仓分层列表 | DW layer list"
+// @Success 200 {array} models.DWLayer "数仓分层列表 | DW layer list"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @x-addp-auth-mode "permission"
@@ -47,7 +47,7 @@ func (h *DWLayerHandler) ListDWLayers(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param body body models.CreateDWLayerRequest true "创建请求 | Create request"
-// @Success 201 {object} map[string]interface{} "已创建的分层 | Created DW layer"
+// @Success 201 {object} models.DWLayer "已创建的分层 | Created DW layer"
 // @Failure 400 {object} models.ErrorResponse "请求无效 | Invalid request"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
@@ -77,7 +77,7 @@ func (h *DWLayerHandler) CreateDWLayer(c *gin.Context) {
 // @Tags Model
 // @Produce json
 // @Param id path int true "分层ID | DW layer ID"
-// @Success 200 {object} map[string]interface{} "分层详情 | DW layer details"
+// @Success 200 {object} models.DWLayer "分层详情 | DW layer details"
 // @Failure 400 {object} models.ErrorResponse "分层 ID 无效 | Invalid DW layer ID"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
@@ -109,7 +109,7 @@ func (h *DWLayerHandler) GetDWLayer(c *gin.Context) {
 // @Produce json
 // @Param id path int true "分层ID | DW layer ID"
 // @Param body body models.UpdateDWLayerRequest true "更新请求 | Update request"
-// @Success 200 {object} map[string]interface{} "已更新的分层 | Updated DW layer"
+// @Success 200 {object} models.DWLayer "已更新的分层 | Updated DW layer"
 // @Failure 400 {object} models.ErrorResponse "请求或分层 ID 无效 | Invalid request or DW layer ID"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
@@ -146,7 +146,8 @@ func (h *DWLayerHandler) UpdateDWLayer(c *gin.Context) {
 // @Tags Model
 // @Produce json
 // @Param id path int true "分层ID | DW layer ID"
-// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Param body body models.VersionRequest true "资源版本 | Resource version"
+// @Success 200 {object} models.MessageResponse "删除成功 | Deleted successfully"
 // @Failure 400 {object} models.ErrorResponse "分层 ID 无效 | Invalid DW layer ID"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
@@ -163,8 +164,13 @@ func (h *DWLayerHandler) DeleteDWLayer(c *gin.Context) {
 		return
 	}
 
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
 	tenantID := getTenantID(c)
-	if err := h.svc.DeleteDWLayer(id, tenantID); err != nil {
+	if err := h.svc.DeleteDWLayer(id, tenantID, req.Version); err != nil {
 		writeServiceError(c, err)
 		return
 	}

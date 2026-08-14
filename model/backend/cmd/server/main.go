@@ -75,6 +75,7 @@ func main() {
 	dwLayerRepo := repository.NewDWLayerRepository(db)
 	factMetricRepo := repository.NewFactMetricRepository(db)
 	tableRelationRepo := repository.NewTableRelationRepository(db)
+	standardReferenceGuardRepo := repository.NewStandardReferenceGuardRepository(db)
 
 	// 创建 Services（仅 Model 相关，传入 standardURL 用于验证 element_id）
 	entitySvc := service.NewEntityService(entityRepo, entityRelationRepo)
@@ -86,6 +87,7 @@ func main() {
 	factMetricSvc := service.NewFactMetricService(factMetricRepo, logicalTableRepo)
 	factMetricSvc.SetStandardClient(standardClient)
 	tableRelationSvc := service.NewTableRelationService(tableRelationRepo, logicalTableRepo)
+	standardReferenceGuardSvc := service.NewStandardReferenceGuardService(standardReferenceGuardRepo)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
 	if err := cleanupSvc.Start(context.Background()); err != nil {
@@ -101,6 +103,7 @@ func main() {
 		dwLayerSvc,
 		factMetricSvc,
 		tableRelationSvc,
+		standardReferenceGuardSvc,
 		cfg.SystemURL,
 		redisClient,
 	)

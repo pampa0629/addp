@@ -16,7 +16,7 @@ func TestDimensionHierarchyListIncludesOrderedLevels(t *testing.T) {
 		t.Fatalf("attach standard schema: %v", err)
 	}
 	for _, statement := range []string{
-		`CREATE TABLE standard.dimension_hierarchies (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, domain_id INTEGER, name TEXT NOT NULL, code TEXT NOT NULL, description TEXT, created_by INTEGER NOT NULL DEFAULT 0, updated_by INTEGER, created_at DATETIME, updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1)`,
+		`CREATE TABLE standard.dimension_hierarchies (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, domain_id INTEGER, name TEXT NOT NULL, code TEXT NOT NULL, description TEXT, created_by INTEGER NOT NULL DEFAULT 0, updated_by INTEGER, created_at DATETIME, updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1, lifecycle_state TEXT NOT NULL DEFAULT 'active')`,
 		`CREATE TABLE standard.dimension_hierarchy_levels (id INTEGER PRIMARY KEY, hierarchy_id INTEGER NOT NULL, level_num INTEGER NOT NULL, name TEXT NOT NULL, element_id INTEGER, description TEXT, sort_order INTEGER NOT NULL DEFAULT 0)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {

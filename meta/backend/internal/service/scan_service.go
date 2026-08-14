@@ -48,6 +48,7 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 	indexerService := NewIndexerService(nil, log) // indexer 稍后通过 SetIndexer 注入
 	runtimes := scanruntime.NewRuntimes(db, log, repo, indexerService)
 	runtimes.SetCADInspector(NewSuperMapCADInspector(engineService))
+	runtimes.SetContainerInspector(NewWorkflowContainerInspector(engineService))
 
 	s := &ScanService{
 		db:             db,

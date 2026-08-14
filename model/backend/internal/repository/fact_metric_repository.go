@@ -14,6 +14,8 @@ func NewFactMetricRepository(db *gorm.DB) *FactMetricRepository {
 	return &FactMetricRepository{db: db}
 }
 
+func (r *FactMetricRepository) DB() *gorm.DB { return r.db }
+
 // ListByFactTable 获取事实表关联的所有指标
 func (r *FactMetricRepository) ListByFactTable(factTableID, tenantID int64) ([]models.FactMetricMapping, error) {
 	var mappings []models.FactMetricMapping

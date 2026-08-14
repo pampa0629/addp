@@ -47,8 +47,98 @@ func Migrate(db *gorm.DB) error {
 		); err != nil {
 			return fmt.Errorf("auto migrate standard schema: %w", err)
 		}
+		if err := migrateStandardQualityRuleKeys(tx); err != nil {
+			return err
+		}
 		return applyStandardSchemaStatements(tx)
 	})
+}
+
+func migrateStandardQualityRuleKeys(db *gorm.DB) error {
+	if db.Dialector.Name() != "postgres" {
+		return nil
+	}
+	statements := []string{
+		`DO $do$ BEGIN
+			IF EXISTS (
+				SELECT 1 FROM standard.elements
+				WHERE quality_rules IS NOT NULL AND (
+					jsonb_typeof(quality_rules) IS DISTINCT FROM 'object'
+					OR quality_rules->>'schema_version' IS DISTINCT FROM 'addp.quality.rules/v1'
+					OR jsonb_typeof(quality_rules->'rules') IS DISTINCT FROM 'array'
+				)
+			) THEN
+				RAISE EXCEPTION 'standard.elements contains invalid addp.quality.rules/v1 documents';
+			END IF;
+			IF EXISTS (
+				SELECT 1
+				FROM standard.elements AS element
+				CROSS JOIN LATERAL jsonb_array_elements(element.quality_rules->'rules') AS rules(rule)
+				WHERE element.quality_rules IS NOT NULL
+				  AND jsonb_typeof(rule) IS DISTINCT FROM 'object'
+			) THEN
+				RAISE EXCEPTION 'standard.elements contains non-object quality rules';
+			END IF;
+		END $do$`,
+		`UPDATE standard.elements AS element
+		SET quality_rules = jsonb_set(
+			element.quality_rules,
+			'{rules}',
+			(
+				SELECT COALESCE(jsonb_agg(
+					CASE WHEN rule ? 'rule_key' THEN rule ELSE jsonb_set(
+						rule,
+						'{rule_key}',
+						to_jsonb(
+							substr(hash, 1, 8) || '-' || substr(hash, 9, 4) || '-' || substr(hash, 13, 4) || '-' || substr(hash, 17, 4) || '-' || substr(hash, 21, 12)
+						),
+						true
+					) END
+					ORDER BY ordinal
+				), '[]'::jsonb)
+				FROM (
+					SELECT rule, ordinal, md5('standard.element:' || element.tenant_id::text || ':' || element.id::text || ':' || ordinal::text) AS hash
+					FROM jsonb_array_elements(element.quality_rules->'rules') WITH ORDINALITY AS rules(rule, ordinal)
+				) AS keyed_rules
+			)
+		)
+		WHERE element.quality_rules IS NOT NULL
+		AND EXISTS (
+			SELECT 1 FROM jsonb_array_elements(element.quality_rules->'rules') AS rules(rule)
+			WHERE NOT (rule ? 'rule_key')
+		)`,
+		`DO $do$ BEGIN
+			IF EXISTS (
+				SELECT 1
+				FROM standard.elements AS element
+				CROSS JOIN LATERAL jsonb_array_elements(element.quality_rules->'rules') AS rules(rule)
+				WHERE element.quality_rules IS NOT NULL AND (
+					jsonb_typeof(rule) IS DISTINCT FROM 'object'
+					OR jsonb_typeof(rule->'rule_key') IS DISTINCT FROM 'string'
+					OR rule->>'rule_key' !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+					OR rule->>'rule_key' = '00000000-0000-0000-0000-000000000000'
+				)
+			) THEN
+				RAISE EXCEPTION 'standard.elements contains invalid quality rule_key values';
+			END IF;
+			IF EXISTS (
+				SELECT 1
+				FROM standard.elements AS element
+				CROSS JOIN LATERAL jsonb_array_elements(element.quality_rules->'rules') AS rules(rule)
+				WHERE element.quality_rules IS NOT NULL
+				GROUP BY element.id, rule->>'rule_key'
+				HAVING COUNT(*) > 1
+			) THEN
+				RAISE EXCEPTION 'standard.elements contains duplicate quality rule_key values';
+			END IF;
+		END $do$`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return fmt.Errorf("migrate standard quality rule keys: %w", err)
+		}
+	}
+	return nil
 }
 
 func prepareStandardSchemaMigration(db *gorm.DB) error {

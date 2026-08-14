@@ -2,7 +2,15 @@ from pathlib import Path
 
 import pytest
 
-from addp_common.workflow_access import WorkflowAccessError, publish_target_directory, publish_target_file, require_access_plan, stage_source_file
+from addp_common.workflow_access import (
+    WorkflowAccessError,
+    publish_target_directory,
+    publish_target_file,
+    require_access_plan,
+    require_source_plan,
+    require_target_plan,
+    stage_source_file,
+)
 
 
 def _plan(source: Path, target: Path, *, kind="file", write_mode="create"):
@@ -50,3 +58,14 @@ def test_local_directory_completion_marker_and_replace(tmp_path):
     (source / "tileset.json").write_text("{}", encoding="utf-8")
     publish_target_directory(source, plan, completion_marker="tileset.json")
     assert (target / "tileset.json").is_file()
+
+
+def test_source_and_target_only_access_plans(tmp_path):
+    plan = _plan(tmp_path / "source.las", tmp_path / "target.copc.laz")
+    require_source_plan({"access_plan": {"schema_version": plan["schema_version"], "source": plan["source"]}})
+    require_target_plan({"access_plan": {"schema_version": plan["schema_version"], "target": plan["target"]}})
+
+    with pytest.raises(WorkflowAccessError, match="must not contain target"):
+        require_source_plan({"access_plan": plan})
+    with pytest.raises(WorkflowAccessError, match="must not contain source"):
+        require_target_plan({"access_plan": plan})

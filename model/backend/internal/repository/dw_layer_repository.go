@@ -31,11 +31,24 @@ func (r *DWLayerRepository) List(tenantID int64) ([]models.DWLayer, error) {
 }
 
 func (r *DWLayerRepository) Update(layer *models.DWLayer) error {
-	return commonrepo.WrapDBError(r.db.Save(layer).Error)
+	result := r.db.Model(&models.DWLayer{}).
+		Where("id = ? AND tenant_id = ? AND version = ?", layer.ID, layer.TenantID, layer.Version).
+		Updates(map[string]interface{}{
+			"layer_name": layer.LayerName, "description": layer.Description, "naming_rule": layer.NamingRule,
+			"quality_sla": layer.QualitySLA, "sort_order": layer.SortOrder, "version": gorm.Expr("version + 1"),
+		})
+	if result.Error != nil {
+		return commonrepo.WrapDBError(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
+	}
+	layer.Version++
+	return nil
 }
 
-func (r *DWLayerRepository) Delete(id, tenantID int64) error {
-	result := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.DWLayer{})
+func (r *DWLayerRepository) Delete(id, tenantID, version int64) error {
+	result := r.db.Where("id = ? AND tenant_id = ? AND version = ?", id, tenantID, version).Delete(&models.DWLayer{})
 	if result.Error != nil {
 		return commonrepo.WrapDBError(result.Error)
 	}
@@ -44,6 +57,8 @@ func (r *DWLayerRepository) Delete(id, tenantID int64) error {
 	}
 	return nil
 }
+
+func (r *DWLayerRepository) DB() *gorm.DB { return r.db }
 
 func (r *DWLayerRepository) ExistsByCode(code string, tenantID int64, excludeID int64) (bool, error) {
 	var count int64

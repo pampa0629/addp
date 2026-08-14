@@ -90,6 +90,49 @@ test('preserves the business-domain URL state across entity detail navigation', 
   await expect(page.getByRole('cell', { name: '客户', exact: true })).toHaveCount(0)
 })
 
+test('preserves an unsaved entity draft when another page advances the resource version', async ({ browser }) => {
+  const context = await browser.newContext({ baseURL: 'http://127.0.0.1:4182' })
+  const backend = await installMockBackend(context, {
+    concurrentEntity: true,
+    permissions: [...DEFAULT_PERMISSIONS, 'model.entity.update']
+  })
+  const pageA = await context.newPage()
+  const pageB = await context.newPage()
+
+  try {
+    await Promise.all([pageA.goto('/entities/7'), pageB.goto('/entities/7')])
+    await expect(pageA.getByRole('textbox', { name: '实体名称', exact: true })).toHaveValue('活动')
+    await expect(pageB.getByRole('textbox', { name: '实体名称', exact: true })).toHaveValue('活动')
+
+    await pageA.getByRole('textbox', { name: '实体名称', exact: true }).fill('活动并发临时')
+    await pageA.getByRole('button', { name: '保存', exact: true }).click()
+    await expect(pageA.getByRole('alert').filter({ hasText: '保存成功' })).toBeVisible()
+
+    await pageB.getByRole('textbox', { name: '描述', exact: true }).fill('并发冲突草稿')
+    await pageB.getByRole('button', { name: '保存', exact: true }).click()
+    await expect(pageB.getByRole('alert').filter({
+      hasText: '资源已被其他用户修改，当前未保存内容已保留。请确认后手动刷新，再重新提交。'
+    })).toBeVisible()
+    await expect(pageB.getByRole('textbox', { name: '实体名称', exact: true })).toHaveValue('活动')
+    await expect(pageB.getByRole('textbox', { name: '描述', exact: true })).toHaveValue('并发冲突草稿')
+    await expect(pageB.getByText('未保存', { exact: true })).toBeVisible()
+    expect(backend.getUpdateVersions()).toEqual([1, 1])
+
+    await pageB.getByRole('button', { name: '刷新', exact: true }).click()
+    const discardDialog = pageB.getByRole('dialog', { name: '存在未保存内容' })
+    await expect(discardDialog).toBeVisible()
+    await expect(discardDialog).toContainText('离开或刷新将丢失当前未保存内容，是否继续？')
+    await discardDialog.getByRole('button', { name: '放弃并继续', exact: true }).click()
+
+    await expect(pageB.getByRole('textbox', { name: '实体名称', exact: true })).toHaveValue('活动并发临时')
+    await expect(pageB.getByRole('textbox', { name: '描述', exact: true })).toHaveValue('')
+    await expect(pageB.getByText('未保存', { exact: true })).toHaveCount(0)
+    expect(backend.getEntity().version).toBe(2)
+  } finally {
+    await context.close()
+  }
+})
+
 test.describe('DDL preview', () => {
   test.use({ viewport: { width: 620, height: 560 }, colorScheme: 'dark' })
 
@@ -116,17 +159,19 @@ test.describe('DDL preview', () => {
   })
 })
 
-async function installMockBackend(page, options = {}) {
+async function installMockBackend(target, options = {}) {
   let entityListRequests = 0
+  let entity = structuredClone(ENTITIES[0])
   const ddlRequests = []
+  const updateVersions = []
   const permissions = options.permissions || DEFAULT_PERMISSIONS
 
-  await page.addInitScript(({ theme }) => {
+  await target.addInitScript(({ theme }) => {
     localStorage.setItem('addp-lang', 'zh-cn')
     localStorage.setItem('theme-mode', theme || 'light')
   }, { theme: options.theme })
 
-  await page.route('**/api/v1/**', async route => {
+  await target.route('**/api/v1/**', async route => {
     const request = route.request()
     const url = new URL(request.url())
     const path = url.pathname
@@ -149,7 +194,21 @@ async function installMockBackend(page, options = {}) {
       return fulfillJSON(route, [{ layer_code: 'dwd', layer_name: '明细层' }])
     }
     if (path === '/api/v1/model/entities/7/attributes') return fulfillJSON(route, [])
-    if (path === '/api/v1/model/entities/7') return fulfillJSON(route, ENTITIES[0])
+    if (path === '/api/v1/model/entities/7' && request.method() === 'GET') {
+      return fulfillJSON(route, entity)
+    }
+    if (path === '/api/v1/model/entities/7' && request.method() === 'PUT' && options.concurrentEntity) {
+      const body = request.postDataJSON()
+      updateVersions.push(body.version)
+      if (body.version !== entity.version) {
+        return fulfillJSON(route, {
+          error: '资源版本冲突',
+          error_code: 'resource_version_conflict'
+        }, 409)
+      }
+      entity = { ...entity, ...body, version: entity.version + 1 }
+      return fulfillJSON(route, entity)
+    }
     if (path === '/api/v1/model/entity-relations') return fulfillJSON(route, [])
     if (path === '/api/v1/model/entities' && request.method() === 'GET') {
       entityListRequests += 1
@@ -160,7 +219,8 @@ async function installMockBackend(page, options = {}) {
         }, 403)
       }
       const domainID = Number(url.searchParams.get('domain_id'))
-      const data = domainID ? ENTITIES.filter(entity => entity.domain_id === domainID) : ENTITIES
+      const entities = options.concurrentEntity ? [entity] : ENTITIES
+      const data = domainID ? entities.filter(item => item.domain_id === domainID) : entities
       return fulfillJSON(route, { data, total: data.length })
     }
     if (path === '/api/v1/model/logical-tables/2/fields') return fulfillJSON(route, [])
@@ -179,7 +239,9 @@ async function installMockBackend(page, options = {}) {
 
   return {
     getDDLRequests: () => structuredClone(ddlRequests),
-    getEntityListRequests: () => entityListRequests
+    getEntity: () => structuredClone(entity),
+    getEntityListRequests: () => entityListRequests,
+    getUpdateVersions: () => [...updateVersions]
   }
 }
 

@@ -73,7 +73,7 @@ func TestRuleApplicationElementCandidatesUseTenantServiceProjection(t *testing.T
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":12,"name":"Gender","code":"gender","quality_rules":{"schema_version":"addp.quality.rules/v1","rules":[{"type":"not_null","enabled":true,"severity":"error","message":"required","params":{}}]}}],"total":1,"page":1,"page_size":100,"total_pages":1}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":12,"name":"Gender","code":"gender","quality_rules":{"schema_version":"addp.quality.rules/v1","rules":[{"rule_key":"00000000-0000-4000-8000-000000000001","type":"not_null","enabled":true,"severity":"error","message":"required","params":{}}]}}],"total":1,"page":1,"page_size":100,"total_pages":1}`))
 	}))
 	defer standardServer.Close()
 	standardClient := commonClient.NewStandardClient(standardServer.URL, commonClient.ServiceTokenProviderFunc(func(_ context.Context, tenantID uint) (string, error) {

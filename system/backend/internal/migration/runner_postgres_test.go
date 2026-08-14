@@ -15,6 +15,103 @@ import (
 	"github.com/addp/system/internal/testsupport"
 )
 
+func TestStandardReferenceRuntimeForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset Standard reference runtime migration schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	through48, _ := migrationFilesBeforeAndThrough(t, "000049_query_parameter_capabilities.up.sql")
+	through64, through65 := migrationFilesBeforeAndThrough(t, "000065_iam_standard_reference_runtime.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through48, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 48: %v", err)
+	}
+	if _, err := db.Exec(`
+		CREATE TABLE system.engines (
+		    engine_type text NOT NULL,
+		    capabilities jsonb
+		)
+	`); err != nil {
+		t.Fatalf("create migration 49 engine fixture: %v", err)
+	}
+	if err := (&Runner{DSN: dsn, FS: through64, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 64: %v", err)
+	}
+	_, tenantID := seedInitializedMigrationTenant(t, db, "standard-runtime-migration", "Standard Runtime Migration")
+
+	if err := (&Runner{DSN: dsn, FS: through65, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply Standard reference runtime migration 65: %v", err)
+	}
+
+	var version int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read migration 65 version: %v", err)
+	}
+	var permissionCount, rolePermissionCount, membershipCount, assignmentCount int
+	if err := db.QueryRow(`
+		SELECT count(*) FROM system.permissions
+		WHERE permission_key = 'model.standard_reference.update'
+		  AND owner_module = 'model' AND status = 'active'
+	`).Scan(&permissionCount); err != nil {
+		t.Fatalf("count Standard reference update permission: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions role_permission
+		JOIN system.roles role ON role.id = role_permission.role_id
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE role.tenant_id IS NULL
+		  AND role.role_key = 'tenant.standard_runtime'
+		  AND permission.permission_key = 'model.standard_reference.update'
+	`).Scan(&rolePermissionCount); err != nil {
+		t.Fatalf("count Standard runtime role permission: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.tenant_memberships membership
+		JOIN system.service_principals service_principal ON service_principal.id = membership.principal_id
+		WHERE membership.tenant_id = $1
+		  AND membership.status = 'active'
+		  AND service_principal.name = 'addp-standard'
+	`, tenantID).Scan(&membershipCount); err != nil {
+		t.Fatalf("count Standard runtime tenant membership: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_assignments assignment
+		JOIN system.service_principals service_principal ON service_principal.id = assignment.principal_id
+		JOIN system.roles role ON role.id = assignment.role_id
+		WHERE assignment.tenant_id = $1
+		  AND assignment.scope_type = 'tenant'
+		  AND assignment.status = 'active'
+		  AND service_principal.name = 'addp-standard'
+		  AND role.tenant_id IS NULL
+		  AND role.role_key = 'tenant.standard_runtime'
+	`, tenantID).Scan(&assignmentCount); err != nil {
+		t.Fatalf("count Standard runtime tenant assignment: %v", err)
+	}
+	if version != 65 || dirty || permissionCount != 1 || rolePermissionCount != 1 ||
+		membershipCount != 1 || assignmentCount != 1 {
+		t.Fatalf(
+			"migration 65 state=(%d,%t) permission=%d role_permission=%d membership=%d assignment=%d",
+			version, dirty, permissionCount, rolePermissionCount, membershipCount, assignmentCount,
+		)
+	}
+}
+
 func TestMetaServicePrincipalForwardMigrationAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {

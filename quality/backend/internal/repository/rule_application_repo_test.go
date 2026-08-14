@@ -81,7 +81,8 @@ func newRuleApplicationRepositoryTestDB(t *testing.T) *gorm.DB {
 		tenant_id INTEGER NOT NULL,
 		execution_id TEXT NOT NULL,
 		last_execution_id TEXT NOT NULL,
-		rule_application_id INTEGER NOT NULL,
+			rule_application_id INTEGER NOT NULL,
+			rule_key TEXT NOT NULL,
 		rule_type TEXT NOT NULL,
 		severity TEXT NOT NULL,
 		message TEXT,
@@ -110,7 +111,7 @@ func createRuleApplicationRepositoryTestApplication(t *testing.T, db *gorm.DB, t
 	t.Helper()
 	application := models.RuleApplication{
 		TenantID: tenantID, ElementID: 11, EngineID: 12, SchemaName: "public", Table: "orders", ColumnName: "amount",
-		RuleConfig: json.RawMessage(`{"schema_version":"addp.quality.rules/v1","rules":[{"type":"not_null","enabled":true,"severity":"error","message":"","params":{}}]}`),
+		RuleConfig: json.RawMessage(`{"schema_version":"addp.quality.rules/v1","rules":[{"rule_key":"00000000-0000-4000-8000-000000000001","type":"not_null","enabled":true,"severity":"error","message":"","params":{}}]}`),
 		Enabled:    true, CreatedBy: 1,
 	}
 	if err := db.Create(&application).Error; err != nil {
@@ -124,7 +125,7 @@ func createRuleApplicationRepositoryTestIssue(t *testing.T, db *gorm.DB, applica
 	now := time.Now().UTC()
 	issue := models.Issue{
 		TenantID: application.TenantID, ExecutionID: "first", LastExecutionID: "latest", RuleApplicationID: application.ID,
-		RuleType: "not_null", Severity: "error", ColumnName: application.ColumnName, Table: application.Table,
+		RuleKey: "00000000-0000-4000-8000-000000000001", RuleType: "not_null", Severity: "error", ColumnName: application.ColumnName, Table: application.Table,
 		SchemaName: application.SchemaName, EngineID: application.EngineID, FailedCount: 1, TotalCount: 1,
 		PassRate: 0, Detail: json.RawMessage(`{}`), Status: "open", LastObservedAt: &now,
 	}

@@ -7,6 +7,8 @@ import (
 	"io"
 	"strconv"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 const RulesSchemaVersion = "addp.quality.rules/v1"
@@ -32,6 +34,7 @@ type Document struct {
 }
 
 type Rule struct {
+	RuleKey  string     `json:"rule_key"`
 	Type     string     `json:"type"`
 	Enabled  bool       `json:"enabled"`
 	Severity string     `json:"severity"`
@@ -103,15 +106,25 @@ func (d Document) Validate() error {
 	if d.Rules == nil {
 		return fmt.Errorf("quality_rules.rules must be an array")
 	}
+	seenRuleKeys := make(map[string]struct{}, len(d.Rules))
 	for index, rule := range d.Rules {
 		if err := rule.Validate(); err != nil {
 			return fmt.Errorf("quality_rules.rules[%d]: %w", index, err)
 		}
+		if _, exists := seenRuleKeys[rule.RuleKey]; exists {
+			return fmt.Errorf("quality_rules.rules[%d]: duplicate rule_key %q", index, rule.RuleKey)
+		}
+		seenRuleKeys[rule.RuleKey] = struct{}{}
 	}
 	return nil
 }
 
 func (r Rule) Validate() error {
+	parsedRuleKey, err := uuid.Parse(r.RuleKey)
+	if err != nil || parsedRuleKey == uuid.Nil || parsedRuleKey.String() != r.RuleKey {
+		return fmt.Errorf("rule_key must be a non-empty lowercase UUID")
+	}
+
 	switch r.Severity {
 	case SeverityError, SeverityWarning, SeverityInfo:
 	default:
@@ -217,6 +230,7 @@ func (d *Document) UnmarshalJSON(raw []byte) error {
 
 func (r *Rule) UnmarshalJSON(raw []byte) error {
 	type ruleJSON struct {
+		RuleKey  *string          `json:"rule_key"`
 		Type     *string          `json:"type"`
 		Enabled  *bool            `json:"enabled"`
 		Severity *string          `json:"severity"`
@@ -227,13 +241,14 @@ func (r *Rule) UnmarshalJSON(raw []byte) error {
 	if err := decodeStrict(raw, &value); err != nil {
 		return err
 	}
-	if value.Type == nil || value.Enabled == nil || value.Severity == nil || value.Message == nil || value.Params == nil {
-		return fmt.Errorf("type, enabled, severity, message and params are required")
+	if value.RuleKey == nil || value.Type == nil || value.Enabled == nil || value.Severity == nil || value.Message == nil || value.Params == nil {
+		return fmt.Errorf("rule_key, type, enabled, severity, message and params are required")
 	}
 	var params Parameters
 	if err := decodeStrict(*value.Params, &params); err != nil {
 		return fmt.Errorf("params: %w", err)
 	}
+	r.RuleKey = *value.RuleKey
 	r.Type = *value.Type
 	r.Enabled = *value.Enabled
 	r.Severity = *value.Severity

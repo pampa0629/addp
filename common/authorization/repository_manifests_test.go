@@ -13,16 +13,16 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 348 {
-		t.Fatalf("descriptor count = %d, want 348", len(descriptors))
+	if len(descriptors) != 349 {
+		t.Fatalf("descriptor count = %d, want 349", len(descriptors))
 	}
 	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "transfer.task.update" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
 	}
 
 	roles := report.Roles
-	if len(roles) != 56 {
-		t.Fatalf("role count = %d, want 56", len(roles))
+	if len(roles) != 57 {
+		t.Fatalf("role count = %d, want 57", len(roles))
 	}
 	if roles[0].Key != "platform.agent_runtime" || roles[len(roles)-1].Key != "tenant.transfer_runtime" {
 		t.Fatalf("role boundary keys = %q, %q", roles[0].Key, roles[len(roles)-1].Key)
@@ -74,6 +74,10 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"standard.domain.read",
 		"standard.element.read",
 		"standard.metric.read",
+	})
+	assertRepositoryRolePrincipalTypes(t, roles, "tenant.standard_runtime", []string{"service_principal"})
+	assertRepositoryRolePermissions(t, roles, "tenant.standard_runtime", []string{
+		"model.standard_reference.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.transfer_runtime", []string{
 		"meta.catalog.read",

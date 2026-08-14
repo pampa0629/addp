@@ -66,8 +66,8 @@ export const dwLayerAPI = {
     return client.put(`/model/dw-layers/${id}`, data)
   },
   // 删除数仓分层
-  delete(id) {
-    return client.delete(`/model/dw-layers/${id}`)
+  delete(id, version) {
+    return client.delete(`/model/dw-layers/${id}`, { data: { version } })
   }
 }
 
@@ -93,15 +93,15 @@ export const entityAPI = {
     return client.put(`/model/entities/${id}`, data)
   },
   // 删除业务实体
-  delete(id) {
-    return client.delete(`/model/entities/${id}`)
+  delete(id, version) {
+    return client.delete(`/model/entities/${id}`, { data: { version } })
   },
   // 审批通过
-  approve(id) {
-    return client.post(`/model/entities/${id}/approve`)
+  approve(id, version) {
+    return client.post(`/model/entities/${id}/approve`, { version })
   },
-  reopen(id) {
-    return client.post(`/model/entities/${id}/reopen`)
+  reopen(id, version) {
+    return client.post(`/model/entities/${id}/reopen`, { version })
   },
   // 获取实体属性列表
   getAttributes(entityId) {
@@ -116,8 +116,8 @@ export const entityAPI = {
     return client.put(`/model/entities/${entityId}/attributes/${attrId}`, data)
   },
   // 删除实体属性
-  deleteAttribute(entityId, attrId) {
-    return client.delete(`/model/entities/${entityId}/attributes/${attrId}`)
+  deleteAttribute(entityId, attrId, version) {
+    return client.delete(`/model/entities/${entityId}/attributes/${attrId}`, { data: { version } })
   },
   // 导入 Mermaid ER 图
   importMermaid(data) {
@@ -125,7 +125,7 @@ export const entityAPI = {
   },
   // 导出 Mermaid ER 图
   exportMermaid() {
-    return client.get('/model/entities/export-mermaid', { responseType: 'text' })
+    return client.get('/model/entities/export-mermaid')
   }
 }
 
@@ -152,8 +152,8 @@ export const entityRelationAPI = {
     return client.put(`/model/entity-relations/${id}`, data)
   },
   // 删除实体关系
-  delete(id) {
-    return client.delete(`/model/entity-relations/${id}`)
+  delete(id, version) {
+    return client.delete(`/model/entity-relations/${id}`, { data: { version } })
   }
 }
 
@@ -166,11 +166,11 @@ export const logicalTableAPI = {
   listAll(params) {
     return listAll(client, '/model/logical-tables', params)
   },
-  approve(id) {
-    return client.post(`/model/logical-tables/${id}/approve`)
+  approve(id, version) {
+    return client.post(`/model/logical-tables/${id}/approve`, { version })
   },
-  reopen(id) {
-    return client.post(`/model/logical-tables/${id}/reopen`)
+  reopen(id, version) {
+    return client.post(`/model/logical-tables/${id}/reopen`, { version })
   },
   // 创建逻辑表
   create(data) {
@@ -185,8 +185,8 @@ export const logicalTableAPI = {
     return client.put(`/model/logical-tables/${id}`, data)
   },
   // 删除逻辑表
-  delete(id) {
-    return client.delete(`/model/logical-tables/${id}`)
+  delete(id, version) {
+    return client.delete(`/model/logical-tables/${id}`, { data: { version } })
   },
   // 获取逻辑表字段列表
   getFields(tableId) {
@@ -201,8 +201,8 @@ export const logicalTableAPI = {
     return client.put(`/model/logical-tables/${tableId}/fields/${fieldId}`, data)
   },
   // 删除字段
-  deleteField(tableId, fieldId) {
-    return client.delete(`/model/logical-tables/${tableId}/fields/${fieldId}`)
+  deleteField(tableId, fieldId, version) {
+    return client.delete(`/model/logical-tables/${tableId}/fields/${fieldId}`, { data: { version } })
   },
   // 预览 DDL
   previewDDL(id, data) {
@@ -217,8 +217,8 @@ export const logicalTableAPI = {
     return client.post(`/model/logical-tables/${tableId}/metrics`, data)
   },
   // 解除指标关联
-  removeMetric(tableId, mappingId) {
-    return client.delete(`/model/logical-tables/${tableId}/metrics/${mappingId}`)
+  removeMetric(tableId, mappingId, version) {
+    return client.delete(`/model/logical-tables/${tableId}/metrics/${mappingId}`, { data: { version } })
   },
   // 获取事实表关联的维度表列表
   listDimensionRelations(tableId) {
@@ -229,8 +229,8 @@ export const logicalTableAPI = {
     return client.post(`/model/logical-tables/${tableId}/dimension-relations`, data)
   },
   // 删除维度表关联
-  removeDimensionRelation(tableId, relationId) {
-    return client.delete(`/model/logical-tables/${tableId}/dimension-relations/${relationId}`)
+  removeDimensionRelation(tableId, relationId, version) {
+    return client.delete(`/model/logical-tables/${tableId}/dimension-relations/${relationId}`, { data: { version } })
   }
 }
 

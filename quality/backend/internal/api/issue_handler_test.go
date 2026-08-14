@@ -57,7 +57,7 @@ func TestIssueListUsesTenantFromAuthContext(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body.Total != 1 || len(body.Data) != 1 || body.Data[0].TenantID != 7 || body.Data[0].Table != "tenant_7" {
+	if body.Total != 1 || len(body.Data) != 1 || body.Data[0].TenantID != 7 || body.Data[0].Table != "tenant_7" || body.Data[0].RuleKey == "" {
 		t.Fatalf("tenant-scoped response = %#v", body)
 	}
 }
@@ -147,7 +147,8 @@ func newIssueHandlerTestDB(t *testing.T) *gorm.DB {
 		tenant_id INTEGER NOT NULL,
 		execution_id TEXT NOT NULL DEFAULT '',
 		last_execution_id TEXT NOT NULL DEFAULT '',
-		rule_application_id INTEGER NOT NULL,
+			rule_application_id INTEGER NOT NULL,
+			rule_key TEXT NOT NULL,
 		rule_type TEXT NOT NULL DEFAULT 'not_null',
 		severity TEXT NOT NULL DEFAULT 'error',
 		message TEXT NOT NULL DEFAULT '',
@@ -166,7 +167,7 @@ func newIssueHandlerTestDB(t *testing.T) *gorm.DB {
 		last_observed_at DATETIME,
 		created_at DATETIME,
 		updated_at DATETIME,
-		UNIQUE (tenant_id, rule_application_id)
+			UNIQUE (tenant_id, rule_application_id, rule_key)
 	)`).Error; err != nil {
 		t.Fatalf("create quality issues table: %v", err)
 	}
@@ -183,6 +184,9 @@ func createIssueHandlerIssue(t *testing.T, db *gorm.DB, issue models.Issue) {
 	}
 	if issue.RuleType == "" {
 		issue.RuleType = "not_null"
+	}
+	if issue.RuleKey == "" {
+		issue.RuleKey = "00000000-0000-4000-8000-000000000001"
 	}
 	if issue.Severity == "" {
 		issue.Severity = "error"

@@ -19,6 +19,15 @@ other = "The referenced Standard resource was not found or does not belong to th
 [model.common.standard_unavailable]
 other = "The Data Standard service is temporarily unavailable. Try again later"
 
+[model.common.resource_version_conflict]
+other = "The resource was modified by another user. Refresh and try again"
+
+[model.common.standard_reference_deleting]
+other = "The referenced Standard resource is being deleted and cannot be referenced"
+
+[model.common.standard_reference_guard_state_conflict]
+other = "The Standard reference deletion guard is already terminal"
+
 [model.entity.not_found]
 other = "Entity not found"
 

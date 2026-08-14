@@ -2,7 +2,7 @@
 
 本文件为 Claude Code 在 `standard/` 目录下工作时提供指导。
 
-数据元 `quality_rules` 的结构和校验必须遵守 [ADDP 数据质量规范](../docs/spec/addp数据质量规范.md)。Standard 只拥有规则定义，不拥有物理字段应用、规则执行、评分或质量问题。
+数据元 `quality_rules` 的结构和校验必须遵守 [ADDP 数据质量规范](../docs/spec/addp数据质量规范.md)。每条规则必须有由 Standard 首次创建时生成且编辑过程中保持不变的 `rule_key`；Standard 只拥有规则定义，不拥有物理字段应用、规则执行、评分或质量问题。
 
 ## 模块概述
 
@@ -346,6 +346,7 @@ GET/POST/PUT/DELETE /api/standard/dimension-hierarchies/:id/levels
 
 **依赖**:
 - **System 模块**: JWT 认证、用户信息（`SYSTEM_URL`）
+- **Model 模块**: 删除业务域、数据元、维度层级和指标前冻结 Model 标准引用删除屏障并执行权威影响扫描（`MODEL_URL`）
 - **MinIO**: 标准文档文件存储（bucket: `standard`）
 
 **被依赖**（其他模块调用 Standard 的 API）:
@@ -412,6 +413,8 @@ draft → approved → deprecated
 ### 无跨 Schema 外键
 
 Standard 的 `elements`、`units`、`code_sets` 等被其他 Schema（model、metadata 等）引用时，**没有数据库级外键约束**，通过应用层 HTTP 调用 Standard API 进行 ID 存在性验证。
+
+Model 可引用的 Domain、Element、DimensionHierarchy 和 Metric 使用独立 `lifecycle_state=active|deleting`。硬删除时 Standard 先进入 `deleting`，再调用 Model 冻结 `(tenant_id, resource_type, resource_id)` 屏障并权威扫描引用；有引用时恢复 `active/open` 并返回 `409 standard_resource_referenced`，无引用时才删除并把 Model 屏障终止为 `deleted`。普通 check-then-delete、自动清空 Model 引用、跨 Schema 查询和绕过屏障的强制删除都不是合法路径。
 
 ### 数据库约束与启动收敛
 

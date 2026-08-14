@@ -387,10 +387,10 @@ const loadAllDimensionTables = async () => {
   }
 }
 
-let selectionVersion = 0
+let selectionGeneration = 0
 
 const clearSelection = () => {
-  selectionVersion += 1
+  selectionGeneration += 1
   selectedTableId.value = null
   selectedTable.value = null
   tableFields.value = []
@@ -401,7 +401,7 @@ const clearSelection = () => {
 }
 
 const loadSelectedTable = async (table) => {
-  const requestVersion = ++selectionVersion
+  const requestGeneration = ++selectionGeneration
   selectedTableId.value = table.id
   selectedTable.value = table
   tableFields.value = []
@@ -416,22 +416,22 @@ const loadSelectedTable = async (table) => {
       logicalTableAPI.listDimensionRelations(table.id),
       logicalTableAPI.listMetrics(table.id),
     ])
-    if (requestVersion !== selectionVersion) return
+    if (requestGeneration !== selectionGeneration) return
     tableFields.value = fieldsRes || []
     dimensionRelations.value = relationsRes || []
     factMetrics.value = metricsRes || []
   } catch (err) {
-    if (requestVersion === selectionVersion) {
+    if (requestGeneration === selectionGeneration) {
       loadError.value = getModelErrorMessage(err, t, 'model.common.load_failed')
     }
   } finally {
-    if (requestVersion === selectionVersion) {
+    if (requestGeneration === selectionGeneration) {
       loadingRelated.value = false
       loadingMetrics.value = false
     }
   }
 
-  if (requestVersion !== selectionVersion) return
+  if (requestGeneration !== selectionGeneration) return
   await nextTick()
   renderMermaid()
 }
@@ -512,12 +512,14 @@ const handleAddDimRelation = async () => {
   }
   addingDim.value = true
   try {
-    await logicalTableAPI.addDimensionRelation(selectedTable.value.id, {
+    const result = await logicalTableAPI.addDimensionRelation(selectedTable.value.id, {
+      version: selectedTable.value.version,
       target_table: addDimForm.value.target_table,
       source_field: addDimForm.value.source_field,
       target_field: addDimForm.value.target_field,
       relation_type: addDimForm.value.relation_type,
     })
+    selectedTable.value.version = result.version
     ElMessage.success(t('model.star_schema.add_success'))
     addDimDialogVisible.value = false
     const res = await logicalTableAPI.listDimensionRelations(selectedTable.value.id)
@@ -544,7 +546,12 @@ const handleRemoveDimRelation = async (rel) => {
     return
   }
   try {
-    await logicalTableAPI.removeDimensionRelation(selectedTable.value.id, rel.id)
+    const result = await logicalTableAPI.removeDimensionRelation(
+      selectedTable.value.id,
+      rel.id,
+      selectedTable.value.version
+    )
+    selectedTable.value.version = result.version
     ElMessage.success(t('model.star_schema.remove_success'))
     dimensionRelations.value = dimensionRelations.value.filter(r => r.id !== rel.id)
   } catch (e) {

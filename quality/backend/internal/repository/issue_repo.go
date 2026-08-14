@@ -82,13 +82,13 @@ func (r *IssueRepository) BatchCreate(items []models.Issue) error {
 }
 
 // Reconcile applies one complete execution observation to the current issue
-// projection. It is idempotent on tenant + rule_application_id.
+// projection. It is idempotent on tenant + rule_application_id + rule_key.
 func (r *IssueRepository) Reconcile(ctx context.Context, tenantID int64, executionID string, observations []models.IssueObservation, observedAt time.Time) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, observation := range observations {
 			if observation.Passed {
 				if err := tx.Model(&models.Issue{}).
-					Where("tenant_id = ? AND rule_application_id = ? AND status = ?", tenantID, observation.RuleApplicationID, "open").
+					Where("tenant_id = ? AND rule_application_id = ? AND rule_key = ? AND status = ?", tenantID, observation.RuleApplicationID, observation.RuleKey, "open").
 					Updates(map[string]interface{}{
 						"status": "resolved", "resolved_at": observedAt, "last_execution_id": executionID,
 						"last_observed_at": observedAt, "failed_count": observation.FailedCount, "total_count": observation.TotalCount,
@@ -103,9 +103,9 @@ func (r *IssueRepository) Reconcile(ctx context.Context, tenantID int64, executi
 			if err != nil {
 				return err
 			}
-			issue := models.Issue{TenantID: tenantID, ExecutionID: executionID, LastExecutionID: executionID, RuleApplicationID: observation.RuleApplicationID, RuleType: observation.RuleType, Severity: observation.Severity, Message: observation.Message, ColumnName: observation.ColumnName, Table: observation.Table, SchemaName: observation.SchemaName, EngineID: observation.EngineID, FailedCount: observation.FailedCount, TotalCount: observation.TotalCount, PassRate: observation.PassRate, Detail: detail, Status: "open", LastObservedAt: &observedAt}
+			issue := models.Issue{TenantID: tenantID, ExecutionID: executionID, LastExecutionID: executionID, RuleApplicationID: observation.RuleApplicationID, RuleKey: observation.RuleKey, RuleType: observation.RuleType, Severity: observation.Severity, Message: observation.Message, ColumnName: observation.ColumnName, Table: observation.Table, SchemaName: observation.SchemaName, EngineID: observation.EngineID, FailedCount: observation.FailedCount, TotalCount: observation.TotalCount, PassRate: observation.PassRate, Detail: detail, Status: "open", LastObservedAt: &observedAt}
 			if err := tx.Clauses(clause.OnConflict{
-				Columns: []clause.Column{{Name: "tenant_id"}, {Name: "rule_application_id"}},
+				Columns: []clause.Column{{Name: "tenant_id"}, {Name: "rule_application_id"}, {Name: "rule_key"}},
 				DoUpdates: clause.Assignments(map[string]interface{}{
 					"last_execution_id": executionID, "rule_type": observation.RuleType,
 					"severity": observation.Severity, "message": observation.Message, "column_name": observation.ColumnName,

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 
 	commonapi "github.com/addp/common/api"
@@ -12,12 +13,13 @@ var ErrInvalidHierarchyLevelNumber = errors.New("invalid dimension hierarchy lev
 
 // DimensionHierarchyService 维度层级服务
 type DimensionHierarchyService struct {
-	repo *repository.DimensionHierarchyRepository
-	refs *repository.TenantReferenceRepository
+	repo     *repository.DimensionHierarchyRepository
+	refs     *repository.TenantReferenceRepository
+	deletion *StandardReferenceDeletionService
 }
 
-func NewDimensionHierarchyService(repo *repository.DimensionHierarchyRepository, refs *repository.TenantReferenceRepository) *DimensionHierarchyService {
-	return &DimensionHierarchyService{repo: repo, refs: refs}
+func NewDimensionHierarchyService(repo *repository.DimensionHierarchyRepository, refs *repository.TenantReferenceRepository, deletion *StandardReferenceDeletionService) *DimensionHierarchyService {
+	return &DimensionHierarchyService{repo: repo, refs: refs, deletion: deletion}
 }
 
 func (s *DimensionHierarchyService) List(tenantID int64) ([]models.DimensionHierarchy, error) {
@@ -74,8 +76,10 @@ func (s *DimensionHierarchyService) Update(id, tenantID, userID int64, req *mode
 	return s.repo.GetByID(id, tenantID)
 }
 
-func (s *DimensionHierarchyService) Delete(id, tenantID int64) error {
-	return s.repo.Delete(id, tenantID)
+func (s *DimensionHierarchyService) Delete(ctx context.Context, id, tenantID int64) error {
+	return s.deletion.Delete(ctx, tenantID, "dimension_hierarchy", id, func() error {
+		return s.repo.Delete(id, tenantID)
+	})
 }
 
 // --- 层级管理 ---

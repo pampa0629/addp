@@ -106,7 +106,9 @@ func (h *MetricHandler) UpdateCategory(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Failure 409 {object} map[string]string
+// @Failure 404 {object} map[string]string "指标不存在 | Metric not found"
+// @Failure 409 {object} map[string]interface{} "资源仍被 Model 引用 | Resource is still referenced by Model"
+// @Failure 503 {object} map[string]string "Model 引用删除屏障不可用 | Model reference deletion guard unavailable"
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
@@ -296,7 +298,7 @@ func (h *MetricHandler) DeleteMetric(c *gin.Context) {
 		return
 	}
 	tenantID := getTenantID(c)
-	if err := h.svc.DeleteMetric(id, tenantID); err != nil {
+	if err := h.svc.DeleteMetric(c.Request.Context(), id, tenantID); err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}

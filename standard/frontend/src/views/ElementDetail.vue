@@ -129,7 +129,7 @@
             <el-empty :description="$t('standard.element.noRules')" />
           </div>
           <div v-else class="rules-list">
-            <div v-for="(rule, index) in qualityRules" :key="index" class="rule-item">
+            <div v-for="(rule, index) in qualityRules" :key="rule.rule_key" class="rule-item">
               <div class="rule-header">
                 <el-checkbox v-model="rule.enabled">{{ $t('standard.element.ruleEnabled') }}</el-checkbox>
                 <el-select v-model="rule.type" size="small" style="width: 140px" @change="handleRuleTypeChange(rule)">
@@ -428,6 +428,7 @@ const handleCodeSetChange = (codeSetId) => {
 
 const addRule = () => {
   const newRule = {
+    rule_key: globalThis.crypto.randomUUID(),
     type: 'not_null',
     enabled: true,
     severity: 'error',

@@ -56,7 +56,7 @@ func qualityRuleDocumentForTest(ruleType string) map[string]interface{} {
 	return map[string]interface{}{
 		"schema_version": dataquality.RulesSchemaVersion,
 		"rules": []interface{}{map[string]interface{}{
-			"type": ruleType, "enabled": true, "severity": "error", "message": "required", "params": map[string]interface{}{},
+			"rule_key": "00000000-0000-4000-8000-000000000001", "type": ruleType, "enabled": true, "severity": "error", "message": "required", "params": map[string]interface{}{},
 		}},
 	}
 }

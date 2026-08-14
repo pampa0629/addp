@@ -10,6 +10,26 @@ type MessageResponse struct {
 	Message string `json:"message" example:"操作成功"`
 }
 
+type EntityListResponse struct {
+	Data       []Entity `json:"data"`
+	Total      int64    `json:"total"`
+	Page       int      `json:"page"`
+	PageSize   int      `json:"page_size"`
+	TotalPages int      `json:"total_pages"`
+}
+
+type LogicalTableListResponse struct {
+	Data       []LogicalTable `json:"data"`
+	Total      int64          `json:"total"`
+	Page       int            `json:"page"`
+	PageSize   int            `json:"page_size"`
+	TotalPages int            `json:"total_pages"`
+}
+
+type DDLPreviewResponse struct {
+	DDL string `json:"ddl"`
+}
+
 // SuccessResponse 成功响应
 type SuccessResponse struct {
 	Code    int         `json:"code" example:"200"`

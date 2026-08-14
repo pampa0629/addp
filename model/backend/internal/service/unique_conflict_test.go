@@ -30,11 +30,13 @@ func TestAggregateChildWritesReturnStableUniqueConflictCodes(t *testing.T) {
 	if err := db.Create(&target).Error; err != nil {
 		t.Fatalf("create target entity: %v", err)
 	}
-	attributeRequest := &models.CreateEntityAttributeRequest{Name: "ID", ColumnName: "id", DataType: "bigint"}
-	if _, err := entityService.CreateAttribute(source.ID, 1, attributeRequest); err != nil {
+	attributeRequest := &models.CreateEntityAttributeRequest{Version: 1, Name: "ID", ColumnName: "id", DataType: "bigint"}
+	attributeResponse, err := entityService.CreateAttribute(source.ID, 1, attributeRequest)
+	if err != nil {
 		t.Fatalf("create first attribute: %v", err)
 	}
-	_, err := entityService.CreateAttribute(source.ID, 1, attributeRequest)
+	attributeRequest.Version = attributeResponse.Version
+	_, err = entityService.CreateAttribute(source.ID, 1, attributeRequest)
 	requireDomainErrorCode(t, err, "entity_attribute_column_conflict")
 
 	tableRepo := repository.NewLogicalTableRepository(db)
@@ -43,10 +45,12 @@ func TestAggregateChildWritesReturnStableUniqueConflictCodes(t *testing.T) {
 	if err := db.Create(&table).Error; err != nil {
 		t.Fatalf("create logical table: %v", err)
 	}
-	fieldRequest := &models.CreateLogicalFieldRequest{Name: "ID", ColumnName: "id", DataType: "bigint"}
-	if _, err := logicalTableService.CreateField(table.ID, 1, fieldRequest); err != nil {
+	fieldRequest := &models.CreateLogicalFieldRequest{Version: 1, Name: "ID", ColumnName: "id", DataType: "bigint"}
+	fieldResponse, err := logicalTableService.CreateField(table.ID, 1, fieldRequest)
+	if err != nil {
 		t.Fatalf("create first logical field: %v", err)
 	}
+	fieldRequest.Version = fieldResponse.Version
 	_, err = logicalTableService.CreateField(table.ID, 1, fieldRequest)
 	requireDomainErrorCode(t, err, "logical_field_column_conflict")
 
@@ -84,11 +88,11 @@ func TestAggregateChildUpdatesReturnStableUniqueConflictCodes(t *testing.T) {
 	if err := db.Create(&target).Error; err != nil {
 		t.Fatalf("create target entity: %v", err)
 	}
-	firstAttribute, err := entityService.CreateAttribute(source.ID, 1, &models.CreateEntityAttributeRequest{Name: "ID", ColumnName: "id", DataType: "bigint"})
+	firstAttribute, err := entityService.CreateAttribute(source.ID, 1, &models.CreateEntityAttributeRequest{Version: 1, Name: "ID", ColumnName: "id", DataType: "bigint"})
 	if err != nil {
 		t.Fatalf("create first attribute: %v", err)
 	}
-	secondAttribute, err := entityService.CreateAttribute(source.ID, 1, &models.CreateEntityAttributeRequest{Name: "Code", ColumnName: "code", DataType: "string"})
+	secondAttribute, err := entityService.CreateAttribute(source.ID, 1, &models.CreateEntityAttributeRequest{Version: firstAttribute.Version, Name: "Code", ColumnName: "code", DataType: "string"})
 	if err != nil {
 		t.Fatalf("create second attribute: %v", err)
 	}
@@ -96,8 +100,8 @@ func TestAggregateChildUpdatesReturnStableUniqueConflictCodes(t *testing.T) {
 	falseValue := false
 	trueValue := true
 	zero := 0
-	_, err = entityService.UpdateAttribute(secondAttribute.ID, source.ID, 1, &models.UpdateEntityAttributeRequest{
-		Name: "Code", ColumnName: "id", DataType: "string", IsPK: &falseValue, Nullable: &trueValue, SortOrder: &zero,
+	_, err = entityService.UpdateAttribute(secondAttribute.Attribute.ID, source.ID, 1, &models.UpdateEntityAttributeRequest{
+		Version: secondAttribute.Version, Name: "Code", ColumnName: "id", DataType: "string", IsPK: &falseValue, Nullable: &trueValue, SortOrder: &zero,
 	})
 	requireDomainErrorCode(t, err, "entity_attribute_column_conflict")
 
@@ -107,15 +111,16 @@ func TestAggregateChildUpdatesReturnStableUniqueConflictCodes(t *testing.T) {
 	if err := db.Create(&table).Error; err != nil {
 		t.Fatalf("create logical table: %v", err)
 	}
-	if _, err := logicalTableService.CreateField(table.ID, 1, &models.CreateLogicalFieldRequest{Name: "ID", ColumnName: "id", DataType: "bigint"}); err != nil {
+	firstField, err := logicalTableService.CreateField(table.ID, 1, &models.CreateLogicalFieldRequest{Version: 1, Name: "ID", ColumnName: "id", DataType: "bigint"})
+	if err != nil {
 		t.Fatalf("create first logical field: %v", err)
 	}
-	secondField, err := logicalTableService.CreateField(table.ID, 1, &models.CreateLogicalFieldRequest{Name: "Code", ColumnName: "code", DataType: "string"})
+	secondField, err := logicalTableService.CreateField(table.ID, 1, &models.CreateLogicalFieldRequest{Version: firstField.Version, Name: "Code", ColumnName: "code", DataType: "string"})
 	if err != nil {
 		t.Fatalf("create second logical field: %v", err)
 	}
-	_, err = logicalTableService.UpdateField(secondField.ID, table.ID, 1, &models.UpdateLogicalFieldRequest{
-		Name: "Code", ColumnName: "id", DataType: "string", Nullable: &trueValue, IsPK: &falseValue,
+	_, err = logicalTableService.UpdateField(secondField.Field.ID, table.ID, 1, &models.UpdateLogicalFieldRequest{
+		Version: secondField.Version, Name: "Code", ColumnName: "id", DataType: "string", Nullable: &trueValue, IsPK: &falseValue,
 		IsPartition: &falseValue, SortOrder: &zero, FieldRole: "regular",
 	})
 	requireDomainErrorCode(t, err, "logical_field_column_conflict")
@@ -132,6 +137,6 @@ func TestAggregateChildUpdatesReturnStableUniqueConflictCodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create second entity relation: %v", err)
 	}
-	_, err = entityRelationService.Update(secondRelation.ID, 1, &models.UpdateEntityRelationRequest{RelationType: "one_to_many", Name: "places"})
+	_, err = entityRelationService.Update(secondRelation.ID, 1, &models.UpdateEntityRelationRequest{Version: secondRelation.Version, SourceEntity: source.ID, TargetEntity: target.ID, RelationType: "one_to_many", Name: "places"})
 	requireDomainErrorCode(t, err, "entity_relation_conflict")
 }

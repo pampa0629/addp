@@ -17,6 +17,7 @@ type LogicalTable struct {
 	GrainDescription string    `gorm:"type:text" json:"grain_description"`                // 仅 fact 表：粒度声明（如"每行代表一笔支付事务"）
 	SCDType          int       `gorm:"default:0" json:"scd_type"`                         // 仅 dimension 表：缓慢变化维类型 0=静态/1=覆盖/2=拉链/3=混合
 	Materialization  JSONB     `gorm:"type:jsonb;serializer:json" json:"materialization"` // 物化配置
+	Version          int64     `gorm:"not null;default:1" json:"version"`
 	CreatedBy        int64     `gorm:"not null" json:"created_by"`
 	UpdatedBy        *int64    `json:"updated_by,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
@@ -87,6 +88,7 @@ type CreateLogicalTableRequest struct {
 
 // UpdateLogicalTableRequest 更新逻辑表请求
 type UpdateLogicalTableRequest struct {
+	Version          int64                  `json:"version" binding:"required,gt=0" minimum:"1"`
 	DomainID         *int64                 `json:"domain_id" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
 	EntityID         *int64                 `json:"entity_id" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
 	Name             string                 `json:"name" binding:"required,max=200" maxLength:"200"`
@@ -105,6 +107,7 @@ type PreviewLogicalTableDDLRequest struct {
 
 // CreateTableRelationRequest 创建逻辑表关联请求
 type CreateTableRelationRequest struct {
+	Version      int64  `json:"version" binding:"required,gt=0" minimum:"1"`
 	TargetTable  int64  `json:"target_table" binding:"required,gt=0" minimum:"1"`
 	SourceField  int64  `json:"source_field" binding:"required,gt=0" minimum:"1"`
 	TargetField  int64  `json:"target_field" binding:"required,gt=0" minimum:"1"`
@@ -113,6 +116,7 @@ type CreateTableRelationRequest struct {
 
 // CreateLogicalFieldRequest 创建逻辑表字段请求
 type CreateLogicalFieldRequest struct {
+	Version        int64  `json:"version" binding:"required,gt=0" minimum:"1"`
 	ElementID      *int64 `json:"element_id,omitempty" binding:"omitempty,gt=0" minimum:"1"`
 	Name           string `json:"name" binding:"required,max=200" maxLength:"200"`
 	ColumnName     string `json:"column_name" binding:"required,max=200" maxLength:"200"`
@@ -131,6 +135,7 @@ type CreateLogicalFieldRequest struct {
 
 // UpdateLogicalFieldRequest 更新逻辑表字段请求
 type UpdateLogicalFieldRequest struct {
+	Version        int64  `json:"version" binding:"required,gt=0" minimum:"1"`
 	ElementID      *int64 `json:"element_id" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
 	Name           string `json:"name" binding:"required,max=200" maxLength:"200"`
 	ColumnName     string `json:"column_name" binding:"required,max=200" maxLength:"200"`
@@ -145,4 +150,28 @@ type UpdateLogicalFieldRequest struct {
 	FieldRole      string `json:"field_role" binding:"required,oneof=regular measure_additive measure_semi measure_non dimension_fk degenerate_dim" enums:"regular,measure_additive,measure_semi,measure_non,dimension_fk,degenerate_dim"`
 	HierarchyID    *int64 `json:"hierarchy_id" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
 	HierarchyLevel *int   `json:"hierarchy_level" binding:"omitempty,gte=0" minimum:"0" extensions:"x-nullable"`
+}
+
+type LogicalFieldMutationResponse struct {
+	Field   LogicalField `json:"field"`
+	Version int64        `json:"version"`
+}
+
+type TableRelationMutationResponse struct {
+	Relation TableRelation `json:"relation"`
+	Version  int64         `json:"version"`
+}
+
+type TableRelationDetail struct {
+	ID              int64  `json:"id"`
+	SourceTable     int64  `json:"source_table"`
+	SourceField     int64  `json:"source_field"`
+	SourceFieldName string `json:"source_field_name"`
+	TargetTable     int64  `json:"target_table"`
+	TargetTableName string `json:"target_table_name"`
+	TargetTableCode string `json:"target_table_code"`
+	TargetSCDType   int    `json:"target_scd_type"`
+	TargetField     int64  `json:"target_field"`
+	TargetFieldName string `json:"target_field_name"`
+	RelationType    string `json:"relation_type"`
 }

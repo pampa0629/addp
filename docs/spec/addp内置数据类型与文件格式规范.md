@@ -48,6 +48,8 @@
 | Iceberg 表目录 | `whole` | `table` | `iceberg` | 整体表目录，需 whole scope 规则 |
 | SQLite | `single` | `container` | `sqlite` | 内部表先写入 `type_info.container.children` |
 | GeoPackage | `single` | `container` | `geopackage` | 内部 layer 先写入 `type_info.container.children` |
+| File Geodatabase | `whole` | `container` | `filegdb` | `.gdb` 目录整体构成容器，内部 feature class / table 为 child |
+| Personal Geodatabase | `single` | `container` | `pgeo` | `.mdb` 单文件容器，只允许作为只读 source |
 | ZIP | `single` | `container` | `zip` | 压缩包 entry 先写入 `type_info.container.children` |
 | 图片 | `single` 或 TIFF sidecar `multi` | `media` | `jpeg` / `png` / `gif` / `tiff` / `image` | GPS 或 GeoTIFF 空间语义进入 spatial |
 | Raster mosaic | `whole` | `media` | `raster_mosaic` | 由 `mosaic.addp.json` manifest 声明的栅格镶嵌数据集 |
@@ -1090,6 +1092,41 @@ Manager 展示容器 children 时消费 `type_info.container`；进入内部表�
 - 不得把容器内所有表字段合并成外层 item 的 `type_info.table.fields`。
 - 不得把容器内单个表或 layer 的字段、样本行、空间字段、SRID、extent、空间索引等 child 内容写入外层容器 attributes。
 - 不得把 GeoPackage 的格式私有元数据混入 `capabilities.spatial`。
+
+## File Geodatabase / Personal Geodatabase
+
+### 识别与组织
+
+| 格式 | `layout` | `data_type` | `format` | 主资源 |
+|---|---|---|---|---|
+| File Geodatabase | `whole` | `container` | `filegdb` | 后缀为 `.gdb` 且包含合法 FileGDB 系统文件的目录整体 |
+| Personal Geodatabase | `single` | `container` | `pgeo` | 可由 GDAL PGeo 驱动打开并识别地理数据库系统表的 `.mdb` 文件 |
+
+FileGDB 的 `.gdb` 目录是一个 data item，目录内 `a*.gdbtable`、`a*.gdbtablx`、索引和系统文件不得分别落为 item。PGeo 的 `.mdb` 文件是一个 data item。两者的 feature class、普通 table 和 feature dataset 先写入 `type_info.container.children`；选中具体 child 后再归一为 table 内容和空间能力。
+
+### attributes 写入
+
+| 分区 | FileGDB | PGeo |
+|---|---|---|
+| `item` | `layout=whole`、`data_type=container`、`format=filegdb`、`scope_exclusive=true`、`claim_policy=whole_scope` | `layout=single`、`data_type=container`、`format=pgeo` |
+| `type_info.container` | feature dataset、feature class、table 的轻量 children、默认入口和数量 | feature class、table 的轻量 children、默认入口和数量 |
+| `format_info.<format>` | GDAL driver/version、FileGDB 版本、域/关系/附件等受控摘要 | GDAL driver/version、MDB 版本、域/关系等受控摘要 |
+| `capabilities.spatial` | 外层容器不写入；由选中 child 的 table describe 结果表达 | 外层容器不写入；由选中 child 的 table describe 结果表达 |
+
+### 读写与运行时边界
+
+- FileGDB 的内置开源数据面固定使用 GDAL OpenFileGDB；支持 child table/feature class 读取和新目标 FileGDB 写出。
+- PGeo 的内置开源数据面固定使用 GDAL PGeo + unixODBC / MDB Tools，只允许读取，不提供 `.mdb` 写回。
+- GDAL 原生依赖由受控 GIS 运行时承载，不嵌入 Meta、Manager 或 Transfer Backend 进程；业务模块通过统一 Provider 契约消费，不直接执行 `ogrinfo`、`ogr2ogr` 或拼接驱动参数。
+- child 几何行值进入 ADDP 数据面后统一使用 EWKB，并通过 `SpatialInfo` 携带 geometry field、type、dimension、SRID / CRS 和 extent；不得把 FileGDB/PGeo 私有 geometry blob 暴露给 Transfer。
+- Oracle 目标只通过 Oracle Engine 的 `TableWriteSessionProvider` 写普通表和 `MDSYS.SDO_GEOMETRY`。该路径不得创建 `SDE` schema、修改 geodatabase system tables、注册 feature class 或宣称 Enterprise Geodatabase 支持。
+
+### 格式约束
+
+- FileGDB/PGeo 的 domain、subtype、relationship class、attachment、topology、network dataset 和 annotation 不得静默丢失；第一阶段发现后写入受控摘要并明确标记不支持传输。
+- FileGDB 写出第一阶段只承诺普通 table / feature class、二维 geometry、字段、CRS 和记录，不承诺 ArcGIS 高级 geodatabase 行为。
+- PGeo 是 legacy source-only 格式，不建立写入 provider 或兼容回退路径。
+- Enterprise Geodatabase、ArcGIS SDE 注册与版本化属于数据库 workspace 能力，不属于 `filegdb` 或 `pgeo` format provider。
 
 ## ZIP / 压缩包
 

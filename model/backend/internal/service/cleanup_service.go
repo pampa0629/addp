@@ -14,9 +14,11 @@ import (
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/model/internal/models"
+	"github.com/addp/model/internal/repository"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type CleanupService struct {
@@ -294,32 +296,80 @@ func (s *CleanupService) listTenantCandidates(ctx context.Context, tenantID int6
 }
 
 func (s *CleanupService) logicalCleanup(ctx context.Context, candidates modelCleanupCandidates, stats *ModelCleanupStats) {
-	for _, entity := range candidates.entities {
-		if entity.Status == "draft" {
-			stats.SkippedItems++
-			continue
+	var draftedEntities, draftedTables, skippedItems int
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var revision *models.EntityModelRevision
+		var err error
+		if len(candidates.entities) > 0 {
+			revision, err = repository.LockEntityModelRevision(tx, candidates.TenantID)
+			if err != nil {
+				return err
+			}
 		}
-		if err := s.db.WithContext(ctx).Model(&models.Entity{}).
-			Where("id = ? AND tenant_id = ?", entity.ID, entity.TenantID).
-			Update("status", "draft").Error; err != nil {
-			stats.Errors = append(stats.Errors, fmt.Sprintf("draft entity %d failed: %v", entity.ID, err))
-			continue
+
+		var entities []models.Entity
+		if ids := entityIDs(candidates.entities); len(ids) > 0 {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("tenant_id = ? AND id IN ?", candidates.TenantID, ids).
+				Order("id ASC").Find(&entities).Error; err != nil {
+				return err
+			}
 		}
-		stats.DraftedEntities++
+		for _, entity := range entities {
+			if entity.Status == "draft" {
+				skippedItems++
+				continue
+			}
+			result := tx.Model(&models.Entity{}).
+				Where("id = ? AND tenant_id = ? AND version = ?", entity.ID, candidates.TenantID, entity.Version).
+				Updates(map[string]interface{}{"status": "draft", "version": gorm.Expr("version + 1")})
+			if result.Error != nil {
+				return fmt.Errorf("draft entity %d failed: %w", entity.ID, result.Error)
+			}
+			if result.RowsAffected != 1 {
+				return fmt.Errorf("draft entity %d failed: resource changed while locked", entity.ID)
+			}
+			draftedEntities++
+		}
+		if draftedEntities > 0 {
+			if _, err := repository.AdvanceEntityModelRevision(tx, candidates.TenantID, revision.Revision); err != nil {
+				return err
+			}
+		}
+
+		var tables []models.LogicalTable
+		if ids := logicalTableIDs(candidates.logicalTables); len(ids) > 0 {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("tenant_id = ? AND id IN ?", candidates.TenantID, ids).
+				Order("id ASC").Find(&tables).Error; err != nil {
+				return err
+			}
+		}
+		for _, table := range tables {
+			if table.Status == "draft" {
+				skippedItems++
+				continue
+			}
+			result := tx.Model(&models.LogicalTable{}).
+				Where("id = ? AND tenant_id = ? AND version = ?", table.ID, candidates.TenantID, table.Version).
+				Updates(map[string]interface{}{"status": "draft", "version": gorm.Expr("version + 1")})
+			if result.Error != nil {
+				return fmt.Errorf("draft logical table %d failed: %w", table.ID, result.Error)
+			}
+			if result.RowsAffected != 1 {
+				return fmt.Errorf("draft logical table %d failed: resource changed while locked", table.ID)
+			}
+			draftedTables++
+		}
+		return nil
+	})
+	if err != nil {
+		stats.Errors = append(stats.Errors, err.Error())
+		return
 	}
-	for _, table := range candidates.logicalTables {
-		if table.Status == "draft" {
-			stats.SkippedItems++
-			continue
-		}
-		if err := s.db.WithContext(ctx).Model(&models.LogicalTable{}).
-			Where("id = ? AND tenant_id = ?", table.ID, table.TenantID).
-			Update("status", "draft").Error; err != nil {
-			stats.Errors = append(stats.Errors, fmt.Sprintf("draft logical table %d failed: %v", table.ID, err))
-			continue
-		}
-		stats.DraftedTables++
-	}
+	stats.DraftedEntities += draftedEntities
+	stats.DraftedTables += draftedTables
+	stats.SkippedItems += skippedItems
 }
 
 func (s *CleanupService) physicalCleanup(ctx context.Context, candidates modelCleanupCandidates, stats *ModelCleanupStats) {
@@ -338,7 +388,20 @@ func (s *CleanupService) physicalCleanup(ctx context.Context, candidates modelCl
 		{model: &models.Entity{}, ids: entityIDs(candidates.entities), name: "entities", tenantScoped: true},
 		{model: &models.DWLayer{}, ids: dwLayerIDs(candidates.dwLayers), name: "dw layers", tenantScoped: true},
 	}
+	deletedRecords := 0
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		entityModelChanged := len(candidates.entities) > 0 || len(candidates.entityAttributes) > 0 || len(candidates.entityRelations) > 0
+		var revision *models.EntityModelRevision
+		var err error
+		if entityModelChanged {
+			revision, err = repository.LockEntityModelRevision(tx, candidates.TenantID)
+			if err != nil {
+				return err
+			}
+		}
+		if err := lockCleanupRoots(tx, candidates); err != nil {
+			return err
+		}
 		for _, batch := range batches {
 			if len(batch.ids) == 0 {
 				continue
@@ -347,8 +410,15 @@ func (s *CleanupService) physicalCleanup(ctx context.Context, candidates modelCl
 			if batch.tenantScoped {
 				query = query.Where("tenant_id = ?", candidates.TenantID)
 			}
-			if err := query.Delete(batch.model, batch.ids).Error; err != nil {
-				return fmt.Errorf("delete %s failed: %w", batch.name, err)
+			result := query.Delete(batch.model, batch.ids)
+			if result.Error != nil {
+				return fmt.Errorf("delete %s failed: %w", batch.name, result.Error)
+			}
+			deletedRecords += int(result.RowsAffected)
+		}
+		if entityModelChanged {
+			if _, err := repository.AdvanceEntityModelRevision(tx, candidates.TenantID, revision.Revision); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -356,9 +426,31 @@ func (s *CleanupService) physicalCleanup(ctx context.Context, candidates modelCl
 		stats.Errors = append(stats.Errors, err.Error())
 		return
 	}
-	for _, batch := range batches {
-		stats.DeletedRecords += len(batch.ids)
+	stats.DeletedRecords += deletedRecords
+}
+
+func lockCleanupRoots(tx *gorm.DB, candidates modelCleanupCandidates) error {
+	locks := []struct {
+		model interface{}
+		ids   []int64
+		name  string
+	}{
+		{model: &[]models.Entity{}, ids: entityIDs(candidates.entities), name: "entities"},
+		{model: &[]models.EntityRelation{}, ids: entityRelationIDs(candidates.entityRelations), name: "entity relations"},
+		{model: &[]models.LogicalTable{}, ids: logicalTableIDs(candidates.logicalTables), name: "logical tables"},
+		{model: &[]models.DWLayer{}, ids: dwLayerIDs(candidates.dwLayers), name: "dw layers"},
 	}
+	for _, lock := range locks {
+		if len(lock.ids) == 0 {
+			continue
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("tenant_id = ? AND id IN ?", candidates.TenantID, lock.ids).
+			Order("id ASC").Find(lock.model).Error; err != nil {
+			return fmt.Errorf("lock %s failed: %w", lock.name, err)
+		}
+	}
+	return nil
 }
 
 func modelCleanupContextUint(cleanupContext map[string]interface{}, key string) (uint, bool) {

@@ -1,18 +1,21 @@
 package service
 
 import (
+	"context"
+
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 )
 
 type DomainService struct {
-	repo *repository.DomainRepository
-	refs *repository.TenantReferenceRepository
+	repo     *repository.DomainRepository
+	refs     *repository.TenantReferenceRepository
+	deletion *StandardReferenceDeletionService
 }
 
-func NewDomainService(repo *repository.DomainRepository, refs *repository.TenantReferenceRepository) *DomainService {
-	return &DomainService{repo: repo, refs: refs}
+func NewDomainService(repo *repository.DomainRepository, refs *repository.TenantReferenceRepository, deletion *StandardReferenceDeletionService) *DomainService {
+	return &DomainService{repo: repo, refs: refs, deletion: deletion}
 }
 
 func (s *DomainService) CreateDomain(req *models.CreateDomainRequest, tenantID, userID int64) (*models.Domain, error) {
@@ -125,6 +128,8 @@ func (s *DomainService) validateParent(id, tenantID int64, parentID *int64) erro
 	return nil
 }
 
-func (s *DomainService) DeleteDomain(id, tenantID int64) error {
-	return mapDeleteConflict(s.repo.Delete(id, tenantID), ErrDomainReferenced)
+func (s *DomainService) DeleteDomain(ctx context.Context, id, tenantID int64) error {
+	return s.deletion.Delete(ctx, tenantID, "domain", id, func() error {
+		return mapDeleteConflict(s.repo.Delete(id, tenantID), ErrDomainReferenced)
+	})
 }

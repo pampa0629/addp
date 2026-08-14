@@ -24,7 +24,7 @@ func NewTableRelationHandler(svc *service.TableRelationService) *TableRelationHa
 // @Tags Model
 // @Produce json
 // @Param id path int true "事实表ID | Fact table ID"
-// @Success 200 {object} map[string]interface{} "维度关联列表 | Dimension relation list"
+// @Success 200 {array} models.TableRelationDetail "维度关联列表 | Dimension relation list"
 // @Failure 400 {object} models.ErrorResponse "事实表 ID 或表类型无效 | Invalid fact table ID or table type"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
@@ -55,7 +55,7 @@ func (h *TableRelationHandler) ListDimensionRelations(c *gin.Context) {
 // @Produce json
 // @Param id path int true "事实表ID | Fact table ID"
 // @Param body body models.CreateTableRelationRequest true "创建请求 | Create request"
-// @Success 201 {object} map[string]interface{} "已创建的关联 | Created relation"
+// @Success 201 {object} models.TableRelationMutationResponse "已创建的关联 | Created relation"
 // @Failure 400 {object} models.ErrorResponse "表或字段类型无效 | Invalid table or field type"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
@@ -91,7 +91,8 @@ func (h *TableRelationHandler) AddDimensionRelation(c *gin.Context) {
 // @Produce json
 // @Param id path int true "事实表ID | Fact table ID"
 // @Param rid path int true "关联ID | Relation ID"
-// @Success 200 {object} map[string]interface{} "删除成功 | Removed successfully"
+// @Param body body models.VersionRequest true "父资源版本 | Parent resource version"
+// @Success 200 {object} models.VersionResponse "删除成功 | Removed successfully"
 // @Failure 400 {object} models.ErrorResponse "事实表或关联 ID 无效 | Invalid fact table or relation ID"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
@@ -112,10 +113,16 @@ func (h *TableRelationHandler) RemoveDimensionRelation(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidRelationID), "invalid_table_relation_id"))
 		return
 	}
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
 	tenantID := getTenantID(c)
-	if err := h.svc.RemoveDimensionRelation(relationID, tableID, tenantID); err != nil {
+	response, err := h.svc.RemoveDimensionRelation(relationID, tableID, tenantID, req.Version)
+	if err != nil {
 		writeServiceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "removed"})
+	c.JSON(http.StatusOK, response)
 }

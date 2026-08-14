@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/dataquality"
 	"github.com/addp/standard/internal/models"
@@ -8,12 +10,13 @@ import (
 )
 
 type ElementService struct {
-	repo *repository.ElementRepository
-	refs *repository.TenantReferenceRepository
+	repo     *repository.ElementRepository
+	refs     *repository.TenantReferenceRepository
+	deletion *StandardReferenceDeletionService
 }
 
-func NewElementService(repo *repository.ElementRepository, refs *repository.TenantReferenceRepository) *ElementService {
-	return &ElementService{repo: repo, refs: refs}
+func NewElementService(repo *repository.ElementRepository, refs *repository.TenantReferenceRepository, deletion *StandardReferenceDeletionService) *ElementService {
+	return &ElementService{repo: repo, refs: refs, deletion: deletion}
 }
 
 func (s *ElementService) CreateElement(req *models.CreateElementRequest, tenantID, userID int64) (*models.Element, error) {
@@ -171,8 +174,10 @@ func (s *ElementService) UpdateElement(id, tenantID, userID int64, req *models.U
 	return s.GetElement(id, tenantID)
 }
 
-func (s *ElementService) DeleteElement(id, tenantID int64) error {
-	return s.repo.Delete(id, tenantID)
+func (s *ElementService) DeleteElement(ctx context.Context, id, tenantID int64) error {
+	return s.deletion.Delete(ctx, tenantID, "element", id, func() error {
+		return s.repo.Delete(id, tenantID)
+	})
 }
 
 func (s *ElementService) ApproveElement(id, tenantID, userID, version int64) error {

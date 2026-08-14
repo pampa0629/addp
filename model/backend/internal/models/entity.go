@@ -11,6 +11,7 @@ type Entity struct {
 	Code        string    `gorm:"size:100;not null" json:"code"`
 	Description string    `gorm:"type:text" json:"description"`
 	Status      string    `gorm:"size:20;default:'draft'" json:"status"` // draft/approved
+	Version     int64     `gorm:"not null;default:1" json:"version"`
 	CreatedBy   int64     `gorm:"not null" json:"created_by"`
 	UpdatedBy   *int64    `json:"updated_by,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -50,6 +51,7 @@ type EntityRelation struct {
 	RelationType string    `gorm:"size:20;not null" json:"relation_type"` // one_to_one/one_to_many/many_to_many
 	Name         string    `gorm:"size:200" json:"name"`
 	Description  string    `gorm:"type:text" json:"description"`
+	Version      int64     `gorm:"not null;default:1" json:"version"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -68,6 +70,7 @@ type CreateEntityRequest struct {
 
 // UpdateEntityRequest 更新实体请求
 type UpdateEntityRequest struct {
+	Version     int64  `json:"version" binding:"required,gt=0" minimum:"1"`
 	DomainID    *int64 `json:"domain_id" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
 	Name        string `json:"name" binding:"required,max=200" maxLength:"200"`
 	Description string `json:"description"`
@@ -75,6 +78,7 @@ type UpdateEntityRequest struct {
 
 // CreateEntityAttributeRequest 创建实体属性请求
 type CreateEntityAttributeRequest struct {
+	Version     int64  `json:"version" binding:"required,gt=0" minimum:"1"`
 	ElementID   *int64 `json:"element_id,omitempty" binding:"omitempty,gt=0" minimum:"1"`
 	Name        string `json:"name" binding:"required,max=200" maxLength:"200"`
 	ColumnName  string `json:"column_name" binding:"required,max=200" maxLength:"200"`
@@ -87,6 +91,7 @@ type CreateEntityAttributeRequest struct {
 
 // UpdateEntityAttributeRequest 更新实体属性请求
 type UpdateEntityAttributeRequest struct {
+	Version     int64  `json:"version" binding:"required,gt=0" minimum:"1"`
 	ElementID   *int64 `json:"element_id" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
 	Name        string `json:"name" binding:"required,max=200" maxLength:"200"`
 	ColumnName  string `json:"column_name" binding:"required,max=200" maxLength:"200"`
@@ -108,6 +113,9 @@ type CreateEntityRelationRequest struct {
 
 // UpdateEntityRelationRequest 更新实体关系请求
 type UpdateEntityRelationRequest struct {
+	Version      int64  `json:"version" binding:"required,gt=0" minimum:"1"`
+	SourceEntity int64  `json:"source_entity" binding:"required,gt=0" minimum:"1"`
+	TargetEntity int64  `json:"target_entity" binding:"required,gt=0" minimum:"1"`
 	RelationType string `json:"relation_type" binding:"required,oneof=one_to_one one_to_many many_to_many"`
 	Name         string `json:"name" binding:"max=200" maxLength:"200"`
 	Description  string `json:"description"`
@@ -116,10 +124,23 @@ type UpdateEntityRelationRequest struct {
 // MermaidImportRequest Mermaid导入请求
 type MermaidImportRequest struct {
 	MermaidCode string `json:"mermaid_code" binding:"required"`
+	Revision    int64  `json:"revision" binding:"required,gt=0" minimum:"1"`
 }
 
 // MermaidImportResult Mermaid导入结果
 type MermaidImportResult struct {
-	CreatedEntities  int `json:"created_entities"`
-	CreatedRelations int `json:"created_relations"`
+	CreatedEntities  int   `json:"created_entities"`
+	CreatedRelations int   `json:"created_relations"`
+	Revision         int64 `json:"revision"`
+}
+
+// MermaidExportResponse 是实体模型集合的结构化导出结果。
+type MermaidExportResponse struct {
+	MermaidCode string `json:"mermaid_code"`
+	Revision    int64  `json:"revision"`
+}
+
+type EntityAttributeMutationResponse struct {
+	Attribute EntityAttribute `json:"attribute"`
+	Version   int64           `json:"version"`
 }

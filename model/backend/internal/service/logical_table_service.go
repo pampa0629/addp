@@ -3,14 +3,17 @@ package service
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"sort"
+	"strings"
+	"unicode/utf8"
+
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/model/i18n"
 	"github.com/addp/model/internal/apperrors"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
-	"regexp"
-	"strings"
-	"unicode/utf8"
+	"gorm.io/gorm"
 )
 
 type LogicalTableService struct {
@@ -107,17 +110,6 @@ func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableR
 	if err := s.validateReferences(tenantID, req.DomainID, nil, nil); err != nil {
 		return nil, err
 	}
-	if err := s.validateOwnedReferences(tenantID, req.EntityID, req.Layer); err != nil {
-		return nil, err
-	}
-	exists, err := s.repo.ExistsByCode(req.Code, tenantID, 0)
-	if err != nil {
-		return nil, err
-	}
-	if exists {
-		return nil, apperrors.Conflict("logical_table_code_conflict", i18n.MsgTableCodeConflict)
-	}
-
 	table := &models.LogicalTable{
 		TenantID:         tenantID,
 		DomainID:         req.DomainID,
@@ -130,12 +122,38 @@ func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableR
 		GrainDescription: req.GrainDescription,
 		SCDType:          req.SCDType,
 		Status:           "draft",
+		Version:          1,
 		Materialization:  req.Materialization,
 		CreatedBy:        userID,
 	}
 
-	if err := s.repo.Create(table); err != nil {
-		return nil, modelResourceError(err, "logical_table_code", i18n.MsgTableCodeConflict)
+	err := s.repo.DB().Transaction(func(tx *gorm.DB) error {
+		if err := lockStandardReferences(tx, tenantID, standardReference(models.StandardResourceDomain, req.DomainID)); err != nil {
+			return err
+		}
+		if req.EntityID != nil {
+			if _, err := repository.LockEntity(tx, *req.EntityID, tenantID); err != nil {
+				return apperrors.NotFound("entity_not_found", i18n.MsgEntityNotFound)
+			}
+		}
+		if _, err := repository.LockDWLayerByCode(tx, req.Layer, tenantID); err != nil {
+			return apperrors.NotFound("dw_layer_not_found", i18n.MsgLayerNotFound)
+		}
+		txRepo := repository.NewLogicalTableRepository(tx)
+		exists, err := txRepo.ExistsByCode(req.Code, tenantID, 0)
+		if err != nil {
+			return err
+		}
+		if exists {
+			return apperrors.Conflict("logical_table_code_conflict", i18n.MsgTableCodeConflict)
+		}
+		if err := txRepo.Create(table); err != nil {
+			return modelResourceError(err, "logical_table_code", i18n.MsgTableCodeConflict)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return table, nil
 }
@@ -166,13 +184,6 @@ func (s *LogicalTableService) ListLogicalTables(tenantID int64, opts repository.
 }
 
 func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req *models.UpdateLogicalTableRequest) (*models.LogicalTable, error) {
-	table, err := s.repo.GetByID(id, tenantID)
-	if err != nil {
-		return nil, modelResourceError(err, "logical_table_not_found", i18n.MsgTableNotFound)
-	}
-	if table.Status != "draft" {
-		return nil, apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
-	}
 	if req == nil || !validOptionalID(req.DomainID) || !validOptionalID(req.EntityID) ||
 		!validRequiredString(req.Name, 200) || !validValue(req.TableType, "entity", "fact", "dimension") ||
 		!validRequiredString(req.Layer, 20) || req.SCDType == nil || req.Materialization == nil {
@@ -182,105 +193,171 @@ func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req
 	if err := s.validateReferences(tenantID, req.DomainID, nil, nil); err != nil {
 		return nil, err
 	}
-	table.Name = req.Name
-	table.DomainID = req.DomainID
-	table.EntityID = req.EntityID
-	table.Description = req.Description
-	table.TableType = req.TableType
-	table.Layer = req.Layer
-	if strings.TrimSpace(table.Layer) == "" {
+	if strings.TrimSpace(req.Layer) == "" {
 		return nil, apperrors.Validation("logical_table_layer_required", i18n.MsgValidationFailed)
 	}
-	table.GrainDescription = req.GrainDescription
-	table.SCDType = *req.SCDType
 	if err := validateMaterializationKeys(req.Materialization); err != nil {
 		return nil, apperrors.Wrap(apperrors.KindValidation, "materialization_invalid", i18n.MsgValidationFailed, err)
 	}
-	table.Materialization = req.Materialization
-	if err := validateLogicalTableShape(table.TableType, table.SCDType, table.GrainDescription); err != nil {
+	if err := validateLogicalTableShape(req.TableType, *req.SCDType, req.GrainDescription); err != nil {
 		return nil, err
 	}
-	if err := s.validateOwnedReferences(tenantID, table.EntityID, table.Layer); err != nil {
-		return nil, err
-	}
-	table.UpdatedBy = &userID
-
-	if err := s.repo.Update(table); err != nil {
+	var table *models.LogicalTable
+	err := s.repo.DB().Transaction(func(tx *gorm.DB) error {
+		if err := lockStandardReferences(tx, tenantID, standardReference(models.StandardResourceDomain, req.DomainID)); err != nil {
+			return err
+		}
+		var err error
+		table, err = repository.LockLogicalTable(tx, id, tenantID)
+		if err != nil {
+			return modelResourceError(err, "logical_table_not_found", i18n.MsgTableNotFound)
+		}
+		if err := requireVersion(table.Version, req.Version); err != nil {
+			return err
+		}
+		if table.Status != "draft" {
+			return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
+		}
+		if req.EntityID != nil {
+			if _, err := repository.LockEntity(tx, *req.EntityID, tenantID); err != nil {
+				return apperrors.NotFound("entity_not_found", i18n.MsgEntityNotFound)
+			}
+		}
+		if _, err := repository.LockDWLayerByCode(tx, req.Layer, tenantID); err != nil {
+			return apperrors.NotFound("dw_layer_not_found", i18n.MsgLayerNotFound)
+		}
+		table.Name = req.Name
+		table.DomainID = req.DomainID
+		table.EntityID = req.EntityID
+		table.Description = req.Description
+		table.TableType = req.TableType
+		table.Layer = req.Layer
+		table.GrainDescription = req.GrainDescription
+		table.SCDType = *req.SCDType
+		table.Materialization = req.Materialization
+		table.UpdatedBy = &userID
+		return repository.NewLogicalTableRepository(tx).Update(table)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return table, nil
 }
 
-func (s *LogicalTableService) DeleteLogicalTable(id, tenantID int64) error {
-	table, err := s.repo.GetByID(id, tenantID)
-	if err != nil {
-		return modelResourceError(err, "logical_table_not_found", i18n.MsgTableNotFound)
-	}
-	if table.Status != "draft" {
-		return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
-	}
-	relations, err := repository.NewTableRelationRepository(s.repo.DB()).ListByTable(id, tenantID)
-	if err != nil {
-		return err
-	}
-	for _, relation := range relations {
-		otherTableID := relation.SourceTable
-		if otherTableID == id {
-			otherTableID = relation.TargetTable
+func (s *LogicalTableService) DeleteLogicalTable(id, tenantID, version int64) error {
+	return s.repo.DB().Transaction(func(tx *gorm.DB) error {
+		table, err := repository.LockLogicalTable(tx, id, tenantID)
+		if err != nil {
+			return modelResourceError(err, "logical_table_not_found", i18n.MsgTableNotFound)
 		}
-		otherTable, err := s.repo.GetByID(otherTableID, tenantID)
+		if err := requireVersion(table.Version, version); err != nil {
+			return err
+		}
+		if table.Status != "draft" {
+			return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
+		}
+		relations, err := repository.NewTableRelationRepository(tx).ListByTable(id, tenantID)
 		if err != nil {
 			return err
 		}
-		if otherTable.Status != "draft" {
-			return apperrors.Conflict("logical_table_relation_state_conflict", i18n.MsgTableRelationStateConflict)
+		otherTableIDs := make(map[int64]struct{}, len(relations))
+		survivingFactIDs := make(map[int64]struct{}, len(relations))
+		for _, relation := range relations {
+			otherTableID := relation.SourceTable
+			if otherTableID == id {
+				otherTableID = relation.TargetTable
+			}
+			otherTableIDs[otherTableID] = struct{}{}
+			if relation.SourceTable != id {
+				survivingFactIDs[relation.SourceTable] = struct{}{}
+			}
 		}
-	}
-	return s.repo.Delete(id, tenantID)
+
+		orderedOtherTableIDs := make([]int64, 0, len(otherTableIDs))
+		for otherTableID := range otherTableIDs {
+			orderedOtherTableIDs = append(orderedOtherTableIDs, otherTableID)
+		}
+		sort.Slice(orderedOtherTableIDs, func(i, j int) bool { return orderedOtherTableIDs[i] < orderedOtherTableIDs[j] })
+
+		lockedVersions := make(map[int64]int64, len(orderedOtherTableIDs))
+		for _, otherTableID := range orderedOtherTableIDs {
+			otherTable, err := repository.LockLogicalTable(tx, otherTableID, tenantID)
+			if err != nil {
+				return err
+			}
+			if otherTable.Status != "draft" {
+				return apperrors.Conflict("logical_table_relation_state_conflict", i18n.MsgTableRelationStateConflict)
+			}
+			lockedVersions[otherTableID] = otherTable.Version
+		}
+		if err := repository.NewLogicalTableRepository(tx).Delete(id, tenantID, version); err != nil {
+			return err
+		}
+		for _, otherTableID := range orderedOtherTableIDs {
+			if _, survivesAsFact := survivingFactIDs[otherTableID]; !survivesAsFact {
+				continue
+			}
+			if _, err := repository.AdvanceLogicalTableVersion(tx, otherTableID, tenantID, lockedVersions[otherTableID]); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
-func (s *LogicalTableService) ApproveLogicalTable(id, tenantID, userID int64) error {
-	table, err := s.repo.GetByID(id, tenantID)
-	if err != nil {
-		return modelResourceError(err, "logical_table_not_found", i18n.MsgTableNotFound)
-	}
-	if table.Status != "draft" {
-		return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
-	}
-	if err := validateLogicalTableShape(table.TableType, table.SCDType, table.GrainDescription); err != nil {
-		return err
-	}
-	if strings.TrimSpace(table.Layer) == "" {
-		return apperrors.Validation("logical_table_layer_required", i18n.MsgValidationFailed)
-	}
-	fields, err := s.repo.GetFields(id)
-	if err != nil {
-		return err
-	}
-	if len(fields) == 0 {
-		return apperrors.Validation("logical_table_approval_fields_required", i18n.MsgTableFieldsRequired)
-	}
-	hasPrimaryKey := false
-	for _, field := range fields {
-		if field.IsPK {
-			hasPrimaryKey = true
-		}
-	}
-	if !hasPrimaryKey {
-		return apperrors.Validation("logical_table_approval_primary_key_required", i18n.MsgTablePrimaryKeyRequired)
-	}
-	return s.repo.UpdateStatus(id, tenantID, "approved", userID)
+func (s *LogicalTableService) ApproveLogicalTable(id, tenantID, userID, version int64) (*models.LogicalTable, error) {
+	return s.updateLogicalTableStatus(id, tenantID, userID, version, "draft", "approved", true)
 }
 
-func (s *LogicalTableService) ReopenLogicalTable(id, tenantID, userID int64) error {
-	table, err := s.repo.GetByID(id, tenantID)
-	if err != nil {
-		return modelResourceError(err, "logical_table_not_found", i18n.MsgTableNotFound)
-	}
-	if table.Status != "approved" {
-		return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
-	}
-	return s.repo.UpdateStatus(id, tenantID, "draft", userID)
+func (s *LogicalTableService) ReopenLogicalTable(id, tenantID, userID, version int64) (*models.LogicalTable, error) {
+	return s.updateLogicalTableStatus(id, tenantID, userID, version, "approved", "draft", false)
+}
+
+func (s *LogicalTableService) updateLogicalTableStatus(id, tenantID, userID, version int64, from, to string, validateApproval bool) (*models.LogicalTable, error) {
+	var table *models.LogicalTable
+	err := s.repo.DB().Transaction(func(tx *gorm.DB) error {
+		var err error
+		table, err = repository.LockLogicalTable(tx, id, tenantID)
+		if err != nil {
+			return modelResourceError(err, "logical_table_not_found", i18n.MsgTableNotFound)
+		}
+		if err := requireVersion(table.Version, version); err != nil {
+			return err
+		}
+		if table.Status != from {
+			return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
+		}
+		if validateApproval {
+			if err := validateLogicalTableShape(table.TableType, table.SCDType, table.GrainDescription); err != nil {
+				return err
+			}
+			if strings.TrimSpace(table.Layer) == "" {
+				return apperrors.Validation("logical_table_layer_required", i18n.MsgValidationFailed)
+			}
+			fields, err := repository.NewLogicalTableRepository(tx).GetFields(id)
+			if err != nil {
+				return err
+			}
+			if len(fields) == 0 {
+				return apperrors.Validation("logical_table_approval_fields_required", i18n.MsgTableFieldsRequired)
+			}
+			hasPrimaryKey := false
+			for _, field := range fields {
+				hasPrimaryKey = hasPrimaryKey || field.IsPK
+			}
+			if !hasPrimaryKey {
+				return apperrors.Validation("logical_table_approval_primary_key_required", i18n.MsgTablePrimaryKeyRequired)
+			}
+		}
+		if err := repository.NewLogicalTableRepository(tx).UpdateStatus(id, tenantID, version, to, userID); err != nil {
+			return err
+		}
+		table.Status = to
+		table.Version++
+		table.UpdatedBy = &userID
+		return nil
+	})
+	return table, err
 }
 
 // GetFields 获取逻辑表字段列表
@@ -292,14 +369,7 @@ func (s *LogicalTableService) GetFields(tableID, tenantID int64) ([]models.Logic
 }
 
 // CreateField 创建字段
-func (s *LogicalTableService) CreateField(tableID, tenantID int64, req *models.CreateLogicalFieldRequest) (*models.LogicalField, error) {
-	table, err := s.repo.GetByID(tableID, tenantID)
-	if err != nil {
-		return nil, apperrors.NotFound("logical_table_not_found", i18n.MsgTableNotFound)
-	}
-	if table.Status != "draft" {
-		return nil, apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
-	}
+func (s *LogicalTableService) CreateField(tableID, tenantID int64, req *models.CreateLogicalFieldRequest) (*models.LogicalFieldMutationResponse, error) {
 	if err := validateCreateLogicalFieldRequest(req); err != nil {
 		return nil, err
 	}
@@ -309,15 +379,11 @@ func (s *LogicalTableService) CreateField(tableID, tenantID int64, req *models.C
 	if req.IsPK && req.Nullable {
 		return nil, apperrors.Validation("logical_field_invalid", i18n.MsgValidationFailed)
 	}
-	if table.TableType != "fact" && strings.HasPrefix(req.FieldRole, "measure_") {
-		return nil, apperrors.Validation("logical_field_invalid", i18n.MsgValidationFailed)
-	}
-
 	fieldRole := req.FieldRole
 	if fieldRole == "" {
 		fieldRole = "regular"
 	}
-	field := &models.LogicalField{
+	field := models.LogicalField{
 		TableID:        tableID,
 		ElementID:      req.ElementID,
 		Name:           req.Name,
@@ -335,31 +401,46 @@ func (s *LogicalTableService) CreateField(tableID, tenantID int64, req *models.C
 		HierarchyLevel: req.HierarchyLevel,
 	}
 
-	if err := s.repo.CreateField(field); err != nil {
-		return nil, modelResourceError(err, "logical_field_column", i18n.MsgFieldColumnConflict)
+	response := &models.LogicalFieldMutationResponse{Field: field}
+	err := s.repo.DB().Transaction(func(tx *gorm.DB) error {
+		if err := lockStandardReferences(tx, tenantID,
+			standardReference(models.StandardResourceElement, req.ElementID),
+			standardReference(models.StandardResourceDimensionHierarchy, req.HierarchyID)); err != nil {
+			return err
+		}
+		table, err := repository.LockLogicalTable(tx, tableID, tenantID)
+		if err != nil {
+			return apperrors.NotFound("logical_table_not_found", i18n.MsgTableNotFound)
+		}
+		if err := requireVersion(table.Version, req.Version); err != nil {
+			return err
+		}
+		if table.Status != "draft" {
+			return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
+		}
+		if table.TableType != "fact" && strings.HasPrefix(req.FieldRole, "measure_") {
+			return apperrors.Validation("logical_field_invalid", i18n.MsgValidationFailed)
+		}
+		if err := repository.NewLogicalTableRepository(tx).CreateField(&response.Field); err != nil {
+			return modelResourceError(err, "logical_field_column", i18n.MsgFieldColumnConflict)
+		}
+		response.Version, err = repository.AdvanceLogicalTableVersion(tx, tableID, tenantID, req.Version)
+		return err
+	})
+	if err != nil {
+		return nil, err
 	}
-	return field, nil
+	return response, nil
 }
 
 // UpdateField 更新字段
-func (s *LogicalTableService) UpdateField(fieldID, tableID, tenantID int64, req *models.UpdateLogicalFieldRequest) (*models.LogicalField, error) {
-	table, err := s.repo.GetByID(tableID, tenantID)
-	if err != nil {
-		return nil, apperrors.NotFound("logical_table_not_found", i18n.MsgTableNotFound)
-	}
-	if table.Status != "draft" {
-		return nil, apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
-	}
+func (s *LogicalTableService) UpdateField(fieldID, tableID, tenantID int64, req *models.UpdateLogicalFieldRequest) (*models.LogicalFieldMutationResponse, error) {
 	if req == nil {
 		return nil, apperrors.Validation("invalid_request", i18n.MsgValidationFailed)
 	}
 
 	if err := s.validateReferences(tenantID, nil, req.ElementID, req.HierarchyID); err != nil {
 		return nil, err
-	}
-	field, err := s.repo.GetFieldByID(fieldID, tableID)
-	if err != nil {
-		return nil, apperrors.NotFound("logical_field_not_found", i18n.MsgFieldNotFound)
 	}
 	if !validRequiredString(req.Name, 200) || !modelCodePattern.MatchString(req.ColumnName) || utf8.RuneCountInString(req.ColumnName) > 200 ||
 		!validValue(req.DataType, modelDataTypes...) || !validValue(req.FieldRole, modelFieldRoles...) ||
@@ -369,46 +450,82 @@ func (s *LogicalTableService) UpdateField(fieldID, tableID, tenantID int64, req 
 		return nil, apperrors.Validation("invalid_request", i18n.MsgValidationFailed)
 	}
 
-	field.Name = req.Name
-	field.ColumnName = req.ColumnName
-	field.DataType = req.DataType
-	field.ElementID = req.ElementID
-	field.Length = req.Length
-	field.Nullable = *req.Nullable
-	field.IsPK = *req.IsPK
-	field.IsPartition = *req.IsPartition
-	field.DefaultValue = req.DefaultValue
-	field.Description = req.Description
-	field.SortOrder = *req.SortOrder
-	field.FieldRole = req.FieldRole
-	field.HierarchyID = req.HierarchyID
-	field.HierarchyLevel = req.HierarchyLevel
-	if field.IsPK && field.Nullable {
+	if *req.IsPK && *req.Nullable {
 		return nil, apperrors.Validation("logical_field_invalid", i18n.MsgValidationFailed)
 	}
-	if table.TableType != "fact" && strings.HasPrefix(field.FieldRole, "measure_") {
-		return nil, apperrors.Validation("logical_field_invalid", i18n.MsgValidationFailed)
+	response := &models.LogicalFieldMutationResponse{}
+	err := s.repo.DB().Transaction(func(tx *gorm.DB) error {
+		if err := lockStandardReferences(tx, tenantID,
+			standardReference(models.StandardResourceElement, req.ElementID),
+			standardReference(models.StandardResourceDimensionHierarchy, req.HierarchyID)); err != nil {
+			return err
+		}
+		table, err := repository.LockLogicalTable(tx, tableID, tenantID)
+		if err != nil {
+			return apperrors.NotFound("logical_table_not_found", i18n.MsgTableNotFound)
+		}
+		if err := requireVersion(table.Version, req.Version); err != nil {
+			return err
+		}
+		if table.Status != "draft" {
+			return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
+		}
+		if table.TableType != "fact" && strings.HasPrefix(req.FieldRole, "measure_") {
+			return apperrors.Validation("logical_field_invalid", i18n.MsgValidationFailed)
+		}
+		txRepo := repository.NewLogicalTableRepository(tx)
+		field, err := txRepo.GetFieldByID(fieldID, tableID)
+		if err != nil {
+			return apperrors.NotFound("logical_field_not_found", i18n.MsgFieldNotFound)
+		}
+		field.Name = req.Name
+		field.ColumnName = req.ColumnName
+		field.DataType = req.DataType
+		field.ElementID = req.ElementID
+		field.Length = req.Length
+		field.Nullable = *req.Nullable
+		field.IsPK = *req.IsPK
+		field.IsPartition = *req.IsPartition
+		field.DefaultValue = req.DefaultValue
+		field.Description = req.Description
+		field.SortOrder = *req.SortOrder
+		field.FieldRole = req.FieldRole
+		field.HierarchyID = req.HierarchyID
+		field.HierarchyLevel = req.HierarchyLevel
+		if err := txRepo.UpdateField(field); err != nil {
+			return modelResourceError(err, "logical_field_column", i18n.MsgFieldColumnConflict)
+		}
+		response.Field = *field
+		response.Version, err = repository.AdvanceLogicalTableVersion(tx, tableID, tenantID, req.Version)
+		return err
+	})
+	if err != nil {
+		return nil, err
 	}
-
-	if err := s.repo.UpdateField(field); err != nil {
-		return nil, modelResourceError(err, "logical_field_column", i18n.MsgFieldColumnConflict)
-	}
-	return field, nil
+	return response, nil
 }
 
 // DeleteField 删除字段
-func (s *LogicalTableService) DeleteField(fieldID, tableID, tenantID int64) error {
-	table, err := s.repo.GetByID(tableID, tenantID)
-	if err != nil {
-		return apperrors.NotFound("logical_table_not_found", i18n.MsgTableNotFound)
-	}
-	if table.Status != "draft" {
-		return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
-	}
-	if err := s.repo.DeleteField(fieldID, tableID); err != nil {
-		return modelResourceError(err, "logical_field_not_found", i18n.MsgFieldNotFound)
-	}
-	return nil
+func (s *LogicalTableService) DeleteField(fieldID, tableID, tenantID, version int64) (*models.VersionResponse, error) {
+	response := &models.VersionResponse{}
+	err := s.repo.DB().Transaction(func(tx *gorm.DB) error {
+		table, err := repository.LockLogicalTable(tx, tableID, tenantID)
+		if err != nil {
+			return apperrors.NotFound("logical_table_not_found", i18n.MsgTableNotFound)
+		}
+		if err := requireVersion(table.Version, version); err != nil {
+			return err
+		}
+		if table.Status != "draft" {
+			return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
+		}
+		if err := repository.NewLogicalTableRepository(tx).DeleteField(fieldID, tableID); err != nil {
+			return modelResourceError(err, "logical_field_not_found", i18n.MsgFieldNotFound)
+		}
+		response.Version, err = repository.AdvanceLogicalTableVersion(tx, tableID, tenantID, version)
+		return err
+	})
+	return response, err
 }
 
 // PreviewDDL 预览生成的 DDL（仅支持 PostgreSQL）

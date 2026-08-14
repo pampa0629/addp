@@ -33,6 +33,7 @@ func SetupRouter(
 	dwLayerSvc *service.DWLayerService,
 	factMetricSvc *service.FactMetricService,
 	tableRelationSvc *service.TableRelationService,
+	standardReferenceGuardSvc *service.StandardReferenceGuardService,
 	systemURL string,
 	redisClient *redis.Client,
 ) *gin.Engine {
@@ -65,6 +66,7 @@ func SetupRouter(
 	dwLayerHandler := NewDWLayerHandler(dwLayerSvc)
 	factMetricHandler := NewFactMetricHandler(factMetricSvc)
 	tableRelationHandler := NewTableRelationHandler(tableRelationSvc)
+	standardReferenceGuardHandler := NewStandardReferenceGuardHandler(standardReferenceGuardSvc)
 
 	// API 路由组
 	api := router.Group("/api/v1/model")
@@ -78,6 +80,9 @@ func SetupRouter(
 	}
 
 	{
+		standardReferenceGuards := api.Group("/standard-reference-guards")
+		standardReferenceGuards.PUT("/:resource_type/:resource_id", permission(modelauthorization.PermissionModelStandardReferenceUpdate), standardReferenceGuardHandler.SetState)
+
 		// 业务实体路由
 		entities := api.Group("/entities")
 		{

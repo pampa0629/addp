@@ -31,6 +31,7 @@
           </el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.engineId')">{{ issue.engine_id ?? '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.ruleApplicationId')">{{ issue.rule_application_id ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('quality.issue.ruleKey')" :span="2">{{ issue.rule_key || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.schema')">{{ issue.schema_name || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.tableName')">{{ issue.table_name || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.column')">{{ issue.column_name || '-' }}</el-descriptions-item>

@@ -83,3 +83,31 @@ func TestSourcePlanSupportsReadOnlyDirectOperator(t *testing.T) {
 		t.Fatal("source plan JSON is missing source")
 	}
 }
+
+func TestTargetPlanSupportsIncrementalDirectWriter(t *testing.T) {
+	plan, err := NewTargetPlan(Target{
+		Kind:      KindDirectory,
+		Format:    "filegdb",
+		Name:      "roads.gdb",
+		WriteMode: WriteModeReplace,
+		Access: Access{
+			Method:    MethodObjectStore,
+			Endpoint:  "minio:9000",
+			AccessKey: "key",
+			SecretKey: "secret",
+			Bucket:    "research",
+			Prefix:    "exports/roads.gdb",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.JSONMap()["target"] == nil {
+		t.Fatal("target plan JSON is missing target")
+	}
+	audit := plan.AuditJSONMap()["target"].(commonModels.JSONMap)
+	access := audit["access"].(commonModels.JSONMap)
+	if _, ok := access["secret_key"]; ok {
+		t.Fatalf("target audit leaked secret: %#v", access)
+	}
+}

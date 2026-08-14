@@ -52,6 +52,12 @@ other = "The resource was modified by another user. Refresh and try again"
 [standard.common.invalid_resource_reference]
 other = "A referenced resource does not exist or belongs to another tenant"
 
+[standard.common.model_reference_conflict]
+other = "This Standard resource is still referenced by Model. Remove the references before deleting it"
+
+[standard.common.model_reference_guard_unavailable]
+other = "Model reference validation is temporarily unavailable. The delete was stopped; try again later"
+
 [standard.code_set.invalid_type]
 other = "Code set type must be system or custom"
 

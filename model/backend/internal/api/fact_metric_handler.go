@@ -24,7 +24,7 @@ func NewFactMetricHandler(svc *service.FactMetricService) *FactMetricHandler {
 // @Tags Model
 // @Produce json
 // @Param id path int true "事实表ID | Fact table ID"
-// @Success 200 {object} map[string]interface{} "指标关联列表 | Metric mapping list"
+// @Success 200 {array} models.FactMetricMapping "指标关联列表 | Metric mapping list"
 // @Failure 400 {object} models.ErrorResponse "事实表 ID 或表类型无效 | Invalid fact table ID or table type"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
@@ -56,7 +56,7 @@ func (h *FactMetricHandler) ListMetrics(c *gin.Context) {
 // @Produce json
 // @Param id path int true "事实表ID | Fact table ID"
 // @Param body body models.CreateFactMetricMappingRequest true "创建请求 | Create request"
-// @Success 201 {object} map[string]interface{} "已创建的关联 | Created mapping"
+// @Success 201 {object} models.FactMetricMutationResponse "已创建的关联 | Created mapping"
 // @Failure 400 {object} models.ErrorResponse "请求的表类型无效 | Invalid table type"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
@@ -97,7 +97,8 @@ func (h *FactMetricHandler) AddMetric(c *gin.Context) {
 // @Produce json
 // @Param id path int true "事实表ID | Fact table ID"
 // @Param mid path int true "关联ID | Mapping ID"
-// @Success 200 {object} map[string]interface{} "删除成功 | Removed successfully"
+// @Param body body models.VersionRequest true "父资源版本 | Parent resource version"
+// @Success 200 {object} models.VersionResponse "删除成功 | Removed successfully"
 // @Failure 400 {object} models.ErrorResponse "事实表或关联 ID 无效 | Invalid fact table or mapping ID"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
@@ -119,10 +120,16 @@ func (h *FactMetricHandler) RemoveMetric(c *gin.Context) {
 		return
 	}
 
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
 	tenantID := getTenantID(c)
-	if err := h.svc.RemoveMetric(mappingID, tableID, tenantID); err != nil {
+	response, err := h.svc.RemoveMetric(mappingID, tableID, tenantID, req.Version)
+	if err != nil {
 		writeServiceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "removed"})
+	c.JSON(http.StatusOK, response)
 }

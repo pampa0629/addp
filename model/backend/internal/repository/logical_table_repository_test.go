@@ -32,6 +32,7 @@ func setupLogicalTableRepositoryTestDB(t *testing.T) *gorm.DB {
 			grain_description TEXT,
 			scd_type INTEGER DEFAULT 0,
 			materialization TEXT,
+			version INTEGER NOT NULL DEFAULT 1,
 			created_by INTEGER NOT NULL,
 			updated_by INTEGER,
 			created_at DATETIME,
@@ -97,7 +98,7 @@ func TestLogicalTableDeleteRejectsCrossTenantChildDeletion(t *testing.T) {
 		t.Fatalf("create logical field: %v", err)
 	}
 
-	err := NewLogicalTableRepository(db).Delete(table.ID, 1)
+	err := NewLogicalTableRepository(db).Delete(table.ID, 1, table.Version)
 	if err == nil {
 		t.Fatal("cross-tenant delete error = nil")
 	}
@@ -133,7 +134,7 @@ func TestLogicalTableDeleteRemovesAggregateInOneTenant(t *testing.T) {
 		t.Fatalf("create metric mapping: %v", err)
 	}
 
-	if err := NewLogicalTableRepository(db).Delete(table.ID, 1); err != nil {
+	if err := NewLogicalTableRepository(db).Delete(table.ID, 1, table.Version); err != nil {
 		t.Fatalf("delete logical table: %v", err)
 	}
 

@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
@@ -11,10 +13,11 @@ type MetricService struct {
 	catRepo    *repository.MetricCategoryRepository
 	metricRepo *repository.MetricRepository
 	refs       *repository.TenantReferenceRepository
+	deletion   *StandardReferenceDeletionService
 }
 
-func NewMetricService(catRepo *repository.MetricCategoryRepository, metricRepo *repository.MetricRepository, refs *repository.TenantReferenceRepository) *MetricService {
-	return &MetricService{catRepo: catRepo, metricRepo: metricRepo, refs: refs}
+func NewMetricService(catRepo *repository.MetricCategoryRepository, metricRepo *repository.MetricRepository, refs *repository.TenantReferenceRepository, deletion *StandardReferenceDeletionService) *MetricService {
+	return &MetricService{catRepo: catRepo, metricRepo: metricRepo, refs: refs, deletion: deletion}
 }
 
 // --- 指标目录 ---
@@ -175,8 +178,10 @@ func (s *MetricService) UpdateMetric(id, tenantID, userID int64, req *models.Upd
 	return s.metricRepo.GetByID(id, tenantID)
 }
 
-func (s *MetricService) DeleteMetric(id, tenantID int64) error {
-	return mapDeleteConflict(s.metricRepo.Delete(id, tenantID), ErrMetricReferenced)
+func (s *MetricService) DeleteMetric(ctx context.Context, id, tenantID int64) error {
+	return s.deletion.Delete(ctx, tenantID, "metric", id, func() error {
+		return mapDeleteConflict(s.metricRepo.Delete(id, tenantID), ErrMetricReferenced)
+	})
 }
 
 func (s *MetricService) ApproveMetric(id, tenantID, userID, version int64) error {

@@ -16,6 +16,10 @@ import (
 // cross-tenant resource so callers cannot use validation APIs for tenant probing.
 var ErrTenantReferenceNotFound = errors.New("tenant reference not found")
 
+// ErrStandardReferenceDeleting means the Standard owner has frozen new bindings
+// while coordinating a hard delete.
+var ErrStandardReferenceDeleting = errors.New("standard reference deleting")
+
 // StandardClient is the Bearer-only client for tenant-owned Standard APIs.
 type StandardClient struct{ tenantHTTPClient }
 
@@ -31,13 +35,14 @@ func (c *StandardClient) WithTenantID(tenantID uint) *StandardClient {
 }
 
 type ElementResponse struct {
-	ID           int64                `json:"id"`
-	TenantID     int64                `json:"tenant_id"`
-	Name         string               `json:"name"`
-	Code         string               `json:"code"`
-	DataType     string               `json:"data_type"`
-	CodeSetID    *int64               `json:"code_set_id"`
-	QualityRules dataquality.Document `json:"quality_rules"`
+	ID             int64                `json:"id"`
+	TenantID       int64                `json:"tenant_id"`
+	Name           string               `json:"name"`
+	Code           string               `json:"code"`
+	DataType       string               `json:"data_type"`
+	CodeSetID      *int64               `json:"code_set_id"`
+	QualityRules   dataquality.Document `json:"quality_rules"`
+	LifecycleState string               `json:"lifecycle_state"`
 }
 
 type ElementSummary struct {
@@ -63,8 +68,9 @@ type elementCandidateListResponse struct {
 }
 
 type tenantReferenceResponse struct {
-	ID       int64 `json:"id"`
-	TenantID int64 `json:"tenant_id"`
+	ID             int64  `json:"id"`
+	TenantID       int64  `json:"tenant_id"`
+	LifecycleState string `json:"lifecycle_state"`
 }
 
 func (c *StandardClient) validateTenantReference(ctx context.Context, path, resourceName string) error {
@@ -74,6 +80,9 @@ func (c *StandardClient) validateTenantReference(ctx context.Context, path, reso
 	}
 	if c.tenantID == nil || resource.TenantID != int64(*c.tenantID) {
 		return fmt.Errorf("standard validate %s: %w", resourceName, ErrTenantReferenceNotFound)
+	}
+	if resource.LifecycleState != "active" {
+		return fmt.Errorf("standard validate %s: %w", resourceName, ErrStandardReferenceDeleting)
 	}
 	return nil
 }
@@ -85,6 +94,9 @@ func (c *StandardClient) ValidateElement(ctx context.Context, elementID int64) e
 	}
 	if c.tenantID == nil || element.TenantID != int64(*c.tenantID) {
 		return fmt.Errorf("standard validate element: %w", ErrTenantReferenceNotFound)
+	}
+	if element.LifecycleState != "active" {
+		return fmt.Errorf("standard validate element: %w", ErrStandardReferenceDeleting)
 	}
 	return nil
 }

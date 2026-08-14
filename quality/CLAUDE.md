@@ -117,7 +117,8 @@ quality/
 | id | int64 PK | 主键 |
 | tenant_id | int64 | 租户 ID |
 | execution_id / last_execution_id | string | 首次发现和最近观测到该问题的 execution |
-| rule_application_id | int64 | 关联规则应用；与 `tenant_id` 共同构成当前问题唯一身份 |
+| rule_application_id | int64 | 关联规则应用 |
+| rule_key | UUID | 规则快照中的稳定规则身份；与 `tenant_id + rule_application_id` 共同构成当前问题唯一身份 |
 | rule_type | string | 数据库存储字段；API JSON 字段名为 `type` |
 | severity / message | string | 规则严重级别和说明 |
 | column_name / table_name / schema_name | string | 问题字段定位 |
@@ -201,7 +202,7 @@ GET    /health                                 # 服务健康检查
     3. 严格解析 execution_config 中的版本化规则快照
     4. 通过 SQLGenerator 安全引用标识符、绑定所有规则参数并执行聚合检查
     5. 计算规则、字段和表级评分；结果写入 execution.metadata
-    6. 以 tenant_id + rule_application_id 对 Issue 做幂等 reconcile
+    6. 以 tenant_id + rule_application_id + rule_key 对 Issue 做幂等 reconcile
     7. 校验 lease owner 后原子写 execution 终态和 CheckTask 最近执行摘要
     ↓
 worker 崩溃后由 lease 恢复：未达 max_attempts 返回 pending，达到上限写 failed
@@ -237,6 +238,7 @@ worker 崩溃后由 lease 恢复：未达 max_attempts 返回 pending，达到�
   "rule_details": [
     {
       "rule_application_id": 123,
+      "rule_key": "0d6c7c6a-4f0d-4d4f-9e5a-6f8e5c7a1b2c",
       "type": "format",
       "severity": "error",
       "message": "手机号格式不正确",
@@ -315,7 +317,7 @@ open（待处理）
     └─→ ignored（已忽略）：已知问题，暂不处理
 ```
 
-同一租户、同一 RuleApplication 始终只有一个当前问题。规则失败时创建或重开为 `open`，后续检查通过时自动变为 `resolved`。人工只能将 `open` 更新为 `resolved` 或 `ignored`，且必须提交处理说明；终态之间不可互转。
+同一租户、同一 RuleApplication 中的每个 `rule_key` 始终只有一个当前问题。同一应用可包含多条同类型规则，但每条规则拥有独立 Issue；一条规则通过不得关闭另一条规则的问题。规则失败时创建或重开为 `open`，后续检查通过时自动变为 `resolved`。人工只能将 `open` 更新为 `resolved` 或 `ignored`，且必须提交处理说明；终态之间不可互转。
 
 RuleApplication 是当前配置，execution metadata 才是历史事实。存在已冻结该规则应用的 `pending|running` execution 时禁止删除；其余删除必须在同一事务中清理对应 Issue，并保留已完成 execution 历史。
 

@@ -108,7 +108,7 @@ func descriptorFormatByExtension(ext string) FormatType {
 
 func IsGeospatialFormat(format FormatType) bool {
 	switch format {
-	case FormatShapefile, FormatGeoJSON, FormatGeoPackage, FormatKML, FormatKMZ:
+	case FormatShapefile, FormatGeoJSON, FormatGeoPackage, FormatFileGDB, FormatPGeo, FormatKML, FormatKMZ:
 		return true
 	default:
 		return false

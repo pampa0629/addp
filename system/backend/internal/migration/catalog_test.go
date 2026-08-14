@@ -12,8 +12,27 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 64 {
-		t.Fatalf("LatestVersion = %d, want 64", catalog.LatestVersion)
+	if catalog.LatestVersion != 65 {
+		t.Fatalf("LatestVersion = %d, want 65", catalog.LatestVersion)
+	}
+}
+
+func TestStandardReferenceRuntimeMigrationPublishesDeletionGuardBoundary(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000065_iam_standard_reference_runtime.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 65: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'model.standard_reference.update'",
+		"'tenant.standard_runtime'",
+		"'addp-standard'",
+		"INSERT INTO system.tenant_memberships",
+		"INSERT INTO system.role_assignments",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 65 missing %q", fragment)
+		}
 	}
 }
 

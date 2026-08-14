@@ -19,6 +19,15 @@ other = "引用的标准资源不存在或不属于当前租户"
 [model.common.standard_unavailable]
 other = "数据标准服务暂时不可用，请稍后重试"
 
+[model.common.resource_version_conflict]
+other = "资源已被其他用户修改，请刷新后重试"
+
+[model.common.standard_reference_deleting]
+other = "引用的标准资源正在删除，无法建立或保留该引用"
+
+[model.common.standard_reference_guard_state_conflict]
+other = "标准引用删除屏障已进入不可逆终态"
+
 [model.entity.not_found]
 other = "实体不存在"
 

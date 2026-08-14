@@ -29,7 +29,7 @@ func NewEntityHandler(svc *service.EntityService) *EntityHandler {
 // @Param keyword query string false "关键词搜索 | Keyword search"
 // @Param page query int false "页码 | Page number" default(1) minimum(1)
 // @Param page_size query int false "每页数量 | Page size" default(20) minimum(1) maximum(100)
-// @Success 200 {object} map[string]interface{} "实体列表 | Entity list"
+// @Success 200 {object} models.EntityListResponse "实体列表 | Entity list"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "查询参数无效 | Invalid query parameters"
@@ -90,7 +90,7 @@ func (h *EntityHandler) ListEntities(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param body body models.CreateEntityRequest true "创建请求 | Create request"
-// @Success 201 {object} map[string]interface{} "已创建的实体 | Created entity"
+// @Success 201 {object} models.Entity "已创建的实体 | Created entity"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "请求无效 | Invalid request"
@@ -124,7 +124,7 @@ func (h *EntityHandler) CreateEntity(c *gin.Context) {
 // @Tags Model
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
-// @Success 200 {object} map[string]interface{} "实体详情 | Entity details"
+// @Success 200 {object} models.Entity "实体详情 | Entity details"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "实体 ID 无效 | Invalid entity ID"
@@ -156,7 +156,7 @@ func (h *EntityHandler) GetEntity(c *gin.Context) {
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Param body body models.UpdateEntityRequest true "更新请求 | Update request"
-// @Success 200 {object} map[string]interface{} "已更新的实体 | Updated entity"
+// @Success 200 {object} models.Entity "已更新的实体 | Updated entity"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "请求或实体 ID 无效 | Invalid request or entity ID"
@@ -196,7 +196,8 @@ func (h *EntityHandler) UpdateEntity(c *gin.Context) {
 // @Tags Model
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
-// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Param body body models.VersionRequest true "资源版本 | Resource version"
+// @Success 200 {object} models.MessageResponse "删除成功 | Deleted successfully"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "实体 ID 无效 | Invalid entity ID"
@@ -214,7 +215,12 @@ func (h *EntityHandler) DeleteEntity(c *gin.Context) {
 	}
 
 	tenantID := getTenantID(c)
-	if err := h.svc.DeleteEntity(id, tenantID); err != nil {
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
+	if err := h.svc.DeleteEntity(id, tenantID, req.Version); err != nil {
 		writeServiceError(c, err)
 		return
 	}
@@ -226,7 +232,8 @@ func (h *EntityHandler) DeleteEntity(c *gin.Context) {
 // @Tags Model
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
-// @Success 200 {object} map[string]interface{} "审批成功 | Approved successfully"
+// @Param body body models.VersionRequest true "资源版本 | Resource version"
+// @Success 200 {object} models.Entity "审批成功 | Approved successfully"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "实体缺少属性、主键或属性定义不完整 | Entity has no attributes, no primary key, or an incomplete attribute definition"
@@ -246,11 +253,17 @@ func (h *EntityHandler) ApproveEntity(c *gin.Context) {
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
 
-	if err := h.svc.ApproveEntity(id, tenantID, userID); err != nil {
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
+	entity, err := h.svc.ApproveEntity(id, tenantID, userID, req.Version)
+	if err != nil {
 		writeServiceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "approved"})
+	c.JSON(http.StatusOK, entity)
 }
 
 // ReopenEntity POST /api/model/entities/:id/reopen
@@ -258,7 +271,8 @@ func (h *EntityHandler) ApproveEntity(c *gin.Context) {
 // @Tags Model
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
-// @Success 200 {object} models.MessageResponse "重新打开成功 | Reopened successfully"
+// @Param body body models.VersionRequest true "资源版本 | Resource version"
+// @Success 200 {object} models.Entity "重新打开成功 | Reopened successfully"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "实体 ID 无效 | Invalid entity ID"
@@ -274,11 +288,17 @@ func (h *EntityHandler) ReopenEntity(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
-	if err := h.svc.ReopenEntity(id, getTenantID(c), getUserID(c)); err != nil {
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
+	entity, err := h.svc.ReopenEntity(id, getTenantID(c), getUserID(c), req.Version)
+	if err != nil {
 		writeServiceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "reopened"})
+	c.JSON(http.StatusOK, entity)
 }
 
 // GetAttributes GET /api/model/entities/:id/attributes
@@ -286,7 +306,7 @@ func (h *EntityHandler) ReopenEntity(c *gin.Context) {
 // @Tags Model
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
-// @Success 200 {object} map[string]interface{} "属性列表 | Attribute list"
+// @Success 200 {array} models.EntityAttribute "属性列表 | Attribute list"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "实体 ID 无效 | Invalid entity ID"
@@ -318,7 +338,7 @@ func (h *EntityHandler) GetAttributes(c *gin.Context) {
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Param body body models.CreateEntityAttributeRequest true "创建请求 | Create request"
-// @Success 201 {object} map[string]interface{} "已创建的属性 | Created attribute"
+// @Success 201 {object} models.EntityAttributeMutationResponse "已创建的属性 | Created attribute"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "请求或实体 ID 无效 | Invalid request or entity ID"
@@ -359,7 +379,7 @@ func (h *EntityHandler) CreateAttribute(c *gin.Context) {
 // @Param id path int true "实体ID | Entity ID"
 // @Param aid path int true "属性ID | Attribute ID"
 // @Param body body models.UpdateEntityAttributeRequest true "更新请求 | Update request"
-// @Success 200 {object} map[string]interface{} "已更新的属性 | Updated attribute"
+// @Success 200 {object} models.EntityAttributeMutationResponse "已更新的属性 | Updated attribute"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "请求、实体或属性 ID 无效 | Invalid request, entity, or attribute ID"
@@ -403,7 +423,8 @@ func (h *EntityHandler) UpdateAttribute(c *gin.Context) {
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Param aid path int true "属性ID | Attribute ID"
-// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Param body body models.VersionRequest true "父资源版本 | Parent resource version"
+// @Success 200 {object} models.VersionResponse "删除成功 | Deleted successfully"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "实体或属性 ID 无效 | Invalid entity or attribute ID"
@@ -426,11 +447,17 @@ func (h *EntityHandler) DeleteAttribute(c *gin.Context) {
 	}
 
 	tenantID := getTenantID(c)
-	if err := h.svc.DeleteAttribute(attrID, entityID, tenantID); err != nil {
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
+	response, err := h.svc.DeleteAttribute(attrID, entityID, tenantID, req.Version)
+	if err != nil {
 		writeServiceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	c.JSON(http.StatusOK, response)
 }
 
 // ImportMermaid POST /api/model/entities/import-mermaid
@@ -439,7 +466,7 @@ func (h *EntityHandler) DeleteAttribute(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param body body models.MermaidImportRequest true "导入请求 | Import request"
-// @Success 200 {object} map[string]interface{} "导入结果 | Import result"
+// @Success 200 {object} models.MermaidImportResult "导入结果 | Import result"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "Mermaid 内容无效 | Invalid Mermaid content"
@@ -471,7 +498,7 @@ func (h *EntityHandler) ImportMermaid(c *gin.Context) {
 // @Summary 导出 Mermaid ER 图 | Export Mermaid ER diagram
 // @Tags Model
 // @Produce json
-// @Success 200 {object} map[string]interface{} "Mermaid ER 图代码 | Mermaid ER diagram code"
+// @Success 200 {object} models.MermaidExportResponse "Mermaid ER 图代码 | Mermaid ER diagram code"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @x-addp-auth-mode "permission"
@@ -487,8 +514,5 @@ func (h *EntityHandler) ExportMermaid(c *gin.Context) {
 		return
 	}
 
-	// 设置响应头，支持文件下载
-	c.Header("Content-Type", "text/plain; charset=utf-8")
-	c.Header("Content-Disposition", "attachment; filename=er-diagram.mmd")
-	c.String(http.StatusOK, mermaidCode)
+	c.JSON(http.StatusOK, mermaidCode)
 }

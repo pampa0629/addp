@@ -88,7 +88,7 @@
         <el-table-column :label="t('model.logical_table.actions')" width="150" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="goToDetail(row)">{{ t('model.common.design') }}</el-button>
-            <el-popconfirm v-if="can('model.logical_model.delete')" :title="t('model.logical_table.delete_confirm')" @confirm="handleDelete(row.id)">
+            <el-popconfirm v-if="can('model.logical_model.delete')" :title="t('model.logical_table.delete_confirm')" @confirm="handleDelete(row)">
               <template #reference>
                 <el-button link type="danger">{{ t('model.common.delete') }}</el-button>
               </template>
@@ -292,13 +292,13 @@ const handleCreate = async () => {
   }
 }
 
-const handleDelete = async (id) => {
+const handleDelete = async (table) => {
   if (!can('model.logical_model.delete')) {
     ElMessage.error(t('model.common.permission_denied'))
     return
   }
   try {
-    await logicalTableAPI.delete(id)
+    await logicalTableAPI.delete(table.id, table.version)
     ElMessage.success(t('model.common.delete_success'))
     loadTables()
   } catch (err) {

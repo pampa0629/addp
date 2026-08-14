@@ -141,7 +141,7 @@ func TestIntegrationPostgresIssueConcurrentFirstObservation(t *testing.T) {
 	tenantID := time.Now().UnixNano()%100000000 + 920000000
 	application := models.RuleApplication{
 		TenantID: tenantID, ElementID: 11, EngineID: 12, SchemaName: "public", Table: "orders", ColumnName: "amount",
-		RuleConfig: []byte(`{"schema_version":"addp.quality.rules/v1","rules":[{"type":"not_null","enabled":true,"severity":"error","message":"","params":{}}]}`),
+		RuleConfig: []byte(`{"schema_version":"addp.quality.rules/v1","rules":[{"rule_key":"00000000-0000-4000-8000-000000000001","type":"not_null","enabled":true,"severity":"error","message":"","params":{}}]}`),
 		CreatedBy:  1,
 	}
 	if err := db.Create(&application).Error; err != nil {
@@ -153,7 +153,7 @@ func TestIntegrationPostgresIssueConcurrentFirstObservation(t *testing.T) {
 	})
 
 	observation := models.IssueObservation{
-		RuleApplicationID: application.ID, RuleType: "not_null", Severity: "error", Message: "required",
+		RuleApplicationID: application.ID, RuleKey: "00000000-0000-4000-8000-000000000001", RuleType: "not_null", Severity: "error", Message: "required",
 		ColumnName: application.ColumnName, Table: application.Table, SchemaName: application.SchemaName,
 		EngineID: application.EngineID, FailedCount: 1, TotalCount: 10, PassRate: 90,
 	}

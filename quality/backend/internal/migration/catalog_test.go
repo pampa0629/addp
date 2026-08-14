@@ -11,8 +11,8 @@ func TestEmbeddedCatalogContainsQualityQueryIndexes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog: %v", err)
 	}
-	if catalog.LatestVersion != 4 {
-		t.Fatalf("latest migration version = %d, want 4", catalog.LatestVersion)
+	if catalog.LatestVersion != 5 {
+		t.Fatalf("latest migration version = %d, want 5", catalog.LatestVersion)
 	}
 	queryIndexes := catalog.Files[2]
 	if queryIndexes.Name != "000003_quality_query_indexes.up.sql" {
@@ -41,6 +41,20 @@ func TestEmbeddedCatalogContainsQualityQueryIndexes(t *testing.T) {
 	} {
 		if !strings.Contains(cleanup.Contents, required) {
 			t.Fatalf("tenant index cleanup migration missing %q", required)
+		}
+	}
+	ruleKeyIdentity := catalog.Files[4]
+	if ruleKeyIdentity.Name != "000005_quality_rule_key_identity.up.sql" {
+		t.Fatalf("rule key migration = %q", ruleKeyIdentity.Name)
+	}
+	for _, required := range []string{
+		"ADD COLUMN rule_key UUID",
+		"quality.issues contains rule identities that cannot be mapped uniquely to rule_key",
+		"DROP INDEX quality.uq_quality_issue_rule_application",
+		"CREATE UNIQUE INDEX uq_quality_issue_rule",
+	} {
+		if !strings.Contains(ruleKeyIdentity.Contents, required) {
+			t.Fatalf("rule key migration missing %q", required)
 		}
 	}
 }

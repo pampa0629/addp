@@ -19,7 +19,8 @@ func TestOraclePluginCapabilitiesAndInterfaces(t *testing.T) {
 	if got := p.ConnectionIdentityFields(); strings.Join(got, ",") != "host,port,service_name,user" {
 		t.Fatalf("identity fields = %#v", got)
 	}
-	if p.Capabilities().Storage.Store == nil || !p.Capabilities().Storage.Store.BatchRead || !p.Capabilities().Storage.Store.TableReadSession {
+	if p.Capabilities().Storage.Store == nil || !p.Capabilities().Storage.Store.BatchRead || !p.Capabilities().Storage.Store.TableReadSession ||
+		!p.Capabilities().Storage.Store.TableWriteSession || !p.Capabilities().Storage.Store.TableWritePrepare || !p.Capabilities().Storage.Store.Delete {
 		t.Fatalf("storage capabilities = %#v", p.Capabilities().Storage)
 	}
 	spatialEncoding := p.Capabilities().Storage.Store.TableSpatialEncoding
@@ -38,8 +39,7 @@ func TestOraclePluginCapabilitiesAndInterfaces(t *testing.T) {
 		t.Fatalf("Oracle partitioned change apply capabilities = %#v", apply)
 	}
 	if p.Capabilities().Storage.Store.ChangeStreamRead != nil || p.Capabilities().Storage.Store.BoundedWatermarkRead ||
-		p.Capabilities().Storage.Store.BatchWrite || p.Capabilities().Storage.Store.TableWriteSession ||
-		p.Capabilities().Storage.Store.TableWritePrepare || p.Capabilities().Storage.Store.TableUpsert != nil {
+		p.Capabilities().Storage.Store.BatchWrite || p.Capabilities().Storage.Store.TableUpsert != nil {
 		t.Fatalf("Oracle first phase must not declare CDC or watermark capabilities")
 	}
 	if !p.Capabilities().Storage.Facts.Indexes || !p.Capabilities().Storage.Facts.Constraints || !p.Capabilities().Storage.Facts.Partitioning {

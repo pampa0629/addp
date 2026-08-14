@@ -68,11 +68,24 @@ func (r *EntityRepository) List(tenantID int64, opts ListEntityOptions) ([]model
 }
 
 func (r *EntityRepository) Update(entity *models.Entity) error {
-	return commonrepo.WrapDBError(r.db.Save(entity).Error)
+	result := r.db.Model(&models.Entity{}).
+		Where("id = ? AND tenant_id = ? AND version = ?", entity.ID, entity.TenantID, entity.Version).
+		Updates(map[string]interface{}{
+			"domain_id": entity.DomainID, "name": entity.Name, "description": entity.Description,
+			"updated_by": entity.UpdatedBy, "version": gorm.Expr("version + 1"),
+		})
+	if result.Error != nil {
+		return commonrepo.WrapDBError(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
+	}
+	entity.Version++
+	return nil
 }
 
-func (r *EntityRepository) Delete(id, tenantID int64) error {
-	result := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Entity{})
+func (r *EntityRepository) Delete(id, tenantID, version int64) error {
+	result := r.db.Where("id = ? AND tenant_id = ? AND version = ?", id, tenantID, version).Delete(&models.Entity{})
 	if result.Error != nil {
 		return commonrepo.WrapDBError(result.Error)
 	}
@@ -82,10 +95,10 @@ func (r *EntityRepository) Delete(id, tenantID int64) error {
 	return nil
 }
 
-func (r *EntityRepository) UpdateStatus(id, tenantID int64, status string, updatedBy int64) error {
+func (r *EntityRepository) UpdateStatus(id, tenantID, version int64, status string, updatedBy int64) error {
 	result := r.db.Model(&models.Entity{}).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
-		Updates(map[string]interface{}{"status": status, "updated_by": updatedBy})
+		Where("id = ? AND tenant_id = ? AND version = ?", id, tenantID, version).
+		Updates(map[string]interface{}{"status": status, "updated_by": updatedBy, "version": gorm.Expr("version + 1")})
 	if result.Error != nil {
 		return commonrepo.WrapDBError(result.Error)
 	}

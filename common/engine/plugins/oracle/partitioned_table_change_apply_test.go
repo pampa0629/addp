@@ -25,15 +25,15 @@ func TestOraclePartitionedApplyOptionsAndTypes(t *testing.T) {
 	if err != nil || strings.Join(keys, ",") != "ID" {
 		t.Fatalf("validate options keys=%v err=%v", keys, err)
 	}
-	if got, err := oracleSQLTypeForApplyField(opts.Fields[1]); err != nil || got != "NUMBER(18,2)" {
+	if got, err := oracleSQLTypeForField(opts.Fields[1]); err != nil || got != "NUMBER(18,2)" {
 		t.Fatalf("decimal SQL type=%q err=%v", got, err)
 	}
 	for _, field := range []datatype.FieldInfo{
 		{Name: "CLOCK", Type: datatype.FieldTypeTime},
 		{Name: "TOO_WIDE", Type: datatype.FieldTypeDecimal, Precision: 39, Scale: 2},
 	} {
-		if _, err := oracleSQLTypeForApplyField(field); err == nil {
-			t.Fatalf("oracleSQLTypeForApplyField(%#v) unexpectedly succeeded", field)
+		if _, err := oracleSQLTypeForField(field); err == nil {
+			t.Fatalf("oracleSQLTypeForField(%#v) unexpectedly succeeded", field)
 		}
 	}
 }
@@ -97,7 +97,7 @@ func TestOracleApplyValueExpressionUsesNativeSpatialConstructor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"SDO_UTIL.FROM_WKBGEOMETRY(:3)", "MDSYS.SDO_GEOMETRY", "decoded.raw_geom.SDO_GTYPE", "4326"} {
+	for _, expected := range []string{"SDO_UTIL.FROM_WKBGEOMETRY(:3)", "MDSYS.SDO_GEOMETRY", "2001", "4326"} {
 		if !strings.Contains(expression, expected) {
 			t.Fatalf("spatial expression=%q missing %q", expression, expected)
 		}

@@ -207,11 +207,14 @@ func (h *ElementHandler) UpdateElement(c *gin.Context) {
 	c.JSON(http.StatusOK, element)
 }
 
-// DeleteElement DELETE /api/model/elements/:id
+// DeleteElement DELETE /api/v1/standard/elements/:id
 // @Summary 删除数据元 | Delete data element
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]string "数据元不存在 | Data element not found"
+// @Failure 409 {object} map[string]interface{} "资源仍被 Model 引用 | Resource is still referenced by Model"
+// @Failure 503 {object} map[string]string "Model 引用删除屏障不可用 | Model reference deletion guard unavailable"
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
@@ -225,7 +228,7 @@ func (h *ElementHandler) DeleteElement(c *gin.Context) {
 		return
 	}
 	tenantID := getTenantID(c)
-	if err := h.svc.DeleteElement(id, tenantID); err != nil {
+	if err := h.svc.DeleteElement(c.Request.Context(), id, tenantID); err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
@@ -271,7 +274,7 @@ func (h *ElementHandler) ApproveElement(c *gin.Context) {
 // @Summary 获取数据元质量规则 | Get data element quality rules
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} models.QualityRulesResponse
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"

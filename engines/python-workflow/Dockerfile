@@ -10,7 +10,27 @@ RUN apt-get update && apt-get install -y \
     libproj-dev \
     gdal-bin \
     libgdal-dev \
+    unixodbc \
+    odbc-mdbtools \
     && rm -rf /var/lib/apt/lists/*
+
+# GDAL PGeo probes the standard Microsoft Access ODBC driver names. Debian's
+# MDB Tools package registers only MDBTools, so expose the same driver under
+# the two names used by GDAL without assuming a CPU architecture path.
+RUN python - <<'PY'
+from pathlib import Path
+
+driver = next(Path("/usr/lib").glob("*/odbc/libmdbodbc.so"))
+config = Path("/etc/odbcinst.ini")
+text = config.read_text()
+text = text.replace("Driver=libmdbodbc.so", f"Driver={driver}")
+text = text.replace("Setup=libmdbodbc.so", f"Setup={driver}")
+aliases = "".join(
+    f"\n[{name}]\nDescription=MDBTools Driver for GDAL PGeo\nDriver={driver}\nSetup={driver}\nFileUsage=1\n"
+    for name in ("Microsoft Access Driver (*.mdb, *.accdb)", "Microsoft Access Driver (*.mdb)")
+)
+config.write_text(text.rstrip() + "\n" + aliases)
+PY
 
 # Set working directory
 WORKDIR /app

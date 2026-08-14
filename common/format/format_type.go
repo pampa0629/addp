@@ -33,6 +33,8 @@ const (
 
 	FormatSQLite   FormatType = "sqlite"
 	FormatUDBX     FormatType = "udbx"
+	FormatFileGDB  FormatType = "filegdb"
+	FormatPGeo     FormatType = "pgeo"
 	FormatPostgres FormatType = "postgres"
 	FormatMySQL    FormatType = "mysql"
 

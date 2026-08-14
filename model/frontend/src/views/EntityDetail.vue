@@ -11,17 +11,21 @@
         <el-tag v-if="entity.status" :type="entity.status === 'approved' ? 'success' : 'info'" size="small">
           {{ entity.status === 'approved' ? t('model.common.status_approved') : t('model.common.status_draft') }}
         </el-tag>
+        <el-tag v-if="isDirty" type="warning" size="small">{{ t('model.common.unsaved') }}</el-tag>
       </div>
       <div v-if="!pageLoading && !pageError" class="header-right">
+        <el-button :title="t('model.common.refresh')" :aria-label="t('model.common.refresh')" @click="handleRefresh">
+          <el-icon><Refresh /></el-icon>
+        </el-button>
         <el-button v-if="canEditEntity" type="primary" @click="handleSave" :loading="saving">{{ t('model.common.save') }}</el-button>
         <el-button
           v-if="entity.status === 'draft' && can('model.entity.approve')"
           type="success"
           @click="handleApprove"
         >{{ t('model.entity.approve') }}</el-button>
-		<el-button v-if="entity.status === 'approved' && can('model.entity.update')" @click="handleReopen">
-		  {{ t('model.common.reopen') }}
-		</el-button>
+        <el-button v-if="entity.status === 'approved' && can('model.entity.update')" @click="handleReopen">
+          {{ t('model.common.reopen') }}
+        </el-button>
       </div>
     </div>
 
@@ -92,8 +96,8 @@
         <el-table :data="attributes" v-loading="attrLoading" stripe>
           <el-table-column :label="t('model.attribute.index')" type="index" width="60" />
           <el-table-column :label="t('model.attribute.name')" prop="name" min-width="140" />
-		  <el-table-column :label="t('model.attribute.column_name')" prop="column_name" min-width="140" />
-		  <el-table-column :label="t('model.attribute.data_type')" prop="data_type" width="110" />
+          <el-table-column :label="t('model.attribute.column_name')" prop="column_name" min-width="140" />
+          <el-table-column :label="t('model.attribute.data_type')" prop="data_type" width="110" />
           <el-table-column :label="t('model.attribute.element')" width="160">
             <template #default="{ row }">
               {{ getElementName(row.element_id) || '-' }}
@@ -214,14 +218,14 @@
         <el-form-item :label="t('model.attribute.name')" prop="name">
           <el-input v-model="attrForm.name" maxlength="200" :placeholder="t('model.attribute.name_placeholder')" />
         </el-form-item>
-		<el-form-item :label="t('model.attribute.column_name')" prop="column_name">
-		  <el-input v-model="attrForm.column_name" maxlength="200" :placeholder="t('model.attribute.column_name_placeholder')" />
-		</el-form-item>
-		<el-form-item :label="t('model.attribute.data_type')" prop="data_type">
-		  <el-select v-model="attrForm.data_type" style="width:100%">
-			<el-option v-for="type in attributeDataTypes" :key="type" :label="type" :value="type" />
-		  </el-select>
-		</el-form-item>
+        <el-form-item :label="t('model.attribute.column_name')" prop="column_name">
+          <el-input v-model="attrForm.column_name" maxlength="200" :placeholder="t('model.attribute.column_name_placeholder')" />
+        </el-form-item>
+        <el-form-item :label="t('model.attribute.data_type')" prop="data_type">
+          <el-select v-model="attrForm.data_type" style="width:100%">
+            <el-option v-for="type in attributeDataTypes" :key="type" :label="type" :value="type" />
+          </el-select>
+        </el-form-item>
         <el-form-item :label="t('model.attribute.element')">
           <el-select
             v-model="attrForm.element_id"
@@ -342,6 +346,7 @@ import { resolveEntityListRouteState } from '../utils/routeState'
 import { initializeMermaidTheme, observeThemeChange } from '../utils/mermaidTheme'
 import { getModelErrorMessage } from '../utils/apiError'
 import { buildEntityAttributeUpdateRequest, canPerformDraftAction, isEditableDraft, resolvePositiveRouteId } from '../utils/modelDetailState'
+import { useUnsavedChanges } from '../composables/useUnsavedChanges'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -415,6 +420,13 @@ const relationRules = {
   relationType: [{ required: true, message: t('model.relation.type_required'), trigger: 'change' }]
 }
 
+const unsavedState = computed(() => ({
+  form: { ...form },
+  attribute_draft: attrDialogVisible.value ? { ...attrForm } : null,
+  relation_draft: relationDialogVisible.value ? { ...relationForm } : null
+}))
+const { isDirty, markSaved, confirmDiscardChanges } = useUnsavedChanges({ state: unsavedState, t })
+
 // 排除当前实体的其他实体列表
 const otherEntities = computed(() => allEntities.value.filter(e => e.id !== entityId.value && e.status === 'draft'))
 const canModifyRelation = (relation, permission) => {
@@ -469,15 +481,16 @@ const handleTabChange = async (tab) => {
   }
 }
 
-const loadEntity = async () => {
-  const res = await entityAPI.get(entityId.value)
-  entity.value = res || {}
+const applyEntity = resource => {
+  entity.value = resource || {}
   Object.assign(form, {
     name: entity.value.name,
     domain_id: entity.value.domain_id,
     description: entity.value.description || ''
   })
 }
+
+const loadEntity = async () => applyEntity(await entityAPI.get(entityId.value))
 
 const loadAttributes = async () => {
   attrLoading.value = true
@@ -500,6 +513,10 @@ const loadRelations = async () => {
   }
 }
 
+const handleRefresh = async () => {
+  if (await confirmDiscardChanges()) await loadPage()
+}
+
 const handleSave = async () => {
   if (!canEditEntity.value) {
     ElMessage.error(t('model.common.permission_denied'))
@@ -507,9 +524,10 @@ const handleSave = async () => {
   }
   saving.value = true
   try {
-    await entityAPI.update(entityId.value, form)
+    const updated = await entityAPI.update(entityId.value, { ...form, version: entity.value.version })
+    applyEntity(updated)
+    markSaved()
     ElMessage.success(t('model.common.save_success'))
-    loadEntity()
   } catch (err) {
     ElMessage.error(getModelErrorMessage(err, t, 'model.common.save_failed'))
   } finally {
@@ -522,10 +540,15 @@ const handleApprove = async () => {
     ElMessage.error(t('model.common.permission_denied'))
     return
   }
+  if (isDirty.value) {
+    ElMessage.warning(t('model.common.save_before_action'))
+    return
+  }
   try {
-    await entityAPI.approve(entityId.value)
+    const updated = await entityAPI.approve(entityId.value, entity.value.version)
+    applyEntity(updated)
+    markSaved()
     ElMessage.success(t('model.entity.approve_success'))
-    loadEntity()
   } catch (err) {
     ElMessage.error(getModelErrorMessage(err, t, 'model.entity.approve_failed'))
   }
@@ -536,12 +559,13 @@ const handleReopen = async () => {
     ElMessage.error(t('model.common.permission_denied'))
     return
   }
-	try {
-	await entityAPI.reopen(entityId.value)
-	ElMessage.success(t('model.common.reopen_success'))
-	loadEntity()
+  try {
+    const updated = await entityAPI.reopen(entityId.value, entity.value.version)
+    applyEntity(updated)
+    markSaved()
+    ElMessage.success(t('model.common.reopen_success'))
   } catch (err) {
-	ElMessage.error(getModelErrorMessage(err, t, 'model.common.op_failed'))
+    ElMessage.error(getModelErrorMessage(err, t, 'model.common.op_failed'))
   }
 }
 
@@ -550,8 +574,8 @@ const openAttrDialog = (attr = null) => {
   if (attr) {
     Object.assign(attrForm, {
       name: attr.name,
-	  column_name: attr.column_name,
-	  data_type: attr.data_type,
+      column_name: attr.column_name,
+      data_type: attr.data_type,
       element_id: attr.element_id ?? null,
       is_pk: attr.is_pk,
       nullable: attr.nullable,
@@ -559,7 +583,7 @@ const openAttrDialog = (attr = null) => {
       sort_order: attr.sort_order ?? 0
     })
   } else {
-	Object.assign(attrForm, { name: '', column_name: '', data_type: 'string', element_id: null, is_pk: false, nullable: true, description: '', sort_order: 0 })
+    Object.assign(attrForm, { name: '', column_name: '', data_type: 'string', element_id: null, is_pk: false, nullable: true, description: '', sort_order: 0 })
   }
   attrDialogVisible.value = true
 }
@@ -578,10 +602,16 @@ const handleAttrSubmit = async () => {
   attrSubmitting.value = true
   try {
     if (editingAttr.value) {
-      await entityAPI.updateAttribute(entityId.value, editingAttr.value.id, buildEntityAttributeUpdateRequest(attrForm))
+      const result = await entityAPI.updateAttribute(
+        entityId.value,
+        editingAttr.value.id,
+        buildEntityAttributeUpdateRequest(attrForm, entity.value.version)
+      )
+      entity.value.version = result.version
       ElMessage.success(t('model.common.update_success'))
     } else {
-      await entityAPI.createAttribute(entityId.value, attrForm)
+      const result = await entityAPI.createAttribute(entityId.value, { ...attrForm, version: entity.value.version })
+      entity.value.version = result.version
       ElMessage.success(t('model.common.add_success'))
     }
     attrDialogVisible.value = false
@@ -599,7 +629,8 @@ const deleteAttr = async (attrId) => {
     return
   }
   try {
-    await entityAPI.deleteAttribute(entityId.value, attrId)
+    const result = await entityAPI.deleteAttribute(entityId.value, attrId, entity.value.version)
+    entity.value.version = result.version
     ElMessage.success(t('model.common.delete_success'))
     loadAttributes()
   } catch (err) {
@@ -656,6 +687,7 @@ const handleRelationSubmit = async () => {
     }
 
     if (editingRelation.value) {
+      payload.version = editingRelation.value.version
       await entityRelationAPI.update(editingRelation.value.id, payload)
       ElMessage.success(t('model.relation.updated'))
     } else {
@@ -678,7 +710,7 @@ const deleteRelation = async (relation) => {
     return
   }
   try {
-    await entityRelationAPI.delete(relation.id)
+    await entityRelationAPI.delete(relation.id, relation.version)
     ElMessage.success(t('model.common.delete_success'))
     loadRelations()
   } catch (err) {
@@ -712,8 +744,8 @@ const refreshLocalDiagram = async () => {
         entityAPI.get(id),
         entityAPI.getAttributes(id)
       ]).then(([entityRes, attrsRes]) => ({
-		...entityRes,
-		attributes: attrsRes || []
+        ...entityRes,
+        attributes: attrsRes || []
       }))
     )
 
@@ -759,9 +791,9 @@ const refreshLocalDiagram = async () => {
 const generateEntityDefinition = (ent, attrs) => {
   let code = `  ${ent.code} {\n`
   attrs.forEach(attr => {
-	const type = attr.data_type
+    const type = attr.data_type
     const pk = attr.is_pk ? ' PK' : ''
-	code += `    ${type} ${attr.column_name}${pk}\n`
+    code += `    ${type} ${attr.column_name}${pk}\n`
   })
   code += `  }\n`
   return code
@@ -830,13 +862,17 @@ async function restoreTabFromRoute() {
 
 watch(() => route.query, restoreTabFromRoute)
 
-let loadVersion = 0
+let loadGeneration = 0
 const loadPage = async () => {
-  const version = ++loadVersion
+  const generation = ++loadGeneration
   pageLoading.value = true
   pageError.value = ''
   referenceError.value = ''
   routeDataReady = false
+  attrDialogVisible.value = false
+  relationDialogVisible.value = false
+  editingAttr.value = null
+  editingRelation.value = null
   entity.value = {}
   attributes.value = []
   relations.value = []
@@ -847,13 +883,13 @@ const loadPage = async () => {
   }
   try {
     await loadEntity()
-    if (version !== loadVersion) return
+    if (generation !== loadGeneration) return
     await loadAttributes()
-    if (version !== loadVersion) return
+    if (generation !== loadGeneration) return
     const [domainsResult, elementsResult, entitiesResult] = await Promise.allSettled([
       domainAPI.list(), elementAPI.listAll(), entityAPI.listAll()
     ])
-    if (version !== loadVersion) return
+    if (generation !== loadGeneration) return
     domains.value = domainsResult.status === 'fulfilled' ? domainsResult.value || [] : []
     elements.value = elementsResult.status === 'fulfilled' ? elementsResult.value || [] : []
     allEntities.value = entitiesResult.status === 'fulfilled' ? entitiesResult.value || [] : []
@@ -861,10 +897,11 @@ const loadPage = async () => {
       referenceError.value = t('model.common.reference_data_unavailable')
     }
     routeDataReady = true
+    markSaved()
   } catch (error) {
-    if (version === loadVersion) pageError.value = getModelErrorMessage(error, t, 'model.common.load_failed')
+    if (generation === loadGeneration) pageError.value = getModelErrorMessage(error, t, 'model.common.load_failed')
   } finally {
-    if (version === loadVersion) {
+    if (generation === loadGeneration) {
       pageLoading.value = false
       if (!pageError.value && activeTab.value === 'relations') {
         nextTick(() => loadRelations())

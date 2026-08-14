@@ -833,6 +833,7 @@ type encodedContentTableTarget struct {
 	deleter             *engineTargetResourceDeleter
 	tableWriterProvider format.TableWriterProvider
 	multiProvider       format.MultiTableWriterProvider
+	scopeWriterProvider format.ScopeTableWriterProvider
 	connInfo            engineplugin.ConnectionInfo
 	path                engineplugin.CatalogPath
 	refBasePath         string
@@ -848,6 +849,19 @@ func (t *encodedContentTableTarget) Open(ctx context.Context, tableInfo *datatyp
 		if err := t.deleteExistingTarget(ctx); err != nil {
 			return nil, err
 		}
+	}
+	if t.scopeWriterProvider != nil {
+		scope := contentRefFromCatalogPath(t.path)
+		scope.Role = contentio.RoleScope
+		var writer contentio.Writer
+		if t.writer != nil {
+			writer = contentadapter.NewMappedWriter(t.writer, t.connInfo, contentadapter.ScopePathMapper(t.path), t.writeOptions)
+		}
+		tableWriter, err := t.scopeWriterProvider.OpenTableScopeWriter(ctx, writer, scope, tableInfo, formatOptions)
+		if err != nil {
+			return nil, fmt.Errorf("open encoded scope table writer: %w", err)
+		}
+		return &scopeTableBatchWriter{tableWriter: tableWriter, targetRef: format.NewRelatedRef(scope, true, true)}, nil
 	}
 	if tableInfoEmpty(tableInfo) && t.multiProvider == nil {
 		output, err := t.contentWriter().Create(ctx, contentRefFromCatalogPath(t.path))
@@ -876,6 +890,55 @@ func (t *encodedContentTableTarget) Open(ctx context.Context, tableInfo *datatyp
 		return nil, fmt.Errorf("open encoded target table writer: %w", err)
 	}
 	return &contentTableBatchWriter{output: output, tableWriter: tableWriter, targetRef: targetRef}, nil
+}
+
+type scopeTableBatchWriter struct {
+	tableWriter format.TableWriter
+	targetRef   format.RelatedRef
+	closed      bool
+}
+
+func (w *scopeTableBatchWriter) WriteBatch(ctx context.Context, batch *engineplugin.BatchData) error {
+	if batch == nil || len(batch.Rows) == 0 {
+		return nil
+	}
+	if err := w.tableWriter.WriteRows(ctx, batch.Rows); err != nil {
+		return fmt.Errorf("write encoded scope target rows at offset %d: %w", batch.Offset, err)
+	}
+	return nil
+}
+
+func (w *scopeTableBatchWriter) Close(ctx context.Context) error {
+	if w.closed {
+		return nil
+	}
+	if err := w.tableWriter.Close(ctx); err != nil {
+		return fmt.Errorf("close encoded scope table writer: %w", err)
+	}
+	w.closed = true
+	return nil
+}
+
+func (w *scopeTableBatchWriter) Abort(ctx context.Context) error {
+	if w.closed {
+		return nil
+	}
+	w.closed = true
+	if writer, ok := w.tableWriter.(format.AbortableTableWriter); ok {
+		return writer.Abort(ctx)
+	}
+	return w.tableWriter.Close(ctx)
+}
+
+func (w *scopeTableBatchWriter) CommitMarker() *resume.Marker {
+	if provider, ok := w.tableWriter.(format.CommitMarkerProvider); ok {
+		return provider.CommitMarker()
+	}
+	return nil
+}
+
+func (w *scopeTableBatchWriter) TargetRefs() []format.RelatedRef {
+	return []format.RelatedRef{w.targetRef}
 }
 
 func writeOptionsWithResumeMarker(options *format.WriteOptions, marker *resume.Marker) *format.WriteOptions {

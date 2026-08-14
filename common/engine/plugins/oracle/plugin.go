@@ -39,6 +39,9 @@ var (
 	_ plugin.ParameterizedSQLQueryRuntimeProvider = (*OraclePlugin)(nil)
 	_ plugin.BatchReadableProvider                = (*OraclePlugin)(nil)
 	_ plugin.TableReadSessionProvider             = (*OraclePlugin)(nil)
+	_ plugin.TableWritePreparer                   = (*OraclePlugin)(nil)
+	_ plugin.TableWriteSessionProvider            = (*OraclePlugin)(nil)
+	_ plugin.ResourceDeleteProvider               = (*OraclePlugin)(nil)
 	_ plugin.SpatialFeatureReadProvider           = (*OraclePlugin)(nil)
 	_ plugin.PartitionedTableChangeApplyProvider  = (*OraclePlugin)(nil)
 )
@@ -90,6 +93,9 @@ func (p *OraclePlugin) ConnectionIdentityFields() []string {
 func (p *OraclePlugin) Capabilities() plugin.EngineCapabilities {
 	caps := plugin.NewTabularCapabilities(p.Type(), plugin.CatalogTermSchema, plugin.TabularCapabilityOptions{
 		TableReadSession:   true,
+		TableWriteSession:  true,
+		TableWritePrepare:  true,
+		Delete:             true,
 		SupportsParameters: true,
 		Indexes:            true,
 		Constraints:        true,

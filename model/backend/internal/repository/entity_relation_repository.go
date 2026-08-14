@@ -14,6 +14,8 @@ func NewEntityRelationRepository(db *gorm.DB) *EntityRelationRepository {
 	return &EntityRelationRepository{db: db}
 }
 
+func (r *EntityRelationRepository) DB() *gorm.DB { return r.db }
+
 // Create 创建实体关系
 func (r *EntityRelationRepository) Create(relation *models.EntityRelation) error {
 	return commonrepo.WrapDBError(r.db.Create(relation).Error)
@@ -47,12 +49,26 @@ func (r *EntityRelationRepository) ListByTenantID(tenantID int64) ([]models.Enti
 
 // Update 更新实体关系
 func (r *EntityRelationRepository) Update(relation *models.EntityRelation) error {
-	return commonrepo.WrapDBError(r.db.Save(relation).Error)
+	result := r.db.Model(&models.EntityRelation{}).
+		Where("id = ? AND tenant_id = ? AND version = ?", relation.ID, relation.TenantID, relation.Version).
+		Updates(map[string]interface{}{
+			"source_entity": relation.SourceEntity, "target_entity": relation.TargetEntity,
+			"relation_type": relation.RelationType, "name": relation.Name, "description": relation.Description,
+			"version": gorm.Expr("version + 1"),
+		})
+	if result.Error != nil {
+		return commonrepo.WrapDBError(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
+	}
+	relation.Version++
+	return nil
 }
 
 // Delete 删除实体关系
-func (r *EntityRelationRepository) Delete(id, tenantID int64) error {
-	result := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.EntityRelation{})
+func (r *EntityRelationRepository) Delete(id, tenantID, version int64) error {
+	result := r.db.Where("id = ? AND tenant_id = ? AND version = ?", id, tenantID, version).Delete(&models.EntityRelation{})
 	if result.Error != nil {
 		return commonrepo.WrapDBError(result.Error)
 	}

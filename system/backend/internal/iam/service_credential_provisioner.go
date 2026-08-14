@@ -55,6 +55,7 @@ var builtinTenantRuntimeServiceClientIDs = []string{
 	"addp-pointcloud",
 	"addp-service",
 	"addp-spark",
+	"addp-standard",
 	"addp-transfer",
 }
 

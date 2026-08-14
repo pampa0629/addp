@@ -1284,6 +1284,9 @@ const docTemplate = `{
                 "params": {
                     "$ref": "#/definitions/dataquality.Parameters"
                 },
+                "rule_key": {
+                    "type": "string"
+                },
                 "severity": {
                     "type": "string"
                 },
@@ -1539,6 +1542,9 @@ const docTemplate = `{
                 },
                 "rule_application_id": {
                     "type": "integer"
+                },
+                "rule_key": {
+                    "type": "string"
                 },
                 "schema_name": {
                     "type": "string"
@@ -2111,6 +2117,9 @@ const docTemplate = `{
                 },
                 "rule_application_id": {
                     "type": "integer"
+                },
+                "rule_key": {
+                    "type": "string"
                 },
                 "schema_name": {
                     "type": "string"

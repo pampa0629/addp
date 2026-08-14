@@ -31,7 +31,7 @@ func TestListElementsFiltersByCanonicalIDs(t *testing.T) {
 		}
 	}
 
-	handler := NewElementHandler(service.NewElementService(repository.NewElementRepository(db), nil))
+	handler := NewElementHandler(service.NewElementService(repository.NewElementRepository(db), nil, nil))
 	router := gin.New()
 	router.GET("/elements", withElementHandlerAuth(7), handler.ListElements)
 
@@ -120,7 +120,8 @@ func newElementHandlerTestDB(t *testing.T) *gorm.DB {
 		updated_by INTEGER,
 		created_at DATETIME,
 		updated_at DATETIME,
-		version INTEGER NOT NULL DEFAULT 1
+		version INTEGER NOT NULL DEFAULT 1,
+		lifecycle_state TEXT NOT NULL DEFAULT 'active'
 	)`).Error; err != nil {
 		t.Fatalf("create elements: %v", err)
 	}

@@ -61,14 +61,20 @@ type documentExtractionResult struct {
 }
 
 type Processor struct {
-	repo         *metaRepo.ScanRepository
-	indexer      AssetIndexer
-	log          *slog.Logger
-	cadInspector metaenrich.CADInspector
+	repo               *metaRepo.ScanRepository
+	indexer            AssetIndexer
+	log                *slog.Logger
+	cadInspector       metaenrich.CADInspector
+	containerInspector metaenrich.ContainerInspector
 }
 
 func (p Processor) WithCADInspector(inspector metaenrich.CADInspector) Processor {
 	p.cadInspector = inspector
+	return p
+}
+
+func (p Processor) WithContainerInspector(inspector metaenrich.ContainerInspector) Processor {
+	p.containerInspector = inspector
 	return p
 }
 

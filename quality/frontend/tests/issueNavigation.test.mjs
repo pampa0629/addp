@@ -77,6 +77,11 @@ test('issue detail reloads after manual status changes and shows audit facts', (
   assert.match(detailSource, /quality\.issue\.resolutionNote/)
 })
 
+test('issue detail exposes the stable rule identity', () => {
+  assert.match(detailSource, /issue\.rule_key/)
+  assert.match(detailSource, /quality\.issue\.ruleKey/)
+})
+
 test('issue list writes filters and pagination into the canonical route', () => {
   assert.match(listSource, /buildIssueListRouteQuery/)
   assert.match(listSource, /watch\(\(\) => route\.query, restoreListFromRoute/)

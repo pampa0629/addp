@@ -120,6 +120,7 @@ type TableTransferExecutor struct {
 	TargetContentWriter        engineplugin.ContentWritableProvider
 	TargetTableWriterProvider  format.TableWriterProvider
 	TargetMultiProvider        format.MultiTableWriterProvider
+	TargetScopeWriterProvider  format.ScopeTableWriterProvider
 	TargetDeleteProvider       engineplugin.ResourceDeleteProvider
 	TargetNativePreparer       engineplugin.TableWritePreparer
 	TargetNativeWriter         engineplugin.BatchWritableProvider
@@ -159,8 +160,12 @@ func NewTableTransferExecutor(sourceEngineType, targetEngineType string, sourceF
 	if targetFormat != "" {
 		executor.TargetTableWriterProvider, _ = format.GetTableWriterProvider(targetFormat)
 		executor.TargetMultiProvider, _ = format.GetMultiTableWriterProvider(targetFormat)
+		executor.TargetScopeWriterProvider, _ = format.GetScopeTableWriterProvider(targetFormat)
 		if executor.TargetTableWriterProvider != nil {
 			executor.TargetMultiProvider = nil
+			executor.TargetScopeWriterProvider = nil
+		} else if executor.TargetMultiProvider != nil {
+			executor.TargetScopeWriterProvider = nil
 		}
 	}
 	executor.TargetNativePreparer, _ = targetPlugin.(engineplugin.TableWritePreparer)
@@ -254,16 +259,20 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 }
 
 func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarget, error) {
-	deleter, err := e.targetDeleter(plan)
-	if err != nil {
-		return nil, err
+	var deleter *engineTargetResourceDeleter
+	if plan.Kind != TableEndpointEncoded || e.TargetScopeWriterProvider == nil {
+		var err error
+		deleter, err = e.targetDeleter(plan)
+		if err != nil {
+			return nil, err
+		}
 	}
 	switch plan.Kind {
 	case TableEndpointEncoded:
-		if e.TargetContentWriter == nil {
+		if e.TargetContentWriter == nil && e.TargetScopeWriterProvider == nil {
 			return nil, fmt.Errorf("encoded table target requires content writer")
 		}
-		if e.TargetTableWriterProvider == nil && e.TargetMultiProvider == nil {
+		if e.TargetTableWriterProvider == nil && e.TargetMultiProvider == nil && e.TargetScopeWriterProvider == nil {
 			return nil, fmt.Errorf("encoded table target requires table writer provider")
 		}
 		refBasePath, refPathMapper := encodedTargetRelatedRefMapping(plan.Path)
@@ -272,6 +281,7 @@ func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarg
 			deleter:             deleter,
 			tableWriterProvider: e.TargetTableWriterProvider,
 			multiProvider:       e.TargetMultiProvider,
+			scopeWriterProvider: e.TargetScopeWriterProvider,
 			connInfo:            plan.ConnInfo,
 			path:                plan.Path,
 			refBasePath:         refBasePath,

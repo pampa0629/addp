@@ -12,6 +12,7 @@ type DWLayer struct {
 	NamingRule  string    `gorm:"type:text" json:"naming_rule"` // 命名规范（如：dwd_{domain}_{entity}_d）
 	QualitySLA  JSONB     `gorm:"type:jsonb;serializer:json" json:"quality_sla"`
 	SortOrder   int       `gorm:"default:0" json:"sort_order"`
+	Version     int64     `gorm:"not null;default:1" json:"version"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -32,6 +33,7 @@ type CreateDWLayerRequest struct {
 
 // UpdateDWLayerRequest 更新数仓分层请求
 type UpdateDWLayerRequest struct {
+	Version     int64                  `json:"version" binding:"required,gt=0" minimum:"1"`
 	LayerName   string                 `json:"layer_name" binding:"required,max=100" maxLength:"100"`
 	Description string                 `json:"description"`
 	NamingRule  string                 `json:"naming_rule"`

@@ -18,5 +18,8 @@ func standardReferenceError(err error, code string) error {
 	if errors.Is(err, commonclient.ErrTenantReferenceNotFound) {
 		return apperrors.Wrap(apperrors.KindNotFound, code, i18n.MsgReferenceNotFound, err)
 	}
+	if errors.Is(err, commonclient.ErrStandardReferenceDeleting) {
+		return apperrors.Wrap(apperrors.KindConflict, "standard_reference_deleting", i18n.MsgStandardReferenceDeleting, err)
+	}
 	return apperrors.Wrap(apperrors.KindUnavailable, "standard_service_unavailable", i18n.MsgStandardUnavailable, err)
 }

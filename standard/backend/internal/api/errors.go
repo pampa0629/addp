@@ -18,7 +18,26 @@ func respondError(c *gin.Context, status int, err error) {
 	}
 	message := commoni18n.T(c, sysi18n.MsgOperationFailed)
 	useGenericMessage := status >= 500
+	errorCode := ""
+	response := gin.H{}
+	var referencedError *service.StandardResourceReferencedError
 	switch {
+	case errors.As(err, &referencedError):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgStandardResourceReferenced)
+		errorCode = "standard_resource_referenced"
+		useGenericMessage = false
+		if referencedError.Impact != nil {
+			response["reference_count"] = referencedError.Impact.ReferenceCount
+			response["reference_summary"] = referencedError.Impact.Summary
+			response["reference_sample"] = referencedError.Impact.Sample
+			response["reference_sample_truncated"] = referencedError.Impact.SampleTruncated
+		}
+	case errors.Is(err, service.ErrModelReferenceGuardUnavailable):
+		status = http.StatusServiceUnavailable
+		message = commoni18n.T(c, sysi18n.MsgModelReferenceGuardUnavailable)
+		errorCode = "model_reference_guard_unavailable"
+		useGenericMessage = false
 	case errors.Is(err, repository.ErrMetricDependencyCycle):
 		message = commoni18n.T(c, sysi18n.MsgMetricDependencyCycle)
 	case errors.Is(err, service.ErrInvalidHierarchyLevelNumber):
@@ -91,7 +110,11 @@ func respondError(c *gin.Context, status int, err error) {
 	if useGenericMessage {
 		message = commoni18n.T(c, sysi18n.MsgOperationFailed)
 	}
-	c.JSON(status, gin.H{"error": message})
+	response["error"] = message
+	if errorCode != "" {
+		response["error_code"] = errorCode
+	}
+	c.JSON(status, response)
 }
 
 func respondDocumentFileError(c *gin.Context, err error) {

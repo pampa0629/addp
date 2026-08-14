@@ -44,6 +44,46 @@ func TestResolveItemsGroupsShapefileRefs(t *testing.T) {
 	}
 }
 
+func TestResolveItemsClaimsFileGDBDirectoryAsWholeContainer(t *testing.T) {
+	t.Parallel()
+
+	size := int64(10)
+	result, err := ResolveItems(ResolveInput{
+		ScopeKind: ScopeKindDirectory,
+		ScopePath: "arcgis/roads.gdb",
+		Candidates: []Candidate{
+			{Path: "arcgis/roads.gdb/a00000001.gdbtable", Name: "a00000001.gdbtable", SizeBytes: &size},
+			{Path: "arcgis/roads.gdb/a00000001.gdbtablx", Name: "a00000001.gdbtablx", SizeBytes: &size},
+			{Path: "arcgis/roads.gdb/a00000004.gdbtable", Name: "a00000004.gdbtable", SizeBytes: &size},
+			{Path: "arcgis/roads.gdb/a00000004.spx", Name: "a00000004.spx", SizeBytes: &size},
+			{Path: "arcgis/roads.gdb/gdb", Name: "gdb", SizeBytes: &size},
+			{Path: "arcgis/roads.gdb/timestamps", Name: "timestamps", SizeBytes: &size},
+		},
+		Options: ResolveOptions{AllowWholeScope: true},
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("items = %#v, want one FileGDB whole container", result.Items)
+	}
+	item := result.Items[0]
+	if item.Layout != format.LayoutWhole || item.Format != string(format.FormatFileGDB) || item.DataType != datatype.Container || item.ScopePath != "arcgis/roads.gdb" {
+		t.Fatalf("item = %#v, want FileGDB whole container", item)
+	}
+	if !result.Exclusive {
+		t.Fatal("FileGDB whole scope must be exclusive")
+	}
+	for _, candidate := range result.Items[0].ClaimPaths {
+		if !result.Claims[candidate] {
+			t.Fatalf("candidate %q was not claimed: %#v", candidate, result.Claims)
+		}
+	}
+	if len(result.Claims) != 6 {
+		t.Fatalf("claims = %#v, want all FileGDB internal files", result.Claims)
+	}
+}
+
 func TestResolveItemsGroupsGeoTIFFSidecars(t *testing.T) {
 	t.Parallel()
 

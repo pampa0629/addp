@@ -25,7 +25,7 @@ func NewEntityRelationHandler(svc *service.EntityRelationService) *EntityRelatio
 // @Accept json
 // @Produce json
 // @Param body body models.CreateEntityRelationRequest true "创建请求 | Create request"
-// @Success 201 {object} map[string]interface{} "已创建的关系 | Created relation"
+// @Success 201 {object} models.EntityRelation "已创建的关系 | Created relation"
 // @Failure 400 {object} models.ErrorResponse "请求无效 | Invalid request"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
@@ -57,7 +57,7 @@ func (h *EntityRelationHandler) CreateRelation(c *gin.Context) {
 // @Tags Model
 // @Produce json
 // @Param entity_id query int false "实体ID过滤 | Filter by entity ID"
-// @Success 200 {object} map[string]interface{} "关系列表 | Relation list"
+// @Success 200 {array} models.EntityRelation "关系列表 | Relation list"
 // @Failure 400 {object} models.ErrorResponse "实体 ID 过滤无效 | Invalid entity ID filter"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
@@ -96,7 +96,7 @@ func (h *EntityRelationHandler) ListRelations(c *gin.Context) {
 // @Tags Model
 // @Produce json
 // @Param id path int true "关系ID | Relation ID"
-// @Success 200 {object} map[string]interface{} "关系详情 | Relation details"
+// @Success 200 {object} models.EntityRelation "关系详情 | Relation details"
 // @Failure 400 {object} models.ErrorResponse "关系 ID 无效 | Invalid relation ID"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
@@ -129,7 +129,7 @@ func (h *EntityRelationHandler) GetRelation(c *gin.Context) {
 // @Produce json
 // @Param id path int true "关系ID | Relation ID"
 // @Param body body models.UpdateEntityRelationRequest true "更新请求 | Update request"
-// @Success 200 {object} map[string]interface{} "已更新的关系 | Updated relation"
+// @Success 200 {object} models.EntityRelation "已更新的关系 | Updated relation"
 // @Failure 400 {object} models.ErrorResponse "请求或关系 ID 无效 | Invalid request or relation ID"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
@@ -167,7 +167,8 @@ func (h *EntityRelationHandler) UpdateRelation(c *gin.Context) {
 // @Tags Model
 // @Produce json
 // @Param id path int true "关系ID | Relation ID"
-// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Param body body models.VersionRequest true "资源版本 | Resource version"
+// @Success 200 {object} models.MessageResponse "删除成功 | Deleted successfully"
 // @Failure 400 {object} models.ErrorResponse "关系 ID 无效 | Invalid relation ID"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
@@ -184,8 +185,13 @@ func (h *EntityRelationHandler) DeleteRelation(c *gin.Context) {
 		return
 	}
 
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
 	tenantID := getTenantID(c)
-	if err := h.svc.Delete(id, tenantID); err != nil {
+	if err := h.svc.Delete(id, tenantID, req.Version); err != nil {
 		writeServiceError(c, err)
 		return
 	}

@@ -32,7 +32,7 @@ func NewLogicalTableHandler(svc *service.LogicalTableService) *LogicalTableHandl
 // @Param domain_id query int false "业务域ID | Domain ID" minimum(1)
 // @Param page query int false "页码 | Page number" default(1) minimum(1)
 // @Param page_size query int false "每页数量 | Page size" default(20) minimum(1) maximum(100)
-// @Success 200 {object} map[string]interface{} "逻辑表列表 | Logical table list"
+// @Success 200 {object} models.LogicalTableListResponse "逻辑表列表 | Logical table list"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "查询参数无效 | Invalid query parameters"
@@ -105,7 +105,7 @@ func (h *LogicalTableHandler) ListLogicalTables(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param body body models.CreateLogicalTableRequest true "创建请求 | Create request"
-// @Success 201 {object} map[string]interface{} "已创建的逻辑表 | Created logical table"
+// @Success 201 {object} models.LogicalTable "已创建的逻辑表 | Created logical table"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "请求无效 | Invalid request"
@@ -139,7 +139,7 @@ func (h *LogicalTableHandler) CreateLogicalTable(c *gin.Context) {
 // @Tags Model
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
-// @Success 200 {object} map[string]interface{} "逻辑表详情 | Logical table details"
+// @Success 200 {object} models.LogicalTable "逻辑表详情 | Logical table details"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "逻辑表 ID 无效 | Invalid logical table ID"
@@ -171,7 +171,7 @@ func (h *LogicalTableHandler) GetLogicalTable(c *gin.Context) {
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Param body body models.UpdateLogicalTableRequest true "更新请求 | Update request"
-// @Success 200 {object} map[string]interface{} "已更新的逻辑表 | Updated logical table"
+// @Success 200 {object} models.LogicalTable "已更新的逻辑表 | Updated logical table"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "请求或逻辑表 ID 无效 | Invalid request or logical table ID"
@@ -211,7 +211,8 @@ func (h *LogicalTableHandler) UpdateLogicalTable(c *gin.Context) {
 // @Tags Model
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
-// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Param body body models.VersionRequest true "资源版本 | Resource version"
+// @Success 200 {object} models.MessageResponse "删除成功 | Deleted successfully"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "逻辑表 ID 无效 | Invalid logical table ID"
@@ -228,8 +229,13 @@ func (h *LogicalTableHandler) DeleteLogicalTable(c *gin.Context) {
 		return
 	}
 
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
 	tenantID := getTenantID(c)
-	if err := h.svc.DeleteLogicalTable(id, tenantID); err != nil {
+	if err := h.svc.DeleteLogicalTable(id, tenantID, req.Version); err != nil {
 		writeServiceError(c, err)
 		return
 	}
@@ -241,7 +247,8 @@ func (h *LogicalTableHandler) DeleteLogicalTable(c *gin.Context) {
 // @Tags Model
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
-// @Success 200 {object} models.MessageResponse "审批成功 | Approved successfully"
+// @Param body body models.VersionRequest true "资源版本 | Resource version"
+// @Success 200 {object} models.LogicalTable "审批成功 | Approved successfully"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "逻辑表缺少字段或主键 | Logical table has no fields or primary key"
@@ -257,11 +264,17 @@ func (h *LogicalTableHandler) ApproveLogicalTable(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
-	if err := h.svc.ApproveLogicalTable(id, getTenantID(c), getUserID(c)); err != nil {
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
+	table, err := h.svc.ApproveLogicalTable(id, getTenantID(c), getUserID(c), req.Version)
+	if err != nil {
 		writeServiceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "approved"})
+	c.JSON(http.StatusOK, table)
 }
 
 // ReopenLogicalTable POST /api/model/logical-tables/:id/reopen
@@ -269,7 +282,8 @@ func (h *LogicalTableHandler) ApproveLogicalTable(c *gin.Context) {
 // @Tags Model
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
-// @Success 200 {object} models.MessageResponse "重新打开成功 | Reopened successfully"
+// @Param body body models.VersionRequest true "资源版本 | Resource version"
+// @Success 200 {object} models.LogicalTable "重新打开成功 | Reopened successfully"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "逻辑表 ID 无效 | Invalid logical table ID"
@@ -285,11 +299,17 @@ func (h *LogicalTableHandler) ReopenLogicalTable(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
-	if err := h.svc.ReopenLogicalTable(id, getTenantID(c), getUserID(c)); err != nil {
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
+	table, err := h.svc.ReopenLogicalTable(id, getTenantID(c), getUserID(c), req.Version)
+	if err != nil {
 		writeServiceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "reopened"})
+	c.JSON(http.StatusOK, table)
 }
 
 // GetFields GET /api/model/logical-tables/:id/fields
@@ -297,7 +317,7 @@ func (h *LogicalTableHandler) ReopenLogicalTable(c *gin.Context) {
 // @Tags Model
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
-// @Success 200 {object} map[string]interface{} "字段列表 | Field list"
+// @Success 200 {array} models.LogicalField "字段列表 | Field list"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "逻辑表 ID 无效 | Invalid logical table ID"
@@ -329,7 +349,7 @@ func (h *LogicalTableHandler) GetFields(c *gin.Context) {
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Param body body models.CreateLogicalFieldRequest true "创建请求 | Create request"
-// @Success 201 {object} map[string]interface{} "已创建的字段 | Created field"
+// @Success 201 {object} models.LogicalFieldMutationResponse "已创建的字段 | Created field"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "字段定义无效 | Invalid field definition"
@@ -370,7 +390,7 @@ func (h *LogicalTableHandler) CreateField(c *gin.Context) {
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Param fid path int true "字段ID | Field ID"
 // @Param body body models.UpdateLogicalFieldRequest true "更新请求 | Update request"
-// @Success 200 {object} map[string]interface{} "已更新的字段 | Updated field"
+// @Success 200 {object} models.LogicalFieldMutationResponse "已更新的字段 | Updated field"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "字段定义无效 | Invalid field definition"
@@ -414,7 +434,8 @@ func (h *LogicalTableHandler) UpdateField(c *gin.Context) {
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Param fid path int true "字段ID | Field ID"
-// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Param body body models.VersionRequest true "父资源版本 | Parent resource version"
+// @Success 200 {object} models.VersionResponse "删除成功 | Deleted successfully"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "逻辑表或字段 ID 无效 | Invalid logical table or field ID"
@@ -436,12 +457,18 @@ func (h *LogicalTableHandler) DeleteField(c *gin.Context) {
 		return
 	}
 
+	var req models.VersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
 	tenantID := getTenantID(c)
-	if err := h.svc.DeleteField(fieldID, tableID, tenantID); err != nil {
+	response, err := h.svc.DeleteField(fieldID, tableID, tenantID, req.Version)
+	if err != nil {
 		writeServiceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	c.JSON(http.StatusOK, response)
 }
 
 // PreviewDDL POST /api/model/logical-tables/:id/preview-ddl
@@ -451,7 +478,7 @@ func (h *LogicalTableHandler) DeleteField(c *gin.Context) {
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
 // @Param body body models.PreviewLogicalTableDDLRequest true "当前物化配置 | Current materialization configuration"
-// @Success 200 {object} map[string]interface{} "DDL 预览 | DDL preview"
+// @Success 200 {object} models.DDLPreviewResponse "DDL 预览 | DDL preview"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "请求或物化配置无效 | Invalid request or materialization configuration"

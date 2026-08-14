@@ -12,7 +12,24 @@ RUN apt-get update && apt-get install -y \
     gdal-bin \
     libgdal-dev \
     libgdal36 \
+    unixodbc \
+    odbc-mdbtools \
     && rm -rf /var/lib/apt/lists/*
+
+RUN python - <<'PY'
+from pathlib import Path
+
+driver = next(Path("/usr/lib").glob("*/odbc/libmdbodbc.so"))
+config = Path("/etc/odbcinst.ini")
+text = config.read_text()
+text = text.replace("Driver=libmdbodbc.so", f"Driver={driver}")
+text = text.replace("Setup=libmdbodbc.so", f"Setup={driver}")
+aliases = "".join(
+    f"\n[{name}]\nDescription=MDBTools Driver for GDAL PGeo\nDriver={driver}\nSetup={driver}\nFileUsage=1\n"
+    for name in ("Microsoft Access Driver (*.mdb, *.accdb)", "Microsoft Access Driver (*.mdb)")
+)
+config.write_text(text.rstrip() + "\n" + aliases)
+PY
 
 RUN GDAL_VERSION="$(gdal-config --version)" \
     && pip install --no-cache-dir "GDAL==${GDAL_VERSION}"

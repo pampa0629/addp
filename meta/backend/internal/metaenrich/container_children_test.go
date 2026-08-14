@@ -13,14 +13,70 @@ import (
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
 	commonJSON "github.com/addp/common/jsonmap"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/xuri/excelize/v2"
 )
 
+type fakeRuntimeContainerInspector struct {
+	result *format.ContainerDescribeResult
+	format string
+	layout string
+}
+
+func (f *fakeRuntimeContainerInspector) InspectContainer(_ context.Context, _ *commonModels.Engine, _ uint, _ string, sourceFormat, sourceLayout string) (*format.ContainerDescribeResult, error) {
+	f.format = sourceFormat
+	f.layout = sourceLayout
+	return f.result, nil
+}
+
 func detectedItemForTest(item dataitem.ResolvedItem) *metaitem.DetectedItem {
 	return &metaitem.DetectedItem{ResolvedItem: item}
+}
+
+func TestEnrichRuntimeFileGDBContainerWritesLightweightChildren(t *testing.T) {
+	rowCount := int64(21)
+	columnCount := 4
+	inspector := &fakeRuntimeContainerInspector{result: &format.ContainerDescribeResult{
+		Container: &datatype.ContainerInfo{
+			ChildCount: 1, DefaultChild: "Util_solar_county", ResourceCount: 1,
+			Children: []datatype.ContainerChildInfo{{
+				Name: "Util_solar_county", ChildKind: "feature_class", DataType: datatype.Table,
+				RowCount: &rowCount, ColumnCount: &columnCount,
+				Native: map[string]interface{}{"table": "Util_solar_county", "geometry_type": "MultiPolygon", "fields": []string{"must_not_persist"}},
+			}},
+		},
+		FormatInfo: map[string]interface{}{"driver": "OpenFileGDB", "gdal_version": "3.6.2"},
+	}}
+	attrs := models.JSONMap{}
+	item := detectedItemForTest(dataitem.ResolvedItem{
+		DataType: datatype.Container, Format: string(format.FormatFileGDB), Layout: format.LayoutWhole,
+	})
+
+	handled, err := EnrichRuntimeContainerItem(context.Background(), attrs, inspector, &commonModels.Engine{ID: 12}, 1, item, "arcgis/source.gdb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !handled || inspector.format != string(format.FormatFileGDB) || inspector.layout != format.LayoutWhole {
+		t.Fatalf("handled=%v format=%q layout=%q", handled, inspector.format, inspector.layout)
+	}
+	container := commonJSON.Section(attrs, "type_info.container")
+	children := container["children"].([]map[string]interface{})
+	if len(children) != 1 || children[0]["name"] != "Util_solar_county" || children[0]["row_count"] != rowCount {
+		t.Fatalf("children = %#v", children)
+	}
+	native := children[0]["native"].(map[string]interface{})
+	if native["table"] != "Util_solar_county" || native["geometry_type"] != "MultiPolygon" {
+		t.Fatalf("native = %#v", native)
+	}
+	if _, exists := native["fields"]; exists {
+		t.Fatalf("schema fields must not persist in parent child index: %#v", native)
+	}
+	if info := commonJSON.Section(attrs, "format_info.filegdb"); info["driver"] != "OpenFileGDB" {
+		t.Fatalf("format_info.filegdb = %#v", info)
+	}
 }
 
 func TestEnrichExcelContainerChildrenWritesSheets(t *testing.T) {

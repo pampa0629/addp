@@ -11,8 +11,12 @@
         <el-tag v-if="table.status" :type="statusTagType(table.status)" size="small">
           {{ statusLabel(table.status) }}
         </el-tag>
+        <el-tag v-if="isDirty" type="warning" size="small">{{ t('model.common.unsaved') }}</el-tag>
       </div>
       <div v-if="!pageLoading && !pageError" class="header-right">
+        <el-button :title="t('model.common.refresh')" :aria-label="t('model.common.refresh')" @click="handleRefresh">
+          <el-icon><Refresh /></el-icon>
+        </el-button>
         <el-button v-if="canEdit" type="primary" @click="handleSave" :loading="saving">{{ t('model.common.save') }}</el-button>
         <el-button v-if="table.status === 'draft' && authStore.hasPermission('model.logical_model.update')" type="success" @click="handleApprove">
           {{ t('model.common.approve') }}
@@ -407,7 +411,7 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Plus, View } from '@element-plus/icons-vue'
+import { ArrowLeft, Plus, Refresh, View } from '@element-plus/icons-vue'
 import { logicalTableAPI, domainAPI, elementAPI, standardMetricAPI, dwLayerAPI } from '../api/model'
 import DDLPreviewDialog from '../components/DDLPreviewDialog.vue'
 import { useI18n } from 'vue-i18n'
@@ -423,6 +427,7 @@ import {
   isEditableDraft,
   resolvePositiveRouteId
 } from '../utils/modelDetailState'
+import { useUnsavedChanges } from '../composables/useUnsavedChanges'
 
 const { t } = useI18n()
 
@@ -510,6 +515,14 @@ const fieldRules = {
   data_type: [{ required: true, message: t('model.field.type_required'), trigger: 'change' }]
 }
 
+const unsavedState = computed(() => ({
+  form: { ...form },
+  materialization: { ...materializationForm },
+  field_draft: fieldDialogVisible.value ? { ...fieldForm } : null,
+  metric_draft: metricDialogVisible.value ? { ...metricForm } : null
+}))
+const { isDirty, markSaved, confirmDiscardChanges } = useUnsavedChanges({ state: unsavedState, t })
+
 const statusTagType = (s) => ({ draft: 'info', approved: 'success' }[s] ?? 'info')
 const statusLabel = (s) => ({
   draft: t('model.common.status_draft'),
@@ -540,9 +553,8 @@ const fieldRoleLabel = (role) => {
   return (map[role] ?? role) || t('model.field.role_label_regular')
 }
 
-const loadTable = async () => {
-  const res = await logicalTableAPI.get(tableId.value)
-  table.value = res || {}
+const applyTable = resource => {
+  table.value = resource || {}
   Object.assign(form, {
     name: table.value.name,
     domain_id: table.value.domain_id,
@@ -561,6 +573,8 @@ const loadTable = async () => {
     partition_type: mat.partition_type || 'range',
   })
 }
+
+const loadTable = async () => applyTable(await logicalTableAPI.get(tableId.value))
 
 const loadFields = async () => {
   fieldLoading.value = true
@@ -593,6 +607,10 @@ const loadAvailableMetrics = async () => {
   }
 }
 
+const handleRefresh = async () => {
+  if (await confirmDiscardChanges()) await loadPage()
+}
+
 const handleSave = async () => {
   if (!canEdit.value) {
     ElMessage.error(t('model.common.permission_denied'))
@@ -601,9 +619,10 @@ const handleSave = async () => {
   saving.value = true
   try {
     const updateData = buildLogicalTableUpdateRequest(form, table.value, materializationForm)
-    await logicalTableAPI.update(tableId.value, updateData)
+    const updated = await logicalTableAPI.update(tableId.value, updateData)
+    applyTable(updated)
+    markSaved()
     ElMessage.success(t('model.common.save_success'))
-    loadTable()
   } catch (err) {
     ElMessage.error(getModelErrorMessage(err, t, 'model.common.save_failed'))
   } finally {
@@ -616,7 +635,16 @@ const handleApprove = async () => {
     ElMessage.error(t('model.common.permission_denied'))
     return
   }
-  try { await logicalTableAPI.approve(tableId.value); ElMessage.success(t('model.common.approve_success')); loadTable() }
+  if (isDirty.value) {
+    ElMessage.warning(t('model.common.save_before_action'))
+    return
+  }
+  try {
+    const updated = await logicalTableAPI.approve(tableId.value, table.value.version)
+    applyTable(updated)
+    markSaved()
+    ElMessage.success(t('model.common.approve_success'))
+  }
   catch (err) { ElMessage.error(getModelErrorMessage(err, t, 'model.common.op_failed')) }
 }
 
@@ -625,7 +653,12 @@ const handleReopen = async () => {
     ElMessage.error(t('model.common.permission_denied'))
     return
   }
-  try { await logicalTableAPI.reopen(tableId.value); ElMessage.success(t('model.common.reopen_success')); loadTable() }
+  try {
+    const updated = await logicalTableAPI.reopen(tableId.value, table.value.version)
+    applyTable(updated)
+    markSaved()
+    ElMessage.success(t('model.common.reopen_success'))
+  }
   catch (err) { ElMessage.error(getModelErrorMessage(err, t, 'model.common.op_failed')) }
 }
 
@@ -699,10 +732,16 @@ const handleFieldSubmit = async () => {
   fieldSubmitting.value = true
   try {
     if (editingField.value) {
-      await logicalTableAPI.updateField(tableId.value, editingField.value.id, buildLogicalFieldUpdateRequest(fieldForm))
+      const result = await logicalTableAPI.updateField(
+        tableId.value,
+        editingField.value.id,
+        buildLogicalFieldUpdateRequest(fieldForm, table.value.version)
+      )
+      table.value.version = result.version
       ElMessage.success(t('model.common.update_success'))
     } else {
-      await logicalTableAPI.createField(tableId.value, fieldForm)
+      const result = await logicalTableAPI.createField(tableId.value, { ...fieldForm, version: table.value.version })
+      table.value.version = result.version
       ElMessage.success(t('model.common.add_success'))
     }
     fieldDialogVisible.value = false
@@ -720,7 +759,8 @@ const deleteField = async (fieldId) => {
     return
   }
   try {
-    await logicalTableAPI.deleteField(tableId.value, fieldId)
+    const result = await logicalTableAPI.deleteField(tableId.value, fieldId, table.value.version)
+    table.value.version = result.version
     ElMessage.success(t('model.common.delete_success'))
     loadFields()
   } catch (err) {
@@ -745,7 +785,8 @@ const handleAddMetric = async () => {
   }
   metricSubmitting.value = true
   try {
-    await logicalTableAPI.addMetric(tableId.value, metricForm)
+    const result = await logicalTableAPI.addMetric(tableId.value, { ...metricForm, version: table.value.version })
+    table.value.version = result.version
     ElMessage.success(t('model.metric.associate_success'))
     metricDialogVisible.value = false
     loadMetrics()
@@ -762,7 +803,8 @@ const removeMetric = async (mappingId) => {
     return
   }
   try {
-    await logicalTableAPI.removeMetric(tableId.value, mappingId)
+    const result = await logicalTableAPI.removeMetric(tableId.value, mappingId, table.value.version)
+    table.value.version = result.version
     ElMessage.success(t('model.metric.remove_success'))
     loadMetrics()
   } catch (err) {
@@ -770,12 +812,15 @@ const removeMetric = async (mappingId) => {
   }
 }
 
-let loadVersion = 0
+let loadGeneration = 0
 const loadPage = async () => {
-  const version = ++loadVersion
+  const generation = ++loadGeneration
   pageLoading.value = true
   pageError.value = ''
   referenceError.value = ''
+  fieldDialogVisible.value = false
+  metricDialogVisible.value = false
+  editingField.value = null
   table.value = {}
   fields.value = []
   metrics.value = []
@@ -786,22 +831,23 @@ const loadPage = async () => {
   }
   try {
     await loadTable()
-    if (version !== loadVersion) return
+    if (generation !== loadGeneration) return
     await Promise.all([loadFields(), loadMetrics()])
     const [domainsResult, elementsResult, layersResult] = await Promise.allSettled([
       domainAPI.list(), elementAPI.listAll(), dwLayerAPI.list()
     ])
-    if (version !== loadVersion) return
+    if (generation !== loadGeneration) return
     domains.value = domainsResult.status === 'fulfilled' ? domainsResult.value || [] : []
     elements.value = elementsResult.status === 'fulfilled' ? elementsResult.value || [] : []
     layers.value = layersResult.status === 'fulfilled' ? layersResult.value || [] : []
     if ([domainsResult, elementsResult, layersResult].some(result => result.status === 'rejected')) {
       referenceError.value = t('model.common.reference_data_unavailable')
     }
+    markSaved()
   } catch (error) {
-    if (version === loadVersion) pageError.value = getModelErrorMessage(error, t, 'model.common.load_failed')
+    if (generation === loadGeneration) pageError.value = getModelErrorMessage(error, t, 'model.common.load_failed')
   } finally {
-    if (version === loadVersion) pageLoading.value = false
+    if (generation === loadGeneration) pageLoading.value = false
   }
 }
 

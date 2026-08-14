@@ -10,7 +10,16 @@ import (
 
 func parseTestRule(t *testing.T, raw string) dataquality.Rule {
 	t.Helper()
-	document, err := dataquality.Parse([]byte(`{"schema_version":"addp.quality.rules/v1","rules":[` + raw + `]}`))
+	var rule map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &rule); err != nil {
+		t.Fatal(err)
+	}
+	rule["rule_key"] = "00000000-0000-4000-8000-000000000001"
+	encoded, err := json.Marshal(rule)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := dataquality.Parse([]byte(`{"schema_version":"addp.quality.rules/v1","rules":[` + string(encoded) + `]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +49,7 @@ func TestSQLGeneratorUsesV1ParameterNames(t *testing.T) {
 	t.Parallel()
 
 	legacy, err := json.Marshal(map[string]interface{}{
-		"type": "length", "enabled": true, "severity": "error", "message": "", "params": map[string]interface{}{"min_length": 1},
+		"rule_key": "00000000-0000-4000-8000-000000000001", "type": "length", "enabled": true, "severity": "error", "message": "", "params": map[string]interface{}{"min_length": 1},
 	})
 	if err != nil {
 		t.Fatal(err)

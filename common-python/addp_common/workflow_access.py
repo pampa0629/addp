@@ -33,6 +33,36 @@ def require_access_plan(params: dict[str, Any]) -> dict[str, Any]:
     return plan
 
 
+def require_source_plan(params: dict[str, Any]) -> dict[str, Any]:
+    plan = params.get("access_plan")
+    if not isinstance(plan, dict):
+        raise WorkflowAccessError("access_plan is required")
+    if plan.get("schema_version") != SCHEMA_VERSION:
+        raise WorkflowAccessError(f"access_plan.schema_version must be {SCHEMA_VERSION}")
+    source = _required_object(plan, "source")
+    _validate_resource(source, "source")
+    if "target" in plan:
+        raise WorkflowAccessError("source-only access plan must not contain target")
+    return plan
+
+
+def require_target_plan(params: dict[str, Any]) -> dict[str, Any]:
+    plan = params.get("access_plan")
+    if not isinstance(plan, dict):
+        raise WorkflowAccessError("access_plan is required")
+    if plan.get("schema_version") != SCHEMA_VERSION:
+        raise WorkflowAccessError(f"access_plan.schema_version must be {SCHEMA_VERSION}")
+    target = _required_object(plan, "target")
+    _validate_resource(target, "target")
+    if target.get("write_mode") not in {"create", "replace"}:
+        raise WorkflowAccessError("access_plan.target.write_mode must be create or replace")
+    if not _text(target.get("name")):
+        raise WorkflowAccessError("access_plan.target.name is required")
+    if "source" in plan:
+        raise WorkflowAccessError("target-only access plan must not contain source")
+    return plan
+
+
 def source_format(plan: dict[str, Any]) -> str:
     return _text(_required_object(plan, "source").get("format")).lower()
 

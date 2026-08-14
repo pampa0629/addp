@@ -181,6 +181,8 @@ Entity、LogicalTable、DWLayer 和 EntityRelation 是独立并发版本主体�
 
 Mermaid 导出返回 `{ "mermaid_code": "...", "revision": 1 }`，导入提交同一结构并在单个事务内推进 Tenant 实体模型集合 `revision`。不得保留只返回字符串或不带修订版本的并行接口。
 
+Tenant 实体模型集合的 `revision` 由所有 Entity、EntityAttribute、EntityRelation 写入推进，不只由 Mermaid 导入推进。Mermaid ADDP 元数据必须完整往返这些资源的可编辑业务字段，导出后立即导入不得丢失 domain、描述、Standard 引用或排序信息。
+
 ### 实体关系
 
 ```
@@ -244,6 +246,8 @@ Model 是 `model.logical_model.*` 第一批 Permission 的唯一 owner，机器�
 Entity、EntityRelation、DWLayer 和 LogicalModel 分别使用 `model.entity.*`、`model.entity_relation.*`、`model.dw_layer.*`、`model.logical_model.*`。EntityAttribute 是 Entity 聚合内子资源；LogicalField、TableRelation 和 FactMetricMapping 是 LogicalModel 聚合内子资源，不建立平行宽泛 Permission。Mermaid 导入是破坏性全量替换，按 Entity 与 EntityRelation 的 create/delete 执行 all-of 校验；导出按两者的 read 执行 all-of 校验。已审批实体必须先全部重新打开，导入不会绕过生命周期约束。
 
 并发契约以 [Model 概念与数据约束规范](docs/model概念与数据约束规范.md) 为事实源。后端必须把版本校验、生命周期校验、聚合写入和版本递增放在同一事务中；前端收到 `409 resource_version_conflict` 后保留本地未保存状态，不自动重试。
+
+EntityRelation 使用完整 `PUT`：请求包含变更后的 source_entity、target_entity、relation_type、name、description 和 version，并在事务内锁定变更前后涉及的全部 Entity。Cleanup 属于内部强制写入，同样必须推进资源版本和实体模型集合 revision。
 
 ## 特殊设计
 

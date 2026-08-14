@@ -19,6 +19,10 @@ type FormatImplementationSnapshot struct {
 	ScopeTableInfoProvider      bool `json:"scope_table_info_provider,omitempty"`
 	ScopeTableSampleReader      bool `json:"scope_table_sample_reader,omitempty"`
 	ScopeTableReader            bool `json:"scope_table_reader_provider,omitempty"`
+	ScopeTableWriter            bool `json:"scope_table_writer_provider,omitempty"`
+	RuntimeContainerInfo        bool `json:"runtime_container_info_provider_factory,omitempty"`
+	RuntimeScopeTableReader     bool `json:"runtime_scope_table_reader_factory,omitempty"`
+	RuntimeScopeTableWriter     bool `json:"runtime_scope_table_writer_factory,omitempty"`
 	TableReaderProvider         bool `json:"table_reader_provider,omitempty"`
 	MultiTableReader            bool `json:"multi_table_reader_provider,omitempty"`
 	TableWriterProvider         bool `json:"table_writer_provider,omitempty"`
@@ -81,6 +85,10 @@ func implementationSnapshotForFormat(formatType FormatType) FormatImplementation
 	_, status.ScopeTableInfoProvider = plugin.(ScopeTableInfoProvider)
 	_, status.ScopeTableSampleReader = plugin.(ScopeTableSampleReader)
 	_, status.ScopeTableReader = plugin.(ScopeTableReaderProvider)
+	_, status.ScopeTableWriter = plugin.(ScopeTableWriterProvider)
+	_, status.RuntimeContainerInfo = plugin.(RuntimeContainerInfoProviderFactory)
+	_, status.RuntimeScopeTableReader = plugin.(RuntimeScopeTableReaderFactory)
+	_, status.RuntimeScopeTableWriter = plugin.(RuntimeScopeTableWriterFactory)
 	_, status.TableReaderProvider = plugin.(TableReaderProvider)
 	_, status.MultiTableReader = plugin.(MultiTableReaderProvider)
 	_, status.TableWriterProvider = plugin.(TableWriterProvider)

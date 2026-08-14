@@ -34,6 +34,21 @@ func (r *Runtimes) SetCADInspector(inspector metaenrich.CADInspector) {
 	}
 }
 
+func (r *Runtimes) SetContainerInspector(inspector metaenrich.ContainerInspector) {
+	if r == nil {
+		return
+	}
+	if r.ObjectCatalog != nil {
+		r.ObjectCatalog.containerInspector = inspector
+	}
+	if r.FilesystemCatalog != nil {
+		r.FilesystemCatalog.containerInspector = inspector
+	}
+	if r.ItemRefresh != nil {
+		r.ItemRefresh.containerInspector = inspector
+	}
+}
+
 func NewRuntimes(
 	db *gorm.DB,
 	log *slog.Logger,

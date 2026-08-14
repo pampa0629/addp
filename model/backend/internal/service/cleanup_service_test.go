@@ -29,6 +29,7 @@ func setupModelCleanupTestDB(t *testing.T) *gorm.DB {
 			naming_rule TEXT,
 			quality_sla TEXT,
 			sort_order INTEGER DEFAULT 0,
+			version INTEGER NOT NULL DEFAULT 1,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -42,6 +43,7 @@ func setupModelCleanupTestDB(t *testing.T) *gorm.DB {
 			status TEXT DEFAULT 'draft',
 			created_by INTEGER NOT NULL,
 			updated_by INTEGER,
+			version INTEGER NOT NULL DEFAULT 1,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -67,6 +69,7 @@ func setupModelCleanupTestDB(t *testing.T) *gorm.DB {
 			relation_type TEXT NOT NULL,
 			name TEXT,
 			description TEXT,
+			version INTEGER NOT NULL DEFAULT 1,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -84,6 +87,7 @@ func setupModelCleanupTestDB(t *testing.T) *gorm.DB {
 			grain_description TEXT,
 			scd_type INTEGER DEFAULT 0,
 			materialization TEXT,
+			version INTEGER NOT NULL DEFAULT 1,
 			created_by INTEGER NOT NULL,
 			updated_by INTEGER,
 			created_at DATETIME,
@@ -135,6 +139,9 @@ func setupModelCleanupTestDB(t *testing.T) *gorm.DB {
 			t.Fatalf("create cleanup test table: %v", err)
 		}
 	}
+	if err := db.Exec(`CREATE TABLE model.entity_model_revisions (tenant_id INTEGER PRIMARY KEY, revision INTEGER NOT NULL DEFAULT 1, updated_at DATETIME)`).Error; err != nil {
+		t.Fatalf("create revision table: %v", err)
+	}
 	return db
 }
 
@@ -171,12 +178,25 @@ func TestModelCleanupTenantDeletedLogicalDraftsActiveDefinitions(t *testing.T) {
 	if entity.Status != "draft" {
 		t.Fatalf("expected entity draft, got %s", entity.Status)
 	}
+	if entity.Version != 2 {
+		t.Fatalf("expected entity version 2, got %d", entity.Version)
+	}
 	var table models.LogicalTable
 	if err := db.First(&table, tableID).Error; err != nil {
 		t.Fatalf("load logical table: %v", err)
 	}
 	if table.Status != "draft" {
 		t.Fatalf("expected logical table draft, got %s", table.Status)
+	}
+	if table.Version != 2 {
+		t.Fatalf("expected logical table version 2, got %d", table.Version)
+	}
+	var revision models.EntityModelRevision
+	if err := db.Where("tenant_id = ?", 1).First(&revision).Error; err != nil {
+		t.Fatalf("load entity model revision: %v", err)
+	}
+	if revision.Revision != 2 {
+		t.Fatalf("expected entity model revision 2, got %d", revision.Revision)
 	}
 }
 
@@ -201,6 +221,13 @@ func TestModelCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 	}
 	if stats.DeletedRecords != 11 {
 		t.Fatalf("expected 11 deleted records, got %+v", stats)
+	}
+	var revision models.EntityModelRevision
+	if err := db.Where("tenant_id = ?", 1).First(&revision).Error; err != nil {
+		t.Fatalf("load entity model revision: %v", err)
+	}
+	if revision.Revision != 2 {
+		t.Fatalf("expected entity model revision 2, got %d", revision.Revision)
 	}
 	assertModelCleanupCount(t, db, modelCleanupCountExpectation{tenantID: 1})
 	assertModelCleanupCount(t, db, modelCleanupCountExpectation{

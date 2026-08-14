@@ -33,8 +33,10 @@ const docTemplate = `{
                     "200": {
                         "description": "数仓分层列表 | DW layer list",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_model_internal_models.DWLayer"
+                            }
                         }
                     },
                     "401": {
@@ -86,8 +88,7 @@ const docTemplate = `{
                     "201": {
                         "description": "已创建的分层 | Created DW layer",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.DWLayer"
                         }
                     },
                     "400": {
@@ -148,8 +149,7 @@ const docTemplate = `{
                     "200": {
                         "description": "分层详情 | DW layer details",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.DWLayer"
                         }
                     },
                     "400": {
@@ -220,8 +220,7 @@ const docTemplate = `{
                     "200": {
                         "description": "已更新的分层 | Updated DW layer",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.DWLayer"
                         }
                     },
                     "400": {
@@ -280,14 +279,22 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "资源版本 | Resource version",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "删除成功 | Deleted successfully",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MessageResponse"
                         }
                     },
                     "400": {
@@ -387,8 +394,7 @@ const docTemplate = `{
                     "200": {
                         "description": "实体列表 | Entity list",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.EntityListResponse"
                         }
                     },
                     "400": {
@@ -446,8 +452,7 @@ const docTemplate = `{
                     "201": {
                         "description": "已创建的实体 | Created entity",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.Entity"
                         }
                     },
                     "400": {
@@ -511,8 +516,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Mermaid ER 图代码 | Mermaid ER diagram code",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MermaidExportResponse"
                         }
                     },
                     "401": {
@@ -567,8 +571,7 @@ const docTemplate = `{
                     "200": {
                         "description": "导入结果 | Import result",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MermaidImportResult"
                         }
                     },
                     "400": {
@@ -632,8 +635,7 @@ const docTemplate = `{
                     "200": {
                         "description": "实体详情 | Entity details",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.Entity"
                         }
                     },
                     "400": {
@@ -704,8 +706,7 @@ const docTemplate = `{
                     "200": {
                         "description": "已更新的实体 | Updated entity",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.Entity"
                         }
                     },
                     "400": {
@@ -770,14 +771,22 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "资源版本 | Resource version",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "删除成功 | Deleted successfully",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MessageResponse"
                         }
                     },
                     "400": {
@@ -838,14 +847,22 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "资源版本 | Resource version",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "审批成功 | Approved successfully",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.Entity"
                         }
                     },
                     "400": {
@@ -912,8 +929,10 @@ const docTemplate = `{
                     "200": {
                         "description": "属性列表 | Attribute list",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_model_internal_models.EntityAttribute"
+                            }
                         }
                     },
                     "400": {
@@ -984,8 +1003,7 @@ const docTemplate = `{
                     "201": {
                         "description": "已创建的属性 | Created attribute",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.EntityAttributeMutationResponse"
                         }
                     },
                     "400": {
@@ -1077,8 +1095,7 @@ const docTemplate = `{
                     "200": {
                         "description": "已更新的属性 | Updated attribute",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.EntityAttributeMutationResponse"
                         }
                     },
                     "400": {
@@ -1150,14 +1167,22 @@ const docTemplate = `{
                         "name": "aid",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "父资源版本 | Parent resource version",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "删除成功 | Deleted successfully",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionResponse"
                         }
                     },
                     "400": {
@@ -1218,13 +1243,22 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "资源版本 | Resource version",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "重新打开成功 | Reopened successfully",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.MessageResponse"
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.Entity"
                         }
                     },
                     "400": {
@@ -1290,8 +1324,10 @@ const docTemplate = `{
                     "200": {
                         "description": "关系列表 | Relation list",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_model_internal_models.EntityRelation"
+                            }
                         }
                     },
                     "400": {
@@ -1349,8 +1385,7 @@ const docTemplate = `{
                     "201": {
                         "description": "已创建的关系 | Created relation",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.EntityRelation"
                         }
                     },
                     "400": {
@@ -1417,8 +1452,7 @@ const docTemplate = `{
                     "200": {
                         "description": "关系详情 | Relation details",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.EntityRelation"
                         }
                     },
                     "400": {
@@ -1489,8 +1523,7 @@ const docTemplate = `{
                     "200": {
                         "description": "已更新的关系 | Updated relation",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.EntityRelation"
                         }
                     },
                     "400": {
@@ -1549,14 +1582,22 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "资源版本 | Resource version",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "删除成功 | Deleted successfully",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MessageResponse"
                         }
                     },
                     "400": {
@@ -1673,8 +1714,7 @@ const docTemplate = `{
                     "200": {
                         "description": "逻辑表列表 | Logical table list",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.LogicalTableListResponse"
                         }
                     },
                     "400": {
@@ -1732,8 +1772,7 @@ const docTemplate = `{
                     "201": {
                         "description": "已创建的逻辑表 | Created logical table",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.LogicalTable"
                         }
                     },
                     "400": {
@@ -1806,8 +1845,7 @@ const docTemplate = `{
                     "200": {
                         "description": "逻辑表详情 | Logical table details",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.LogicalTable"
                         }
                     },
                     "400": {
@@ -1878,8 +1916,7 @@ const docTemplate = `{
                     "200": {
                         "description": "已更新的逻辑表 | Updated logical table",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.LogicalTable"
                         }
                     },
                     "400": {
@@ -1944,14 +1981,22 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "资源版本 | Resource version",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "删除成功 | Deleted successfully",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MessageResponse"
                         }
                     },
                     "400": {
@@ -2012,13 +2057,22 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "资源版本 | Resource version",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "审批成功 | Approved successfully",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.MessageResponse"
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.LogicalTable"
                         }
                     },
                     "400": {
@@ -2085,8 +2139,10 @@ const docTemplate = `{
                     "200": {
                         "description": "维度关联列表 | Dimension relation list",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_model_internal_models.TableRelationDetail"
+                            }
                         }
                     },
                     "400": {
@@ -2157,8 +2213,7 @@ const docTemplate = `{
                     "201": {
                         "description": "已创建的关联 | Created relation",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.TableRelationMutationResponse"
                         }
                     },
                     "400": {
@@ -2226,14 +2281,22 @@ const docTemplate = `{
                         "name": "rid",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "父资源版本 | Parent resource version",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "删除成功 | Removed successfully",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionResponse"
                         }
                     },
                     "400": {
@@ -2300,8 +2363,10 @@ const docTemplate = `{
                     "200": {
                         "description": "字段列表 | Field list",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_model_internal_models.LogicalField"
+                            }
                         }
                     },
                     "400": {
@@ -2372,8 +2437,7 @@ const docTemplate = `{
                     "201": {
                         "description": "已创建的字段 | Created field",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.LogicalFieldMutationResponse"
                         }
                     },
                     "400": {
@@ -2465,8 +2529,7 @@ const docTemplate = `{
                     "200": {
                         "description": "已更新的字段 | Updated field",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.LogicalFieldMutationResponse"
                         }
                     },
                     "400": {
@@ -2538,14 +2601,22 @@ const docTemplate = `{
                         "name": "fid",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "父资源版本 | Parent resource version",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "删除成功 | Deleted successfully",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionResponse"
                         }
                     },
                     "400": {
@@ -2612,8 +2683,10 @@ const docTemplate = `{
                     "200": {
                         "description": "指标关联列表 | Metric mapping list",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_model_internal_models.FactMetricMapping"
+                            }
                         }
                     },
                     "400": {
@@ -2684,8 +2757,7 @@ const docTemplate = `{
                     "201": {
                         "description": "已创建的关联 | Created mapping",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.FactMetricMutationResponse"
                         }
                     },
                     "400": {
@@ -2759,14 +2831,22 @@ const docTemplate = `{
                         "name": "mid",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "父资源版本 | Parent resource version",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "删除成功 | Removed successfully",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionResponse"
                         }
                     },
                     "400": {
@@ -2845,8 +2925,7 @@ const docTemplate = `{
                     "200": {
                         "description": "DDL 预览 | DDL preview",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.DDLPreviewResponse"
                         }
                     },
                     "400": {
@@ -2901,13 +2980,22 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "资源版本 | Resource version",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "重新打开成功 | Reopened successfully",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.MessageResponse"
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.LogicalTable"
                         }
                     },
                     "400": {
@@ -2944,6 +3032,100 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "model.logical_model.update"
+                ]
+            }
+        },
+        "/standard-reference-guards/{resource_type}/{resource_id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "由 Standard 在删除资源时冻结、释放或终止 Model 引用键，并在冻结响应中返回权威引用影响。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StandardReference"
+                ],
+                "summary": "设置标准引用删除屏障 | Set Standard reference deletion guard",
+                "parameters": [
+                    {
+                        "enum": [
+                            "domain",
+                            "element",
+                            "dimension_hierarchy",
+                            "metric"
+                        ],
+                        "type": "string",
+                        "description": "标准资源类型 | Standard resource type",
+                        "name": "resource_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "标准资源 ID | Standard resource ID",
+                        "name": "resource_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "目标屏障状态 | Desired guard state",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.SetStandardReferenceGuardRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.StandardReferenceGuardResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "标准引用键不存在 | Standard reference key not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "屏障状态冲突 | Guard state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.standard_reference.update"
                 ]
             }
         }
@@ -2985,7 +3167,8 @@ const docTemplate = `{
             "required": [
                 "column_name",
                 "data_type",
-                "name"
+                "name",
+                "version"
             ],
             "properties": {
                 "column_name": {
@@ -3028,6 +3211,10 @@ const docTemplate = `{
                 "sort_order": {
                     "type": "integer",
                     "minimum": 0
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -3091,7 +3278,8 @@ const docTemplate = `{
         "github_com_addp_model_internal_models.CreateFactMetricMappingRequest": {
             "type": "object",
             "required": [
-                "metric_id"
+                "metric_id",
+                "version"
             ],
             "properties": {
                 "field_id": {
@@ -3104,6 +3292,10 @@ const docTemplate = `{
                 },
                 "note": {
                     "type": "string"
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -3112,7 +3304,8 @@ const docTemplate = `{
             "required": [
                 "column_name",
                 "data_type",
-                "name"
+                "name",
+                "version"
             ],
             "properties": {
                 "column_name": {
@@ -3184,6 +3377,10 @@ const docTemplate = `{
                 "sort_order": {
                     "type": "integer",
                     "minimum": 0
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -3244,7 +3441,8 @@ const docTemplate = `{
             "required": [
                 "source_field",
                 "target_field",
-                "target_table"
+                "target_table",
+                "version"
             ],
             "properties": {
                 "relation_type": {
@@ -3266,6 +3464,213 @@ const docTemplate = `{
                 "target_table": {
                     "type": "integer",
                     "minimum": 1
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.DDLPreviewResponse": {
+            "type": "object",
+            "properties": {
+                "ddl": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.DWLayer": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "layer_code": {
+                    "description": "ods/dwd/dws/ads",
+                    "type": "string"
+                },
+                "layer_name": {
+                    "description": "贴源层/明细层/汇总层/应用层",
+                    "type": "string"
+                },
+                "naming_rule": {
+                    "description": "命名规范（如：dwd_{domain}_{entity}_d）",
+                    "type": "string"
+                },
+                "quality_sla": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.JSONB"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.Entity": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "domain_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "draft/approved",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.EntityAttribute": {
+            "type": "object",
+            "properties": {
+                "column_name": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "data_type": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "element_id": {
+                    "description": "引用数据元（可选）",
+                    "type": "integer"
+                },
+                "entity_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_pk": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.EntityAttributeMutationResponse": {
+            "type": "object",
+            "properties": {
+                "attribute": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.EntityAttribute"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.EntityListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.Entity"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.EntityRelation": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "relation_type": {
+                    "description": "one_to_one/one_to_many/many_to_many",
+                    "type": "string"
+                },
+                "source_entity": {
+                    "type": "integer"
+                },
+                "target_entity": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -3282,14 +3687,262 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_model_internal_models.FactMetricMapping": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "fact_table_id": {
+                    "description": "→ model.logical_tables (table_type='fact')",
+                    "type": "integer"
+                },
+                "field_id": {
+                    "description": "→ model.logical_fields（可选，哪个字段是该指标的计算基础）",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "metric_id": {
+                    "description": "→ standard.metrics（无 DB FK 约束，跨 schema）",
+                    "type": "integer"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.FactMetricMutationResponse": {
+            "type": "object",
+            "properties": {
+                "mapping": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.FactMetricMapping"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.JSONB": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "github_com_addp_model_internal_models.LogicalField": {
+            "type": "object",
+            "properties": {
+                "column_name": {
+                    "description": "物理列名",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "data_type": {
+                    "description": "string/int/bigint/float/decimal/date/datetime/bool/json/text",
+                    "type": "string"
+                },
+                "default_value": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "element_id": {
+                    "description": "引用数据元（可选）",
+                    "type": "integer"
+                },
+                "field_role": {
+                    "type": "string"
+                },
+                "hierarchy_id": {
+                    "description": "枚举：regular / measure_additive / measure_semi / measure_non / dimension_fk / degenerate_dim",
+                    "type": "integer"
+                },
+                "hierarchy_level": {
+                    "description": "在层级中对应的层次编号",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_partition": {
+                    "description": "是否分区字段",
+                    "type": "boolean"
+                },
+                "is_pk": {
+                    "type": "boolean"
+                },
+                "length": {
+                    "type": "integer"
+                },
+                "name": {
+                    "description": "字段显示名",
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "table_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.LogicalFieldMutationResponse": {
+            "type": "object",
+            "properties": {
+                "field": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.LogicalField"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.LogicalTable": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "description": "英文表名（物化时使用）",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "domain_id": {
+                    "type": "integer"
+                },
+                "entity_id": {
+                    "description": "关联实体（可选）",
+                    "type": "integer"
+                },
+                "grain_description": {
+                    "description": "仅 fact 表：粒度声明（如\"每行代表一笔支付事务\"）",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "layer": {
+                    "description": "ods/dwd/dws/ads",
+                    "type": "string"
+                },
+                "materialization": {
+                    "description": "物化配置",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.JSONB"
+                        }
+                    ]
+                },
+                "name": {
+                    "type": "string"
+                },
+                "scd_type": {
+                    "description": "仅 dimension 表：缓慢变化维类型 0=静态/1=覆盖/2=拉链/3=混合",
+                    "type": "integer"
+                },
+                "status": {
+                    "description": "draft/approved",
+                    "type": "string"
+                },
+                "table_type": {
+                    "description": "建模角色：entity/fact/dimension",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.LogicalTableListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.LogicalTable"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.MermaidExportResponse": {
+            "type": "object",
+            "properties": {
+                "mermaid_code": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_model_internal_models.MermaidImportRequest": {
             "type": "object",
             "required": [
-                "mermaid_code"
+                "mermaid_code",
+                "revision"
             ],
             "properties": {
                 "mermaid_code": {
                     "type": "string"
+                },
+                "revision": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.MermaidImportResult": {
+            "type": "object",
+            "properties": {
+                "created_entities": {
+                    "type": "integer"
+                },
+                "created_relations": {
+                    "type": "integer"
+                },
+                "revision": {
+                    "type": "integer"
                 }
             }
         },
@@ -3314,11 +3967,170 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_model_internal_models.SetStandardReferenceGuardRequest": {
+            "type": "object",
+            "required": [
+                "state"
+            ],
+            "properties": {
+                "state": {
+                    "type": "string",
+                    "enum": [
+                        "open",
+                        "frozen",
+                        "deleted"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.StandardReferenceGuardResponse": {
+            "type": "object",
+            "properties": {
+                "reference_count": {
+                    "type": "integer"
+                },
+                "resource_id": {
+                    "type": "integer"
+                },
+                "resource_type": {
+                    "type": "string"
+                },
+                "sample": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.StandardReferenceImpact"
+                    }
+                },
+                "sample_truncated": {
+                    "type": "boolean"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.StandardReferenceImpactSummary"
+                    }
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.StandardReferenceImpact": {
+            "type": "object",
+            "properties": {
+                "field": {
+                    "type": "string"
+                },
+                "owner_id": {
+                    "type": "integer"
+                },
+                "owner_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.StandardReferenceImpactSummary": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "field": {
+                    "type": "string"
+                },
+                "owner_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.TableRelation": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "relation_type": {
+                    "description": "fk/join",
+                    "type": "string"
+                },
+                "source_field": {
+                    "type": "integer"
+                },
+                "source_table": {
+                    "type": "integer"
+                },
+                "target_field": {
+                    "type": "integer"
+                },
+                "target_table": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.TableRelationDetail": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "relation_type": {
+                    "type": "string"
+                },
+                "source_field": {
+                    "type": "integer"
+                },
+                "source_field_name": {
+                    "type": "string"
+                },
+                "source_table": {
+                    "type": "integer"
+                },
+                "target_field": {
+                    "type": "integer"
+                },
+                "target_field_name": {
+                    "type": "string"
+                },
+                "target_scd_type": {
+                    "type": "integer"
+                },
+                "target_table": {
+                    "type": "integer"
+                },
+                "target_table_code": {
+                    "type": "string"
+                },
+                "target_table_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.TableRelationMutationResponse": {
+            "type": "object",
+            "properties": {
+                "relation": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.TableRelation"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_model_internal_models.UpdateDWLayerRequest": {
             "type": "object",
             "required": [
                 "layer_name",
-                "sort_order"
+                "sort_order",
+                "version"
             ],
             "properties": {
                 "description": {
@@ -3339,6 +4151,10 @@ const docTemplate = `{
                 "sort_order": {
                     "type": "integer",
                     "minimum": 0
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -3350,7 +4166,8 @@ const docTemplate = `{
                 "is_pk",
                 "name",
                 "nullable",
-                "sort_order"
+                "sort_order",
+                "version"
             ],
             "properties": {
                 "column_name": {
@@ -3394,13 +4211,20 @@ const docTemplate = `{
                 "sort_order": {
                     "type": "integer",
                     "minimum": 0
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
         "github_com_addp_model_internal_models.UpdateEntityRelationRequest": {
             "type": "object",
             "required": [
-                "relation_type"
+                "relation_type",
+                "source_entity",
+                "target_entity",
+                "version"
             ],
             "properties": {
                 "description": {
@@ -3417,13 +4241,26 @@ const docTemplate = `{
                         "one_to_many",
                         "many_to_many"
                     ]
+                },
+                "source_entity": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "target_entity": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
         "github_com_addp_model_internal_models.UpdateEntityRequest": {
             "type": "object",
             "required": [
-                "name"
+                "name",
+                "version"
             ],
             "properties": {
                 "description": {
@@ -3437,6 +4274,10 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "maxLength": 200
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -3450,7 +4291,8 @@ const docTemplate = `{
                 "is_pk",
                 "name",
                 "nullable",
-                "sort_order"
+                "sort_order",
+                "version"
             ],
             "properties": {
                 "column_name": {
@@ -3526,6 +4368,10 @@ const docTemplate = `{
                 "sort_order": {
                     "type": "integer",
                     "minimum": 0
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -3536,7 +4382,8 @@ const docTemplate = `{
                 "materialization",
                 "name",
                 "scd_type",
-                "table_type"
+                "table_type",
+                "version"
             ],
             "properties": {
                 "description": {
@@ -3577,6 +4424,30 @@ const docTemplate = `{
                         "fact",
                         "dimension"
                     ]
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.VersionRequest": {
+            "type": "object",
+            "required": [
+                "version"
+            ],
+            "properties": {
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.VersionResponse": {
+            "type": "object",
+            "properties": {
+                "version": {
+                    "type": "integer"
                 }
             }
         }

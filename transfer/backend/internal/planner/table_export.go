@@ -279,6 +279,12 @@ func hasTableExportWriter(formatType format.FormatType) bool {
 	if _, err := format.GetMultiTableWriterProvider(formatType); err == nil {
 		return true
 	}
+	if _, err := format.GetScopeTableWriterProvider(formatType); err == nil {
+		return true
+	}
+	if _, err := format.GetRuntimeScopeTableWriterFactory(formatType); err == nil {
+		return true
+	}
 	return false
 }
 
@@ -844,6 +850,9 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 			return executor.TableSourcePlan{}, err
 		}
 		parseOptions := tableParseOptions(endpoint.Options, sourceFormat)
+		if err := applyContainerChildParseOptions(endpoint, itemDescriptor, parseOptions); err != nil {
+			return executor.TableSourcePlan{}, err
+		}
 		applyMetaSpatialParseOptions(parseOptions, sourceSpatialInfo)
 		if selection := sourceFieldSelectionFromTransforms(transforms); selection != nil {
 			parseOptions.FieldSelection = selection
@@ -878,6 +887,50 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 	default:
 		return executor.TableSourcePlan{}, fmt.Errorf("unsupported source representation %q", endpoint.Representation)
 	}
+}
+
+func applyContainerChildParseOptions(endpoint EndpointSpec, descriptor dataitem.ItemDescriptor, opts *format.ParseOptions) error {
+	if descriptor.DataType != datatype.Container {
+		return nil
+	}
+	if opts == nil {
+		return fmt.Errorf("container table source requires parse options")
+	}
+	if strings.TrimSpace(stringValue(endpoint.Options, "layer")) != "" || strings.TrimSpace(stringValue(endpoint.Options, format.ChildTableParam)) != "" {
+		return fmt.Errorf("container table source options must use %q; layer and %q are provider-internal", format.ChildNameParam, format.ChildTableParam)
+	}
+	childName := strings.TrimSpace(stringValue(endpoint.Options, format.ChildNameParam))
+	if childName == "" {
+		return fmt.Errorf("container table source requires options.%s", format.ChildNameParam)
+	}
+	container := commonJSON.Section(endpoint.Attributes, "type_info.container")
+	children := commonJSON.InterfaceSlice(container["children"])
+	if len(children) == 0 {
+		return fmt.Errorf("source Meta item has no type_info.container.children; run a deep metadata scan")
+	}
+	var selected map[string]interface{}
+	for _, value := range children {
+		child := commonJSON.InterfaceMap(value)
+		if child != nil && strings.TrimSpace(commonJSON.InterfaceString(child["name"])) == childName {
+			selected = child
+			break
+		}
+	}
+	if selected == nil {
+		return fmt.Errorf("container child %q is not present in source Meta item", childName)
+	}
+	if dataType := strings.TrimSpace(commonJSON.InterfaceString(selected["data_type"])); dataType != string(datatype.Table) {
+		return fmt.Errorf("container child %q has data_type %q, want %q", childName, dataType, datatype.Table)
+	}
+	childOptions := format.ChildTableParseOptions(childName, selected)
+	opts.SheetName = childOptions.SheetName
+	if opts.ExtraParams == nil {
+		opts.ExtraParams = map[string]interface{}{}
+	}
+	for key, value := range childOptions.ExtraParams {
+		opts.ExtraParams[key] = value
+	}
+	return nil
 }
 
 func buildTableTargetPlan(endpoint EndpointSpec, engine EngineBinding) (executor.TableTargetPlan, error) {
@@ -1406,9 +1459,13 @@ func isNativeTableParentType(resourceType resourcetree.ResourceType) bool {
 }
 
 func tabularNamespaceTerm(engine EngineBinding) string {
-	engineType := strings.ToLower(strings.TrimSpace(effectiveEngineType(engine, EngineRef{})))
-	if strings.Contains(engineType, "postgres") {
-		return engineplugin.CatalogTermSchema
+	capabilities := effectiveEngineCapabilities(engine)
+	if capabilities != nil && capabilities.Storage != nil && capabilities.Storage.CatalogModel != nil {
+		for _, level := range capabilities.Storage.CatalogModel.Levels {
+			if level.Role == engineplugin.CatalogRoleBranch && strings.TrimSpace(level.Term) != "" {
+				return level.Term
+			}
+		}
 	}
 	return engineplugin.CatalogTermDatabase
 }
@@ -1611,6 +1668,9 @@ func hasTableTransferReader(formatType format.FormatType) bool {
 		return true
 	}
 	if _, err := format.GetScopeTableReaderProvider(formatType); err == nil {
+		return true
+	}
+	if _, err := format.GetRuntimeScopeTableReaderFactory(formatType); err == nil {
 		return true
 	}
 	return false

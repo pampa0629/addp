@@ -77,7 +77,7 @@
         <el-table-column :label="t('model.attribute.actions')" width="150" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="goToDetail(row)">{{ t('model.common.design') }}</el-button>
-            <el-popconfirm v-if="can('model.entity.delete')" :title="t('model.entity.delete_confirm')" @confirm="handleDelete(row.id)">
+            <el-popconfirm v-if="can('model.entity.delete')" :title="t('model.entity.delete_confirm')" @confirm="handleDelete(row)">
               <template #reference>
                 <el-button link type="danger">{{ t('model.common.delete') }}</el-button>
               </template>
@@ -274,13 +274,13 @@ const handleCreate = async () => {
   }
 }
 
-const handleDelete = async (id) => {
+const handleDelete = async (entity) => {
   if (!can('model.entity.delete')) {
     ElMessage.error(t('model.common.permission_denied'))
     return
   }
   try {
-    await entityAPI.delete(id)
+    await entityAPI.delete(entity.id, entity.version)
     ElMessage.success(t('model.common.delete_success'))
     loadEntities()
   } catch (err) {

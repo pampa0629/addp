@@ -224,6 +224,8 @@ scope 读取必须从 Meta 已确认的 whole scope 根范围出发。
 
 Transfer 读取 whole scope table 时，必须从已确认 scope ref 构造 `contentio.Reader` / `contentio.Lister`，再交给 `ScopeTableReaderProvider` 连续读取。不得使用 `ScopeTableSampleReader` 或分页 sample 能力冒充全量 Transfer 读取。
 
+当格式依赖不能嵌入业务 Backend、必须由受控 Workflow Runtime 承载时，`RuntimeContainerInfoProviderFactory` 与 `RuntimeScopeTableProviderFactory` 是唯一例外入口。调用方仍从已确认 locator 和 Engine Instance 出发，但通过 `common/engine/workflowaccess` 派生执行期 `addp.workflow.access-plan/v1`，再绑定为具体 `BoundContainerInfoProvider`、`ScopeTableReaderProvider` 或 `ScopeTableWriterProvider`。Runtime container info 只返回父容器的轻量 child 索引和格式私有摘要，不能展开所有 child 的完整字段或样本。Runtime 不解析 ADDP locator，FormatPlugin 不读取 System，也不保存 engine id、Runtime URL 或存储凭据。普通进程内格式继续使用 contentio；不得为同一格式同时保留 contentio 解码和本地 CLI 解码两条主路径。
+
 ### engine-native
 
 ```text

@@ -68,6 +68,54 @@ func TestStandardClientHidesCrossTenantReference(t *testing.T) {
 	}
 }
 
+func TestStandardClientRequiresActiveLifecycleForReferenceValidation(t *testing.T) {
+	for _, resource := range []struct {
+		name     string
+		path     string
+		validate func(*StandardClient) error
+	}{
+		{
+			name: "domain",
+			path: "/api/v1/standard/domains/42",
+			validate: func(client *StandardClient) error {
+				return client.ValidateDomain(context.Background(), 42)
+			},
+		},
+		{
+			name: "element",
+			path: "/api/v1/standard/elements/42",
+			validate: func(client *StandardClient) error {
+				return client.ValidateElement(context.Background(), 42)
+			},
+		},
+	} {
+		resource := resource
+		t.Run(resource.name, func(t *testing.T) {
+			lifecycleState := "active"
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != resource.path {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"id":42,"tenant_id":7,"lifecycle_state":"` + lifecycleState + `"}`))
+			}))
+			defer server.Close()
+
+			client := NewStandardClient(server.URL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+				return "tenant-token", nil
+			}), server.Client()).WithTenantID(7)
+			if err := resource.validate(client); err != nil {
+				t.Fatalf("active validation error = %v", err)
+			}
+			lifecycleState = "deleting"
+			if err := resource.validate(client); !errors.Is(err, ErrStandardReferenceDeleting) {
+				t.Fatalf("deleting validation error = %v, want ErrStandardReferenceDeleting", err)
+			}
+		})
+	}
+}
+
 func TestStandardClientReadsDirectVersionedQualityRuleDocument(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/standard/elements/12/quality-rules" {
@@ -78,7 +126,7 @@ func TestStandardClientReadsDirectVersionedQualityRuleDocument(t *testing.T) {
 			t.Fatalf("unexpected auth headers: Authorization=%q X-Tenant-ID=%q", r.Header.Get("Authorization"), r.Header.Get("X-Tenant-ID"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"schema_version":"addp.quality.rules/v1","rules":[{"type":"not_null","enabled":true,"severity":"error","message":"required","params":{}}]}`))
+		_, _ = w.Write([]byte(`{"schema_version":"addp.quality.rules/v1","rules":[{"rule_key":"00000000-0000-4000-8000-000000000001","type":"not_null","enabled":true,"severity":"error","message":"required","params":{}}]}`))
 	}))
 	defer server.Close()
 
@@ -150,7 +198,7 @@ func TestStandardClientListsElementCandidates(t *testing.T) {
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":12,"name":"Gender","code":"gender","quality_rules":{"schema_version":"addp.quality.rules/v1","rules":[{"type":"not_null","enabled":true,"severity":"error","message":"required","params":{}}]}}],"total":1,"page":2,"page_size":20,"total_pages":1}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":12,"name":"Gender","code":"gender","quality_rules":{"schema_version":"addp.quality.rules/v1","rules":[{"rule_key":"00000000-0000-4000-8000-000000000001","type":"not_null","enabled":true,"severity":"error","message":"required","params":{}}]}}],"total":1,"page":2,"page_size":20,"total_pages":1}`))
 	}))
 	defer server.Close()
 

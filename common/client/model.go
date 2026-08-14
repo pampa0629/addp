@@ -20,6 +20,46 @@ func (c *ModelClient) WithTenantID(tenantID uint) *ModelClient {
 	return &ModelClient{tenantHTTPClient: c.tenantHTTPClient.withTenantID(tenantID)}
 }
 
+const (
+	StandardReferenceGuardOpen    = "open"
+	StandardReferenceGuardFrozen  = "frozen"
+	StandardReferenceGuardDeleted = "deleted"
+)
+
+type StandardReferenceImpact struct {
+	OwnerType string `json:"owner_type"`
+	OwnerID   int64  `json:"owner_id"`
+	Field     string `json:"field"`
+}
+
+type StandardReferenceImpactSummary struct {
+	OwnerType string `json:"owner_type"`
+	Field     string `json:"field"`
+	Count     int64  `json:"count"`
+}
+
+type StandardReferenceGuardResponse struct {
+	ResourceType    string                           `json:"resource_type"`
+	ResourceID      int64                            `json:"resource_id"`
+	State           string                           `json:"state"`
+	ReferenceCount  int64                            `json:"reference_count"`
+	Summary         []StandardReferenceImpactSummary `json:"summary"`
+	Sample          []StandardReferenceImpact        `json:"sample"`
+	SampleTruncated bool                             `json:"sample_truncated"`
+}
+
+func (c *ModelClient) SetStandardReferenceGuard(ctx context.Context, resourceType string, resourceID int64, state string) (*StandardReferenceGuardResponse, error) {
+	var response StandardReferenceGuardResponse
+	payload := struct {
+		State string `json:"state"`
+	}{State: state}
+	path := fmt.Sprintf("/api/v1/model/standard-reference-guards/%s/%d", resourceType, resourceID)
+	if err := c.doJSON(ctx, http.MethodPut, path, payload, &response); err != nil {
+		return nil, fmt.Errorf("model set standard reference guard: %w", err)
+	}
+	return &response, nil
+}
+
 type ModelEntity struct {
 	ID          uint                   `json:"id"`
 	Name        string                 `json:"name"`

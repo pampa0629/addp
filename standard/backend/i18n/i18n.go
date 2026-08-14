@@ -29,6 +29,8 @@ const (
 	MsgResourceConflict           = "standard.common.resource_conflict"
 	MsgVersionConflict            = "standard.common.version_conflict"
 	MsgInvalidResourceReference   = "standard.common.invalid_resource_reference"
+	MsgStandardResourceReferenced = "standard.common.model_reference_conflict"
+	MsgModelReferenceGuardUnavailable = "standard.common.model_reference_guard_unavailable"
 	MsgInvalidCodeSetType         = "standard.code_set.invalid_type"
 	MsgDomainParentCycle          = "standard.domain.parent_cycle"
 	MsgClassificationParentCycle  = "standard.classification.parent_cycle"

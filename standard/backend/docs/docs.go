@@ -1033,6 +1033,31 @@ const docTemplate = `{
                                 "type": "string"
                             }
                         }
+                    },
+                    "404": {
+                        "description": "维度层级不存在 | Dimension hierarchy not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "资源仍被 Model 引用 | Resource is still referenced by Model",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Model 引用删除屏障不可用 | Model reference deletion guard unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -2046,8 +2071,24 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "404": {
+                        "description": "业务域不存在 | Business domain not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "409": {
-                        "description": "Conflict",
+                        "description": "资源仍被 Model 引用 | Resource is still referenced by Model",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Model 引用删除屏障不可用 | Model reference deletion guard unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2313,6 +2354,31 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "数据元不存在 | Data element not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "资源仍被 Model 引用 | Resource is still referenced by Model",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Model 引用删除屏障不可用 | Model reference deletion guard unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2664,8 +2730,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.QualityRulesResponse"
                         }
                     },
                     "401": {
@@ -3903,8 +3968,24 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "404": {
+                        "description": "指标不存在 | Metric not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "409": {
-                        "description": "Conflict",
+                        "description": "资源仍被 Model 引用 | Resource is still referenced by Model",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Model 引用删除屏障不可用 | Model reference deletion guard unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -4841,6 +4922,49 @@ const docTemplate = `{
                 }
             }
         },
+        "dataquality.Parameters": {
+            "type": "object",
+            "properties": {
+                "max": {
+                    "type": "string"
+                },
+                "min": {
+                    "type": "string"
+                },
+                "pattern": {
+                    "type": "string"
+                },
+                "values": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "dataquality.Rule": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "params": {
+                    "$ref": "#/definitions/dataquality.Parameters"
+                },
+                "rule_key": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_standard_internal_models.Classification": {
             "type": "object",
             "properties": {
@@ -5033,6 +5157,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/github_com_addp_standard_internal_models.DimensionHierarchyLevel"
                     }
                 },
+                "lifecycle_state": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -5181,6 +5308,9 @@ const docTemplate = `{
                 },
                 "length": {
                     "type": "integer"
+                },
+                "lifecycle_state": {
+                    "type": "string"
                 },
                 "name": {
                     "type": "string"
@@ -5431,6 +5561,9 @@ const docTemplate = `{
                 "id": {
                     "type": "integer"
                 },
+                "lifecycle_state": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -5620,6 +5753,20 @@ const docTemplate = `{
                 },
                 "total_pages": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.QualityRulesResponse": {
+            "type": "object",
+            "properties": {
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataquality.Rule"
+                    }
+                },
+                "schema_version": {
+                    "type": "string"
                 }
             }
         },
@@ -6174,6 +6321,9 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "integer"
+                },
+                "lifecycle_state": {
+                    "type": "string"
                 },
                 "name": {
                     "type": "string"

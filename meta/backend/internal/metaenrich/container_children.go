@@ -3,14 +3,56 @@ package metaenrich
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 )
+
+type ContainerInspector interface {
+	InspectContainer(ctx context.Context, source *commonModels.Engine, tenantID uint, physicalPath, sourceFormat, sourceLayout string) (*format.ContainerDescribeResult, error)
+}
+
+// EnrichRuntimeContainerItem uses the single runtime-bound provider path for
+// formats whose native dependencies cannot live in Meta.
+func EnrichRuntimeContainerItem(
+	ctx context.Context,
+	attrs models.JSONMap,
+	inspector ContainerInspector,
+	source *commonModels.Engine,
+	tenantID uint,
+	item *metaitem.DetectedItem,
+	physicalPath string,
+) (bool, error) {
+	if item == nil || item.DataType != datatype.Container {
+		return false, nil
+	}
+	formatType := format.NormalizeFormat(item.Format)
+	if _, err := format.GetRuntimeContainerInfoProviderFactory(formatType); err != nil {
+		return false, nil
+	}
+	if inspector == nil {
+		return true, fmt.Errorf("runtime container deep scan requires a configured inspector")
+	}
+	result, err := inspector.InspectContainer(ctx, source, tenantID, physicalPath, string(formatType), item.Layout)
+	if err != nil {
+		return true, err
+	}
+	if result == nil || result.Container == nil {
+		return true, fmt.Errorf("runtime container inspector returned no container type info")
+	}
+	item.Container = result.Container.Clone()
+	metaitem.ApplyContainerInfo(attrs, item)
+	if len(result.FormatInfo) > 0 {
+		metaattr.MergeStandardAttributes(attrs, metaattr.FormatInfoAttributes(string(formatType), result.FormatInfo))
+	}
+	return true, nil
+}
 
 const (
 	containerChildLimit       = 100

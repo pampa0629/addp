@@ -33,7 +33,8 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			updated_by INTEGER,
 			created_at DATETIME,
 			updated_at DATETIME,
-			version INTEGER NOT NULL DEFAULT 1
+			version INTEGER NOT NULL DEFAULT 1,
+			lifecycle_state TEXT NOT NULL DEFAULT 'active'
 		)`,
 		`CREATE TABLE standard.glossaries (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,7 +88,8 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			updated_by INTEGER,
 			created_at DATETIME,
 			updated_at DATETIME,
-			version INTEGER NOT NULL DEFAULT 1
+			version INTEGER NOT NULL DEFAULT 1,
+			lifecycle_state TEXT NOT NULL DEFAULT 'active'
 		)`,
 		`CREATE TABLE standard.code_sets (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -196,7 +198,8 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			updated_by INTEGER,
 			created_at DATETIME,
 			updated_at DATETIME,
-			version INTEGER NOT NULL DEFAULT 1
+			version INTEGER NOT NULL DEFAULT 1,
+			lifecycle_state TEXT NOT NULL DEFAULT 'active'
 		)`,
 		`CREATE TABLE standard.metric_element_mappings (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -263,7 +266,8 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			updated_by INTEGER,
 			created_at DATETIME,
 			updated_at DATETIME,
-			version INTEGER NOT NULL DEFAULT 1
+			version INTEGER NOT NULL DEFAULT 1,
+			lifecycle_state TEXT NOT NULL DEFAULT 'active'
 		)`,
 		`CREATE TABLE standard.dimension_hierarchy_levels (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,

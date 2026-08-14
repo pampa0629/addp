@@ -45,7 +45,7 @@
             <el-button v-if="can('model.dw_layer.update')" link type="primary" @click="openDialog(row)">{{ t('model.common.edit') }}</el-button>
             <el-popconfirm v-if="can('model.dw_layer.delete')"
               :title="t('model.dw_layer.delete_confirm')"
-              @confirm="handleDelete(row.id)"
+              @confirm="handleDelete(row)"
             >
               <template #reference>
                 <el-button link type="danger">{{ t('model.common.delete') }}</el-button>
@@ -191,7 +191,8 @@ const handleSubmit = async () => {
   submitting.value = true
   try {
     if (editingLayer.value) {
-      await dwLayerAPI.update(editingLayer.value.id, buildDWLayerUpdateRequest(form.value, editingLayer.value))
+      const updated = await dwLayerAPI.update(editingLayer.value.id, buildDWLayerUpdateRequest(form.value, editingLayer.value))
+      editingLayer.value = updated
       ElMessage.success(t('model.common.update_success'))
     } else {
       await dwLayerAPI.create(form.value)
@@ -206,13 +207,13 @@ const handleSubmit = async () => {
   }
 }
 
-const handleDelete = async (id) => {
+const handleDelete = async (layer) => {
   if (!can('model.dw_layer.delete')) {
     ElMessage.error(t('model.common.permission_denied'))
     return
   }
   try {
-    await dwLayerAPI.delete(id)
+    await dwLayerAPI.delete(layer.id, layer.version)
     ElMessage.success(t('model.common.delete_success'))
     loadLayers()
   } catch (err) {
@@ -239,7 +240,7 @@ const handleInitDefault = async () => {
         await dwLayerAPI.create(d)
       } catch (err) {
         const errorCode = err?.response?.data?.error_code
-        if (err?.response?.status === 409 || errorCode === 'dw_layer_code_conflict') continue
+        if (errorCode === 'dw_layer_code_conflict') continue
         throw err
       }
     }

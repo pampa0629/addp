@@ -12,6 +12,34 @@ definitions:
         description: 在源模块中的唯一标识
         type: string
     type: object
+  dataquality.Parameters:
+    properties:
+      max:
+        type: string
+      min:
+        type: string
+      pattern:
+        type: string
+      values:
+        items:
+          type: string
+        type: array
+    type: object
+  dataquality.Rule:
+    properties:
+      enabled:
+        type: boolean
+      message:
+        type: string
+      params:
+        $ref: '#/definitions/dataquality.Parameters'
+      rule_key:
+        type: string
+      severity:
+        type: string
+      type:
+        type: string
+    type: object
   github_com_addp_standard_internal_models.Classification:
     properties:
       code:
@@ -140,6 +168,8 @@ definitions:
         items:
           $ref: '#/definitions/github_com_addp_standard_internal_models.DimensionHierarchyLevel'
         type: array
+      lifecycle_state:
+        type: string
       name:
         type: string
       tenant_id:
@@ -241,6 +271,8 @@ definitions:
         type: integer
       length:
         type: integer
+      lifecycle_state:
+        type: string
       name:
         type: string
       nullable:
@@ -408,6 +440,8 @@ definitions:
         type: string
       id:
         type: integer
+      lifecycle_state:
+        type: string
       name:
         type: string
       status:
@@ -533,6 +567,15 @@ definitions:
         type: integer
       total_pages:
         type: integer
+    type: object
+  github_com_addp_standard_internal_models.QualityRulesResponse:
+    properties:
+      rules:
+        items:
+          $ref: '#/definitions/dataquality.Rule'
+        type: array
+      schema_version:
+        type: string
     type: object
   github_com_addp_standard_internal_models.SetDocumentMappingsRequest:
     properties:
@@ -899,6 +942,8 @@ definitions:
         type: string
       id:
         type: integer
+      lifecycle_state:
+        type: string
       name:
         type: string
       parent_id:
@@ -1495,6 +1540,23 @@ paths:
             type: object
         "403":
           description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 维度层级不存在 | Dimension hierarchy not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源仍被 Model 引用 | Resource is still referenced by Model
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Model 引用删除屏障不可用 | Model reference deletion guard unavailable
           schema:
             additionalProperties:
               type: string
@@ -2149,8 +2211,19 @@ paths:
             additionalProperties:
               type: string
             type: object
+        "404":
+          description: 业务域不存在 | Business domain not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
         "409":
-          description: Conflict
+          description: 资源仍被 Model 引用 | Resource is still referenced by Model
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Model 引用删除屏障不可用 | Model reference deletion guard unavailable
           schema:
             additionalProperties:
               type: string
@@ -2322,6 +2395,23 @@ paths:
             type: object
         "403":
           description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 数据元不存在 | Data element not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 资源仍被 Model 引用 | Resource is still referenced by Model
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Model 引用删除屏障不可用 | Model reference deletion guard unavailable
           schema:
             additionalProperties:
               type: string
@@ -2619,8 +2709,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/github_com_addp_standard_internal_models.QualityRulesResponse'
         "401":
           description: 需要登录 | Authentication required
           schema:
@@ -3372,8 +3461,19 @@ paths:
             additionalProperties:
               type: string
             type: object
+        "404":
+          description: 指标不存在 | Metric not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
         "409":
-          description: Conflict
+          description: 资源仍被 Model 引用 | Resource is still referenced by Model
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Model 引用删除屏障不可用 | Model reference deletion guard unavailable
           schema:
             additionalProperties:
               type: string

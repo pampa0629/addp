@@ -36,6 +36,7 @@ func TestDimensionHierarchyRoutesEnforceTenantScope(t *testing.T) {
 	dimensionService := service.NewDimensionHierarchyService(
 		repository.NewDimensionHierarchyRepository(db),
 		references,
+		nil,
 	)
 	router := SetupRouter(db, nil, nil, nil, nil, nil, nil, nil, nil, dimensionService, authServer.URL)
 
@@ -82,18 +83,21 @@ func createDimensionHierarchyTestSchema(t testing.TB, db *gorm.DB) {
 	statements := []string{
 		`CREATE TABLE standard.domains (
 			id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL,
-			name TEXT NOT NULL, code TEXT NOT NULL
+			name TEXT NOT NULL, code TEXT NOT NULL,
+			lifecycle_state TEXT NOT NULL DEFAULT 'active'
 		)`,
 		`CREATE TABLE standard.elements (
 			id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL,
-			name TEXT NOT NULL, code TEXT NOT NULL
+			name TEXT NOT NULL, code TEXT NOT NULL,
+			lifecycle_state TEXT NOT NULL DEFAULT 'active'
 		)`,
 		`CREATE TABLE standard.dimension_hierarchies (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL,
 			domain_id INTEGER, name TEXT NOT NULL, code TEXT NOT NULL,
 			description TEXT, created_by INTEGER NOT NULL, updated_by INTEGER,
 			created_at DATETIME, updated_at DATETIME,
-			version INTEGER NOT NULL DEFAULT 1
+			version INTEGER NOT NULL DEFAULT 1,
+			lifecycle_state TEXT NOT NULL DEFAULT 'active'
 		)`,
 		`CREATE TABLE standard.dimension_hierarchy_levels (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, hierarchy_id INTEGER NOT NULL,

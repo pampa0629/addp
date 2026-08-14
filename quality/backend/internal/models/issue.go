@@ -8,10 +8,11 @@ import (
 // Issue 质量问题工单
 type Issue struct {
 	ID                int64           `gorm:"primaryKey" json:"id"`
-	TenantID          int64           `gorm:"not null;index;uniqueIndex:uq_quality_issue_rule_application" json:"tenant_id"`
+	TenantID          int64           `gorm:"not null;index;uniqueIndex:uq_quality_issue_rule" json:"tenant_id"`
 	ExecutionID       string          `gorm:"size:255;not null;index" json:"execution_id"` // common.task_executions.execution_id
 	LastExecutionID   string          `gorm:"size:255;not null;index" json:"last_execution_id"`
-	RuleApplicationID int64           `gorm:"not null;uniqueIndex:uq_quality_issue_rule_application" json:"rule_application_id"`
+	RuleApplicationID int64           `gorm:"not null;uniqueIndex:uq_quality_issue_rule" json:"rule_application_id"`
+	RuleKey           string          `gorm:"type:uuid;not null;uniqueIndex:uq_quality_issue_rule" json:"rule_key"`
 	RuleType          string          `gorm:"size:100;not null" json:"type"`
 	Severity          string          `gorm:"size:20;not null;default:'error'" json:"severity"`
 	Message           string          `gorm:"type:text" json:"message"`
@@ -36,6 +37,7 @@ func (Issue) TableName() string { return "quality.issues" }
 
 type IssueObservation struct {
 	RuleApplicationID int64
+	RuleKey           string
 	RuleType          string
 	Severity          string
 	Message           string

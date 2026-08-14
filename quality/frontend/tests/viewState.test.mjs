@@ -122,6 +122,11 @@ test('execution detail shows a stable failure state and stops obsolete polling',
   assert.match(executionDetailSource, /executionFailureLabel\(execution\.value, t\)/)
 })
 
+test('execution detail exposes the stable rule identity', () => {
+  assert.match(executionDetailSource, /prop="rule_key"/)
+  assert.match(executionDetailSource, /quality\.execution\.ruleKey/)
+})
+
 test('execution list and detail share localized stable failure reasons', () => {
   assert.match(executionListSource, /executionFailureLabel\(row, t\)/)
   assert.match(executionDetailSource, /executionFailureLabel\(execution\.value, t\)/)

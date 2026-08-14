@@ -22,6 +22,7 @@ type ResourceAttributesInput struct {
 	IncludeAccessIndex bool
 	CatalogPathFor     func(string) plugin.CatalogPath
 	CADInspector       CADInspector
+	ContainerInspector ContainerInspector
 	SourceEngine       *commonModels.Engine
 	TenantID           uint
 }
@@ -82,6 +83,11 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 		}
 	}
 	metaitem.ApplyContainerSummary(attrs, item)
+	if handled, err := EnrichRuntimeContainerItem(ctx, attrs, input.ContainerInspector, input.SourceEngine, input.TenantID, item, input.PhysicalPath); err != nil {
+		return item, item.Fields, err
+	} else if handled {
+		return item, item.Fields, nil
+	}
 	if item.DataType == datatype.Container && canReadContent {
 		reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, input.CatalogPathFor(input.PhysicalPath), plugin.ReadOptions{})
 		if err != nil {

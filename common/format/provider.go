@@ -6,6 +6,8 @@ import (
 
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/datatype"
+	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/workflowaccess"
 	"github.com/addp/common/resume"
 )
 
@@ -165,6 +167,50 @@ type ScopeTableReaderProvider interface {
 	OpenTableScopeReader(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *ParseOptions) (TableReader, error)
 }
 
+// ScopeTableWriterProvider writes one table child as a whole output scope.
+// The writer owns the complete scope commit boundary, including cleanup after
+// a failed write; callers must not publish individual internal files.
+type ScopeTableWriterProvider interface {
+	FormatPlugin
+	OpenTableScopeWriter(ctx context.Context, writer contentio.Writer, scope contentio.Ref, tableInfo *datatype.TableInfo, options *WriteOptions) (TableWriter, error)
+}
+
+// RuntimeScopeTableProviderFactory is the stable identity shared by format
+// factories whose native dependencies live in a controlled workflow runtime.
+// The factory itself is not an executable reader or writer.
+type RuntimeScopeTableProviderFactory interface {
+	FormatPlugin
+}
+
+// RuntimeContainerInfoProviderFactory binds a source-only access plan to a
+// container info provider whose native dependencies live in a workflow runtime.
+// The factory does not inspect resources itself.
+type RuntimeContainerInfoProviderFactory interface {
+	FormatPlugin
+	RequiredContainerInfoOperators() []string
+	BindContainerInfoProvider(runtime engineplugin.WorkflowRuntimeProvider, runtimeConn engineplugin.ConnectionInfo, plan workflowaccess.SourcePlan) (BoundContainerInfoProvider, error)
+}
+
+// BoundContainerInfoProvider inspects one already-authorized container source.
+// It does not receive a content stream because the bound access plan is the
+// sole resource access contract.
+type BoundContainerInfoProvider interface {
+	FormatPlugin
+	DescribeContainer(ctx context.Context, options *ParseOptions) (*ContainerDescribeResult, error)
+}
+
+type RuntimeScopeTableReaderFactory interface {
+	RuntimeScopeTableProviderFactory
+	RequiredScopeTableReadOperators() []string
+	BindScopeTableReader(runtime engineplugin.WorkflowRuntimeProvider, runtimeConn engineplugin.ConnectionInfo, plan workflowaccess.SourcePlan) (ScopeTableReaderProvider, error)
+}
+
+type RuntimeScopeTableWriterFactory interface {
+	RuntimeScopeTableProviderFactory
+	RequiredScopeTableWriteOperators() []string
+	BindScopeTableWriter(runtime engineplugin.WorkflowRuntimeProvider, runtimeConn engineplugin.ConnectionInfo, plan workflowaccess.TargetPlan) (ScopeTableWriterProvider, error)
+}
+
 // TableWriterProvider 表示格式能够把 table 数据写出为该格式编码。
 //
 // Provider 是可注册的无状态能力入口；TableWriter 是一次输出会话的状态对象。
@@ -189,6 +235,11 @@ type MultiTableWriterProvider interface {
 type TableWriter interface {
 	WriteRows(ctx context.Context, rows []map[string]interface{}) error
 	Close(ctx context.Context) error
+}
+
+type AbortableTableWriter interface {
+	TableWriter
+	Abort(ctx context.Context) error
 }
 
 // CommitMarkerProvider is an optional capability implemented by writers that
