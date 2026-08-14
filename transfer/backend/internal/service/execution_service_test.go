@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	commonExecution "github.com/addp/common/execution"
 	"testing"
 
+	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resume"
 	"github.com/addp/transfer/internal/executor"
@@ -494,8 +495,8 @@ func newExecutionServiceTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS transfer").Error; err != nil {
 		t.Fatalf("attach transfer schema: %v", err)
 	}
-	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
-		t.Fatalf("attach common schema: %v", err)
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
 	createExecutionServiceTestTables(t, db)
 	return db
@@ -534,42 +535,12 @@ func createExecutionServiceTestTables(t *testing.T, db *gorm.DB) {
 			updated_at DATETIME,
 			deleted_at DATETIME
 		)`,
-		`CREATE TABLE common.task_executions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			tenant_id INTEGER NOT NULL,
-			execution_id TEXT NOT NULL,
-			module TEXT NOT NULL,
-			task_type TEXT NOT NULL,
-			source TEXT NOT NULL DEFAULT '',
-			source_task_id TEXT,
-			source_task_name TEXT,
-			parent_execution_id TEXT,
-			status TEXT NOT NULL,
-			progress INTEGER,
-			current_step TEXT,
-			trigger_type TEXT NOT NULL,
-			triggered_by INTEGER,
-			execution_config JSON,
-			error_details JSON,
-			metadata JSON,
-			execution_time_ms INTEGER,
-			rows_affected INTEGER,
-			records_read INTEGER,
-			records_written INTEGER,
-			bytes_read INTEGER,
-			bytes_written INTEGER,
-			started_at DATETIME,
-			completed_at DATETIME,
-			created_at DATETIME,
-			updated_at DATETIME
-		)`,
 	}
 	for _, stmt := range statements {
 		if err := db.Exec(stmt).Error; err != nil {
 			t.Fatalf("create test table: %v", err)
 		}
 	}
-	addTaskExecutionModelColumns(t, db)
 }
 
 func createExecutionServiceTestTask(t *testing.T, db *gorm.DB) models.TransferTask {

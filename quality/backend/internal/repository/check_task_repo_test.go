@@ -10,6 +10,7 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	"github.com/addp/quality/internal/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -288,13 +289,11 @@ func newCheckTaskRepositoryTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("get sql db: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	for _, schema := range []string{"common", "quality"} {
-		if err := db.Exec("ATTACH DATABASE ':memory:' AS " + schema).Error; err != nil {
-			t.Fatalf("attach %s schema: %v", schema, err)
-		}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS quality").Error; err != nil {
+		t.Fatalf("attach quality schema: %v", err)
 	}
-	if err := db.Exec(qualityRepositoryExecutionTableSQL).Error; err != nil {
-		t.Fatalf("create common execution test table: %v", err)
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE quality.check_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -333,46 +332,6 @@ func newCheckTaskRepositoryTestDB(t *testing.T) *gorm.DB {
 	}
 	return db
 }
-
-const qualityRepositoryExecutionTableSQL = `CREATE TABLE common.task_executions (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	tenant_id INTEGER NOT NULL,
-	execution_id TEXT NOT NULL UNIQUE,
-	module TEXT NOT NULL,
-	task_type TEXT NOT NULL,
-	source TEXT NOT NULL DEFAULT '',
-	source_task_id TEXT,
-	source_task_name TEXT,
-	parent_execution_id TEXT,
-	status TEXT NOT NULL,
-	progress INTEGER,
-	current_step TEXT,
-	trigger_type TEXT NOT NULL,
-	triggered_by INTEGER,
-	actor_principal_id INTEGER,
-	actor_tenant_membership_id INTEGER,
-	issued_authorization_version INTEGER,
-	execution_authorization_id INTEGER,
-	authorization_effects TEXT,
-	authorization_expires_at DATETIME,
-	execution_config JSON,
-	error_details JSON,
-	metadata JSON,
-	execution_time_ms INTEGER,
-	rows_affected INTEGER,
-	records_read INTEGER,
-	records_written INTEGER,
-	bytes_read INTEGER,
-	bytes_written INTEGER,
-	lease_owner TEXT,
-	lease_expires_at DATETIME,
-	attempt INTEGER NOT NULL DEFAULT 0,
-	max_attempts INTEGER NOT NULL DEFAULT 3,
-	started_at DATETIME,
-	completed_at DATETIME,
-	created_at DATETIME,
-	updated_at DATETIME
-)`
 
 func createCheckTaskRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID int64) models.CheckTask {
 	t.Helper()

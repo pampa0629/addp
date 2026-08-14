@@ -1,4 +1,4 @@
-.PHONY: help init dev build up down logs clean test test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres dev-all \
+.PHONY: help init dev build up down logs clean test test-go test-model-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres dev-all \
         build-backend build-frontend build-debug build-release build-iam-bootstrap build-iam-recovery clean-dist \
         infra-up infra-down infra-restart infra-status ports-validate
 
@@ -440,6 +440,33 @@ test-common-python-cli-release: ## 构建 wheel 并运行全新 venv、pipx 生�
 test-system-iam-postgres: ## 使用一次性 PostgreSQL 数据库运行 System IAM 发布门禁
 	@bash scripts/test/system-iam-postgres-gate.sh
 
+test-execution-fixtures: ## 校验统一执行存储测试夹具
+	@bash scripts/test/check-execution-test-fixtures.sh
+
+test-model-frontend: ## 运行 Model 前端状态、交互与浏览器回归测试
+	@cd model/frontend && npm test
+	@cd model/frontend && npm run test:e2e
+	@cd model/frontend && npm run build
+
+test-go: ## 运行 go.work 中全部 Go 模块测试
+	@set -e; \
+	workspace_modules="$$(go list -m -f '{{.Dir}}')"; \
+	for module in $$(git ls-files -- 'go.mod' '**/go.mod' | sed 's#/go.mod$$##; s#^go.mod$$#.#'); do \
+		if ! printf '%s\n' "$$workspace_modules" | grep -Fxq "$(CURDIR)/$$module"; then \
+			echo "$(RED)Go 模块未加入 go.work: $$module$(NC)" >&2; \
+			exit 1; \
+		fi; \
+	done; \
+	for module_dir in $$workspace_modules; do \
+		module=$${module_dir#$(CURDIR)/}; \
+		if [ "$$module" = "$$module_dir" ] || ! git ls-files --error-unmatch "$$module/go.mod" >/dev/null 2>&1; then \
+			echo "$(RED)go.work 引用了仓库外或未跟踪模块: $$module_dir$(NC)" >&2; \
+			exit 1; \
+		fi; \
+		echo "$(GREEN)运行 $$module 测试...$(NC)"; \
+		(cd "$$module_dir" && go test ./...); \
+	done
+
 compare-agent-eval: ## 比较两份仓库外 Agent v2 评测报告
 	@bash scripts/test/agent-evaluation-gate.sh compare
 
@@ -459,12 +486,7 @@ test-authorization: ## 校验 IAM Manifest、生成常量和授权覆盖报告
 	@cd common && go run ./authorization/cmd/manifest --coverage-report --repository-root .. > /tmp/addp-authorization-coverage.json
 	@SWAGGER_COVERAGE_WARN_ONLY=1 bash scripts/swagger/check-route-coverage.sh all
 
-test: test-agent-eval test-authorization ## 运行所有测试
-	@echo "$(GREEN)运行测试...$(NC)"
-	@cd system/backend && go test ./...
-	@if [ -d manager/backend ]; then cd manager/backend && go test ./...; fi
-	@if [ -d meta/backend ]; then cd meta/backend && go test ./...; fi
-	@if [ -d transfer/backend ]; then cd transfer/backend && go test ./...; fi
+test: test-execution-fixtures test-model-frontend test-agent-eval test-authorization test-go ## 运行所有测试
 	@echo "$(GREEN)所有测试完成$(NC)"
 
 test-system: ## 运行 System 模块测试

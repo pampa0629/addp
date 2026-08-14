@@ -8,6 +8,7 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/graph/internal/models"
 	"gorm.io/driver/sqlite"
@@ -137,53 +138,14 @@ func newBuildRepositoryTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("get sql db: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
-		t.Fatalf("attach common schema: %v", err)
-	}
-	if err := db.Exec(graphRepositoryExecutionTableSQL).Error; err != nil {
-		t.Fatalf("create common execution test table: %v", err)
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
 	if err := db.AutoMigrate(&models.BuildTask{}, &models.BuildMaterial{}, &models.ReviewItem{}); err != nil {
 		t.Fatalf("migrate graph execution test tables: %v", err)
 	}
 	return db
 }
-
-const graphRepositoryExecutionTableSQL = `CREATE TABLE common.task_executions (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	tenant_id INTEGER NOT NULL,
-	execution_id TEXT NOT NULL UNIQUE,
-	module TEXT NOT NULL,
-	task_type TEXT NOT NULL,
-	source TEXT NOT NULL DEFAULT '',
-	source_task_id TEXT,
-	source_task_name TEXT,
-	parent_execution_id TEXT,
-	status TEXT NOT NULL,
-	progress INTEGER,
-	current_step TEXT,
-	trigger_type TEXT NOT NULL,
-	triggered_by INTEGER,
-	actor_principal_id TEXT,
-	actor_tenant_membership_id INTEGER,
-	issued_authorization_version INTEGER,
-	execution_authorization_id TEXT,
-	authorization_effects JSON,
-	authorization_expires_at DATETIME,
-	execution_config JSON,
-	error_details JSON,
-	metadata JSON,
-	execution_time_ms INTEGER,
-	rows_affected INTEGER,
-	records_read INTEGER,
-	records_written INTEGER,
-	bytes_read INTEGER,
-	bytes_written INTEGER,
-	started_at DATETIME,
-	completed_at DATETIME,
-	created_at DATETIME,
-	updated_at DATETIME
-)`
 
 func createBuildRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID uint, status string) (models.BuildTask, models.BuildMaterial) {
 	t.Helper()

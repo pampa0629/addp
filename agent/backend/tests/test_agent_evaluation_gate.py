@@ -5,16 +5,27 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 EVAL_ROOT = REPO_ROOT / "evals" / "agent-scenarios"
 sys.path.insert(0, str(EVAL_ROOT))
 
-from gate import GateFailure, build_report  # noqa: E402
+from gate import GateFailure, build_report, run_offline_checks  # noqa: E402
 
 
 class AgentEvaluationGateTests(unittest.TestCase):
+    @patch("gate._run_check")
+    def test_offline_checks_use_each_module_test_runtime(self, run_check):
+        run_check.return_value = {"name": "stub", "status": "passed", "duration_ms": 0}
+
+        run_offline_checks()
+
+        calls = run_check.call_args_list
+        self.assertEqual(calls[0].args[1][0], str(REPO_ROOT / "agent/backend/venv/bin/python"))
+        self.assertEqual(calls[1].args[1][0], str(REPO_ROOT / "common-python/.venv/bin/python"))
+
     def test_offline_contract_gate_discovers_all_scenarios(self):
         report = build_report(EVAL_ROOT)
         self.assertEqual(report["schema"], "addp.agent-evaluation-gate/v2")

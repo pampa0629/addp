@@ -29,6 +29,7 @@ scripts/
 ├── local/          # 四、本地 Docker 部署
 ├── prod/           # 五、生产服务器部署
 ├── registry/       # Docker Registry 管理
+├── test/           # 测试门禁与发布认证
 └── utils/          # 通用工具脚本
 ```
 
@@ -422,11 +423,14 @@ scripts/utils/
 ```bash
 scripts/test/
 ├── agent-evaluation-gate.sh  # Agent 离线/发布统一评测门禁
+├── check-execution-test-fixtures.sh # 统一执行存储测试夹具门禁
 ├── common-python-cli-release-gate.sh # ADDP CLI wheel 与 macOS Keychain 产品发布门禁
 └── system-iam-postgres-gate.sh # System IAM 与 Fosite 一次性 PostgreSQL 发布门禁
 ```
 
-Agent 默认离线门禁使用 `make test-agent-eval`，并已包含在根 `make test`。人工发布验收使用 `make test-agent-eval-release`，需要显式提供三份仓库外在线证据路径；脚本不自动执行 OAuth 登录或生成在线证据。输出统一为仓库外 `addp.agent-evaluation-gate/v2`，外部发布流程可归档其中的源码版本、契约/证据摘要和检查耗时，脚本自身不维护历史记录。
+Go 全量测试使用 `make test-go`，先校验根目录 `go.work` 与 Git 已跟踪的 `go.mod` 完全一致，再逐一运行 `go test ./...`，不维护第二份模块清单。`make test-execution-fixtures` 禁止业务测试手写 `task_executions` 表；Common 仓储自测、System PostgreSQL 专项测试及 Manager 历史表清理测试使用精确文件白名单。Model 的权限错误、URL 状态、ER 图过滤、DDL 请求和主题 token 回归使用 `make test-model-frontend`；该入口同时运行独立端口上的浏览器 E2E，覆盖 403 明确提示、业务域详情往返恢复和窄窗口深色 DDL 预览，并执行生产构建与 500 KiB 入口分块预算校验。三项均已纳入根目录 `make test`。
+
+Agent 默认离线门禁使用 `make test-agent-eval`，并已包含在根 `make test`。该门禁分别使用 `agent/backend/venv` 运行 Agent 测试、使用 `common-python/.venv` 运行 Common-Python 全量测试；缺少后者时先执行 `cd common-python && uv sync --extra dev`。人工发布验收使用 `make test-agent-eval-release`，需要显式提供三份仓库外在线证据路径；脚本不自动执行 OAuth 登录或生成在线证据。输出统一为仓库外 `addp.agent-evaluation-gate/v2`，外部发布流程可归档其中的源码版本、契约/证据摘要和检查耗时，脚本自身不维护历史记录。
 
 两份归档报告使用 `make compare-agent-eval` 比较，需要显式提供 `ADDP_AGENT_EVAL_BASELINE` 和 `ADDP_AGENT_EVAL_CURRENT`，结果通过 `ADDP_AGENT_EVAL_REPORT` 写到仓库外。比较只读取严格 v2 报告，输出 `addp.agent-evaluation-comparison/v1`，不重跑测试、不读取在线证据、不设置耗时阈值。
 

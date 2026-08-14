@@ -206,6 +206,7 @@
     <!-- 属性对话框 -->
     <el-dialog
       v-model="attrDialogVisible"
+      class="addp-dialog"
       :title="editingAttr ? t('model.attribute.edit') : t('model.attribute.add')"
       width="min(480px, calc(100vw - 32px))"
     >
@@ -258,6 +259,7 @@
     <!-- 关系对话框 -->
     <el-dialog
       v-model="relationDialogVisible"
+      class="addp-dialog"
       :title="editingRelation ? t('model.relation.edit') : t('model.relation.add')"
       width="min(600px, calc(100vw - 32px))"
     >

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -39,26 +40,8 @@ func newExecutionQueryServiceTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
-		t.Fatalf("attach common schema: %v", err)
-	}
-	if err := db.Exec(`CREATE TABLE common.task_executions (
-		id INTEGER PRIMARY KEY,
-		tenant_id INTEGER NOT NULL,
-		execution_id TEXT NOT NULL,
-		module TEXT NOT NULL,
-		task_type TEXT NOT NULL,
-		source TEXT NOT NULL DEFAULT '',
-		source_task_id TEXT,
-		source_task_name TEXT,
-		parent_execution_id TEXT,
-		status TEXT NOT NULL,
-		progress INTEGER,
-		trigger_type TEXT NOT NULL,
-		created_at DATETIME,
-		updated_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create task_executions table: %v", err)
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
 	return db
 }

@@ -9,6 +9,7 @@ import (
 
 	commonAuth "github.com/addp/common/authorization"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/google/uuid"
@@ -282,10 +283,11 @@ func newToolApprovalTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("get sql db: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	for _, schema := range []string{"develop", "common"} {
-		if err := db.Exec("ATTACH DATABASE ':memory:' AS " + schema).Error; err != nil {
-			t.Fatalf("attach %s schema: %v", schema, err)
-		}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS develop").Error; err != nil {
+		t.Fatalf("attach develop schema: %v", err)
+	}
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
 	statements := []string{
 		`CREATE TABLE develop.tool_approvals (
@@ -305,41 +307,6 @@ func newToolApprovalTestDB(t *testing.T) *gorm.DB {
 			decided_by_user_id INTEGER,
 			consumed_at DATETIME,
 			execution_id TEXT
-		)`,
-		`CREATE TABLE common.task_executions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			tenant_id INTEGER NOT NULL,
-			execution_id TEXT NOT NULL UNIQUE,
-			module TEXT NOT NULL,
-			task_type TEXT NOT NULL,
-			source TEXT NOT NULL,
-			source_task_id TEXT,
-			source_task_name TEXT,
-			parent_execution_id TEXT,
-			status TEXT NOT NULL,
-			progress INTEGER,
-			current_step TEXT,
-			trigger_type TEXT NOT NULL,
-			triggered_by INTEGER,
-			actor_principal_id INTEGER,
-			actor_tenant_membership_id INTEGER,
-			issued_authorization_version INTEGER,
-			execution_authorization_id INTEGER,
-			authorization_effects TEXT,
-			authorization_expires_at DATETIME,
-			execution_config JSON,
-			error_details JSON,
-			metadata JSON,
-			execution_time_ms INTEGER,
-			rows_affected INTEGER,
-			records_read INTEGER,
-			records_written INTEGER,
-			bytes_read INTEGER,
-			bytes_written INTEGER,
-			started_at DATETIME,
-			completed_at DATETIME,
-			created_at DATETIME NOT NULL,
-			updated_at DATETIME NOT NULL
 		)`,
 	}
 	for _, statement := range statements {

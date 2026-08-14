@@ -99,7 +99,7 @@
     </el-card>
 
     <!-- 新建对话框 -->
-    <el-dialog v-model="createDialogVisible" :title="t('model.entity.new')" width="min(480px, calc(100vw - 32px))">
+    <el-dialog v-model="createDialogVisible" class="addp-dialog" :title="t('model.entity.new')" width="min(480px, calc(100vw - 32px))">
       <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-width="90px">
         <el-form-item :label="t('model.entity.name')" prop="name">
           <el-input v-model="createForm.name" maxlength="200" :placeholder="t('model.entity.name_placeholder')" />

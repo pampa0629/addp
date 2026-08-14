@@ -68,6 +68,7 @@
     <!-- 导入对话框 -->
     <el-dialog
       v-model="importDialogVisible"
+      class="addp-dialog"
       :title="t('model.er_diagram.import_dialog_title')"
       width="min(800px, calc(100vw - 32px))"
     >
@@ -143,6 +144,7 @@ import { getModelErrorMessage } from '../utils/apiError'
 import { initializeMermaidTheme, observeThemeChange } from '../utils/mermaidTheme'
 import { buildERDiagramRouteQuery, resolveERDiagramRouteState } from '../utils/routeState'
 import { navigateModelRoute } from '../utils/moduleNavigation'
+import { filterERDiagramByDomain } from '../utils/erDiagramState'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -221,13 +223,13 @@ const refreshDiagram = async () => {
       entityRelationAPI.list()
     ])
     const allEntities = entitiesRes || []
-    entities.value = selectedDomainId.value
-      ? allEntities.filter(entity => entity.domain_id === selectedDomainId.value)
-      : allEntities
-    const visibleEntityIds = new Set(entities.value.map(entity => entity.id))
-    relations.value = (relationsRes || []).filter(relation =>
-      visibleEntityIds.has(relation.source_entity) && visibleEntityIds.has(relation.target_entity)
+    const filteredDiagram = filterERDiagramByDomain(
+      allEntities,
+      relationsRes || [],
+      selectedDomainId.value
     )
+    entities.value = filteredDiagram.entities
+    relations.value = filteredDiagram.relations
 
     // 生成Mermaid代码
     await generateGlobalMermaidCode()

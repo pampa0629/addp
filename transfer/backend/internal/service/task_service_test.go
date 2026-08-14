@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/plugins/csv"
 	_ "github.com/addp/common/format/plugins/pdf"
@@ -486,8 +487,8 @@ func newTransferTaskServiceTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS transfer").Error; err != nil {
 		t.Fatalf("attach transfer schema: %v", err)
 	}
-	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
-		t.Fatalf("attach common schema: %v", err)
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
 	if err := db.Exec(`
 		CREATE TABLE transfer.transfer_tasks (
@@ -523,40 +524,6 @@ func newTransferTaskServiceTestDB(t *testing.T) *gorm.DB {
 	`).Error; err != nil {
 		t.Fatalf("create transfer_tasks table: %v", err)
 	}
-	if err := db.Exec(`
-			CREATE TABLE common.task_executions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			tenant_id INTEGER NOT NULL,
-			execution_id TEXT NOT NULL UNIQUE,
-			module TEXT NOT NULL,
-			task_type TEXT NOT NULL,
-			source TEXT NOT NULL DEFAULT '',
-			source_task_id TEXT,
-			source_task_name TEXT,
-			parent_execution_id TEXT,
-			status TEXT NOT NULL,
-			progress INTEGER,
-			current_step TEXT,
-			trigger_type TEXT NOT NULL,
-			triggered_by INTEGER,
-			execution_config JSON,
-			error_details JSON,
-			metadata JSON,
-			execution_time_ms INTEGER,
-			rows_affected INTEGER,
-			records_read INTEGER,
-			records_written INTEGER,
-			bytes_read INTEGER,
-			bytes_written INTEGER,
-			started_at DATETIME,
-			completed_at DATETIME,
-			created_at DATETIME,
-			updated_at DATETIME
-		)
-	`).Error; err != nil {
-		t.Fatalf("create task_executions table: %v", err)
-	}
-	addTaskExecutionModelColumns(t, db)
 	if err := db.Exec(`
 			CREATE TABLE transfer.schema_change_requests (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,

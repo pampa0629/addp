@@ -1,8 +1,9 @@
 <template>
   <el-dialog
     v-model="visible"
+    class="addp-dialog"
     :title="t('model.ddl.title')"
-    width="700px"
+    width="min(700px, calc(100vw - 24px))"
     :before-close="handleClose"
   >
     <div class="ddl-wrapper">

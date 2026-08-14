@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	_ "github.com/addp/common/format/plugins/csv"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/repository"
@@ -392,26 +393,9 @@ func newTransferCleanupTestDB(t *testing.T) *gorm.DB {
 		)`).Error; err != nil {
 		t.Fatalf("create schema_change_requests table: %v", err)
 	}
-	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
-		t.Fatalf("attach common schema: %v", err)
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE common.task_executions (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		tenant_id INTEGER NOT NULL,
-		execution_id TEXT NOT NULL,
-		module TEXT NOT NULL,
-		task_type TEXT NOT NULL,
-		source_task_id TEXT,
-		status TEXT NOT NULL,
-		metadata JSON,
-		started_at DATETIME,
-		completed_at DATETIME,
-		execution_time_ms INTEGER,
-		updated_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create task_executions table: %v", err)
-	}
-	addTaskExecutionModelColumns(t, db)
 	return db
 }
 

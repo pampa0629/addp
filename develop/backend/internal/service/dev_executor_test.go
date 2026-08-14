@@ -14,6 +14,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/models"
@@ -65,10 +66,11 @@ func TestExecuteWithParamsFromParentExecutionKeepsFailedChildWhenAuthorizationFa
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, schema := range []string{"develop", "common"} {
-		if err := db.Exec("ATTACH DATABASE ':memory:' AS " + schema).Error; err != nil {
-			t.Fatalf("attach %s schema: %v", schema, err)
-		}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS develop").Error; err != nil {
+		t.Fatalf("attach develop schema: %v", err)
+	}
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
 	for _, statement := range []string{
 		`CREATE TABLE develop.dev_tasks (
@@ -77,17 +79,6 @@ func TestExecuteWithParamsFromParentExecutionKeepsFailedChildWhenAuthorizationFa
 			editor_layout JSON, timeout INTEGER, description TEXT, tags TEXT, created_by INTEGER,
 			updated_by INTEGER, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME,
 			status TEXT, last_execution_id TEXT, last_execution_status TEXT, last_run_at DATETIME
-		)`,
-		`CREATE TABLE common.task_executions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, execution_id TEXT NOT NULL UNIQUE,
-			module TEXT NOT NULL, task_type TEXT NOT NULL, source TEXT NOT NULL, source_task_id TEXT,
-			source_task_name TEXT, parent_execution_id TEXT, status TEXT NOT NULL, progress INTEGER,
-			current_step TEXT, trigger_type TEXT NOT NULL, triggered_by INTEGER,
-			actor_principal_id INTEGER, actor_tenant_membership_id INTEGER, issued_authorization_version INTEGER,
-			execution_authorization_id INTEGER, authorization_effects TEXT, authorization_expires_at DATETIME,
-			execution_config JSON, error_details JSON, metadata JSON, execution_time_ms INTEGER,
-			rows_affected INTEGER, records_read INTEGER, records_written INTEGER, bytes_read INTEGER,
-			bytes_written INTEGER, started_at DATETIME, completed_at DATETIME, created_at DATETIME, updated_at DATETIME
 		)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
@@ -311,15 +302,8 @@ func TestNotifyExecutionLineageFailureDoesNotMutateSuccessfulExecution(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
-		t.Fatalf("attach common schema: %v", err)
-	}
-	if err := db.Exec(`CREATE TABLE common.task_executions (
-		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, execution_id TEXT NOT NULL UNIQUE,
-		module TEXT NOT NULL, task_type TEXT NOT NULL, source TEXT NOT NULL, status TEXT NOT NULL,
-		progress INTEGER, trigger_type TEXT NOT NULL, metadata JSON, created_at DATETIME, updated_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create task executions: %v", err)
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
 	executionID := uuid.New().String()
 	if err := db.Exec(`INSERT INTO common.task_executions

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/mvt"
@@ -327,19 +328,13 @@ func newTileCacheTaskServiceTestDB(t *testing.T) *gorm.DB {
 	}
 	sqlDB, _ := db.DB()
 	sqlDB.SetMaxOpenConns(1)
-	for _, schema := range []string{"common", "manager"} {
-		if err := db.Exec("ATTACH DATABASE ':memory:' AS " + schema).Error; err != nil {
-			t.Fatalf("attach %s: %v", schema, err)
-		}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS manager").Error; err != nil {
+		t.Fatalf("attach manager: %v", err)
+	}
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
 	statements := []string{
-		`CREATE TABLE common.task_executions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, execution_id TEXT NOT NULL,
-			module TEXT NOT NULL, task_type TEXT NOT NULL, source TEXT NOT NULL DEFAULT '', source_task_id TEXT,
-			source_task_name TEXT, parent_execution_id TEXT, status TEXT NOT NULL, progress INTEGER, current_step TEXT,
-			trigger_type TEXT NOT NULL, triggered_by INTEGER, execution_config JSON, error_details JSON, metadata JSON,
-			execution_time_ms INTEGER, rows_affected INTEGER, records_read INTEGER, records_written INTEGER,
-			bytes_read INTEGER, bytes_written INTEGER, started_at DATETIME, completed_at DATETIME, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE manager.vector_tile_cache_tasks (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL, description TEXT,
 			enabled BOOLEAN, last_execution_id TEXT, last_execution_status TEXT, last_run_at DATETIME, next_run_at DATETIME,
@@ -383,7 +378,6 @@ func newTileCacheTaskServiceTestDB(t *testing.T) *gorm.DB {
 			t.Fatalf("create test table: %v", err)
 		}
 	}
-	addTaskExecutionRuntimeColumns(t, db)
 	return db
 }
 

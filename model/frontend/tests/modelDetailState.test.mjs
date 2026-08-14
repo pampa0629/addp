@@ -72,3 +72,14 @@ test('DDL preview payload contains only current materialization fields', () => {
     }
   })
 })
+
+test('DDL preview payload normalizes absent materialization without leaking undefined fields', () => {
+  assert.deepEqual(buildDDLPreviewRequest(), {
+    materialization: {
+      schema_name: '',
+      table_name: '',
+      partition_by: '',
+      partition_type: ''
+    }
+  })
+})

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	"github.com/addp/transfer/internal/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -131,7 +132,7 @@ func newSchemaChangeRepositoryTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS transfer").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE TABLE transfer.schema_change_requests (
@@ -158,24 +159,17 @@ func newSchemaChangeRepositoryTestDB(t *testing.T) *gorm.DB {
 		)`).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(`CREATE TABLE common.task_executions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			tenant_id INTEGER NOT NULL,
-			execution_id TEXT NOT NULL UNIQUE,
-			metadata JSON,
-			updated_at DATETIME
-		)`).Error; err != nil {
-		t.Fatal(err)
-	}
-	addTaskExecutionModelColumns(t, db)
 	return db
 }
 
 func seedSchemaChangeMetadataScanRequest(t *testing.T, db *gorm.DB, id uint) {
 	t.Helper()
 	executionID := fmt.Sprintf("schema-exec-%d", id)
-	if err := db.Exec(`INSERT INTO common.task_executions (tenant_id, execution_id, metadata, updated_at)
-		VALUES (?, ?, ?, ?)`, 7, executionID, `{"continuous":{}}`, time.Now()).Error; err != nil {
+	if err := db.Exec(`INSERT INTO common.task_executions
+		(tenant_id, execution_id, module, task_type, source, status, trigger_type, metadata, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 7, executionID, commonExecution.ModuleTransfer,
+		commonExecution.TaskTypeSync, commonExecution.ModuleTransfer, commonExecution.ExecutionStatusRunning,
+		commonExecution.TriggerTypeManual, `{"continuous":{}}`, time.Now(), time.Now()).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`INSERT INTO transfer.schema_change_requests

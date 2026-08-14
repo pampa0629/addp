@@ -163,7 +163,7 @@
     </el-row>
 
     <!-- 添加维度关联对话框 -->
-    <el-dialog v-model="addDimDialogVisible" :title="t('model.star_schema.add_dim_title')" width="min(480px, calc(100vw - 32px))" :close-on-click-modal="false">
+    <el-dialog v-model="addDimDialogVisible" class="addp-dialog" :title="t('model.star_schema.add_dim_title')" width="min(480px, calc(100vw - 32px))" :close-on-click-modal="false">
       <el-form :model="addDimForm" label-width="100px" ref="addDimFormRef">
         <el-form-item :label="t('model.star_schema.dim_table')" prop="target_table" :rules="[{ required: true, message: t('model.star_schema.dim_table_required') }]">
           <el-select

@@ -59,6 +59,7 @@
     <!-- 新建/编辑对话框 -->
     <el-dialog
       v-model="dialogVisible"
+      class="addp-dialog"
       :title="editingLayer ? t('model.dw_layer.edit') : t('model.dw_layer.new')"
       width="min(520px, calc(100vw - 32px))"
     >

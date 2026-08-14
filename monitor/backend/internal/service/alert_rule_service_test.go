@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -16,15 +17,7 @@ func TestAlertRuleTargetsOnlyIncludeActiveTaskProviderTypes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec(`CREATE TABLE common.task_executions (
-		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, execution_id TEXT NOT NULL,
-		module TEXT NOT NULL, task_type TEXT NOT NULL, source TEXT NOT NULL, source_task_id TEXT,
-		source_task_name TEXT, parent_execution_id TEXT, status TEXT NOT NULL, trigger_type TEXT NOT NULL,
-		metadata JSON, created_at DATETIME, updated_at DATETIME
-	)`).Error; err != nil {
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatal(err)
 	}
 	for _, row := range []struct {
@@ -37,8 +30,8 @@ func TestAlertRuleTargetsOnlyIncludeActiveTaskProviderTypes(t *testing.T) {
 		{executionID: "legacy-17", taskType: "transfer", taskID: "17", name: "legacy transfer"},
 	} {
 		if err := db.Exec(`INSERT INTO common.task_executions
-			(tenant_id, execution_id, module, task_type, source, source_task_id, source_task_name, status, trigger_type)
-			VALUES (7, ?, ?, ?, ?, ?, ?, ?, ?)`, row.executionID, commonExecution.ModuleTransfer,
+			(tenant_id, execution_id, module, task_type, source, source_task_id, source_task_name, status, trigger_type, created_at, updated_at)
+			VALUES (7, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, row.executionID, commonExecution.ModuleTransfer,
 			row.taskType, commonExecution.ModuleTransfer, row.taskID, row.name,
 			commonExecution.ExecutionStatusSuccess, commonExecution.TriggerTypeManual).Error; err != nil {
 			t.Fatal(err)

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	"github.com/addp/orchestrator/internal/repository"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -91,10 +92,11 @@ func newOrchestratorExecutionServiceTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	for _, schema := range []string{"orchestrator", "common"} {
-		if err := db.Exec("ATTACH DATABASE ':memory:' AS " + schema).Error; err != nil {
-			t.Fatalf("attach %s schema: %v", schema, err)
-		}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS orchestrator").Error; err != nil {
+		t.Fatalf("attach orchestrator schema: %v", err)
+	}
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
 	statements := []string{
 		`CREATE TABLE orchestrator.orchestrations (
@@ -102,18 +104,6 @@ func newOrchestratorExecutionServiceTestDB(t *testing.T) *gorm.DB {
 			steps JSON NOT NULL, editor_layout JSON NOT NULL DEFAULT '{}', enabled BOOLEAN, schedule TEXT, last_run_at DATETIME, next_run_at DATETIME,
 			last_execution_id TEXT, last_execution_status TEXT, created_by INTEGER,
 			created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
-		)`,
-		`CREATE TABLE common.task_executions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, execution_id TEXT NOT NULL,
-			module TEXT NOT NULL, task_type TEXT NOT NULL, source TEXT NOT NULL, source_task_id TEXT,
-			source_task_name TEXT, parent_execution_id TEXT, status TEXT NOT NULL, progress INTEGER,
-			current_step TEXT, trigger_type TEXT NOT NULL, triggered_by INTEGER,
-			actor_principal_id INTEGER, actor_tenant_membership_id INTEGER, issued_authorization_version INTEGER,
-			execution_authorization_id INTEGER, authorization_effects TEXT, authorization_expires_at DATETIME,
-			execution_config JSON,
-			error_details JSON, metadata JSON, execution_time_ms INTEGER, rows_affected INTEGER,
-			records_read INTEGER, records_written INTEGER, bytes_read INTEGER, bytes_written INTEGER,
-			started_at DATETIME, completed_at DATETIME, created_at DATETIME, updated_at DATETIME
 		)`,
 	}
 	for _, statement := range statements {

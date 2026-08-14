@@ -31,7 +31,7 @@ fi
 VENV_PYTHON="$WORK_DIR/venv/bin/python"
 VENV_ADDP="$WORK_DIR/venv/bin/addp"
 
-"$VENV_PYTHON" -m pip install --disable-pip-version-check "$WHEEL" pytest pytest-asyncio twine pipx==1.16.5
+"$VENV_PYTHON" -m pip install --disable-pip-version-check "$WHEEL[dev]" twine pipx==1.16.5
 "$VENV_PYTHON" -m twine check "$WHEEL"
 "$VENV_PYTHON" -c '
 from pathlib import Path

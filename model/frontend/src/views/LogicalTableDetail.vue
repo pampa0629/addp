@@ -258,6 +258,7 @@
     <!-- 字段对话框 -->
     <el-dialog
       v-model="fieldDialogVisible"
+      class="addp-dialog"
       :title="editingField ? t('model.field.edit') : t('model.field.add')"
       width="min(580px, calc(100vw - 32px))"
     >
@@ -358,7 +359,7 @@
     </el-dialog>
 
     <!-- 关联指标对话框 -->
-    <el-dialog v-model="metricDialogVisible" :title="t('model.metric.add')" width="min(520px, calc(100vw - 32px))">
+    <el-dialog v-model="metricDialogVisible" class="addp-dialog" :title="t('model.metric.add')" width="min(520px, calc(100vw - 32px))">
       <el-form :model="metricForm" label-width="90px">
         <el-form-item :label="t('model.metric.metric_name')" required>
           <el-select

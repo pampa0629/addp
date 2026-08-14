@@ -1,9 +1,6 @@
 const readThemeColor = (styles, variable) => styles.getPropertyValue(variable).trim()
 
-export const readMermaidTheme = () => {
-  const styles = getComputedStyle(document.documentElement)
-
-  return {
+export const resolveMermaidTheme = styles => ({
     background: readThemeColor(styles, '--addp-bg-primary'),
     surface: readThemeColor(styles, '--addp-bg-secondary'),
     textPrimary: readThemeColor(styles, '--addp-text-primary'),
@@ -20,8 +17,10 @@ export const readMermaidTheme = () => {
       { length: 12 },
       (_, index) => readThemeColor(styles, `--addp-graph-category-${index + 1}`)
     )
-  }
-}
+  })
+
+export const readMermaidTheme = () =>
+  resolveMermaidTheme(getComputedStyle(document.documentElement))
 
 export const initializeMermaidTheme = (mermaid, diagramConfig = {}) => {
   const theme = readMermaidTheme()

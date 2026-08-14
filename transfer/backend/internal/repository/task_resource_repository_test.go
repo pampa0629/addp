@@ -9,6 +9,7 @@ import (
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	"github.com/addp/transfer/internal/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -117,10 +118,11 @@ func newTaskResourceRepositoryTestDB(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	for _, schema := range []string{"transfer", "common"} {
-		if err := db.Exec("ATTACH DATABASE ':memory:' AS " + schema).Error; err != nil {
-			t.Fatal(err)
-		}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS transfer").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatal(err)
 	}
 	statements := []string{
 		`CREATE TABLE transfer.transfer_tasks (
@@ -135,19 +137,12 @@ func newTaskResourceRepositoryTestDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE transfer.capture_resources (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, task_id INTEGER NOT NULL)`,
 		`CREATE TABLE transfer.schema_change_requests (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, task_id INTEGER NOT NULL)`,
-		`CREATE TABLE common.task_executions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, execution_id TEXT NOT NULL,
-			module TEXT NOT NULL, task_type TEXT NOT NULL, source_task_id TEXT, status TEXT NOT NULL,
-			metadata JSON, started_at DATETIME, completed_at DATETIME, execution_time_ms INTEGER,
-			created_at DATETIME, updated_at DATETIME
-		)`,
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
-	addTaskExecutionModelColumns(t, db)
 	return db
 }
 
@@ -183,9 +178,10 @@ func seedTaskResourceExecution(t *testing.T, db *gorm.DB, tenantID, taskID uint,
 	t.Helper()
 	now := time.Date(2026, 7, 24, 1, 0, 0, 0, time.UTC)
 	if err := db.Exec(`INSERT INTO common.task_executions
-		(tenant_id, execution_id, module, task_type, source_task_id, status, metadata, started_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, '{"existing":"value"}', ?, ?, ?)`,
-		tenantID, executionID, commonExecution.ModuleTransfer, commonExecution.TaskTypeSync, fmt.Sprint(taskID), status, startedAt, now, now,
+		(tenant_id, execution_id, module, task_type, source, source_task_id, status, trigger_type, metadata, started_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, '{"existing":"value"}', ?, ?, ?)`,
+		tenantID, executionID, commonExecution.ModuleTransfer, commonExecution.TaskTypeSync, commonExecution.ModuleTransfer,
+		fmt.Sprint(taskID), status, commonExecution.TriggerTypeManual, startedAt, now, now,
 	).Error; err != nil {
 		t.Fatal(err)
 	}

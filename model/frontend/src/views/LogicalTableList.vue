@@ -110,7 +110,7 @@
     </el-card>
 
     <!-- 新建对话框 -->
-    <el-dialog v-model="createDialogVisible" :title="t('model.logical_table.new')" width="min(540px, calc(100vw - 32px))">
+    <el-dialog v-model="createDialogVisible" class="addp-dialog" :title="t('model.logical_table.new')" width="min(540px, calc(100vw - 32px))">
       <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-width="100px">
         <el-form-item :label="t('model.logical_table.name')" prop="name">
           <el-input v-model="createForm.name" maxlength="200" :placeholder="t('model.logical_table.name_placeholder')" />

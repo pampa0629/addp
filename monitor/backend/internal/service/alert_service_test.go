@@ -6,6 +6,7 @@ import (
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
 	commonsecurity "github.com/addp/common/security"
 	monitorModels "github.com/addp/monitor/internal/models"
@@ -18,18 +19,10 @@ func TestAlertEvaluationOpensResolvesAndReopensIncident(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, schema := range []string{"common", "monitor"} {
-		if err := db.Exec("ATTACH DATABASE ':memory:' AS " + schema).Error; err != nil {
-			t.Fatal(err)
-		}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS monitor").Error; err != nil {
+		t.Fatal(err)
 	}
-	if err := db.Exec(`CREATE TABLE common.task_executions (
-		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, execution_id TEXT NOT NULL UNIQUE,
-		module TEXT NOT NULL, task_type TEXT NOT NULL, source TEXT NOT NULL, source_task_id TEXT,
-		source_task_name TEXT, parent_execution_id TEXT,
-		status TEXT NOT NULL, progress INTEGER DEFAULT 0, trigger_type TEXT NOT NULL,
-		metadata JSON, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL
-	)`).Error; err != nil {
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE TABLE monitor.alert_incidents (

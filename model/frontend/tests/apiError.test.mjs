@@ -6,6 +6,7 @@ test('permission errors use a stable code', () => {
   const error = { response: { status: 403, data: { error_code: 'permission_denied' } } }
   assert.equal(isPermissionDenied(error), true)
   assert.equal(getModelErrorCode(error), 'permission_denied')
+  assert.equal(isPermissionDenied({ response: { status: 400, data: { error_code: 'permission_denied' } } }), true)
 })
 
 test('not found and generic errors remain distinguishable', () => {

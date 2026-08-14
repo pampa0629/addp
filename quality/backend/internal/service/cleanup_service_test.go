@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	"github.com/addp/quality/internal/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -304,8 +305,8 @@ func newQualityCleanupTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS quality").Error; err != nil {
 		t.Fatalf("attach quality schema: %v", err)
 	}
-	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
-		t.Fatalf("attach common schema: %v", err)
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
 	statements := []string{
 		`CREATE TABLE quality.rule_applications (
@@ -361,21 +362,6 @@ func newQualityCleanupTestDB(t *testing.T) *gorm.DB {
 			resolved_by INTEGER,
 			resolution_note TEXT,
 			last_observed_at DATETIME,
-			created_at DATETIME,
-			updated_at DATETIME
-		)`,
-		`CREATE TABLE common.task_executions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			tenant_id INTEGER NOT NULL,
-			execution_id TEXT NOT NULL UNIQUE,
-			module TEXT NOT NULL,
-			task_type TEXT NOT NULL,
-			source TEXT NOT NULL DEFAULT '',
-			source_task_id TEXT,
-			status TEXT NOT NULL,
-			trigger_type TEXT NOT NULL,
-			attempt INTEGER NOT NULL DEFAULT 0,
-			max_attempts INTEGER NOT NULL DEFAULT 3,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
