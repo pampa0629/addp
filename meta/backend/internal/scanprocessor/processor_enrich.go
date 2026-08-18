@@ -28,6 +28,7 @@ func (p Processor) enrichDeep(ctx context.Context, input *input, attrs models.JS
 		IncludeAccessIndex: input.IncludeAccessIndex,
 		CatalogPathFor:     input.CatalogPathFor,
 		CADInspector:       p.cadInspector,
+		FormatDetector:     p.formatDetector,
 		ContainerInspector: p.containerInspector,
 		SourceEngine:       input.Resource,
 		TenantID:           input.TenantID,

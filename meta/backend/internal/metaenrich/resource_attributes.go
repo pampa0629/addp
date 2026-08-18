@@ -22,6 +22,7 @@ type ResourceAttributesInput struct {
 	IncludeAccessIndex bool
 	CatalogPathFor     func(string) plugin.CatalogPath
 	CADInspector       CADInspector
+	FormatDetector     RuntimeFormatDetector
 	ContainerInspector ContainerInspector
 	SourceEngine       *commonModels.Engine
 	TenantID           uint
@@ -31,6 +32,9 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 	item := input.Item
 	if attrs == nil || item == nil {
 		return item, nil, nil
+	}
+	if err := RefineRuntimeFormat(ctx, attrs, input.FormatDetector, input.SourceEngine, input.TenantID, item, input.PhysicalPath); err != nil {
+		return item, nil, err
 	}
 
 	canReadContent := input.ContentReader != nil && input.CatalogPathFor != nil && input.PhysicalPath != ""

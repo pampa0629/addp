@@ -57,7 +57,26 @@ func (c *ModelClient) SetStandardReferenceGuard(ctx context.Context, resourceTyp
 	if err := c.doJSON(ctx, http.MethodPut, path, payload, &response); err != nil {
 		return nil, fmt.Errorf("model set standard reference guard: %w", err)
 	}
+	if err := validateStandardReferenceGuardResponse(&response, resourceType, resourceID, state); err != nil {
+		return nil, fmt.Errorf("model set standard reference guard: %w", err)
+	}
 	return &response, nil
+}
+
+func validateStandardReferenceGuardResponse(response *StandardReferenceGuardResponse, resourceType string, resourceID int64, state string) error {
+	if response.ResourceType != resourceType {
+		return fmt.Errorf("invalid standard reference guard response: resource_type=%q, want %q", response.ResourceType, resourceType)
+	}
+	if response.ResourceID != resourceID {
+		return fmt.Errorf("invalid standard reference guard response: resource_id=%d, want %d", response.ResourceID, resourceID)
+	}
+	if response.State != state {
+		return fmt.Errorf("invalid standard reference guard response: state=%q, want %q", response.State, state)
+	}
+	if response.ReferenceCount < 0 {
+		return fmt.Errorf("invalid standard reference guard response: reference_count=%d", response.ReferenceCount)
+	}
+	return nil
 }
 
 type ModelEntity struct {

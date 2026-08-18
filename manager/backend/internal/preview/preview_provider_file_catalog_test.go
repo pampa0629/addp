@@ -115,6 +115,70 @@ func TestFileCatalogPreviewUsesMetaContainerAttributes(t *testing.T) {
 	}
 }
 
+func TestFileCatalogPreviewUsesRuntimeContainerMetaBeforeContentHandler(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingFileCatalogPreviewPlugin{
+		engineType:   "nfs",
+		contentType:  "application/octet-stream",
+		expectedPath: "/arcgis/pgeo_roundtrip.gdb",
+	}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	contentRegistry := objectcontent.NewObjectContentRegistry()
+	objectcontent.LoadObjectContentPlugins(contentRegistry, "../../plugins")
+	provider := NewFileCatalogPreviewProvider(nil, contentRegistry)
+
+	preview, err := provider.Preview(context.Background(), &PreviewRequest{
+		Engine:    &models.Engine{EngineType: "nfs", ID: 14},
+		Schema:    "arcgis",
+		Table:     "pgeo_roundtrip.gdb",
+		ScopePath: "arcgis/pgeo_roundtrip.gdb",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "container",
+				"format":    "filegdb",
+				"layout":    "whole",
+			},
+			"type_info": map[string]interface{}{
+				"container": map[string]interface{}{
+					"child_count": int64(1),
+					"children": []interface{}{
+						map[string]interface{}{
+							"name":            "PGEO_WGS84_POINTS",
+							"table":           "PGEO_WGS84_POINTS",
+							"child_kind":      "feature_class",
+							"data_type":       "table",
+							"row_count":       int64(265),
+							"column_count":    int64(25),
+							"geometry_column": "SHAPE",
+						},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Object == nil || preview.Object.Content == nil || preview.Object.Content.Kind != models.ObjectPreviewKindContainer {
+		t.Fatalf("object content = %#v, want container preview from Meta", preview.Object)
+	}
+	if enginePlugin.openContentCalls != 0 {
+		t.Fatalf("OpenContent calls = %d, want 0 for runtime container Meta preview", enginePlugin.openContentCalls)
+	}
+	children, ok := preview.Object.Content.JSON.(map[string]interface{})["children"].([]map[string]interface{})
+	if !ok || len(children) != 1 || children[0]["name"] != "PGEO_WGS84_POINTS" {
+		t.Fatalf("children = %#v, want FileGDB feature class", preview.Object.Content.JSON)
+	}
+}
+
 func TestFileCatalogImagePreviewUsesStorageStreamURL(t *testing.T) {
 	previous, previousErr := plugin.Get("nfs")
 	enginePlugin := &recordingFileCatalogPreviewPlugin{

@@ -326,6 +326,8 @@ func TestMIMEToFormat(t *testing.T) {
 		{"image/webp", FormatWebP},
 		{"image/svg+xml", FormatSVG},
 		{"application/json", FormatJSON},
+		{"application/xml", FormatXML},
+		{"text/xml", FormatXML},
 		{"application/x-sqlite3", FormatSQLite},
 		{"application/vnd.apache.orc", FormatORC},
 		{"video/mp4", FormatMP4},

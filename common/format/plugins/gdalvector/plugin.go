@@ -17,10 +17,12 @@ import (
 
 const (
 	BatchProtocol             = "gdal.vector-batch/v1"
+	FormatDetectionSchema     = "gdal.vector-dataset.detect/v1"
 	ContainerInspectionSchema = "gdal.vector-dataset.inspect/v1"
 )
 
 const (
+	operatorDetect     = "vector_dataset.detect"
 	operatorInspect    = "vector_dataset.inspect"
 	operatorReadOpen   = "vector_dataset.read_open"
 	operatorReadBatch  = "vector_dataset.read_batch"
@@ -32,6 +34,7 @@ const (
 )
 
 var (
+	detectOperators  = []string{operatorDetect}
 	inspectOperators = []string{operatorInspect}
 	readOperators    = []string{operatorReadOpen, operatorReadBatch, operatorReadClose}
 	writeOperators   = []string{operatorWriteOpen, operatorWriteBatch, operatorWriteClose, operatorWriteAbort}
@@ -42,12 +45,18 @@ type basePlugin struct {
 	descriptor format.FormatDescriptor
 }
 
+type DetectionOnlyPlugin struct{ *basePlugin }
+
 type ReadOnlyPlugin struct{ *basePlugin }
 
 type ReadWritePlugin struct{ *ReadOnlyPlugin }
 
 func NewReadOnlyPlugin(descriptor format.FormatDescriptor) *ReadOnlyPlugin {
 	return &ReadOnlyPlugin{basePlugin: &basePlugin{formatType: descriptor.Format, descriptor: descriptor}}
+}
+
+func NewDetectionOnlyPlugin(descriptor format.FormatDescriptor) *DetectionOnlyPlugin {
+	return &DetectionOnlyPlugin{basePlugin: &basePlugin{formatType: descriptor.Format, descriptor: descriptor}}
 }
 
 func NewReadWritePlugin(descriptor format.FormatDescriptor) *ReadWritePlugin {
@@ -67,6 +76,23 @@ func (p *basePlugin) SpatialEncodingCapability() format.SpatialEncodingCapabilit
 		NativeReadEncoding:     format.GeometryEncodingEWKB,
 		NativeWriteEncoding:    format.GeometryEncodingEWKB,
 	}
+}
+
+func (p *DetectionOnlyPlugin) RequiredFormatDetectionOperators() []string {
+	return append([]string(nil), detectOperators...)
+}
+
+func (p *DetectionOnlyPlugin) BindFormatDetector(runtime engineplugin.WorkflowRuntimeProvider, runtimeConn engineplugin.ConnectionInfo, plan workflowaccess.SourcePlan) (format.BoundFormatDetector, error) {
+	if err := validateRuntime(runtime, runtimeConn); err != nil {
+		return nil, err
+	}
+	if err := plan.Validate(); err != nil {
+		return nil, fmt.Errorf("validate GDAL vector source plan: %w", err)
+	}
+	if !strings.EqualFold(plan.Source.Format, string(p.Format())) {
+		return nil, fmt.Errorf("GDAL vector source format %q does not match plugin %q", plan.Source.Format, p.Format())
+	}
+	return &runtimeProvider{formatType: p.Format(), runtime: runtime, runtimeConn: cloneConnectionInfo(runtimeConn), sourcePlan: &plan}, nil
 }
 
 func (p *ReadOnlyPlugin) RequiredScopeTableReadOperators() []string {
@@ -129,6 +155,30 @@ type runtimeProvider struct {
 }
 
 func (p *runtimeProvider) Format() format.FormatType { return p.formatType }
+
+func (p *runtimeProvider) DetectFormat(ctx context.Context) (format.FormatType, error) {
+	if p.sourcePlan == nil {
+		return format.FormatUnknown, fmt.Errorf("GDAL vector source plan is not bound")
+	}
+	result, err := p.invoke(ctx, operatorDetect, map[string]interface{}{
+		"access_plan": p.sourcePlan.JSONMap(),
+	})
+	if err != nil {
+		return format.FormatUnknown, err
+	}
+	if schema, _ := result.Result["schema_version"].(string); schema != FormatDetectionSchema {
+		return format.FormatUnknown, fmt.Errorf("unsupported GDAL vector detection schema %q", schema)
+	}
+	candidate, _ := result.Result["candidate_format"].(string)
+	if !strings.EqualFold(candidate, string(p.Format())) {
+		return format.FormatUnknown, fmt.Errorf("GDAL vector detection candidate %q does not match plugin %q", candidate, p.Format())
+	}
+	detected := format.NormalizeFormat(fmt.Sprint(result.Result["format"]))
+	if detected != p.Format() && detected != format.FormatPGeo {
+		return format.FormatUnknown, fmt.Errorf("GDAL vector detector returned unsupported format %q for %q", detected, p.Format())
+	}
+	return detected, nil
+}
 
 func (p *runtimeProvider) DescribeContainer(ctx context.Context, options *format.ParseOptions) (*format.ContainerDescribeResult, error) {
 	if p.sourcePlan == nil {
@@ -476,6 +526,7 @@ func cloneMap(value map[string]interface{}) map[string]interface{} {
 }
 
 var (
+	_ format.RuntimeFormatDetectorFactory        = (*DetectionOnlyPlugin)(nil)
 	_ format.RuntimeContainerInfoProviderFactory = (*ReadOnlyPlugin)(nil)
 	_ format.RuntimeContainerInfoProviderFactory = (*ReadWritePlugin)(nil)
 	_ format.RuntimeScopeTableReaderFactory      = (*ReadOnlyPlugin)(nil)
@@ -484,6 +535,7 @@ var (
 	_ format.ScopeTableReaderProvider            = (*runtimeProvider)(nil)
 	_ format.ScopeTableWriterProvider            = (*runtimeProvider)(nil)
 	_ format.BoundContainerInfoProvider          = (*runtimeProvider)(nil)
+	_ format.BoundFormatDetector                 = (*runtimeProvider)(nil)
 	_ format.TableSpatialInfoProvider            = (*tableReader)(nil)
 	_ format.TableReader                         = (*tableReader)(nil)
 	_ format.TableWriter                         = (*tableWriter)(nil)

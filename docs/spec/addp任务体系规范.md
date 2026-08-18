@@ -36,6 +36,9 @@
 9. Monitor 只聚合观察，不成为任务 owner。
 10. ad-hoc-only execution type 可以写入统一执行记录，但在没有持久任务定义前不得注册为 TaskProvider 能力或进入 Orchestrator 任务选择。
 11. 真实读写 owner 必须在 execution 结果中写入版本化 `lineage_facts`；Meta 负责消费并维护血缘关系，Orchestrator 不重复生成资源血缘。
+12. execution worker 是执行 owner 的运行时角色，不限定为独立进程；owner 必须明确其消费机制、并发上限、领取所有权、恢复和终态写入语义。
+13. owner scheduler 只负责按任务定义发现到期任务、创建 execution 和投递；dispatcher 只负责 outbox/delivery 投递；二者都不得替代 execution worker 成为业务执行事实源。
+14. runtime queue 是 execution 的传输和领取机制，不得成为任务定义、execution 结果或产物状态的第二事实源；同一 task type 不得同时保留未定义边界的多条执行路线。
 
 ## 核心对象
 

@@ -32,7 +32,7 @@
     </el-descriptions>
 
     <el-alert
-      v-if="execution?.status === 'failed' && failureReason"
+      v-if="failureReason"
       :title="t('quality.execution.failureReason')"
       :description="failureReason"
       type="error"
@@ -101,7 +101,7 @@ const result = computed(() => {
 const failureReason = computed(() => executionFailureLabel(execution.value, t))
 
 const statusType = (status) => {
-  const map = { success: 'success', failed: 'danger', running: 'warning', pending: 'info' }
+  const map = { success: 'success', failed: 'danger', timeout: 'danger', running: 'warning', pending: 'info' }
   return map[status] || 'info'
 }
 const statusLabel = (status) => ({

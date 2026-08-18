@@ -222,6 +222,11 @@ func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
 			want: "builtin:content-markdown",
 		},
 		{
+			name: "xml",
+			req:  ObjectContentRequest{Format: "xml", Extension: ".xml", ContentType: "application/xml"},
+			want: "builtin:content-text",
+		},
+		{
 			name: "excel",
 			req:  ObjectContentRequest{Extension: ".xlsm", ContentType: "application/vnd.ms-excel.sheet.macroenabled.12"},
 			want: "builtin:content-container",
@@ -293,6 +298,27 @@ func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
 				t.Fatalf("handler = %q, want %q", handler.Name(), tt.want)
 			}
 		})
+	}
+}
+
+func TestXMLObjectContentUsesTextPreview(t *testing.T) {
+	registry := NewObjectContentRegistry()
+	LoadObjectContentPlugins(registry, "../../plugins")
+	handler := registry.Resolve(&ObjectContentRequest{Format: "xml", Extension: ".xml", ContentType: "application/xml"})
+	if handler == nil {
+		t.Fatal("XML object content request did not resolve")
+	}
+	content, truncated, err := handler.Handle(context.Background(), &ObjectContentRequest{Format: "xml"}, func(limit int64) ([]byte, bool, error) {
+		return []byte("<metadata><title>roads</title></metadata>"), false, nil
+	})
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if truncated || content.Kind != models.ObjectPreviewKindText || content.PreviewMaterial != models.PreviewMaterialText {
+		t.Fatalf("content = %#v, truncated=%v, want text preview", content, truncated)
+	}
+	if content.Text != "<metadata><title>roads</title></metadata>" {
+		t.Fatalf("Text = %q", content.Text)
 	}
 }
 

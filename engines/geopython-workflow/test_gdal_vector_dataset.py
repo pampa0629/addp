@@ -7,9 +7,11 @@ from shapely import from_wkb, get_srid
 
 from operators.gdal_vector_dataset import (
     BATCH_PROTOCOL,
+    DETECTION_SCHEMA,
     INSPECTION_SCHEMA,
     _authority_code,
     _feature_row,
+    detect,
     inspect,
     read_batch,
     read_open,
@@ -42,6 +44,58 @@ def _target_plan(path: Path):
             "access": {"method": "mounted_path", "path": str(path)},
         },
     }
+
+
+def _access_source_plan(path: Path):
+    return {
+        "schema_version": "addp.workflow.access-plan/v1",
+        "source": {
+            "kind": "file",
+            "format": "access",
+            "access": {"method": "mounted_path", "path": str(path)},
+        },
+    }
+
+
+def test_detect_refines_access_candidate_to_pgeo(tmp_path, monkeypatch):
+    source = tmp_path / "source.mdb"
+    source.write_bytes(b"mdb")
+
+    class FakeDriver:
+        def GetDescription(self):
+            return "PGeo"
+
+    class FakeDataset:
+        def GetDriver(self):
+            return FakeDriver()
+
+    monkeypatch.setattr("operators.gdal_vector_dataset._required_driver", lambda *args, **kwargs: object())
+    monkeypatch.setattr("operators.gdal_vector_dataset.gdal.OpenEx", lambda *args, **kwargs: FakeDataset())
+    result = detect(_access_source_plan(source))
+
+    assert result == {
+        "schema_version": DETECTION_SCHEMA,
+        "candidate_format": "access",
+        "format": "pgeo",
+        "evidence": {"driver": "PGeo"},
+    }
+
+
+def test_detect_keeps_non_pgeo_mdb_as_access(tmp_path, monkeypatch):
+    source = tmp_path / "source.mdb"
+    source.write_bytes(b"mdb")
+
+    def reject_pgeo(*args, **kwargs):
+        raise RuntimeError("not a Personal Geodatabase")
+
+    monkeypatch.setattr("operators.gdal_vector_dataset._required_driver", lambda *args, **kwargs: object())
+    monkeypatch.setattr("operators.gdal_vector_dataset.gdal.OpenEx", reject_pgeo)
+    result = detect(_access_source_plan(source))
+
+    assert result["schema_version"] == DETECTION_SCHEMA
+    assert result["candidate_format"] == "access"
+    assert result["format"] == "access"
+    assert result["evidence"] == {"driver": ""}
 
 
 def _create_source(path: Path):
@@ -81,6 +135,7 @@ def test_filegdb_stateless_batch_round_trip(tmp_path):
     assert [row["id"] for row in rows] == [1, 2]
     geometry = from_wkb(base64.b64decode(rows[0]["SHAPE"]))
     assert get_srid(geometry) == 4326
+    assert read_batch(BATCH_PROTOCOL, _source_plan(source), "regions", 2, 10)["rows"] == []
 
     write_open(BATCH_PROTOCOL, _target_plan(target), "regions", opened["fields"], opened["spatial"])
     write_batch(BATCH_PROTOCOL, _target_plan(target), "regions", opened["fields"], opened["spatial"], 0, rows[:1])
@@ -91,6 +146,55 @@ def test_filegdb_stateless_batch_round_trip(tmp_path):
     reopened = read_open(BATCH_PROTOCOL, _source_plan(target), "regions")
     assert reopened["row_count"] == 2
     assert reopened["spatial"]["srid"] == 4326
+
+
+def test_filegdb_writer_maps_source_objectid_to_system_fid(tmp_path):
+    target = tmp_path / "objectid.gdb"
+    fields = [
+        {"name": "OBJECTID", "type": "int", "nullable": False},
+        {"name": "name", "type": "string", "nullable": True},
+        {"name": "Shape", "type": "geometry", "nullable": True},
+    ]
+    spatial = {
+        "geometry_columns": [{
+            "name": "Shape",
+            "geometry_type": "Point",
+            "dimension": 2,
+            "srid": 4326,
+        }],
+        "primary_geometry_column": "Shape",
+        "srid": 4326,
+    }
+    point = ogr.CreateGeometryFromWkt("POINT (116.397 39.908)")
+    row = {
+        "OBJECTID": 7,
+        "name": "beijing",
+        "Shape": base64.b64encode(point.ExportToWkb()).decode("ascii"),
+    }
+
+    write_open(BATCH_PROTOCOL, _target_plan(target), "points", fields, spatial)
+    write_batch(BATCH_PROTOCOL, _target_plan(target), "points", fields, spatial, 0, [row])
+    write_close(BATCH_PROTOCOL, _target_plan(target), "points", fields, spatial, 1)
+
+    dataset = gdal.OpenEx(str(target), gdal.OF_VECTOR, allowed_drivers=["OpenFileGDB"])
+    layer = dataset.GetLayerByName("points")
+    assert layer.GetFIDColumn() == "OBJECTID"
+    assert layer.GetLayerDefn().GetFieldIndex("OBJECTID") == -1
+    feature = layer.GetFeature(7)
+    assert feature is not None
+    assert feature.GetField("name") == "beijing"
+    dataset = None
+
+    reopened = read_open(BATCH_PROTOCOL, _source_plan(target), "points")
+    assert reopened["fields"][0] == {
+        "name": "OBJECTID",
+        "type": "int",
+        "native_type": "FID",
+        "nullable": False,
+        "ordinal_position": 1,
+    }
+    reopened_rows = read_batch(BATCH_PROTOCOL, _source_plan(target), "points", 0, 10)["rows"]
+    assert reopened_rows[0]["OBJECTID"] == 7
 
 
 def test_filegdb_inspect_returns_lightweight_container_children(tmp_path):
@@ -109,7 +213,7 @@ def test_filegdb_inspect_returns_lightweight_container_children(tmp_path):
         "child_kind": "feature_class",
         "data_type": "table",
         "row_count": 2,
-        "column_count": 3,
+        "column_count": 4,
         "native": {
             "table": "regions",
             "geometry_column": "SHAPE",
@@ -136,17 +240,26 @@ def test_filegdb_inspect_attribute_table_has_no_geometry_column(tmp_path):
 
     child = result["container"]["children"][0]
     assert child["child_kind"] == "table"
-    assert child["column_count"] == 1
+    assert child["column_count"] == 2
     assert child["native"] == {"table": "codes"}
     opened = read_open(BATCH_PROTOCOL, _source_plan(source), "codes")
     assert opened["spatial"] == {}
-    assert opened["fields"] == [{
-        "name": "code",
-        "type": "string",
-        "native_type": "String",
-        "nullable": True,
-        "ordinal_position": 1,
-    }]
+    assert opened["fields"] == [
+        {
+            "name": "OBJECTID",
+            "type": "int",
+            "native_type": "FID",
+            "nullable": False,
+            "ordinal_position": 1,
+        },
+        {
+            "name": "code",
+            "type": "string",
+            "native_type": "String",
+            "nullable": True,
+            "ordinal_position": 2,
+        },
+    ]
 
 
 def test_inspect_skips_unreadable_dataset_layers(monkeypatch):

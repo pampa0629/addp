@@ -65,6 +65,7 @@ type Processor struct {
 	indexer            AssetIndexer
 	log                *slog.Logger
 	cadInspector       metaenrich.CADInspector
+	formatDetector     metaenrich.RuntimeFormatDetector
 	containerInspector metaenrich.ContainerInspector
 }
 
@@ -75,6 +76,14 @@ func (p Processor) WithCADInspector(inspector metaenrich.CADInspector) Processor
 
 func (p Processor) WithContainerInspector(inspector metaenrich.ContainerInspector) Processor {
 	p.containerInspector = inspector
+	if detector, ok := inspector.(metaenrich.RuntimeFormatDetector); ok {
+		p.formatDetector = detector
+	}
+	return p
+}
+
+func (p Processor) WithFormatDetector(detector metaenrich.RuntimeFormatDetector) Processor {
+	p.formatDetector = detector
 	return p
 }
 

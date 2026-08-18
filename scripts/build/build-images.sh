@@ -423,7 +423,7 @@ check_service_changed() {
             comparison_time=$(( pointcloud_time > common_time ? pointcloud_time : common_time ))
             ;;
 
-        python-workflow-engine|jupyter-engine)
+        geopython-workflow-engine|jupyter-engine)
             # These Dockerfiles package common-python; compare both source trees.
             comparison_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" ')' \
                 -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | \
@@ -668,7 +668,7 @@ build_service() {
             fi
             ;;
 
-        python-workflow-engine|raster-mosaic-runtime)
+        geopython-workflow-engine|raster-mosaic-runtime)
             # GeoPython Workflow 依赖 common-python，共享 schema/client 需要仓库根作为构建上下文
             build_context="."
             dockerfile_path="${service_dir}/Dockerfile"
@@ -923,7 +923,7 @@ main() {
         "portal-backend:portal/backend"
         "graph-backend:graph/backend"
         "inference-backend:inference/backend"
-        "python-workflow-engine:engines/python-workflow"
+        "geopython-workflow-engine:engines/geopython-workflow"
         "raster-mosaic-runtime:manager/raster-mosaic-runtime"
         "model3d-workflow-engine:engines/model3d-workflow"
         "pointcloud-workflow-engine:engines/pointcloud-workflow"

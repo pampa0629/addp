@@ -7,6 +7,7 @@ import (
 	"github.com/addp/common/dataquality"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
+	"gorm.io/gorm"
 )
 
 type ElementService struct {
@@ -175,8 +176,8 @@ func (s *ElementService) UpdateElement(id, tenantID, userID int64, req *models.U
 }
 
 func (s *ElementService) DeleteElement(ctx context.Context, id, tenantID int64) error {
-	return s.deletion.Delete(ctx, tenantID, "element", id, func() error {
-		return s.repo.Delete(id, tenantID)
+	return s.deletion.Delete(ctx, tenantID, "element", id, func(tx *gorm.DB, resourceID, resourceTenantID int64) error {
+		return s.repo.DeleteTx(tx, resourceID, resourceTenantID)
 	})
 }
 

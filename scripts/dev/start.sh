@@ -24,7 +24,7 @@ show_usage() {
   echo "  -asset        启动 Asset 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -portal       启动 Portal 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Asset)"
   echo "  -graph        启动 Graph 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
-  echo "  -python-workflow    启动 GeoPython Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -geopython-workflow    启动 GeoPython Workflow (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -math-workflow      启动 Math Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -model3d-workflow   启动 Model3D Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -pointcloud-workflow 启动 PointCloud Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
@@ -45,7 +45,7 @@ show_usage() {
   echo "  $0 -system        # 启动 System Backend/Frontend + Meta Backend/Worker + Gateway + Console"
   echo "  $0 -manager       # 启动 Manager + 公共依赖 + Transfer + 三维/点云工作流"
   echo "  $0 -develop       # 启动 Develop + 公共依赖 + 工作流引擎"
-  echo "  $0 -python-workflow     # 启动 GeoPython Workflow Engine + 公共依赖"
+  echo "  $0 -geopython-workflow     # 启动 GeoPython Workflow + 公共依赖"
   echo "  $0 -math-workflow       # 启动 Math Workflow Engine + 公共依赖"
   echo "  $0 -model3d-workflow    # 启动 Model3D Workflow Engine + 公共依赖"
   echo "  $0 -pointcloud-workflow # 启动 PointCloud Workflow Engine + 公共依赖"
@@ -117,7 +117,7 @@ generate_service_urls() {
 
     # 特殊服务
     [ -n "$MEILISEARCH_PORT" ] && export MEILISEARCH_URL="http://${SERVICE_HOST}:${MEILISEARCH_PORT}"
-    [ -n "$PYTHON_WORKFLOW_PORT" ] && export PYTHON_WORKFLOW_URL="http://${SERVICE_HOST}:${PYTHON_WORKFLOW_PORT}"
+    [ -n "$GEOPYTHON_WORKFLOW_PORT" ] && export GEOPYTHON_WORKFLOW_URL="http://${SERVICE_HOST}:${GEOPYTHON_WORKFLOW_PORT}"
     [ -n "$MODEL3D_WORKFLOW_PORT" ] && export MODEL3D_WORKFLOW_URL="http://${SERVICE_HOST}:${MODEL3D_WORKFLOW_PORT}"
     [ -n "$POINTCLOUD_WORKFLOW_PORT" ] && export POINTCLOUD_WORKFLOW_URL="http://${SERVICE_HOST}:${POINTCLOUD_WORKFLOW_PORT}"
     [ -n "$SUPERMAP_WORKFLOW_PORT" ] && export SUPERMAP_WORKFLOW_URL="http://${SERVICE_HOST}:${SUPERMAP_WORKFLOW_PORT}"
@@ -244,7 +244,7 @@ for arg in "$@"; do
     -h|--help)
       show_usage
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-inference|-standard|-model|-quality|-asset|-portal|-graph|-python-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-spark-workflow|-jupyter|-duckdb|-gateway|-console)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-inference|-standard|-model|-quality|-asset|-portal|-graph|-geopython-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-spark-workflow|-jupyter|-duckdb|-gateway|-console)
       SELECTED_MODULE="${arg#-}"
       START_ALL=false
       ;;
@@ -455,7 +455,7 @@ else
       START_GRAPH_BACKEND=true
       START_GRAPH_FRONTEND=true
       ;;
-    python-workflow)
+    geopython-workflow)
       START_PYTHON_WORKFLOW=true
       ;;
     math-workflow)
@@ -1472,155 +1472,127 @@ if [ "$START_DUCKDB" = true ]; then
 fi
 
 # ============================================================
-# Step 4: Start GeoPython Workflow Engine (Python service)
+# Step 4: Start GeoPython Workflow (Docker runtime)
 # ============================================================
 if [ "$START_PYTHON_WORKFLOW" = true ]; then
-  echo -e "${YELLOW}Step 4/5: 启动 GeoPython Workflow Engine...${NC}"
+  echo -e "${YELLOW}Step 4/5: 启动 GeoPython Workflow...${NC}"
 
-  # 检查 Python 3 是否安装
-  if ! command -v python3 &> /dev/null; then
-      echo -e "${RED}✗ Python 3 未安装，请先安装 Python 3.11+${NC}"
-      exit 1
+geopython_workflow_source_fingerprint() {
+  {
+    printf '%s\n' "geopython-workflow-image-v1"
+    while IFS= read -r file; do
+      printf '%s %s\n' "$file" "$(git hash-object "$file")"
+    done < <(
+      {
+        printf '%s\n' \
+          engines/geopython-workflow/Dockerfile \
+          engines/geopython-workflow/requirements.txt \
+          engines/geopython-workflow/api_server.py \
+          engines/geopython-workflow/container_entrypoint.sh \
+          engines/geopython-workflow/workflow_engine.py \
+          engines/geopython-workflow/geometry_batches.py \
+          common-python/README.md \
+          common-python/pyproject.toml
+        find engines/geopython-workflow/operators common-python/addp_common \
+          -type f ! -path '*/__pycache__/*' ! -name '*.pyc'
+      } | LC_ALL=C sort
+    )
+  } | git hash-object --stdin
+}
+
+ensure_geopython_workflow_image() {
+  local image="$1"
+  local fingerprint
+  local current_fingerprint
+  fingerprint="$(geopython_workflow_source_fingerprint)"
+  current_fingerprint="$(docker image inspect \
+    -f '{{ index .Config.Labels "addp.geopython.source-fingerprint" }}' \
+    "$image" 2>/dev/null || true)"
+
+  if [ "$current_fingerprint" = "$fingerprint" ]; then
+    echo "GeoPython Workflow 镜像构建输入未变化，复用现有镜像: $image"
+    return 0
   fi
 
-  # 检查 Python 版本（需要 3.11+）
-  PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
-  REQUIRED_VERSION="3.11"
-  if [ "$(printf '%s\n' "$REQUIRED_VERSION" "$PYTHON_VERSION" | sort -V | head -n1)" != "$REQUIRED_VERSION" ]; then
-      echo -e "${RED}✗ Python 版本过低 ($PYTHON_VERSION)，需要 3.11+${NC}"
-      exit 1
+  echo "构建 GeoPython Workflow 镜像（构建输入已变化或镜像不存在）..."
+  docker build \
+    --label "addp.geopython.source-fingerprint=${fingerprint}" \
+    -f engines/geopython-workflow/Dockerfile \
+    -t "$image" \
+    .
+}
+
+start_geopython_workflow_engine_process() {
+  if ! command -v docker >/dev/null 2>&1; then
+    echo -e "${RED}✗ GeoPython Workflow 需要 Docker runtime 承载 GDAL/OGR${NC}"
+    exit 1
   fi
 
-# 检查并创建虚拟环境（幂等）
-NEED_INSTALL=false
-if [ ! -d "engines/python-workflow/venv" ]; then
-    echo "首次启动，创建 Python 虚拟环境..."
-    cd engines/python-workflow
-    # 使用智能 Python 选择（优先 3.11）
-    SELECTED_PYTHON=$(select_python)
-    PYTHON_VER=$($SELECTED_PYTHON --version)
-    echo "  使用 $PYTHON_VER"
-    $SELECTED_PYTHON -m venv --system-site-packages venv
-    NEED_INSTALL=true
-else
-    if ! ./engines/python-workflow/venv/bin/python - <<'PY' &> /dev/null
-import flask, geopandas, pyarrow, pyproj, addp_common
-from osgeo import gdal
-import numpy
-version = tuple(int(part) for part in numpy.__version__.split(".")[:2])
-if version >= (2, 3):
-    raise SystemExit(1)
-PY
-    then
-        SELECTED_PYTHON=$(select_python)
-        if "$SELECTED_PYTHON" -c "from osgeo import gdal" &> /dev/null; then
-            echo "GeoPython Workflow venv 缺少匹配的 GDAL/NumPy，重建为可继承系统 GDAL 的虚拟环境..."
-            rm -rf engines/python-workflow/venv
-            cd engines/python-workflow
-            PYTHON_VER=$($SELECTED_PYTHON --version)
-            echo "  使用 $PYTHON_VER"
-            $SELECTED_PYTHON -m venv --system-site-packages venv
-            NEED_INSTALL=true
-        fi
-    fi
-    # 检查关键依赖是否已安装
-    if [ "$NEED_INSTALL" = false ] && ! ./engines/python-workflow/venv/bin/python -c "import flask, geopandas, pyarrow, pyproj, addp_common" &> /dev/null; then
-        echo "检测到虚拟环境缺少依赖，重新安装..."
-        cd engines/python-workflow
-        NEED_INSTALL=true
-    elif [ "$NEED_INSTALL" = false ]; then
-        echo "虚拟环境已存在且依赖完整，跳过安装"
-    fi
-fi
+  local image="addp-geopython-workflow-engine:dev"
+  local source_dir="${ROOT_DIR}/business/nfs/data"
+  local container_source_dir="${ROOT_DIR}/business/nfs/data"
+  local system_port="${SYSTEM_BACKEND_PORT:-8180}"
 
-if [ "$NEED_INSTALL" = true ]; then
-    # 使用 pip 安装依赖（更稳定，避免 uv 虚拟环境识别问题）
-    echo "使用 pip 安装依赖（首次安装可能需要 1-2 分钟）..."
+  ensure_geopython_workflow_image "$image"
 
-    # 构建 pip 安装命令（支持镜像源配置）
-    PIP_CMD="./venv/bin/python -m pip install"
-    if [ -n "$PIP_INDEX_URL" ]; then
-        echo "  使用镜像源: $PIP_INDEX_URL"
-        PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
-        if [ -n "$PIP_TRUSTED_HOST" ]; then
-            PIP_CMD="$PIP_CMD --trusted-host $PIP_TRUSTED_HOST"
-        fi
-    else
-        echo "  使用官方源（国外可能较慢，建议在 .env 中配置 PIP_INDEX_URL）"
-    fi
+  echo "启动 GeoPython Workflow Docker runtime..."
+  docker rm -f geopython-workflow-engine >/dev/null 2>&1 || true
+  mkdir -p "${source_dir}" logs .dev-pids
+  GEOPYTHON_WORKFLOW_PID=$(
+    docker run -d \
+      --name geopython-workflow-engine \
+      --label com.docker.compose.project=addp-app \
+      --label com.docker.compose.service=geopython-workflow-engine \
+      --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
+      --add-host=host.docker.internal:host-gateway \
+      -p "${GEOPYTHON_WORKFLOW_PORT}:8099" \
+      -e PORT=8099 \
+      -e SYSTEM_URL="http://host.docker.internal:${system_port}" \
+      -e GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET="${GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET:-}" \
+      -e GEOPYTHON_WORKFLOW_LOOPBACK_HOST=host.docker.internal \
+      -e POSTGRES_HOST=host.docker.internal \
+      -e POSTGRES_PORT="${POSTGRES_PORT:-15432}" \
+      -e POSTGRES_USER="${POSTGRES_USER:-addp}" \
+      -e POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}" \
+      -e POSTGRES_DB="${POSTGRES_DB:-addp}" \
+      -e DB_SCHEMA=develop \
+      -v "${ROOT_DIR}/logs:/app/logs" \
+      -v "${source_dir}:${container_source_dir}" \
+      "$image"
+  )
+  echo "$GEOPYTHON_WORKFLOW_PID" > .dev-pids/geopython-workflow-engine.pid
+}
 
-    # 升级 pip 并安装依赖
-    $PIP_CMD --upgrade pip
-    $PIP_CMD -r requirements.txt
-    $PIP_CMD -e ../../common-python
+# 启动 GeoPython Workflow
+if check_service_running "geopython-workflow-engine" "$GEOPYTHON_WORKFLOW_PORT"; then
+  start_geopython_workflow_engine_process
 
-    # 检查安装是否成功
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✓ Python 依赖安装完成${NC}"
-        if ! ./venv/bin/python -c "from osgeo import gdal" &> /dev/null; then
-            echo -e "${YELLOW}⚠️  GeoPython Workflow 缺少 GDAL Python 绑定(osgeo.gdal)，栅格 mosaic 生成算子将不可用。${NC}"
-            echo -e "${YELLOW}   提示：macOS 可先执行 brew install gdal，或使用 GeoPython Workflow 容器镜像。${NC}"
-        fi
-    else
-        echo -e "${RED}✗ Python 依赖安装失败，请检查错误信息${NC}"
-        echo -e "${YELLOW}提示：某些依赖可能需要系统库支持（如 GDAL）${NC}"
-        echo -e "${YELLOW}macOS: brew install gdal${NC}"
-        echo -e "${YELLOW}Ubuntu: sudo apt-get install libgdal-dev${NC}"
-        cd ..
-        exit 1
-    fi
-    cd ..
-fi
-
-# 启动 GeoPython Workflow Engine
-if check_service_running "python-workflow-engine" "$PYTHON_WORKFLOW_PORT"; then
-  echo "启动 GeoPython Workflow Engine..."
-  cd engines/python-workflow
-
-  # 设置环境变量
-  export PORT=$PYTHON_WORKFLOW_PORT
-  # SYSTEM_URL 已由 generate_service_urls() 自动生成
-  export GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET=${GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET:-""}
-  export POSTGRES_HOST=localhost
-  export POSTGRES_PORT=15432
-  export POSTGRES_USER=addp
-  export POSTGRES_PASSWORD=addp_password
-  export POSTGRES_DB=addp
-  export DB_SCHEMA=develop
-
-  # 直接使用虚拟环境的 Python（无需 activate）
-  ./venv/bin/python api_server.py > ../../logs/python-workflow-engine.log 2> ../../logs/python-workflow-engine-stderr.log &
-  PYTHON_WORKFLOW_PID=$!
-  echo $PYTHON_WORKFLOW_PID > ../../.dev-pids/python-workflow-engine.pid
-  cd ../..
-
-  echo -e "${GREEN}✓ GeoPython Workflow Engine 已启动 (PID: $PYTHON_WORKFLOW_PID)${NC}"
+  echo -e "${GREEN}✓ GeoPython Workflow 已启动 (PID: $GEOPYTHON_WORKFLOW_PID)${NC}"
 
   # 等待健康检查通过
-  echo -n "等待 GeoPython Workflow Engine 就绪..."
+  echo -n "等待 GeoPython Workflow 就绪..."
   WAIT_COUNT=0
   MAX_WAIT=60
-  until curl -f http://localhost:${PYTHON_WORKFLOW_PORT}/health > /dev/null 2>&1; do
+  until curl -f http://localhost:${GEOPYTHON_WORKFLOW_PORT}/health > /dev/null 2>&1; do
     echo -n "."
     sleep 1
     WAIT_COUNT=$((WAIT_COUNT + 1))
     if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
       echo -e " ${RED}✗${NC}"
-      echo -e "${RED}✗ GeoPython Workflow Engine 启动超时（60秒）${NC}"
-      echo -e "${YELLOW}查看日志: tail -f logs/python-workflow-engine.log${NC}"
-      echo -e "${YELLOW}或检查错误: tail -f logs/python-workflow-engine-stderr.log${NC}"
+      echo -e "${RED}✗ GeoPython Workflow 启动超时（60秒）${NC}"
+      echo -e "${YELLOW}查看日志: docker logs geopython-workflow-engine${NC}"
       exit 1
     fi
   done
   echo -e " ${GREEN}✓${NC}"
-  echo -e "${GREEN}✓ GeoPython Workflow Engine 就绪 (http://localhost:${PYTHON_WORKFLOW_PORT})${NC}"
+  echo -e "${GREEN}✓ GeoPython Workflow 就绪 (http://localhost:${GEOPYTHON_WORKFLOW_PORT})${NC}"
 else
-  PYTHON_WORKFLOW_PID=$(cat .dev-pids/python-workflow-engine.pid 2>/dev/null)
-  echo -e "${GREEN}✓ GeoPython Workflow Engine 已在运行 (PID: $PYTHON_WORKFLOW_PID)${NC}"
+  GEOPYTHON_WORKFLOW_PID=$(cat .dev-pids/geopython-workflow-engine.pid 2>/dev/null)
+  echo -e "${GREEN}✓ GeoPython Workflow 已在运行 (Runtime: $GEOPYTHON_WORKFLOW_PID)${NC}"
 fi
   echo ""
 else
-  echo -e "${YELLOW}Step 4/5: 跳过 GeoPython Workflow Engine${NC}"
+  echo -e "${YELLOW}Step 4/5: 跳过 GeoPython Workflow${NC}"
   echo ""
 fi
 
@@ -2681,7 +2653,7 @@ echo "  Quality:  http://localhost:${QUALITY_BACKEND_PORT}"
   echo "  Portal:   http://localhost:${PORTAL_BACKEND_PORT}"
 echo "  Jupyter Runtime:     http://localhost:${JUPYTER_API_PORT}"
 echo "  Spark 工作流引擎: http://localhost:${SPARK_WORKFLOW_PORT}"
-echo "  GeoPython Workflow Engine:    http://localhost:${PYTHON_WORKFLOW_PORT}"
+echo "  GeoPython Workflow:    http://localhost:${GEOPYTHON_WORKFLOW_PORT}"
 echo "  Model3D Workflow Engine:   http://localhost:${MODEL3D_WORKFLOW_PORT}"
 echo "  PointCloud Workflow Engine: http://localhost:${POINTCLOUD_WORKFLOW_PORT}"
 echo "  SuperMap Workflow Engine:  http://localhost:${SUPERMAP_WORKFLOW_PORT}"
@@ -2711,7 +2683,7 @@ echo "  Develop Backend:      $DEVELOP_PID"
 echo "  Service Backend:      $SERVICE_PID"
 echo "  DuckDB Runtime:       $DUCKDB_PID"
 echo "  Raster Mosaic Runtime:      $RASTER_MOSAIC_RUNTIME_PID"
-echo "  GeoPython Workflow Engine:     $PYTHON_WORKFLOW_PID"
+echo "  GeoPython Workflow:     $GEOPYTHON_WORKFLOW_PID"
 echo "  Model3D Workflow Engine:    $MODEL3D_WORKFLOW_PID"
 echo "  PointCloud Workflow Engine: $POINTCLOUD_WORKFLOW_PID"
 echo "  SuperMap Workflow Engine:  $SUPERMAP_WORKFLOW_PID"
@@ -2746,7 +2718,7 @@ echo "  Standard: logs/standard-backend.log"
 echo "  Model:    logs/model-backend.log"
 echo "  Quality:  logs/quality-backend.log"
 echo "  Inference: logs/inference-backend.log"
-echo "  GeoPython Workflow Engine: logs/python-workflow-engine.log"
+echo "  GeoPython Workflow: logs/geopython-workflow-engine.log"
 echo "  Math Workflow Engine: logs/math-workflow-engine.log (显式 -math-workflow 启动时)"
 echo "  Model3D Workflow Engine: logs/model3d-workflow-engine.log"
 echo "  PointCloud Workflow Engine: docker logs pointcloud-workflow-engine"

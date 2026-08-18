@@ -11,6 +11,8 @@ const formatDisplayNames = {
   pcd: 'PCD',
   xyz: 'XYZ',
   geojson: 'GeoJSON',
+  access: 'Microsoft Access Database',
+  pgeo: 'Personal Geodatabase',
   geotiff: 'GeoTIFF',
   tiff: 'TIFF',
   tif: 'TIFF',

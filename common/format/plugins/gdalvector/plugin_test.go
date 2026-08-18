@@ -180,3 +180,48 @@ func TestReadOnlyPluginDoesNotImplementWriterFactory(t *testing.T) {
 		t.Fatal("read-only PGeo plugin must not implement runtime writer factory")
 	}
 }
+
+func TestDetectionOnlyPluginRefinesAccessToPGeo(t *testing.T) {
+	if err := format.RegisterFormatDescriptor(format.FormatDescriptor{
+		ID: "test-pgeo-detection", Format: format.FormatPGeo, DataType: datatype.Container, Layouts: []string{format.LayoutSingle},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/operators/"+operatorDetect+"/invoke" {
+			t.Fatalf("operator path = %q, want detect", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "success",
+			"result": map[string]interface{}{
+				"schema_version":   FormatDetectionSchema,
+				"candidate_format": "access",
+				"format":           "pgeo",
+			},
+		})
+	}))
+	defer server.Close()
+
+	runtime := engineplugin.NewHTTPWorkflowRuntimeProvider("geopython_workflow", "GeoPython")
+	plugin := NewDetectionOnlyPlugin(format.FormatDescriptor{
+		ID: "test-access", Format: format.FormatAccess, DataType: datatype.Container, Layouts: []string{format.LayoutSingle},
+	})
+	plan, err := workflowaccess.NewSourcePlan(workflowaccess.Source{
+		Kind: workflowaccess.KindFile, Format: "access",
+		Access: workflowaccess.Access{Method: workflowaccess.MethodMountedPath, Path: "/data/source.mdb"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	detector, err := plugin.BindFormatDetector(runtime, runtimeConnectionInfo(t, server.URL), plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	detected, err := detector.DetectFormat(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detected != format.FormatPGeo {
+		t.Fatalf("detected format = %q, want %q", detected, format.FormatPGeo)
+	}
+}

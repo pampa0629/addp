@@ -44,6 +44,49 @@ func TestResolveItemsGroupsShapefileRefs(t *testing.T) {
 	}
 }
 
+func TestResolveItemsGroupsShapefileMetadataXMLAndKeepsStandaloneXML(t *testing.T) {
+	t.Parallel()
+
+	size := int64(10)
+	result, err := ResolveItems(ResolveInput{
+		ScopeKind: ScopeKindDirectory,
+		Candidates: []Candidate{
+			{Path: "WGS84_Points.shp", Name: "WGS84_Points.shp", SizeBytes: &size},
+			{Path: "WGS84_Points.shx", Name: "WGS84_Points.shx", SizeBytes: &size},
+			{Path: "WGS84_Points.dbf", Name: "WGS84_Points.dbf", SizeBytes: &size},
+			{Path: "WGS84_Points.shp.xml", Name: "WGS84_Points.shp.xml", ContentType: "application/xml", SizeBytes: &size},
+			{Path: "catalog.xml", Name: "catalog.xml", ContentType: "application/xml", SizeBytes: &size},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if len(result.Items) != 2 {
+		t.Fatalf("items = %#v, want shapefile and standalone XML", result.Items)
+	}
+	shapefile := result.Items[0]
+	if shapefile.Format != string(format.FormatShapefile) || len(shapefile.RefList) != 4 {
+		t.Fatalf("shapefile = %#v, want .shp.xml grouped as fourth ref", shapefile)
+	}
+	if !result.Claims["WGS84_Points.shp.xml"] {
+		t.Fatalf("claims = %#v, want Shapefile metadata XML claimed", result.Claims)
+	}
+	var metadataRef *ItemRef
+	for index := range shapefile.RefList {
+		if shapefile.RefList[index].Role == "metadata" {
+			metadataRef = &shapefile.RefList[index]
+			break
+		}
+	}
+	if metadataRef == nil || metadataRef.Extension != ".shp.xml" || metadataRef.Required {
+		t.Fatalf("metadata ref = %#v, want optional Shapefile XML metadata", metadataRef)
+	}
+	standalone := result.Items[1]
+	if standalone.Format != string(format.FormatXML) || standalone.DataType != datatype.Document || standalone.Layout != format.LayoutSingle {
+		t.Fatalf("standalone item = %#v, want single XML document", standalone)
+	}
+}
+
 func TestResolveItemsClaimsFileGDBDirectoryAsWholeContainer(t *testing.T) {
 	t.Parallel()
 

@@ -132,10 +132,17 @@ mindmap
       运行模式
         控制台:console
         独立模块
-      Backend/Worker 分离
-        transfor
-        meta
-        manager
+      后台执行角色
+        独立 Worker 进程
+          Transfer Bounded Worker
+          Transfer Continuous Worker
+          Meta Scan Worker
+        Backend 内嵌 Execution Worker
+          Quality Check Worker
+        非 Execution Worker
+          Owner Scheduler
+          Dispatcher
+          Maintenance Loop
 ```
 
 ---

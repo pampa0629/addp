@@ -9,7 +9,8 @@
 | engine | 引擎 | ADDP 连接和访问外部数据系统的能力入口。 | 例如 PostgreSQL、MinIO、NFS、Neo4j。 |
 | Oracle Engine | Oracle 引擎 | 通过 `engine_type=oracle` 登记的 Oracle 数据库 Engine Instance；普通表 Catalog/查询/读取与基础 Oracle Spatial（`MDSYS.SDO_GEOMETRY`、SpatialInfo、EWKB）能力以 `service_name` 所指服务为连接边界，以 schema/table 为业务路径。 | Oracle CDC 和 ArcGIS SDE 逻辑变化源分别扩展，不因共用 Oracle 连接而合并为同一能力。 |
 | File Geodatabase | 文件地理数据库 | ArcGIS `.gdb` 目录承载的多图层矢量容器格式；ADDP 使用 `format=filegdb + layout=whole + data_type=container` 表达，feature class / table 是容器 child。 | 内置开源数据面使用 GDAL OpenFileGDB；普通图层读写不等同 Enterprise Geodatabase、SDE 注册、拓扑或版本化支持。 |
-| Personal Geodatabase | 个人地理数据库 | Microsoft Access `.mdb` 承载的旧 ArcGIS 地理数据库容器格式；ADDP 使用 `format=pgeo + layout=single + data_type=container` 表达。 | 内置开源数据面只允许作为只读 source，通过 GDAL PGeo + unixODBC / MDB Tools 抽取；不提供 `.mdb` 写回。 |
+| Microsoft Access Database | Microsoft Access 数据库 | Microsoft Jet / Access `.mdb` 承载的通用数据库容器格式；ADDP 使用 `format=access + layout=single + data_type=container` 表达。 | `.mdb` 后缀和 `application/x-msaccess` MIME 只证明 Access 容器候选，不能证明它是 ArcGIS Personal Geodatabase。 |
+| Personal Geodatabase | 个人地理数据库 | Microsoft Access `.mdb` 承载、且经 ArcGIS PGeo 驱动确定性识别的旧 ArcGIS 地理数据库容器格式；ADDP 使用 `format=pgeo + layout=single + data_type=container` 表达。 | Meta 深度扫描从 `access` 候选精化为 `pgeo`；内置开源数据面只允许作为只读 source，通过 GDAL PGeo + unixODBC / MDB Tools 抽取，不提供 `.mdb` 写回。 |
 | Engine Instance | 引擎实例 | System 中一条绑定到确定物理端点的引擎登记事实。 | `engine_id` 只标识该实例；物理端点身份不可原地改变，端点变化必须创建新的 Engine Instance。 |
 | Engine Runtime Descriptor | 引擎运行时描述 | System 面向受信 Runtime Service Principal 提供的脱敏 Engine Instance 控制面投影。 | 只包含实例身份、生命周期、能力声明和工作流/脚本运行时的 `protocol/host/port`；不包含数据引擎凭据、数据库连接参数或可直接读取业务数据的明文连接。 |
 | engine lifecycle state | 引擎生命周期状态 | Engine Instance 当前能否被正常消费或正在退出平台的状态。 | 统一使用 `active`、`disabled`、`deleting`；`deleting` 保留连接只用于删除前 cleanup，不进入正常业务选择。 |
@@ -143,6 +144,11 @@
 | orchestration schedule | 编排调度 | Orchestrator 编排定义上保存的定时计划。 | 只决定编排 run 何时启动；不继承、不覆盖其中 Step 引用任务的自身调度。 |
 | task type | 任务类型 | owner 模块内稳定的业务执行类型标识。 | 例如 `scan`、`vector_tile_cache_generation`、`embedding`；只有存在持久任务定义并允许编排时才由 TaskProvider capabilities 声明，ad-hoc-only execution type 不因此自动成为 TaskProvider 类型。 |
 | TaskProvider | 任务提供者 | 模块对外声明可编排任务能力的角色。 | 按模块注册，不按任务类型注册；一个 provider 在 `task_capabilities[]` 中声明多个任务类型能力。 |
+| execution worker | 执行工作器 | 执行 owner 消费已创建 execution、推进真实运行体并写入 execution 终态的后台运行角色。 | 是运行时角色而非固定进程类型；可以嵌入 owner backend，也可以独立部署。worker 必须使用 owner 声明的运行时队列、并发、租约和恢复语义。 |
+| owner scheduler | Owner 调度器 | 按任务定义中的 schedule 发现到期任务、创建 execution 并投递给 execution worker 的 owner 组件。 | 调度器负责“何时创建 execution”，不负责替代 worker 执行真实任务；调度定义仍归任务 owner。 |
+| runtime queue | 运行时队列 | execution 从创建到被执行 worker 领取之间的投递和领取机制。 | 可以是 Redis/Asynq、PostgreSQL claim、进程内队列或长驻 runtime lease；不是任务定义、execution 结果或产物状态事实。 |
+| dispatcher | 投递器 | 从 owner outbox 或 delivery 队列领取待发送事项并调用外部接收方的后台角色。 | Monitor Webhook/邮件 dispatcher 不执行业务任务，不创建业务 execution；投递记录和重试状态归 Monitor outbox。 |
+| maintenance loop | 维护循环 | 处理固定系统维护、清理、注册同步或观测采集的后台循环。 | 不等于 execution worker；只有演进为可持久执行、可审计的任务定义后，才进入 owner scheduler + execution worker 体系。 |
 | source task id | 来源任务 ID | execution 关联的 owner 模块任务定义 ID。 | 在 `common.task_executions.source_task_id` 中保存；查询时必须结合 `module + task_type`。 |
 | parent execution id | 父执行 ID | 当前 execution 的父级 execution UUID。 | 用于 Orchestrator 子步骤追踪父编排。 |
 | ad-hoc execution | 一次性执行 | 不依赖持久任务定义、直接按本次配置创建的 execution。 | 可以没有 `source_task_id`，但必须在 `execution_config` 保存完整执行配置。 |
@@ -197,6 +203,7 @@
 |---|---|---|---|
 | ADDP Operator | ADDP 算子 | ADDP 平台统一的可编排能力定义，包含稳定 ID、参数、输入输出端口、执行模式和展示元数据。 | 面向 Develop 前端、工作流定义、参数校验、执行历史和血缘；不承载具体引擎私有类名。 |
 | Workflow Runtime | 工作流运行时 | 按 `addp.workflow/v1` 协议接收算子列表查询和 workflow_def 执行请求的独立执行服务。 | 例如 GeoPython Workflow、Spark Workflow、Model3D Workflow、PointCloud Workflow、SuperMap Workflow。 |
+| GeoPython Workflow | GeoPython Workflow 运行时 | 基于 Python 地理计算生态实现的 Workflow Runtime，提供 Pandas、GeoPandas、GDAL/OGR 等算子能力。 | 用户可见名称、System Engine Instance 名称和文档专名统一使用 `GeoPython Workflow`；`engine_type` 固定为 `geopython_workflow`，不得使用其他历史别名。 |
 | Federated Query Runtime | 联邦查询运行时 | 通过统一查询协议执行 SQL，并按本次执行授权动态挂载多个 Source Engine 或对象表的独立计算服务。 | DuckDB Runtime 是首个实现；Runtime Engine 只表示计算端点，SQL 引用的数据源仍分别保持自己的 Engine Instance 身份。 |
 | Runtime Engine | 运行时引擎 | System 中代表独立计算 Runtime 物理端点的 Engine Instance。 | Develop 任务和 Service 定义绑定 Runtime Engine；它不等于查询涉及的 Source Engine，也不因此获得 Source Engine 数据权限。 |
 | Source Engine | 数据源引擎 | 一次查询、工作流或服务执行实际读取或写入数据的 Engine Instance。 | Source Engine 必须逐个进入 Execution Authorization；不能用 Runtime Engine ID 替代或隐式扩大数据源范围。 |

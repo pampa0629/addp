@@ -1157,6 +1157,8 @@
       "fileTypeText": "Text File",
       "mdRaw": "Raw Text",
       "mdRendered": "Rendered MD",
+      "xmlRaw": "Raw XML",
+      "xmlFormatted": "Formatted XML",
       "fileTypeVideo": "Video",
       "fileTypeAudio": "Audio",
       "fileTypeExt": "{ext} File",

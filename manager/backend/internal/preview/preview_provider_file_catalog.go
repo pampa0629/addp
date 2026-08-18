@@ -159,6 +159,11 @@ func (p *fileCatalogPreviewProvider) previewFile(
 	rawContentType := meta.ContentType
 	canonicalContentType := objectcontent.InferContentType(filePath, rawContentType)
 	preview.Object.ContentType = canonicalContentType
+	dir, name := splitFSPath(filePath)
+	if content := containerPreviewContentFromMetaAttributes(preview.Object.Attributes, meta.Size, dir, name); content != nil {
+		preview.Object.Content = content
+		return preview, nil
+	}
 
 	if p.content != nil {
 		contentPath := filePath
@@ -193,12 +198,6 @@ func (p *fileCatalogPreviewProvider) previewFile(
 		}
 		handler := p.content.Resolve(contentReq)
 		if handler != nil {
-			if objectcontent.IsContainerFormat(contentReq.Format) {
-				if content := containerPreviewContentFromMetaAttributes(preview.Object.Attributes, meta.Size, contentReq.Path, contentReq.Name); content != nil {
-					preview.Object.Content = content
-					return preview, nil
-				}
-			}
 			if streamHandler, ok := handler.(objectcontent.StreamableContentHandler); ok {
 				streamer := func() (io.ReadCloser, error) {
 					return openFileCatalogContent(ctxTimeout, contentReader, connInfo, engine.ID, filePath)

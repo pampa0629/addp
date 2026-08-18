@@ -8,9 +8,11 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/instanceprovider"
 	"github.com/addp/common/engine/plugin"
 	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
+	"github.com/addp/common/engine/workflowaccess"
 	"github.com/addp/common/federatedquery"
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
@@ -32,11 +34,17 @@ var ErrEngineAccessDenied = errors.New("engine not accessible for current tenant
 //
 // 注意：重命名自 PreviewOrchestrator，避免与 Orchestrator 模块混淆
 type PreviewResolver struct {
-	registry             *PreviewRegistry
-	systemClient         *commonClient.SystemClient
-	metaClient           *commonClient.MetaClient
-	runtimeClient        instanceprovider.RuntimeDescriptorClient
-	runtimeClientFactory func(uint) instanceprovider.RuntimeDescriptorClient
+	registry                 *PreviewRegistry
+	systemClient             *commonClient.SystemClient
+	metaClient               *commonClient.MetaClient
+	runtimeClient            instanceprovider.RuntimeDescriptorClient
+	runtimeClientFactory     func(uint) instanceprovider.RuntimeDescriptorClient
+	runtimeListClient        workflowRuntimeDescriptorListClient
+	runtimeListClientFactory func(uint) workflowRuntimeDescriptorListClient
+}
+
+type workflowRuntimeDescriptorListClient interface {
+	ListEngineRuntimeDescriptors(context.Context) ([]commonModels.EngineRuntimeDescriptor, error)
 }
 
 // NewPreviewResolver 创建预览解析器
@@ -60,12 +68,26 @@ func NewPreviewResolver(
 		metaClient:    metaClient,
 		runtimeClient: runtimeClient,
 	}
+	resolver.runtimeListClient, _ = runtimeClient.(workflowRuntimeDescriptorListClient)
 	if systemRuntime, ok := runtimeClient.(*commonClient.SystemServiceClient); ok {
 		resolver.runtimeClientFactory = func(tenantID uint) instanceprovider.RuntimeDescriptorClient {
 			return systemRuntime.WithTenantID(tenantID)
 		}
+		resolver.runtimeListClientFactory = func(tenantID uint) workflowRuntimeDescriptorListClient {
+			return systemRuntime.WithTenantID(tenantID)
+		}
 	}
 	return resolver
+}
+
+func (r *PreviewResolver) runtimeDescriptorListClientForTenant(tenantID *uint) workflowRuntimeDescriptorListClient {
+	if r == nil {
+		return nil
+	}
+	if r.runtimeListClient == nil || tenantID == nil || *tenantID == 0 || r.runtimeListClientFactory == nil {
+		return r.runtimeListClient
+	}
+	return r.runtimeListClientFactory(*tenantID)
 }
 
 func (r *PreviewResolver) runtimeDescriptorClientForTenant(tenantID *uint) instanceprovider.RuntimeDescriptorClient {
@@ -165,6 +187,11 @@ func (r *PreviewResolver) Preview(ctx context.Context, req *PreviewResolverReque
 	}
 	if refProvider := r.resolveRefPreviewProvider(req, providerReq); refProvider != nil {
 		provider = refProvider
+	}
+	if provider.Name() == "builtin:scope-table" {
+		if err := r.bindRuntimeScopeTableReader(ctx, req, providerReq); err != nil {
+			return nil, err
+		}
 	}
 
 	logger.L().Info("选择预览插件", "provider", provider.Name(), "locator", req.Locator.ToURI(), "item_type", req.ItemType)
@@ -625,7 +652,7 @@ func providerNamesForMeta(req *PreviewResolverRequest, providerReq *PreviewReque
 
 	switch dataType {
 	case "table":
-		if layout == "whole" && hasScopeTableProvider(formatType) {
+		if layout == "whole" && hasScopeTablePreviewProvider(formatType) {
 			return []string{"builtin:scope-table"}
 		}
 		if providerReq != nil && isFileTableFormat(formatType, attrs) && isContentFileItemType(itemType) {
@@ -639,6 +666,13 @@ func providerNamesForMeta(req *PreviewResolverRequest, providerReq *PreviewReque
 		return []string{"builtin:graph"}
 	case "container":
 		if providerReq != nil && strings.TrimSpace(providerReq.ChildName) != "" && isContentFileItemType(itemType) {
+			// Some physical single-file containers (for example PGeo .mdb)
+			// expose table children through the runtime scope-table capability.
+			// Layout describes the physical resource, not whether a selected
+			// child can be read as a scope table, so it must not gate this route.
+			if hasScopeTablePreviewProvider(formatType) {
+				return []string{"builtin:scope-table"}
+			}
 			return []string{"builtin:container-child"}
 		}
 		if providerReq != nil && itemType == "file" {
@@ -696,12 +730,88 @@ func isFileTableFormat(formatType format.FormatType, attrs map[string]interface{
 	return false
 }
 
-func hasScopeTableProvider(formatType format.FormatType) bool {
+func hasScopeTablePreviewProvider(formatType format.FormatType) bool {
 	if formatType == "" || formatType == format.FormatUnknown {
 		return false
 	}
-	_, err := format.GetScopeTableSampleReader(formatType)
+	if _, err := format.GetScopeTableSampleReader(formatType); err == nil {
+		return true
+	}
+	_, err := format.GetRuntimeScopeTableReaderFactory(formatType)
 	return err == nil
+}
+
+func (r *PreviewResolver) bindRuntimeScopeTableReader(ctx context.Context, req *PreviewResolverRequest, providerReq *PreviewRequest) error {
+	if req == nil || providerReq == nil || providerReq.ScopeTableReaderProvider != nil {
+		return nil
+	}
+	formatType := resolveScopeTableFormat(providerReq)
+	factory, err := format.GetRuntimeScopeTableReaderFactory(formatType)
+	if err != nil {
+		return nil
+	}
+	if req.TenantID == nil || *req.TenantID == 0 {
+		return ErrEngineAccessDenied
+	}
+	client := r.runtimeDescriptorListClientForTenant(req.TenantID)
+	if client == nil {
+		return fmt.Errorf("System runtime descriptor client is required to preview %s", formatType)
+	}
+	descriptors, err := client.ListEngineRuntimeDescriptors(ctx)
+	if err != nil {
+		return fmt.Errorf("list workflow runtime descriptors for %s preview: %w", formatType, err)
+	}
+	source, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{
+		Engine: req.Engine, Locator: req.Locator, Kind: runtimeScopeTableSourceKind(providerReq.Attributes), Format: string(formatType),
+	})
+	if err != nil {
+		return fmt.Errorf("resolve %s preview source access: %w", formatType, err)
+	}
+	plan, err := workflowaccess.NewSourcePlan(source)
+	if err != nil {
+		return err
+	}
+	sort.SliceStable(descriptors, func(left, right int) bool {
+		if descriptors[left].IsBuiltin != descriptors[right].IsBuiltin {
+			return !descriptors[left].IsBuiltin
+		}
+		return descriptors[left].ID < descriptors[right].ID
+	})
+	failures := make([]string, 0)
+	for index := range descriptors {
+		runtimeEngine := descriptors[index].AsEngine()
+		if runtimeEngine == nil || runtimeEngine.LifecycleState != commonModels.EngineLifecycleActive {
+			continue
+		}
+		if err := dbbridge.RequireDirectWorkflowOperators(ctx, runtimeEngine, factory.RequiredScopeTableReadOperators()...); err != nil {
+			failures = append(failures, fmt.Sprintf("%s: %v", runtimeEngine.Name, err))
+			continue
+		}
+		runtimeProvider, err := dbbridge.WorkflowRuntimeProviderForEngine(runtimeEngine)
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("%s: %v", runtimeEngine.Name, err))
+			continue
+		}
+		bound, err := factory.BindScopeTableReader(runtimeProvider, plugin.ConnectionInfo(runtimeEngine.ConnectionInfo), plan)
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("%s: %v", runtimeEngine.Name, err))
+			continue
+		}
+		providerReq.ScopeTableReaderProvider = bound
+		return nil
+	}
+	message := fmt.Sprintf("no active workflow runtime provides %s preview operators %s", formatType, strings.Join(factory.RequiredScopeTableReadOperators(), ", "))
+	if len(failures) > 0 {
+		message += "; discovery failures: " + strings.Join(failures, "; ")
+	}
+	return fmt.Errorf("%s", message)
+}
+
+func runtimeScopeTableSourceKind(attrs map[string]interface{}) string {
+	if itemLayoutFromMetaAttributes(attrs) == format.LayoutWhole {
+		return workflowaccess.KindDirectory
+	}
+	return workflowaccess.KindFile
 }
 
 // buildPreviewResult 将 provider 返回的预览内容包装为统一 PreviewResult。

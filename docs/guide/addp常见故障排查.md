@@ -42,7 +42,7 @@ bash scripts/dev/keepalive.sh restart -orchestrator
 bash scripts/dev/keepalive.sh restart -orchestrator
 
 # 局部重启扩展服务并保持服务可用；不会停止整套 ADDP 开发环境
-bash scripts/dev/keepalive.sh restart -python-workflow
+bash scripts/dev/keepalive.sh restart -geopython-workflow
 
 # 全量重启并保持服务可用
 bash scripts/dev/keepalive.sh restart -all
@@ -58,7 +58,7 @@ bash scripts/dev/keepalive.sh start -system
 - 普通本地终端继续优先使用 `bash scripts/dev/start.sh` 或 `bash scripts/dev/restart.sh`。
 - Codex 等命令结束后会回收后台进程的托管环境，使用 `bash scripts/dev/keepalive.sh ...`。
 - `keepalive.sh restart -<Go模块名>` 会继承 `restart.sh` 的全局停止语义：先停止整套 ADDP 开发环境，再启动指定模块及其依赖。它适合“只需要该模块继续可用”的场景，不适合在用户外部终端已经启动全套服务时由 Codex 接管局部重启。
-- `keepalive.sh restart -python-workflow|-math-workflow|-spark-workflow|-jupyter|-copilot|-agent` 会继承扩展服务局部重启语义，只重启对应服务。
+- `keepalive.sh restart -geopython-workflow|-math-workflow|-spark-workflow|-jupyter|-copilot|-agent` 会继承扩展服务局部重启语义，只重启对应服务。
 - 如果需要保持全套服务可用，在 Codex 中使用 `bash scripts/dev/keepalive.sh restart -all` 并让该命令持续前台运行；如果只想做一次性验证，运行测试和构建命令即可，不要为了局部 Go 后端改动在 Codex 中执行 `restart -<Go模块名>`。
 - 不要同时在外部终端和 Codex 中并发执行 `restart.sh` / `stop.sh`，因为脚本会按 PID、进程名和端口清理 ADDP 开发服务，两个会话可能互相清理。
 
@@ -571,7 +571,7 @@ status_code, body = register_runtime_engine(
 
 2. **查看引擎日志**
    ```bash
-   tail -f logs/python-workflow-engine.log
+   tail -f logs/geopython-workflow-engine.log
    # 应该看到：✅ Successfully registered to System Backend (Engine ID: 65)
    ```
 
@@ -643,7 +643,7 @@ status_code, body = register_runtime_engine(
 |------|------|---------|
 | 2025-12-18 | Manager 数据预览"暂无数据"（双重 .data 访问） | Claude Code |
 | 2026-01-03 | Workflow 引擎注册失败 502（系统代理拦截） | Claude Code |
-| 2026-01-27 | GeoPython Workflow Engine 依赖安装失败（NumPy 版本冲突） | Claude Code |
+| 2026-01-27 | GeoPython Workflow 依赖安装失败（NumPy 版本冲突） | Claude Code |
 | 2026-01-27 | 工作流引擎注册失败 404（缺少 /api 前缀） | Claude Code |
 | 2026-01-29 | MVT 物化视图创建失败（主键大小写问题） | Claude Code |
 
@@ -651,11 +651,11 @@ status_code, body = register_runtime_engine(
 
 ## 后端问题
 
-### 3. GeoPython Workflow Engine 依赖安装失败（NumPy 版本冲突）
+### 3. GeoPython Workflow 依赖安装失败（NumPy 版本冲突）
 
 #### 问题现象
 
-运行 `bash scripts/dev/restart.sh -python-workflow` 时失败，错误信息：
+运行 `bash scripts/dev/restart.sh -geopython-workflow` 时失败，错误信息：
 
 ```
 Collecting numpy<2.0 (from -r requirements.txt (line 4))
@@ -693,7 +693,7 @@ Collecting numpy<2.0 (from -r requirements.txt (line 4))
 
 #### 解决方案
 
-**更新 `engines/python-workflow/requirements.txt`：**
+**更新 `engines/geopython-workflow/requirements.txt`：**
 
 1. **升级 NumPy**（从 `<2.0` 改为 `>=2.0`）
 2. **升级 GeoPandas**（从 `0.14.1` 改为 `>=0.15.0`）
@@ -725,7 +725,7 @@ python-dotenv>=1.0.0
 #### 验证修复
 
 ```bash
-cd engines/python-workflow
+cd engines/geopython-workflow
 
 # 清除旧的虚拟环境（如需要）
 rm -rf venv
@@ -746,8 +746,8 @@ python3 -m venv venv
 
 - **发现日期：** 2026-01-27
 - **修复版本：** v0.0.22+
-- **影响范围：** GeoPython Workflow Engine（所有 Python 3.11+ 环境）
-- **验证命令：** `bash scripts/dev/restart.sh -python-workflow`
+- **影响范围：** GeoPython Workflow（所有 Python 3.11+ 环境）
+- **验证命令：** `bash scripts/dev/restart.sh -geopython-workflow`
 
 ---
 
@@ -783,10 +783,10 @@ Math Workflow 是协议参考实现，需要时通过 System 引擎管理按扩�
 
 ```bash
 # 重启工作流引擎
-bash scripts/dev/restart.sh -python-workflow
+bash scripts/dev/restart.sh -geopython-workflow
 
 # 检查注册日志（应看到 202）
-tail -f logs/python-workflow-engine-stderr.log
+tail -f logs/geopython-workflow-engine-stderr.log
 
 # 预期输出：
 # Successfully registered to System Backend
@@ -1001,7 +1001,7 @@ whereClause := fmt.Sprintf("%s > 100", dialect.QuoteIdentifier(col))
 
 ### 现象
 
-在同一个 `pytest` 进程中同时运行多个 workflow engine 测试时，例如同时运行 `engines/python-workflow` 和 `engines/math-workflow` 的测试，可能出现类似错误：
+在同一个 `pytest` 进程中同时运行多个 workflow engine 测试时，例如同时运行 `engines/geopython-workflow` 和 `engines/math-workflow` 的测试，可能出现类似错误：
 
 ```text
 ImportError: cannot import name 'get_operator_function' from 'operators'
@@ -1016,7 +1016,7 @@ ImportError: cannot import name 'get_operator_function' from 'operators'
 按引擎目录隔离运行测试：
 
 ```bash
-cd engines/python-workflow && PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest test_operator_metadata.py
+cd engines/geopython-workflow && PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest test_operator_metadata.py
 cd engines/math-workflow && PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests/test_api.py
 ```
 

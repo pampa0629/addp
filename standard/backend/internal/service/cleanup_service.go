@@ -49,6 +49,7 @@ type StandardCleanupStats struct {
 	DocumentMetricMappings   int      `json:"document_metric_mappings"`
 	DimensionHierarchies     int      `json:"dimension_hierarchies"`
 	DimensionHierarchyLevels int      `json:"dimension_hierarchy_levels"`
+	ReferenceDeletions       int      `json:"reference_deletions"`
 	DeprecatedGlossaries     int      `json:"deprecated_glossaries,omitempty"`
 	DeprecatedElements       int      `json:"deprecated_elements,omitempty"`
 	DeprecatedMetrics        int      `json:"deprecated_metrics,omitempty"`
@@ -235,6 +236,7 @@ type standardCleanupCandidates struct {
 	documentMetricMappings   []models.DocumentMetricMapping
 	dimensionHierarchies     []models.DimensionHierarchy
 	dimensionHierarchyLevels []models.DimensionHierarchyLevel
+	referenceDeletions       []models.StandardReferenceDeletion
 }
 
 func (c standardCleanupCandidates) stats() *StandardCleanupStats {
@@ -259,6 +261,7 @@ func (c standardCleanupCandidates) stats() *StandardCleanupStats {
 		DocumentMetricMappings:   len(c.documentMetricMappings),
 		DimensionHierarchies:     len(c.dimensionHierarchies),
 		DimensionHierarchyLevels: len(c.dimensionHierarchyLevels),
+		ReferenceDeletions:       len(c.referenceDeletions),
 	}
 }
 
@@ -369,6 +372,9 @@ func (s *CleanupService) listTenantCandidates(ctx context.Context, tenantID int6
 			return candidates, err
 		}
 	}
+	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&candidates.referenceDeletions).Error; err != nil {
+		return candidates, err
+	}
 	return candidates, nil
 }
 
@@ -431,6 +437,7 @@ func (s *CleanupService) physicalCleanup(ctx context.Context, candidates standar
 		ids   []int64
 		name  string
 	}{
+		{model: &models.StandardReferenceDeletion{}, ids: standardReferenceDeletionIDs(candidates.referenceDeletions), name: "reference deletions"},
 		{model: &models.DocumentElementMapping{}, ids: standardDocumentElementMappingIDs(documentElementMappingsToDelete), name: "document element mappings"},
 		{model: &models.DocumentGlossaryMapping{}, ids: standardDocumentGlossaryMappingIDs(documentGlossaryMappingsToDelete), name: "document glossary mappings"},
 		{model: &models.DocumentMetricMapping{}, ids: standardDocumentMetricMappingIDs(documentMetricMappingsToDelete), name: "document metric mappings"},
@@ -675,7 +682,8 @@ func standardCandidateRecordCount(stats *StandardCleanupStats) int {
 		stats.DocumentGlossaryMappings +
 		stats.DocumentMetricMappings +
 		stats.DimensionHierarchies +
-		stats.DimensionHierarchyLevels
+		stats.DimensionHierarchyLevels +
+		stats.ReferenceDeletions
 }
 
 func standardRiskLevelForCount(count int) string {
@@ -892,6 +900,14 @@ func standardDimensionHierarchyIDs(items []models.DimensionHierarchy) []int64 {
 }
 
 func standardDimensionHierarchyLevelIDs(items []models.DimensionHierarchyLevel) []int64 {
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	return ids
+}
+
+func standardReferenceDeletionIDs(items []models.StandardReferenceDeletion) []int64 {
 	ids := make([]int64, 0, len(items))
 	for _, item := range items {
 		ids = append(ids, item.ID)

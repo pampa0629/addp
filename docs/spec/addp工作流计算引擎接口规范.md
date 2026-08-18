@@ -985,7 +985,7 @@ curl -X POST http://localhost:8100/api/workflow \
 ### A. 参考实现
 
 - **Math Workflow**: `engines/math-workflow/` - 简单示例，适合学习
-- **GeoPython Workflow**: `engines/python-workflow/` - 生产级 Python 实现，包含 Pandas / GeoPandas 等运行库
+- **GeoPython Workflow**: `engines/geopython-workflow/` - 生产级 Python 实现，包含 Pandas / GeoPandas 等运行库
 - **Spark Workflow**: `engines/spark-workflow/` - 分布式计算示例
 - **Model3D Workflow**: `engines/model3d-workflow/` - 三维模型和 BIM 快显转换运行时
 - **PointCloud Workflow**: `engines/pointcloud-workflow/` - 点云 COPC 快显转换运行时

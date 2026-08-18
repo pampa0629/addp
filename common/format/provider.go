@@ -182,6 +182,23 @@ type RuntimeScopeTableProviderFactory interface {
 	FormatPlugin
 }
 
+// RuntimeFormatDetectorFactory binds an access plan for a weakly identified
+// base format to a detector whose native dependencies live in a workflow
+// runtime. It refines format identity without changing the data item boundary.
+type RuntimeFormatDetectorFactory interface {
+	FormatPlugin
+	RequiredFormatDetectionOperators() []string
+	BindFormatDetector(runtime engineplugin.WorkflowRuntimeProvider, runtimeConn engineplugin.ConnectionInfo, plan workflowaccess.SourcePlan) (BoundFormatDetector, error)
+}
+
+// BoundFormatDetector determines the canonical format of one already-authorized
+// source. Infrastructure failures are errors; a confirmed base format is a
+// successful detection result.
+type BoundFormatDetector interface {
+	FormatPlugin
+	DetectFormat(ctx context.Context) (FormatType, error)
+}
+
 // RuntimeContainerInfoProviderFactory binds a source-only access plan to a
 // container info provider whose native dependencies live in a workflow runtime.
 // The factory does not inspect resources itself.

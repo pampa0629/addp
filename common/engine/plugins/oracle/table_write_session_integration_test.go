@@ -137,6 +137,79 @@ func TestIntegrationOracleTableWriteSessionSpatialRoundTrip(t *testing.T) {
 	}
 }
 
+func TestIntegrationOraclePrepareMixedCaseSpatialColumn(t *testing.T) {
+	if os.Getenv("ADDP_ORACLE_SPATIAL_INTEGRATION") != "1" {
+		t.Skip("set ADDP_ORACLE_SPATIAL_INTEGRATION=1 to run Oracle Spatial integration test")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	connInfo := oracleIntegrationConnInfo(t)
+	p := &OraclePlugin{}
+	schema := strings.ToUpper(connInfo["user"].(string))
+	table := "ADDP_CASE_" + strings.ToUpper(uuid.NewString()[:8])
+	path := plugin.CatalogRootPath(p.CatalogModel(), 92002)
+	path.Segments = append(path.Segments,
+		plugin.CatalogSegment{Term: plugin.CatalogTermSchema, Kind: plugin.CatalogKindNamespace, Name: schema},
+		plugin.CatalogSegment{Term: plugin.CatalogTermTable, Kind: plugin.CatalogKindTable, Name: table},
+	)
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cleanupCancel()
+		_ = p.DeleteResource(cleanupCtx, connInfo, path)
+	}()
+
+	srid, dimension := 4326, 2
+	extent := datatype.NewBoundingBox(-180, -90, 180, 90)
+	spatialInfo := &datatype.SpatialInfo{
+		GeometryColumns:       []datatype.GeometryColumnInfo{{Name: "Shape", GeometryType: "Point", SRID: &srid, Dimension: &dimension}},
+		PrimaryGeometryColumn: "Shape",
+		Extent:                &extent,
+	}
+	fields := []datatype.FieldInfo{
+		{Name: "id", Type: datatype.FieldTypeBigInt},
+		{Name: "Shape", Type: datatype.FieldTypeGeometry},
+	}
+	if err := p.PrepareTableWrite(ctx, connInfo, path, plugin.TableWriteOptions{Fields: fields, SpatialInfo: spatialInfo}); err != nil {
+		t.Fatalf("PrepareTableWrite: %v", err)
+	}
+	dsn, err := p.BuildDSN(connInfo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("oracle", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var spatialIndexCount, metadataCount int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM user_indexes WHERE table_name = :1 AND index_type = 'DOMAIN'", table).Scan(&spatialIndexCount); err != nil {
+		t.Fatal(err)
+	}
+	if spatialIndexCount != 1 {
+		t.Fatalf("spatial index count = %d, want 1", spatialIndexCount)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM user_sdo_geom_metadata WHERE table_name = :1 AND column_name = :2", table, `"Shape"`).Scan(&metadataCount); err != nil {
+		t.Fatal(err)
+	}
+	if metadataCount != 1 {
+		t.Fatalf("quoted spatial metadata count = %d, want 1", metadataCount)
+	}
+	qualified := commonquery.ForEngine("oracle").QualifiedTable(schema, table)
+	if _, err := db.ExecContext(ctx, `INSERT INTO `+qualified+` ("id", "Shape") VALUES (1, MDSYS.SDO_GEOMETRY(2001, 4326, MDSYS.SDO_POINT_TYPE(116.397, 39.908, NULL), NULL, NULL))`); err != nil {
+		t.Fatalf("insert mixed-case spatial row: %v", err)
+	}
+	facts, err := p.DescribeCatalogFacts(ctx, connInfo, path, plugin.CatalogFactsOptions{IncludeSpatialFacts: true, IncludeIndexes: true})
+	if err != nil {
+		t.Fatalf("DescribeCatalogFacts: %v", err)
+	}
+	if facts.Spatial == nil || facts.Spatial.PrimaryGeometryName() != "Shape" || facts.Spatial.PrimaryGeometryType() != "Point" || facts.Spatial.PrimarySRIDValue() != srid || facts.Spatial.PrimaryDimensionValue() != dimension {
+		t.Fatalf("mixed-case spatial facts = %#v", facts.Spatial)
+	}
+	if facts.Spatial.HasSpatialIndex == nil || !*facts.Spatial.HasSpatialIndex {
+		t.Fatalf("mixed-case spatial index facts = %#v", facts.Spatial)
+	}
+}
+
 func readOracleIntegrationBatchAfterDDL(ctx context.Context, p *OraclePlugin, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
 	var lastErr error
 	for attempt := 0; attempt < 10; attempt++ {

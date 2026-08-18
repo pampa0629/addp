@@ -23,6 +23,13 @@ logger = logging.getLogger(__name__)
 
 _SPATIAL_FORMATS = {'shp', 'geojson', 'gpkg', 'kml', 'gml', 'fgb'}
 
+
+def _map_loopback_host(host: str) -> str:
+    shared_host = os.getenv('GEOPYTHON_WORKFLOW_LOOPBACK_HOST', '').strip()
+    if shared_host and str(host).strip().lower() in {'localhost', '127.0.0.1', '::1'}:
+        return shared_host
+    return host
+
 def _read_file(full_path: str, fmt: str, geom_column: str = None):
     """根据格式读取文件，返回 DataFrame 或 GeoDataFrame"""
     if fmt in _SPATIAL_FORMATS:
@@ -108,7 +115,7 @@ def load(
 
         # 从 connection_info 中提取信息（已由 Develop Backend 从 System API 获取并解密）
         engine_type = connection_info.get('engine_type')
-        host = connection_info.get('host')
+        host = _map_loopback_host(connection_info.get('host'))
         port = connection_info.get('port')
         # 兼容 username 和 user 两种字段名
         user = connection_info.get('user') or connection_info.get('username')
@@ -225,7 +232,7 @@ def save(
 
         # 从 connection_info 中提取信息
         engine_type = connection_info.get('engine_type')
-        host = connection_info.get('host')
+        host = _map_loopback_host(connection_info.get('host'))
         port = connection_info.get('port')
         # 兼容 username 和 user 两种字段名
         user = connection_info.get('user') or connection_info.get('username')

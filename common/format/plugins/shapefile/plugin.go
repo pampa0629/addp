@@ -61,14 +61,15 @@ func init() {
 }
 
 const (
-	extSHP = ".shp"
-	extSHX = ".shx"
-	extDBF = ".dbf"
-	extPRJ = ".prj"
-	extQPJ = ".qpj"
-	extCPG = ".cpg"
-	extSBN = ".sbn"
-	extSBX = ".sbx"
+	extSHP         = ".shp"
+	extSHX         = ".shx"
+	extDBF         = ".dbf"
+	extPRJ         = ".prj"
+	extQPJ         = ".qpj"
+	extCPG         = ".cpg"
+	extSBN         = ".sbn"
+	extSBX         = ".sbx"
+	extMetadataXML = ".shp.xml"
 
 	roleMain         = "main"
 	roleIndex        = "index"
@@ -76,6 +77,7 @@ const (
 	roleProjection   = "projection"
 	roleEncoding     = "encoding"
 	roleSpatialIndex = "spatial_index"
+	roleMetadata     = "metadata"
 )
 
 func RelatedRefSpecs() []format.RelatedRefSpec {
@@ -88,6 +90,7 @@ func RelatedRefSpecs() []format.RelatedRefSpec {
 		{Extension: extCPG, Role: roleEncoding, Required: false},
 		{Extension: extSBN, Role: roleSpatialIndex, Required: false},
 		{Extension: extSBX, Role: roleSpatialIndex, Required: false},
+		{Extension: extMetadataXML, Role: roleMetadata, Required: false},
 	}
 }
 
@@ -134,6 +137,8 @@ func refTypeForRole(role string) (datatype.DataType, format.FormatType) {
 	switch strings.ToLower(strings.TrimSpace(role)) {
 	case roleProjection, roleEncoding:
 		return datatype.Document, format.FormatText
+	case roleMetadata:
+		return datatype.Document, format.FormatXML
 	default:
 		return datatype.Unknown, format.FormatUnknown
 	}
@@ -162,6 +167,8 @@ func labelForRole(role, ext string) string {
 		return "编码声明"
 	case roleSpatialIndex:
 		return "空间索引"
+	case roleMetadata:
+		return "元数据"
 	default:
 		if ext != "" {
 			return strings.ToUpper(strings.TrimPrefix(ext, ".")) + " 内容"

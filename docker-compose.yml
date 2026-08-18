@@ -87,7 +87,7 @@ services:
       - MANAGER_URL=http://manager-backend:8081
       - ORCHESTRATOR_URL=http://orchestrator-backend:8084
       - DEVELOP_URL=http://develop-backend:8185
-      - PYTHON_WORKFLOW_URL=http://python-workflow-engine:8099
+      - GEOPYTHON_WORKFLOW_URL=http://geopython-workflow-engine:8099
       - INFERENCE_URL=http://inference-backend:8191
       - GIN_MODE=release
     ports:
@@ -539,7 +539,7 @@ services:
       - DEVELOP_SERVICE_CLIENT_SECRET=${DEVELOP_SERVICE_CLIENT_SECRET}
       - TRANSFER_URL=http://transfer-backend:8083
       - MANAGER_URL=http://manager-backend:8081
-      - PYTHON_WORKFLOW_URL=http://python-workflow-engine:8099
+      - GEOPYTHON_WORKFLOW_URL=http://geopython-workflow-engine:8099
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -829,6 +829,8 @@ services:
     environment:
       - SERVICE_HOST=quality-backend
       - QUALITY_BACKEND_PORT=8182
+      - QUALITY_CHECK_TIMEOUT=${QUALITY_CHECK_TIMEOUT:-30m}
+      - QUALITY_WORKER_CONCURRENCY=${QUALITY_WORKER_CONCURRENCY:-4}
       - SYSTEM_URL=http://system-backend:8180
       - STANDARD_URL=http://standard-backend:8110
       - META_URL=http://meta-backend:8082
@@ -1166,20 +1168,20 @@ services:
           cpus: '0.5'
           memory: 512M
 
-  # ==================== GeoPython Workflow Engine (Python 数据处理工作流引擎) ====================
+  # ==================== GeoPython Workflow (Python 数据处理工作流引擎) ====================
 
-  python-workflow-engine:
+  geopython-workflow-engine:
     build:
       context: .
-      dockerfile: engines/python-workflow/Dockerfile
-    image: ${REGISTRY:-localhost:5001}/addp-python-workflow-engine:${IMAGE_TAG:-latest}
-    container_name: python-workflow-engine
+      dockerfile: engines/geopython-workflow/Dockerfile
+    image: ${REGISTRY:-localhost:5001}/addp-geopython-workflow-engine:${IMAGE_TAG:-latest}
+    container_name: geopython-workflow-engine
     environment:
       - PORT=8099
       - SYSTEM_URL=http://system-backend:8180
       - GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET=${GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET}
       - LOG_LEVEL=${LOG_LEVEL:-info}
-      - PYTHON_WORKFLOW_GUNICORN_TIMEOUT=${PYTHON_WORKFLOW_GUNICORN_TIMEOUT:-7200}
+      - GEOPYTHON_WORKFLOW_GUNICORN_TIMEOUT=${GEOPYTHON_WORKFLOW_GUNICORN_TIMEOUT:-7200}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}

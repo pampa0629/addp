@@ -279,7 +279,7 @@ curl -H "Authorization: Bearer <token>" \
 tail -f logs/develop-backend.log | grep "execution_id=123"
 
 # 4. 检查 GeoPython Workflow 运行时日志（如果是工作流错误）
-tail -f logs/python-workflow-engine.log
+tail -f logs/geopython-workflow-engine.log
 ```
 
 ## 注意事项
@@ -365,7 +365,7 @@ curl -H "Authorization: Bearer <token>" \
 
 ## 相关文档
 
-- **GeoPython Workflow 运行时说明** - [engines/python-workflow](../engines/python-workflow)
+- **GeoPython Workflow 运行时说明** - [engines/geopython-workflow](../engines/geopython-workflow)
 - **工作流计算引擎接口规范** - [docs/spec/addp工作流计算引擎接口规范.md](../docs/spec/addp工作流计算引擎接口规范.md)
 - **System 模块说明** - [system/CLAUDE.md](../system/CLAUDE.md)
 - **共享数据库桥接** - `common/dbbridge`

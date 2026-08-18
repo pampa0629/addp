@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GeoPython Workflow Engine Test Script
+GeoPython Workflow Test Script
 测试工作流引擎的核心功能
 """
 
@@ -288,7 +288,7 @@ def test_direct_operator_converts_only_declared_geodataframe_param():
 
 def main():
     """运行所有测试"""
-    print("GeoPython Workflow Engine 功能测试\n")
+    print("GeoPython Workflow 功能测试\n")
 
     tests = [
         test_imports,
@@ -320,7 +320,7 @@ def main():
     print(f"{'='*50}")
 
     if passed == total:
-        print("✅ 所有测试通过！GeoPython Workflow Engine 已就绪。")
+        print("✅ 所有测试通过！GeoPython Workflow 已就绪。")
         return 0
     else:
         print(f"❌ {total - passed} 个测试失败")

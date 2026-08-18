@@ -122,9 +122,12 @@ func (r *CheckTaskRepository) ClaimExecution(ctx context.Context, taskID, tenant
 
 		execution.SourceTaskID = sourceTaskID
 		execution.SourceTaskName = &task.Name
-		execution.ExecutionConfig = commonModels.JSONMap{
-			"engine_id": task.EngineID, "schema_name": task.SchemaName, "table_name": task.Table,
+		if execution.ExecutionConfig == nil {
+			return fmt.Errorf("quality execution config is missing")
 		}
+		execution.ExecutionConfig["engine_id"] = task.EngineID
+		execution.ExecutionConfig["schema_name"] = task.SchemaName
+		execution.ExecutionConfig["table_name"] = task.Table
 		var ruleApps []models.RuleApplication
 		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("tenant_id = ? AND engine_id = ? AND schema_name = ? AND table_name = ? AND enabled = ?", tenantID, task.EngineID, task.SchemaName, task.Table, true).
 			Order("id ASC").Find(&ruleApps).Error; err != nil {

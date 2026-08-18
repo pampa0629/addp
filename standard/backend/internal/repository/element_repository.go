@@ -88,6 +88,10 @@ func (r *ElementRepository) Delete(id, tenantID int64) error {
 	return deleteInTransaction(r.db, &models.Element{}, "id = ? AND tenant_id = ?", id, tenantID)
 }
 
+func (r *ElementRepository) DeleteTx(tx *gorm.DB, id, tenantID int64) error {
+	return requireAffectedRow(tx.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Element{}))
+}
+
 func (r *ElementRepository) UpdateStatus(id, tenantID, expectedVersion int64, status string, updatedBy int64) error {
 	return updateVersioned(r.db, &models.Element{}, id, tenantID, expectedVersion, map[string]interface{}{
 		"status": status, "updated_by": updatedBy,

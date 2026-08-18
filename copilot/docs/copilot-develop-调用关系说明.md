@@ -27,7 +27,7 @@ Copilot 是一个**纯后端 API 服务**（Python FastAPI，端口 8087），�
 | **Copilot 后端** | `workflow_generation_chain.py` | LLM Chain；根据选定算子的 Public Operator Spec 生成完整 DAG JSON |
 | **Copilot 后端** | `workflow_validation_chain.py` | 四层验证；结构、唯一性、依赖关系、参数合法性 |
 | **Copilot 后端** | `develop_tools.py` | LangChain Tools；封装对 Develop 后端算子 API 的调用（发现 + 详情） |
-| **工作流引擎** | `python-workflow` / `spark-workflow` / `math-workflow` | 暴露 `/api/operators` 端点；提供算子元数据（参数定义、输出定义、workflow_example） |
+| **工作流引擎** | `geopython-workflow` / `spark-workflow` / `math-workflow` | 暴露 `/api/operators` 端点；提供算子元数据（参数定义、输出定义、workflow_example） |
 | **LLM 服务** | 通义千问 / OpenAI / Claude / Ollama | 执行算子筛选、工作流生成、自动修复等推理任务 |
 
 ## 查询工作台生成主流程

@@ -365,8 +365,11 @@ const handlePageChange = (page) => {
 <style scoped>
 .container-preview {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 16px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .container-summary {
@@ -401,10 +404,15 @@ const handlePageChange = (page) => {
 }
 
 .container-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
   background: var(--addp-bg-primary);
   border: 1px solid var(--el-border-color-light);
   border-radius: 6px;
   padding: 8px;
+  overflow: hidden;
 }
 
 .child-toolbar {
@@ -442,8 +450,11 @@ const handlePageChange = (page) => {
 
 .child-preview {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .child-pagination {

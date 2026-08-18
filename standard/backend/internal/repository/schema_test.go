@@ -132,6 +132,7 @@ func openStandardSchemaTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("attach standard schema: %v", err)
 	}
 	statements := []string{
+		`CREATE TABLE standard.reference_deletions (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, resource_type TEXT NOT NULL, resource_id INTEGER NOT NULL)`,
 		`CREATE TABLE standard.domains (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,
 		`CREATE TABLE standard.elements (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,
 		`CREATE TABLE standard.code_sets (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,

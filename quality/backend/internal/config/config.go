@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"time"
 
 	commonConfig "github.com/addp/common/config"
 )
@@ -10,8 +11,10 @@ import (
 type Config struct {
 	commonConfig.BaseConfig
 
-	Port     string
-	DBSchema string
+	Port              string
+	DBSchema          string
+	CheckTimeout      time.Duration
+	WorkerConcurrency int
 
 	RedisHost     string
 	RedisPort     string
@@ -27,8 +30,10 @@ func LoadConfig() (*Config, error) {
 	commonConfig.LoadEnv()
 
 	cfg := &Config{
-		Port:     commonConfig.GetEnv("QUALITY_BACKEND_PORT", "8182"),
-		DBSchema: "quality",
+		Port:              commonConfig.GetEnv("QUALITY_BACKEND_PORT", "8182"),
+		DBSchema:          "quality",
+		CheckTimeout:      commonConfig.GetEnvDuration("QUALITY_CHECK_TIMEOUT", "30m"),
+		WorkerConcurrency: commonConfig.GetEnvInt("QUALITY_WORKER_CONCURRENCY", 4),
 
 		RedisHost:     commonConfig.GetEnv("REDIS_HOST", "localhost"),
 		RedisPort:     commonConfig.GetEnv("REDIS_PORT", "16379"),
@@ -41,6 +46,12 @@ func LoadConfig() (*Config, error) {
 	}
 
 	commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)
+	if cfg.CheckTimeout <= 0 {
+		return nil, fmt.Errorf("QUALITY_CHECK_TIMEOUT must be positive")
+	}
+	if cfg.WorkerConcurrency <= 0 {
+		return nil, fmt.Errorf("QUALITY_WORKER_CONCURRENCY must be positive")
+	}
 
 	cfg.BaseConfig.SystemServiceURL = cfg.SystemURL
 

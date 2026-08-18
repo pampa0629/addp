@@ -199,7 +199,7 @@ GET    /health                                 # 服务健康检查
 持久 worker 使用 FOR UPDATE SKIP LOCKED 领取已授权的 pending execution：
     1. 写 running、started_at、attempt 和 worker lease，并在执行期间续租
     2. 通过 System 的 ExecutionEngineAccess 获取授权后的 PostgreSQL 连接事实
-    3. 严格解析 execution_config 中的版本化规则快照
+    3. 严格解析 execution_config 中的版本、超时预算和规则快照
     4. 通过 SQLGenerator 安全引用标识符、绑定所有规则参数并执行聚合检查
     5. 计算规则、字段和表级评分；结果写入 execution.metadata
     6. 以 tenant_id + rule_application_id + rule_key 对 Issue 做幂等 reconcile
@@ -282,6 +282,8 @@ worker 崩溃后由 lease 恢复：未达 max_attempts 返回 pending，达到�
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
 | `QUALITY_BACKEND_PORT` | `8182` | 后端服务端口 |
+| `QUALITY_CHECK_TIMEOUT` | `30m` | 整次质量检查超时；触发时冻结到 execution 配置 |
+| `QUALITY_WORKER_CONCURRENCY` | `4` | 单进程并行 execution 槽位数；必须为正整数 |
 | `SYSTEM_URL` | `http://localhost:8180` | System 模块地址 |
 | `STANDARD_URL` | `http://localhost:8110` | Standard 模块地址 |
 | `QUALITY_SERVICE_CLIENT_SECRET` | - | Quality Confidential OAuth Client Secret |
@@ -304,6 +306,10 @@ Quality 的执行历史是 `common.task_executions` 的跨模块统一投影，�
 ### 规则配置快照
 
 创建 RuleApplication 时，后端从 Standard 拉取严格版本化的 `addp.quality.rules/v1` 文档，只保留启用规则并写入 `rule_config`。触发任务时再次把当前启用 RuleApplication 冻结到 execution 的 `execution_config`；worker 只消费 execution 快照，不回读实时配置。
+
+Quality execution 配置唯一版本为 `addp.quality.execution-config/v1`。任务触发时同时冻结 `QUALITY_CHECK_TIMEOUT` 对应的 `check_timeout_ms`；worker 对授权消费、目标连接和全部规则 SQL 使用同一个截止时间。超时必须取消目标 PostgreSQL 语句并写 `timeout + quality.execution.timeout`，不能写成普通 SQL 失败，也不能生成部分评分或更新 Issue。
+
+单个 Quality 进程使用 `QUALITY_WORKER_CONCURRENCY` 个有界执行槽位并行领取不同 CheckTask，默认并发数为 4。所有槽位和多实例仍通过 `FOR UPDATE SKIP LOCKED` 与 execution lease 协调；同一 CheckTask 的 active execution 限制保持不变。lease 恢复扫描每个进程只运行一份，不随执行槽位数重复。
 
 RuleApplication 只保存 `element_id` 和规则快照，不复制数据元名称或编码。列表 API 使用 Quality 租户服务身份按当前页 ID 集合从 Standard 批量解析 `element: {id, name, code}`；这是当前展示投影，不是历史事实。浏览器不直接调用 Standard 来补全列表，也不保留搜索缓存到裸 ID 的展示旁路。
 

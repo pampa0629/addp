@@ -23,6 +23,7 @@ func TestDescribeRefsUsesRefFormatFacts(t *testing.T) {
 		format.NewRelatedRef(contentio.NewRef("roads"+extSHP, contentio.RoleMain), true, true),
 		format.NewRelatedRef(contentio.NewRef("roads"+extDBF, roleAttributes), true, false),
 		format.NewRelatedRef(contentio.NewRef("roads"+extPRJ, roleProjection), false, false),
+		format.NewRelatedRef(contentio.NewRef("roads"+extMetadataXML, roleMetadata), false, false),
 	})
 
 	byRole := map[string]format.RefDescriptor{}
@@ -37,6 +38,9 @@ func TestDescribeRefsUsesRefFormatFacts(t *testing.T) {
 	}
 	if got := byRole[roleProjection].Format; got != format.FormatText {
 		t.Fatalf("projection format = %s, want text", got)
+	}
+	if got := byRole[roleMetadata].Format; got != format.FormatXML {
+		t.Fatalf("metadata format = %s, want xml", got)
 	}
 }
 
@@ -96,6 +100,20 @@ func TestRelatedRefSpecsIncludeProjectionSidecars(t *testing.T) {
 			t.Fatalf("spec %s = %#v, want optional projection sidecar", ext, spec)
 		}
 	}
+}
+
+func TestRelatedRefSpecsIncludeMetadataXMLSidecar(t *testing.T) {
+	t.Parallel()
+	for _, spec := range RelatedRefSpecs() {
+		if format.NormalizeExtension(spec.Extension) != extMetadataXML {
+			continue
+		}
+		if spec.Required || spec.Role != roleMetadata {
+			t.Fatalf("metadata spec = %#v, want optional metadata sidecar", spec)
+		}
+		return
+	}
+	t.Fatalf("RelatedRefSpecs() missing %s", extMetadataXML)
 }
 
 func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {

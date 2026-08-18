@@ -59,6 +59,23 @@
         </div>
       </el-form-item>
 
+      <el-form-item
+        v-if="isContainerSource"
+        :label="t('transfer.taskWizard.containerChildLabel')"
+      >
+        <el-select
+          v-model="containerChildName"
+          :placeholder="t('transfer.taskWizard.containerChildPlaceholder')"
+        >
+          <el-option
+            v-for="child in selectedContainerChildren"
+            :key="child.name"
+            :label="child.name"
+            :value="child.name"
+          />
+        </el-select>
+      </el-form-item>
+
     </el-form>
   </div>
 </template>
@@ -78,6 +95,11 @@ import {
   isContentEngine,
   representationLabel
 } from '@/utils/transferDisplay'
+import {
+  containerTableChildren,
+  isTransferableTableContainer,
+  resolveContainerTableChild
+} from './containerSource.mjs'
 
 const { t } = useI18n()
 
@@ -94,6 +116,7 @@ const formData = reactive({
 
 const selectedNode = ref(null)
 const pickerSelection = ref(null)
+const containerChildName = ref('')
 
 const supportedEncodedSourceFormats = ref(new Set())
 const supportedRawCopyFormats = ref(new Map())
@@ -107,11 +130,38 @@ const selectedFormat = computed(() => nodeFormat(selectedNode.value))
 const selectedSourceLabel = computed(() => catalogPathForNode(selectedNode.value))
 const selectedSourceSummary = computed(() => buildSelectedSourceSummary(selectedNode.value))
 const initialSourceLocator = computed(() => props.wizardState.sourceLocator.value || '')
+const selectedContainerChildren = computed(() => containerTableChildren(selectedNode.value?.attributes || {}))
+const isContainerSource = computed(() => isContainerSourceNode(selectedNode.value, selectedEngine.value))
+const selectedContainerChild = computed(() => {
+  if (!isContainerSource.value) return null
+  return resolveContainerTableChild(selectedNode.value?.attributes || {}, containerChildName.value)
+})
 
-watch(selectedNode, (node) => {
-  if (node) {
-    syncSource(node)
+const selectedTransferDataType = computed(() => {
+  return selectedContainerChild.value ? 'table' : selectedDataType.value
+})
+
+watch(selectedNode, async (node) => {
+  if (!node) {
+    containerChildName.value = ''
+    return
   }
+  if (isContainerSourceNode(node, selectedEngine.value)) {
+    const previousChild = props.wizardState.sourceConfig.value?.options?.child_name || ''
+    containerChildName.value = resolveContainerTableChild(node.attributes || {}, previousChild)?.name || ''
+    syncSource(node)
+    props.wizardState.loadSourceFields([])
+    return
+  }
+  containerChildName.value = ''
+  syncSource(node)
+  await loadFieldsForNode(node)
+})
+
+watch(containerChildName, () => {
+  if (!selectedNode.value || !isContainerSource.value) return
+  syncSource(selectedNode.value)
+  props.wizardState.loadSourceFields([])
 })
 
 watch(
@@ -282,10 +332,13 @@ function containerKindForPath(index, engine = selectedEngine.value) {
 
 async function selectNode(node) {
   selectedNode.value = node
-  await loadFieldsForNode(node)
 }
 
 async function loadFieldsForNode(node) {
+  if (isContainerSourceNode(node, selectedEngine.value)) {
+    props.wizardState.loadSourceFields([])
+    return
+  }
   if (treeNodeType(node) === 'topic') {
     props.wizardState.loadSourceFields([])
     return
@@ -314,9 +367,12 @@ function syncSource(node) {
   const engine = selectedEngine.value
   if (!engine || !node) return
 
+  const containerChild = selectedContainerChild.value
   const endpointResource = buildSourceEndpointResource(node)
   const locator = sourceLocatorForNode(node)
-  const dataType = treeNodeType(node) === 'topic' ? 'unknown' : nodeDataType(node)
+  const dataType = treeNodeType(node) === 'topic'
+    ? 'unknown'
+    : (containerChild ? 'table' : nodeDataType(node))
   props.wizardState.updateSource({
     engineID: formData.engineID,
     engineType: engine.engine_type,
@@ -335,6 +391,7 @@ function syncSource(node) {
       representation: representationForSelection(node),
       format: nodeFormat(node),
       locator,
+      options: containerChild ? { child_name: containerChild.name } : {},
       sourceItem: {
         item_id: resolveNodeItemID(node) || undefined,
         meta_id: resolveNodeItemID(node) || undefined,
@@ -343,7 +400,7 @@ function syncSource(node) {
         kind: node.kind,
         term: node.term,
         path: node.path,
-        data_type: dataType,
+        data_type: nodeDataType(node),
         representation: representationForSelection(node),
         format: nodeFormat(node),
         layout: node.layout,
@@ -461,12 +518,15 @@ function nodeItemAttribute(node, key) {
 function buildSelectedSourceSummary(node) {
   if (!node) return null
 
+  const containerChild = selectedContainerChild.value
   const loadedFields = props.wizardState.sourceFields?.value || []
   const fieldCount = firstPresent(
+    numericValue(containerChild?.column_count),
     numericValue(node.field_count),
     loadedFields.length || null
   )
   const rowCount = firstPresent(
+    numericValue(containerChild?.row_count),
     numericValue(node.row_count)
   )
   const size = firstPresent(
@@ -476,7 +536,7 @@ function buildSelectedSourceSummary(node) {
     node.last_modified_at
   )
   const format = selectedFormat.value
-  const spatial = node.spatial || spatialSummaryFromFields(loadedFields)
+  const spatial = spatialSummaryFromContainerChild(containerChild) || node.spatial || spatialSummaryFromFields(loadedFields)
 
   const items = []
 
@@ -512,13 +572,24 @@ function buildSelectedSourceSummary(node) {
     path: selectedSourceLabel.value || node.name || '-',
     dataType: treeNodeType(node) === 'topic'
       ? t('transfer.taskWizard.kafkaTopicLabel')
-      : dataTypeLabel(selectedDataType.value),
+      : dataTypeLabel(selectedTransferDataType.value),
     format: format ? formatLabel(format) : '',
     spatial,
     spatialInfo: spatial
       ? [spatial.geometry, spatial.geometryType, spatial.srid ? `SRID ${spatial.srid}` : ''].filter(Boolean).join(' · ')
       : '',
     items
+  }
+}
+
+function spatialSummaryFromContainerChild(child) {
+  const native = child?.native || {}
+  const geometry = String(native.geometry_column || '').trim()
+  if (!geometry) return null
+  return {
+    geometry,
+    geometryType: native.geometry_type || '',
+    srid: native.srid
   }
 }
 
@@ -584,10 +655,21 @@ function catalogRoleFromTreeNode(node) {
 
 function isSelectableSourceItem(node, engine = selectedEngine.value) {
   if (node?.role !== 'leaf') return false
+  if (isContainerSourceNode(node, engine)) return true
   if (treeNodeType(node) === 'topic') {
     return normalizeEngineType(engine?.engine_type) === 'kafka'
   }
   return isSupportedSourceShape(nodeDataType(node), representationForSelection(node, engine), nodeFormat(node))
+}
+
+function isContainerSourceNode(node, engine = selectedEngine.value) {
+  return isTransferableTableContainer({
+    dataType: nodeDataType(node),
+    representation: representationForSelection(node, engine),
+    format: nodeFormat(node),
+    attributes: node?.attributes || {},
+    readableFormats: supportedEncodedSourceFormats.value
+  })
 }
 
 function isSupportedSourceShape(dataType, representation, sourceFormat) {

@@ -37,7 +37,7 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 	if len(input.RecursiveFiles) > 0 {
 		files = input.RecursiveFiles
 	}
-	initialResolved, err := resolveCommonItems(input.DirPath, files)
+	initialResolved, err := resolveCommonItems(input.DirPath, files, true)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,9 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 	}
 	if initialResolved.Exclusive {
 		appendResolvedCommonItems(ctx, input, initialResolved, result)
-		return result, nil
+		if result.Exclusive {
+			return result, nil
+		}
 	}
 
 	for _, item := range resolveOBJResourceItems(ctx, input, files) {
@@ -60,7 +62,7 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 		appendResolvedDetection(input, result, item)
 	}
 
-	resolved, err := resolveCommonItems(input.DirPath, filterManifestAndClaimedStorageFiles(files, result.Claims))
+	resolved, err := resolveCommonItems(input.DirPath, filterManifestAndClaimedStorageFiles(files, result.Claims), !initialResolved.Exclusive)
 	if err != nil {
 		return nil, err
 	}
@@ -84,13 +86,13 @@ func appendResolvedDetection(input DirectoryResolveInput, result *DetectionResul
 	}
 }
 
-func resolveCommonItems(dirPath string, files []StorageFileRef) (*dataitem.ResolveResult, error) {
+func resolveCommonItems(dirPath string, files []StorageFileRef, allowWholeScope bool) (*dataitem.ResolveResult, error) {
 	return dataitem.ResolveItems(dataitem.ResolveInput{
 		ScopeKind:  dataitem.ScopeKindDirectory,
 		ScopePath:  dirPath,
 		Candidates: fileEntriesToCandidates(files),
 		Options: dataitem.ResolveOptions{
-			AllowWholeScope: true,
+			AllowWholeScope: allowWholeScope,
 		},
 	})
 }

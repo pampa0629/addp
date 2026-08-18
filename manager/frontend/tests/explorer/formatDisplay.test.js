@@ -14,4 +14,12 @@ describe('dataFormatDisplayName', () => {
   it('formats SuperMap UDBX as a product format label', () => {
     expect(dataFormatDisplayName('udbx')).toBe('SuperMap UDBX')
   })
+
+  it('uses the product name for Personal Geodatabase', () => {
+    expect(dataFormatDisplayName('pgeo')).toBe('Personal Geodatabase')
+  })
+
+  it('distinguishes a generic Access database from Personal Geodatabase', () => {
+    expect(dataFormatDisplayName('access')).toBe('Microsoft Access Database')
+  })
 })

@@ -150,6 +150,14 @@ cd transfer/backend
 go test ./internal/planner ./internal/executor -run 'TableTransfer|Native|Encoded|Shapefile|Parquet|FieldSelection|Checkpoint|Retry' -count=1
 ```
 
+真实 Access/PGeo 样本识别、PGeo -> Oracle Spatial bounded 导入，以及 Oracle Spatial -> FileGDB round-trip：
+
+```bash
+make test-arcgis-open-formats
+```
+
+该门禁由仓库根目录执行，要求 GeoPython 容器和 Business Oracle 已启动，不会自行重启服务。它断言普通 Access 不误判、PGeo catalog/行读取、PGeo 写入 Oracle 的行数/Point/MultiPolygon geometry/SRID（含无 SRID 源数据），以及 Oracle Spatial 写入 FileGDB 后回读的 123 行 MultiPolygon、非空 geometry 和 SRID 0。测试只使用临时 Oracle 表和临时 `.gdb` 目录，结束自动清理。
+
 Oracle Spatial CDC 数据面矩阵（需要 Business Oracle、Kafka Connect、Infra Kafka 和 `addp_test`）使用显式开关运行：
 
 ```bash

@@ -6,6 +6,7 @@ import (
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
+	"gorm.io/gorm"
 )
 
 // MetricService 指标服务
@@ -179,8 +180,8 @@ func (s *MetricService) UpdateMetric(id, tenantID, userID int64, req *models.Upd
 }
 
 func (s *MetricService) DeleteMetric(ctx context.Context, id, tenantID int64) error {
-	return s.deletion.Delete(ctx, tenantID, "metric", id, func() error {
-		return mapDeleteConflict(s.metricRepo.Delete(id, tenantID), ErrMetricReferenced)
+	return s.deletion.Delete(ctx, tenantID, "metric", id, func(tx *gorm.DB, resourceID, resourceTenantID int64) error {
+		return mapDeleteConflict(s.metricRepo.DeleteTx(tx, resourceID, resourceTenantID), ErrMetricReferenced)
 	})
 }
 

@@ -71,11 +71,11 @@ else
   echo -e "${RED}✗ spark-workflow-engine${NC}"
 fi
 
-# GeoPython Workflow Engine
+# GeoPython Workflow
 if curl -f http://localhost:8099/health > /dev/null 2>&1; then
-  echo -e "${GREEN}✓ python-workflow-engine${NC}"
+  echo -e "${GREEN}✓ geopython-workflow-engine${NC}"
 else
-  echo -e "${RED}✗ python-workflow-engine${NC}"
+  echo -e "${RED}✗ geopython-workflow-engine${NC}"
 fi
 
 # Model3D Workflow Engine

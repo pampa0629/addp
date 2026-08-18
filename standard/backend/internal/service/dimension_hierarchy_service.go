@@ -7,6 +7,7 @@ import (
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
+	"gorm.io/gorm"
 )
 
 var ErrInvalidHierarchyLevelNumber = errors.New("invalid dimension hierarchy level number")
@@ -77,8 +78,8 @@ func (s *DimensionHierarchyService) Update(id, tenantID, userID int64, req *mode
 }
 
 func (s *DimensionHierarchyService) Delete(ctx context.Context, id, tenantID int64) error {
-	return s.deletion.Delete(ctx, tenantID, "dimension_hierarchy", id, func() error {
-		return s.repo.Delete(id, tenantID)
+	return s.deletion.Delete(ctx, tenantID, "dimension_hierarchy", id, func(tx *gorm.DB, resourceID, resourceTenantID int64) error {
+		return s.repo.DeleteTx(tx, resourceID, resourceTenantID)
 	})
 }
 

@@ -27,6 +27,10 @@ func scanFileRefGroups(
 	if !ok {
 		return scanflow.DispatchResult{}, fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)
 	}
+	catalogProvider, ok := enginePlugin.(plugin.CatalogProvider)
+	if !ok {
+		return scanflow.DispatchResult{}, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
+	}
 	itemTerm := scanflow.CatalogLeafTermForPlugin(enginePlugin, plugin.CatalogTermFile)
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 
@@ -39,11 +43,27 @@ func scanFileRefGroups(
 			continue
 		}
 		candidates := scanflow.FileRefGroupCandidateSet(resource.ID, primary, group)
+		parentDirPath := candidates.DirPath
+		if len(candidates.Subdirs) > 1 {
+			return result, fmt.Errorf("file ref group contains multiple scope directories: %s", primary)
+		}
+		if len(candidates.Subdirs) == 1 {
+			scope := candidates.Subdirs[0]
+			recursiveFiles, recursiveSubdirs, err := runtime.listDirectoryRecursive(ctx, resource, catalogProvider, connInfo, scope.Path)
+			if err != nil {
+				return result, fmt.Errorf("failed to list file ref group scope %s: %w", scope.Path, err)
+			}
+			candidates.DirPath = scope.Path
+			candidates.Files = append(candidates.Files, recursiveFiles...)
+			candidates.Subdirs = recursiveSubdirs
+			candidates.RecursiveFiles = candidates.Files
+			candidates.RecursiveSubdirs = recursiveSubdirs
+		}
 		if reporter != nil {
 			reporter.Message(fmt.Sprintf("扫描内容引用组 %s", primary))
 		}
 
-		_, parentNode, err := runtime.ensureFilesystemScanRoot(tenantID, resource, enginePlugin, candidates.DirPath)
+		_, parentNode, err := runtime.ensureFilesystemScanRoot(tenantID, resource, enginePlugin, parentDirPath)
 		if err != nil {
 			return result, err
 		}

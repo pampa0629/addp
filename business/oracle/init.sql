@@ -199,10 +199,10 @@ DECLARE
   END;
 BEGIN
   upsert_spatial_feature(1, 'LineString', 'LINESTRING (116.35 39.90, 116.45 39.95)');
-  upsert_spatial_feature(2, 'Polygon', 'POLYGON ((116.30 39.85, 116.30 39.95, 116.40 39.95, 116.40 39.85, 116.30 39.85))');
+  upsert_spatial_feature(2, 'Polygon', 'POLYGON ((116.30 39.85, 116.40 39.85, 116.40 39.95, 116.30 39.95, 116.30 39.85))');
   upsert_spatial_feature(3, 'MultiPoint', 'MULTIPOINT ((116.30 39.80), (116.50 40.00))');
   upsert_spatial_feature(4, 'MultiLineString', 'MULTILINESTRING ((116.20 39.80, 116.30 39.90), (116.40 39.90, 116.50 40.00))');
-  upsert_spatial_feature(5, 'MultiPolygon', 'MULTIPOLYGON (((116.10 39.70, 116.10 39.75, 116.15 39.75, 116.15 39.70, 116.10 39.70)), ((116.50 40.00, 116.50 40.05, 116.55 40.05, 116.55 40.00, 116.50 40.00)))');
+  upsert_spatial_feature(5, 'MultiPolygon', 'MULTIPOLYGON (((116.10 39.70, 116.15 39.70, 116.15 39.75, 116.10 39.75, 116.10 39.70)), ((116.50 40.00, 116.55 40.00, 116.55 40.05, 116.50 40.05, 116.50 40.00)))');
   upsert_spatial_feature(6, 'GeometryCollection', 'GEOMETRYCOLLECTION (POINT (116.397 39.908), LINESTRING (116.35 39.90, 116.45 39.95))');
 END;
 /

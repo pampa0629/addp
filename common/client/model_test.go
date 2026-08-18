@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -50,5 +51,32 @@ func TestModelClientGetEntityReturnsAttributeFailure(t *testing.T) {
 
 	if _, err := newModelTestClient(server).GetEntityWithAttributes(context.Background(), 1); err == nil {
 		t.Fatal("expected attribute request failure")
+	}
+}
+
+func TestModelClientRejectsInvalidStandardReferenceGuardResponse(t *testing.T) {
+	tests := []struct {
+		name     string
+		response string
+	}{
+		{name: "resource type", response: `{"resource_type":"element","resource_id":42,"state":"frozen","reference_count":0}`},
+		{name: "resource id", response: `{"resource_type":"domain","resource_id":43,"state":"frozen","reference_count":0}`},
+		{name: "state", response: `{"resource_type":"domain","resource_id":42,"state":"open","reference_count":0}`},
+		{name: "negative reference count", response: `{"resource_type":"domain","resource_id":42,"state":"frozen","reference_count":-1}`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, test.response)
+			}))
+			defer server.Close()
+
+			_, err := newModelTestClient(server).SetStandardReferenceGuard(context.Background(), "domain", 42, StandardReferenceGuardFrozen)
+			if err == nil || !strings.Contains(err.Error(), "invalid standard reference guard response") {
+				t.Fatalf("SetStandardReferenceGuard() error = %v, want invalid response", err)
+			}
+		})
 	}
 }

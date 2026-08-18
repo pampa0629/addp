@@ -28,9 +28,9 @@ Standard 的业务域、数据元、维度层级和指标被 Model 引用时，�
 
 Model 为 `(tenant_id, resource_type, resource_id)` 维护单行屏障，状态只允许 `open`、`frozen`、`deleted`。任何可能写入 `domain_id`、`element_id`、`hierarchy_id` 或 `metric_id` 的事务，必须按稳定顺序创建并锁定对应屏障行，只有 `open` 才允许继续；屏障状态检查、Model 业务写入、资源版本和 Tenant 实体模型集合 `revision` 推进必须处于同一事务。Standard HTTP 校验仍在本地事务前完成，不能持有 Model 行锁等待网络。
 
-Standard 删除遵循唯一顺序：资源进入 `deleting` → Model 原子冻结屏障并权威扫描当前引用 → 有引用则 Standard 恢复 `active`、Model 恢复 `open` 并返回 `409 standard_resource_referenced` → 无引用则 Standard 硬删除资源、Model 将屏障终止为 `deleted`。冻结事务与所有新增引用事务锁定同一屏障行：冻结前完成的写入必然进入权威扫描，冻结后到达的写入必然失败，因此不存在在途请求越过扫描的窗口。
+Standard 删除遵循唯一顺序：Standard 先持久化删除协调记录并将资源置为 `deleting`，再由同一删除协调流程串行锁定 Standard 资源行，调用 Model 原子冻结屏障并权威扫描当前引用。协调流程必须在释放 Standard 资源行锁前完成冻结、引用分支和本地硬删除；这样用户重试、后台补偿和并发删除不会同时执行本地删除。有引用时必须先让 Model 恢复 `open`，再提交 Standard `active`；任一恢复步骤失败都保留 `deleting` 协调记录，供后台补偿继续处理。无引用时 Standard 硬删除资源并保留协调记录，直到 Model 屏障终止为 `deleted` 成功；因此即使资源已硬删除而终态通知响应丢失，后台补偿仍能完成终态收敛。冻结事务与所有新增引用事务锁定同一屏障行：冻结前完成的写入必然进入权威扫描，冻结后到达的写入必然失败，因此不存在在途请求越过扫描的窗口。
 
-`frozen` 和 `deleted` 都禁止新增或保留目标引用；`deleted` 是不可逆终态，防止删除完成前已通过 Standard 校验、但较晚进入 Model 事务的请求在资源删除后落库。协调调用失败时不得绕过屏障继续删除。资源已进入 `deleting` 时重复删除必须从冻结和权威扫描继续，不能创建第二条强制删除路径；本地删除失败必须恢复 Standard `active` 和 Model `open`，已经完成硬删除但终态通知失败时屏障保持 `frozen`，后续只允许补做 `deleted` 终态。
+`frozen` 和 `deleted` 都禁止新增或保留目标引用；`deleted` 是不可逆终态，防止删除完成前已通过 Standard 校验、但较晚进入 Model 事务的请求在资源删除后落库。协调调用失败时不得绕过屏障继续删除。资源已进入 `deleting` 时重复删除必须复用同一条协调记录并从冻结和权威扫描继续，不能创建第二条强制删除路径。Model 冻结前或本地删除失败时，只能在 Model 成功 `open` 后再恢复 Standard `active`；如果 `open` 失败，资源保持 `deleting`，后台补偿必须重试。已经完成硬删除但终态通知失败时协调记录和 Model 屏障都保持待收敛状态，后续只允许补做 `deleted` 终态；协调记录不得因本地资源已不存在而丢失。
 
 ## 四、生命周期
 

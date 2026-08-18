@@ -53,7 +53,7 @@
     },
     "quickHints": {
       "listWorkflowEngines": "查看当前可用的工作流引擎",
-      "listGeoPythonOperators": "查看 GeoPython 工作流引擎支持的公开算子",
+      "listGeoPythonOperators": "查看 GeoPython Workflow支持的公开算子",
       "listSparkOperators": "查看 Spark 工作流引擎支持的公开算子",
       "listPointCloudOperators": "查看 PointCloud 工作流引擎支持的公开算子"
     }

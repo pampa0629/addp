@@ -226,14 +226,6 @@ func (r *TaskExecutionRepository) GetRunningExecutions(ctx context.Context, tena
 	return executions, err
 }
 
-// DeleteOldRecords 删除旧记录（数据清理）
-func (r *TaskExecutionRepository) DeleteOldRecords(ctx context.Context, tenantID int, beforeDate time.Time) (int64, error) {
-	result := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND created_at < ?", tenantID, beforeDate).
-		Delete(&TaskExecution{})
-	return result.RowsAffected, result.Error
-}
-
 // StartExecution 原子地将待执行记录切换为运行中，并写入真实开始时间。
 func (r *TaskExecutionRepository) StartExecution(ctx context.Context, executionID string, tenantID int, startedAt time.Time) error {
 	result := r.db.WithContext(ctx).

@@ -65,6 +65,16 @@
             {{ markdownRawMode ? t('manager.explorer.mdRendered') : t('manager.explorer.mdRaw') }}
           </el-button>
 
+          <el-button
+            v-if="isXMLContent"
+            size="small"
+            :type="xmlRawMode ? 'default' : 'primary'"
+            @click="xmlRawMode = !xmlRawMode"
+          >
+            <el-icon><component :is="xmlRawMode ? View : Document" /></el-icon>
+            {{ xmlRawMode ? t('manager.explorer.xmlFormatted') : t('manager.explorer.xmlRaw') }}
+          </el-button>
+
           <!-- 向量化按钮 -->
           <el-button
             v-if="showVectorizeButton"
@@ -502,6 +512,7 @@ import S3MPreview from '@/components/explorer/S3MPreview.vue'
 import { useExplorerStore } from '@/stores/explorer'
 import { navigateManagerRoute } from '@/utils/moduleNavigation'
 import { dataFormatDisplayName } from '@/utils/formatDisplay'
+import { isXMLTextPreview, withFormattedXMLPreview } from '@/utils/xmlPreview'
 import {
   quickViewTileAdvisoryAction as tileAdvisoryAction,
   quickViewTileAdvisoryMessage as tileAdvisoryMessage,
@@ -646,6 +657,9 @@ const previewComponentProps = computed(() => {
 })
 const previewComponentData = computed(() => {
   if (!props.previewData) return props.previewData
+  if (isXMLContent.value) {
+    return withFormattedXMLPreview(props.previewData, xmlRawMode.value)
+  }
   if (previewPluginName.value !== 'image' || !isTIFFNode.value || !quickViewStatus.value) {
     return props.previewData
   }
@@ -1056,6 +1070,7 @@ watch(
   () => props.selectedNode?.id,
   () => {
     markdownRawMode.value = false
+    xmlRawMode.value = false
     activePreviewMode.value = 'basic_preview'
     quickViewStatus.value = null
     quickViewStatusLocator = ''
@@ -1064,6 +1079,13 @@ watch(
     activeGraphSampleKind.value = ''
     activeGraphSampleTotal.value = null
     graphOverviewPage.value = 1
+  }
+)
+
+watch(
+  () => store.selectedRefPath,
+  () => {
+    xmlRawMode.value = false
   }
 )
 
@@ -2281,6 +2303,9 @@ const markdownRawMode = ref(false)
 const isMarkdownContent = computed(() => {
   return (props.previewData?.object?.content?.kind || '').toLowerCase() === 'markdown'
 })
+
+const xmlRawMode = ref(false)
+const isXMLContent = computed(() => isXMLTextPreview(props.previewData))
 
 const objectSizeBytes = computed(() => {
   return objectData.value?.size_bytes || 0

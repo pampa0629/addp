@@ -6,6 +6,7 @@ import (
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
+	"gorm.io/gorm"
 )
 
 type DomainService struct {
@@ -129,7 +130,7 @@ func (s *DomainService) validateParent(id, tenantID int64, parentID *int64) erro
 }
 
 func (s *DomainService) DeleteDomain(ctx context.Context, id, tenantID int64) error {
-	return s.deletion.Delete(ctx, tenantID, "domain", id, func() error {
-		return mapDeleteConflict(s.repo.Delete(id, tenantID), ErrDomainReferenced)
+	return s.deletion.Delete(ctx, tenantID, "domain", id, func(tx *gorm.DB, resourceID, resourceTenantID int64) error {
+		return mapDeleteConflict(s.repo.DeleteTx(tx, resourceID, resourceTenantID), ErrDomainReferenced)
 	})
 }

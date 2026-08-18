@@ -168,7 +168,7 @@ export_images() {
         # Worker services
         "meta-worker" "transfer-worker"
         # Engine/runtime services
-        "python-workflow-engine" "raster-mosaic-runtime" "model3d-workflow-engine"
+        "geopython-workflow-engine" "raster-mosaic-runtime" "model3d-workflow-engine"
         "pointcloud-workflow-engine" "spark-workflow-engine" "jupyter-engine" "duckdb-engine"
         # Frontend services
         "system-frontend" "manager-frontend" "meta-frontend"

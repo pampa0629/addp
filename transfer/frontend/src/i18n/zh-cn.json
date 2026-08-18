@@ -838,6 +838,8 @@
       "sourceTypeLabel": "数据源类型",
       "sourceEngineLabel": "数据源引擎",
       "sourceItemLabel": "源数据项",
+      "containerChildLabel": "子表/图层",
+      "containerChildPlaceholder": "请选择容器内的表或图层",
       "sourceCatalogCurrentPath": "当前位置：{path}",
       "catalogNameColumn": "名称",
       "catalogKindColumn": "类型",

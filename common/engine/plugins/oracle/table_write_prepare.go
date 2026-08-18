@@ -104,6 +104,7 @@ func ensureOracleSpatialMetadataAndIndexes(ctx context.Context, db *sql.DB, sche
 }
 
 func ensureOracleSpatialMetadata(ctx context.Context, db *sql.DB, table string, column datatype.GeometryColumnInfo, spatialInfo *datatype.SpatialInfo) error {
+	metadataColumnName := oracleSpatialMetadataColumnName(column.Name)
 	dimension := 0
 	if column.Dimension != nil {
 		dimension = *column.Dimension
@@ -122,7 +123,7 @@ func ensureOracleSpatialMetadata(ctx context.Context, db *sql.DB, table string, 
 		SELECT metadata.srid, (SELECT COUNT(*) FROM TABLE(metadata.diminfo))
 		  FROM user_sdo_geom_metadata metadata
 		 WHERE metadata.table_name = :1 AND metadata.column_name = :2
-	`, table, column.Name).Scan(&currentSRID, &currentDimension)
+	`, table, metadataColumnName).Scan(&currentSRID, &currentDimension)
 	if err == nil {
 		if currentDimension != dimension {
 			return fmt.Errorf("oracle spatial metadata for %s.%s has dimension %d, expected %d", table, column.Name, currentDimension, dimension)
@@ -151,11 +152,37 @@ func ensureOracleSpatialMetadata(ctx context.Context, db *sql.DB, table string, 
 		          MDSYS.SDO_DIM_ELEMENT('X', :3, :4, :5),
 		          MDSYS.SDO_DIM_ELEMENT('Y', :6, :7, :8)),
 		        :9)
-	`, table, column.Name, minX, maxX, tolerance, minY, maxY, tolerance, srid)
+	`, table, metadataColumnName, minX, maxX, tolerance, minY, maxY, tolerance, srid)
 	if err != nil {
 		return fmt.Errorf("insert Oracle spatial metadata for %s.%s: %w", table, column.Name, err)
 	}
 	return nil
+}
+
+func oracleSpatialMetadataColumnName(name string) string {
+	name = strings.TrimSpace(name)
+	if isOracleUnquotedIdentifier(name) && name == strings.ToUpper(name) {
+		return name
+	}
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
+
+func isOracleUnquotedIdentifier(name string) bool {
+	if name == "" {
+		return false
+	}
+	for index, value := range []byte(name) {
+		if index == 0 {
+			if !((value >= 'A' && value <= 'Z') || value == '_') {
+				return false
+			}
+			continue
+		}
+		if !((value >= 'A' && value <= 'Z') || (value >= '0' && value <= '9') || value == '_' || value == '$' || value == '#') {
+			return false
+		}
+	}
+	return true
 }
 
 func oracleSpatialBounds(spatialInfo *datatype.SpatialInfo) (float64, float64, float64, float64, float64, error) {

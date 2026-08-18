@@ -122,6 +122,7 @@ import {
   searchResourceTree
 } from '../api/resourceTree.js'
 import { selectionFromResourceTreeNode } from '../utils/resourceSelection.js'
+import { isResourceTreeSearchReady } from '../utils/resourceTreeSearch.mjs'
 import ResourceTree from './ResourceTree.vue'
 
 const props = defineProps({
@@ -522,7 +523,7 @@ const normalizeVisibleChildren = (children) => {
 const runSearch = async () => {
   const keyword = searchKeyword.value.trim()
   const requestSeq = ++searchRequestSeq
-  if (!keyword) {
+  if (!isResourceTreeSearchReady(keyword)) {
     searchResults.value = []
     searching.value = false
     return

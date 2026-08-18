@@ -33,6 +33,16 @@ scripts/
 └── utils/          # 通用工具脚本
 ```
 
+### ArcGIS 开放格式集成门禁
+
+真实 Access/PGeo 样本和 Oracle Spatial bounded 导入使用单一入口：
+
+```bash
+make test-arcgis-open-formats
+```
+
+该门禁要求 GeoPython 容器和业务 Oracle 已启动；默认读取 `business/nfs/data/arcgis` 下的验收样本，也可通过 `ADDP_ARCGIS_PGEO_FIXTURE`、`ADDP_ARCGIS_ACCESS_FIXTURE`、`ADDP_ARCGIS_PGEO_MATRIX_FIXTURE` 指定其他绝对路径。门禁只执行验收，不负责启动或重启服务。
+
 ---
 
 ## 一、基础设施管理 (infra/)
@@ -425,6 +435,7 @@ scripts/test/
 ├── agent-evaluation-gate.sh  # Agent 离线/发布统一评测门禁
 ├── check-execution-test-fixtures.sh # 统一执行存储测试夹具门禁
 ├── common-python-cli-release-gate.sh # ADDP CLI wheel 与 macOS Keychain 产品发布门禁
+├── quality-postgres-gate.sh # Quality PostgreSQL 集成门禁
 └── system-iam-postgres-gate.sh # System IAM 与 Fosite 一次性 PostgreSQL 发布门禁
 ```
 
@@ -436,7 +447,7 @@ Agent 默认离线门禁使用 `make test-agent-eval`，并已包含在根 `make
 
 正式发布基线使用 `make compare-agent-eval-release`，复用相同环境变量，但强制 baseline/current 均为 clean、passed 的 `online_required` 报告且不存在回归。普通 dirty/离线报告只用于开发比较；脚本不自动选择、归档或更新 baseline。
 
-阶段 5 封板后，上述四个 Make 目标与 `scripts/test/agent-evaluation-gate.sh` 是唯一标准入口；不新增旁路脚本、仓库内报告归档或兼容旧 Schema 的命令。
+阶段 5 封板后，上述五个 Make 目标与 `scripts/test/agent-evaluation-gate.sh` 是唯一标准入口；不新增旁路脚本、仓库内报告归档或兼容旧 Schema 的命令。
 
 正式 `addp` CLI 发布使用 `make test-common-python-cli-release`。该入口构建 wheel，在全新 venv 安装并运行全量测试，校验 venv 中的 `addp` entry point 和版本；随后在临时 pipx 根目录中通过 `PIPX_DEFAULT_BACKEND=pip` 安装并强制重装同一个 wheel，校验包来源、版本、命令入口和卸载无残留，再通过 pipx 入口使用真实 macOS Keychain 执行 Browser PKCE、Device Flow、AuthContext、跨进程刷新、撤销和终端敏感信息产品 E2E。CLI 最终目标支持主流桌面操作系统，Windows 与 Linux 在各自真实 OS 凭据后端建立同等级 E2E 后再加入支持矩阵。门禁不接受明文文件 Keyring 降级，也不替代 System Fosite 与 PostgreSQL 协议测试。
 

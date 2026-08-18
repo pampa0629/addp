@@ -21,6 +21,8 @@ import (
 
 	// 导入 general 引擎插件以触发自动注册
 	_ "github.com/addp/common/engine/plugins/builtin/general"
+	// 导入 format 解析器以触发自动注册（图片、PDF、CSV、FileGDB、PGeo 等）
+	_ "github.com/addp/common/format/builtin"
 )
 
 func main() {

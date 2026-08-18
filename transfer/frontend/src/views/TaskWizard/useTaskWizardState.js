@@ -556,10 +556,13 @@ export function useTaskWizardState() {
     const nextLocator = config.locator || extra.locator || ''
     const oldSourceEngineID = sourceEngineID.value
     const oldSourceLocator = sourceLocator.value
+    const oldSourceChildName = sourceContainerChildName(sourceConfig.value)
+    const nextSourceChildName = sourceContainerChildName(extra)
     const oldSourceEmpty = !oldSourceEngineID && !oldSourceLocator
     const sourceChanged = !oldSourceEmpty && (
       Number(oldSourceEngineID || 0) !== Number(config.engineID || 0) ||
-      !sameLocatorIdentity(oldSourceLocator, nextLocator)
+      !sameLocatorIdentity(oldSourceLocator, nextLocator) ||
+      oldSourceChildName !== nextSourceChildName
     )
 
     sourceEngineID.value = config.engineID
@@ -989,6 +992,10 @@ export function useTaskWizardState() {
     return true
   }
 
+  function sourceContainerChildName(config = {}) {
+    return String(config?.options?.child_name || '').trim()
+  }
+
   function normalizeTargetType(target) {
     const loc = parseTransferLocator(target?.parent_locator)
     if (['bucket', 'prefix', 'service'].includes(loc.type)) return 's3'
@@ -1037,6 +1044,7 @@ export function useTaskWizardState() {
       representation: source.representation || 'native',
       format: targetUiFormat(source.format, source.options || {}),
       locator: source.locator || '',
+      options: source.options || {},
       sourceItem: loc.itemID
         ? {
             item_id: loc.itemID,

@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -10,6 +12,26 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+func TestIntegrationPostgresQualityQueryDeadlineCancelsStatement(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
+	}
+	db, err := gorm.Open(postgres.Open(qualityServiceIntegrationDSN()), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open PostgreSQL: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	startedAt := time.Now()
+	err = db.WithContext(ctx).Exec("SELECT pg_sleep(5)").Error
+	if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		t.Fatalf("pg_sleep error = %v, context error = %v, want deadline exceeded", err, ctx.Err())
+	}
+	if elapsed := time.Since(startedAt); elapsed > 2*time.Second {
+		t.Fatalf("deadline cancellation took %v, want under 2s", elapsed)
+	}
+}
 
 func TestIntegrationPostgresSixQualityRules(t *testing.T) {
 	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {

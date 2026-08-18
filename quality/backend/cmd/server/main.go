@@ -75,7 +75,7 @@ func main() {
 	// Services
 	ruleEngineSvc := service.NewRuleEngineService(standardClient, systemServiceClient, ruleAppRepo)
 	checkTaskSvc := service.NewCheckTaskService(checkTaskRepo, systemServiceClient)
-	checkExecutor := service.NewCheckExecutor(systemServiceClient, executionAuthorizationClient, checkTaskRepo, issueRepo)
+	checkExecutor := service.NewCheckExecutor(systemServiceClient, executionAuthorizationClient, checkTaskRepo, issueRepo, cfg.CheckTimeout, cfg.WorkerConcurrency)
 	checkExecutor.StartWorker(context.Background())
 	defer checkExecutor.StopWorker()
 	issueSvc := service.NewIssueService(issueRepo)

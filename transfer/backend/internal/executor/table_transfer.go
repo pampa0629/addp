@@ -220,10 +220,7 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 		if e.SourceContentReader == nil {
 			return nil, fmt.Errorf("encoded table source requires content reader")
 		}
-		if plan.Layout == format.LayoutWhole {
-			if e.SourceScopeReadProvider == nil {
-				return nil, fmt.Errorf("encoded whole scope table source requires scope table reader provider")
-			}
+		if e.SourceScopeReadProvider != nil {
 			return &encodedContentTableSource{
 				reader:              e.SourceContentReader,
 				scopeReaderProvider: e.SourceScopeReadProvider,
@@ -235,6 +232,9 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 				tableInfo:           plan.TableInfo,
 				spatialInfo:         plan.SpatialInfo,
 			}, nil
+		}
+		if plan.Layout == format.LayoutWhole {
+			return nil, fmt.Errorf("encoded whole scope table source requires scope table reader provider")
 		}
 		if e.SourceTableReadProvider == nil && e.SourceMultiReadProvider == nil {
 			return nil, fmt.Errorf("encoded table source requires table reader provider")

@@ -28,6 +28,24 @@ func TestNormalizedScanRefsAddsPrimaryAndDeduplicates(t *testing.T) {
 	}
 }
 
+func TestNormalizedScanRefsPreservesExplicitScopeRole(t *testing.T) {
+	t.Parallel()
+
+	refs := NormalizedScanRefs(models.ScanRefGroup{
+		Primary: "arcgis/pgeo_roundtrip.gdb",
+		Refs: []models.ScanRef{
+			{Path: "arcgis/pgeo_roundtrip.gdb", Role: "scope", Required: true},
+		},
+	})
+
+	want := []models.ScanRef{
+		{Path: "arcgis/pgeo_roundtrip.gdb", Role: "scope", Required: true, Primary: true},
+	}
+	if !reflect.DeepEqual(refs, want) {
+		t.Fatalf("refs = %#v, want %#v", refs, want)
+	}
+}
+
 func TestFileRefsFromScanRefGroup(t *testing.T) {
 	t.Parallel()
 
@@ -66,6 +84,34 @@ func TestFileRefGroupCandidateSet(t *testing.T) {
 	}
 	if got := candidates.CatalogPathFor("shp/roads.shp").StringPath(); got != "shp/roads.shp" {
 		t.Fatalf("catalog path = %q", got)
+	}
+}
+
+func TestFileRefGroupCandidateSetPreservesScopeDirectory(t *testing.T) {
+	t.Parallel()
+
+	candidates := FileRefGroupCandidateSet(7, "arcgis/pgeo_roundtrip.gdb", models.ScanRefGroup{
+		Primary: "arcgis/pgeo_roundtrip.gdb",
+		Refs: []models.ScanRef{
+			{Path: "arcgis/pgeo_roundtrip.gdb", Role: "scope", Required: true},
+		},
+	})
+
+	if candidates.DirPath != "arcgis" {
+		t.Fatalf("DirPath = %q, want arcgis", candidates.DirPath)
+	}
+	if len(candidates.Files) != 0 {
+		t.Fatalf("candidate files = %#v, want none", candidates.Files)
+	}
+	if len(candidates.Subdirs) != 1 || candidates.Subdirs[0].Path != "arcgis/pgeo_roundtrip.gdb" {
+		t.Fatalf("candidate subdirs = %#v, want FileGDB scope directory", candidates.Subdirs)
+	}
+	if got := candidates.Subdirs[0].CatalogPath.StringPath(); got != "arcgis/pgeo_roundtrip.gdb" {
+		t.Fatalf("scope catalog path = %q", got)
+	}
+	segments := candidates.CatalogPathFor("arcgis/pgeo_roundtrip.gdb").Segments
+	if len(segments) == 0 || segments[len(segments)-1].Kind != "directory" {
+		t.Fatalf("scope catalog path segments = %#v, want directory leaf", segments)
 	}
 }
 

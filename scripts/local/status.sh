@@ -85,7 +85,7 @@ else
     echo -e "  ${RED}✗${NC} System Backend:        http://localhost:8180 ${YELLOW}(not running)${NC}"
 fi
 
-PYTHON_WORKFLOW_RUNNING=$(docker compose -f docker-compose.yml ps python-workflow-engine --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
+GEOPYTHON_WORKFLOW_RUNNING=$(docker compose -f docker-compose.yml ps geopython-workflow-engine --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
 MODEL3D_WORKFLOW_RUNNING=$(docker compose -f docker-compose.yml ps model3d-workflow-engine --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
 POINTCLOUD_WORKFLOW_RUNNING=$(docker compose -f docker-compose.yml ps pointcloud-workflow-engine --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
 SUPERMAP_WORKFLOW_RUNNING=$(docker compose -f docker-compose.yml ps supermap-workflow-engine --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
@@ -93,10 +93,10 @@ SUPERMAP_WORKFLOW_RUNNING=$(docker compose -f docker-compose.yml ps supermap-wor
 echo ""
 echo -e "${CYAN}Engines:${NC}"
 
-if [ "$PYTHON_WORKFLOW_RUNNING" -gt 0 ]; then
-    echo -e "  ${GREEN}✓${NC} GeoPython Workflow Engine:      http://localhost:8099"
+if [ "$GEOPYTHON_WORKFLOW_RUNNING" -gt 0 ]; then
+    echo -e "  ${GREEN}✓${NC} GeoPython Workflow:      http://localhost:8099"
 else
-    echo -e "  ${RED}✗${NC} GeoPython Workflow Engine:      http://localhost:8099 ${YELLOW}(not running)${NC}"
+    echo -e "  ${RED}✗${NC} GeoPython Workflow:      http://localhost:8099 ${YELLOW}(not running)${NC}"
 fi
 
 if [ "$MODEL3D_WORKFLOW_RUNNING" -gt 0 ]; then

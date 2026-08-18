@@ -339,7 +339,7 @@ sequenceDiagram
 ```
 → 当用户选择**查询工作台**时，PostgreSQL 会出现在可用引擎列表中
 
-**GeoPython Workflow 引擎**:
+**GeoPython Workflow**:
 ```json
 {
   "schema_version": "engine.capabilities/v1",

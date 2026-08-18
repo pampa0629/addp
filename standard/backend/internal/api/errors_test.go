@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	commonapi "github.com/addp/common/api"
+	commonclient "github.com/addp/common/client"
 	"github.com/addp/standard/internal/repository"
 	"github.com/addp/standard/internal/service"
 	"github.com/gin-gonic/gin"
@@ -55,5 +57,51 @@ func TestRespondErrorMapsStructuredErrorsAndLanguage(t *testing.T) {
 				t.Fatalf("body = %s, want %q", response.Body.String(), tt.wantBody)
 			}
 		})
+	}
+}
+
+func TestRespondErrorReturnsStandardReferenceConflictContract(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/standard/domains/42", nil)
+
+	respondError(context, http.StatusInternalServerError, &service.StandardResourceReferencedError{
+		Impact: &commonclient.StandardReferenceGuardResponse{
+			ResourceType:   "domain",
+			ResourceID:     42,
+			State:          commonclient.StandardReferenceGuardFrozen,
+			ReferenceCount: 2,
+			Summary: []commonclient.StandardReferenceImpactSummary{
+				{OwnerType: "entity", Field: "domain_id", Count: 2},
+			},
+			Sample: []commonclient.StandardReferenceImpact{
+				{OwnerType: "entity", OwnerID: 7, Field: "domain_id"},
+			},
+		},
+	})
+
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusConflict)
+	}
+	var response struct {
+		Error                    string                                        `json:"error"`
+		ErrorCode                string                                        `json:"error_code"`
+		ReferenceCount           int64                                         `json:"reference_count"`
+		ReferenceSummary         []commonclient.StandardReferenceImpactSummary `json:"reference_summary"`
+		ReferenceSample          []commonclient.StandardReferenceImpact        `json:"reference_sample"`
+		ReferenceSampleTruncated bool                                          `json:"reference_sample_truncated"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error == "" || response.ErrorCode != "standard_resource_referenced" || response.ReferenceCount != 2 {
+		t.Fatalf("response = %+v", response)
+	}
+	if len(response.ReferenceSummary) != 1 || response.ReferenceSummary[0].Count != 2 {
+		t.Fatalf("reference summary = %+v", response.ReferenceSummary)
+	}
+	if len(response.ReferenceSample) != 1 || response.ReferenceSample[0].OwnerID != 7 {
+		t.Fatalf("reference sample = %+v", response.ReferenceSample)
 	}
 }

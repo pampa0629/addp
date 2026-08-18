@@ -107,6 +107,8 @@ func (p *Plugin) Descriptor() format.FormatDescriptor
 
 `Descriptor()` 是格式身份、识别规则、默认 data type 和 layout 的静态事实源，不是某个 data item 的扫描结果，也不声明当前 Go 进程是否已有 provider / reader / writer。当前进程实际加载了哪些实现，只能由已注册 `FormatPlugin` 是否实现对应接口动态判断。
 
+扩展名或 MIME 同时承载基础格式和专用语义格式时，只能由基础格式 descriptor 声明这些弱识别事实，专用格式必须由内容或受控 Runtime 探测确定。例如 `.mdb` 和 `application/x-msaccess` 只声明 `format=access` 候选；只有 GDAL PGeo 驱动能够打开并确认其 ArcGIS 结构时，Meta 才把最终格式精化为 `pgeo`。同理，`application/xml`、`text/xml` 和 `.xml` 只声明 `format=xml`；OSGB Scene 只能由目录直属 `metadata.xml` 候选结合清单内容校验和场景周边资源确定，不得占用通用 XML MIME。不得让基础格式与专用格式同时声明同一弱识别事实，也不得仅凭文件名把普通内容落为专用格式。
+
 如果该格式暂时只有识别、默认 data type 或 layout，没有后端解析实现，也要建立 descriptor-only plugin 包并实现 `Descriptor()`。不要在 `common/format` 根包集中追加内置 descriptor 清单；根包只保留 descriptor 注册、查询和冲突诊断机制。
 
 ## 4. 实现 provider 和 reader
@@ -116,6 +118,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor
 | 场景 | 必需 / 推荐接口 | 注册后主要消费者 |
 |---|---|---|
 | 格式身份 | `FormatPlugin` | Meta、Manager、Transfer、能力发现 |
+| 受控 Runtime 格式精化 | `RuntimeFormatDetectorFactory` | Meta 深度扫描；用于把共享扩展名的基础格式候选确定为专用格式 |
 | 格式私有元信息 | `FormatInfoProvider` | Meta |
 | 单资源表格元信息 | `TableInfoProvider` | Meta、Manager 探查、Transfer 规划 |
 | 单资源表格样本 | `TableSampleReader` | Manager、轻量探查 |

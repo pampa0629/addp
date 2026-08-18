@@ -348,6 +348,36 @@ func TestCommonDataItemResolverAdaptsOSGBWholeScope(t *testing.T) {
 	}
 }
 
+func TestCommonDataItemResolverKeepsInvalidOSGBManifestAsStandaloneXML(t *testing.T) {
+	d := &commonDataItemResolver{}
+	files := []StorageFileRef{
+		{Name: "metadata.xml", Path: "documents/metadata.xml", Size: 32, ContentType: "application/xml"},
+	}
+
+	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
+		ContentReader: refMapContentReader{content: map[string][]byte{
+			"documents/metadata.xml": []byte(`<catalog><title>Independent XML</title></catalog>`),
+		}},
+		DirPath:        "documents",
+		Files:          files,
+		RecursiveFiles: files,
+		Options:        ResolveOptions{IncludeSingleResources: true},
+	})
+	if err != nil {
+		t.Fatalf("ResolveItems() error = %v", err)
+	}
+	if result.Exclusive {
+		t.Fatal("plain metadata.xml must not exclusively claim the directory as OSGB scene")
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("items = %#v, want one standalone XML item", result.Items)
+	}
+	item := result.Items[0]
+	if item.Format != string(format.FormatXML) || item.DataType != datatype.Document || item.Layout != format.LayoutSingle {
+		t.Fatalf("item = %#v, want standalone XML document", item)
+	}
+}
+
 func TestCommonDataItemResolverAdaptsGLTFManifestMultiItem(t *testing.T) {
 	d := &commonDataItemResolver{}
 	files := []StorageFileRef{

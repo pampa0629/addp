@@ -28,6 +28,9 @@ func TestOSGBSceneDescriptor(t *testing.T) {
 	if len(descriptor.Identification.FileNames) != 1 || descriptor.Identification.FileNames[0] != MetadataFileName {
 		t.Fatalf("FileNames = %#v, want metadata.xml", descriptor.Identification.FileNames)
 	}
+	if len(descriptor.Identification.MimeTypes) != 0 {
+		t.Fatalf("MimeTypes = %#v, OSGB scene must not claim generic XML MIME types", descriptor.Identification.MimeTypes)
+	}
 }
 
 func TestDescribeModel3DReadsOSGBSceneMetadata(t *testing.T) {

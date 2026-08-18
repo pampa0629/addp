@@ -88,6 +88,26 @@ graph TB
 | `metadata` | jsonb | 结果摘要、步骤结果、模块扩展信息 |
 | `error_details` | jsonb | 错误类型、消息和诊断信息 |
 
+### 执行运行时角色矩阵
+
+`common.task_executions` 统一记录执行事实，但不要求所有模块使用同一种运行时队列。下面的矩阵区分“执行 worker”和“调度器、投递器、维护循环”，避免把名称相同的后台组件误认为同一机制。
+
+| 运行时角色 | 所属模块 | 进程边界 | 领取/投递事实 | 并发与恢复 | 与 `common.task_executions` 的关系 |
+|---|---|---|---|---|---|
+| Quality execution worker | Quality | 内嵌 `quality-backend` | PostgreSQL `FOR UPDATE SKIP LOCKED` 领取已授权 `pending` execution | `QUALITY_WORKER_CONCURRENCY` 默认 4；execution lease、超时预算、过期恢复 | 直接消费 Quality `check` execution，并写入评分、Issue reconcile 和终态 |
+| Meta scan worker | Meta | 独立 `meta-worker` 进程 | Redis/Asynq `meta:scan` | `META_WORKER_CONCURRENCY` 默认 10；由 Asynq 管理重试 | Backend 创建 Meta execution 后投递，worker 执行扫描并回写 execution |
+| Transfer bounded worker | Transfer | 独立 `transfer-worker` 进程 | Redis/Asynq `transfer:execute` | `TRANSFER_WORKER_CONCURRENCY` 默认 10；由 Asynq 管理重试 | 承担 bounded `sync` execution，不承载 continuous 无限消费 |
+| Transfer continuous worker | Transfer | 独立 `transfer-continuous-worker` 进程 | `transfer.runtime_leases`、Kafka/CDC position | capacity、heartbeat、fencing；恢复创建新的 recovery execution | 承担 continuous runtime session；`sync_states` 是业务 committed position，不替代 execution 历史 |
+| Webhook/Email dispatcher | Monitor | 内嵌 `monitor-backend` | Monitor delivery outbox + `SKIP LOCKED` | 投递 lease、至少一次语义、指数退避和 dead 终态 | 消费告警生命周期 delivery，不创建或改写业务 execution |
+
+**角色边界**:
+
+- execution worker 负责“执行什么以及如何完成”；owner scheduler 只负责“何时创建 execution”；dispatcher 只负责“如何投递通知”。
+- Orchestrator scheduler、Manager embedding scheduler、Meta lineage collector 和各模块 cleanup 属于 scheduler/maintenance loop，不自动等同 execution worker。
+- Quality、Meta、Transfer 的运行时机制可以不同，但 owner 必须保持单一路线，不能让同一 task type 在 Redis、数据库和进程内队列之间无定义地旁路切换。
+
+当前实现巡检发现 Meta Backend 在 Redis 不可用时仍保留本地队列 fallback；这与 Meta scan 的 Asynq 独立 worker 主路线形成双轨，后续应单独收敛，不能作为新模块示范。
+
 ---
 
 ## 任务执行状态流转

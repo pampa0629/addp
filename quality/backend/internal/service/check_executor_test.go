@@ -13,10 +13,11 @@ import (
 	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 )
 
 func TestRunCheckRejectsNonManualTriggerAsBadRequest(t *testing.T) {
-	executor := NewCheckExecutor(nil, nil, nil, nil)
+	executor := NewCheckExecutor(nil, nil, nil, nil, time.Minute, 1)
 	_, err := executor.RunCheckWithContext(context.Background(), 1, 7, 11, "", commonExecution.TriggerTypeScheduled, "quality", nil)
 	if !errors.Is(err, commonAPI.ErrBadRequest) {
 		t.Fatalf("RunCheckWithContext error = %v, want bad request", err)
@@ -143,7 +144,7 @@ func TestIssueExecutionAuthorizationFromParentUsesQualityBoundary(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	executor := NewCheckExecutor(commonClient.NewSystemServiceClient(server.URL, tokenSource, server.Client()), nil, nil, nil)
+	executor := NewCheckExecutor(commonClient.NewSystemServiceClient(server.URL, tokenSource, server.Client()), nil, nil, nil, time.Minute, 1)
 	facts, err := executor.issueExecutionAuthorization(context.Background(), 7, childExecutionID, 12, "", &parentExecutionID)
 	if err != nil {
 		t.Fatalf("issueExecutionAuthorization: %v", err)
@@ -189,10 +190,61 @@ func TestIssueExecutionAuthorizationRejectsInvalidSystemResponse(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			executor := NewCheckExecutor(commonClient.NewSystemServiceClient(server.URL, tokenSource, server.Client()), nil, nil, nil)
+			executor := NewCheckExecutor(commonClient.NewSystemServiceClient(server.URL, tokenSource, server.Client()), nil, nil, nil, time.Minute, 1)
 			if _, err := executor.issueExecutionAuthorization(context.Background(), 7, childExecutionID, 12, "", &parentExecutionID); err == nil {
 				t.Fatal("issueExecutionAuthorization unexpectedly accepted invalid response")
 			}
 		})
+	}
+}
+
+func TestExecutionCheckTimeoutRequiresVersionedPositiveBudget(t *testing.T) {
+	valid := commonModels.JSONMap{
+		"schema_version":   qualityExecutionConfigSchemaVersion,
+		"check_timeout_ms": int64(45000),
+	}
+	got, err := executionCheckTimeout(valid)
+	if err != nil || got != 45*time.Second {
+		t.Fatalf("executionCheckTimeout() = %v, %v, want 45s", got, err)
+	}
+	for _, config := range []commonModels.JSONMap{
+		{"schema_version": "addp.quality.execution-config/v0", "check_timeout_ms": int64(45000)},
+		{"schema_version": qualityExecutionConfigSchemaVersion, "check_timeout_ms": int64(0)},
+		{"schema_version": qualityExecutionConfigSchemaVersion},
+	} {
+		if _, err := executionCheckTimeout(config); err == nil {
+			t.Fatalf("executionCheckTimeout(%#v) unexpectedly succeeded", config)
+		}
+	}
+}
+
+func TestExecutionTerminalFieldsDistinguishesTimeout(t *testing.T) {
+	timedOut := executionTerminalFields(failExecution(qualityExecutionSQLFailed, context.DeadlineExceeded), true)
+	if timedOut["status"] != commonExecution.ExecutionStatusTimeout {
+		t.Fatalf("timeout status = %v", timedOut["status"])
+	}
+	timeoutDetails, ok := timedOut["error_details"].(commonModels.JSONMap)
+	if !ok || timeoutDetails["code"] != qualityExecutionTimeout {
+		t.Fatalf("timeout error details = %#v", timedOut["error_details"])
+	}
+
+	failed := executionTerminalFields(failExecution(qualityExecutionSQLFailed, errors.New("query failed")), false)
+	if failed["status"] != commonExecution.ExecutionStatusFailed {
+		t.Fatalf("failed status = %v", failed["status"])
+	}
+	failedDetails, ok := failed["error_details"].(commonModels.JSONMap)
+	if !ok || failedDetails["code"] != qualityExecutionSQLFailed {
+		t.Fatalf("failed error details = %#v", failed["error_details"])
+	}
+}
+
+func TestExecutionDeadlineWinsOverCompletedRuleResult(t *testing.T) {
+	execErr := executionErrorForDeadline(nil, true)
+	if !errors.Is(execErr, context.DeadlineExceeded) {
+		t.Fatalf("deadline error = %v, want context deadline exceeded", execErr)
+	}
+	fields := executionTerminalFields(execErr, true)
+	if fields["status"] != commonExecution.ExecutionStatusTimeout {
+		t.Fatalf("deadline status = %v, want timeout", fields["status"])
 	}
 }

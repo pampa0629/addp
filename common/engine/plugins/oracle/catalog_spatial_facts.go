@@ -44,7 +44,7 @@ func enrichOracleSpatialInfo(ctx context.Context, db *sql.DB, schema, table stri
 	}
 	for index := range spatialInfo.GeometryColumns {
 		column := &spatialInfo.GeometryColumns[index]
-		row, ok := metadata[strings.ToUpper(column.Name)]
+		row, ok := metadata[column.Name]
 		if !ok {
 			continue
 		}
@@ -130,12 +130,20 @@ func queryOracleSpatialMetadata(ctx context.Context, db *sql.DB, schema, table s
 		if err := rows.Scan(&row.ColumnName, &row.SRID, &row.Dimension); err != nil {
 			return nil, fmt.Errorf("scan Oracle spatial metadata: %w", err)
 		}
-		result[strings.ToUpper(strings.TrimSpace(row.ColumnName))] = row
+		result[oracleSpatialMetadataFieldName(row.ColumnName)] = row
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate Oracle spatial metadata: %w", err)
 	}
 	return result, nil
+}
+
+func oracleSpatialMetadataFieldName(name string) string {
+	name = strings.TrimSpace(name)
+	if len(name) >= 2 && name[0] == '"' && name[len(name)-1] == '"' {
+		return strings.ReplaceAll(name[1:len(name)-1], `""`, `"`)
+	}
+	return name
 }
 
 func queryOracleCRSDefinition(ctx context.Context, db *sql.DB, srid *int) (*datatype.CRSDefinition, error) {

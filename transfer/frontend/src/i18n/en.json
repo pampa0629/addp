@@ -868,6 +868,8 @@
       "sourceEngine": "Source Engine",
       "sourceEngineLabel": "Source Engine",
       "sourceItemLabel": "Source Item",
+      "containerChildLabel": "Table / Layer",
+      "containerChildPlaceholder": "Select a table or layer in the container",
       "sourceCatalogCurrentPath": "Current Path: {path}",
       "catalogNameColumn": "Name",
       "catalogKindColumn": "Kind",

@@ -143,6 +143,8 @@ item refresh 只允许刷新该 item 自身的 attributes、字段、format info
 
 容器文件是 `data_type=container`，不是单独内容布局。SQLite、GeoPackage、Excel、ZIP 等通常由 single-resource detector 识别为 `layout=single`、`data_type=container`，内部对象先写入 attributes。
 
+共享扩展名的容器必须先按基础格式形成 single-resource 候选，再由 Meta 深度扫描执行确定性格式精化。`.mdb` 统一先识别为 `format=access`；GDAL PGeo 驱动确认其 ArcGIS 结构后，最终 item 才写为 `format=pgeo`。Runtime 不可用或探测执行失败属于扫描错误，不能静默猜测；确定性返回“不是 PGeo”时保留 `format=access`，不得尝试第二套后缀旁路。
+
 Shapefile 必须归入 sibling multi-resource，不得作为 whole-scope detector。
 
 `mixed_collection` 暂不作为基础 detector 类别。只认领部分资源时使用 `multi`；整体认领时使用 `whole`。未来确实出现无法表达的复杂内容布局，再单独修订规范。

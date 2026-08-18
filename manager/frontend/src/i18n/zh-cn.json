@@ -1157,6 +1157,8 @@
       "fileTypeText": "文本文件",
       "mdRaw": "原始文本",
       "mdRendered": "MD 渲染",
+      "xmlRaw": "原文",
+      "xmlFormatted": "格式化",
       "fileTypeVideo": "视频",
       "fileTypeAudio": "音频",
       "fileTypeExt": "{ext} 文件",

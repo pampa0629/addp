@@ -74,7 +74,7 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
             prompt="请选择工作流运行时",
             candidates=[
                 {
-                    "label": "GeoPython 工作流引擎",
+                    "label": "GeoPython Workflow",
                     "value": 20,
                     "candidate": {"id": 20, "engine_type": "geopython_workflow"},
                 }

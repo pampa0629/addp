@@ -1,4 +1,4 @@
-.PHONY: help init dev build up down logs clean test test-go test-model-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres dev-all \
+.PHONY: help init dev build up down logs clean test test-go test-model-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-arcgis-open-formats dev-all \
         build-backend build-frontend build-debug build-release build-iam-bootstrap build-iam-recovery clean-dist \
         infra-up infra-down infra-restart infra-status ports-validate
 
@@ -144,9 +144,9 @@ dev-gateway: ## 开发模式运行 Gateway 模块
 	@echo "$(GREEN)启动 Gateway 模块开发环境...$(NC)"
 	@cd gateway && go run cmd/gateway/main.go
 
-dev-python-workflow: ## 开发模式运行 GeoPython Workflow Engine
-	@echo "$(GREEN)启动 GeoPython Workflow Engine 开发环境...$(NC)"
-	@cd engines/python-workflow && \
+dev-geopython-workflow: ## 开发模式运行 GeoPython Workflow
+	@echo "$(GREEN)启动 GeoPython Workflow 开发环境...$(NC)"
+	@cd engines/geopython-workflow && \
 	if [ ! -d "venv" ]; then \
 		echo "创建 Python 虚拟环境..." && \
 		python3 -m venv venv; \
@@ -182,7 +182,7 @@ dev-health: ## 检查开发模式服务健康状态
 	@curl -sf http://localhost:8180/health > /dev/null && echo "  $(GREEN)✓ System healthy$(NC)" || echo "  $(RED)✗ System unhealthy$(NC)"
 	@curl -sf http://localhost:8081/health > /dev/null && echo "  $(GREEN)✓ Manager healthy$(NC)" || echo "  $(RED)✗ Manager unhealthy$(NC)"
 	@curl -sf http://localhost:8082/health > /dev/null && echo "  $(GREEN)✓ Meta healthy$(NC)" || echo "  $(RED)✗ Meta unhealthy$(NC)"
-	@curl -sf http://localhost:8099/health > /dev/null && echo "  $(GREEN)✓ GeoPython Workflow Engine healthy$(NC)" || echo "  $(RED)✗ GeoPython Workflow Engine unhealthy$(NC)"
+	@curl -sf http://localhost:8099/health > /dev/null && echo "  $(GREEN)✓ GeoPython Workflow healthy$(NC)" || echo "  $(RED)✗ GeoPython Workflow unhealthy$(NC)"
 	@curl -sf http://localhost:8000/health > /dev/null && echo "  $(GREEN)✓ Gateway healthy$(NC)" || echo "  $(RED)✗ Gateway unhealthy$(NC)"
 
 build: build-release ## 编译所有服务（默认 release 输出到 dist）
@@ -439,6 +439,12 @@ test-common-python-cli-release: ## 构建 wheel 并运行全新 venv、pipx 生�
 
 test-system-iam-postgres: ## 使用一次性 PostgreSQL 数据库运行 System IAM 发布门禁
 	@bash scripts/test/system-iam-postgres-gate.sh
+
+test-quality-postgres: ## 使用一次性 PostgreSQL 数据库运行 Quality 集成门禁
+	@bash scripts/test/quality-postgres-gate.sh
+
+test-arcgis-open-formats: ## 使用真实 Access/PGeo 样本和 Oracle Spatial 运行集成门禁
+	@bash scripts/test/arcgis-open-formats-integration-gate.sh
 
 test-execution-fixtures: ## 校验统一执行存储测试夹具
 	@bash scripts/test/check-execution-test-fixtures.sh

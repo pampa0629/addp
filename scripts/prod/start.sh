@@ -89,7 +89,7 @@ docker compose -f docker-compose.yml up -d \
   quality-backend \
   asset-backend \
   portal-backend \
-  python-workflow-engine \
+  geopython-workflow-engine \
   model3d-workflow-engine \
   pointcloud-workflow-engine \
   supermap-workflow-engine \
@@ -123,7 +123,7 @@ services=(
   "jupyter-engine:8097"
   "duckdb-engine:8104"
   "spark-workflow-engine:8098"
-  "python-workflow-engine:8099"
+  "geopython-workflow-engine:8099"
   "model3d-workflow-engine:8101"
   "pointcloud-workflow-engine:8102"
   "supermap-workflow-engine:8103"
@@ -232,7 +232,7 @@ echo -e "  Model Backend:          http://localhost:8181"
 echo -e "  Quality Backend:        http://localhost:8182"
 echo -e "  Asset Backend:          http://localhost:8183"
 echo -e "  Portal Backend:         http://localhost:8184"
-echo -e "  GeoPython Workflow Engine: http://localhost:8099"
+echo -e "  GeoPython Workflow: http://localhost:8099"
 echo -e "  Model3D Workflow Engine: http://localhost:8101"
 echo -e "  PointCloud Workflow Engine: http://localhost:8102"
 echo -e "  Spark Spark 工作流引擎:    http://localhost:8098"

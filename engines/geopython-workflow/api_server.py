@@ -1,6 +1,6 @@
 """
-GeoPython Workflow Engine Flask API Server
-Python 数据处理工作流引擎 API 服务
+GeoPython Workflow Flask API Server
+Python 数据处理工作流运行时 API 服务
 提供 REST API 接口供 Develop 和 Orchestrator 调用
 """
 
@@ -86,10 +86,10 @@ def health_check():
     Returns:
         {
             "status": "healthy",
-            "service": "python-workflow-engine",
+            "service": "geopython-workflow-engine",
             "version": "1.0.0",
             "uptime": 3600,
-            "operators_count": 42,
+            "operators_count": len(list_operators()),
             "dependencies": {
                 "geopandas": "0.14.1",
                 "pandas": "2.1.4"
@@ -105,7 +105,7 @@ def health_check():
 
         return jsonify({
             "status": "healthy",
-            "service": "python-workflow-engine",
+            "service": "geopython-workflow-engine",
             "version": "1.0.0",
             "uptime": uptime,
             "operators_count": len(operators),
@@ -139,7 +139,7 @@ def get_operators():
         {
             "status": "success",
             "operators": [...],
-            "count": 42
+            "count": len(list_operators())
         }
     """
     try:
@@ -628,7 +628,7 @@ def register_to_system():
     # 构建注册请求
     payload = {
         "engine_type": "geopython_workflow",
-        "name": "GeoPython 工作流引擎",
+        "name": "GeoPython Workflow",
         "description": "基于 Python 地理计算生态的工作流引擎，支持 Pandas、GeoPandas、GDAL/OGR 等能力",
         "connection_info": {
             "protocol": protocol,
@@ -706,5 +706,5 @@ if __name__ == '__main__':
 
     # 启动 Flask 服务
     port = int(os.getenv('PORT', 8099))
-    logger.info(f"🚀 Starting GeoPython Workflow Engine on port {port}")
+    logger.info(f"🚀 Starting GeoPython Workflow on port {port}")
     app.run(host='0.0.0.0', port=port, debug=False)

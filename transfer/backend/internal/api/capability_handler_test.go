@@ -83,6 +83,22 @@ func TestBuildTableFormatCapabilitiesExposeUserFacingFormats(t *testing.T) {
 	if !shapefile.Spatial {
 		t.Fatal("shapefile spatial = false, want true")
 	}
+
+	for value, expected := range map[string][2]bool{
+		"pgeo":    {true, false},
+		"filegdb": {true, true},
+	} {
+		capability, ok := byValue[value]
+		if !ok {
+			t.Fatalf("missing runtime scope table format capability %q; got %#v", value, capabilities)
+		}
+		if capability.Read != expected[0] || capability.Write != expected[1] {
+			t.Fatalf("%s read/write = %v/%v, want %v/%v", value, capability.Read, capability.Write, expected[0], expected[1])
+		}
+		if expected[1] && capability.ProviderKind != "runtime_scope" {
+			t.Fatalf("%s provider_kind = %q, want runtime_scope", value, capability.ProviderKind)
+		}
+	}
 }
 
 func TestBuildTableFormatCapabilitiesIncludesRegisteredTableReaders(t *testing.T) {

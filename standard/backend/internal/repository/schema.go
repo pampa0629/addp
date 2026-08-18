@@ -44,6 +44,7 @@ func Migrate(db *gorm.DB) error {
 			&models.DocumentMetricMapping{},
 			&models.DimensionHierarchy{},
 			&models.DimensionHierarchyLevel{},
+			&models.StandardReferenceDeletion{},
 		); err != nil {
 			return fmt.Errorf("auto migrate standard schema: %w", err)
 		}
@@ -261,6 +262,7 @@ func postgresStandardSchemaStatements() []string {
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_document_file_cleanups_object_key ON standard.document_file_cleanups (object_key)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_dimension_hierarchies_tenant_code ON standard.dimension_hierarchies (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_dimension_hierarchy_levels_hierarchy_level ON standard.dimension_hierarchy_levels (hierarchy_id, level_num)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_reference_deletions_resource ON standard.reference_deletions (tenant_id, resource_type, resource_id)",
 
 		"DROP INDEX IF EXISTS standard.idx_codeset_tenant_code",
 		"DROP INDEX IF EXISTS standard.idx_codeitem_set_code",
@@ -379,6 +381,7 @@ func sqliteStandardSchemaStatements() []string {
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_document_file_cleanups_object_key ON document_file_cleanups (object_key)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_dimension_hierarchies_tenant_code ON dimension_hierarchies (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_dimension_hierarchy_levels_hierarchy_level ON dimension_hierarchy_levels (hierarchy_id, level_num)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_reference_deletions_resource ON reference_deletions (tenant_id, resource_type, resource_id)",
 
 		"DROP INDEX IF EXISTS standard.idx_codeset_tenant_code",
 		"DROP INDEX IF EXISTS standard.idx_codeitem_set_code",

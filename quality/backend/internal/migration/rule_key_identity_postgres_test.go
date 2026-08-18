@@ -48,8 +48,8 @@ func TestIntegrationPostgresRuleKeyIdentityV2Vector(t *testing.T) {
 		t.Fatalf("clear identity vector fixture: %v", err)
 	}
 	if err := tx.Exec(`INSERT INTO quality.rule_applications (
-		id, tenant_id, element_id, engine_id, schema_name, table_name, column_name, rule_config, created_by
-	) VALUES (?, ?, ?, 1, 'public', 'identity_vector', 'value', ?::jsonb, 1)`,
+		id, tenant_id, element_id, engine_id, schema_name, table_name, column_name, rule_config, created_by, created_at, updated_at
+	) VALUES (?, ?, ?, 1, 'public', 'identity_vector', 'value', ?::jsonb, 1, NOW(), NOW())`,
 		application,
 		tenantID,
 		elementID,
@@ -59,9 +59,10 @@ func TestIntegrationPostgresRuleKeyIdentityV2Vector(t *testing.T) {
 	}
 	if err := tx.Exec(`INSERT INTO quality.issues (
 		tenant_id, execution_id, last_execution_id, rule_application_id, rule_key, rule_type, severity,
-		column_name, table_name, schema_name, engine_id, failed_count, total_count, pass_rate
+		message, column_name, table_name, schema_name, engine_id, failed_count, total_count, pass_rate,
+		resolution_note, created_at, updated_at
 	) VALUES (?, 'identity-vector', 'identity-vector', ?, ?::uuid, 'not_null', 'error',
-		'value', 'identity_vector', 'public', 1, 1, 1, 0)`, tenantID, application, oldRuleKey).Error; err != nil {
+		'', 'value', 'identity_vector', 'public', 1, 1, 1, 0, '', NOW(), NOW())`, tenantID, application, oldRuleKey).Error; err != nil {
 		t.Fatalf("insert identity vector issue: %v", err)
 	}
 	if err := tx.Exec(catalog.Files[5].Contents).Error; err != nil {

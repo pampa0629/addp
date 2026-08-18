@@ -196,10 +196,10 @@ MINIO_ROOT_PASSWORD=minioadmin
 
 ```bash
 # 容器版 GeoPython Workflow 的 gunicorn worker 超时。默认 7200 秒。
-PYTHON_WORKFLOW_GUNICORN_TIMEOUT=7200
+GEOPYTHON_WORKFLOW_GUNICORN_TIMEOUT=7200
 ```
 
-栅格 mosaic 生成超时已迁移为 Manager 配置页面中“快显策略”Tab 的平台普通运行配置，作为后续 execution 的默认预算；GeoPython 容器的 `PYTHON_WORKFLOW_GUNICORN_TIMEOUT` 仍由部署环境维护。
+栅格 mosaic 生成超时已迁移为 Manager 配置页面中“快显策略”Tab 的平台普通运行配置，作为后续 execution 的默认预算；GeoPython 容器的 `GEOPYTHON_WORKFLOW_GUNICORN_TIMEOUT` 仍由部署环境维护。
 
 leaf COG 生成并发不通过全局环境变量固定，而是在任务 `config.cog` 中归一化为明确值。默认策略按运行机器 CPU 预算计算：逻辑 CPU 小于 8 时 `leaf_concurrency=1`，8 到 15 时为 `2`，16 到 31 时为 `4`，32 及以上时为 `6`，上限 `8`；单个 leaf COG 的 GDAL `num_threads` 默认按 `逻辑 CPU / (leaf_concurrency * 2)` 计算并限制在 `1` 到 `4`。当前 18 逻辑 CPU 开发机默认得到 `leaf_concurrency=4`、`num_threads=2`。`cog.leaf_retry_attempts` 默认 `2`，上限 `5`，用于单个 leaf COG 生成或校验的瞬时失败重试。`detached` 模式重跑时会复用目标数据集中已经存在且内容级 COG 校验通过的 leaf，因此超时或中断后的恢复通过再次执行同一任务继续完成未生成部分，而不是从头覆盖全部 leaf。
 
@@ -413,6 +413,10 @@ MONITOR_SERVICE_CLIENT_SECRET=
 ORCHESTRATOR_SERVICE_CLIENT_SECRET=
 PORTAL_SERVICE_CLIENT_SECRET=
 QUALITY_SERVICE_CLIENT_SECRET=
+# Quality 整次检查的执行预算，使用 Go duration 格式；触发时冻结到 execution 配置。
+QUALITY_CHECK_TIMEOUT=30m
+# Quality 单进程并行执行槽位数；必须为正整数，跨实例仍通过数据库 lease 协调。
+QUALITY_WORKER_CONCURRENCY=4
 SERVICE_SERVICE_CLIENT_SECRET=
 STANDARD_SERVICE_CLIENT_SECRET=
 TRANSFER_SERVICE_CLIENT_SECRET=

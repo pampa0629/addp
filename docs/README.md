@@ -58,6 +58,8 @@
 - [国际化体系图](concepts/addp国际化体系图.md)
 - [国际化开发规范](spec/addp国际化开发规范.md)
 - [前端路由与可恢复状态规范](spec/addp前端路由与可恢复状态规范.md)
+- [统一测试与 Online 验收体系方案](next/ADDP统一测试与Online验收体系方案.md)
+- [ADDP 企业数据目录能力专题](next/ADDP企业数据目录能力专题.md)
 - [规划文档](plan/)
 - [跟进文档](next/)
 - [技能文档](skills/)
@@ -169,6 +171,7 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 4. [元数据扫描机制规范](spec/addp元数据扫描机制规范.md)：处理 Meta ScanTask 与 execution 时阅读。
 5. [Transfer 任务语义与同步模式](../transfer/docs/transfer-任务语义与同步模式.md)：处理 Transfer 全量、增量、持续同步、状态、重试、进度或日志语义时阅读。
 6. [Transfer 后续能力清单](next/transfer后续能力清单.md)：评估尚未实现的同步模式或运行时能力时阅读。
+7. [ArcGIS SDE 支持设计](next/ArcGIS%20SDE支持设计.md)：处理 Oracle Enterprise Geodatabase workspace、非版本化要素类读写、traditional versioning 逻辑变化源或后续 branch versioning 时阅读。
 
 ## 数据质量主题
 

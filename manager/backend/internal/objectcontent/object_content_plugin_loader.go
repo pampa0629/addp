@@ -256,6 +256,10 @@ func buildTextContentHandler(cfg ObjectContentPluginConfig, formatType commonfor
 	if formatType == commonformat.FormatText {
 		contentTypes = append(contentTypes, "text/")
 		extensions = nil
+		xmlFormats, xmlExtensions, xmlContentTypes := descriptorMatcherDefaults(commonformat.FormatXML)
+		formats = append(formats, xmlFormats...)
+		extensions = append(extensions, xmlExtensions...)
+		contentTypes = append(contentTypes, xmlContentTypes...)
 	}
 	return &textContentHandler{
 		baseContentHandler: baseContentHandler{

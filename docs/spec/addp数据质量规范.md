@@ -106,6 +106,8 @@ Standard 在创建和更新数据元时校验完整规则文档。Quality 创建
 
 规则应用快照是后续 execution 的事实来源。Standard 数据元规则改变后，不得静默修改已有规则应用；用户必须显式重新创建或刷新规则应用。每次 execution 还必须把实际使用的规则应用 ID、规则快照和目标范围写入 `execution_config`，保证历史可审计。
 
+Quality execution 配置唯一版本为 `addp.quality.execution-config/v1`，至少冻结 `schema_version`、目标 Engine/schema/table、全部启用 RuleApplication 快照和 `check_timeout_ms`。`check_timeout_ms` 来自任务触发时的服务配置 `QUALITY_CHECK_TIMEOUT`，创建后不得因服务重启或配置变化而改写；worker 不得回读当前配置替换 execution 已冻结的预算。缺失、版本不符或超时预算非正数的配置必须使 execution 失败，不能使用默认值兜底。
+
 `rule_key` 引入及身份算法修正迁移只更新 Standard 当前规则定义、Quality 当前 RuleApplication 快照和可按旧 key 唯一映射的当前 Issue。已完成 execution 的 `execution_config` 与 `metadata` 是不可变历史，不做回写；迁移时不得存在已经冻结旧身份的 `pending|running` Quality execution。若旧 Issue 无法按其 RuleApplication 内的旧 key 唯一映射到规则，迁移必须拒绝启动并报告冲突，不能按类型、数组位置或相似内容猜测、合并问题。
 
 ## 4. 规则应用与检查任务
@@ -175,7 +177,7 @@ SQL 编译必须遵守：
 4. 每条规则使用一条聚合查询同时返回 `total_count` 和 `failed_count`，避免对同一表重复执行无关计数。
 5. 规则结构、参数、目标方言或数据库表达式错误都属于 execution 错误，不能跳过规则后继续宣告成功。
 
-Quality failed execution 的 `error_details.code` 必须使用稳定领域错误码；原始数据库、SQL、连接和外部服务错误只写服务日志，不得返回给前端。v1 错误码包括：`quality.authorization.issue_failed`、`quality.authorization.persist_failed`、`quality.execution.authorization_missing`、`quality.execution.authorization_failed`、`quality.execution.unsupported_engine`、`quality.execution.target_connection_failed`、`quality.execution.rule_snapshot_invalid`、`quality.execution.no_rule_applications`、`quality.execution.rule_compile_failed`、`quality.execution.sql_execution_failed`、`quality.execution.result_invalid`、`quality.execution.lease_expired`、`quality.issue.reconcile_failed` 和兜底码 `quality.execution.failed`。前端必须使用同一映射按错误码本地化展示失败原因；执行列表和详情都只能展示该稳定原因，不得展示持久化的安全摘要或内部错误文本。
+Quality 的 `failed` 或 `timeout` 终态 execution 必须在 `error_details.code` 使用稳定领域错误码；原始数据库、SQL、连接和外部服务错误只写服务日志，不得返回给前端。v1 错误码包括：`quality.authorization.issue_failed`、`quality.authorization.persist_failed`、`quality.execution.authorization_missing`、`quality.execution.authorization_failed`、`quality.execution.unsupported_engine`、`quality.execution.target_connection_failed`、`quality.execution.config_invalid`、`quality.execution.rule_snapshot_invalid`、`quality.execution.no_rule_applications`、`quality.execution.rule_compile_failed`、`quality.execution.sql_execution_failed`、`quality.execution.result_invalid`、`quality.execution.lease_expired`、`quality.issue.reconcile_failed`、超时码 `quality.execution.timeout` 和失败兜底码 `quality.execution.failed`。前端必须使用同一映射按错误码本地化展示终态原因；执行列表和详情都只能展示该稳定原因，不得展示持久化的安全摘要或内部错误文本。
 
 ### 5.2 空表与规则真值
 
@@ -198,14 +200,17 @@ Quality 使用数据库任务队列作为唯一执行路线，不使用请求内
 ### 7.1 创建与领取
 
 1. API 在 CheckTask 行锁事务内检查该任务不存在 `pending|running` execution。
-2. 同一事务创建 `common.task_executions(status=pending, started_at=NULL)`，冻结任务目标和启用规则应用快照，并更新任务最近执行摘要。
+2. 同一事务创建 `common.task_executions(status=pending, started_at=NULL)`，冻结版本化 execution 配置、任务目标、超时预算和启用规则应用快照，并更新任务最近执行摘要。
 3. 事务提交后签发 Execution Authorization，再以条件更新把授权事实附加到仍为 pending 的 execution；签发或附加失败必须将该 execution 置为 failed。
 4. worker 只领取已附加 Execution Authorization 的 pending execution，使用 `FOR UPDATE SKIP LOCKED` 原子推进为 `running`，设置 `started_at`、`lease_owner` 和 `lease_expires_at`。
-5. 数据库领取事务必须短小；外部 HTTP、目标数据库查询和结果计算都在事务外完成。
+5. 每个 Quality 实例使用 `QUALITY_WORKER_CONCURRENCY` 个有界执行槽位并行消费不同 CheckTask；默认值为 `4`，配置必须为正整数。并发数是单进程资源上限，不写入 execution，也不改变任务语义；跨实例和同实例的所有槽位仍以数据库 claim 与 lease 为唯一协调事实。
+6. lease 过期恢复由每个 Quality 实例的单一恢复循环负责，执行槽位不得各自重复扫描恢复队列。
+7. 数据库领取事务必须短小；外部 HTTP、目标数据库查询和结果计算都在事务外完成。
 
 ### 7.2 lease 与恢复
 
 - running worker 在长任务期间续租。
+- worker 必须以 execution 冻结的 `check_timeout_ms` 为整次检查建立 Context 截止时间；授权消费、目标连接、所有规则 SQL 和结果计算共享这一预算。截止时间到达时必须取消正在执行的 PostgreSQL 语句并写 `timeout + quality.execution.timeout`，不得误记为普通 SQL 失败，也不得协调 Issue 或写部分评分。
 - worker 启动和固定周期都扫描 lease 已过期的 running execution。
 - 每次成功领取时增加 `attempt`；lease 过期后，未达到最大尝试次数的 execution 回到 pending，达到上限则进入 failed 并写稳定错误码。
 - 只有持有当前 lease 的 worker 可以写进度和终态，防止过期 worker 覆盖新 worker 结果。
@@ -315,6 +320,8 @@ ignored -> open    （后续检查再次失败）
 - pending execution 领取与 lease 恢复使用匹配过滤条件的部分索引；不为全部终态记录维护无用队列索引。
 - Issue 必须以同租户 RuleApplication 为 owner 并使用级联删除外键兜底；业务删除仍显式执行当前投影清理，不能把生命周期语义隐藏在数据库级联中。
 
+质量规则按定义必须读取目标表的完整事实范围。`format`、`allowed_values` 等规则通常使用并行全表扫描；`unique` 在目标列已有可用 B-tree 索引且可进行 index-only scan 时可以避免排序，否则可能产生磁盘外排。Quality 可以记录和报告执行耗时，但不得自动创建、删除或修改业务表索引；索引建议属于目标数据源治理决策，不是规则执行前提。
+
 所有 ID 使用平台现有 bigint 语义，时间使用带时区时间事实。禁止仅依赖 GORM 应用层校验代替数据库唯一约束、check constraint 或并发控制。
 
 Quality 私有表只通过模块内连续、带校验和、持有数据库迁移锁的 SQL migration 演进。服务启动不得同时运行 GORM `AutoMigrate`、启动期临时 DDL 或第二套迁移路线；已应用 migration 内容变化、版本缺失、版本越界或约束不满足时必须拒绝启动。
@@ -341,7 +348,7 @@ Quality 私有表只通过模块内连续、带校验和、持有数据库迁移
 2. 标识符引用、参数绑定、恶意名称/值和 PostgreSQL SQL 集成测试。
 3. 空表、无规则、部分失败、非法规则和目标 SQL 错误。
 4. 手动 User 授权、Orchestrator 父 execution 派生、授权过期和 Engine 越权。
-5. pending claim、并发 worker、lease 过期恢复、最大尝试失败和服务重启恢复。
+5. pending claim、并发 worker、lease 过期恢复、最大尝试失败、服务重启恢复，以及冻结超时预算、目标 SQL 取消和 `timeout` 终态。
 6. Issue 按 `tenant_id + rule_application_id + rule_key` 去重、自动 reopen/resolve、人工状态机、并发更新和 RuleApplication 删除级联。
 7. 列表分页、Tenant 隔离、HTTP 状态码、错误 envelope 和 Swagger 路由覆盖。
 8. 前端 Engine 选择、任务执行轮询、metadata 结果展示、错误反馈和路由恢复。

@@ -11,6 +11,7 @@ import (
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/workflowaccess"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/catalogutil"
@@ -24,6 +25,59 @@ type namedPreviewProvider struct {
 }
 
 type previewRuntimeTokenSource struct{}
+
+type previewWorkflowRuntimePlugin struct {
+	engineType string
+	operators  []plugin.OperatorDescriptor
+}
+
+func (p *previewWorkflowRuntimePlugin) Type() string         { return p.engineType }
+func (p *previewWorkflowRuntimePlugin) DisplayName() string  { return p.engineType }
+func (p *previewWorkflowRuntimePlugin) EngineOrigin() string { return "extension" }
+func (p *previewWorkflowRuntimePlugin) TestConnection(context.Context, plugin.ConnectionInfo) error {
+	return nil
+}
+func (p *previewWorkflowRuntimePlugin) ValidateConnectionInfo(plugin.ConnectionInfo) error {
+	return nil
+}
+func (p *previewWorkflowRuntimePlugin) DefaultPort() int          { return 0 }
+func (p *previewWorkflowRuntimePlugin) RequiredFields() []string  { return nil }
+func (p *previewWorkflowRuntimePlugin) SensitiveFields() []string { return nil }
+func (p *previewWorkflowRuntimePlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.NewWorkflowCapabilities(p.engineType, plugin.WorkflowRuntimeAPIAddpV1)
+}
+func (p *previewWorkflowRuntimePlugin) RuntimeEndpoint(context.Context, plugin.ConnectionInfo) (string, error) {
+	return "http://preview-runtime", nil
+}
+func (p *previewWorkflowRuntimePlugin) ListOperators(context.Context, plugin.ConnectionInfo) ([]plugin.OperatorDescriptor, error) {
+	return append([]plugin.OperatorDescriptor(nil), p.operators...), nil
+}
+func (p *previewWorkflowRuntimePlugin) ExecuteWorkflow(context.Context, plugin.ConnectionInfo, plugin.WorkflowExecuteRequest) (*plugin.WorkflowExecuteResult, error) {
+	return nil, fmt.Errorf("unexpected workflow execution")
+}
+func (p *previewWorkflowRuntimePlugin) InvokeOperator(context.Context, plugin.ConnectionInfo, string, plugin.OperatorInvokeRequest) (*plugin.OperatorInvokeResult, error) {
+	return nil, fmt.Errorf("unexpected operator invocation")
+}
+func (p *previewWorkflowRuntimePlugin) GetExecutionStatus(context.Context, plugin.ConnectionInfo, string) (*plugin.WorkflowExecutionStatus, error) {
+	return nil, fmt.Errorf("unexpected execution status request")
+}
+
+type previewRuntimeDescriptorClient struct {
+	descriptors []commonModels.EngineRuntimeDescriptor
+}
+
+func (c previewRuntimeDescriptorClient) GetEngineRuntimeDescriptor(_ context.Context, engineID uint) (*commonModels.EngineRuntimeDescriptor, error) {
+	for index := range c.descriptors {
+		if c.descriptors[index].ID == engineID {
+			return &c.descriptors[index], nil
+		}
+	}
+	return nil, fmt.Errorf("runtime descriptor %d not found", engineID)
+}
+
+func (c previewRuntimeDescriptorClient) ListEngineRuntimeDescriptors(context.Context) ([]commonModels.EngineRuntimeDescriptor, error) {
+	return append([]commonModels.EngineRuntimeDescriptor(nil), c.descriptors...), nil
+}
 
 func (previewRuntimeTokenSource) Token(_ context.Context, tenantID uint) (string, error) {
 	if tenantID != 7 {
@@ -460,6 +514,151 @@ func TestResolveProviderByMetaUsesContainerChildForSQLiteChild(t *testing.T) {
 	}
 	if provider.Name() != "builtin:container-child" {
 		t.Fatalf("provider = %q, want builtin:container-child", provider.Name())
+	}
+}
+
+func TestResolveProviderByMetaUsesScopeTableForWholeRuntimeContainerChild(t *testing.T) {
+	registry := NewPreviewRegistry()
+	registry.Register(namedPreviewProvider{name: "builtin:scope-table"})
+	registry.Register(namedPreviewProvider{name: "builtin:container-child"})
+	resolver := NewPreviewResolver(registry, nil, nil)
+
+	req := &PreviewResolverRequest{
+		Locator: &resourcetree.ResourceLocator{},
+		Engine:  &commonModels.Engine{EngineType: "nfs"},
+		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "container",
+				"format":    "filegdb",
+				"layout":    "whole",
+			},
+		}},
+		ItemType:  "file",
+		ChildName: "PGEO_WGS84_POINTS",
+	}
+	provider, err := resolver.resolveProviderByMeta(req, &PreviewRequest{
+		Engine:    &models.Engine{EngineType: "nfs"},
+		Table:     "pgeo_roundtrip.gdb",
+		ChildName: "PGEO_WGS84_POINTS",
+	})
+	if err != nil {
+		t.Fatalf("resolveProviderByMeta() error = %v", err)
+	}
+	if provider.Name() != "builtin:scope-table" {
+		t.Fatalf("provider = %q, want builtin:scope-table", provider.Name())
+	}
+}
+
+func TestResolveProviderByMetaUsesScopeTableForSingleRuntimeContainerChild(t *testing.T) {
+	registry := NewPreviewRegistry()
+	registry.Register(namedPreviewProvider{name: "builtin:scope-table"})
+	registry.Register(namedPreviewProvider{name: "builtin:container-child"})
+	resolver := NewPreviewResolver(registry, nil, nil)
+
+	req := &PreviewResolverRequest{
+		Locator: &resourcetree.ResourceLocator{},
+		Engine:  &commonModels.Engine{EngineType: "nfs"},
+		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "container",
+				"format":    "pgeo",
+				"layout":    "single",
+			},
+		}},
+		ItemType:  "file",
+		ChildName: "WGS84_Points",
+	}
+	provider, err := resolver.resolveProviderByMeta(req, &PreviewRequest{
+		Engine:    &models.Engine{EngineType: "nfs"},
+		Table:     "AggDB_v1.2015.1.mdb",
+		ChildName: "WGS84_Points",
+	})
+	if err != nil {
+		t.Fatalf("resolveProviderByMeta() error = %v", err)
+	}
+	if provider.Name() != "builtin:scope-table" {
+		t.Fatalf("provider = %q, want builtin:scope-table", provider.Name())
+	}
+}
+
+func TestRuntimeScopeTableSourceKindUsesResolvedItemLayout(t *testing.T) {
+	tests := []struct {
+		name   string
+		attrs  map[string]interface{}
+		wanted string
+	}{
+		{
+			name: "PGeo single file",
+			attrs: map[string]interface{}{
+				"item": map[string]interface{}{"format": "pgeo", "layout": "single"},
+			},
+			wanted: workflowaccess.KindFile,
+		},
+		{
+			name: "FileGDB whole directory",
+			attrs: map[string]interface{}{
+				"item": map[string]interface{}{"format": "filegdb", "layout": "whole"},
+			},
+			wanted: workflowaccess.KindDirectory,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := runtimeScopeTableSourceKind(test.attrs); got != test.wanted {
+				t.Fatalf("runtimeScopeTableSourceKind() = %q, want %q", got, test.wanted)
+			}
+		})
+	}
+}
+
+func TestBindRuntimeScopeTableReaderUsesWorkflowRuntimeFactory(t *testing.T) {
+	const runtimeType = "preview-filegdb-runtime"
+	previous, previousErr := plugin.Get(runtimeType)
+	requiredOperators := []string{"vector_dataset.read_open", "vector_dataset.read_batch", "vector_dataset.read_close"}
+	operators := make([]plugin.OperatorDescriptor, 0, len(requiredOperators))
+	for _, name := range requiredOperators {
+		operators = append(operators, plugin.OperatorDescriptor{
+			ID: name, Name: name, DisplayName: name, EngineType: runtimeType,
+			Category: "io", CategoryPath: []string{"io"}, Description: name,
+			Parameters: []plugin.ParameterDescriptor{}, OutputPorts: []plugin.OutputPortDescriptor{},
+			ExecutionModes: []string{"direct"}, Effects: []string{"read"},
+		})
+	}
+	runtimePlugin := &previewWorkflowRuntimePlugin{engineType: runtimeType, operators: operators}
+	plugin.Register(runtimePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(runtimeType)
+	}()
+
+	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil, previewRuntimeDescriptorClient{
+		descriptors: []commonModels.EngineRuntimeDescriptor{{
+			ID: 31, Name: "GeoPython", EngineType: runtimeType, LifecycleState: commonModels.EngineLifecycleActive,
+		}},
+	})
+	tenantID := uint(1)
+	req := &PreviewResolverRequest{
+		Locator: &resourcetree.ResourceLocator{EngineID: 14, Type: resourcetree.TypeFile, Path: []string{"arcgis", "pgeo_roundtrip.gdb"}},
+		Engine: &commonModels.Engine{
+			ID: 14, EngineType: "nfs", ConnectionInfo: commonModels.ConnectionInfo{"mount_path": "/mnt/nfs"},
+		},
+		TenantID: &tenantID,
+	}
+	providerReq := &PreviewRequest{
+		Engine:    &models.Engine{ID: 14, EngineType: "nfs"},
+		ChildName: "PGEO_WGS84_POINTS",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{"data_type": "container", "format": "filegdb", "layout": "whole"},
+		},
+	}
+	if err := resolver.bindRuntimeScopeTableReader(context.Background(), req, providerReq); err != nil {
+		t.Fatalf("bindRuntimeScopeTableReader() error = %v", err)
+	}
+	if providerReq.ScopeTableReaderProvider == nil || providerReq.ScopeTableReaderProvider.Format() != "filegdb" {
+		t.Fatalf("scope table reader provider = %#v, want bound FileGDB runtime provider", providerReq.ScopeTableReaderProvider)
 	}
 }
 

@@ -80,7 +80,7 @@ const emptyText = computed(() => t(statusFilter.value
   : 'quality.execution.empty'))
 
 const statusType = (status) => {
-  const map = { success: 'success', failed: 'danger', running: 'warning', pending: 'info' }
+  const map = { success: 'success', failed: 'danger', timeout: 'danger', running: 'warning', pending: 'info' }
   return map[status] || 'info'
 }
 const statusLabel = (status) => ({

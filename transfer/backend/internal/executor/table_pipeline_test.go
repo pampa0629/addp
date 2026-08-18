@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/datatype"
 	"strings"
 	"testing"
@@ -401,6 +402,42 @@ func TestTableTransferExecutorReadsParquetWholeScopeSource(t *testing.T) {
 	}
 }
 
+func TestTableTransferExecutorUsesBoundScopeReaderForSingleLayoutContainer(t *testing.T) {
+	scopeProvider := &singleLayoutScopeReaderProvider{}
+	output := &fakeContentWriter{}
+	exec := &TableTransferExecutor{
+		SourceContentReader:       &fakeContentReader{},
+		SourceScopeReadProvider:   scopeProvider,
+		TargetContentWriter:       output,
+		TargetTableWriterProvider: csvformat.NewPlugin(nil),
+	}
+
+	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{
+			Kind:   TableEndpointEncoded,
+			Path:   engineplugin.FileItemPath(14, "arcgis/source.mdb"),
+			Format: format.FormatPGeo,
+			Layout: format.LayoutSingle,
+		},
+		Target:    TableTargetPlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
+		BatchSize: 1,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if !scopeProvider.opened {
+		t.Fatal("bound scope reader provider was not opened")
+	}
+	if metrics.RecordsRead != 2 || metrics.RecordsWritten != 2 || metrics.Batches != 2 {
+		t.Fatalf("metrics = %#v, want 2 read/written and 2 batches", metrics)
+	}
+	for _, want := range []string{"Alpha", "Beta"} {
+		if !strings.Contains(output.buf.String(), want) {
+			t.Fatalf("csv output = %q, missing %q", output.buf.String(), want)
+		}
+	}
+}
+
 func writeParquetTestFile(t *testing.T, storage *fakeContentWriter, path engineplugin.CatalogPath, plugin format.TableWriterProvider, rows []map[string]interface{}) {
 	t.Helper()
 	writer := contentadapter.NewWriter(storage, nil, path, engineplugin.WriteOptions{Overwrite: true})
@@ -703,6 +740,49 @@ func TestNewTableTransferExecutorLoadsEncodedToEncodedProvidersFromRegistry(t *t
 
 type markerTableBatchSource struct {
 	marker *resume.Marker
+}
+
+type singleLayoutScopeReaderProvider struct {
+	opened bool
+}
+
+func (p *singleLayoutScopeReaderProvider) Format() format.FormatType {
+	return format.FormatPGeo
+}
+
+func (p *singleLayoutScopeReaderProvider) OpenTableScopeReader(context.Context, contentio.Reader, contentio.Ref, *format.ParseOptions) (format.TableReader, error) {
+	p.opened = true
+	return &singleLayoutTableReader{rows: []map[string]interface{}{
+		{"id": 1, "name": "Alpha"},
+		{"id": 2, "name": "Beta"},
+	}}, nil
+}
+
+type singleLayoutTableReader struct {
+	rows []map[string]interface{}
+}
+
+func (r *singleLayoutTableReader) Fields() []datatype.FieldInfo {
+	return []datatype.FieldInfo{
+		{Name: "id", Type: datatype.FieldTypeInt},
+		{Name: "name", Type: datatype.FieldTypeString},
+	}
+}
+
+func (r *singleLayoutTableReader) ReadRows(_ context.Context, limit int) ([]map[string]interface{}, error) {
+	if len(r.rows) == 0 {
+		return []map[string]interface{}{}, nil
+	}
+	if limit > len(r.rows) {
+		limit = len(r.rows)
+	}
+	batch := append([]map[string]interface{}(nil), r.rows[:limit]...)
+	r.rows = r.rows[limit:]
+	return batch, nil
+}
+
+func (r *singleLayoutTableReader) Close(context.Context) error {
+	return nil
 }
 
 func (s *markerTableBatchSource) Open(context.Context) (TableBatchReader, error) {

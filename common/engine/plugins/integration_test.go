@@ -344,7 +344,7 @@ func TestWorkflowRuntimeRegistrationIncludesCapabilities(t *testing.T) {
 	}{
 		{
 			name: "geopython_workflow",
-			path: "engines/python-workflow/api_server.py",
+			path: "engines/geopython-workflow/api_server.py",
 			required: []string{
 				`"engine_type": "geopython_workflow"`,
 				`"schema_version": "engine.capabilities/v1"`,

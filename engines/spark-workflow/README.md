@@ -289,9 +289,9 @@ engine.load_workflow(workflow_def)
 result = engine.run()
 ```
 
-## 与 GeoPython Workflow Engine 的对比
+## 与 GeoPython Workflow 的对比
 
-| 特性 | GeoPython Workflow Engine | Spark 工作流 Engine |
+| 特性 | GeoPython Workflow | Spark 工作流 Engine |
 |------|------------------|---------------------|
 | **适用场景** | 快速原型、探索分析 | 生产环境、大规模处理 |
 | **数据规模** | < 10 GB | > 100 GB (TB 级) |

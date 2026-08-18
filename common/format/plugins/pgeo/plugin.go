@@ -15,10 +15,6 @@ func NewPlugin() *gdalvector.ReadOnlyPlugin {
 		I18nKey:  "format.pgeo",
 		DataType: datatype.Container,
 		Layouts:  []string{format.LayoutSingle},
-		Identification: format.FormatIdentification{
-			Extensions: []string{".mdb"},
-			MimeTypes:  []string{"application/x-msaccess"},
-		},
 	})
 }
 

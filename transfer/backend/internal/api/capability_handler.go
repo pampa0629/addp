@@ -191,6 +191,12 @@ func hasTableReader(formatType format.FormatType) bool {
 	if _, err := format.GetMultiTableReaderProvider(formatType); err == nil {
 		return true
 	}
+	if _, err := format.GetScopeTableReaderProvider(formatType); err == nil {
+		return true
+	}
+	if _, err := format.GetRuntimeScopeTableReaderFactory(formatType); err == nil {
+		return true
+	}
 	return false
 }
 
@@ -200,6 +206,12 @@ func transferWritable(formatType format.FormatType) (bool, string) {
 	}
 	if _, err := format.GetMultiTableWriterProvider(formatType); err == nil {
 		return true, "multi_table"
+	}
+	if _, err := format.GetScopeTableWriterProvider(formatType); err == nil {
+		return true, "scope"
+	}
+	if _, err := format.GetRuntimeScopeTableWriterFactory(formatType); err == nil {
+		return true, "runtime_scope"
 	}
 	return false, ""
 }

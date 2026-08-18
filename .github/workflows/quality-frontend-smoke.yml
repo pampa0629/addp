@@ -1,0 +1,53 @@
+name: Quality frontend smoke
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-frontend-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-frontend:
+    name: Quality frontend (route, E2E, build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: quality/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: quality/frontend
+        run: npm ci
+
+      - name: Install Chromium for Playwright
+        working-directory: quality/frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run route tests
+        working-directory: quality/frontend
+        run: npm run test:route
+
+      - name: Run browser smoke tests
+        working-directory: quality/frontend
+        run: npm run test:e2e
+
+      - name: Build frontend
+        working-directory: quality/frontend
+        run: npm run build

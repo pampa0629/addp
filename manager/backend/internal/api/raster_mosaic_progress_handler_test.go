@@ -128,7 +128,7 @@ func TestManagerProgressEndpointRecordsVectorTileCacheEvent(t *testing.T) {
 	})
 	router.POST("/executions/:execution_id/events", handler.RecordManagerExecutionProgressEvent)
 
-	body := `{"phase":"generate","event":"progress","message":"生成矢量瓦片缓存","current_zoom":10,"max_zoom":18,"tiles_processed":367,"tiles_total_estimate":1000,"progress_percent":36.7,"overall_progress":36.7,"metadata":{"worker":"python-workflow"}}`
+	body := `{"phase":"generate","event":"progress","message":"生成矢量瓦片缓存","current_zoom":10,"max_zoom":18,"tiles_processed":367,"tiles_total_estimate":1000,"progress_percent":36.7,"overall_progress":36.7,"metadata":{"worker":"geopython-workflow"}}`
 	req := httptest.NewRequest(http.MethodPost, "/executions/tile-cache-progress-http-1/events", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()

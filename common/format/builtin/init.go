@@ -8,6 +8,7 @@ import (
 	_ "github.com/addp/common/format/mappers/spatialite"
 
 	// 导入内置 table 格式能力，触发 init() 自动注册
+	_ "github.com/addp/common/format/plugins/access"
 	_ "github.com/addp/common/format/plugins/avro"
 	_ "github.com/addp/common/format/plugins/copc"
 	_ "github.com/addp/common/format/plugins/csv"
@@ -52,6 +53,7 @@ import (
 	_ "github.com/addp/common/format/plugins/text"
 	_ "github.com/addp/common/format/plugins/tiles3d"
 	_ "github.com/addp/common/format/plugins/wps"
+	_ "github.com/addp/common/format/plugins/xml"
 
 	// 导入内置媒体信息 provider，触发 init() 自动注册
 	_ "github.com/addp/common/format/plugins/image"

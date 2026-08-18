@@ -11,6 +11,7 @@ import (
 	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/quality/internal/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -368,5 +369,9 @@ func newQualityRepositoryTestExecution(executionID string, tenantID int, created
 		TaskType: commonExecution.TaskTypeQualityCheck, Source: commonExecution.ModuleQuality,
 		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
 		CreatedAt: createdAt, UpdatedAt: createdAt,
+		ExecutionConfig: commonModels.JSONMap{
+			"schema_version":   "addp.quality.execution-config/v1",
+			"check_timeout_ms": int64((30 * time.Minute).Milliseconds()),
+		},
 	}
 }

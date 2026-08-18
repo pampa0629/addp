@@ -180,7 +180,7 @@ IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
 - `transfer-worker` - Transfer Worker
 
 **Engine/Runtime 服务** (6 个):
-- `python-workflow-engine` - GeoPython Workflow Engine
+- `geopython-workflow-engine` - GeoPython Workflow
 - `raster-mosaic-runtime` - Raster Mosaic Runtime
 - `model3d-workflow-engine` - Model3D Workflow Engine
 - `pointcloud-workflow-engine` - PointCloud Workflow Engine
@@ -402,7 +402,7 @@ harbor.example.com:5001/project/addp-manager-backend:latest
 - `addp-transfer-worker`
 
 **Engine/Runtime 服务** (6 个):
-- `addp-python-workflow-engine`
+- `addp-geopython-workflow-engine`
 - `addp-raster-mosaic-runtime`
 - `addp-model3d-workflow-engine`
 - `addp-pointcloud-workflow-engine`

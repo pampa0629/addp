@@ -3,6 +3,7 @@ package preview
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/datatype"
@@ -24,6 +25,15 @@ func (p *ScopeTablePreviewProvider) Name() string {
 }
 
 func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
+	if req == nil || req.Engine == nil {
+		return nil, fmt.Errorf("engine is required")
+	}
+	page, pageSize := scopeTablePreviewPagination(req)
+	formatType := resolveScopeTableFormat(req)
+	if req.ScopeTableReaderProvider != nil {
+		return previewRuntimeScopeTable(ctx, req, formatType, page, pageSize)
+	}
+
 	plug, err := plugin.Get(req.Engine.EngineType)
 	if err != nil {
 		return nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
@@ -38,19 +48,9 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 		return nil, err
 	}
 
-	// 分页参数
-	page := req.Page
-	if page < 1 {
-		page = 1
-	}
-	pageSize := req.PageSize
-	if pageSize <= 0 {
-		pageSize = 20
-	}
 	offset := int64((page - 1) * pageSize)
 	limit := int64(pageSize)
 
-	formatType := resolveScopeTableFormat(req)
 	scopeSampleReader, err := format.GetScopeTableSampleReader(formatType)
 	if err != nil {
 		return nil, fmt.Errorf("no scope table sample reader for %s: %w", formatType, err)
@@ -116,6 +116,107 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 		PageSize:       pageSize,
 		Total:          int(total),
 	}, nil
+}
+
+func scopeTablePreviewPagination(req *PreviewRequest) (int, int) {
+	page := req.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := req.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	return page, pageSize
+}
+
+func previewRuntimeScopeTable(ctx context.Context, req *PreviewRequest, formatType format.FormatType, page, pageSize int) (*models.TablePreview, error) {
+	child := containerChildInputForRequest(req.Attributes, req.ChildName)
+	options := format.ChildTableParseOptions(req.ChildName, child)
+	options.GeometryEncoding = format.GeometryEncodingEWKB
+	scopePath := strings.TrimSpace(req.ScopePath)
+	if scopePath == "" {
+		scopePath = strings.Trim(nfsPhysicalPath(req.Schema, req.Table), "/")
+	}
+	reader, err := req.ScopeTableReaderProvider.OpenTableScopeReader(ctx, nil, contentio.NewRef(scopePath, contentio.RoleScope), options)
+	if err != nil {
+		return nil, fmt.Errorf("open runtime scope table preview for %s child %s: %w", formatType, req.ChildName, err)
+	}
+	fields := reader.Fields()
+	spatialInfo := spatialInfoFromMetaAttributes(req.Attributes)
+	if provider, ok := reader.(format.TableSpatialInfoProvider); ok && provider.SpatialInfo() != nil {
+		spatialInfo = provider.SpatialInfo()
+	}
+	rows, err := readRuntimeScopeTableWindow(ctx, reader, (page-1)*pageSize, pageSize)
+	if err != nil {
+		_ = reader.Close(ctx)
+		return nil, fmt.Errorf("read runtime scope table preview: %w", err)
+	}
+	if err := reader.Close(ctx); err != nil {
+		return nil, fmt.Errorf("close runtime scope table preview: %w", err)
+	}
+
+	tableInfo := &datatype.TableInfo{Name: req.ChildName, Fields: fields}
+	geometryColumns := (&FileTablePreviewProvider{}).detectGeometryColumns(tableInfo)
+	srid := 0
+	sourceCRS := ""
+	var sourceCRSDefinition *datatype.CRSDefinition
+	if spatialInfo != nil {
+		srid = spatialInfo.PrimarySRIDValue()
+		sourceCRS = spatialInfo.PrimaryCRSRef()
+		sourceCRSDefinition = spatialInfo.CRSDefinitionByID(sourceCRS)
+	}
+	spatialContract := tablePreviewSpatialCRSContract(geometryColumns, srid, sourceCRS, sourceCRSDefinition)
+	columns := make([]string, 0, len(fields))
+	columnMeta := make([]models.ColumnMetadata, 0, len(fields))
+	for _, field := range fields {
+		columns = append(columns, field.Name)
+		columnMeta = append(columnMeta, models.ColumnMetadata{ColumnName: field.Name, Type: string(field.Type), IsNullable: field.Nullable})
+	}
+	total := containerChildRowCount(child)
+	if total == 0 {
+		total = int64(len(rows))
+	}
+	return &models.TablePreview{
+		Mode: PreviewModeTable, Columns: columns, Fields: append([]datatype.FieldInfo(nil), fields...), ColumnMetadata: columnMeta,
+		Rows: rows, Total: int(total), Page: page, PageSize: pageSize,
+		GeometryColumns: geometryColumns, GeometryColumn: spatialContract.GeometryColumn,
+		SourceSRID: spatialContract.SourceSRID, SourceCRS: spatialContract.SourceCRS,
+		SourceCRSDefinition: spatialContract.SourceCRSDefinition, TransformStatus: spatialContract.TransformStatus,
+		PreviewHint: spatialContract.PreviewHint, SRID: srid, Extent: tablePreviewSpatialExtent(spatialInfo),
+	}, nil
+}
+
+func readRuntimeScopeTableWindow(ctx context.Context, reader format.TableReader, offset, limit int) ([]map[string]interface{}, error) {
+	for offset > 0 {
+		batchSize := offset
+		if batchSize > 1000 {
+			batchSize = 1000
+		}
+		rows, err := reader.ReadRows(ctx, batchSize)
+		if err != nil {
+			return nil, err
+		}
+		if len(rows) == 0 {
+			return []map[string]interface{}{}, nil
+		}
+		offset -= len(rows)
+	}
+	return reader.ReadRows(ctx, limit)
+}
+
+func containerChildRowCount(child map[string]interface{}) int64 {
+	for _, key := range []string{"row_count", "estimated_row_count"} {
+		switch value := child[key].(type) {
+		case int64:
+			return value
+		case int:
+			return int64(value)
+		case float64:
+			return int64(value)
+		}
+	}
+	return 0
 }
 
 func scopeTableSampleOptionsFromMetaAttributes(attrs map[string]interface{}) *format.ParseOptions {

@@ -1,4 +1,4 @@
-# GeoPython Workflow Engine Dependencies
+# GeoPython Workflow Dependencies
 
 # Core spatial computation. Keep NumPy below 2.3 so local GDAL Python bindings
 # inherited from system site-packages remain import-compatible.

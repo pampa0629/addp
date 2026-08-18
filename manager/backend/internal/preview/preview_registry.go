@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/models"
 )
@@ -47,6 +48,9 @@ type PreviewRequest struct {
 	GraphSample     plugin.GraphSampleFilter // 图预览样本过滤条件
 	DataScope       dataprofile.DataScope    // Manager 剖析内部使用的数据范围
 	Attributes      map[string]interface{}   // 来自 meta_item/meta_node 的标准属性分区
+	// ScopeTableReaderProvider is bound by PreviewResolver when a whole-scope
+	// format requires native dependencies from a workflow runtime.
+	ScopeTableReaderProvider format.ScopeTableReaderProvider
 }
 
 // Mode 根据请求推断预览模式。

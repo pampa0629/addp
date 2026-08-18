@@ -414,7 +414,7 @@ draft → approved → deprecated
 
 Standard 的 `elements`、`units`、`code_sets` 等被其他 Schema（model、metadata 等）引用时，**没有数据库级外键约束**，通过应用层 HTTP 调用 Standard API 进行 ID 存在性验证。
 
-Model 可引用的 Domain、Element、DimensionHierarchy 和 Metric 使用独立 `lifecycle_state=active|deleting`。硬删除时 Standard 先进入 `deleting`，再调用 Model 冻结 `(tenant_id, resource_type, resource_id)` 屏障并权威扫描引用；有引用时恢复 `active/open` 并返回 `409 standard_resource_referenced`，无引用时才删除并把 Model 屏障终止为 `deleted`。普通 check-then-delete、自动清空 Model 引用、跨 Schema 查询和绕过屏障的强制删除都不是合法路径。
+Model 可引用的 Domain、Element、DimensionHierarchy 和 Metric 使用独立 `lifecycle_state=active|deleting`。硬删除时 Standard 先写入删除协调记录并进入 `deleting`，再由删除协调流程串行锁定 Standard 资源行，调用 Model 冻结 `(tenant_id, resource_type, resource_id)` 屏障并权威扫描引用；有引用时必须先恢复 Model `open`，再恢复 Standard `active` 并返回 `409 standard_resource_referenced`；无引用时才硬删除资源，协调记录保留到 Model 屏障终止为 `deleted` 成功。资源行锁覆盖冻结、扫描和本地删除，用户重试与后台补偿复用同一协调记录；后台定期补偿 `deleting` 或资源已删除但终态未收敛的协调记录。普通 check-then-delete、自动清空 Model 引用、跨 Schema 查询和绕过屏障的强制删除都不是合法路径。
 
 ### 数据库约束与启动收敛
 

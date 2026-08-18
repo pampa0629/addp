@@ -3,7 +3,7 @@ set -e
 
 # 使用说明
 show_usage() {
-  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-model] [-quality] [-asset] [-portal] [-inference] [-python-workflow] [-math-workflow] [-model3d-workflow] [-pointcloud-workflow] [-supermap-workflow] [-copilot] [-agent] [-spark-workflow] [-jupyter] [-duckdb]"
+  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-model] [-quality] [-asset] [-portal] [-inference] [-geopython-workflow] [-math-workflow] [-model3d-workflow] [-pointcloud-workflow] [-supermap-workflow] [-copilot] [-agent] [-spark-workflow] [-jupyter] [-duckdb]"
   echo ""
   echo "选项:"
   echo "  无参数        只重启服务,自动检测 common 模块变化并增量编译受影响的模块"
@@ -24,7 +24,7 @@ show_usage() {
   echo "  -portal      强制重新编译 Portal 模块"
   echo "  -graph       强制重新编译 Graph 模块"
   echo "  -inference   强制重新编译 Inference 模块"
-  echo "  -python-workflow   重启 GeoPython Workflow Engine (Python 服务)"
+  echo "  -geopython-workflow   重启 GeoPython Workflow (Python 服务)"
   echo "  -math-workflow     重启 Math Workflow Engine (Python 服务)"
   echo "  -model3d-workflow  重启 Model3D Workflow Engine (Python 服务)"
   echo "  -pointcloud-workflow 重启 PointCloud Workflow Engine (Docker runtime)"
@@ -42,13 +42,13 @@ show_usage() {
   echo "  - 只指定 Python/扩展服务参数时,仅重启对应服务,不停止整套环境"
   echo ""
   echo "注意:"
-  echo "  - GeoPython Workflow Engine、Math Workflow Engine、Spark 工作流 Engine、PointCloud Workflow Engine、SuperMap Workflow Engine、Jupyter Engine、Copilot 和 Agent 支持局部重启"
+  echo "  - GeoPython Workflow、Math Workflow Engine、Spark 工作流 Engine、PointCloud Workflow Engine、SuperMap Workflow Engine、Jupyter Engine、Copilot 和 Agent 支持局部重启"
   echo "  - 只有 Go 后端模块支持选择性编译"
   echo ""
   echo "示例:"
   echo "  $0                    # 智能检测 + 重启 (推荐)"
   echo "  $0 -system -meta      # 重启并重新编译 system 和 meta"
-  echo "  $0 -python-workflow         # 仅重启 GeoPython Workflow Engine"
+  echo "  $0 -geopython-workflow         # 仅重启 GeoPython Workflow"
   echo "  $0 -all               # 重启并重新编译所有模块 (完整)"
   exit 1
 }
@@ -134,7 +134,7 @@ for arg in "$@"; do
     -all)
       FORCE_BUILD_ALL=true
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-asset|-portal|-graph|-inference|-python-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-copilot|-agent|-spark-workflow|-jupyter|-duckdb)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-asset|-portal|-graph|-inference|-geopython-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-copilot|-agent|-spark-workflow|-jupyter|-duckdb)
       module="${arg#-}"  # 移除前导的 -
       FORCE_BUILD_MODULES+=("$module")
       ;;
@@ -153,7 +153,7 @@ done
 has_go_module_params() {
     for module in "${FORCE_BUILD_MODULES[@]}"; do
         # Python 服务列表
-        if [[ "$module" != "python-workflow" &&
+        if [[ "$module" != "geopython-workflow" &&
               "$module" != "math-workflow" &&
               "$module" != "model3d-workflow" &&
               "$module" != "pointcloud-workflow" &&
@@ -170,7 +170,7 @@ has_go_module_params() {
 
 is_python_service_module() {
     case "$1" in
-        python-workflow|math-workflow|model3d-workflow|pointcloud-workflow|supermap-workflow|spark-workflow|jupyter|copilot|agent)
+        geopython-workflow|math-workflow|model3d-workflow|pointcloud-workflow|supermap-workflow|spark-workflow|jupyter|copilot|agent)
             return 0
             ;;
         *)
@@ -332,26 +332,96 @@ verify_pidfile_process_alive() {
     fi
 }
 
-restart_python_workflow_service() {
-    local port="${PYTHON_WORKFLOW_PORT:-8099}"
-    stop_pidfile_process ".dev-pids/python-workflow-engine.pid" "GeoPython Workflow Engine"
-    stop_matching_port_process "$port" "GeoPython Workflow Engine" "python.*api_server\\.py|engines/python-workflow"
-    require_service_python "engines/python-workflow" "GeoPython Workflow Engine" "python-workflow"
-    echo "  启动 GeoPython Workflow Engine..."
-    (
-        cd engines/python-workflow
-        export PORT="$port"
-        export GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET="${GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET:-}"
-        export POSTGRES_HOST=localhost
-        export POSTGRES_PORT=15432
-        export POSTGRES_USER=addp
-        export POSTGRES_PASSWORD=addp_password
-        export POSTGRES_DB=addp
-        export DB_SCHEMA=develop
-        start_background_process "." ".dev-pids/python-workflow-engine.pid" "logs/python-workflow-engine.log" "logs/python-workflow-engine-stderr.log" ./venv/bin/python api_server.py
-    )
-    wait_http_ready "GeoPython Workflow Engine" "http://localhost:${port}/health"
-    verify_pidfile_process_alive ".dev-pids/python-workflow-engine.pid" "GeoPython Workflow Engine" "logs/python-workflow-engine.log" "logs/python-workflow-engine-stderr.log"
+geopython_workflow_source_fingerprint() {
+    {
+        printf '%s\n' "geopython-workflow-image-v1"
+        while IFS= read -r file; do
+            printf '%s %s\n' "$file" "$(git hash-object "$file")"
+        done < <(
+            {
+                printf '%s\n' \
+                    engines/geopython-workflow/Dockerfile \
+                    engines/geopython-workflow/requirements.txt \
+                    engines/geopython-workflow/api_server.py \
+                    engines/geopython-workflow/container_entrypoint.sh \
+                    engines/geopython-workflow/workflow_engine.py \
+                    engines/geopython-workflow/geometry_batches.py \
+                    common-python/README.md \
+                    common-python/pyproject.toml
+                find engines/geopython-workflow/operators common-python/addp_common \
+                    -type f ! -path '*/__pycache__/*' ! -name '*.pyc'
+            } | LC_ALL=C sort
+        )
+    } | git hash-object --stdin
+}
+
+ensure_geopython_workflow_image() {
+    local image="$1"
+    local fingerprint
+    local current_fingerprint
+    fingerprint="$(geopython_workflow_source_fingerprint)"
+    current_fingerprint="$(docker image inspect \
+        -f '{{ index .Config.Labels "addp.geopython.source-fingerprint" }}' \
+        "$image" 2>/dev/null || true)"
+
+    if [ "$current_fingerprint" = "$fingerprint" ]; then
+        echo "  GeoPython Workflow 镜像构建输入未变化，复用现有镜像: $image"
+        return 0
+    fi
+
+    echo "  构建 GeoPython Workflow 镜像（构建输入已变化或镜像不存在）..."
+    docker build \
+        --label "addp.geopython.source-fingerprint=${fingerprint}" \
+        -f engines/geopython-workflow/Dockerfile \
+        -t "$image" \
+        .
+}
+
+restart_geopython_workflow_service() {
+    local port="${GEOPYTHON_WORKFLOW_PORT:-8099}"
+    local image="addp-geopython-workflow-engine:dev"
+    local source_dir="${ROOT_DIR}/business/nfs/data"
+    local container_source_dir="${ROOT_DIR}/business/nfs/data"
+    local system_port="${SYSTEM_BACKEND_PORT:-8180}"
+
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "❌ GeoPython Workflow 需要 Docker runtime 承载 GDAL/OGR"
+        return 1
+    fi
+
+    docker rm -f geopython-workflow-engine >/dev/null 2>&1 || true
+    rm -f .dev-pids/geopython-workflow-engine.pid
+    stop_matching_port_process "$port" "GeoPython Workflow" "python.*api_server\\.py|engines/geopython-workflow"
+    ensure_geopython_workflow_image "$image"
+
+    echo "  启动 GeoPython Workflow Docker runtime..."
+    mkdir -p "${source_dir}" logs .dev-pids
+    docker run -d \
+        --name geopython-workflow-engine \
+        --label com.docker.compose.project=addp-app \
+        --label com.docker.compose.service=geopython-workflow-engine \
+        --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
+        --add-host=host.docker.internal:host-gateway \
+        -p "${port}:8099" \
+        -e PORT=8099 \
+        -e SYSTEM_URL="http://host.docker.internal:${system_port}" \
+        -e GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET="${GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET:-}" \
+        -e GEOPYTHON_WORKFLOW_LOOPBACK_HOST=host.docker.internal \
+        -e POSTGRES_HOST=host.docker.internal \
+        -e POSTGRES_PORT="${POSTGRES_PORT:-15432}" \
+        -e POSTGRES_USER="${POSTGRES_USER:-addp}" \
+        -e POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}" \
+        -e POSTGRES_DB="${POSTGRES_DB:-addp}" \
+        -e DB_SCHEMA=develop \
+        -v "${ROOT_DIR}/logs:/app/logs" \
+        -v "${source_dir}:${container_source_dir}" \
+        "$image" > .dev-pids/geopython-workflow-engine.pid
+    wait_http_ready "GeoPython Workflow" "http://localhost:${port}/health"
+    if ! docker ps --filter "name=^/geopython-workflow-engine$" --format '{{.Names}}' | grep -qx "geopython-workflow-engine"; then
+        echo "❌ GeoPython Workflow 容器启动后不存在"
+        echo "   查看日志: docker logs geopython-workflow-engine"
+        return 1
+    fi
 }
 
 restart_math_workflow_service() {
@@ -618,8 +688,8 @@ restart_scoped_python_services() {
     mkdir -p logs .dev-pids
     for module in "${FORCE_BUILD_MODULES[@]}"; do
         case "$module" in
-            python-workflow)
-                restart_python_workflow_service
+            geopython-workflow)
+                restart_geopython_workflow_service
                 ;;
             math-workflow)
                 restart_math_workflow_service
@@ -706,7 +776,7 @@ echo ""
 
 # 1. 先强制杀死 Python 服务（避免端口残留导致 stop.sh 误判为非 ADDP 进程）
 echo "🐍 强制终止 Python 服务..."
-pkill -9 -f "engines/python-workflow/api_server.py" 2>/dev/null || true
+pkill -9 -f "engines/geopython-workflow/api_server.py" 2>/dev/null || true
 pkill -9 -f "engines/math-workflow/api_server.py" 2>/dev/null || true
 pkill -9 -f "engines/model3d-workflow/api_server.py" 2>/dev/null || true
 pkill -9 -f "engines/pointcloud-workflow/api_server.py" 2>/dev/null || true
@@ -773,9 +843,9 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     elif [ "$module" = "agent" ]; then
       # Agent 是 Python 服务，不需要编译
       echo "  标记 Agent Backend 需要重启（无需编译）"
-    elif [ "$module" = "python-workflow" ]; then
-      # GeoPython Workflow Engine 是 Python 服务，不需要编译
-      echo "  标记 GeoPython Workflow Engine 需要重启（无需编译）"
+    elif [ "$module" = "geopython-workflow" ]; then
+      # GeoPython Workflow 是 Python 服务，不需要编译
+      echo "  标记 GeoPython Workflow 需要重启（无需编译）"
     elif [ "$module" = "math-workflow" ]; then
       # Math Workflow Engine 是 Python 服务，不需要编译
       echo "  标记 Math Workflow Engine 需要重启（无需编译）"
@@ -815,7 +885,7 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     elif [ "$module" = "agent" ]; then
       # Python 服务无二进制文件
       :
-    elif [ "$module" = "python-workflow" ]; then
+    elif [ "$module" = "geopython-workflow" ]; then
       # Python 服务无二进制文件
       :
     elif [ "$module" = "math-workflow" ]; then
@@ -863,7 +933,7 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     elif [ "$module" = "agent" ]; then
       # Python 服务无需清理 Go 缓存
       :
-    elif [ "$module" = "python-workflow" ]; then
+    elif [ "$module" = "geopython-workflow" ]; then
       # Python 服务无需清理 Go 缓存
       :
     elif [ "$module" = "math-workflow" ]; then

@@ -990,7 +990,10 @@ const handleScanSelectedEngine = async () => {
   const engineName = selectedResource.value.name
   scanning.value = true
   try {
-    const run = await metaApi.createManualScanRun(selectedResource.value.id, [], { scan_depth: 'deep', force: false })
+    const run = await metaApi.createManualScanRun(selectedResource.value.id, [], {
+      scan_depth: 'deep',
+      force: Boolean(selectedResource.value.scanned_at)
+    })
     startScanStatus(t('meta.scan.engineScanSubmitted', { name: engineName }), t('meta.scan.scanWaiting'), 5)
     await waitForScanRun(run, {
       onProgress: latest => updateScanStatusFromRun(latest, t('meta.scan.engineScanSubmitted', { name: engineName }))
@@ -1327,7 +1330,10 @@ const handleScanCatalogEntry = async (catalogEntry) => {
 
   try {
     const target = catalogEntryTargetOf(catalogEntry) || catalogEntryName
-    const run = await metaApi.createManualScanRun(selectedResource.value.id, [target], { scan_depth: 'deep', force: false })
+    const run = await metaApi.createManualScanRun(selectedResource.value.id, [target], {
+      scan_depth: 'deep',
+      force: catalogEntry.scan_status === 'completed'
+    })
     startScanStatus(t('meta.scan.catalogEntryScanSubmitted', { term: terminology, name: catalogEntryName }), t('meta.scan.scanWaiting'), 5)
     await waitForScanRun(run, {
       onProgress: latest => updateScanStatusFromRun(latest, t('meta.scan.catalogEntryScanSubmitted', { term: terminology, name: catalogEntryName }))

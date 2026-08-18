@@ -31,12 +31,14 @@ const (
 	qualityExecutionAuthorizationFailed    = "quality.execution.authorization_failed"
 	qualityExecutionEngineUnsupported      = "quality.execution.unsupported_engine"
 	qualityExecutionTargetConnectionFailed = "quality.execution.target_connection_failed"
+	qualityExecutionConfigInvalid          = "quality.execution.config_invalid"
 	qualityExecutionRuleSnapshotInvalid    = "quality.execution.rule_snapshot_invalid"
 	qualityExecutionNoRules                = "quality.execution.no_rule_applications"
 	qualityExecutionRuleCompileFailed      = "quality.execution.rule_compile_failed"
 	qualityExecutionSQLFailed              = "quality.execution.sql_execution_failed"
 	qualityExecutionResultInvalid          = "quality.execution.result_invalid"
 	qualityExecutionIssueReconcileFailed   = "quality.issue.reconcile_failed"
+	qualityExecutionTimeout                = "quality.execution.timeout"
 	qualityWorkerLease                     = 30 * time.Minute
 	qualityWorkerPoll                      = 500 * time.Millisecond
 )
@@ -68,6 +70,8 @@ type CheckExecutor struct {
 	checkTaskRepo          *repository.CheckTaskRepository
 	issueRepo              *repository.IssueRepository
 	sqlGen                 *SQLGenerator
+	checkTimeout           time.Duration
+	workerConcurrency      int
 	workerID               string
 	workerCancel           context.CancelFunc
 	workerDone             chan struct{}
@@ -79,6 +83,8 @@ func NewCheckExecutor(
 	executionAuthorization *commonClient.SystemExecutionAuthorizationClient,
 	checkTaskRepo *repository.CheckTaskRepository,
 	issueRepo *repository.IssueRepository,
+	checkTimeout time.Duration,
+	workerConcurrency int,
 ) *CheckExecutor {
 	return &CheckExecutor{
 		systemClient:           systemClient,
@@ -86,6 +92,8 @@ func NewCheckExecutor(
 		checkTaskRepo:          checkTaskRepo,
 		issueRepo:              issueRepo,
 		sqlGen:                 NewSQLGenerator(),
+		checkTimeout:           checkTimeout,
+		workerConcurrency:      workerConcurrency,
 		workerID:               "quality-" + uuid.NewString(),
 		workerDone:             make(chan struct{}),
 	}
@@ -155,6 +163,10 @@ func (e *CheckExecutor) RunCheckWithContext(
 		TaskType: commonExecution.TaskTypeQualityCheck, Source: normalizedSource, ParentExecutionID: parentExecutionID,
 		Status: commonExecution.ExecutionStatusPending, TriggerType: normalizedTriggerType,
 		CreatedAt: now, UpdatedAt: now, MaxAttempts: 3,
+		ExecutionConfig: commonModels.JSONMap{
+			"schema_version":   qualityExecutionConfigSchemaVersion,
+			"check_timeout_ms": e.checkTimeout.Milliseconds(),
+		},
 	}
 	if userID > 0 {
 		taskExec.TriggeredBy = intPtr(int(userID))
@@ -246,7 +258,7 @@ func (e *CheckExecutor) StartWorker(ctx context.Context) {
 	e.workerStartOnce.Do(func() {
 		workerCtx, cancel := context.WithCancel(ctx)
 		e.workerCancel = cancel
-		go e.workerLoop(workerCtx)
+		go e.workerSupervisor(workerCtx)
 	})
 }
 
@@ -257,13 +269,49 @@ func (e *CheckExecutor) StopWorker() {
 	}
 }
 
-func (e *CheckExecutor) workerLoop(ctx context.Context) {
+func (e *CheckExecutor) workerSupervisor(ctx context.Context) {
 	defer close(e.workerDone)
+	var workers sync.WaitGroup
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		e.recoveryLoop(ctx)
+	}()
+	for slot := 1; slot <= e.workerConcurrency; slot++ {
+		workerID := fmt.Sprintf("%s-%d", e.workerID, slot)
+		workers.Add(1)
+		go func(workerID string) {
+			defer workers.Done()
+			e.executionWorkerLoop(ctx, workerID)
+		}(workerID)
+	}
+	workers.Wait()
+}
+
+func (e *CheckExecutor) recoveryLoop(ctx context.Context) {
+	ticker := time.NewTicker(qualityWorkerPoll)
+	defer ticker.Stop()
+	e.processExpired(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			e.processExpired(ctx)
+		}
+	}
+}
+
+func (e *CheckExecutor) executionWorkerLoop(ctx context.Context, workerID string) {
 	ticker := time.NewTicker(qualityWorkerPoll)
 	defer ticker.Stop()
 	for {
-		e.processExpired(ctx)
-		e.processPending(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		if e.processPending(ctx, workerID) {
+			continue
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -274,27 +322,45 @@ func (e *CheckExecutor) workerLoop(ctx context.Context) {
 
 func (e *CheckExecutor) processExpired(ctx context.Context) {
 	if err := e.checkTaskRepo.RecoverExpiredExecutions(ctx, time.Now().UTC()); err != nil {
-		log.Printf("quality execution lease recovery failed: %v", err)
+		if ctx.Err() == nil {
+			log.Printf("quality execution lease recovery failed: %v", err)
+		}
 	}
 }
 
-func (e *CheckExecutor) processPending(ctx context.Context) {
-	execution, task, err := e.checkTaskRepo.ClaimPendingExecution(ctx, e.workerID, time.Now().UTC(), qualityWorkerLease)
+func (e *CheckExecutor) processPending(ctx context.Context, workerID string) bool {
+	execution, task, err := e.checkTaskRepo.ClaimPendingExecution(ctx, workerID, time.Now().UTC(), qualityWorkerLease)
 	if err != nil {
-		log.Printf("quality execution claim failed: %v", err)
-		return
+		if ctx.Err() == nil {
+			log.Printf("quality execution claim failed: %v", err)
+		}
+		return false
 	}
 	if execution == nil || task == nil {
-		return
+		return false
 	}
-	checkCtx, cancelCheck := context.WithCancel(ctx)
+	checkTimeout, configErr := executionCheckTimeout(execution.ExecutionConfig)
+	if configErr != nil {
+		completedAt := time.Now().UTC()
+		fields := executionTerminalFields(failExecution(qualityExecutionConfigInvalid, configErr), false)
+		if execution.StartedAt != nil {
+			fields["execution_time_ms"] = completedAt.Sub(*execution.StartedAt).Milliseconds()
+		}
+		if err := e.checkTaskRepo.CompleteExecutionWithLease(ctx, task.ID, int64(task.TenantID), execution.ExecutionID, workerID, fields, completedAt); err != nil {
+			log.Printf("quality execution %s config failure completion failed: %v", execution.ExecutionID, err)
+		}
+		return true
+	}
+	checkCtx, cancelCheck := context.WithTimeout(ctx, checkTimeout)
 	heartbeatDone := make(chan error, 1)
-	go e.renewExecutionLease(checkCtx, cancelCheck, execution, heartbeatDone)
+	go e.renewExecutionLease(checkCtx, cancelCheck, execution, workerID, heartbeatDone)
 	result, observations, execErr := e.doCheck(checkCtx, task, execution)
+	timedOut := errors.Is(checkCtx.Err(), context.DeadlineExceeded) || errors.Is(execErr, context.DeadlineExceeded)
+	execErr = executionErrorForDeadline(execErr, timedOut)
 	cancelCheck()
 	if heartbeatErr := <-heartbeatDone; heartbeatErr != nil {
 		log.Printf("quality execution %s lease renewal failed: %v", execution.ExecutionID, heartbeatErr)
-		return
+		return true
 	}
 	completedAt := time.Now().UTC()
 	fields := map[string]interface{}{}
@@ -302,9 +368,14 @@ func (e *CheckExecutor) processPending(ctx context.Context) {
 		fields["execution_time_ms"] = completedAt.Sub(*execution.StartedAt).Milliseconds()
 	}
 	if execErr != nil {
-		log.Printf("quality execution %s failed: %v", execution.ExecutionID, execErr)
-		fields["status"] = commonExecution.ExecutionStatusFailed
-		fields["error_details"] = commonModels.JSONMap{"code": executionFailureCode(execErr), "message": "quality check execution failed"}
+		if timedOut {
+			log.Printf("quality execution %s timed out: %v", execution.ExecutionID, execErr)
+		} else {
+			log.Printf("quality execution %s failed: %v", execution.ExecutionID, execErr)
+		}
+		for key, value := range executionTerminalFields(execErr, timedOut) {
+			fields[key] = value
+		}
 	} else {
 		if err := e.issueRepo.Reconcile(ctx, int64(task.TenantID), execution.ExecutionID, observations, completedAt); err != nil {
 			execErr = fmt.Errorf("reconcile quality issues: %w", err)
@@ -317,12 +388,33 @@ func (e *CheckExecutor) processPending(ctx context.Context) {
 			fields["progress"] = 100
 		}
 	}
-	if err := e.checkTaskRepo.CompleteExecutionWithLease(ctx, task.ID, int64(task.TenantID), execution.ExecutionID, e.workerID, fields, completedAt); err != nil {
+	if err := e.checkTaskRepo.CompleteExecutionWithLease(ctx, task.ID, int64(task.TenantID), execution.ExecutionID, workerID, fields, completedAt); err != nil {
 		log.Printf("quality execution %s completion failed: %v", execution.ExecutionID, err)
+	}
+	return true
+}
+
+func executionTerminalFields(execErr error, timedOut bool) map[string]interface{} {
+	if timedOut {
+		return map[string]interface{}{
+			"status":        commonExecution.ExecutionStatusTimeout,
+			"error_details": commonModels.JSONMap{"code": qualityExecutionTimeout, "message": "quality check execution timed out"},
+		}
+	}
+	return map[string]interface{}{
+		"status":        commonExecution.ExecutionStatusFailed,
+		"error_details": commonModels.JSONMap{"code": executionFailureCode(execErr), "message": "quality check execution failed"},
 	}
 }
 
-func (e *CheckExecutor) renewExecutionLease(ctx context.Context, cancel context.CancelFunc, execution *commonExecution.TaskExecution, done chan<- error) {
+func executionErrorForDeadline(execErr error, timedOut bool) error {
+	if timedOut && execErr == nil {
+		return failExecution(qualityExecutionTimeout, context.DeadlineExceeded)
+	}
+	return execErr
+}
+
+func (e *CheckExecutor) renewExecutionLease(ctx context.Context, cancel context.CancelFunc, execution *commonExecution.TaskExecution, workerID string, done chan<- error) {
 	ticker := time.NewTicker(qualityWorkerLease / 3)
 	defer ticker.Stop()
 	for {
@@ -331,7 +423,7 @@ func (e *CheckExecutor) renewExecutionLease(ctx context.Context, cancel context.
 			done <- nil
 			return
 		case now := <-ticker.C:
-			if err := e.checkTaskRepo.RenewLease(ctx, execution.ExecutionID, int64(execution.TenantID), e.workerID, now.UTC().Add(qualityWorkerLease)); err != nil {
+			if err := e.checkTaskRepo.RenewLease(ctx, execution.ExecutionID, int64(execution.TenantID), workerID, now.UTC().Add(qualityWorkerLease)); err != nil {
 				if ctx.Err() != nil {
 					done <- nil
 					return
@@ -468,6 +560,29 @@ func snapshotRuleApplications(config commonModels.JSONMap) ([]models.RuleApplica
 		return nil, fmt.Errorf("decode execution rule snapshot: %w", err)
 	}
 	return applications, nil
+}
+
+const qualityExecutionConfigSchemaVersion = "addp.quality.execution-config/v1"
+
+func executionCheckTimeout(config commonModels.JSONMap) (time.Duration, error) {
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		return 0, fmt.Errorf("encode execution config: %w", err)
+	}
+	var snapshot struct {
+		SchemaVersion  string `json:"schema_version"`
+		CheckTimeoutMS int64  `json:"check_timeout_ms"`
+	}
+	if err := json.Unmarshal(encoded, &snapshot); err != nil {
+		return 0, fmt.Errorf("decode execution config: %w", err)
+	}
+	if snapshot.SchemaVersion != qualityExecutionConfigSchemaVersion {
+		return 0, fmt.Errorf("unsupported execution config version %q", snapshot.SchemaVersion)
+	}
+	if snapshot.CheckTimeoutMS <= 0 || snapshot.CheckTimeoutMS > int64(time.Duration(1<<63-1)/time.Millisecond) {
+		return 0, fmt.Errorf("invalid check_timeout_ms %d", snapshot.CheckTimeoutMS)
+	}
+	return time.Duration(snapshot.CheckTimeoutMS) * time.Millisecond, nil
 }
 
 func intPtr(v int) *int { return &v }

@@ -144,7 +144,7 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 bash scripts/dev/restart.sh -manager
 
 # 局部重启扩展服务
-bash scripts/dev/restart.sh -python-workflow
+bash scripts/dev/restart.sh -geopython-workflow
 bash scripts/dev/restart.sh -math-workflow
 bash scripts/dev/restart.sh -model3d-workflow
 bash scripts/dev/restart.sh -pointcloud-workflow
@@ -225,7 +225,7 @@ Transfer Backend (8083) + Transfer bounded Worker + Transfer continuous Worker +
   ↓
 Orchestrator Backend (8084)
   ↓
-Model3D / PointCloud / SuperMap / GeoPython Workflow Engines (按模块需要启动；全量启动包含 SuperMap)
+Model3D / PointCloud / SuperMap / GeoPython Workflows (按模块需要启动；全量启动包含 SuperMap)
   ↓
 Gateway (8000) - API 路由
   ↓

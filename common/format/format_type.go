@@ -32,6 +32,7 @@ const (
 	FormatHEIC  FormatType = "heic"
 
 	FormatSQLite   FormatType = "sqlite"
+	FormatAccess   FormatType = "access"
 	FormatUDBX     FormatType = "udbx"
 	FormatFileGDB  FormatType = "filegdb"
 	FormatPGeo     FormatType = "pgeo"

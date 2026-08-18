@@ -78,7 +78,7 @@ engines/docs/
 
 参考示例引擎实现：
 - **Math Workflow**: `/Users/pampa/code/addp/engines/math-workflow/` - 最简参考实现（约350行核心代码）
-- **GeoPython Workflow**: `/Users/pampa/code/addp/engines/python-workflow/` - 完整空间计算引擎
+- **GeoPython Workflow**: `/Users/pampa/code/addp/engines/geopython-workflow/` - 空间与数据处理工作流运行时
 - **Spark Workflow**: `/Users/pampa/code/addp/engines/spark-workflow/` - 分布式计算引擎
 
 Math Workflow 是参考实现，ADDP 开发环境可随 `-all` / `-develop` 自动启动服务，但启动时不自动注册到 System；需要使用时在 System 引擎管理中按扩展引擎手动注册。

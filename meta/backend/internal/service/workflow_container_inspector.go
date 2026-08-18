@@ -25,6 +25,60 @@ func NewWorkflowContainerInspector(engineService *EngineService) *WorkflowContai
 	return &WorkflowContainerInspector{engineService: engineService}
 }
 
+func (i *WorkflowContainerInspector) DetectFormat(
+	ctx context.Context,
+	source *commonModels.Engine,
+	tenantID uint,
+	physicalPath, candidateFormat, sourceLayout string,
+) (format.FormatType, error) {
+	if i == nil || i.engineService == nil || source == nil {
+		return format.FormatUnknown, fmt.Errorf("workflow format detector is not configured")
+	}
+	formatType := format.NormalizeFormat(candidateFormat)
+	factory, err := format.GetRuntimeFormatDetectorFactory(formatType)
+	if err != nil {
+		return format.FormatUnknown, err
+	}
+	runtime, runtimeProvider, runtimeConn, err := i.resolveRuntime(ctx, tenantID, factory.RequiredFormatDetectionOperators())
+	if err != nil {
+		return format.FormatUnknown, fmt.Errorf("resolve %s format detection runtime: %w", formatType, err)
+	}
+
+	kind := workflowaccess.KindFile
+	resourceType := resourcetree.TypeFile
+	if sourceLayout == format.LayoutWhole {
+		kind = workflowaccess.KindDirectory
+		resourceType = resourcetree.TypeDirectory
+	} else if strings.EqualFold(source.EngineType, "minio") || strings.EqualFold(source.EngineType, "s3") {
+		resourceType = resourcetree.TypeObject
+	}
+	locator := resourcetree.LocatorFromFullName(source.ID, source.EngineType, string(resourceType), physicalPath, nil)
+	if locator == nil {
+		return format.FormatUnknown, fmt.Errorf("cannot build %s detection source locator for %q", formatType, physicalPath)
+	}
+	workflowSource, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{
+		Engine: source, Locator: locator, Kind: kind, Format: string(formatType),
+	})
+	if err != nil {
+		return format.FormatUnknown, fmt.Errorf("resolve %s detection workflow access: %w", formatType, err)
+	}
+	plan, err := workflowaccess.NewSourcePlan(workflowSource)
+	if err != nil {
+		return format.FormatUnknown, err
+	}
+	detector, err := factory.BindFormatDetector(runtimeProvider, runtimeConn, plan)
+	if err != nil {
+		return format.FormatUnknown, err
+	}
+	detectCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	detected, err := detector.DetectFormat(detectCtx)
+	if err != nil {
+		return format.FormatUnknown, fmt.Errorf("detect %s format with runtime %d: %w", formatType, runtime.ID, err)
+	}
+	return detected, nil
+}
+
 func (i *WorkflowContainerInspector) InspectContainer(
 	ctx context.Context,
 	source *commonModels.Engine,

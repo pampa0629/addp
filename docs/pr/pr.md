@@ -14,7 +14,7 @@
 
 试了之后，一发不可收拾。
 
-五个月后，一个我自己命名为 **ADDP（全域数据平台）** 的系统从零长了出来：**14 个微服务模块、116 个前端页面、11 种存储和计算引擎支持**，后端用 Go，前端用 Vue3，PostgreSQL + Redis + MinIO + Meilisearch 做底座，还有 GeoPython 工作流引擎、Spark 分布式计算引擎和 Jupyter Notebook 集成。
+五个月后，一个我自己命名为 **ADDP（全域数据平台）** 的系统从零长了出来：**14 个微服务模块、116 个前端页面、11 种存储和计算引擎支持**，后端用 Go，前端用 Vue3，PostgreSQL + Redis + MinIO + Meilisearch 做底座，还有 GeoPython Workflow、Spark 分布式计算引擎和 Jupyter Notebook 集成。
 
 整个过程，我一行代码没写。
 

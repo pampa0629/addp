@@ -11,7 +11,7 @@ GeoPython Workflow 是 ADDP 的工作流运行时扩展引擎：
 - Provider：`WorkflowRuntimeProvider`
 - 运行时协议：`addp.workflow/v1`
 - 默认端口：`8099`
-- 代码目录：`engines/python-workflow`
+- 代码目录：`engines/geopython-workflow`
 
 业务模块不直接拼接 GeoPython Workflow 的 HTTP URL。Develop 等调用方通过 Common Engine 获取 `WorkflowRuntimeProvider`，由 provider 按统一协议调用运行时接口。
 
@@ -29,12 +29,14 @@ GeoPython Workflow 必须实现以下入口：
 
 工作流定义只支持标准 `workflow_def.tasks` 数组格式，且 `tasks` 必须非空。
 
-## 本地启动
+## 开发启动
 
-推荐使用项目统一开发脚本：
+GeoPython Workflow 固定由 Linux Docker runtime 承载，确保 GDAL、OpenFileGDB、PGeo、unixODBC 和 MDB Tools 使用同一套可复现依赖。macOS 宿主机不再维护第二套 venv 运行路径。
+
+使用项目统一开发脚本：
 
 ```bash
-bash scripts/dev/start.sh -python-workflow
+bash scripts/dev/start.sh -geopython-workflow
 ```
 
 服务启动后可验证：
@@ -44,26 +46,28 @@ curl http://localhost:8099/health
 curl http://localhost:8099/api/operators
 ```
 
-日志位置：
+容器内必须同时提供 `OpenFileGDB`、`PGeo` 和 `ODBC` 驱动。可用以下命令核对：
 
 ```bash
-tail -f logs/python-workflow-engine.log
-tail -f logs/python-workflow-engine-stderr.log
+docker exec geopython-workflow-engine python -c "from osgeo import gdal; print([bool(gdal.GetDriverByName(name)) for name in ('OpenFileGDB', 'PGeo', 'ODBC')])"
+docker logs -f geopython-workflow-engine
 ```
+
+开发脚本把 `business/nfs/data` 挂载到容器内相同绝对路径，并把数据库连接中的回环地址映射到 `host.docker.internal`，因此 Business NFS 暴露的物理路径在宿主机和 Runtime 内保持一致。
 
 ## 容器运行
 
-根目录 `docker-compose.yml` 中的服务名是 `python-workflow-engine`，构建上下文为 `./engines/python-workflow`。
+根目录 `docker-compose.yml` 中的服务名是 `geopython-workflow-engine`，构建上下文为 `./engines/geopython-workflow`。
 
 ```bash
-docker compose up -d python-workflow-engine
-docker compose logs -f python-workflow-engine
+docker compose up -d geopython-workflow-engine
+docker compose logs -f geopython-workflow-engine
 ```
 
 生产和本地容器脚本如需构建镜像，应使用当前服务与目录：
 
 ```bash
-bash scripts/build/build-images.sh --services python-workflow-engine
+bash scripts/build/build-images.sh --services geopython-workflow-engine
 ```
 
 ## System 自注册

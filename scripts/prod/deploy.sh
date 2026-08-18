@@ -140,7 +140,7 @@ if [ "$SKIP_PUSH" = false ]; then
         "develop-backend"
         "service-backend"
         "inference-backend"
-        "python-workflow-engine"
+        "geopython-workflow-engine"
         "model3d-workflow-engine"
         "pointcloud-workflow-engine"
         "supermap-workflow-engine"

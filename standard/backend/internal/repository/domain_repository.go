@@ -47,6 +47,10 @@ func (r *DomainRepository) Delete(id, tenantID int64) error {
 	return deleteInTransaction(r.db, &models.Domain{}, "id = ? AND tenant_id = ?", id, tenantID)
 }
 
+func (r *DomainRepository) DeleteTx(tx *gorm.DB, id, tenantID int64) error {
+	return requireAffectedRow(tx.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Domain{}))
+}
+
 func (r *DomainRepository) ExistsByCode(code string, tenantID int64, excludeID int64) (bool, error) {
 	var count int64
 	query := r.db.Model(&models.Domain{}).Where("code = ? AND tenant_id = ?", code, tenantID)

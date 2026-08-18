@@ -21,7 +21,7 @@ describe('new chat capability examples', () => {
 
     expect(hints).not.toMatch(/数据目录|数据源|搜索|预览|导入|Shapefile|SQL|发布|执行工作流/)
     expect(hints).toContain('工作流引擎')
-    expect(hints).toContain('GeoPython 工作流引擎')
+    expect(hints).toContain('GeoPython Workflow')
     expect(hints).toContain('Spark 工作流引擎')
     expect(hints).toContain('PointCloud 工作流引擎')
   })

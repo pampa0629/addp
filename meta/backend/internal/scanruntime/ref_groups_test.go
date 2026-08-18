@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
@@ -244,4 +245,77 @@ func TestFileScanRefGroupsPersistsSingleShapefileItem(t *testing.T) {
 		"shp/a5.sbn",
 		"shp/a5.sbx",
 	})
+}
+
+func TestFileScanRefGroupsPersistsFileGDBScopeItem(t *testing.T) {
+	sizeBytes := int64(12)
+	provider := filesystemScanTestProvider{
+		entriesByPath: map[string][]plugin.CatalogEntry{
+			"arcgis/pgeo_roundtrip.gdb": {
+				{
+					Name: "a00000001.gdbtable",
+					Path: plugin.FileItemPath(27, "arcgis/pgeo_roundtrip.gdb/a00000001.gdbtable"),
+					Term: plugin.CatalogTermFile,
+					Kind: plugin.CatalogKindFile,
+					Role: plugin.CatalogRoleLeaf,
+					Storage: &plugin.CatalogStorageFacts{
+						Path:      "arcgis/pgeo_roundtrip.gdb/a00000001.gdbtable",
+						SizeBytes: &sizeBytes,
+					},
+				},
+				{
+					Name: "a00000001.gdbtablx",
+					Path: plugin.FileItemPath(27, "arcgis/pgeo_roundtrip.gdb/a00000001.gdbtablx"),
+					Term: plugin.CatalogTermFile,
+					Kind: plugin.CatalogKindFile,
+					Role: plugin.CatalogRoleLeaf,
+					Storage: &plugin.CatalogStorageFacts{
+						Path:      "arcgis/pgeo_roundtrip.gdb/a00000001.gdbtablx",
+						SizeBytes: &sizeBytes,
+					},
+				},
+			},
+		},
+	}
+	pluginRegisterForTest(t, provider)
+
+	db := openObjectCatalogScanTestDB(t)
+	repo := metaRepo.NewScanRepository(db)
+	svc := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
+	resource := &commonModels.Engine{ID: 27, Name: "Files", EngineType: provider.Type()}
+
+	result, err := svc.ScanRefGroups(resource, 1, []models.ScanRefGroup{
+		{
+			Primary: "arcgis/pgeo_roundtrip.gdb",
+			Refs: []models.ScanRef{
+				{Path: "arcgis/pgeo_roundtrip.gdb", Role: "scope", Required: true},
+			},
+		},
+	}, models.ScannedDepthBasic, true, nil)
+	if err != nil {
+		t.Fatalf("ScanRefGroups() error = %v", err)
+	}
+	if result.Items != 1 {
+		t.Fatalf("items = %d, want one FileGDB item", result.Items)
+	}
+
+	item, ok, err := repo.FindItemByFullName(1, 27, "arcgis/pgeo_roundtrip.gdb")
+	if err != nil {
+		t.Fatalf("FindItemByFullName() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("FileGDB item not found")
+	}
+	if got := commonJSON.String(item.Attributes, "item", "layout"); got != "whole" {
+		t.Fatalf("item.layout = %q, want whole", got)
+	}
+	if got := commonJSON.String(item.Attributes, "item", "data_type"); got != "container" {
+		t.Fatalf("item.data_type = %q, want container", got)
+	}
+	if got := commonJSON.String(item.Attributes, "item", "format"); got != "filegdb" {
+		t.Fatalf("item.format = %q, want filegdb", got)
+	}
+	if got := commonJSON.String(item.Attributes, "item", "claim_policy"); got != "whole_scope" {
+		t.Fatalf("item.claim_policy = %q, want whole_scope", got)
+	}
 }

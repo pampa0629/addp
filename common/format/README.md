@@ -35,7 +35,7 @@
 | 格式身份 descriptor 与诊断快照 | `descriptor.go`、`discovery.go` | descriptor 注册、查询、冲突诊断和 `FormatCapabilitySnapshot`；内置格式定义由各 `plugins/<format>/Descriptor()` 维护。 |
 | 格式检测 | `detection.go`、`detection_mime.go`、`detection_magic.go` | 基于扩展名、MIME、magic bytes 和 descriptor 识别 format candidate，不决定 data item 边界；根包保留稳定 facade。 |
 | FormatPlugin、info provider、content reader 接口 | `provider.go` | 只定义格式层能力接口，不接 engine id，不返回 Manager DTO。 |
-| plugin 注册与动态能力查询 | `provider_registry.go`、`provider_register.go`、`provider_constructors.go`、`provider_views.go` | 注册当前进程已加载的 plugin；获取具体 provider / reader / writer 时对同一 plugin 做接口断言。 |
+| plugin 注册与动态能力查询 | `provider_registry.go`、`provider_register.go`、`provider_constructors.go`、`provider_views.go` | 注册当前进程已加载的 plugin；获取具体 detector / provider / reader / writer 时对同一 plugin 做接口断言。 |
 | data type 通用 info 模型 | `common/datatype` | `common/format` 只通过 provider 返回 `datatype.TableInfo`、`datatype.DocumentInfo`、`datatype.MediaInfo`、`datatype.ContainerInfo`、`datatype.Model3DInfo`、`datatype.PointCloudInfo`、`datatype.GaussianSplatInfo` 等通用事实，不再保留平行结构。内容样本不进入这些 info。 |
 | 格式私有 info 与横切事实候选 | `plugins/<format>/`，目标通过 describe result 或等价结构返回 | 具体格式私有结构留在对应插件目录；`SpatialInfo`、`AccessIndex`、`FormatInfo` 与 `TableInfo` / `Model3DInfo` / `PointCloudInfo` / `GaussianSplatInfo` 同级返回，由 Meta 映射到 `capabilities.*`、`access_index.*`、`format_info.*`。 |
 | 解析选项和 manifest | `options.go`、`manifest.go` | provider / reader 调用选项，以及第三方 descriptor manifest 加载。 |
@@ -104,7 +104,7 @@ func GuessContentType(filename string, peek []byte) string
 
 调用方已经持有一个可能来自用户输入、attributes 或插件返回的 format-like 字符串时，应先调用 `NormalizeFormat`，不能在上层维护扩展名映射表，也不能在识别失败时返回原始字符串。只有 `common/format` 能把扩展名、MIME、文件名或内容探测结果提升为 canonical format。
 
-Shapefile 这类 multi 格式需要特别区分：`.shp/.dbf/.shx` 的识别不等于 item 归并；归并属于 Meta item detector。
+Shapefile 这类 multi 格式需要特别区分：`.shp/.dbf/.shx` 的识别不等于 item 归并；归并属于 Meta item detector。同名 `.shp.xml` 是可选元数据 ref，只有周边存在可组成 Shapefile 的同名必需组件时才归入该 multi item；否则仍按独立 `format=xml` item 处理。
 
 ## Descriptor 与能力发现
 
@@ -143,7 +143,7 @@ hasWhole := format.HasLayout(descriptor.Layouts, format.LayoutWhole)
 
 `FormatDescriptor` 是格式静态事实，覆盖识别、默认 data type 和 layout。内置 descriptor 由 `common/format/plugins/<format>/` 中的 `Descriptor()` 维护；`FormatPlugin` 是格式包的代码入口。调用 `RegisterFormatPlugin` 会注册 plugin，若 plugin 实现 `FormatDescriptorProvider`，会校验 `Format()` 与 `Descriptor().Format` 一致并注册 descriptor。descriptor 可以先于完整 provider / reader 存在，但读写可执行性只由当前进程已注册 plugin 的接口实现决定。
 
-`Identification.FileNames` 只用于有稳定标准入口文件名的格式，例如 `mosaic.addp.json`。它不能替代内容校验；Meta 对 manifest 型 whole scope item 落库前仍应读取 manifest 内容确认 schema、`format`、`data_type` 和 `layout`。
+`Identification.FileNames` 只用于有稳定标准入口文件名的格式，例如 `mosaic.addp.json`。它不能替代内容校验；Meta 对 manifest 型 whole scope item 落库前仍应读取 manifest 内容确认 schema、`format`、`data_type` 和 `layout`。内容校验失败时，候选入口文件必须继续按自身基础格式参与 item 识别，例如非 OSGB Scene 清单的 `metadata.xml` 仍是独立 XML 文档。
 
 `Identification.RelativePaths` 用于入口 manifest 位于 whole scope 固定子目录的格式，例如 S3M 的 `config/scene.scp`。相对路径从 item scope 根计算并参与强命中；不要用 basename 匹配替代固定相对路径，否则同名文件可能错误认领整个目录。
 
@@ -199,6 +199,7 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 | Provider / Reader | Data type | 内容布局 | 输入 / 输出 | 核心能力 | 主要消费者 | 适合的 format |
 |---|---|---|---|---|---|---|
 | `FormatPlugin` | 任意 | 任意 | 无内容输入 | 声明格式身份；后续 provider / reader / writer 查询对同一 plugin 做接口断言。 | Meta、Manager、Transfer、能力发现 | 所有稳定 format |
+| `RuntimeFormatDetectorFactory` | 任意 | 通常 `single` | 已授权 Workflow Access Plan | 在受控 Runtime 中把弱识别基础格式精化为确定格式；不改变 item 边界。 | Meta 深度扫描 | `access` `.mdb` 候选精化为 `pgeo` |
 | `FormatInfoProvider` | 任意 | 通常 `single`，也可服务 `multi` / `whole` 的格式私有摘要 | `io.Reader` | 返回 `format_info.<format>` 候选事实，不写类型信息。 | Meta | CSV encoding、PDF 版本、图片 EXIF、压缩方式等 |
 | `TableInfoProvider` | `table` | `single` | `io.Reader` | 返回字段、行数等 table 类型信息；空间信息、访问索引和格式私有事实作为同级 describe result 候选事实返回。 | Meta、Manager 探查、Transfer 规划 | CSV、JSON/JSONL、Parquet 单文件 |
 | `TableSampleReader` | `table` | `single` | `io.Reader` | 按逻辑行窗口读取少量样本。 | Manager 预览、轻量探查 | CSV、JSON/JSONL、Parquet 单文件 |

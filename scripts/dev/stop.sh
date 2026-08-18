@@ -161,7 +161,7 @@ stop_services_concurrent() {
   pkill -9 -f "addp-.*-worker" 2>/dev/null || true
   # 清理前端和 Python 进程
   pkill -9 -f "vite" 2>/dev/null || true
-  pkill -9 -f "engines/python-workflow.*api_server.py" 2>/dev/null || true
+  pkill -9 -f "engines/geopython-workflow.*api_server.py" 2>/dev/null || true
   pkill -9 -f "engines/model3d-workflow.*api_server.py" 2>/dev/null || true
   pkill -9 -f "engines/pointcloud-workflow.*api_server.py" 2>/dev/null || true
   pkill -9 -f "engines/spark-workflow.*api_server.py" 2>/dev/null || true
@@ -171,6 +171,7 @@ stop_services_concurrent() {
   pkill -9 -f "agent/backend/main.py" 2>/dev/null || true
   pkill -9 -f "uvicorn main:app.*8087" 2>/dev/null || true
   docker rm -f pointcloud-workflow-engine >/dev/null 2>&1 || true
+  docker rm -f geopython-workflow-engine >/dev/null 2>&1 || true
   docker rm -f supermap-workflow-engine >/dev/null 2>&1 || true
 
   # Phase 6: 按端口清理残留进程（处理手动启动的进程）

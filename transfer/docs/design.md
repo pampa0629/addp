@@ -225,7 +225,7 @@ table Transfer 主链路已经稳定。后续增强包括：
 - Doris Stream Load。
 - ClickHouse 排序键 / 分区键 / 原生批量接口。
 - raw copy 端到端样例任务和更完整的执行展示。
-- container child table transfer。
+- container child table transfer 已进入主链路：容器 item 仍保持 `data_type=container`，任务端点以 `data_type=table` 加 `source.options.child_name` 选择已由 Meta 深扫确认的 child；不得把 child 展开为平行的 Meta item 或使用 provider 私有 layer/table 参数。
 
 continuous/Kafka 工作包 2A-2D 已完成第一版。业务 Kafka 主路径固定为：
 

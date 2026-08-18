@@ -27,7 +27,9 @@ from .base import OperatorCategory, OperatorMetadata, OperatorParam, OperatorTyp
 
 
 BATCH_PROTOCOL = "gdal.vector-batch/v1"
+DETECTION_SCHEMA = "gdal.vector-dataset.detect/v1"
 INSPECTION_SCHEMA = "gdal.vector-dataset.inspect/v1"
+DETECT_OPERATORS = ("vector_dataset.detect",)
 INSPECT_OPERATORS = ("vector_dataset.inspect",)
 READ_OPERATORS = (
     "vector_dataset.read_open",
@@ -42,6 +44,29 @@ WRITE_OPERATORS = (
 )
 
 gdal.UseExceptions()
+
+
+def detect(access_plan: dict[str, Any]) -> dict[str, Any]:
+    plan = require_source_plan({"access_plan": access_plan})
+    source = plan["source"]
+    if source.get("kind") != "file" or source.get("format") != "access":
+        raise ValueError("GDAL MDB detector requires an access file source")
+    _required_driver("PGeo", writable=False)
+    with tempfile.TemporaryDirectory(prefix="addp-gdal-vector-detect-") as temp_dir:
+        path = stage_source_file(plan, Path(temp_dir))
+        try:
+            dataset = gdal.OpenEx(str(path), gdal.OF_VECTOR, allowed_drivers=["PGeo"])
+        except RuntimeError:
+            dataset = None
+        detected_format = "pgeo" if dataset is not None else "access"
+        driver_name = dataset.GetDriver().GetDescription() if dataset is not None and dataset.GetDriver() else ""
+        dataset = None
+    return {
+        "schema_version": DETECTION_SCHEMA,
+        "candidate_format": "access",
+        "format": detected_format,
+        "evidence": {"driver": driver_name},
+    }
 
 
 def inspect(access_plan: dict[str, Any], child_limit: int = 100) -> dict[str, Any]:
@@ -136,19 +161,24 @@ def read_batch(
     with _opened_source(plan) as dataset:
         source_layer = _required_layer(dataset, layer)
         fields, spatial = _describe_layer(source_layer)
-        if source_layer.SetNextByIndex(offset) != ogr.OGRERR_NONE:
+        try:
+            seek_result = source_layer.SetNextByIndex(offset)
+        except RuntimeError:
+            seek_result = ogr.OGRERR_FAILURE
+        if seek_result != ogr.OGRERR_NONE:
             source_layer.ResetReading()
             for _ in range(offset):
                 if source_layer.GetNextFeature() is None:
                     return {"protocol": BATCH_PROTOCOL, "rows": []}
         geometry_field = spatial.get("primary_geometry_column")
+        fid_column = source_layer.GetFIDColumn()
         srid = spatial.get("srid") or 0
         rows: list[dict[str, Any]] = []
         for _ in range(limit):
             feature = source_layer.GetNextFeature()
             if feature is None:
                 break
-            rows.append(_feature_row(feature, fields, geometry_field, srid))
+            rows.append(_feature_row(feature, fields, geometry_field, srid, fid_column))
         return {"protocol": BATCH_PROTOCOL, "rows": rows}
 
 
@@ -191,8 +221,14 @@ def write_open(
         if target_layer is None:
             raise RuntimeError(f"create FileGDB layer failed: {layer_name}")
         geometry_field = primary_geometry.get("name")
+        fid_column = target_layer.GetFIDColumn()
         for field in fields:
-            if not isinstance(field, dict) or field.get("type") == "geometry" or field.get("name") == geometry_field:
+            if (
+                not isinstance(field, dict)
+                or field.get("type") == "geometry"
+                or field.get("name") == geometry_field
+                or _same_field_name(field.get("name"), fid_column)
+            ):
                 continue
             if target_layer.CreateField(_ogr_field_definition(field)) != ogr.OGRERR_NONE:
                 raise RuntimeError(f"create FileGDB field failed: {field.get('name')}")
@@ -231,7 +267,10 @@ def write_batch(
             if target_layer.CommitTransaction() != ogr.OGRERR_NONE:
                 raise RuntimeError("commit FileGDB batch transaction failed")
         except Exception:
-            target_layer.RollbackTransaction()
+            try:
+                target_layer.RollbackTransaction()
+            except RuntimeError:
+                pass
             raise
     finally:
         dataset = None
@@ -326,7 +365,24 @@ def _required_layer(dataset, name: str):
 
 def _describe_layer(layer) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     definition = layer.GetLayerDefn()
-    fields = [_field_info(definition.GetFieldDefn(index), index + 1) for index in range(definition.GetFieldCount())]
+    fields: list[dict[str, Any]] = []
+    fid_column = layer.GetFIDColumn()
+    if fid_column and all(
+        not _same_field_name(fid_column, definition.GetFieldDefn(index).GetName())
+        for index in range(definition.GetFieldCount())
+    ):
+        fid64 = layer.GetMetadataItem(ogr.OLMD_FID64) == "YES"
+        fields.append({
+            "name": fid_column,
+            "type": "bigint" if fid64 else "int",
+            "native_type": "FID64" if fid64 else "FID",
+            "nullable": False,
+            "ordinal_position": 1,
+        })
+    fields.extend(
+        _field_info(definition.GetFieldDefn(index), len(fields) + index + 1)
+        for index in range(definition.GetFieldCount())
+    )
     if ogr.GT_Flatten(definition.GetGeomType()) == ogr.wkbNone:
         return fields, {}
     geometry_name = layer.GetGeometryColumn() or "geometry"
@@ -406,11 +462,20 @@ def _addp_field_type(field_type: int, subtype: int) -> str:
     }.get(field_type, "string")
 
 
-def _feature_row(feature, fields: list[dict[str, Any]], geometry_field: str | None, srid: int) -> dict[str, Any]:
+def _feature_row(
+    feature,
+    fields: list[dict[str, Any]],
+    geometry_field: str | None,
+    srid: int,
+    fid_column: str | None = None,
+) -> dict[str, Any]:
     row: dict[str, Any] = {}
     for field in fields:
         name = field["name"]
         if field["type"] == "geometry":
+            continue
+        if _same_field_name(name, fid_column):
+            row[name] = feature.GetFID()
             continue
         index = feature.GetFieldIndex(name)
         if index < 0 or not feature.IsFieldSetAndNotNull(index):
@@ -442,12 +507,18 @@ def _ewkb(geometry, srid: int) -> bytes:
 def _append_feature(layer, row: dict[str, Any], fields: list[dict[str, Any]], geometry_field: str | None, srs) -> None:
     feature = ogr.Feature(layer.GetLayerDefn())
     try:
+        fid_column = layer.GetFIDColumn()
         for field in fields:
             name = field.get("name")
             if not name or field.get("type") == "geometry" or name == geometry_field:
                 continue
             value = row.get(name)
             if value is None:
+                continue
+            if _same_field_name(name, fid_column):
+                if isinstance(value, bool) or not isinstance(value, int):
+                    raise ValueError(f"FileGDB feature id {name} must be an integer")
+                feature.SetFID(value)
                 continue
             if field.get("type") in {"json", "array"} and not isinstance(value, str):
                 value = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
@@ -466,6 +537,10 @@ def _append_feature(layer, row: dict[str, Any], fields: list[dict[str, Any]], ge
             raise RuntimeError("append FileGDB feature failed")
     finally:
         feature = None
+
+
+def _same_field_name(left: Any, right: Any) -> bool:
+    return bool(left and right and str(left).casefold() == str(right).casefold())
 
 
 def _ogr_field_definition(field: dict[str, Any]):
@@ -631,7 +706,7 @@ def _metadata(name: str, effects: list[str], params: list[OperatorParam]) -> Ope
         effects=effects,
         overview="由 ADDP 格式 Provider 调用的 GDAL vector dataset 批处理算子。",
         params=params,
-        use_cases=["FileGDB child 读取", "FileGDB child 写出", "PGeo child 只读"],
+        use_cases=["MDB 格式识别", "FileGDB child 读取", "FileGDB child 写出", "PGeo child 只读"],
         notes=["仅供受控 direct 调用", "geometry 固定 EWKB", "Runtime 不解析 locator"],
         workflow_example={},
         attributes={"protocol": BATCH_PROTOCOL, "runtime_session": "stateless"},
@@ -646,6 +721,7 @@ _SPATIAL_PARAM = _param("spatial", "object", "ADDP SpatialInfo", required=False)
 
 
 OPERATORS = dict([
+    register_operator(_metadata(DETECT_OPERATORS[0], ["read"], [_ACCESS_PLAN_PARAM]), detect),
     register_operator(_metadata(INSPECT_OPERATORS[0], ["read"], [
         _ACCESS_PLAN_PARAM,
         _param("child_limit", "int", "最多返回的轻量 child 数量", required=False, default=100),

@@ -16,6 +16,7 @@ func TestDocumentFormatSnapshotsReflectBackendParsingBoundary(t *testing.T) {
 		{formatType: format.FormatPDF, wantInfo: true},
 		{formatType: format.FormatDOCX, wantInfo: true, wantTextReader: true},
 		{formatType: format.FormatPPTX, wantInfo: true, wantTextReader: true},
+		{formatType: format.FormatXML, wantInfo: true, wantTextReader: true},
 		{formatType: format.FormatWPS},
 	}
 
@@ -81,6 +82,23 @@ func TestDescriptorOnlyTableFormatsExposeMissingProviders(t *testing.T) {
 				t.Fatalf("%s should expose missing table providers until implemented: %#v", formatType, snapshot.Implementations)
 			}
 		})
+	}
+}
+
+func TestMDBWeakIdentityBelongsOnlyToAccess(t *testing.T) {
+	if detected := format.DetectFormat("source.mdb", nil); detected != format.FormatAccess {
+		t.Fatalf("DetectFormat(source.mdb) = %q, want access", detected)
+	}
+	access, ok := format.GetFormatCapabilitySnapshot(format.FormatAccess)
+	if !ok || !access.Implementations.RuntimeFormatDetector {
+		t.Fatalf("access capability snapshot = %#v, want runtime format detector", access)
+	}
+	pgeo, ok := format.GetFormatCapabilitySnapshot(format.FormatPGeo)
+	if !ok {
+		t.Fatal("expected PGeo capability snapshot")
+	}
+	if len(pgeo.Descriptor.Identification.Extensions) != 0 || len(pgeo.Descriptor.Identification.MimeTypes) != 0 {
+		t.Fatalf("PGeo weak identification = %#v, want none", pgeo.Descriptor.Identification)
 	}
 }
 

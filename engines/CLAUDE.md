@@ -10,7 +10,7 @@
 
 ```text
 engines/
-├── python-workflow/  # 空间工作流引擎，默认端口 8099
+├── geopython-workflow/  # GeoPython Workflow 运行时，默认端口 8099
 ├── spark-workflow/   # Spark 工作流引擎，默认端口 8098
 ├── math-workflow/    # 数学工作流参考实现，默认端口 8089，开发环境自动启动服务但需手动注册
 ├── model3d-workflow/ # 三维模型转换运行时，默认端口 8101，开发环境自动启动并自注册，需配置 MODEL3D_CONVERTER_BIN 指向可执行文件路径
@@ -21,7 +21,7 @@ engines/
 └── docs/             # 引擎 API 与设计文档
 ```
 
-端口以仓库根目录 `.env` 和 `scripts/dev/start.sh` 为准：`PYTHON_WORKFLOW_PORT`、`SPARK_WORKFLOW_PORT`、`MATH_WORKFLOW_PORT`、`MODEL3D_WORKFLOW_PORT`、`POINTCLOUD_WORKFLOW_PORT`、`SUPERMAP_WORKFLOW_PORT`、`JUPYTER_API_PORT`、`DUCKDB_RUNTIME_PORT`。
+端口以仓库根目录 `.env` 和 `scripts/dev/start.sh` 为准：`GEOPYTHON_WORKFLOW_PORT`、`SPARK_WORKFLOW_PORT`、`MATH_WORKFLOW_PORT`、`MODEL3D_WORKFLOW_PORT`、`POINTCLOUD_WORKFLOW_PORT`、`SUPERMAP_WORKFLOW_PORT`、`JUPYTER_API_PORT`、`DUCKDB_RUNTIME_PORT`。
 
 ## 开发规则
 
@@ -36,7 +36,7 @@ engines/
 ## 启动与验证
 
 ```bash
-bash scripts/dev/start.sh -python-workflow
+bash scripts/dev/start.sh -geopython-workflow
 bash scripts/dev/start.sh -spark-workflow
 bash scripts/dev/start.sh -math-workflow
 bash scripts/dev/start.sh -model3d-workflow

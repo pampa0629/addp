@@ -84,6 +84,18 @@ func main() {
 	dimHierarchyRepo := repository.NewDimensionHierarchyRepository(db)
 	tenantReferenceRepo := repository.NewTenantReferenceRepository(db)
 	standardReferenceDeletionSvc := service.NewStandardReferenceDeletionService(db, modelClient)
+	standardReferenceDeletionSvc.RegisterLocalDelete("domain", func(tx *gorm.DB, resourceID, tenantID int64) error {
+		return domainRepo.DeleteTx(tx, resourceID, tenantID)
+	})
+	standardReferenceDeletionSvc.RegisterLocalDelete("element", func(tx *gorm.DB, resourceID, tenantID int64) error {
+		return elementRepo.DeleteTx(tx, resourceID, tenantID)
+	})
+	standardReferenceDeletionSvc.RegisterLocalDelete("dimension_hierarchy", func(tx *gorm.DB, resourceID, tenantID int64) error {
+		return dimHierarchyRepo.DeleteTx(tx, resourceID, tenantID)
+	})
+	standardReferenceDeletionSvc.RegisterLocalDelete("metric", func(tx *gorm.DB, resourceID, tenantID int64) error {
+		return metricRepo.DeleteTx(tx, resourceID, tenantID)
+	})
 
 	// 初始化 MinIO 客户端（用于文档文件存储）
 	var minioClient *minio.Client
@@ -117,6 +129,8 @@ func main() {
 		log.Printf("Standard 资源回收执行方启动失败: %v", err)
 	}
 	defer cleanupSvc.Stop()
+	standardReferenceDeletionSvc.Start(context.Background())
+	defer standardReferenceDeletionSvc.Stop()
 
 	router := api.SetupRouter(
 		db,

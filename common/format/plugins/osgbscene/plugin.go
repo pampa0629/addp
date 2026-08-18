@@ -46,10 +46,6 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		Layouts:  []string{format.LayoutWhole},
 		Identification: format.FormatIdentification{
 			FileNames: []string{MetadataFileName},
-			MimeTypes: []string{
-				"application/xml",
-				"text/xml",
-			},
 		},
 	}
 }

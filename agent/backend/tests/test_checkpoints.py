@@ -22,7 +22,7 @@ class AgentCheckpointTests(unittest.TestCase):
                 "engines": [
                     {
                         "id": 20,
-                        "name": "GeoPython 工作流引擎",
+                        "name": "GeoPython Workflow",
                         "engine_type": "geopython_workflow",
                         "lifecycle_state": "active",
                         "connection_status": "online",
