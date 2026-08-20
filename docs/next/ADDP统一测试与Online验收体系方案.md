@@ -319,7 +319,8 @@ T5 按产品或运行时独立编排，例如 System IAM、CLI、Infra Kafka HA�
 
 ## 十、当前建议
 
-本文确认后，建议另开一个独立 AI 任务只实施“阶段 1：统一 Online runner”。这一阶段会同时修改根 `Makefile`、`scripts/test/`、Standard Online 测试和相关说明，边界清晰，适合独立验收。
+当前优先实施持续集成专题的首期平台门禁：开发者继续直接推送 `main`，GitHub Actions 在推送后、每日定时或手工触发时运行无外部服务的平台一致性检查和全仓 Go 测试。该流程不调用 `scripts/dev/restart.sh`，不接管本地开发服务，也不连接 ADDP 开发业务库。
 
-不建议新任务一次性实施阶段 1-4。全仓测试入口和 CI 矩阵涉及多个 owner，应该在首个 runner 稳定后逐模块迁移，避免用一轮大改制造新的双轨体系。
+首期使用 GitHub Hosted Runner，不要求独立测试环境。待确定性 CI 获得真实耗时和失败数据后，再推进本文“阶段 1：统一 Online runner”；届时 Online 验收必须使用专用测试部署、显式测试 Tenant 和构建身份，不能复用本地开发环境。
 
+不建议一次性实施全部测试层级。全仓测试入口和 CI 矩阵涉及多个 owner，应该按稳定入口逐步迁移，避免用一轮大改制造新的双轨体系。

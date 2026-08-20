@@ -1,0 +1,78 @@
+name: Platform CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "30 18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  platform-consistency:
+    name: Platform consistency
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.work
+          cache: false
+
+      - name: Check changed commits for whitespace errors
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$ADDP_CI_EVENT" == "pull_request" ]]; then
+            git diff --check "$ADDP_CI_PR_BASE...$ADDP_CI_HEAD"
+          elif [[ "$ADDP_CI_EVENT" == "push" && \
+                  -n "$ADDP_CI_BEFORE" && \
+                  "$ADDP_CI_BEFORE" != "0000000000000000000000000000000000000000" ]]; then
+            git diff --check "$ADDP_CI_BEFORE...$ADDP_CI_HEAD"
+          else
+            git show --check --format= "$ADDP_CI_HEAD"
+          fi
+
+      - name: Run platform consistency gate
+        run: make test-platform
+
+  go-tests:
+    name: Go workspace tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.work
+          cache-dependency-path: |
+            **/go.sum
+
+      - name: Run all tracked Go module tests
+        run: make test-go

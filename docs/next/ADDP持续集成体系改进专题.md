@@ -1,0 +1,216 @@
+# ADDP 持续集成体系改进专题
+
+> 状态：阶段 1 实施中。现状快照核实于 2026-08-20。本文记录当前 GitHub Actions 覆盖、主要缺口和后续实施路线。
+
+## 一、专题定位
+
+ADDP 已经具备较多本地测试、集成门禁和发布验证入口，但 GitHub Actions 只覆盖 IAM / CLI 与 Quality 的少数场景，尚未形成平台级持续集成体系。
+
+本专题负责回答：
+
+1. 哪些确定性门禁必须在每次 `main` 推送后执行。
+2. 如何把根 `Makefile` 与 `scripts/test/` 中已有的唯一测试入口接入 CI。
+3. 如何区分 PR 门禁、模块集成、Online 验收和发布认证。
+4. 如何通过变更路径选择、并发取消和缓存控制执行成本。
+5. 如何在不改变单人直接推送 `main` 的开发方式下及时反馈失败。
+
+当前阶段采用“推送后验证”而不是“合并前阻断”：开发者继续直接推送 `main`，CI 失败后由 GitHub 通知并由开发者修复；任何自动部署都必须等待前置检查成功。若未来需要阻止问题代码进入 `main`，再单独讨论 Pull Request 和 required checks，不在本专题首期引入。
+
+测试分层、数据隔离、Online Tenant、安全数据库和 T0-T5 定义以 [ADDP 统一测试与 Online 验收体系方案](ADDP统一测试与Online验收体系方案.md) 为准。本文不建立第二套测试分类，也不在 workflow YAML 中复制业务测试逻辑。
+
+## 二、当前 CI 事实
+
+阶段 1 实施前仓库只有三个 GitHub Actions workflow；本阶段新增 `.github/workflows/platform-ci.yml`。
+
+| Workflow | 触发方式 | Job / 执行入口 | 当前定位 |
+| --- | --- | --- | --- |
+| `.github/workflows/iam-cli-release-gates.yml` | 所有 PR；`main` push；`v*` Tag；手工触发 | macOS CLI wheel 产品门禁：`make test-common-python-cli-release`；System IAM PostgreSQL 15 门禁：`make test-system-iam-postgres`；Tag 发布 GitHub Release | T2 / T5 |
+| `.github/workflows/quality-frontend-smoke.yml` | 所有 PR；`main` push；手工触发 | Quality 路由测试、Playwright E2E、前端构建 | T3 |
+| `.github/workflows/quality-postgres-gate.yml` | 所有 PR；`main` push；手工触发 | `make test-quality-postgres`，使用独占 PostgreSQL 15 Service | T2 |
+| `.github/workflows/platform-ci.yml` | PR；`main` push；每日 02:30（北京时间）；手工触发 | `make test-platform`；`make test-go` | T0 / T1 |
+
+当前共同特征：
+
+- 三个 workflow 都设置了最小 `contents: read` 权限、超时和同 ref 并发取消。
+- GitHub Action 引用固定到不可变 commit digest。
+- PostgreSQL 门禁使用固定 PostgreSQL 15 镜像摘要和 disposable database。
+- 三个 workflow 均无 `paths` / `paths-ignore`，任意 PR 都会触发全部门禁。
+- 只有 CLI Tag 发布 Job 具有写权限，其余 Job 默认只读。
+
+## 三、当前依赖自动化
+
+`.github/renovate.json` 已配置 Renovate，但 Renovate 不属于 CI 门禁。当前只管理：
+
+- GitHub Actions action 版本与不可变摘要。
+- PostgreSQL 15 Service 镜像摘要。
+
+当前策略为每周一检查、至少等待发布七天、需要 Dependency Dashboard 人工批准、不自动合并，并使用 `renovate/` 分支前缀。Go、Python、npm 和 Dockerfile 依赖目前不在 Renovate 管理范围内。
+
+Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权限是否完整属于 GitHub 外部状态，正式开展本专题时必须在线核实，不能只根据配置文件推断。
+
+## 四、已存在但未接入 CI 的门禁
+
+根 `Makefile` 已经存在以下正式入口：
+
+| 入口 | 能力 | 测试层级 |
+| --- | --- | --- |
+| `make test-go` | 自动校验全部已跟踪 Go 模块均进入 `go.work`，逐模块执行 `go test ./...` | T1 |
+| `make test-authorization` | Permission Manifest、owner 常量、Tool Catalog、SQL seed 和 Swagger 路由覆盖报告 | T0 / T1 |
+| `make test-execution-fixtures` | 统一 execution 测试夹具约束 | T0 |
+| `make test-model-frontend` | Model 前端单元、E2E 和构建 | T1 / T3 |
+| `make test-agent-eval` | Agent 离线评测门禁 | T1 |
+| `make test-common-python` | common-python 全量测试 | T1 |
+| `make test-arcgis-open-formats` | Access / PGeo / Oracle Spatial 真实样本集成门禁 | T2 / T5，依赖专用环境 |
+| `make test-agent-eval-release` | Agent 在线证据发布门禁 | T5 |
+
+此外，`scripts/utils/check-deps-version.sh` 已改为：
+
+- 从 `docs/spec/addp技术栈规约.md` 读取 Go 依赖唯一目标版本。
+- 自动发现仓库内全部 `go.mod`。
+- 拒绝规约对同一 Go 模块声明多个目标版本。
+- 校验所有模块中的直接和间接规约依赖声明。
+
+该脚本当前未被任何 workflow 或根 `Makefile` 目标调用，因此依赖版本漂移仍只能靠人工执行发现。
+
+## 五、当前主要缺口
+
+### 5.1 平台级 T0 门禁正在接入
+
+当前任意模块都可能修改 `go.mod`、技术栈规约、Permission Manifest、Swagger 或执行夹具。本阶段通过 `make test-platform` 建立唯一的无外部服务平台入口，并在 `main` 推送后自动反馈；它不承诺在推送前阻止代码进入 `main`。
+
+### 5.2 全仓 Go T1 门禁正在接入
+
+`make test-go` 已经具备动态模块发现和 workspace 完整性校验，但尚未接入 CI。当前只有 System IAM 与 Quality 的专项测试进入 GitHub Actions，其他 Go 模块没有 PR 编译与单元测试保障。
+
+### 5.3 前端覆盖集中在 Quality
+
+Quality 具备路由、浏览器 Smoke 和构建门禁。Model 虽有正式本地入口，但未进入 CI；其余前端模块也没有统一登记和按变更路径选择机制。
+
+### 5.4 模块专项门禁无路径选择
+
+当前任何 PR 都会安装 Quality Chromium、运行 Quality E2E、启动两个 PostgreSQL Job 和运行 macOS CLI 门禁，即使改动与这些模块无关。随着门禁增加，这种全量触发方式不可持续。
+
+### 5.5 CI 与 GitHub 仓库策略没有仓库内闭环
+
+以下状态不在仓库中，当前尚未核实：
+
+- `main` 是否启用 Branch Protection 或 Ruleset。
+- 哪些 Job 是 required checks。
+- Actions 是否允许 fork PR、是否需要人工批准。
+- macOS Runner 与浏览器门禁的实际耗时和月度成本。
+- CI 失败通知、Artifact 保留和历史趋势是否满足需要。
+
+这些外部状态必须在专题实施前读取 GitHub 当前配置，并在实施记录中留下核实日期。
+
+## 六、目标边界
+
+### 6.1 Workflow 只负责编排
+
+业务测试和安全检查继续由根 `Makefile`、`scripts/test/` 与模块测试代码拥有。Workflow 只负责：
+
+- 触发条件与变更路径选择。
+- Runner、语言版本和 disposable Service 准备。
+- 调用唯一 Make / script 入口。
+- 超时、并发、Artifact 和 required check 名称。
+
+不得在 YAML 中复制 SQL、测试选择表达式、业务夹具或模块启动逻辑。
+
+### 6.2 平台门禁与模块门禁分开
+
+- 平台 T0 门禁对每次 `main` 推送、定时任务和手工任务执行，不按模块路径跳过。
+- Go T1、前端 T1 / T3、模块 T2 根据受影响路径选择。
+- T4 Online 验收只允许手工或夜间执行，不接管开发环境。
+- T5 发布认证由产品或 Runtime 独立编排，只在发布条件下执行。
+
+### 6.3 只保留一条正式路线
+
+新增统一 workflow 或入口时，必须同步迁移、合并或删除被替代的旧 workflow。不得长期保留“旧专项 workflow + 新矩阵 workflow”两套重复门禁。
+
+## 七、目标 CI 结构
+
+目标结构应按职责收敛为四类，而不是按每个模块无限新增 workflow：
+
+| 类别 | 默认触发 | 内容 |
+| --- | --- | --- |
+| 平台一致性门禁 | `main` push、每日定时、手工 | 依赖版本、变更空白错误、execution fixture、Permission / Swagger 等 T0 检查 |
+| 确定性测试矩阵 | `main` push、每日定时、手工 | Go workspace T1、Python T1、按模块选择的前端 T1 / T3 |
+| 模块集成矩阵 | 相关路径 PR、`main` push、手工 | PostgreSQL、Redis、MinIO 等 disposable T2 门禁 |
+| Online / Release | 夜间、手工或 Tag | T4 专用测试部署验收；T5 产品发布认证 |
+
+具体 workflow 文件名、Job 拆分和矩阵生成方式在实施阶段确认；确认后只能保留一套正式结构。
+
+## 八、分阶段实施路线
+
+### 阶段 0：现状记录
+
+- [x] 盘点现有三个 GitHub Actions workflow。
+- [x] 盘点 Renovate 当前范围。
+- [x] 识别根 Makefile 中尚未接入 CI 的正式测试入口。
+- [x] 记录依赖版本检查脚本尚未接入 CI。
+
+### 阶段 1：平台一致性门禁
+
+- [x] 新增唯一平台 T0 workflow。
+- [x] 通过根 `make test-platform` 接入 `bash scripts/utils/check-deps-version.sh`。
+- [ ] 对 PR base 与 HEAD 的提交差异执行 `git diff --check <base>...HEAD`；不能在干净 checkout 上运行无范围的 `git diff --check` 冒充有效检查。
+- [x] 通过 `make test-platform` 接入 `make test-execution-fixtures`。
+- [x] 首期完整调用现有 `make test-authorization`，不在 workflow 中拆分或复制其内部命令；根据真实耗时再决定是否重构 owner 入口。
+- [x] 保持只读权限，不配置 required check；当前采用直接推送 `main` 后反馈失败的开发方式。
+
+### 阶段 2：全仓确定性测试
+
+- [x] 接入 `make test-go`，保持动态模块发现，不维护手写模块列表。
+- [ ] 接入 `make test-common-python` 和 Agent 离线评测。
+- [ ] 建立前端模块登记和变更路径选择，先迁入已有 `make test-model-frontend`。
+- [ ] 统一缓存键、超时和测试报告格式。
+- [ ] 明确哪些 T1 Job 是 required checks。
+
+### 阶段 3：模块集成矩阵
+
+- [ ] 将 System IAM、Quality PostgreSQL 纳入统一的 T2 结构。
+- [ ] 为 T2 建立模块 owner、所需 Service、数据库安全检查和 path mapping。
+- [ ] 迁移完成后删除被统一结构替代的独立 workflow。
+- [ ] 保证未命中相关路径时显示可解释的跳过结果，不影响 required check 稳定性。
+
+### 阶段 4：Online 与发布门禁
+
+- [ ] 按统一测试方案建立手工 / 夜间 T4 workflow。
+- [ ] 使用专用测试部署、显式测试 Tenant 和构建身份校验。
+- [ ] 保留 CLI 等产品级 T5 门禁，但统一调用、报告和 Artifact 规则。
+- [ ] 核实 Tag、GitHub Release、Artifact Attestation 与仓库 Ruleset 的闭环。
+
+### 阶段 5：规范化与清理
+
+- [ ] 更新 `docs/spec/` 中稳定下来的 CI 规则。
+- [ ] 更新根 README、开发步骤、模块验证说明和 GitHub required checks 清单。
+- [ ] 删除迁移期 workflow、兼容入口和重复说明。
+- [ ] 本专题只保留实施历史和尚未完成事项；全部完成后归档或删除。
+
+## 九、阶段 1 验收标准
+
+首期平台一致性门禁完成时至少满足：
+
+1. 任意 PR 修改技术栈规约或任一 `go.mod` 后都会执行依赖一致性检查。
+2. 规约版本与模块声明不一致时 Job 必须失败，并明确输出依赖、期望版本、实际版本和模块路径。
+3. 新增 Go 模块无需修改 workflow 或检查脚本即可被发现。
+4. 同一依赖在规约中声明多个目标版本时 Job 必须失败。
+5. PR 提交范围中的空白错误能被真实检测，不能因干净 checkout 而永远通过。
+6. Job 只需要仓库只读权限，不使用 Secret，不连接开发或生产服务。
+7. Job 名称稳定；当前不配置 required check，失败通过 GitHub Actions 通知开发者修复。
+8. 本地命令与 CI 调用完全一致，失败可以在本地复现。
+
+## 十、实施前必须核实的外部状态
+
+开始编码前，先通过 GitHub 当前配置核实：
+
+1. Repository Ruleset / Branch Protection 现状；当前不依赖 required checks。
+2. GitHub Actions 默认权限、fork PR 策略和手工批准策略。
+3. 最近至少 30 次 workflow 的耗时、失败原因和 Runner 成本。
+4. Renovate App 安装状态、Dependency Dashboard 和实际更新记录。
+5. 是否需要自托管 Runner；没有明确资源或安全价值时，默认继续使用 GitHub Hosted Runner。
+
+## 十一、建议的首次开展范围
+
+首次实施开展“阶段 1：平台一致性门禁”，并同时接入已有的全仓 Go 确定性测试；不重构现有 IAM、Quality 和 Release workflow。
+
+阶段 1 稳定后，再根据真实耗时与失败数据设计 Python、前端和模块集成矩阵。首期使用 GitHub Hosted Runner，不接入个人 macOS 机器；该机器仅作为未来 macOS Keychain、CLI 生命周期等必须依赖真实 macOS 能力的候选 self-hosted Runner。

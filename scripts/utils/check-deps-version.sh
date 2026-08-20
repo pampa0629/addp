@@ -1,83 +1,108 @@
 #!/usr/bin/env bash
+# check-deps-version.sh - 根据技术栈规约验证全部 Go 模块的依赖版本
+#
+# 功能:
+#   1. 从 docs/spec/addp技术栈规约.md 读取唯一目标版本
+#   2. 自动发现仓库内全部 go.mod 并校验其中的规约依赖声明
+#
+# 用法: bash scripts/utils/check-deps-version.sh
 
-set -e
+set -euo pipefail
 
-echo "🔍 检查ADDP所有模块的依赖版本一致性..."
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+PROJECT_ROOT=$(cd "$SCRIPT_DIR/../.." && pwd)
+SPEC_FILE="$PROJECT_ROOT/docs/spec/addp技术栈规约.md"
+
+cd "$PROJECT_ROOT"
+
+echo "🔍 检查 ADDP 所有 Go 模块的依赖版本一致性..."
+echo "规约事实源: ${SPEC_FILE#$PROJECT_ROOT/}"
 echo ""
 
-# 定义需要检查的关键依赖及其期望版本（使用函数而非关联数组）
-get_expected_version() {
-    case "$1" in
-        "github.com/gin-gonic/gin") echo "v1.11.0" ;;
-        "gorm.io/gorm") echo "v1.31.1" ;;
-        "github.com/golang-jwt/jwt/v5") echo "v5.3.0" ;;
-        "github.com/redis/go-redis/v9") echo "v9.17.2" ;;
-        "github.com/minio/minio-go/v7") echo "v7.0.95" ;;
-        "github.com/go-sql-driver/mysql") echo "v1.9.3" ;;
-        "github.com/hibiken/asynq") echo "v0.25.1" ;;
-        "github.com/jackc/pgx/v5") echo "v5.7.2" ;;
-        "github.com/twpayne/go-geom") echo "v1.6.1" ;;
-        *) echo "" ;;
-    esac
-}
-
-# 依赖列表
-DEPENDENCIES=(
-    "github.com/gin-gonic/gin"
-    "gorm.io/gorm"
-    "github.com/golang-jwt/jwt/v5"
-    "github.com/redis/go-redis/v9"
-    "github.com/minio/minio-go/v7"
-    "github.com/go-sql-driver/mysql"
-    "github.com/hibiken/asynq"
-    "github.com/jackc/pgx/v5"
-    "github.com/twpayne/go-geom"
-)
-
-# 模块列表
-MODULES=(
-    "common"
-    "system/backend"
-    "manager/backend"
-    "meta/backend"
-    "transfer/backend"
-    "orchestrator/backend"
-    "develop/backend"
-    "gateway"
-)
-
-INCONSISTENT=0
-
-# 检查每个模块
-for module in "${MODULES[@]}"; do
-    if [ ! -f "$module/go.mod" ]; then
-        echo "⚠️  $module: go.mod not found"
-        continue
-    fi
-
-    echo "📦 检查模块: $module"
-
-    # 检查每个关键依赖
-    for dep in "${DEPENDENCIES[@]}"; do
-        expected=$(get_expected_version "$dep")
-        actual=$(grep "$dep" "$module/go.mod" | grep -v "// indirect" | awk '{print $2}' | head -1)
-
-        if [ -n "$actual" ]; then
-            if [ "$actual" != "$expected" ]; then
-                echo "  ❌ $dep: 期望 $expected, 实际 $actual"
-                INCONSISTENT=1
-            else
-                echo "  ✅ $dep: $actual"
-            fi
-        fi
-    done
-    echo ""
-done
-
-if [ $INCONSISTENT -eq 0 ]; then
-    echo "✨ 所有模块依赖版本一致！"
-    exit 0
-else
-    echo "⚠️  发现版本不一致，请运行 bash scripts/dev/upgrade-deps.sh 统一版本"
+if ! command -v rg >/dev/null 2>&1; then
+    echo "❌ 缺少 ripgrep (rg)，无法发现全部 go.mod"
     exit 1
 fi
+
+if [ ! -f "$SPEC_FILE" ]; then
+    echo "❌ 技术栈规约不存在: $SPEC_FILE"
+    exit 1
+fi
+
+SPEC_REFS=$(
+    grep -oE '`[[:alnum:]._-]+/[[:alnum:]_.~/-]+@v[^`[:space:]]+`' "$SPEC_FILE" \
+        | tr -d '`' \
+        | sort -u \
+        || true
+)
+
+if [ -z "$SPEC_REFS" ]; then
+    echo "❌ 技术栈规约中未找到 Go 依赖版本声明"
+    exit 1
+fi
+
+MODULE_FILES=$(rg --files -g 'go.mod' | sort)
+if [ -z "$MODULE_FILES" ]; then
+    echo "❌ 仓库中未找到 go.mod"
+    exit 1
+fi
+
+INVALID_SPEC=0
+PREVIOUS_DEP=""
+PREVIOUS_VERSION=""
+while IFS= read -r ref; do
+    dep=${ref%@*}
+    version=${ref##*@}
+    if [ "$dep" = "$PREVIOUS_DEP" ] && [ "$version" != "$PREVIOUS_VERSION" ]; then
+        echo "❌ 规约中同一依赖存在多个目标版本: $dep ($PREVIOUS_VERSION, $version)"
+        INVALID_SPEC=1
+    fi
+    PREVIOUS_DEP=$dep
+    PREVIOUS_VERSION=$version
+done <<< "$SPEC_REFS"
+
+if [ "$INVALID_SPEC" -ne 0 ]; then
+    exit 1
+fi
+
+INCONSISTENT=0
+CHECKED_DEPENDENCIES=0
+CHECKED_DECLARATIONS=0
+
+while IFS= read -r ref; do
+    dep=${ref%@*}
+    expected=${ref##*@}
+    dependency_declarations=0
+    dependency_inconsistent=0
+
+    while IFS= read -r mod; do
+        actual=$(awk -v dep="$dep" '$1 == dep { print $2; exit }' "$mod")
+        if [ -z "$actual" ]; then
+            continue
+        fi
+
+        dependency_declarations=$((dependency_declarations + 1))
+        CHECKED_DECLARATIONS=$((CHECKED_DECLARATIONS + 1))
+        if [ "$actual" != "$expected" ]; then
+            echo "  ❌ $dep: 规约 $expected，$mod 声明 $actual"
+            dependency_inconsistent=1
+            INCONSISTENT=1
+        fi
+    done <<< "$MODULE_FILES"
+
+    if [ "$dependency_declarations" -gt 0 ]; then
+        CHECKED_DEPENDENCIES=$((CHECKED_DEPENDENCIES + 1))
+        if [ "$dependency_inconsistent" -eq 0 ]; then
+            echo "  ✅ $dep: $expected ($dependency_declarations 个模块声明)"
+        fi
+    fi
+done <<< "$SPEC_REFS"
+
+echo ""
+if [ "$INCONSISTENT" -eq 0 ]; then
+    echo "✨ 检查通过：$CHECKED_DEPENDENCIES 个规约依赖，$CHECKED_DECLARATIONS 处 go.mod 声明。"
+    exit 0
+fi
+
+echo "⚠️  检查失败：请先修订技术栈规约确定唯一目标版本，再统一各模块 go.mod。"
+exit 1

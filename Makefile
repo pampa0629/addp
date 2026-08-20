@@ -1,4 +1,4 @@
-.PHONY: help init dev build up down logs clean test test-go test-model-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-arcgis-open-formats dev-all \
+.PHONY: help init dev build up down logs clean test test-platform test-go test-model-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-arcgis-open-formats dev-all \
         build-backend build-frontend build-debug build-release build-iam-bootstrap build-iam-recovery clean-dist \
         infra-up infra-down infra-restart infra-status ports-validate
 
@@ -454,6 +454,11 @@ test-arcgis-open-formats: ## 使用真实 Access/PGeo 样本和 Oracle Spatial �
 
 test-execution-fixtures: ## 校验统一执行存储测试夹具
 	@bash scripts/test/check-execution-test-fixtures.sh
+
+test-platform: ## 运行无外部服务依赖的平台一致性门禁
+	@bash scripts/utils/check-deps-version.sh
+	@$(MAKE) test-execution-fixtures
+	@$(MAKE) test-authorization
 
 test-model-frontend: ## 运行 Model 前端状态、交互与浏览器回归测试
 	@cd model/frontend && npm test
