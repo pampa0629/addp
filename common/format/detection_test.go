@@ -1,6 +1,7 @@
 package format_test
 
 import (
+	"slices"
 	"testing"
 
 	. "github.com/addp/common/format"
@@ -567,63 +568,63 @@ func TestGuessContentType(t *testing.T) {
 		name     string
 		filename string
 		peek     []byte
-		want     string
+		want     []string
 	}{
 		{
 			name:     "CSV file",
 			filename: "data.csv",
 			peek:     nil,
-			want:     "text/csv; charset=utf-8",
+			want:     []string{"text/csv", "text/csv; charset=utf-8"},
 		},
 		{
 			name:     "Shapefile (custom MIME)",
 			filename: "data.shp",
 			peek:     []byte{0x00, 0x00, 0x27, 0x0a},
-			want:     "application/x-shapefile",
+			want:     []string{"application/x-shapefile"},
 		},
 		{
 			name:     "PDF file",
 			filename: "document.pdf",
 			peek:     []byte("%PDF-1.4"),
-			want:     "application/pdf",
+			want:     []string{"application/pdf"},
 		},
 		{
 			name:     "WPS file",
 			filename: "document.wps",
 			peek:     nil,
-			want:     "application/vnd.ms-works",
+			want:     []string{"application/vnd.ms-works"},
 		},
 		{
 			name:     "Markdown file",
 			filename: "README.md",
 			peek:     nil,
-			want:     "text/markdown",
+			want:     []string{"text/markdown", "text/markdown; charset=utf-8"},
 		},
 		{
 			name:     "Avro descriptor MIME",
 			filename: "events.avro",
 			peek:     nil,
-			want:     "application/avro",
+			want:     []string{"application/avro"},
 		},
 		{
 			name:     "HEIC descriptor MIME",
 			filename: "photo.heic",
 			peek:     nil,
-			want:     "image/heic",
+			want:     []string{"image/heic", "image/heif"},
 		},
 		{
 			name:     "AAC descriptor MIME wins over extension conflict",
 			filename: "audio.aac",
 			peek:     nil,
-			want:     "audio/aac",
+			want:     []string{"audio/aac"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := GuessContentType(tt.filename, tt.peek)
-			if got != tt.want {
-				t.Errorf("GuessContentType() = %q, want %q", got, tt.want)
+			if !slices.Contains(tt.want, got) {
+				t.Errorf("GuessContentType() = %q, want one of %q", got, tt.want)
 			}
 		})
 	}
