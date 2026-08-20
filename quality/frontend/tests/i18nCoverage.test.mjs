@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import test from 'node:test'
 
-const sourceFiles = execFileSync('rg', ['--files', 'src'], { encoding: 'utf8' })
-  .trim()
-  .split('\n')
-  .filter(Boolean)
+const listFiles = directory => readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+  const path = join(directory, entry.name)
+  return entry.isDirectory() ? listFiles(path) : [path]
+})
+
+const sourceFiles = listFiles('src')
 
 const usedKeys = new Set()
 for (const file of sourceFiles) {
