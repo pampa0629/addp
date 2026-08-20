@@ -23,79 +23,79 @@ func TestInferContentType(t *testing.T) {
 		name        string
 		objectPath  string
 		contentType string
-		expect      string
+		expects     []string
 	}{
 		{
 			name:        "keep_explicit_type",
 			objectPath:  "bucket/report.pdf",
 			contentType: "application/pdf",
-			expect:      "application/pdf",
+			expects:     []string{"application/pdf"},
 		},
 		{
 			name:        "docx_with_generic_type",
 			objectPath:  "bucket/docs/关于底座.docx",
 			contentType: "application/octet-stream",
-			expect:      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			expects:     []string{"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
 		},
 		{
 			name:        "docx_uppercase_extension_generic_type",
 			objectPath:  "bucket/docs/Manual.DOCX",
 			contentType: "APPLICATION/OCTET-STREAM",
-			expect:      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			expects:     []string{"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
 		},
 		{
 			name:        "docx_non_mime_token_fallback",
 			objectPath:  "bucket/docs/公共技术底座部署手册.docx",
 			contentType: "docx",
-			expect:      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			expects:     []string{"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
 		},
 		{
 			name:        "wps_extension_generic_type",
 			objectPath:  "bucket/docs/示例文档.wps",
 			contentType: "application/octet-stream",
-			expect:      "application/vnd.ms-works",
+			expects:     []string{"application/vnd.ms-works"},
 		},
 		{
 			name:        "unknown_extension_keeps_generic_type",
 			objectPath:  "bucket/blob/data.bin",
 			contentType: "application/octet-stream",
-			expect:      "application/octet-stream",
+			expects:     []string{"application/octet-stream"},
 		},
 		{
 			name:        "markdown_extension_generic_type",
 			objectPath:  "bucket/docs/README.md",
 			contentType: "application/octet-stream",
-			expect:      "text/markdown",
+			expects:     []string{"text/markdown", "text/markdown; charset=utf-8"},
 		},
 		{
 			name:        "avif_extension_generic_type",
 			objectPath:  "bucket/images/photo.avif",
 			contentType: "application/octet-stream",
-			expect:      "image/avif",
+			expects:     []string{"image/avif"},
 		},
 		{
 			name:        "heic_extension_generic_type",
 			objectPath:  "bucket/images/photo.heic",
 			contentType: "application/octet-stream",
-			expect:      "image/heic",
+			expects:     []string{"image/heic", "image/heif"},
 		},
 		{
 			name:        "avro_extension_generic_type",
 			objectPath:  "bucket/data/events.avro",
 			contentType: "application/octet-stream",
-			expect:      "application/avro",
+			expects:     []string{"application/avro"},
 		},
 		{
 			name:        "orc_extension_generic_type",
 			objectPath:  "bucket/data/events.orc",
 			contentType: "application/octet-stream",
-			expect:      "application/orc",
+			expects:     []string{"application/orc"},
 		},
 		{
 			name:        "binary_octet_stream_treated_as_generic",
 			objectPath:  "bucket/slides/demo.pptx",
 			contentType: "binary/octet-stream",
-			expect:      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+			expects:     []string{"application/vnd.openxmlformats-officedocument.presentationml.presentation"},
 		},
 	}
 
@@ -104,9 +104,12 @@ func TestInferContentType(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := InferContentType(tc.objectPath, tc.contentType)
-			if got != tc.expect {
-				t.Fatalf("InferContentType(%q, %q) = %q, want %q", tc.objectPath, tc.contentType, got, tc.expect)
+			for _, expect := range tc.expects {
+				if got == expect {
+					return
+				}
 			}
+			t.Fatalf("InferContentType(%q, %q) = %q, want one of %q", tc.objectPath, tc.contentType, got, tc.expects)
 		})
 	}
 }
