@@ -441,7 +441,7 @@ scripts/test/
 
 平台无外部服务的一致性门禁使用 `make test-platform`，依次校验技术栈规约与全部 `go.mod` 的依赖版本、统一 execution 测试夹具、IAM Manifest、owner 常量、Tool Catalog、SQL seed 和 Swagger 路由覆盖。该入口不启动或重启 ADDP 服务，不连接开发数据库；GitHub Actions 的 Platform CI 在 `main` 推送、每日定时和手工触发时直接调用该入口。
 
-Go 全量测试使用 `make test-go`，先校验根目录 `go.work` 与 Git 已跟踪的 `go.mod` 完全一致，再逐一运行 `go test ./...`，不维护第二份模块清单。`make test-execution-fixtures` 禁止业务测试手写 `task_executions` 表；Common 仓储自测、System PostgreSQL 专项测试及 Manager 历史表清理测试使用精确文件白名单。Model 的权限错误、URL 状态、ER 图过滤、DDL 请求和主题 token 回归使用 `make test-model-frontend`；该入口同时运行独立端口上的浏览器 E2E，覆盖 403 明确提示、业务域详情往返恢复和窄窗口深色 DDL 预览，并执行生产构建与 500 KiB 入口分块预算校验。三项均已纳入根目录 `make test`。
+Go 全量测试使用 `make test-go`，根据 Git 已跟踪的全部 `go.mod` 在系统临时目录生成独立 workspace，再逐一运行 `go test ./...`，不依赖或修改本地被忽略的 `go.work`，也不维护第二份模块清单。`make test-execution-fixtures` 禁止业务测试手写 `task_executions` 表；Common 仓储自测、System PostgreSQL 专项测试及 Manager 历史表清理测试使用精确文件白名单。Model 的权限错误、URL 状态、ER 图过滤、DDL 请求和主题 token 回归使用 `make test-model-frontend`；该入口同时运行独立端口上的浏览器 E2E，覆盖 403 明确提示、业务域详情往返恢复和窄窗口深色 DDL 预览，并执行生产构建与 500 KiB 入口分块预算校验。三项均已纳入根目录 `make test`。
 
 Agent 默认离线门禁使用 `make test-agent-eval`，并已包含在根 `make test`。该门禁分别使用 `agent/backend/venv` 运行 Agent 测试、使用 `common-python/.venv` 运行 Common-Python 全量测试；缺少后者时先执行 `cd common-python && uv sync --extra dev`。人工发布验收使用 `make test-agent-eval-release`，需要显式提供三份仓库外在线证据路径；脚本不自动执行 OAuth 登录或生成在线证据。输出统一为仓库外 `addp.agent-evaluation-gate/v2`，外部发布流程可归档其中的源码版本、契约/证据摘要和检查耗时，脚本自身不维护历史记录。
 

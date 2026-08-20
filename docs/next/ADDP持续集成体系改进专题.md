@@ -54,7 +54,7 @@ Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权�
 
 | 入口 | 能力 | 测试层级 |
 | --- | --- | --- |
-| `make test-go` | 自动校验全部已跟踪 Go 模块均进入 `go.work`，逐模块执行 `go test ./...` | T1 |
+| `make test-go` | 根据全部已跟踪 `go.mod` 生成临时 workspace，逐模块执行 `go test ./...`，不依赖本地被忽略的 `go.work` | T1 |
 | `make test-authorization` | Permission Manifest、owner 常量、Tool Catalog、SQL seed 和 Swagger 路由覆盖报告 | T0 / T1 |
 | `make test-execution-fixtures` | 统一 execution 测试夹具约束 | T0 |
 | `make test-model-frontend` | Model 前端单元、E2E 和构建 | T1 / T3 |
@@ -80,7 +80,7 @@ Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权�
 
 ### 5.2 全仓 Go T1 门禁正在接入
 
-`make test-go` 已经具备动态模块发现和 workspace 完整性校验，但尚未接入 CI。当前只有 System IAM 与 Quality 的专项测试进入 GitHub Actions，其他 Go 模块没有 PR 编译与单元测试保障。
+`make test-go` 已经具备动态模块发现和临时 workspace 生成，并已接入 CI。它不读取或修改本地被忽略的 `go.work`；其他语言和前端模块仍待后续接入。
 
 ### 5.3 前端覆盖集中在 Quality
 

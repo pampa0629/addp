@@ -465,23 +465,20 @@ test-model-frontend: ## 运行 Model 前端状态、交互与浏览器回归测�
 	@cd model/frontend && npm run test:e2e
 	@cd model/frontend && npm run build
 
-test-go: ## 运行 go.work 中全部 Go 模块测试
+test-go: ## 使用临时 workspace 运行全部已跟踪 Go 模块测试
 	@set -e; \
-	workspace_modules="$$(go list -m -f '{{.Dir}}')"; \
-	for module in $$(git ls-files -- 'go.mod' '**/go.mod' | sed 's#/go.mod$$##; s#^go.mod$$#.#'); do \
-		if ! printf '%s\n' "$$workspace_modules" | grep -Fxq "$(CURDIR)/$$module"; then \
-			echo "$(RED)Go 模块未加入 go.work: $$module$(NC)" >&2; \
-			exit 1; \
-		fi; \
-	done; \
-	for module_dir in $$workspace_modules; do \
-		module=$${module_dir#$(CURDIR)/}; \
-		if [ "$$module" = "$$module_dir" ] || ! git ls-files --error-unmatch "$$module/go.mod" >/dev/null 2>&1; then \
-			echo "$(RED)go.work 引用了仓库外或未跟踪模块: $$module_dir$(NC)" >&2; \
-			exit 1; \
-		fi; \
+	workspace_dir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$workspace_dir"' EXIT; \
+	workspace_file="$$workspace_dir/go.work"; \
+	modules="$$(git ls-files -- 'go.mod' '**/go.mod' | sed 's#/go.mod$$##; s#^go.mod$$#.#')"; \
+	if [ -z "$$modules" ]; then \
+		echo "$(RED)仓库中没有已跟踪的 Go 模块$(NC)" >&2; \
+		exit 1; \
+	fi; \
+	GOWORK="$$workspace_file" go work init $$(printf '%s\n' "$$modules" | sed "s#^#$(CURDIR)/#"); \
+	for module in $$modules; do \
 		echo "$(GREEN)运行 $$module 测试...$(NC)"; \
-		(cd "$$module_dir" && go test ./...); \
+		(cd "$$module" && GOWORK="$$workspace_file" go test ./...); \
 	done
 
 compare-agent-eval: ## 比较两份仓库外 Agent v2 评测报告
