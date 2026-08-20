@@ -148,6 +148,8 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 			"inference.runtime.execute",
 			"meta.catalog.read",
 			"meta.scan_task.execute",
+			"system.engine.read",
+			"system.engine_descriptor.read",
 		}) {
 		t.Fatalf("service authorization = %#v", authContext.Authorization)
 	}
