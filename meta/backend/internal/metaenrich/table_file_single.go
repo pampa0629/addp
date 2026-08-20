@@ -60,6 +60,9 @@ func extractSingleTableFileItemWithFormat(
 
 	tableInfo, err := provider.DescribeTable(ctx, rc, nil)
 	if err != nil {
+		if format.IsDefinitiveParseError(err) {
+			return nil, err
+		}
 		// Schema 解析失败时返回基础信息，不阻断扫描
 		return &metaitem.CompositeItemInfo{
 			Layout:             format.LayoutSingle,

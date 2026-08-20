@@ -409,6 +409,9 @@ func applySourceGeometryEncodingForTarget(sourcePlan *executor.TableSourcePlan, 
 		return nil
 	}
 	if !targetConsumesSpatialRows(targetPlan, targetEngine) {
+		if targetPlan.Kind == executor.TableEndpointEncoded && formatHasReadOnlySpatialCapability(targetPlan.Format) {
+			return fmt.Errorf("target format %q cannot write spatial rows", targetPlan.Format)
+		}
 		return nil
 	}
 	if existing := sourceGeometryEncoding(sourcePlan); existing != "" && existing != format.GeometryEncodingWKT && targetSupportsGeometryWriteEncoding(targetPlan, targetEngine, existing) {
@@ -448,6 +451,11 @@ func applySourceGeometryEncodingForTarget(sourcePlan *executor.TableSourcePlan, 
 	return nil
 }
 
+func formatHasReadOnlySpatialCapability(formatType format.FormatType) bool {
+	capability, err := format.GetSpatialEncodingCapability(formatType)
+	return err == nil && len(capability.GeometryReadEncodings) > 0 && len(capability.GeometryWriteEncodings) == 0
+}
+
 func sourceHasSpatialRows(sourcePlan *executor.TableSourcePlan) bool {
 	if sourcePlan == nil {
 		return false
@@ -458,8 +466,7 @@ func sourceHasSpatialRows(sourcePlan *executor.TableSourcePlan) bool {
 	if formatImpliesSpatialRows(sourcePlan.Format) {
 		return true
 	}
-	capability, err := format.GetSpatialEncodingCapability(sourcePlan.Format)
-	return err == nil && len(capability.GeometryReadEncodings) > 0
+	return false
 }
 
 func targetConsumesSpatialRows(targetPlan executor.TableTargetPlan, targetEngine EngineBinding) bool {

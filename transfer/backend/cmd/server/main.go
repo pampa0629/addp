@@ -102,12 +102,7 @@ func main() {
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db) // 统一执行记录仓库
 	log.Printf("✅ Repository 层初始化完成（使用统一执行表）")
 
-	// 创建任务队列（连接 Redis）
 	redisAddr := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)
-	taskQueue := worker.NewTaskQueue(redisAddr, cfg.RedisPassword)
-	defer taskQueue.Close()
-
-	log.Printf("✅ Task queue connected to Redis: %s", redisAddr)
 
 	// 初始化 Redis 客户端（用于资源变更事件同步）
 	redisClient := redis.NewClient(&redis.Options{
@@ -126,7 +121,6 @@ func main() {
 	// 初始化 Service 层。HTTP 进程需要 execution engine 解析 replay plan 和采集请求时 retention 快照，
 	// 实际 bounded 数据处理仍只由 worker 执行。
 	executionService := service.NewExecutionService(db, taskExecutionRepo) // 使用统一执行表
-	executionService.SetTaskQueue(taskQueue)
 	executionEngineService := service.NewExecutionEngineService(
 		transferRepo.NewTaskRepository(db),
 		transferRepo.NewSyncStateRepository(db),
@@ -140,7 +134,7 @@ func main() {
 		PollTimeout: cfg.ContinuousPollTimeout, MaxBytes: cfg.ContinuousFetchMaxBytes,
 		AssertTargetAbsent: continuous.NewReplayTargetAbsenceValidator(nil),
 	}))
-	taskService := service.NewTaskService(db, executionEngineService, cfg, taskQueue)
+	taskService := service.NewTaskService(db, executionEngineService, cfg)
 	taskService.SetEngineResolver(planner.NewSystemEngineResolver(systemClient))
 	taskService.SetExecutionService(executionService) // 注入执行服务（避免循环依赖）
 	cleanupService := service.NewTransferCleanupService(db, redisClient, taskExecutionRepo, service.TaskOwnedCleanupConfig{
@@ -157,6 +151,12 @@ func main() {
 	defer deadLetterTopicCleaner.Close()
 	cleanupService.SetDeadLetterTopicCleaner(deadLetterTopicCleaner)
 	taskService.SetTaskOwnedResourceCleanup(cleanupService)
+	boundedScheduler := worker.NewScheduler(transferRepo.NewTaskRepository(db))
+	boundedScheduler.SetExecutionService(executionService)
+	if err := boundedScheduler.Start(context.Background()); err != nil {
+		log.Fatalf("Transfer owner scheduler 启动失败: %v", err)
+	}
+	defer boundedScheduler.Stop()
 
 	// 数据库 CDC capture control plane；数据面由独立 continuous worker 消费登记的 Infra Kafka generation。
 	if systemClient != nil {

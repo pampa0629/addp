@@ -69,7 +69,7 @@ func (s *CleanupService) Stop() {
 
 func (s *CleanupService) consumeCleanupRequests(ctx context.Context) {
 	groupName := "quality-cleanup-consumer"
-	consumerName := "quality-worker"
+	consumerName := "quality-cleanup"
 	_ = s.redis.XGroupCreateMkStream(ctx, events.EventCleanupRequest, groupName, "$").Err()
 
 	for {

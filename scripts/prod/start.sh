@@ -75,7 +75,8 @@ docker compose -f docker-compose.yml up -d \
   meta-backend \
   meta-worker \
   transfer-backend \
-  transfer-worker \
+  transfer-bounded-worker \
+  transfer-continuous-worker \
   orchestrator-backend \
   develop-backend \
   service-backend \
@@ -87,6 +88,7 @@ docker compose -f docker-compose.yml up -d \
   agent-backend \
   model-backend \
   quality-backend \
+  quality-worker \
   asset-backend \
   portal-backend \
   geopython-workflow-engine \

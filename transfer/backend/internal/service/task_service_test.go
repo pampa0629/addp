@@ -72,7 +72,7 @@ func TestValidateNewTaskConfigAcceptsPostgreSQLCDCAfterDataPlaneIsAvailable(t *t
 
 func TestTaskServiceAcceptsMySQLCDCThroughDatabaseCDCParser(t *testing.T) {
 	db := newTransferTaskServiceTestDB(t)
-	taskSvc := NewTaskService(db, nil, nil, nil)
+	taskSvc := NewTaskService(db, nil, nil)
 	taskSvc.SetEngineResolver(planner.StaticEngineResolver{
 		12: {Type: "mysql", EngineID: 12},
 		20: {Type: "postgresql", EngineID: 20},
@@ -120,9 +120,8 @@ func TestReplayTaskCreatesIndependentExecutionWithoutChangingOwnerTask(t *testin
 		t.Fatal(err)
 	}
 	engine := &fakeReplayTaskExecutionEngine{}
-	queue := &fakeReplayTaskQueue{}
 	executionService := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
-	taskService := NewTaskService(db, engine, nil, queue)
+	taskService := NewTaskService(db, engine, nil)
 	taskService.SetExecutionService(executionService)
 
 	execution, err := taskService.ReplayTask(context.Background(), task.ID, task.TenantID, 9, models.ReplayTaskRequest{
@@ -132,8 +131,8 @@ func TestReplayTaskCreatesIndependentExecutionWithoutChangingOwnerTask(t *testin
 	if err != nil {
 		t.Fatalf("ReplayTask() error = %v", err)
 	}
-	if execution.Status != models.ExecutionStatusPending || queue.executionID != execution.ID || queue.taskID != task.ID {
-		t.Fatalf("execution=%#v queue=%#v", execution, queue)
+	if execution.Status != models.ExecutionStatusPending {
+		t.Fatalf("execution=%#v", execution)
 	}
 	if engine.applyIdentity == "" || engine.applyIdentity == task.ApplyIdentity {
 		t.Fatalf("replay apply identity = %q, owner = %q", engine.applyIdentity, task.ApplyIdentity)
@@ -170,22 +169,9 @@ func (e *fakeReplayTaskExecutionEngine) PrepareReplayExecution(_ context.Context
 	}, nil
 }
 
-type fakeReplayTaskQueue struct {
-	taskID      uint
-	executionID uint
-	tenantID    uint
-}
-
-func (q *fakeReplayTaskQueue) EnqueueExecuteTask(_ context.Context, taskID, executionID, tenantID uint) error {
-	q.taskID, q.executionID, q.tenantID = taskID, executionID, tenantID
-	return nil
-}
-
-func (*fakeReplayTaskQueue) Close() error { return nil }
-
 func TestCreateTaskPersistsNextRunAtWhenEnabled(t *testing.T) {
 	db := newTransferTaskServiceTestDB(t)
-	taskSvc := NewTaskService(db, nil, nil, nil)
+	taskSvc := NewTaskService(db, nil, nil)
 	task, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
 		Name:     "scheduled",
 		TaskType: commonExecution.TaskTypeSync,
@@ -206,7 +192,7 @@ func TestCreateTaskPersistsNextRunAtWhenEnabled(t *testing.T) {
 
 func TestCreateTaskKeepsScheduledTaskDisabledWithoutNextRunAt(t *testing.T) {
 	db := newTransferTaskServiceTestDB(t)
-	taskSvc := NewTaskService(db, nil, nil, nil)
+	taskSvc := NewTaskService(db, nil, nil)
 
 	task, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
 		Name:     "scheduled-disabled",
@@ -225,7 +211,7 @@ func TestCreateTaskKeepsScheduledTaskDisabledWithoutNextRunAt(t *testing.T) {
 
 func TestUpdateTaskClearsNextRunAtWhenScheduleRemoved(t *testing.T) {
 	db := newTransferTaskServiceTestDB(t)
-	taskSvc := NewTaskService(db, nil, nil, nil)
+	taskSvc := NewTaskService(db, nil, nil)
 
 	task, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
 		Name:     "scheduled",
@@ -251,7 +237,7 @@ func TestUpdateTaskClearsNextRunAtWhenScheduleRemoved(t *testing.T) {
 
 func TestCreateTaskRejectsMissingTaskType(t *testing.T) {
 	db := newTransferTaskServiceTestDB(t)
-	taskSvc := NewTaskService(db, nil, nil, nil)
+	taskSvc := NewTaskService(db, nil, nil)
 
 	_, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
 		Name:   "missing-task-type",
@@ -267,7 +253,7 @@ func TestCreateTaskRejectsMissingTaskType(t *testing.T) {
 
 func TestStartTaskRejectsPersistedNonSyncTaskType(t *testing.T) {
 	db := newTransferTaskServiceTestDB(t)
-	taskSvc := NewTaskService(db, nil, nil, nil)
+	taskSvc := NewTaskService(db, nil, nil)
 
 	task := models.TransferTask{
 		TenantID:  7,
@@ -292,7 +278,7 @@ func TestStartTaskRejectsPersistedNonSyncTaskType(t *testing.T) {
 
 func TestContinuousTaskLifecycleIsAtomicWithoutAsynqQueue(t *testing.T) {
 	db := newTransferTaskServiceTestDB(t)
-	taskSvc := NewTaskService(db, nil, nil, nil)
+	taskSvc := NewTaskService(db, nil, nil)
 	taskSvc.SetExecutionService(NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db)))
 	task, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
 		Name: "continuous", TaskType: commonExecution.TaskTypeSync, Config: validContinuousTaskConfig(),
@@ -342,7 +328,7 @@ func TestContinuousTaskLifecycleIsAtomicWithoutAsynqQueue(t *testing.T) {
 func TestPostgreSQLCDCTaskStartsCaptureBeforeRuntimeAndResumesGeneration(t *testing.T) {
 	db := newTransferTaskServiceTestDB(t)
 	control := &fakeCaptureControl{}
-	taskSvc := NewTaskService(db, nil, nil, nil)
+	taskSvc := NewTaskService(db, nil, nil)
 	taskSvc.SetEngineResolver(planner.StaticEngineResolver{
 		12: {Type: "postgresql", EngineID: 12},
 		20: {Type: "postgresql", EngineID: 20},
@@ -385,7 +371,7 @@ func TestPostgreSQLCDCSchemaBlockedTaskCannotStartOrResume(t *testing.T) {
 	if err := db.Create(task).Error; err != nil {
 		t.Fatal(err)
 	}
-	taskSvc := NewTaskService(db, nil, nil, nil)
+	taskSvc := NewTaskService(db, nil, nil)
 	taskSvc.SetCaptureControl(control)
 	for name, start := range map[string]func() error{
 		"start": func() error {
@@ -421,7 +407,7 @@ func TestPostgreSQLCDCConfigIsImmutableAfterCaptureGenerationCreation(t *testing
 		t.Fatal(err)
 	}
 	control := &fakeCaptureControl{resource: &models.CaptureResource{TaskID: task.ID, TenantID: 7, Status: models.CaptureStatusRunning}}
-	taskSvc := NewTaskService(db, nil, nil, nil)
+	taskSvc := NewTaskService(db, nil, nil)
 	taskSvc.SetCaptureControl(control)
 	config := validPostgreSQLCDCTaskConfig()
 	config["target"].(map[string]interface{})["name"] = "other_target"
@@ -432,7 +418,7 @@ func TestPostgreSQLCDCConfigIsImmutableAfterCaptureGenerationCreation(t *testing
 
 func TestListTasksCanRestrictProviderDiscoveryToBounded(t *testing.T) {
 	db := newTransferTaskServiceTestDB(t)
-	taskSvc := NewTaskService(db, nil, nil, nil)
+	taskSvc := NewTaskService(db, nil, nil)
 	for _, req := range []*models.CreateTaskRequest{
 		{Name: "bounded", TaskType: commonExecution.TaskTypeSync, Config: validTableTransferTaskConfig()},
 		{Name: "continuous", TaskType: commonExecution.TaskTypeSync, Config: validContinuousTaskConfig()},
@@ -462,7 +448,7 @@ func TestStopPostgreSQLCDCRequiresExactTaskNameAndCleansCapture(t *testing.T) {
 		t.Fatal(err)
 	}
 	control := &fakeCaptureControl{}
-	taskSvc := NewTaskService(db, nil, nil, nil)
+	taskSvc := NewTaskService(db, nil, nil)
 	taskSvc.SetCaptureControl(control)
 	if err := taskSvc.StopTask(context.Background(), task.ID, 7, models.StopTaskRequest{Confirmed: true, ConfirmationText: "错误名称"}); !errors.Is(err, ErrCDCStopConfirmationRequired) {
 		t.Fatalf("StopTask() error = %v", err)

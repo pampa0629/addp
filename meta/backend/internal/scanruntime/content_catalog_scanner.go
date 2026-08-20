@@ -1,6 +1,8 @@
 package scanruntime
 
 import (
+	"context"
+
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanadapter"
@@ -20,12 +22,12 @@ type objectCatalogAdapter struct {
 
 var _ scanadapter.ContentCatalogAdapter = objectCatalogAdapter{}
 
-func (a objectCatalogAdapter) ScanPaths(resource *commonModels.Engine, tenantID uint, paths []string, scanDepth string, force bool, reporter scanflow.ProgressReporter) (scanflow.DispatchResult, error) {
-	return a.runtime.ScanPaths(resource, tenantID, paths, nil, scanDepth, force, reporter)
+func (a objectCatalogAdapter) ScanPaths(ctx context.Context, resource *commonModels.Engine, tenantID uint, paths []string, scanDepth string, force bool, reporter scanflow.ProgressReporter) (scanflow.DispatchResult, error) {
+	return a.runtime.ScanPaths(ctx, resource, tenantID, paths, nil, scanDepth, force, reporter)
 }
 
-func (a objectCatalogAdapter) ScanRefGroups(resource *commonModels.Engine, tenantID uint, groups []models.ScanRefGroup, scanDepth string, force bool, reporter scanflow.ProgressReporter) (scanflow.DispatchResult, error) {
-	return a.runtime.ScanRefGroups(resource, tenantID, groups, scanDepth, force, reporter)
+func (a objectCatalogAdapter) ScanRefGroups(ctx context.Context, resource *commonModels.Engine, tenantID uint, groups []models.ScanRefGroup, scanDepth string, force bool, reporter scanflow.ProgressReporter) (scanflow.DispatchResult, error) {
+	return a.runtime.ScanRefGroups(ctx, resource, tenantID, groups, scanDepth, force, reporter)
 }
 
 type fileCatalogAdapter struct {
@@ -34,10 +36,10 @@ type fileCatalogAdapter struct {
 
 var _ scanadapter.ContentCatalogAdapter = fileCatalogAdapter{}
 
-func (a fileCatalogAdapter) ScanPaths(resource *commonModels.Engine, tenantID uint, paths []string, scanDepth string, force bool, reporter scanflow.ProgressReporter) (scanflow.DispatchResult, error) {
-	return a.runtime.ScanPaths(resource, tenantID, paths, scanDepth, force, reporter)
+func (a fileCatalogAdapter) ScanPaths(ctx context.Context, resource *commonModels.Engine, tenantID uint, paths []string, scanDepth string, force bool, reporter scanflow.ProgressReporter) (scanflow.DispatchResult, error) {
+	return a.runtime.ScanPaths(ctx, resource, tenantID, paths, scanDepth, force, reporter)
 }
 
-func (a fileCatalogAdapter) ScanRefGroups(resource *commonModels.Engine, tenantID uint, groups []models.ScanRefGroup, scanDepth string, force bool, reporter scanflow.ProgressReporter) (scanflow.DispatchResult, error) {
-	return a.runtime.ScanRefGroups(resource, tenantID, groups, scanDepth, force, reporter)
+func (a fileCatalogAdapter) ScanRefGroups(ctx context.Context, resource *commonModels.Engine, tenantID uint, groups []models.ScanRefGroup, scanDepth string, force bool, reporter scanflow.ProgressReporter) (scanflow.DispatchResult, error) {
+	return a.runtime.ScanRefGroups(ctx, resource, tenantID, groups, scanDepth, force, reporter)
 }

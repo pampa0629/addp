@@ -181,7 +181,7 @@ func TestObjectCatalogBasicScanGroupsShapefileRefsWithoutSidecarItems(t *testing
 		shapefileObjectResource(9, "manager", "a5.dbf", 12),
 		shapefileObjectResource(9, "manager", "a5.cpg", 3),
 	}
-	count, _, err := runtime.persistObjectResources(
+	count, _, err := runtime.persistObjectResources(context.Background(),
 		&commonModels.Engine{ID: 9, EngineType: reader.Type()},
 		1,
 		9,
@@ -242,7 +242,7 @@ func TestObjectCatalogBasicScanGroupsGeoTIFFRefsWithoutSidecarItems(t *testing.T
 		geotiffObjectResource(9, "addp", "image/srtm_40_01.tif.aux.xml", 30),
 	}
 	stats := map[uint]*scanflow.ObjectCatalogNodeAggregate{}
-	count, _, err := runtime.persistObjectResources(
+	count, _, err := runtime.persistObjectResources(context.Background(),
 		&commonModels.Engine{ID: 9, EngineType: reader.Type()},
 		1,
 		9,
@@ -324,7 +324,7 @@ func TestObjectCatalogDeepScanDetectsRasterMosaicDatasetItem(t *testing.T) {
 		geotiffObjectResource(9, "addp", "mosaics/srtm-test/srtm-test/leaf/srtm_46_02.cog.tif", 5000),
 	}
 	stats := map[uint]*scanflow.ObjectCatalogNodeAggregate{}
-	count, _, err := runtime.persistObjectResources(
+	count, _, err := runtime.persistObjectResources(context.Background(),
 		&commonModels.Engine{ID: 9, EngineType: reader.Type()},
 		1,
 		9,
@@ -414,7 +414,7 @@ func TestObjectCatalogDeepScanDetectsGLBModel3DItem(t *testing.T) {
 	resources := []metacatalog.StorageResource{
 		objectResourceForTest(9, "addp", "models/building.glb", int64(len(content)), ""),
 	}
-	count, _, err := runtime.persistObjectResources(
+	count, _, err := runtime.persistObjectResources(context.Background(),
 		&commonModels.Engine{ID: 9, EngineType: reader.Type()},
 		1,
 		9,
@@ -484,7 +484,7 @@ func TestObjectCatalogDeepScanDetects3DTilesModel3DItem(t *testing.T) {
 		objectResourceForTest(9, "addp", "models/city/tileset.json", 1200, ""),
 		objectResourceForTest(9, "addp", "models/city/root.b3dm", 2400, ""),
 	}
-	count, _, err := runtime.persistObjectResources(
+	count, _, err := runtime.persistObjectResources(context.Background(),
 		&commonModels.Engine{ID: 9, EngineType: reader.Type()},
 		1,
 		9,
@@ -549,7 +549,7 @@ func TestObjectCatalogDeepScanDetectsLASPointCloudItem(t *testing.T) {
 	resources := []metacatalog.StorageResource{
 		objectResourceForTest(9, "addp", "point-cloud/site.las", int64(len(content)), ""),
 	}
-	count, _, err := runtime.persistObjectResources(
+	count, _, err := runtime.persistObjectResources(context.Background(),
 		&commonModels.Engine{ID: 9, EngineType: reader.Type()},
 		1,
 		9,
@@ -633,7 +633,7 @@ func TestObjectCatalogPrefixScanDeletesLegacyGeoTIFFSidecarItems(t *testing.T) {
 	}
 	insertObjectItemForTest(t, repo, 1, 9, otherNode, "addp", "other/keep.tif", 20)
 
-	result, err := runtime.ScanPaths(resource, 1, []string{"addp/image"}, nil, models.ScannedDepthDeep, true, nil)
+	result, err := runtime.ScanPaths(context.Background(), resource, 1, []string{"addp/image"}, nil, models.ScannedDepthDeep, true, nil)
 	if err != nil {
 		t.Fatalf("ScanPaths() error = %v", err)
 	}
@@ -719,7 +719,7 @@ func TestObjectCatalogPrefixScanDeletesStalePrefixConflictingWithWholeItem(t *te
 	}
 	stats := map[uint]*scanflow.ObjectCatalogNodeAggregate{}
 	scanned := map[string]bool{}
-	count, _, err := runtime.persistObjectResources(
+	count, _, err := runtime.persistObjectResources(context.Background(),
 		resource,
 		1,
 		9,
@@ -811,7 +811,7 @@ func TestObjectCatalogPrefixScanKeepsWholeItemAtScanRoot(t *testing.T) {
 		objectResourceForTest(9, "addp", "mosaics/srtm-e2e/leaf/a.cog.tif", 10, "tiff"),
 	}
 	stats := map[uint]*scanflow.ObjectCatalogNodeAggregate{}
-	count, _, err := runtime.persistObjectResources(
+	count, _, err := runtime.persistObjectResources(context.Background(),
 		resource,
 		1,
 		9,

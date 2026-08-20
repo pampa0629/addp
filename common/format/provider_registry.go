@@ -66,6 +66,14 @@ func GetSpatialEncodingCapability(formatType FormatType) (SpatialEncodingCapabil
 	return provider.SpatialEncodingCapability(), nil
 }
 
+func GetCRSDefinitionWriteRequirementProvider(formatType FormatType) (CRSDefinitionWriteRequirementProvider, error) {
+	return globalProviderRegistry.GetCRSDefinitionWriteRequirementProvider(formatType)
+}
+
+func (r *ProviderRegistry) GetCRSDefinitionWriteRequirementProvider(formatType FormatType) (CRSDefinitionWriteRequirementProvider, error) {
+	return pluginCapability[CRSDefinitionWriteRequirementProvider](r, formatType, "CRS definition write requirement provider")
+}
+
 func GetMultiTableInfoProvider(formatType FormatType) (MultiTableInfoProvider, error) {
 	return globalProviderRegistry.GetMultiTableInfoProvider(formatType)
 }

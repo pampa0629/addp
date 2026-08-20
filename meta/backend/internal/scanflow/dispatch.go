@@ -1,6 +1,8 @@
 package scanflow
 
 import (
+	"context"
+
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
@@ -14,6 +16,7 @@ const (
 )
 
 type DispatchRequest struct {
+	Context      context.Context
 	Resource     *commonModels.Engine
 	EnginePlugin plugin.EnginePlugin
 	TenantID     uint

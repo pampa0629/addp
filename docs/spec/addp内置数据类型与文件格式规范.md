@@ -42,7 +42,7 @@
 | GeoJSON / FeatureCollection | `single` | `table` | `geojson` | GeoJSON 格式；spatial 为解析后的横切能力 |
 | 任意对象 JSON / 配置 JSON | `single` | `document` 或 `container` | `json` | 按平台消费方式判断 |
 | Shapefile | `multi` | `table` | `shapefile` | 同目录或同 prefix 的同 basename refs |
-| 单个 Parquet | `single` | `table` | `parquet` | 单文件表 |
+| 单个 Parquet / GeoParquet | `single` | `table` | `parquet` | 单文件表；GeoParquet 仍使用 `format=parquet`，空间语义进入 `capabilities.spatial` |
 | sibling Parquet 文件组 | `multi` | `table` | `parquet` | 仅在有明确 ref 或 manifest 规则时成立 |
 | ORC / Avro 单文件 | `single` | `table` | `orc` / `avro` | 单文件表 |
 | Iceberg 表目录 | `whole` | `table` | `iceberg` | 整体表目录，需 whole scope 规则 |
@@ -1048,6 +1048,19 @@ Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“�
 | `capabilities.partitioning` | 分区数量、分区样例、分区范围等分区事实 |
 | `capabilities.statistics` | Meta 扫描是否采样、采样规模等紧凑过程事实；格式 footer 的原生列统计保留在 `format_info.<format>`，不得旁路承载数据剖析结果 |
 
+GeoParquet 不是独立 format。GeoParquet 文件继续使用 `format=parquet + data_type=table`；Parquet footer 中 `geo` key 的原生标准字段写入 `format_info.parquet.geo`，归一化后的主几何列、几何列、拓扑类型、CRS 和文件范围写入 `capabilities.spatial`。几何列在 `type_info.table.fields` 中统一映射为 `geometry`，不得同时保留为 `string` 或 `bytes`。
+
+当前内置 GeoParquet 能力以稳定的 GeoParquet 1.0 / 1.1 为边界：
+
+- reader 支持文件侧 `encoding=WKB`，默认以 WKB 二进制值向通用 table 消费链路输出，并可按调用方契约归一为 EWKB 或 WKT；遇到 GeoArrow 单几何类型编码、GeoParquet 2.x 或其他未知编码必须明确报不支持，不得按普通 Parquet 字符串列降级。
+- writer 在 table 字段包含 `geometry` 时固定写出 GeoParquet 1.1.0：文件几何列使用 Parquet `BYTE_ARRAY`，footer `geo.columns.<name>.encoding` 固定为 `WKB`。写入行值可为 WKB 或 EWKB 二进制，落盘前统一转成不携带内嵌 SRID 的标准 WKB；不得把 geometry 序列化为字符串。geometry 字段必须在 `SpatialInfo.geometry_columns` 中逐一声明，并且必须给出有效主几何列；writer 必须逐行拒绝 GeoParquet 1.1 不支持的 M/XYZM 布局以及与已声明拓扑、维度不一致的值。普通 Parquet 不含 geometry 字段时继续走原非空间 writer。
+- `crs` 缺失时按 GeoParquet 规范归一为 `OGC:CRS84`；`crs=null` 表示 CRS 未知；PROJJSON 中存在确定 authority/code 时可归一为 `crs_ref` / `srid`，不得从名称猜测 EPSG。
+- GeoParquet reader 必须把 `crs` 的 PROJJSON 原文同时保留为 `format_info.parquet.geo` 格式事实，并以 `definition_encoding=projjson` 归一进入 `capabilities.spatial.crs_definitions`，供后续格式写出复用；有 authority/code 时 definition ID 使用对应 `crs_ref`，没有时使用定义文本计算 `ADDP:CRS:<sha256>`，不得把“已知但无 authority ID”降级成未知 CRS。
+- writer 对 `OGC:CRS84` 省略 `crs`，对未知 CRS 明确写 `crs=null`。`EPSG:4326` 在 GeoParquet 1.1 明确覆盖为 x/y（经度/纬度）轴序时与 `OGC:CRS84` 等价；没有 PROJJSON 定义时允许按默认 CRS 写出。其他已知 CRS 必须从 `SpatialInfo.crs_definitions` 取得 `definition_encoding=projjson` 且 ID 与几何列 `crs_ref` 一致的定义。GeoParquet format plugin 通过通用 CRS 定义写出需求 provider 声明缺少的 `projjson` 表达；Transfer 在创建 writer 前按该声明调用 GeoPython Workflow `crs_to_projjson`，只替换本次 execution 使用的 `SpatialInfo` 副本。writer 不负责从 WKT、ESRI WKT 或 PROJ4 猜测转换，转换能力不可用或结果不匹配时必须明确失败。
+- writer 可从主几何列的 `SpatialInfo.extent` 写出二维 `bbox`；只接受有限且最小值不大于最大值的范围。坐标转换不属于 GeoParquet writer，Transfer 必须在进入 writer 前完成。
+- whole-scope Parquet 数据集的各数据文件必须具有一致的几何列、编码和 CRS；冲突时扫描或读取明确失败，不得以第一个文件覆盖其余文件。
+- 不含 `geo` footer metadata 的普通 Parquet 沿用非空间表格主路径，不根据列名或二进制内容猜测几何列。
+
 `whole` item 的范围由 `meta_item.full_name` 表达，`item.scope_exclusive=true`、`item.claim_policy=whole_scope` 表达独占语义。`refs` 只包含规范认定的数据文件或 manifest 关键资源，不包含 `_SUCCESS`、`_metadata`、`_common_metadata`、CRC 等辅助文件，除非具体格式规范另有说明。
 
 ### 表格读取
@@ -1059,6 +1072,7 @@ Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“�
 - 不得把多个独立 sibling Parquet 文件误合成一个 `whole` item。
 - 不得把 Parquet 直接叫作湖表。
 - 不得在 Manager 中按目录临时拼装 scope 表；whole scope 必须由 Meta 已入库 item 表达。
+- 不得新增 `geoparquet` format、data type 或第二套 reader / writer；GeoParquet 必须由现有 Parquet plugin 精化空间事实。
 
 ## SQLite / GeoPackage
 

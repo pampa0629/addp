@@ -474,7 +474,7 @@ check_service_changed() {
             local binary_name
 
             if [[ "$service" == *-worker ]]; then
-                binary_name="${service%-worker}-worker"  # transfer-worker → transfer-worker
+                binary_name="${service%-worker}-worker"
             elif [ "$service" = "gateway" ]; then
                 binary_name="gateway"
             else
@@ -628,7 +628,7 @@ build_service() {
     local dockerfile_path=""
 
     case "$service" in
-        transfer-worker|meta-worker)
+        transfer-bounded-worker|meta-worker|quality-worker)
             # Worker services: special case with worker binary
             dockerfile_path="${service_dir}/Dockerfile.prebuilt.worker"
             build_context="."
@@ -642,7 +642,7 @@ build_service() {
 
             # Check if worker binary exists in dist/ directory
             local arch=$(echo "$BUILD_PLATFORMS" | sed 's|linux/||' | cut -d',' -f1)
-            local binary_name="${service%-worker}-worker"  # e.g., transfer-worker
+            local binary_name="${service%-worker}-worker"
             local binary_path="dist/${BUILD_TYPE:-release}-linux-${arch}/${binary_name}"
 
             if [ ! -f "$binary_path" ]; then
@@ -650,6 +650,11 @@ build_service() {
                 echo -e "${YELLOW}Hint: Run ./scripts/build/compile.sh --arch ${arch} first${NC}"
                 return 1
             fi
+            ;;
+
+        transfer-continuous-worker)
+            dockerfile_path="${service_dir}/Dockerfile.prebuilt.continuous-worker"
+            build_context="."
             ;;
 
         duckdb-engine)
@@ -931,8 +936,10 @@ main() {
         "spark-workflow-engine:engines/spark-workflow"
         "jupyter-engine:engines/jupyter"
         "duckdb-engine:engines/duckdb"
-        "transfer-worker:transfer/backend"
+        "transfer-bounded-worker:transfer/backend"
+        "transfer-continuous-worker:transfer/backend"
         "meta-worker:meta/backend"
+        "quality-worker:quality/backend"
         "gateway:gateway"
         "console:console/frontend"
         "system-frontend:system/frontend"

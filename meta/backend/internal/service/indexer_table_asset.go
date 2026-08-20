@@ -10,7 +10,7 @@ import (
 )
 
 // IndexTableAsset 索引表资产到 Meilisearch
-func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID uint, schemaName string, tableInfo datatype.TableInfo, fields []datatype.FieldInfo, item *models.MetaItem) {
+func (s *IndexerService) IndexTableAsset(ctx context.Context, resource *commonModels.Engine, tenantID uint, schemaName string, tableInfo datatype.TableInfo, fields []datatype.FieldInfo, item *models.MetaItem) {
 	if s.indexer == nil || !s.indexer.Enabled() || resource == nil || item == nil {
 		return
 	}
@@ -54,7 +54,7 @@ func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID
 		DataUpdatedAt: item.DataUpdatedAt,
 	}
 
-	if err := s.indexer.IndexAsset(context.Background(), record); err != nil {
+	if err := s.indexer.IndexAsset(ctx, record); err != nil {
 		s.log.Warn("索引表元数据失败", "fingerprint", item.Fingerprint, "schema", schemaName, "error", err)
 	}
 }

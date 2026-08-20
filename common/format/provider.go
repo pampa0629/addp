@@ -74,6 +74,20 @@ type SpatialEncodingCapabilityProvider interface {
 	SpatialEncodingCapability() SpatialEncodingCapability
 }
 
+// CRSDefinitionWriteRequirement describes one CRS definition representation
+// that a format writer still needs before it can encode SpatialInfo.
+type CRSDefinitionWriteRequirement struct {
+	CRSRef             string
+	DefinitionEncoding string
+}
+
+// CRSDefinitionWriteRequirementProvider lets a format plugin declare dynamic
+// CRS definition requirements without making Transfer branch on format names.
+type CRSDefinitionWriteRequirementProvider interface {
+	FormatPlugin
+	CRSDefinitionWriteRequirements(spatial *datatype.SpatialInfo) ([]CRSDefinitionWriteRequirement, error)
+}
+
 // ContentReader 是内容读取能力的标记接口。
 //
 // Reader 命名用于区分“读取内容数据”和“提供元数据”的 provider。

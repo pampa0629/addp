@@ -6,6 +6,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/addp/common/logger"
@@ -19,24 +20,29 @@ import (
 
 // ExecutionService 执行记录服务（使用统一执行表）
 type ExecutionService struct {
+	db                *gorm.DB
 	taskExecutionRepo *commonExecution.TaskExecutionRepository // 统一执行记录仓库
 	taskRepo          *repository.TaskRepository
-	taskQueue         TaskQueue
 	logger            *slog.Logger
+	activeLeases      sync.Map
+}
+
+func (s *ExecutionService) BindBoundedLease(executionID uint, lease commonExecution.Lease) {
+	s.activeLeases.Store(executionID, lease)
+}
+
+func (s *ExecutionService) UnbindBoundedLease(executionID uint) {
+	s.activeLeases.Delete(executionID)
 }
 
 // NewExecutionService 创建执行服务
 func NewExecutionService(db *gorm.DB, taskExecutionRepo *commonExecution.TaskExecutionRepository) *ExecutionService {
 	return &ExecutionService{
+		db:                db,
 		taskExecutionRepo: taskExecutionRepo,
 		taskRepo:          repository.NewTaskRepository(db),
 		logger:            logger.With("component", "execution_service"),
 	}
-}
-
-// SetTaskQueue 设置执行重试使用的任务队列。
-func (s *ExecutionService) SetTaskQueue(taskQueue TaskQueue) {
-	s.taskQueue = taskQueue
 }
 
 // convertToTransferExecution 将统一执行记录转换为 Transfer API 的执行记录 DTO。
@@ -348,6 +354,11 @@ func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, taskI
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
+	boundary, boundaryErr := planner.TaskRuntimeBoundary(task.Config)
+	if boundaryErr != nil {
+		return nil, boundaryErr
+	}
+	execution.ExecutionBoundary = boundary
 
 	if err := s.taskExecutionRepo.Create(ctx, execution); err != nil {
 		return nil, fmt.Errorf("failed to create execution: %w", err)
@@ -426,7 +437,7 @@ func (s *ExecutionService) UpdateExecution(ctx context.Context, id uint, updates
 		unifiedUpdates["metadata"] = metadata
 	}
 
-	return s.taskExecutionRepo.UpdateFields(ctx, execution.ExecutionID, execution.TenantID, unifiedUpdates)
+	return s.updateExecutionFields(ctx, execution, unifiedUpdates)
 }
 
 // FinishExecution 完成执行（设置结束时间和状态）
@@ -454,7 +465,57 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status 
 		updates["execution_time_ms"] = executionTimeMs
 	}
 
+	if lease, ok := s.leaseForExecution(ctx, id, execution.ExecutionID); ok {
+		delete(updates, "status")
+		delete(updates, "completed_at")
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := commonExecution.CompleteWithLease(ctx, tx, lease, string(status), now, updates); err != nil {
+				return err
+			}
+			if execution.SourceTaskID == nil || isReplayExecutionConfig(execution.ExecutionConfig) {
+				return nil
+			}
+			taskID, err := commonExecution.ParseSourceTaskIDUint(execution.SourceTaskID)
+			if err != nil {
+				return err
+			}
+			progress := 0.0
+			if status == models.ExecutionStatusSuccess {
+				progress = 100
+			}
+			result := tx.Model(&models.TransferTask{}).
+				Where("id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?", taskID, execution.TenantID, execution.ExecutionID, commonExecution.ExecutionStatusRunning).
+				Updates(map[string]interface{}{
+					"status": models.TaskStatusIdle, "progress": progress,
+					"last_execution_status": string(status),
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return fmt.Errorf("transfer task %d summary no longer matches execution %s", taskID, execution.ExecutionID)
+			}
+			return nil
+		})
+	}
 	return s.taskExecutionRepo.UpdateFields(ctx, execution.ExecutionID, execution.TenantID, updates)
+}
+
+func (s *ExecutionService) FinishIfRunning(ctx context.Context, id uint, execErr error) error {
+	execution, err := s.taskExecutionRepo.GetByID(ctx, int64(id), 0)
+	if err != nil {
+		return err
+	}
+	if execution.IsCompleted() {
+		return nil
+	}
+	if execution.Status != commonExecution.ExecutionStatusRunning {
+		return fmt.Errorf("bounded execution %s is not running", execution.ExecutionID)
+	}
+	if execErr != nil {
+		return s.FinishExecution(ctx, id, models.ExecutionStatusFailed, execErr.Error())
+	}
+	return s.FinishExecution(ctx, id, models.ExecutionStatusSuccess, "")
 }
 
 func finishErrorDetails(existing commonModels.JSONMap, status models.ExecutionStatus, errorMsg string) (commonModels.JSONMap, bool) {
@@ -505,9 +566,6 @@ func (s *ExecutionService) RetryExecution(ctx context.Context, id, tenantID, use
 		return nil, fmt.Errorf("retry execution only supports replace snapshot or resumable upsert tasks; got apply_mode %q", mode)
 	}
 
-	if s.taskQueue == nil {
-		return nil, fmt.Errorf("task queue is not available")
-	}
 	now := time.Now()
 	triggeredBy := int(userID)
 	record := &commonExecution.TaskExecution{
@@ -515,6 +573,7 @@ func (s *ExecutionService) RetryExecution(ctx context.Context, id, tenantID, use
 		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleTransfer,
 		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(task.ID), SourceTaskName: &task.Name,
 		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
+		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded, RetryOfExecutionID: &oldExecution.ExecutionID,
 		TriggeredBy: &triggeredBy, ExecutionConfig: task.Config, CreatedAt: now, UpdatedAt: now,
 	}
 	if _, _, err := s.taskRepo.ClaimExecution(ctx, task.ID, tenantID, record, incrementalSourceIdentity(task)); err != nil {
@@ -522,20 +581,7 @@ func (s *ExecutionService) RetryExecution(ctx context.Context, id, tenantID, use
 	}
 	newExecution := s.convertToTransferExecution(record)
 
-	if err := s.taskQueue.EnqueueExecuteTask(ctx, oldExecution.TaskID, newExecution.ID, tenantID); err != nil {
-		if finishErr := s.FinishExecution(ctx, newExecution.ID, models.ExecutionStatusFailed, err.Error()); finishErr != nil {
-			s.logger.Warn("failed to mark retry execution as failed after enqueue failure", "error", finishErr, "execution_id", newExecution.ID)
-		}
-		if updateErr := s.taskRepo.UpdateFields(oldExecution.TaskID, map[string]interface{}{
-			"status":   models.TaskStatusIdle,
-			"progress": 0,
-		}); updateErr != nil {
-			s.logger.Warn("failed to rollback task state after retry enqueue failure", "error", updateErr, "task_id", oldExecution.TaskID)
-		}
-		return nil, fmt.Errorf("failed to enqueue retry execution: %w", err)
-	}
-
-	s.logger.Info("execution retry enqueued", "old_execution_id", id, "new_execution_id", newExecution.ID, "task_id", oldExecution.TaskID)
+	s.logger.Info("execution retry created", "old_execution_id", id, "new_execution_id", newExecution.ID, "task_id", oldExecution.TaskID)
 	return newExecution, nil
 }
 
@@ -649,7 +695,7 @@ func (s *ExecutionService) AppendLog(ctx context.Context, id uint, logLine strin
 
 	errorDetails["logs"] = existingLogs + logLine + "\n"
 
-	return s.taskExecutionRepo.UpdateFields(ctx, execution.ExecutionID, execution.TenantID, map[string]interface{}{
+	return s.updateExecutionFields(ctx, execution, map[string]interface{}{
 		"error_details": errorDetails,
 	})
 }
@@ -662,7 +708,7 @@ func (s *ExecutionService) UpdateMetrics(ctx context.Context, id uint, metrics m
 		return err
 	}
 
-	return s.taskExecutionRepo.UpdateFields(ctx, execution.ExecutionID, execution.TenantID, metrics)
+	return s.updateExecutionFields(ctx, execution, metrics)
 }
 
 // UpdateStatus 更新执行状态（用于状态变更）
@@ -674,10 +720,38 @@ func (s *ExecutionService) UpdateStatus(ctx context.Context, id uint, status mod
 	}
 
 	if status == models.ExecutionStatusRunning {
+		if lease, ok := s.leaseForExecution(ctx, id, execution.ExecutionID); ok {
+			if execution.Status != commonExecution.ExecutionStatusRunning {
+				return fmt.Errorf("claimed execution %s is not running", execution.ExecutionID)
+			}
+			return commonExecution.UpdateWithLease(ctx, s.db, lease, map[string]interface{}{"updated_at": time.Now().UTC()})
+		}
 		return s.taskExecutionRepo.StartExecution(ctx, execution.ExecutionID, execution.TenantID, time.Now())
 	}
 
 	return s.taskExecutionRepo.UpdateFields(ctx, execution.ExecutionID, execution.TenantID, map[string]interface{}{
 		"status": string(status),
 	})
+}
+
+func (s *ExecutionService) updateExecutionFields(ctx context.Context, execution *commonExecution.TaskExecution, fields map[string]interface{}) error {
+	if lease, ok := s.leaseForExecution(ctx, uint(execution.ID), execution.ExecutionID); ok {
+		return commonExecution.UpdateWithLease(ctx, s.db, lease, fields)
+	}
+	if execution.ExecutionBoundary == commonExecution.ExecutionBoundaryBounded && execution.Status == commonExecution.ExecutionStatusRunning {
+		return fmt.Errorf("bounded execution %s update requires the active lease", execution.ExecutionID)
+	}
+	return s.taskExecutionRepo.UpdateFields(ctx, execution.ExecutionID, execution.TenantID, fields)
+}
+
+func (s *ExecutionService) leaseForExecution(ctx context.Context, id uint, executionID string) (commonExecution.Lease, bool) {
+	if lease, ok := commonExecution.LeaseFromContext(ctx); ok {
+		return lease, lease.ExecutionID == executionID
+	}
+	value, ok := s.activeLeases.Load(id)
+	if !ok {
+		return commonExecution.Lease{}, false
+	}
+	lease, ok := value.(commonExecution.Lease)
+	return lease, ok && lease.ExecutionID == executionID
 }

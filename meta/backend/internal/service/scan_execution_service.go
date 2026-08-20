@@ -1,7 +1,10 @@
 package service
 
 import (
+	"context"
 	"log/slog"
+	"sync"
+	"time"
 
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
@@ -9,11 +12,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
-
-// ExecutionDispatcher 负责把 execution 放入调度队列或执行队列
-type ExecutionDispatcher interface {
-	EnqueueExecution(executionID string)
-}
 
 // ScanExecutionService 管理 meta 扫描 execution 的创建、执行、查询和取消
 type ScanExecutionService struct {
@@ -23,7 +21,7 @@ type ScanExecutionService struct {
 	dedupService      *ScanDedupService
 	taskExecutionRepo *commonExecution.TaskExecutionRepository
 	log               *slog.Logger
-	dispatcher        ExecutionDispatcher
+	activeLeases      sync.Map
 }
 
 // NewScanExecutionService 创建扫描执行服务
@@ -48,16 +46,32 @@ func NewScanExecutionService(db *gorm.DB, scanService *ScanService, engineServic
 	}
 }
 
-// SetExecutionDispatcher 设置 execution 分发器
-func (s *ScanExecutionService) SetExecutionDispatcher(dispatcher ExecutionDispatcher) {
-	s.dispatcher = dispatcher
+func (s *ScanExecutionService) BindBoundedLease(executionID string, lease commonExecution.Lease) {
+	s.activeLeases.Store(executionID, lease)
 }
 
-func (s *ScanExecutionService) enqueueExecution(executionID string) {
-	if s.dispatcher == nil {
-		return
+func (s *ScanExecutionService) UnbindBoundedLease(executionID string) {
+	s.activeLeases.Delete(executionID)
+}
+
+func (s *ScanExecutionService) boundedLease(ctx context.Context, executionID string) (commonExecution.Lease, bool) {
+	if lease, ok := commonExecution.LeaseFromContext(ctx); ok && lease.ExecutionID == executionID {
+		return lease, true
 	}
-	s.dispatcher.EnqueueExecution(executionID)
+	value, ok := s.activeLeases.Load(executionID)
+	if !ok {
+		return commonExecution.Lease{}, false
+	}
+	lease, ok := value.(commonExecution.Lease)
+	return lease, ok
+}
+
+func (s *ScanExecutionService) RenewBoundedExecutionLease(ctx context.Context, lease commonExecution.Lease, expiresAt time.Time) error {
+	return commonExecution.RenewLease(ctx, s.db, lease, expiresAt)
+}
+
+func (s *ScanExecutionService) BoundedExecutionAttemptIsTerminal(ctx context.Context, lease commonExecution.Lease) (bool, error) {
+	return commonExecution.AttemptIsTerminal(ctx, s.db, lease)
 }
 
 func (s *ScanExecutionService) lookupStorageType(engineID, tenantID uint) string {

@@ -133,7 +133,7 @@
 - 格式转换（同一 data type 内 representation / format 转换）：CSV、GeoJSON、Parquet、Shapefile 等
 - 全量同步；增量、水位、CDC 等高级能力后续专题设计
 - 字段映射和类型转换
-- 异步任务队列（Asynq，优先级队列：critical / default / low）
+- PostgreSQL bounded execution claim（attempt、lease token、heartbeat、过期恢复）
 - 定时调度（Cron 表达式配置）
 
 **端口**：

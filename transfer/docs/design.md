@@ -23,7 +23,7 @@ Transfer 不负责具体引擎连接、格式解析或数据类型 reader / writ
 ```text
 Transfer API / Frontend
   -> TaskService / ExecutionService
-  -> bounded: Asynq Worker -> Planner -> Executor
+  -> bounded: PostgreSQL claim -> Bounded Worker -> Planner -> Executor
   -> continuous: Continuous Worker -> ChangeEvent adapter -> ChangeApplyWriter
   -> common/engine + common/format + common/contentio
   -> Source / Target engine
@@ -33,7 +33,7 @@ Transfer API / Frontend
 |---|---|---|
 | API | `backend/internal/api` | REST API、认证后的租户上下文、请求 DTO |
 | Service | `backend/internal/service` | 任务 CRUD、执行记录、重试、队列入队、Meta scan 触发 |
-| Bounded Worker | `backend/internal/worker` | 从 Asynq 队列取 bounded task 并调用执行服务 |
+| Bounded Worker | `backend/internal/worker` | 从 `common.task_executions` claim bounded execution 并调用执行服务 |
 | Continuous Worker | `backend/internal/continuous` | 通过 lease/fencing 领取 continuous execution，消费 change stream 并提交目标变化与 position |
 | Planner | `backend/internal/planner` | 解析新 endpoint JSON，解析 System engine，生成 table transfer plan 或 raw copy plan |
 | Executor | `backend/internal/executor` | 按计划执行 table reader / transform / writer，或执行 encoded single content 原样复制 |
@@ -284,4 +284,4 @@ Oracle Spatial 单表
 
 Oracle target 只实现 `PartitionedTableChangeApplyProvider`，不开放普通 bounded table write。目标 schema 必须等于连接用户，业务行与 `_ADDP_TRANSFER_APPLY_POSITIONS` 在同一 Oracle 事务提交；ledger 使用 ownership comment 从 Catalog 隐藏。目标字段拒绝独立 `time`、decimal precision > 38 和非 XY geometry，EWKB 由 Provider 校验冻结 SRID/type/dimension 后通过 `SDO_UTIL.FROM_WKBGEOMETRY` 写入 `MDSYS.SDO_GEOMETRY`。
 
-continuous worker 是 Transfer 独立长驻进程角色，一个进程承载多个 runtime session；它通过 `transfer.runtime_leases` claim owner/lease/heartbeat/fencing，不使用 Asynq 承载无限循环。业务 Kafka 与 PostgreSQL/MySQL/Oracle CDC 复用同一个 consumer/apply/CAS 主循环，不建立第二套 CDC consumer。Oracle Spatial 由 capture Provider 在源 schema 内维护 generation-owned WKB 镜像表，再进入相同 Debezium 主路径。业务 Kafka 已支持显式 `block|dead_letter`；bounded replay 通过独立 Asynq execution 从原业务 Kafka 读取显式 offset ranges，并只写不存在的新 PostgreSQL 隔离表。当前仍不支持无 key append、Kafka target、Schema Registry、Avro、Protobuf、数据库 CDC replay、普通 Oracle LOB/RAC、ArcGIS SDE 或自动 schema evolution。
+continuous worker 是 Transfer 独立长驻进程角色，一个进程承载多个 runtime session；它通过 `transfer.runtime_leases` claim owner/lease/heartbeat/fencing，不进入 bounded execution claim。业务 Kafka 与 PostgreSQL/MySQL/Oracle CDC 复用同一个 consumer/apply/CAS 主循环，不建立第二套 CDC consumer。Oracle Spatial 由 capture Provider 在源 schema 内维护 generation-owned WKB 镜像表，再进入相同 Debezium 主路径。业务 Kafka 已支持显式 `block|dead_letter`；bounded replay 通过独立 `transfer-bounded-worker` PostgreSQL claim execution，从原业务 Kafka 读取显式 offset ranges，并只写不存在的新 PostgreSQL 隔离表。当前仍不支持无 key append、Kafka target、Schema Registry、Avro、Protobuf、数据库 CDC replay、普通 Oracle LOB/RAC、ArcGIS SDE 或自动 schema evolution。

@@ -112,7 +112,7 @@ func TestFilesystemScanRootDoesNotPromoteRootFilesToNodes(t *testing.T) {
 	})
 	resource := &commonModels.Engine{ID: 26, Name: "Business NFS", EngineType: provider.Type()}
 
-	result, err := svc.ScanPaths(resource, 1, nil, models.ScannedDepthBasic, true, nil)
+	result, err := svc.ScanPaths(context.Background(), resource, 1, nil, models.ScannedDepthBasic, true, nil)
 	if err != nil {
 		t.Fatalf("ScanPaths() error = %v", err)
 	}
@@ -192,7 +192,7 @@ func TestFilesystemScanIgnoresSystemFiles(t *testing.T) {
 	})
 	resource := &commonModels.Engine{ID: 26, Name: "Business NFS", EngineType: provider.Type()}
 
-	result, err := svc.ScanPaths(resource, 1, nil, models.ScannedDepthBasic, false, nil)
+	result, err := svc.ScanPaths(context.Background(), resource, 1, nil, models.ScannedDepthBasic, false, nil)
 	if err != nil {
 		t.Fatalf("ScanPaths() error = %v", err)
 	}
@@ -283,7 +283,7 @@ func TestFilesystemForceScanReconcilesStaleRootFileNodes(t *testing.T) {
 	})
 	resource := &commonModels.Engine{ID: 26, Name: "Business NFS", EngineType: provider.Type()}
 
-	result, err := svc.ScanPaths(resource, 1, nil, models.ScannedDepthBasic, true, nil)
+	result, err := svc.ScanPaths(context.Background(), resource, 1, nil, models.ScannedDepthBasic, true, nil)
 	if err != nil {
 		t.Fatalf("ScanPaths() error = %v", err)
 	}
@@ -359,7 +359,7 @@ func TestFilesystemScanDeletesRootFileNodesWithoutForce(t *testing.T) {
 	})
 	resource := &commonModels.Engine{ID: 26, Name: "Business NFS", EngineType: provider.Type()}
 
-	result, err := svc.ScanPaths(resource, 1, nil, models.ScannedDepthBasic, false, nil)
+	result, err := svc.ScanPaths(context.Background(), resource, 1, nil, models.ScannedDepthBasic, false, nil)
 	if err != nil {
 		t.Fatalf("ScanPaths() error = %v", err)
 	}
@@ -399,7 +399,7 @@ func TestFilesystemScanFilePathTargetDoesNotCreateNode(t *testing.T) {
 	})
 	resource := &commonModels.Engine{ID: 26, Name: "Business NFS", EngineType: provider.Type()}
 
-	result, err := svc.ScanPaths(resource, 1, []string{"README.md"}, models.ScannedDepthBasic, false, nil)
+	result, err := svc.ScanPaths(context.Background(), resource, 1, []string{"README.md"}, models.ScannedDepthBasic, false, nil)
 	if err != nil {
 		t.Fatalf("ScanPaths() error = %v", err)
 	}

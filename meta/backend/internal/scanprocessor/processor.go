@@ -20,7 +20,7 @@ import (
 )
 
 type AssetIndexer interface {
-	IndexCatalogAsset(resource *commonModels.Engine, tenantID, engineID uint, catalogResource metacatalog.StorageResource, relativePath, fullName string, item *models.MetaItem, extractedText string) bool
+	IndexCatalogAsset(ctx context.Context, resource *commonModels.Engine, tenantID, engineID uint, catalogResource metacatalog.StorageResource, relativePath, fullName string, item *models.MetaItem, extractedText string) bool
 }
 
 type input struct {
@@ -129,12 +129,18 @@ func (p Processor) Process(ctx context.Context, input input) (Result, error) {
 		return Result{}, err
 	}
 
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
 	item, err := p.persistItem(&input, attrs)
 	if err != nil {
 		return Result{}, err
 	}
 
-	counts := p.indexDeepAsset(&input, item, extraction, isDeepScan)
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	counts := p.indexDeepAsset(ctx, &input, item, extraction, isDeepScan)
 
 	return Result{Item: item, Fields: len(input.Detected.Fields), Extraction: counts}, nil
 }

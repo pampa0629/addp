@@ -9,20 +9,10 @@ import (
 	"github.com/addp/meta/internal/scantask"
 )
 
-func (s *ScanExecutionService) completeExecutionWithFailure(ctx context.Context, executionID string, tenantID int, sourceTaskID *string, scanErr error, completedAt time.Time, durationMs int64) {
-	_ = s.taskExecutionRepo.UpdateFields(ctx, executionID, tenantID, scantask.FailedExecutionFields(scanErr, completedAt, durationMs, time.Now()))
-	if sourceTaskID != nil {
-		if taskID, err := commonExecution.ParseSourceTaskIDUint(sourceTaskID); err == nil {
-			s.backfillTaskStatus(taskID, executionID, commonExecution.ExecutionStatusFailed, completedAt, tenantID)
-		}
-	}
+func (s *ScanExecutionService) completeExecutionWithFailure(ctx context.Context, execution *commonExecution.TaskExecution, scanErr error, completedAt time.Time, durationMs int64) error {
+	return s.completeBoundedExecution(ctx, execution, commonExecution.ExecutionStatusFailed, completedAt, scantask.FailedExecutionFields(scanErr, completedAt, durationMs, time.Now()))
 }
 
-func (s *ScanExecutionService) completeExecutionWithSuccess(ctx context.Context, executionID string, tenantID int, sourceTaskID *string, resp *models.ScanResponse, storageType string, completedAt time.Time, durationMs int64) {
-	_ = s.taskExecutionRepo.UpdateFields(ctx, executionID, tenantID, scantask.SuccessfulExecutionFields(resp, storageType, completedAt, durationMs, time.Now()))
-	if sourceTaskID != nil {
-		if taskID, err := commonExecution.ParseSourceTaskIDUint(sourceTaskID); err == nil {
-			s.backfillTaskStatus(taskID, executionID, commonExecution.ExecutionStatusSuccess, completedAt, tenantID)
-		}
-	}
+func (s *ScanExecutionService) completeExecutionWithSuccess(ctx context.Context, execution *commonExecution.TaskExecution, resp *models.ScanResponse, storageType string, completedAt time.Time, durationMs int64) error {
+	return s.completeBoundedExecution(ctx, execution, commonExecution.ExecutionStatusSuccess, completedAt, scantask.SuccessfulExecutionFields(resp, storageType, completedAt, durationMs, time.Now()))
 }

@@ -66,13 +66,10 @@ func (s *ScanTaskScheduler) runDueScheduledTasks(ctx context.Context) {
 	}
 
 	for _, taskID := range taskIDs {
-		executionID, err := s.claimDueScheduledTask(ctx, taskID, now)
+		_, err := s.claimDueScheduledTask(ctx, taskID, now)
 		if err != nil {
 			s.taskService.log.Warn("创建定时扫描执行失败", "task_id", taskID, "error", err)
 			continue
-		}
-		if executionID != "" {
-			s.EnqueueExecution(executionID)
 		}
 	}
 }
@@ -94,6 +91,13 @@ func (s *ScanTaskScheduler) claimDueScheduledTask(ctx context.Context, taskID ui
 		}
 
 		plannedRunAt := *task.NextRunAt
+		active, err := metaTaskActiveExecutionCount(tx, task.ID, task.TenantID)
+		if err != nil {
+			return err
+		}
+		if active > 0 {
+			return nil
+		}
 		exists, err := scheduledExecutionExists(tx, task.ID, plannedRunAt)
 		if err != nil {
 			return err
@@ -137,9 +141,12 @@ func (s *ScanTaskScheduler) claimDueScheduledTask(ctx context.Context, taskID ui
 		}
 
 		next := s.taskService.nextTimeFromSpec(task.Schedule, now)
+		taskFields := scantask.ScheduledTaskTriggerFields(now, next, time.Now())
+		taskFields["last_execution_id"] = execution.ExecutionID
+		taskFields["last_execution_status"] = commonExecution.ExecutionStatusPending
 		if err := tx.Model(&models.ScanTask{}).
 			Where("id = ?", task.ID).
-			Updates(scantask.ScheduledTaskTriggerFields(now, next, time.Now())).Error; err != nil {
+			Updates(taskFields).Error; err != nil {
 			return err
 		}
 

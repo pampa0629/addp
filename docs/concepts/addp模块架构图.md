@@ -55,10 +55,10 @@ graph TB
     end
 
     subgraph "Worker运行时"
-        TransferBoundedWorker[Transfer Bounded Worker<br/>Asynq 有界任务]
+        TransferBoundedWorker[Transfer Bounded Worker<br/>PostgreSQL Claim]
         TransferContinuousWorker[Transfer Continuous Worker<br/>Supervisor / Runtime Sessions]
         MetaWorker[Meta Worker<br/>扫描任务处理]
-        QualityWorker[Quality Execution Worker<br/>Backend 内嵌 / DB Claim]
+        QualityWorker[Quality Worker<br/>独立进程 / PostgreSQL Claim]
     end
 
     subgraph "共享模块"
@@ -75,7 +75,7 @@ graph TB
 
     subgraph "基础设施层"
         PostgreSQL[(PostgreSQL<br/>系统数据库<br/>:15432)]
-        Redis[(Redis<br/>缓存/队列<br/>:16379)]
+        Redis[(Redis<br/>缓存/事件<br/>:16379)]
         MinIO[(MinIO<br/>对象存储<br/>:19000)]
         Meilisearch[(Meilisearch<br/>全文搜索<br/>:17700)]
         InfraKafka[(Infra Kafka<br/>KRaft<br/>:19092)]
@@ -166,11 +166,11 @@ graph TB
 - **前端层**: 各模块的独立前端应用,Console 通过 iframe 集成所有模块前端
 - **网关层**: Gateway 统一处理外部请求并路由到对应的后端服务
 - **服务层**: 各业务模块的后端服务,提供 RESTful API
-- **Worker运行时**: 执行 owner 的后台执行角色，可以是独立进程，也可以内嵌在 owner Backend
-  - **Transfer Bounded Worker**: 基于 Asynq 的异步任务队列，处理 snapshot 和 watermark bounded execution。
+- **Worker运行时**: bounded execution 数据面使用 owner 模块附属的独立进程；owner Backend 只承担 API、调度和控制面。
+  - **Transfer Bounded Worker**: 从 `common.task_executions` PostgreSQL claim snapshot、watermark 和 bounded replay execution。
   - **Transfer Continuous Worker**: 已实现的独立长驻进程角色，通过 supervisor、DB lease、heartbeat 和 fencing 承载多个 continuous runtime session；不使用 Asynq 承载无限消费循环。当前数据面开放业务 Kafka keyed JSON -> PostgreSQL/MySQL，以及 PostgreSQL/MySQL/Oracle 单表 Debezium CDC -> PostgreSQL/MySQL/Oracle；Oracle Spatial 由 Oracle capture Provider 在源 schema 内维护 WKB 镜像表后进入同一 Debezium/consumer/apply 主路径，Oracle target 只开放 XY geometry。两类 source 共用同一 continuous runtime、position、lease 和 fencing；ArcGIS SDE 仍保留为后续独立逻辑变化源 Provider，不能并入普通 Oracle redo CDC。
-  - **Meta Worker**: 基于 Asynq 的扫描任务处理,执行元数据扫描和索引
-  - **Quality Execution Worker**: 内嵌在 Quality Backend，使用 PostgreSQL execution claim、lease 和有界执行槽位处理质量检查；不使用 Redis/Asynq。
+  - **Meta Worker**: 从 `common.task_executions` PostgreSQL claim 扫描 execution，执行元数据扫描和索引。
+  - **Quality Worker**: 独立进程，从 `common.task_executions` PostgreSQL claim 质量检查 execution，执行评分和 Issue reconcile。
 - **Manager 快显与瓦片任务**: `vector_tile_cache_generation` 与 `vector_tile_set_generation` 由 Manager Backend 按源能力选择唯一执行路径：PostgreSQL/PostGIS 表使用原生 `ST_AsMVT`，MySQL、Oracle 等标准 EWKB 可读的空间表流式物化临时 FlatGeobuf 后调用 GeoPython `vector_to_pmtiles`，文件或对象通过受控访问计划调用同一 operator；三类路径统一输出 PMTiles v3。任务定义、执行记录和缓存结果分别进入 Manager owner 表、`common.task_executions` 与 `manager.vector_tile_cache`。`vector_materialized_view_generation` 仍由 Manager Backend 在手动或编排触发时执行，结果进入 `manager.vector_materialized_view`。这些任务当前不启动模块自身定时调度；若需要多执行器横向扩展或独立 GIS 资源隔离，应将对应任务类型整体切换为唯一的 Manager Worker 或 GIS 执行引擎，不允许 Backend 与 Worker 双轨并存。
 - **共享模块**: common 和 common-frontend 提供可复用的代码和组件
 - **扩展运行时**: `engines/` 目录集中放置不拥有业务配置事实的独立计算 / Notebook Runtime 实现，由业务模块通过统一 Provider 调用。Inference 同时拥有 Provider、Deployment、Profile、凭据和配置管理入口，因此保留为根目录业务模块；其数据面端点另以 `inference_runtime` Engine Instance 纳入统一引擎体系，不在 `engines/` 下复制 owner 实现。
@@ -187,16 +187,16 @@ graph TB
 | **Gateway** | API 网关,请求路由和转发 | 8000 / 8000 | Go, Gin |
 | **Manager** | 数据管理:数据存储目录展示、数据预览、空间快显和瓦片缓存 | 8081 / 8081 | Go, Gin, OpenLayers |
 | **Meta** | 元数据服务:扫描、索引、搜索 | 8082 / 8082 | Go, Gin, Meilisearch, Cron |
-| **Meta Worker** | Meta 扫描任务处理器 | - | Go, Asynq Worker |
-| **Transfer** | 数据传输:同步、搬运、格式转换任务 | 8083 / 8083 | Go, Gin, Asynq |
-| **Transfer Bounded Worker** | Transfer 有界任务处理器 | - | Go, Asynq Worker |
+| **Meta Worker** | Meta 扫描任务处理器 | - | Go, PostgreSQL claim/lease |
+| **Transfer** | 数据传输:同步、搬运、格式转换任务 | 8083 / 8083 | Go, Gin, GORM |
+| **Transfer Bounded Worker** | Transfer 有界任务处理器 | - | Go, PostgreSQL claim/lease |
 | **Transfer Continuous Worker** | Transfer 持续任务处理器 | - | Go, DB lease, Kafka client |
 | **Orchestrator** | 任务编排:跨模块任务编排调度 | 8084 / 8084 | Go, Gin, Cron |
 | **Develop** | 数据开发:查询执行、工作流、Notebook 开发 | 8185 / 8185 | Go, Gin, Monaco Editor |
 | **Service** | 数据服务:服务发布(空间OGC标准与非空间)、外部服务注册 | 8086 / 8086 | Go, Gin, OGC 标准 |
 | **Monitor** | 执行监控:统一监控所有模块的任务执行记录、统计分析 | 8100 / 8100 | Go, Gin, PostgreSQL |
 | **Quality** | 数据质量:规则应用、检查任务、质量评分和问题治理 | 8182 / 8182 | Go, Gin, GORM |
-| **Quality Execution Worker** | Quality 有界检查执行器，内嵌于 Quality Backend | - | Go, PostgreSQL claim/lease |
+| **Quality Worker** | Quality 有界检查执行器，独立进程 | - | Go, PostgreSQL claim/lease |
 | **Inference** | 统一 AI 推理：Provider Connection、Model Deployment、Model Profile、加密凭据和推理数据面 | 8191 / 8191 | Go, Gin, GORM |
 | **Copilot** | AI 辅助助手：输入资源解析与确认、查询/工作流/Notebook/Transfer 领域生成、导航和图谱抽取 | 8087 / 8087 | Python, FastAPI, LangChain |
 
@@ -293,29 +293,29 @@ graph LR
 
 ## Worker 运行时
 
-ADDP 的 execution worker 是执行 owner 的运行时角色，不等同于独立操作系统进程。Meta 与 Transfer 使用独立 Worker 进程；Quality 使用内嵌在 Backend 的有界 worker 池。Manager 当前没有独立 Worker；PostgreSQL/PostGIS 原生 MVT、MySQL/Oracle 临时 FlatGeobuf 到 GeoPython PMTiles、文件或对象到 GeoPython PMTiles，以及矢量物化视图均由 Manager Backend 在手动或 Orchestrator 编排触发时执行。Manager 受管当前结果任务不启动 owner scheduler；Embedding 的逐 item 调度器独立保留。若后续格式实现需要多执行器并发或独立资源隔离，应先把文档和任务运行时统一切换到 Manager Worker 或 GIS 执行引擎，再实现代码，不保留 Backend 与 Worker 双轨。
+ADDP 的 execution worker 是执行 owner 的运行时角色。Quality、Meta 和 Transfer bounded 使用各模块附属的独立 Worker 进程，Transfer continuous 使用专用长期运行时 Worker；对应 Backend 只承担控制面。Manager 当前没有独立 Worker；PostgreSQL/PostGIS 原生 MVT、MySQL/Oracle 临时 FlatGeobuf 到 GeoPython PMTiles、文件或对象到 GeoPython PMTiles，以及矢量物化视图均由 Manager Backend 在手动或 Orchestrator 编排触发时执行。Manager 受管当前结果任务不启动 owner scheduler；Embedding 的逐 item 调度器独立保留。若后续格式实现需要多执行器并发或独立资源隔离，应先把文档和任务运行时统一切换到 Manager Worker 或 GIS 执行引擎，再实现代码，不保留 Backend 与 Worker 双轨。
 
 ```mermaid
 graph TB
     subgraph "Transfer 模块"
         TB[Transfer Backend<br/>:8083]
-        TW[Transfer Bounded Worker<br/>Asynq 有界任务]
+        TW[Transfer Bounded Worker<br/>PostgreSQL claim / lease]
         TCW[Transfer Continuous Worker<br/>Supervisor / Runtime Sessions]
-        TB -.入队.-> Redis
-        Redis -.消费.-> TW
+        TB -.创建 pending execution.-> ExecutionDB[(common.task_executions)]
+        TW -.claim / lease.-> ExecutionDB
         TB -.desired state / pending execution.-> TCW
     end
 
     subgraph "Meta 模块"
         MB[Meta Backend<br/>:8082]
         MW[Meta Worker<br/>扫描任务处理器]
-        MB -.入队.-> Redis2[Redis]
-        Redis2 -.消费.-> MW
+        MB -.创建 pending execution.-> ExecutionDB
+        MW -.claim / lease.-> ExecutionDB
     end
 
     subgraph "Quality 模块"
         QB[Quality Backend<br/>:8182]
-        QW[Quality Execution Worker<br/>Backend 内嵌 / 有界槽位]
+        QW[Quality Worker<br/>独立进程 / 有界槽位]
         QB --> QDB[(common.task_executions)]
         QW -.DB claim / lease.-> QDB
     end
@@ -326,11 +326,6 @@ graph TB
         QVO[VectorMaterializedViewTask<br/>vector_materialized_view_generation]
         MB2 --> TCT
         MB2 --> QVO
-    end
-
-    subgraph "任务队列 (Asynq)"
-        Redis[(Redis<br/>任务队列)]
-        Redis2[(Redis<br/>任务队列)]
     end
 
     TB --> PostgreSQL[(PostgreSQL)]
@@ -358,22 +353,22 @@ graph TB
 
 | 运行时 | 所属模块 | 职责 | 技术栈 |
 |--------|---------|------|-------|
-| **Transfer Bounded Worker** | Transfer | 处理 snapshot 和 watermark bounded `sync` execution，handler 完成后释放 Asynq slot | Go, Asynq, Redis |
+| **Transfer Bounded Worker** | Transfer | PostgreSQL claim snapshot、watermark 和 bounded replay execution，持有 execution lease 后执行 | Go, PostgreSQL claim/lease |
 | **Transfer Continuous Worker** | Transfer | 一个进程承载多个 continuous runtime session，按 task claim lease，并在 session 内受限处理 partition | Go, DB lease, Kafka client |
-| **Meta Worker** | Meta | 异步处理元数据扫描和索引任务,支持定时调度 | Go, Asynq, Redis |
-| **Quality Execution Worker** | Quality | 内嵌 Backend，领取已授权 `pending` check execution，执行规则、评分和 Issue reconcile | Go, PostgreSQL `SKIP LOCKED`, execution lease |
+| **Meta Worker** | Meta | PostgreSQL claim 扫描 execution，处理元数据扫描和索引；定时调度留在 Backend | Go, PostgreSQL claim/lease |
+| **Quality Worker** | Quality | 独立进程领取已授权 `pending` check execution，执行规则、评分和 Issue reconcile | Go, PostgreSQL claim/lease |
 | **TileCacheTask** | Manager | 在 Manager Backend 内按手动请求或 Orchestrator 编排触发 `vector_tile_cache_generation`，执行记录写入 `common.task_executions` | Go, TaskProvider API |
 | **VectorMaterializedViewTask** | Manager | 在 Manager Backend 内按用户手动或 Orchestrator 编排触发执行 `vector_materialized_view_generation`，创建或刷新 Manager 管理的 3857 矢量物化视图目标 | Go, TaskProvider API |
 
 **运行时说明**:
-- **Asynq 队列**: 当前用于 Transfer、Meta 等独立 Worker 场景。
+- **Bounded execution queue**: Quality、Meta、Transfer bounded 统一以 `common.task_executions` PostgreSQL claim 为唯一领取路线，不使用 Redis/Asynq 或进程内 channel。
 - **Continuous supervisor**: Transfer continuous worker 直接 claim pending execution 和 `transfer.runtime_leases`；同一 task 同一时刻只有一个合法 owner，不把长期 session 投递为 Asynq job。
-- **Quality DB claim**: Quality Backend 内的 execution worker 直接从 `common.task_executions` 领取已授权 `pending` check execution；每个实例使用有界槽位，多实例继续通过 `SKIP LOCKED` 与 lease 协调。
+- **Quality DB claim**: 独立 `quality-worker` 从 `common.task_executions` 领取已授权 `pending` check execution；每个实例使用有界槽位，多实例通过 `SKIP LOCKED`、attempt 与 `lease_token` 协调。
 - **CDC capture supervisor**: Transfer 已实现唯一 capture control plane，通过 Kafka Connect REST 管理 PostgreSQL/MySQL Debezium connector，并负责 generation、provider 专属捕获资源、内部 topic/group/ACL 的任务级生命周期；它不嵌入 continuous worker，也不把 Infra Kafka 注册为 System Engine。
 - **Manager 受管结果调度边界**: 瓦片缓存、矢量物化视图等受管当前结果任务均为 `supports_schedule=false`，不由 Manager 自身定时调度；周期性刷新由 Orchestrator 显式携带本次覆盖确认触发。Embedding 的逐 item owner scheduler 独立保留。
 - **执行记录**: 各模块执行状态统一写入 `common.task_executions`。
 - **角色边界**: owner scheduler 负责创建和投递 execution，execution worker 负责真实运行体与终态，Monitor dispatcher 只消费通知 outbox；固定 cleanup、collector 和 heartbeat 属于 maintenance loop，不应统称 worker。
-- **单一路线**: 同一 task type 只能有一条正式执行路线。Meta scan 的正式路线是独立 Asynq Worker；当前代码中的 Redis 缺失时本地队列 fallback 是待收敛双轨，不作为架构能力保留。
+- **单一路线**: 同一 task type 只能有一条正式执行路线。Quality check、Meta scan 和 Transfer bounded 的正式路线均是独立 Worker + PostgreSQL claim；Backend 不执行 bounded 业务逻辑。
 - **结果状态**: Manager 瓦片缓存结果状态写入 `manager.vector_tile_cache`，矢量物化视图结果状态写入 `manager.vector_materialized_view`，不由 execution 替代。
 - **未来切换条件**: 当 Manager API 响应因后台生成受影响、临时材料与 GeoPython 调用需要独立资源隔离，或需要多个执行器并行消费同一类任务时，对应任务类型应切换到唯一的 Manager Worker 或 GIS 执行引擎运行时。
 

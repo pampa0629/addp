@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
@@ -17,34 +18,12 @@ import (
 	"gorm.io/gorm"
 )
 
-type fakeTaskQueue struct {
-	err         error
-	enqueued    bool
-	taskID      uint
-	executionID uint
-	tenantID    uint
-}
-
-func (q *fakeTaskQueue) EnqueueExecuteTask(ctx context.Context, taskID, executionID, tenantID uint) error {
-	q.enqueued = true
-	q.taskID = taskID
-	q.executionID = executionID
-	q.tenantID = tenantID
-	return q.err
-}
-
-func (q *fakeTaskQueue) Close() error {
-	return nil
-}
-
-func TestRetryExecutionEnqueuesRestartExecution(t *testing.T) {
+func TestRetryExecutionCreatesDurablePendingExecution(t *testing.T) {
 	ctx := context.Background()
 	db := newExecutionServiceTestDB(t)
 	task := createExecutionServiceTestTask(t, db)
 	oldExecution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusFailed)
-	queue := &fakeTaskQueue{}
 	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
-	service.SetTaskQueue(queue)
 
 	newExecution, err := service.RetryExecution(ctx, uint(oldExecution.ID), uint(task.TenantID), 9)
 	if err != nil {
@@ -53,14 +32,6 @@ func TestRetryExecutionEnqueuesRestartExecution(t *testing.T) {
 	if newExecution == nil {
 		t.Fatal("RetryExecution returned nil execution")
 	}
-	if !queue.enqueued {
-		t.Fatal("retry execution was not enqueued")
-	}
-	if queue.taskID != task.ID || queue.executionID != newExecution.ID || queue.tenantID != uint(task.TenantID) {
-		t.Fatalf("enqueued payload = task %d execution %d tenant %d, want task %d execution %d tenant %d",
-			queue.taskID, queue.executionID, queue.tenantID, task.ID, newExecution.ID, task.TenantID)
-	}
-
 	var updatedTask models.TransferTask
 	if err := db.First(&updatedTask, task.ID).Error; err != nil {
 		t.Fatalf("load updated task: %v", err)
@@ -81,6 +52,9 @@ func TestRetryExecutionEnqueuesRestartExecution(t *testing.T) {
 	}
 	if len(storedExecution.ExecutionConfig) == 0 {
 		t.Fatal("pending retry execution_config is empty")
+	}
+	if storedExecution.RetryOfExecutionID == nil || *storedExecution.RetryOfExecutionID != oldExecution.ExecutionID {
+		t.Fatalf("retry_of_execution_id = %#v, want %s", storedExecution.RetryOfExecutionID, oldExecution.ExecutionID)
 	}
 }
 
@@ -162,9 +136,7 @@ func TestRetryExecutionDoesNotCarryCheckpointState(t *testing.T) {
 	if err := db.Save(&oldExecution).Error; err != nil {
 		t.Fatalf("save old execution metadata: %v", err)
 	}
-	queue := &fakeTaskQueue{}
 	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
-	service.SetTaskQueue(queue)
 
 	newExecution, err := service.RetryExecution(ctx, uint(oldExecution.ID), uint(task.TenantID), 9)
 	if err != nil {
@@ -177,47 +149,6 @@ func TestRetryExecutionDoesNotCarryCheckpointState(t *testing.T) {
 	}
 	if len(storedExecution.Metadata) != 0 {
 		t.Fatalf("new retry metadata = %#v, want empty restart metadata", storedExecution.Metadata)
-	}
-}
-
-func TestRetryExecutionRollsBackWhenEnqueueFails(t *testing.T) {
-	ctx := context.Background()
-	db := newExecutionServiceTestDB(t)
-	task := createExecutionServiceTestTask(t, db)
-	oldExecution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusFailed)
-	queue := &fakeTaskQueue{err: fmt.Errorf("queue down")}
-	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
-	service.SetTaskQueue(queue)
-
-	_, err := service.RetryExecution(ctx, uint(oldExecution.ID), uint(task.TenantID), 9)
-	if err == nil {
-		t.Fatal("RetryExecution succeeded, want enqueue error")
-	}
-	if !queue.enqueued {
-		t.Fatal("retry execution did not attempt enqueue")
-	}
-
-	var updatedTask models.TransferTask
-	if err := db.First(&updatedTask, task.ID).Error; err != nil {
-		t.Fatalf("load updated task: %v", err)
-	}
-	if updatedTask.Status != models.TaskStatusIdle || updatedTask.Progress != 0 {
-		t.Fatalf("task state = %s progress %.2f, want idle progress 0", updatedTask.Status, updatedTask.Progress)
-	}
-
-	var executions []commonExecution.TaskExecution
-	if err := db.Order("id asc").Find(&executions).Error; err != nil {
-		t.Fatalf("load executions: %v", err)
-	}
-	if len(executions) != 2 {
-		t.Fatalf("execution count = %d, want 2", len(executions))
-	}
-	newExecution := executions[1]
-	if newExecution.Status != commonExecution.ExecutionStatusFailed {
-		t.Fatalf("new execution status = %s, want failed", newExecution.Status)
-	}
-	if newExecution.ErrorDetails["message"] != "queue down" {
-		t.Fatalf("new execution error message = %#v, want queue down", newExecution.ErrorDetails["message"])
 	}
 }
 
@@ -234,16 +165,11 @@ func TestRetryExecutionRejectsAppendTask(t *testing.T) {
 		t.Fatalf("update task config: %v", err)
 	}
 	oldExecution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusFailed)
-	queue := &fakeTaskQueue{}
 	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
-	service.SetTaskQueue(queue)
 
 	_, err := service.RetryExecution(ctx, uint(oldExecution.ID), uint(task.TenantID), 9)
 	if err == nil {
 		t.Fatal("RetryExecution succeeded, want append rejection")
-	}
-	if queue.enqueued {
-		t.Fatal("append retry was enqueued")
 	}
 
 	var executions []commonExecution.TaskExecution
@@ -266,14 +192,9 @@ func TestRetryExecutionRejectsSchemaBlockedCDC(t *testing.T) {
 		t.Fatal(err)
 	}
 	oldExecution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusFailed)
-	queue := &fakeTaskQueue{}
 	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
-	service.SetTaskQueue(queue)
 	if _, err := service.RetryExecution(ctx, uint(oldExecution.ID), uint(task.TenantID), 9); !errors.Is(err, ErrCDCSchemaChangeBlocked) {
 		t.Fatalf("RetryExecution() error = %v, want ErrCDCSchemaChangeBlocked", err)
-	}
-	if queue.enqueued {
-		t.Fatal("schema-blocked CDC retry was enqueued")
 	}
 }
 
@@ -287,6 +208,7 @@ func TestUpdateExecutionMergesMetadataAndDTOExposesIt(t *testing.T) {
 		t.Fatalf("save execution metadata: %v", err)
 	}
 	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+	bindExecutionServiceTestLease(t, db, service, &execution)
 
 	err := service.UpdateExecution(ctx, uint(execution.ID), map[string]interface{}{
 		"metadata": map[string]interface{}{
@@ -369,6 +291,7 @@ func TestTableProgressCallbackStoresResumeAndCommitMarkers(t *testing.T) {
 	task := createExecutionServiceTestTask(t, db)
 	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusRunning)
 	executionService := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+	bindExecutionServiceTestLease(t, db, executionService, &execution)
 	engineService := &ExecutionEngineService{
 		taskRepo:         repositoryForExecutionServiceTest(db),
 		executionService: executionService,
@@ -426,6 +349,7 @@ func TestRawCopyProgressCallbackStoresByteMetricsAndContentCheckpoint(t *testing
 	task := createExecutionServiceTestTask(t, db)
 	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusRunning)
 	executionService := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+	bindExecutionServiceTestLease(t, db, executionService, &execution)
 	engineService := &ExecutionEngineService{
 		taskRepo:         repositoryForExecutionServiceTest(db),
 		executionService: executionService,
@@ -579,4 +503,20 @@ func createExecutionServiceTestExecution(t *testing.T, db *gorm.DB, task models.
 		t.Fatalf("create execution: %v", err)
 	}
 	return execution
+}
+
+func bindExecutionServiceTestLease(t *testing.T, db *gorm.DB, service *ExecutionService, execution *commonExecution.TaskExecution) {
+	t.Helper()
+	owner := "transfer-test-worker"
+	token := "00000000-0000-0000-0000-000000000001"
+	expiresAt := time.Now().Add(time.Hour)
+	execution.ExecutionBoundary = commonExecution.ExecutionBoundaryBounded
+	execution.Attempt = 1
+	execution.LeaseOwner = &owner
+	execution.LeaseToken = &token
+	execution.LeaseExpiresAt = &expiresAt
+	if err := db.Save(execution).Error; err != nil {
+		t.Fatalf("save execution lease: %v", err)
+	}
+	service.BindBoundedLease(uint(execution.ID), commonExecution.Lease{ExecutionID: execution.ExecutionID, TenantID: execution.TenantID, Attempt: 1, Token: token, Owner: owner})
 }

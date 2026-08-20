@@ -96,6 +96,9 @@ func scanObjectCatalogPaths(
 	}
 
 	for _, rawPath := range paths {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
 		if reporter != nil {
 			reporter.Message(fmt.Sprintf("扫描对象路径 %s", rawPath))
 		}
@@ -178,7 +181,7 @@ func scanObjectCatalogPaths(
 		if target.Object != "" {
 			scanPathPrefix = metacatalog.ParentObjectPath(target.Object)
 		}
-		objectCount, pathExtractionStats, err := runtime.persistObjectResources(resource, tenantID, engineID, bucketNode, resources, nodeStats, fullBucket, scanDepth, force, scanPathPrefix, scannedFingerprints, itemTerm)
+		objectCount, pathExtractionStats, err := runtime.persistObjectResources(ctx, resource, tenantID, engineID, bucketNode, resources, nodeStats, fullBucket, scanDepth, force, scanPathPrefix, scannedFingerprints, itemTerm)
 		if err != nil {
 			completed++
 			if reporter != nil {

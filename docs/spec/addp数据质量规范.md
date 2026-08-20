@@ -202,9 +202,9 @@ Quality 使用数据库任务队列作为唯一执行路线，不使用请求内
 1. API 在 CheckTask 行锁事务内检查该任务不存在 `pending|running` execution。
 2. 同一事务创建 `common.task_executions(status=pending, started_at=NULL)`，冻结版本化 execution 配置、任务目标、超时预算和启用规则应用快照，并更新任务最近执行摘要。
 3. 事务提交后签发 Execution Authorization，再以条件更新把授权事实附加到仍为 pending 的 execution；签发或附加失败必须将该 execution 置为 failed。
-4. worker 只领取已附加 Execution Authorization 的 pending execution，使用 `FOR UPDATE SKIP LOCKED` 原子推进为 `running`，设置 `started_at`、`lease_owner` 和 `lease_expires_at`。
-5. 每个 Quality 实例使用 `QUALITY_WORKER_CONCURRENCY` 个有界执行槽位并行消费不同 CheckTask；默认值为 `4`，配置必须为正整数。并发数是单进程资源上限，不写入 execution，也不改变任务语义；跨实例和同实例的所有槽位仍以数据库 claim 与 lease 为唯一协调事实。
-6. lease 过期恢复由每个 Quality 实例的单一恢复循环负责，执行槽位不得各自重复扫描恢复队列。
+4. 独立 `quality-worker` 只领取已附加 Execution Authorization 的 pending execution，使用 `FOR UPDATE SKIP LOCKED` 原子推进为 `running`，设置 `started_at`、`attempt`、`lease_owner`、不可复用的 `lease_token` 和 `lease_expires_at`。`quality-backend` 不得启动执行槽位。
+5. 每个 `quality-worker` 实例使用 `QUALITY_WORKER_CONCURRENCY` 个有界执行槽位并行消费不同 CheckTask；默认值为 `4`，配置必须为正整数。并发数是单进程资源上限，不写入 execution，也不改变任务语义；跨实例和同实例的所有槽位仍以数据库 claim 与 lease 为唯一协调事实。
+6. lease 过期恢复由每个 `quality-worker` 实例的单一恢复循环负责，执行槽位不得各自重复扫描恢复队列。
 7. 数据库领取事务必须短小；外部 HTTP、目标数据库查询和结果计算都在事务外完成。
 
 ### 7.2 lease 与恢复
@@ -213,7 +213,7 @@ Quality 使用数据库任务队列作为唯一执行路线，不使用请求内
 - worker 必须以 execution 冻结的 `check_timeout_ms` 为整次检查建立 Context 截止时间；授权消费、目标连接、所有规则 SQL 和结果计算共享这一预算。截止时间到达时必须取消正在执行的 PostgreSQL 语句并写 `timeout + quality.execution.timeout`，不得误记为普通 SQL 失败，也不得协调 Issue 或写部分评分。
 - worker 启动和固定周期都扫描 lease 已过期的 running execution。
 - 每次成功领取时增加 `attempt`；lease 过期后，未达到最大尝试次数的 execution 回到 pending，达到上限则进入 failed 并写稳定错误码。
-- 只有持有当前 lease 的 worker 可以写进度和终态，防止过期 worker 覆盖新 worker 结果。
+- 只有 attempt、`lease_token` 和运行状态全部匹配的 worker 可以续租、写进度和写终态，防止相同 worker 名称或过期尝试覆盖新结果。
 - 终态只允许 `success`、`failed`、`timeout`、`cancelled`，并按任务体系规范写完成时间和耗时。
 
 Quality 当前不提供取消，因为目标 SQL 的可靠中断、连接回收和终态确认尚未形成闭环。

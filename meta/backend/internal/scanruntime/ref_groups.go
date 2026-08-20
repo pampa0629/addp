@@ -10,6 +10,7 @@ import (
 )
 
 func (s *FilesystemCatalogRuntime) ScanRefGroups(
+	ctx context.Context,
 	resource *commonModels.Engine,
 	tenantID uint,
 	groups []models.ScanRefGroup,
@@ -20,10 +21,11 @@ func (s *FilesystemCatalogRuntime) ScanRefGroups(
 	metaenrich.RegisterItemResolvers()
 	_ = force
 	scanDepth = scanflow.ScanDepthOrDefault(scanDepth, "deep")
-	return scanFileRefGroups(context.Background(), s, resource, tenantID, groups, scanDepth, reporter)
+	return scanFileRefGroups(ctx, s, resource, tenantID, groups, scanDepth, reporter)
 }
 
 func (s *ObjectStorageCatalogRuntime) ScanRefGroups(
+	ctx context.Context,
 	resource *commonModels.Engine,
 	tenantID uint,
 	groups []models.ScanRefGroup,
@@ -34,7 +36,7 @@ func (s *ObjectStorageCatalogRuntime) ScanRefGroups(
 	metaenrich.RegisterItemResolvers()
 	_ = force
 	scanDepth = scanflow.ScanDepthOrDefault(scanDepth, "deep")
-	result, err := scanObjectRefGroups(context.Background(), s, s.repo, resource, tenantID, groups, scanDepth, reporter)
+	result, err := scanObjectRefGroups(ctx, s, s.repo, resource, tenantID, groups, scanDepth, reporter)
 	if err != nil {
 		return scanflow.DispatchResult{}, err
 	}

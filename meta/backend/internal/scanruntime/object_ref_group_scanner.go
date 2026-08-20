@@ -48,6 +48,9 @@ func scanObjectRefGroups(
 	scannedFingerprints := map[string]bool{}
 
 	for i, group := range groups {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
 		primary := scanflow.ScanRefGroupPrimaryPath(group)
 		if primary == "" {
 			continue
@@ -97,7 +100,7 @@ func scanObjectRefGroups(
 				Claims: detection.Claims,
 			})
 		}
-		count, extractionStats, err := runtime.persistObjectCatalogCompositeItems(resource, tenantID, resource.ID, bucketNode, bucketNode, composites, stats, false, candidates.DirPath, scannedFingerprints, itemTerm, contentReader, connInfo, scanDepth)
+		count, extractionStats, err := runtime.persistObjectCatalogCompositeItems(ctx, resource, tenantID, resource.ID, bucketNode, bucketNode, composites, stats, false, candidates.DirPath, scannedFingerprints, itemTerm, contentReader, connInfo, scanDepth)
 		if err != nil {
 			return result, err
 		}

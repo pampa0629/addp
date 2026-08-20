@@ -482,9 +482,9 @@ WGS84 bounds、SRID 和 CRS 属于 `capabilities.spatial`，不重复写入 `for
 | `crs_ref` | 当前空间对象或几何字段引用的 CRS ID。能确定 EPSG 时写 `EPSG:<code>`；不能确定 EPSG 但能获得定义文本时写 `ADDP:CRS:<sha256>`。字段型空间对象优先写在对应 `geometry_columns[]` 内；非字段型空间对象写在顶层。 |
 | `crs_definitions` | CRS 定义集合。只允许写在 `capabilities.spatial` 顶层，字段通过 `crs_ref` 引用，不得在各字段内重复写定义文本。 |
 | `crs_definitions[].id` | CRS 定义 ID，必须被 `crs_ref` 引用。能确定 EPSG 时使用 `EPSG:<code>`；否则使用 `ADDP:CRS:<sha256>`。 |
-| `crs_definitions[].definition_encoding` | CRS 定义表达方式。第一阶段只允许 `wkt`、`esri_wkt`、`proj4`；不得写 `projjson`，因为当前前端不能直接注册。 |
-| `crs_definitions[].definition` | CRS 定义文本，例如 PostGIS `spatial_ref_sys.srtext`、Shapefile `.prj`、GeoPackage `gpkg_spatial_ref_sys.definition` 或 proj4 字符串。 |
-| `crs_definitions[].source` | CRS 定义来源枚举，例如 `postgis_spatial_ref_sys`、`mysql_st_spatial_reference_systems`、`sidecar_prj`、`geopackage_srs`、`geotiff_tags`。 |
+| `crs_definitions[].definition_encoding` | CRS 定义表达方式。只允许 `wkt`、`esri_wkt`、`proj4`、`projjson`。消费者必须按自身能力选择可处理的表达，不得因为前端不能直接注册某种表达而从平台空间事实中删除它。 |
+| `crs_definitions[].definition` | CRS 定义文本，例如 PostGIS `spatial_ref_sys.srtext`、Shapefile `.prj`、GeoPackage `gpkg_spatial_ref_sys.definition`、proj4 字符串或 GeoParquet `crs` 的 PROJJSON 文本。 |
+| `crs_definitions[].source` | CRS 定义来源枚举，例如 `postgis_spatial_ref_sys`、`mysql_st_spatial_reference_systems`、`sidecar_prj`、`geopackage_srs`、`geotiff_tags`、`geoparquet_metadata`。`crs_normalization_runtime` 只用于 execution-local CRS 定义转换结果，不得反写覆盖 Meta 保存的源定义事实。 |
 | `dimension` | 坐标维度，无法确定时可省略。 |
 | `nullable` | 字段是否可空，无法确定时可省略。 |
 | `primary_geometry_column` | Manager 默认空间预览使用的几何字段。多几何字段时必须明确；单几何字段时建议写入；没有字段列概念的空间媒体应省略。 |

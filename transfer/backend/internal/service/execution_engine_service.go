@@ -93,19 +93,19 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, task *models.TransferTask, executionID uint) error {
 	if s.systemClient == nil {
 		err := fmt.Errorf("system client is required for common engine/format transfer task")
-		s.updateExecutionError(task, executionID, err)
+		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
 
 	if err := s.executionService.UpdateStatus(ctx, executionID, models.ExecutionStatusRunning); err != nil {
-		s.logger.Warn("failed to update execution status", "error", err)
+		return fmt.Errorf("assert bounded execution ownership: %w", err)
 	}
 
 	rawSpec, rawErr := planner.ParseRawCopyTaskSpec(task.Config)
 	if rawErr == nil {
 		if err := s.attachRawCopySourceMetaAttributes(task, &rawSpec); err != nil {
 			wrapped := fmt.Errorf("load source meta item attributes: %w", err)
-			s.updateExecutionError(task, executionID, wrapped)
+			s.updateExecutionError(ctx, task, executionID, wrapped)
 			return wrapped
 		}
 		resolver := planner.NewHybridEngineResolver(planner.BindEngineResolver(planner.NewSystemEngineResolver(s.systemClient), task.TenantID), s.infraEngineResolver())
@@ -115,12 +115,12 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 	spec, err := planner.ParseTableExportTaskSpec(task.Config, task.BatchSize)
 	if err != nil {
 		wrapped := fmt.Errorf("parse common transfer task config: table=%v; raw_copy=%v", err, rawErr)
-		s.updateExecutionError(task, executionID, wrapped)
+		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
 	}
 	if err := s.attachSourceMetaAttributes(task, &spec); err != nil {
 		wrapped := fmt.Errorf("load source meta item attributes: %w", err)
-		s.updateExecutionError(task, executionID, wrapped)
+		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
 	}
 
@@ -134,7 +134,7 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 func (s *ExecutionEngineService) executeWatermarkIncrementalTask(ctx context.Context, task *models.TransferTask, executionID uint, spec planner.TableExportTaskSpec, resolver planner.EngineResolver) error {
 	if s.syncStateRepo == nil {
 		err := fmt.Errorf("sync state repository is required for watermark incremental task")
-		s.updateExecutionError(task, executionID, err)
+		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
 	execution, err := s.executionService.taskExecutionRepo.GetByID(ctx, int64(executionID), 0)
@@ -145,23 +145,23 @@ func (s *ExecutionEngineService) executeWatermarkIncrementalTask(ctx context.Con
 	fencingToken := metadataUint64(execution.Metadata, "fencing_token")
 	if stateID == 0 || fencingToken == 0 {
 		err := fmt.Errorf("watermark execution is missing sync state fencing metadata")
-		s.updateExecutionError(task, executionID, err)
+		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
 	state, err := s.syncStateRepo.GetByID(ctx, stateID)
 	if err != nil {
-		s.updateExecutionError(task, executionID, err)
+		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
 	start, err := watermarkCursorFromPosition(state.Position)
 	if err != nil {
-		s.updateExecutionError(task, executionID, err)
+		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
 	build, err := planner.BuildWatermarkIncrementalPlan(spec, resolver)
 	if err != nil {
 		wrapped := fmt.Errorf("build watermark incremental plan: %w", err)
-		s.updateExecutionError(task, executionID, wrapped)
+		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
 	}
 	build.Plan.Start = start
@@ -191,7 +191,7 @@ func (s *ExecutionEngineService) executeWatermarkIncrementalTask(ctx context.Con
 	}
 	incrementalExecutor, err := executor.NewWatermarkIncrementalExecutor(build.SourceEngineType, build.TargetEngineType)
 	if err != nil {
-		s.updateExecutionError(task, executionID, err)
+		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
 	metrics, err := incrementalExecutor.Execute(ctx, build.Plan)
@@ -200,7 +200,7 @@ func (s *ExecutionEngineService) executeWatermarkIncrementalTask(ctx context.Con
 		if metrics != nil {
 			s.updateTableTransferMetrics(executionID, metrics.RecordsRead, metrics.RecordsWritten)
 		}
-		s.updateExecutionError(task, executionID, wrapped)
+		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
 	}
 	s.updateTableTransferMetrics(executionID, metrics.RecordsRead, metrics.RecordsWritten)
@@ -216,7 +216,7 @@ func (s *ExecutionEngineService) executeWatermarkIncrementalTask(ctx context.Con
 	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
 		return err
 	}
-	return s.taskRepo.UpdateFields(task.ID, map[string]interface{}{"status": models.TaskStatusIdle, "progress": 100.0})
+	return nil
 }
 
 func metadataUint64(metadata map[string]interface{}, key string) uint64 {
@@ -332,7 +332,7 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 	buildResult, err := planner.BuildTableTransferPlan(spec, resolver)
 	if err != nil {
 		wrapped := fmt.Errorf("build common table transfer plan: %w", err)
-		s.updateExecutionError(task, executionID, wrapped)
+		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
 	}
 	buildResult.Plan.ProgressCallback = s.tableProgressCallback(task, executionID)
@@ -345,22 +345,27 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 	)
 	if err != nil {
 		wrapped := fmt.Errorf("create common table transfer executor: %w", err)
-		s.updateExecutionError(task, executionID, wrapped)
+		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
 	}
 	if err := s.configureInstanceTableProviders(ctx, task.TenantID, spec, buildResult, tableExecutor); err != nil {
 		wrapped := fmt.Errorf("configure instance table providers: %w", err)
-		s.updateExecutionError(task, executionID, wrapped)
+		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
 	}
 	if hasSpatialReprojectTransform(buildResult.Plan.Transforms) {
 		workflowEngine, workflowOperator, err := s.selectDirectWorkflowRuntime(ctx, task.TenantID, "vector_reproject")
 		if err != nil {
 			wrapped := fmt.Errorf("resolve vector_reproject workflow runtime: %w", err)
-			s.updateExecutionError(task, executionID, wrapped)
+			s.updateExecutionError(ctx, task, executionID, wrapped)
 			return wrapped
 		}
 		tableExecutor.GeometryBatchReprojecter = newWorkflowGeometryBatchReprojectProvider(workflowEngine, workflowOperator.Name)
+	}
+	if tableExecutor.TargetCRSRequirements != nil {
+		tableExecutor.CRSDefinitionConverter = newWorkflowCRSDefinitionConverter(func(resolveCtx context.Context) (commonModels.Engine, commonModels.OperatorDescriptor, error) {
+			return s.selectDirectWorkflowRuntime(resolveCtx, task.TenantID, "crs_to_projjson")
+		})
 	}
 
 	metrics, err := tableExecutor.Execute(ctx, buildResult.Plan)
@@ -369,7 +374,7 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 		if metrics != nil {
 			s.updateTableTransferMetrics(executionID, metrics.RecordsRead, metrics.RecordsWritten)
 		}
-		s.updateExecutionError(task, executionID, wrapped)
+		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
 	}
 	s.updateTableTransferMetrics(executionID, metrics.RecordsRead, metrics.RecordsWritten)
@@ -382,13 +387,7 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 		s.logger.Warn("failed to persist transfer lineage facts", "error", err, "execution_id", executionID)
 	}
 	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
-		s.logger.Warn("failed to finish execution", "error", err)
-	}
-	if err := s.taskRepo.UpdateFields(task.ID, map[string]interface{}{
-		"status":   models.TaskStatusIdle,
-		"progress": 100.0,
-	}); err != nil {
-		s.logger.Warn("failed to update task after successful table transfer", "error", err, "task_id", task.ID)
+		return err
 	}
 	return nil
 }
@@ -615,7 +614,7 @@ func (s *ExecutionEngineService) executeCommonRawCopyTask(ctx context.Context, t
 	buildResult, err := planner.BuildRawCopyPlan(spec, resolver)
 	if err != nil {
 		wrapped := fmt.Errorf("build common raw copy plan: %w", err)
-		s.updateExecutionError(task, executionID, wrapped)
+		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
 	}
 	buildResult.Plan.ProgressCallback = s.rawCopyProgressCallback(task, executionID)
@@ -623,7 +622,7 @@ func (s *ExecutionEngineService) executeCommonRawCopyTask(ctx context.Context, t
 	rawCopyExecutor, err := executor.NewRawCopyExecutor(buildResult.SourceEngineType, buildResult.TargetEngineType)
 	if err != nil {
 		wrapped := fmt.Errorf("create common raw copy executor: %w", err)
-		s.updateExecutionError(task, executionID, wrapped)
+		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
 	}
 
@@ -633,7 +632,7 @@ func (s *ExecutionEngineService) executeCommonRawCopyTask(ctx context.Context, t
 		if metrics != nil {
 			s.updateRawCopyMetrics(executionID, metrics)
 		}
-		s.updateExecutionError(task, executionID, wrapped)
+		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
 	}
 	s.updateRawCopyMetrics(executionID, metrics)
@@ -645,13 +644,7 @@ func (s *ExecutionEngineService) executeCommonRawCopyTask(ctx context.Context, t
 		s.logger.Warn("failed to persist raw copy lineage facts", "error", err, "execution_id", executionID)
 	}
 	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
-		s.logger.Warn("failed to finish execution", "error", err)
-	}
-	if err := s.taskRepo.UpdateFields(task.ID, map[string]interface{}{
-		"status":   models.TaskStatusIdle,
-		"progress": 100.0,
-	}); err != nil {
-		s.logger.Warn("failed to update task after successful raw copy", "error", err, "task_id", task.ID)
+		return err
 	}
 	return nil
 }
@@ -716,12 +709,11 @@ func executionIDString(s *ExecutionEngineService, ctx context.Context, id uint) 
 	return execution.ExecutionID
 }
 
-func (s *ExecutionEngineService) updateExecutionError(task *models.TransferTask, executionID uint, execErr error) {
+func (s *ExecutionEngineService) updateExecutionError(ctx context.Context, task *models.TransferTask, executionID uint, execErr error) {
 	if execErr == nil {
 		return
 	}
 
-	ctx := context.Background()
 	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusFailed, execErr.Error()); err != nil {
 		s.logger.Error("CRITICAL: failed to mark execution as failed - status inconsistency may occur",
 			"error", err,
@@ -731,19 +723,8 @@ func (s *ExecutionEngineService) updateExecutionError(task *models.TransferTask,
 		s.logger.Info("execution marked as failed", "execution_id", executionID)
 	}
 
-	if err := s.taskRepo.UpdateFields(task.ID, map[string]interface{}{
-		"status":   models.TaskStatusIdle,
-		"progress": 0,
-	}); err != nil {
-		s.logger.Error("CRITICAL: failed to update task after execution error - status inconsistency may occur",
-			"error", err,
-			"task_id", task.ID,
-			"execution_id", executionID)
-	} else {
-		s.logger.Info("task status updated after execution failure",
-			"task_id", task.ID,
-			"status", "idle")
-	}
+	// FinishExecution advances the execution and owner-task summary atomically
+	// when the call carries a bounded execution lease.
 }
 
 func (s *ExecutionEngineService) updateTableTransferMetrics(executionID uint, recordsRead, recordsWritten int64) {

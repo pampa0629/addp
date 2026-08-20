@@ -417,6 +417,19 @@ QUALITY_SERVICE_CLIENT_SECRET=
 QUALITY_CHECK_TIMEOUT=30m
 # Quality 单进程并行执行槽位数；必须为正整数，跨实例仍通过数据库 lease 协调。
 QUALITY_WORKER_CONCURRENCY=4
+# Quality 有界 execution 的租约和领取轮询；poll 必须小于 lease。
+QUALITY_WORKER_LEASE_DURATION=30m
+QUALITY_WORKER_POLL_INTERVAL=500ms
+# Meta 扫描有界 execution 的租约、心跳和领取轮询。
+META_WORKER_CONCURRENCY=10
+META_BOUNDED_LEASE_DURATION=2m
+META_BOUNDED_HEARTBEAT_INTERVAL=30s
+META_BOUNDED_CLAIM_INTERVAL=1s
+# Transfer bounded execution 的租约、心跳和领取轮询。
+TRANSFER_BOUNDED_WORKER_CONCURRENCY=10
+TRANSFER_BOUNDED_LEASE_DURATION=2m
+TRANSFER_BOUNDED_HEARTBEAT_INTERVAL=30s
+TRANSFER_BOUNDED_CLAIM_INTERVAL=1s
 SERVICE_SERVICE_CLIENT_SECRET=
 STANDARD_SERVICE_CLIENT_SECRET=
 TRANSFER_SERVICE_CLIENT_SECRET=
@@ -494,7 +507,7 @@ Bootstrap 使用离线 `iam-bootstrap prepare/apply` 两阶段命令；已完成
 **ADDP 系统** (docker-compose.infra.yml):
 
 - PostgreSQL: `postgres_data` 卷 (ADDP 系统元数据)
-- Redis: `redis_data` 卷 (缓存和队列)
+- Redis: `redis_data` 卷（缓存、事件和分布式锁；bounded execution 由 PostgreSQL 持久化）
 - MinIO System: `minio_data` 卷 (系统文件)
 - Meilisearch: `meilisearch_data` 卷 (搜索索引)
 

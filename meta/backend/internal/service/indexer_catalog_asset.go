@@ -26,7 +26,7 @@ func splitCatalogResourcePath(value string) (dir, name string) {
 }
 
 // IndexCatalogAsset 索引 catalog single item 资产到 Meilisearch（统一索引）。
-func (s *IndexerService) IndexCatalogAsset(resource *commonModels.Engine, tenantID, engineID uint, catalogResource metacatalog.StorageResource, relativePath, fullName string, item *models.MetaItem, extractedText string) bool {
+func (s *IndexerService) IndexCatalogAsset(ctx context.Context, resource *commonModels.Engine, tenantID, engineID uint, catalogResource metacatalog.StorageResource, relativePath, fullName string, item *models.MetaItem, extractedText string) bool {
 	if s.indexer == nil || !s.indexer.Enabled() || resource == nil || item == nil {
 		return false
 	}
@@ -105,7 +105,7 @@ func (s *IndexerService) IndexCatalogAsset(resource *commonModels.Engine, tenant
 		assetRecord.ModifiedDate = modified
 	}
 
-	if err := s.indexer.IndexAsset(context.Background(), assetRecord); err != nil {
+	if err := s.indexer.IndexAsset(ctx, assetRecord); err != nil {
 		s.log.Warn("索引 catalog 资产失败", "fingerprint", item.Fingerprint, "root", catalogResource.RootName, "path", catalogResource.Path, "error", err)
 		return false
 	}

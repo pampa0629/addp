@@ -131,7 +131,7 @@ make ports-validate
 | SuperMap Workflow Engine   | 8103     | 8103        | 超图 iObjects C++ 空间计算工作流引擎 |
 | DuckDB Query Runtime       | 8104     | 8104        | 联邦只读查询计算引擎       |
 | PostgreSQL (System)   | 15432    | 15432       | ADDP 系统元数据            |
-| Redis                 | 16379    | 16379       | 缓存和队列                 |
+| Redis                 | 16379    | 16379       | 缓存、事件和分布式锁       |
 | MinIO System API      | 19000    | 19000       | 系统文件存储               |
 | MinIO System Console  | 19001    | 19001       | 系统 MinIO Web UI          |
 | Meilisearch           | 17700    | 17700       | 全文检索引擎               |

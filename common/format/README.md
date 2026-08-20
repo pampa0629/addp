@@ -323,6 +323,8 @@ type MultiTableWriterProvider interface {
 
 格式写出 CRS 定义时，只能使用定义文本，不能使用 CRS ID 充当定义。Shapefile writer 的 `WriteOptions.ExtraParams["crs_definition"]` 表示 `.prj` 定义文本，例如 WKT、ESRI WKT 或 proj4 文本；不得传入裸 `EPSG:<code>` 或 `URN:OGC:DEF:CRS:EPSG::<code>`。CRS ID 应由 `datatype.SpatialInfo` 的 `crs_ref` 表达，定义文本应由 `crs_definitions[].definition` 表达。
 
+格式对 CRS 定义编码有额外要求时，通过 `CRSDefinitionWriteRequirementProvider` 根据本次 `SpatialInfo` 动态声明，不在 Transfer 中硬编码目标格式。Transfer 必须在 writer 创建前完成定义表达转换，并把结果放入 execution-local `SpatialInfo` 副本；format writer 只消费满足声明的定义，不负责调用 PROJ、猜测 EPSG 或修改几何坐标。
+
 目录 scope 格式同样拆成 info 和 sample：
 
 ```go

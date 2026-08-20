@@ -159,17 +159,16 @@ func (r *CheckTaskRepository) ClaimExecution(ctx context.Context, taskID, tenant
 // transaction only locks and updates control-plane rows; external calls happen
 // after it returns.
 func (r *CheckTaskRepository) ClaimPendingExecution(ctx context.Context, workerID string, now time.Time, lease time.Duration) (*commonExecution.TaskExecution, *models.CheckTask, error) {
-	var execution commonExecution.TaskExecution
+	var execution *commonExecution.TaskExecution
 	var task models.CheckTask
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		query := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-			Where("module = ? AND task_type = ? AND status = ? AND execution_authorization_id IS NOT NULL", commonExecution.ModuleQuality, commonExecution.TaskTypeQualityCheck, commonExecution.ExecutionStatusPending).
-			Order("created_at ASC, id ASC").Limit(1).Find(&execution)
-		if query.Error != nil {
-			return query.Error
-		}
-		if query.RowsAffected == 0 {
-			return gorm.ErrRecordNotFound
+		var err error
+		execution, _, err = commonExecution.ClaimNext(ctx, tx, commonExecution.ClaimOptions{
+			Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityCheck,
+			WorkerID: workerID, Now: now, LeaseDuration: lease, RequireAuthorization: true,
+		})
+		if err != nil || execution == nil {
+			return err
 		}
 		if execution.SourceTaskID == nil {
 			return fmt.Errorf("quality execution %s has no source_task_id", execution.ExecutionID)
@@ -178,40 +177,27 @@ func (r *CheckTaskRepository) ClaimPendingExecution(ctx context.Context, workerI
 		if err != nil || taskID <= 0 {
 			return fmt.Errorf("quality execution %s has invalid source_task_id", execution.ExecutionID)
 		}
-		if err := tx.Where("id = ? AND tenant_id = ?", taskID, execution.TenantID).First(&task).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ?", taskID, execution.TenantID).First(&task).Error; err != nil {
 			return err
 		}
-		leaseOwner := workerID
-		leaseExpiresAt := now.Add(lease)
-		result := tx.Model(&commonExecution.TaskExecution{}).
-			Where("execution_id = ? AND tenant_id = ? AND status = ?", execution.ExecutionID, execution.TenantID, commonExecution.ExecutionStatusPending).
-			Updates(map[string]interface{}{
-				"status": commonExecution.ExecutionStatusRunning, "started_at": now, "updated_at": now,
-				"lease_owner": leaseOwner, "lease_expires_at": leaseExpiresAt, "attempt": gorm.Expr("attempt + 1"), "progress": 1,
-			})
+		result := tx.Model(&models.CheckTask{}).
+			Where("id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?", task.ID, task.TenantID, execution.ExecutionID, commonExecution.ExecutionStatusPending).
+			Updates(map[string]interface{}{"last_run_at": now, "last_execution_status": commonExecution.ExecutionStatusRunning})
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
-			return fmt.Errorf("quality execution %s was claimed by another worker", execution.ExecutionID)
+			return fmt.Errorf("%w: quality task %d summary no longer matches execution %s", commonAPI.ErrConflict, task.ID, execution.ExecutionID)
 		}
-		return tx.Model(&models.CheckTask{}).
-			Where("id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?", task.ID, task.TenantID, execution.ExecutionID, commonExecution.ExecutionStatusPending).
-			Updates(map[string]interface{}{"last_run_at": now, "last_execution_status": commonExecution.ExecutionStatusRunning}).Error
+		return nil
 	})
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, nil, nil
-		}
 		return nil, nil, err
 	}
-	execution.Status = commonExecution.ExecutionStatusRunning
-	execution.StartedAt = &now
-	execution.Attempt++
-	execution.LeaseOwner = &workerID
-	leaseExpiresAt := now.Add(lease)
-	execution.LeaseExpiresAt = &leaseExpiresAt
-	return &execution, &task, nil
+	if execution == nil {
+		return nil, nil, nil
+	}
+	return execution, &task, nil
 }
 
 func (r *CheckTaskRepository) AttachExecutionAuthorization(ctx context.Context, tenantID int64, executionID string, fields map[string]interface{}) error {
@@ -252,34 +238,41 @@ func (r *CheckTaskRepository) FailPendingExecution(ctx context.Context, taskID, 
 // failed after the configured attempt limit.
 func (r *CheckTaskRepository) RecoverExpiredExecutions(ctx context.Context, now time.Time) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var executions []commonExecution.TaskExecution
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-			Where("module = ? AND task_type = ? AND status = ? AND lease_expires_at IS NOT NULL AND lease_expires_at < ?", commonExecution.ModuleQuality, commonExecution.TaskTypeQualityCheck, commonExecution.ExecutionStatusRunning, now).
-			Find(&executions).Error; err != nil {
+		executions, err := commonExecution.FindExpiredForUpdate(ctx, tx, commonExecution.ExpiredOptions{
+			Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityCheck, Now: now, Limit: 100,
+		})
+		if err != nil {
 			return err
 		}
 		for _, execution := range executions {
+			lease, err := commonExecution.LeaseFromExecution(execution)
+			if err != nil {
+				return err
+			}
 			status := commonExecution.ExecutionStatusPending
-			fields := map[string]interface{}{"status": status, "lease_owner": nil, "lease_expires_at": nil, "updated_at": now}
 			if execution.Attempt >= execution.MaxAttempts {
 				status = commonExecution.ExecutionStatusFailed
-				fields = map[string]interface{}{
-					"status": status, "completed_at": now, "updated_at": now,
+				fields := map[string]interface{}{
 					"error_details": commonModels.JSONMap{"code": "quality.execution.lease_expired", "message": "quality execution worker lease expired"},
-					"lease_owner":   nil, "lease_expires_at": nil,
 				}
 				if execution.StartedAt != nil {
 					fields["execution_time_ms"] = now.Sub(*execution.StartedAt).Milliseconds()
 				}
-			}
-			if err := tx.Model(&commonExecution.TaskExecution{}).Where("execution_id = ? AND status = ?", execution.ExecutionID, commonExecution.ExecutionStatusRunning).Updates(fields).Error; err != nil {
+				if err := commonExecution.FailExpired(ctx, tx, lease, now, fields); err != nil {
+					return err
+				}
+			} else if err := commonExecution.RetryExpired(ctx, tx, lease, now, "worker lease expired; retry pending"); err != nil {
 				return err
 			}
 			if execution.SourceTaskID != nil {
 				if taskID, parseErr := strconv.ParseInt(*execution.SourceTaskID, 10, 64); parseErr == nil {
-					if err := tx.Model(&models.CheckTask{}).Where("id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?", taskID, execution.TenantID, execution.ExecutionID, commonExecution.ExecutionStatusRunning).
-						Updates(map[string]interface{}{"last_execution_status": status}).Error; err != nil {
-						return err
+					result := tx.Model(&models.CheckTask{}).Where("id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?", taskID, execution.TenantID, execution.ExecutionID, commonExecution.ExecutionStatusRunning).
+						Updates(map[string]interface{}{"last_execution_status": status})
+					if result.Error != nil {
+						return result.Error
+					}
+					if result.RowsAffected != 1 {
+						return fmt.Errorf("%w: quality task %d summary no longer matches recovered execution %s", commonAPI.ErrConflict, taskID, execution.ExecutionID)
 					}
 				}
 			}
@@ -288,48 +281,32 @@ func (r *CheckTaskRepository) RecoverExpiredExecutions(ctx context.Context, now 
 	})
 }
 
-func (r *CheckTaskRepository) CompleteExecutionWithLease(ctx context.Context, taskID, tenantID int64, executionID, workerID string, executionFields map[string]interface{}, completedAt time.Time) error {
+func (r *CheckTaskRepository) CompleteExecutionWithLease(ctx context.Context, taskID, tenantID int64, lease commonExecution.Lease, executionFields map[string]interface{}, completedAt time.Time) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		fields := make(map[string]interface{}, len(executionFields)+4)
+		fields := make(map[string]interface{}, len(executionFields))
 		for key, value := range executionFields {
 			fields[key] = value
 		}
-		fields["completed_at"] = completedAt
-		fields["updated_at"] = completedAt
-		fields["lease_owner"] = nil
-		fields["lease_expires_at"] = nil
-		result := tx.Model(&commonExecution.TaskExecution{}).
-			Where("execution_id = ? AND tenant_id = ? AND status = ? AND lease_owner = ?", executionID, tenantID, commonExecution.ExecutionStatusRunning, workerID).
-			Updates(fields)
-		if result.Error != nil {
-			return result.Error
+		status, _ := fields["status"].(string)
+		delete(fields, "status")
+		delete(fields, "completed_at")
+		delete(fields, "updated_at")
+		if err := commonExecution.CompleteWithLease(ctx, tx, lease, status, completedAt, fields); err != nil {
+			return err
 		}
-		if result.RowsAffected != 1 {
-			return fmt.Errorf("%w: quality execution %s lease is no longer owned", commonAPI.ErrConflict, executionID)
-		}
-		status, _ := executionFields["status"].(string)
-		result = tx.Model(&models.CheckTask{}).
-			Where("id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?", taskID, tenantID, executionID, commonExecution.ExecutionStatusRunning).
+		result := tx.Model(&models.CheckTask{}).
+			Where("id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?", taskID, tenantID, lease.ExecutionID, commonExecution.ExecutionStatusRunning).
 			Updates(map[string]interface{}{"last_run_at": completedAt, "last_execution_status": status})
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
-			return fmt.Errorf("%w: quality check task %d is not running for execution %s", commonAPI.ErrConflict, taskID, executionID)
+			return fmt.Errorf("%w: quality check task %d is not running for execution %s", commonAPI.ErrConflict, taskID, lease.ExecutionID)
 		}
 		return nil
 	})
 }
 
-func (r *CheckTaskRepository) RenewLease(ctx context.Context, executionID string, tenantID int64, workerID string, expiresAt time.Time) error {
-	result := r.db.WithContext(ctx).Model(&commonExecution.TaskExecution{}).
-		Where("execution_id = ? AND tenant_id = ? AND status = ? AND lease_owner = ?", executionID, tenantID, commonExecution.ExecutionStatusRunning, workerID).
-		Updates(map[string]interface{}{"lease_expires_at": expiresAt, "updated_at": time.Now()})
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return fmt.Errorf("%w: quality execution %s lease is no longer owned", commonAPI.ErrConflict, executionID)
-	}
-	return nil
+func (r *CheckTaskRepository) RenewLease(ctx context.Context, lease commonExecution.Lease, expiresAt time.Time) error {
+	return commonExecution.RenewLease(ctx, r.db, lease, expiresAt)
 }

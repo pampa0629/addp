@@ -30,18 +30,20 @@ func (s *ScanExecutionService) executeRun(ctx context.Context, executionID strin
 		lockKey = s.dedupService.GenerateExecutionLockKey(uint(exec.TenantID), execConfig.EngineID, execConfig.ItemID, execConfig.CatalogPaths, execConfig.RefGroups)
 	}
 
+	lease, ok := s.boundedLease(ctx, executionID)
+	if !ok || lease.TenantID != exec.TenantID || lease.Attempt != exec.Attempt {
+		return fmt.Errorf("执行缺少当前有界租约: execution_id=%s", executionID)
+	}
+	if exec.Status != commonExecution.ExecutionStatusRunning {
+		return fmt.Errorf("有界执行不是运行中状态: execution_id=%s status=%s", executionID, exec.Status)
+	}
 	defer s.finishExecutionDedupState(executionID, execConfig, lockKey)
 
-	if exec.Status != commonExecution.ExecutionStatusPending {
-		s.log.Info("跳过非待执行任务", "execution_id", executionID, "status", exec.Status)
-		return nil
-	}
-
 	start := time.Now()
-	if err := s.taskExecutionRepo.StartExecution(ctx, executionID, exec.TenantID, start); err != nil {
-		return err
+	if exec.StartedAt != nil {
+		start = *exec.StartedAt
 	}
-	if err := s.taskExecutionRepo.UpdateFields(ctx, executionID, exec.TenantID, scantask.RunningExecutionFields(time.Now())); err != nil {
+	if err := commonExecution.UpdateWithLease(ctx, s.db, lease, scantask.RunningExecutionFields(time.Now())); err != nil {
 		return err
 	}
 
@@ -53,6 +55,7 @@ func (s *ScanExecutionService) executeRun(ctx context.Context, executionID strin
 	reporter.Message("任务开始执行")
 
 	resp, scanErr := s.scanService.ScanEngineWithOptions(scanflow.Options{
+		Context:      ctx,
 		EngineID:     execConfig.EngineID,
 		TenantID:     uint(exec.TenantID),
 		CatalogPaths: execConfig.CatalogPaths,
@@ -67,10 +70,11 @@ func (s *ScanExecutionService) executeRun(ctx context.Context, executionID strin
 	durationMs := completeTime.Sub(start).Milliseconds()
 
 	if scanErr != nil {
-		s.completeExecutionWithFailure(ctx, executionID, exec.TenantID, exec.SourceTaskID, scanErr, completeTime, durationMs)
+		if err := s.completeExecutionWithFailure(ctx, exec, scanErr, completeTime, durationMs); err != nil {
+			return err
+		}
 		return scanErr
 	}
 
-	s.completeExecutionWithSuccess(ctx, executionID, exec.TenantID, exec.SourceTaskID, resp, execConfig.StorageType, completeTime, durationMs)
-	return nil
+	return s.completeExecutionWithSuccess(ctx, exec, resp, execConfig.StorageType, completeTime, durationMs)
 }

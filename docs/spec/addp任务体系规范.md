@@ -36,9 +36,9 @@
 9. Monitor 只聚合观察，不成为任务 owner。
 10. ad-hoc-only execution type 可以写入统一执行记录，但在没有持久任务定义前不得注册为 TaskProvider 能力或进入 Orchestrator 任务选择。
 11. 真实读写 owner 必须在 execution 结果中写入版本化 `lineage_facts`；Meta 负责消费并维护血缘关系，Orchestrator 不重复生成资源血缘。
-12. execution worker 是执行 owner 的运行时角色，不限定为独立进程；owner 必须明确其消费机制、并发上限、领取所有权、恢复和终态写入语义。
-13. owner scheduler 只负责按任务定义发现到期任务、创建 execution 和投递；dispatcher 只负责 outbox/delivery 投递；二者都不得替代 execution worker 成为业务执行事实源。
-14. runtime queue 是 execution 的传输和领取机制，不得成为任务定义、execution 结果或产物状态的第二事实源；同一 task type 不得同时保留未定义边界的多条执行路线。
+12. Quality `check`、Meta `scan` 和 Transfer bounded `sync` 的 execution worker 必须是 owner 模块附属的独立进程，并统一使用 PostgreSQL execution claim + lease；owner Backend 不执行这些 bounded execution。
+13. owner scheduler 运行在 owner Backend，只负责按任务定义发现到期任务并创建 durable `pending` execution；Worker 不可用不得阻止 scheduler 创建 execution。dispatcher 只负责 outbox/delivery 投递，二者都不得替代 execution worker 成为业务执行事实源。
+14. bounded runtime queue 的唯一主路线是 `common.task_executions` PostgreSQL claim，不保留 Redis/Asynq、进程内 channel 或 Backend 内嵌执行 fallback。continuous runtime、dispatcher 和 maintenance loop 继续使用各自专用协议，不强行迁入 bounded claim。
 
 ## 核心对象
 
@@ -47,7 +47,7 @@
 | 任务定义 | 业务 owner 模块 | owner 模块私有表 | 未来应该按什么策略处理什么对象 |
 | 执行记录 | Common | `common.task_executions` | 某一次实际执行了什么、状态如何、结果如何 |
 | 调度定义 | 任务定义 owner | owner 模块私有表 | 是否启用定时、Cron 表达式、下一次运行时间 |
-| 运行时队列 | 执行 owner | Redis / Asynq / DB claim / 进程内队列 | 如何把 execution 投递给 worker |
+| 运行时队列 | 执行 owner | bounded 使用 PostgreSQL claim；continuous 使用 runtime lease | 如何把 execution 交给合法运行者 |
 | 产物状态 | 产物 owner 模块 | owner 模块私有表或 artifact manifest | 当前产物是否可用、在哪里、由什么配置生成 |
 | 编排定义 | Orchestrator | `orchestrator.orchestrations` | 任务级 DAG，当前只引用已有任务定义；inline execution 后续专题再设计 |
 
@@ -131,6 +131,11 @@
 | `execution_config` | jsonb | 本次执行快照配置 |
 | `metadata` | jsonb | 结果摘要、步骤结果、模块扩展信息 |
 | `error_details` | jsonb | 错误类型、消息和诊断信息 |
+| `lease_token` | UUID | 当前 bounded attempt 不可复用的所有权 token；不对普通业务 API 暴露 |
+| `lease_owner` | string | 当前 Worker 实例和槽位的观测身份，不作为唯一 fencing 条件 |
+| `lease_expires_at` | timestamp | 当前 bounded attempt 的租约截止时间 |
+| `attempt` | integer | 当前 execution 已发生的运行尝试次数 |
+| `max_attempts` | integer | 该 execution 允许自动恢复的最大 attempt 数 |
 | `started_at` | timestamp | 开始时间 |
 | `completed_at` | timestamp | 完成时间 |
 | `execution_time_ms` | bigint | 执行耗时 |
@@ -174,6 +179,23 @@ POST /api/v1/meta/lineage/executions/{execution_id}/collect
 11. owner 任务定义上的最近执行摘要或运行状态若随 execution 状态推进，必须与对应 execution 的 claim、`pending → running` 和终态更新分别位于同一数据库事务；不得先推进公共 execution、再单独更新 owner 表，或反向操作。
 12. 对已有任务定义发起 execution 时，owner 必须在任务定义行锁保护下检查 active execution，并在同一事务创建唯一 pending execution。重跑还必须在该事务中完成运行材料、待处理结果和任务摘要的重置，不能先重置再进入第二次 claim。
 13. 取消操作只有在 owner 能定位并中断真实运行体、等待其停止并由运行体写入 `cancelled` 终态时才能成功；仅修改任务或 execution 状态属于伪取消，必须拒绝。
+
+### Bounded execution 领取、租约和恢复契约
+
+Quality `check`、Meta `scan` 和 Transfer `runtime.boundary=bounded` 必须遵守同一个公共所有权协议：
+
+1. Worker 使用 PostgreSQL `FOR UPDATE SKIP LOCKED` 从 `common.task_executions` 领取本模块、task type 和满足本模块授权前置条件的最早 `pending` execution。
+2. claim 必须原子完成 `pending → running`、首次写入 `started_at`、递增 `attempt`、生成新的随机 `lease_token` 并写入 `lease_owner + lease_expires_at`。`lease_owner` 只用于观测，不能替代 token。
+3. 未取得 claim 的运行体必须 fail-closed；不得执行外部读取、写入、扫描、结果 reconcile 或进度更新。
+4. heartbeat、进度和终态写入必须同时匹配 `execution_id + status=running + attempt + lease_token`。租约过期、被新 attempt 接管或 token 不匹配的旧运行体必须停止，且任何迟到写回都必须被拒绝。
+5. owner task 最近执行摘要若随 claim、恢复或终态推进，owner 必须在同一个数据库事务中组合公共 execution 条件更新和 owner 私有表更新。公共仓储不反向理解 owner 表。
+6. lease 过期只表示当前 attempt 已失去所有权，不自动证明业务可以安全重放。owner 必须按 execution config 和实际提交协议明确本次 execution 是否允许自动恢复；默认不可安全重放。
+7. 只有在尚未产生不可逆外部提交，或者 Provider 使用稳定 operation identity、staging、target ledger、CAS/fencing 等协议保证重复尝试可安全吸收时，recovery 才能把同一未终态 execution 返回 `pending` 并由下一次 claim 增加 attempt。
+8. 无法证明安全重放、达到 `max_attempts` 或发现外部提交状态不明确时，recovery 必须把原 execution 收敛为带稳定错误原因的 `failed`，不得盲目再次执行。
+9. 自动 recovery 复用的是同一未终态 execution；用户或 API 发起 retry 必须创建新的 execution，并显式保存原 execution 关联，不能把 retry 降格为同一 execution 的下一次 attempt。
+10. Worker 优雅停机先停止 claim 新 execution，再取消或收敛当前运行体；不能通过清空 lease 冒充业务已经停止。
+
+公共 `common/execution` 只提供 claim、lease token、heartbeat、带所有权条件的更新和过期领取等通用原语。具体 execution 是否可恢复、owner task 摘要事务、外部副作用幂等和提交边界归 owner/Provider 实现；公共层不承诺跨系统 exactly-once。
 
 ad-hoc execution 的 `task_type` 仍必须是 owner 模块内稳定的业务执行类型，但稳定 execution type 不等于 TaskProvider task type。只有 owner 已提供可保存的任务定义、标准任务列表 / 详情 / 执行接口并允许 Orchestrator 引用时，才能把该类型加入 `task_capabilities[]`。
 
@@ -266,7 +288,7 @@ Transfer `sync` 的稳定语义由以下正交维度表达：
 
 #### Transfer continuous sync v1 契约
 
-continuous execution 表示一次长期运行的 runtime session，不是把 bounded executor 放进无限循环。正式实现必须使用 Transfer 独立 continuous worker/supervisor；现有 Asynq worker 继续只承担 bounded execution。
+continuous execution 表示一次长期运行的 runtime session，不是把 bounded executor 放进无限循环。正式实现必须使用 Transfer 独立 continuous worker/supervisor；`transfer-bounded-worker` 只通过 PostgreSQL claim 承担 bounded execution。
 
 业务 Kafka 第一版任务配置固定为以下单一路线：
 

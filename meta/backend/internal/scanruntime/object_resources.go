@@ -17,6 +17,7 @@ import (
 
 // persistObjectResources 持久化对象 catalog leaf 到数据库。
 func (s *ObjectStorageCatalogRuntime) persistObjectResources(
+	ctx context.Context,
 	resource *commonModels.Engine,
 	tenantID, engineID uint,
 	bucketNode *models.MetaNode,
@@ -38,7 +39,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 	}
 	readableProvider, _ := enginePlugin.(plugin.ContentReadableProvider)
 	if readableProvider != nil {
-		s.detectObjectCatalogResourceFormats(context.Background(), readableProvider, connInfo, resources)
+		s.detectObjectCatalogResourceFormats(ctx, readableProvider, connInfo, resources)
 	}
 
 	basePrefixNode := bucketNode
@@ -59,11 +60,11 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 			"basePrefixNode_name", basePrefixNode.Name)
 	}
 	var compositeWarnings []scanflow.ObjectCatalogCompositeDetectionError
-	compositeSkipPaths, compositeItems, compositeWarnings := scanflow.DetectObjectCatalogCompositeItems(context.Background(), readableProvider, connInfo, engineID, resources, strings.EqualFold(scanDepth, "deep"))
+	compositeSkipPaths, compositeItems, compositeWarnings := scanflow.DetectObjectCatalogCompositeItems(ctx, readableProvider, connInfo, engineID, resources, strings.EqualFold(scanDepth, "deep"))
 	for _, warning := range compositeWarnings {
 		s.log.Warn("对象 catalog 组合项检测失败", "bucket", warning.Bucket, "prefix", warning.Prefix, "error", warning.Err)
 	}
-	compositeCount, compositeExtractionStats, err := s.persistObjectCatalogCompositeItems(resource, tenantID, engineID, bucketNode, basePrefixNode, compositeItems, stats, includeBucketAggregate, scanPathPrefix, scannedFingerprints, itemTerm, readableProvider, connInfo, scanDepth)
+	compositeCount, compositeExtractionStats, err := s.persistObjectCatalogCompositeItems(ctx, resource, tenantID, engineID, bucketNode, basePrefixNode, compositeItems, stats, includeBucketAggregate, scanPathPrefix, scannedFingerprints, itemTerm, readableProvider, connInfo, scanDepth)
 	if err != nil {
 		return objects, extractionStats, err
 	}
@@ -71,6 +72,9 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 	extractionStats = scanflow.MergeExtractionCounts(extractionStats, compositeExtractionStats)
 
 	for _, catalogResource := range resources {
+		if err := ctx.Err(); err != nil {
+			return objects, extractionStats, err
+		}
 		if catalogResource.NodeType == "bucket" {
 			if includeBucketAggregate {
 				scanflow.EnsureObjectCatalogNodeAggregate(stats, bucketNode)
@@ -191,7 +195,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 			"currentParent_name", currentParent.Name,
 			"objectName", itemPlan.ObjectName)
 
-		result, err := scanprocessor.New(s.repo, s.indexer, s.log).WithCADInspector(s.cadInspector).WithContainerInspector(s.containerInspector).Process(context.Background(), scanprocessor.ObjectSingleInput(
+		result, err := scanprocessor.New(s.repo, s.indexer, s.log).WithCADInspector(s.cadInspector).WithContainerInspector(s.containerInspector).Process(ctx, scanprocessor.ObjectSingleInput(
 			resource,
 			tenantID,
 			engineID,

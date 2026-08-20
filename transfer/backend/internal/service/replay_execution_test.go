@@ -54,7 +54,8 @@ func TestExecutionEngineRunsReplayWithoutUpdatingOwnerTask(t *testing.T) {
 		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleTransfer,
 		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(task.ID), SourceTaskName: &taskName,
 		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
-		ExecutionConfig: executionConfig,
+		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
+		ExecutionConfig:   executionConfig,
 		Metadata: commonModels.JSONMap{"replay": map[string]interface{}{
 			"version": ReplayExecutionVersion, "status": "pending", "positions": map[string]interface{}{"0": float64(10)},
 		}},
@@ -67,6 +68,11 @@ func TestExecutionEngineRunsReplayWithoutUpdatingOwnerTask(t *testing.T) {
 	server := replaySystemEngineServer(t)
 	defer server.Close()
 	executionService := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+	claimed, lease, _, err := repository.NewTaskRepository(db).ClaimNextBoundedExecution(context.Background(), "replay-test-worker", time.Now(), time.Minute)
+	if err != nil || claimed == nil || lease == nil {
+		t.Fatalf("claim replay execution = %#v %#v, %v", claimed, lease, err)
+	}
+	executionService.BindBoundedLease(uint(execution.ID), *lease)
 	runtime := &fakeBoundedReplayRuntime{}
 	engineService := NewExecutionEngineService(
 		repository.NewTaskRepository(db), nil, executionService,
@@ -77,7 +83,8 @@ func TestExecutionEngineRunsReplayWithoutUpdatingOwnerTask(t *testing.T) {
 	engineService.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	engineService.SetReplayRuntime(runtime)
 
-	if err := engineService.ExecuteTask(context.Background(), task.ID, uint(execution.ID)); err != nil {
+	execCtx := commonExecution.ContextWithLease(context.Background(), *lease)
+	if err := engineService.ExecuteTask(execCtx, task.ID, uint(execution.ID)); err != nil {
 		t.Fatalf("ExecuteTask() error = %v", err)
 	}
 	if runtime.applyIdentity != applyIdentity || runtime.ranges[0].StartOffset != 10 {

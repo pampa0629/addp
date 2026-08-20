@@ -107,6 +107,10 @@ func (s *ScanService) SetDedupService(dedupService *ScanDedupService) {
 
 func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.ScanResponse, error) {
 	startTime := time.Now()
+	ctx := opts.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	tenantID := opts.TenantID
 	reporter := opts.Reporter
 
@@ -119,12 +123,12 @@ func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.Scan
 	if reporter != nil {
 		reporter.Message("正在加载资源连接信息")
 	}
-	resource, err := s.engineService.GetResourceByID(engineID, tenantID)
+	resource, err := s.engineService.GetResourceByIDWithContext(ctx, engineID, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	effectiveTenantID := tenantIDForResource(resource, tenantID)
-	enginePlugin, err := s.engineService.ResolveScanPlugin(context.Background(), resource, effectiveTenantID)
+	enginePlugin, err := s.engineService.ResolveScanPlugin(ctx, resource, effectiveTenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +157,7 @@ func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.Scan
 		if reporter != nil {
 			reporter.Message("正在刷新数据项元数据")
 		}
-		result, refreshErr := s.runtimes.ItemRefresh.RefreshKnownItemByIDWithPlugin(context.Background(), enginePlugin, resource, effectiveTenantID, opts.ItemID)
+		result, refreshErr := s.runtimes.ItemRefresh.RefreshKnownItemByIDWithPlugin(ctx, enginePlugin, resource, effectiveTenantID, opts.ItemID)
 		if refreshErr != nil {
 			if reporter != nil {
 				reporter.Message(fmt.Sprintf("扫描失败: %v", refreshErr))
@@ -175,6 +179,7 @@ func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.Scan
 	}
 
 	result, err := s.catalogDispatcher.Dispatch(scanflow.DispatchRequest{
+		Context:      ctx,
 		Resource:     resource,
 		EnginePlugin: enginePlugin,
 		TenantID:     effectiveTenantID,

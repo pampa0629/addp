@@ -19,15 +19,17 @@ type Config struct {
 	MeilisearchMasterKey  string
 	MeilisearchAssetIndex string
 
-	// Redis 配置（用于资源变更事件同步和任务队列）
+	// Redis 配置（用于资源变更事件同步和扫描范围锁）
 	RedisHost     string
 	RedisPort     string
 	RedisPassword string
 	RedisDB       int
 
 	// Worker 配置
-	ConcurrentTasks int
-	RetryDelay      time.Duration
+	ConcurrentTasks          int
+	BoundedLeaseDuration     time.Duration
+	BoundedHeartbeatInterval time.Duration
+	BoundedClaimInterval     time.Duration
 
 	// 平台内置 MinIO（用于 no-persist inspect 等内部读取）
 	BuiltinMinioEndpoint  string
@@ -66,7 +68,9 @@ func LoadConfig() *Config {
 
 	// Worker 配置
 	cfg.ConcurrentTasks = commonConfig.GetEnvInt("META_WORKER_CONCURRENCY", 10)
-	cfg.RetryDelay = commonConfig.GetEnvDuration("META_WORKER_RETRY_DELAY", "30s")
+	cfg.BoundedLeaseDuration = commonConfig.GetEnvDuration("META_BOUNDED_LEASE_DURATION", "2m")
+	cfg.BoundedHeartbeatInterval = commonConfig.GetEnvDuration("META_BOUNDED_HEARTBEAT_INTERVAL", "30s")
+	cfg.BoundedClaimInterval = commonConfig.GetEnvDuration("META_BOUNDED_CLAIM_INTERVAL", "1s")
 
 	minioCfg := commonConfig.LoadBuiltinMinIOConfig()
 	cfg.BuiltinMinioEndpoint = minioCfg.Endpoint

@@ -12,6 +12,7 @@ import (
 )
 
 func (s *ObjectStorageCatalogRuntime) persistObjectCatalogCompositeItems(
+	ctx context.Context,
 	resource *commonModels.Engine,
 	tenantID, engineID uint,
 	bucketNode, basePrefixNode *models.MetaNode,
@@ -28,6 +29,9 @@ func (s *ObjectStorageCatalogRuntime) persistObjectCatalogCompositeItems(
 	count := 0
 	extractionStats := scanflow.ExtractionCounts{}
 	for _, composite := range items {
+		if err := ctx.Err(); err != nil {
+			return count, extractionStats, err
+		}
 		if composite.Item == nil {
 			continue
 		}
@@ -44,7 +48,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectCatalogCompositeItems(
 			return count, extractionStats, err
 		}
 
-		result, err := scanprocessor.New(s.repo, s.indexer, s.log).WithCADInspector(s.cadInspector).WithContainerInspector(s.containerInspector).Process(context.Background(), scanprocessor.ObjectCompositeInput(
+		result, err := scanprocessor.New(s.repo, s.indexer, s.log).WithCADInspector(s.cadInspector).WithContainerInspector(s.containerInspector).Process(ctx, scanprocessor.ObjectCompositeInput(
 			resource,
 			tenantID,
 			engineID,

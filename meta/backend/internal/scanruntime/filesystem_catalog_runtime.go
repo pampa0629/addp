@@ -40,6 +40,7 @@ func NewFilesystemCatalogRuntime(
 
 // ScanPaths 扫描文件系统 catalog 路径，识别复合数据项。
 func (s *FilesystemCatalogRuntime) ScanPaths(
+	ctx context.Context,
 	resource *commonModels.Engine,
 	tenantID uint,
 	paths []string,
@@ -48,7 +49,7 @@ func (s *FilesystemCatalogRuntime) ScanPaths(
 	reporter scanflow.ProgressReporter,
 ) (scanflow.DispatchResult, error) {
 	metaenrich.RegisterItemResolvers()
-	result, err := scanFilePaths(context.Background(), s, s.repo, resource, tenantID, paths, scanDepth, force, reporter)
+	result, err := scanFilePaths(ctx, s, s.repo, resource, tenantID, paths, scanDepth, force, reporter)
 	if err != nil {
 		return scanflow.DispatchResult{}, err
 	}

@@ -114,7 +114,7 @@ ALL_SERVICES=(
     "monitor-backend" "standard-backend" "copilot-backend" "agent-backend" "model-backend" "quality-backend" "asset-backend" "portal-backend" "graph-backend" "inference-backend"
     "geopython-workflow-engine" "raster-mosaic-runtime" "model3d-workflow-engine" "pointcloud-workflow-engine" "supermap-workflow-engine" "spark-workflow-engine" "jupyter-engine" "duckdb-engine"
     "gateway"
-    "meta-worker" "transfer-worker"
+    "meta-worker" "quality-worker" "transfer-bounded-worker" "transfer-continuous-worker"
     "system-frontend" "manager-frontend" "meta-frontend"
     "transfer-frontend" "orchestrator-frontend" "develop-frontend"
     "service-frontend" "monitor-frontend" "standard-frontend"

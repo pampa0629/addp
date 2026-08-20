@@ -2096,6 +2096,10 @@ const docTemplate = `{
                 "execution_authorization_id": {
                     "type": "integer"
                 },
+                "execution_boundary": {
+                    "description": "ExecutionBoundary separates finite queue work from long-running runtime sessions.",
+                    "type": "string"
+                },
                 "execution_config": {
                     "description": "JSONB 字段",
                     "allOf": [
@@ -2148,6 +2152,9 @@ const docTemplate = `{
                 "records_written": {
                     "description": "Transfer 写入记录数",
                     "type": "integer"
+                },
+                "retry_of_execution_id": {
+                    "type": "string"
                 },
                 "rows_affected": {
                     "description": "SQL 影响行数",

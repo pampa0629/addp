@@ -531,6 +531,44 @@ def vector_reproject(
 5. 失败时必须返回明确错误，不得静默退回原坐标。
 6. 输出 `binary_payload` 仍为 Arrow + EWKB，只包含转换后的 geometry 列；输出 metadata 中 `source_crs` 和 `target_crs` 都应写入输出几何当前 CRS，不能继续保留输入 CRS。
 
+### 3.5 `crs_to_projjson` 算子契约
+
+`crs_to_projjson` 是 CRS 定义表达转换算子，只把同一 CRS 的 WKT、ESRI WKT、Proj4 或 authority ID 规范化为 PROJJSON，不读取 geometry、不改变坐标，也不负责格式写出。
+
+```python
+def crs_to_projjson(
+    crs_ref: str,
+    definition_encoding: str = "",
+    definition: str = "",
+) -> dict:
+    ...
+```
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `crs_ref` | `string` | 是 | 平台 CRS 身份；支持 `EPSG:<code>` 或带定义的 `ADDP:CRS:<sha256>`。 |
+| `definition_encoding` | `string` | 条件必填 | `definition` 非空时必须为 `wkt`、`esri_wkt`、`proj4` 或 `projjson`。 |
+| `definition` | `string` | 条件必填 | 源 CRS 定义。只有 `EPSG:<code>` 可以省略并由 Runtime 本地 PROJ 数据库解析。 |
+
+输出 `result` 固定为以下结构：
+
+```json
+{
+  "crs_ref": "EPSG:3857",
+  "definition_encoding": "projjson",
+  "definition": "{...}"
+}
+```
+
+direct 调用规则：
+
+1. `execution_modes` 只声明 `direct`，请求和响应只使用普通 JSON，不使用 `binary_payload`。
+2. 输入编码必须显式分派到对应 PROJ parser，不得使用启发式文本猜测。
+3. `EPSG:<code>` 使用 Runtime 随附的本地 PROJ 数据库解析，Runtime 必须禁用网络 CRS / grid 获取。
+4. EPSG 源定义必须和本地 authority 定义等价；冲突时失败。输出 PROJJSON 顶层 `id` 固定为输入 authority/code。
+5. `ADDP:CRS:<sha256>` 必须带定义；输出顶层 `id` 固定为 `{"authority":"ADDP","code":"CRS:<sha256>"}`，不得因序列化变化重算平台 ID。
+6. 输出必须是可解析的 JSON object、包含非空 `type`，并保持输入 `crs_ref`；失败不得返回原定义或伪造未知 CRS。
+
 ---
 
 ### 3.3 算子实现规范

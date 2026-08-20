@@ -322,13 +322,13 @@ Docker Swarm 提供：
 ./scripts/prod/swarm/status.sh
 
 # 4. 查看特定服务日志
-docker service logs -f addp_transfer-worker
+docker service logs -f addp_transfer-bounded-worker
 
 # 5. 手动扩容
-docker service scale addp_transfer-worker=3
+docker service scale addp_transfer-bounded-worker=3
 
 # 6. 滚动更新
-docker service update --image addp-transfer-worker:v2.0 addp_transfer-worker
+docker service update --image addp-transfer-bounded-worker:v2.0 addp_transfer-bounded-worker
 ```
 
 ### Swarm vs Compose

@@ -15,7 +15,7 @@ func TestEmbeddedMigrationsContainQualityQueueIndexes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("executionMigrationNames() error = %v", err)
 	}
-	if got := names[len(names)-1]; got != "008_quality_execution_queue_indexes.sql" {
+	if got := names[len(names)-1]; got != "009_bounded_execution_ownership.sql" {
 		t.Fatalf("latest execution migration = %q", got)
 	}
 	contents, err := migrationFiles.ReadFile("migrations/008_quality_execution_queue_indexes.sql")
@@ -30,6 +30,15 @@ func TestEmbeddedMigrationsContainQualityQueueIndexes(t *testing.T) {
 	} {
 		if !strings.Contains(string(contents), required) {
 			t.Fatalf("quality queue migration missing %q", required)
+		}
+	}
+	ownership, err := migrationFiles.ReadFile("migrations/009_bounded_execution_ownership.sql")
+	if err != nil {
+		t.Fatalf("read bounded ownership migration: %v", err)
+	}
+	for _, required := range []string{"execution_boundary", "retry_of_execution_id", "lease_token", "idx_task_executions_bounded_pending"} {
+		if !strings.Contains(string(ownership), required) {
+			t.Fatalf("bounded ownership migration missing %q", required)
 		}
 	}
 }

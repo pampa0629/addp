@@ -45,6 +45,7 @@ func NewObjectStorageCatalogRuntime(
 
 // ScanPaths 扫描对象存储 catalog 路径。
 func (s *ObjectStorageCatalogRuntime) ScanPaths(
+	ctx context.Context,
 	resource *commonModels.Engine,
 	tenantID uint,
 	catalogPaths, fallback []string,
@@ -53,7 +54,7 @@ func (s *ObjectStorageCatalogRuntime) ScanPaths(
 	reporter scanflow.ProgressReporter,
 ) (scanflow.DispatchResult, error) {
 	metaenrich.RegisterItemResolvers()
-	result, err := scanObjectPaths(context.Background(), s, s.repo, resource, tenantID, catalogPaths, fallback, scanDepth, force, reporter)
+	result, err := scanObjectPaths(ctx, s, s.repo, resource, tenantID, catalogPaths, fallback, scanDepth, force, reporter)
 	if err != nil {
 		return scanflow.DispatchResult{}, err
 	}

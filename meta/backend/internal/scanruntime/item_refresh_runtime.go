@@ -364,7 +364,7 @@ func (r *ItemRefreshRuntime) refreshKnownCatalogFactsItem(
 	}
 
 	if r.indexer != nil {
-		r.indexer.IndexTableAsset(resource, tenantID, schemaName, tableInfo, tableInfo.Fields, refreshed)
+		r.indexer.IndexTableAsset(ctx, resource, tenantID, schemaName, tableInfo, tableInfo.Fields, refreshed)
 	}
 
 	return scanprocessor.Result{Item: refreshed, Fields: len(tableInfo.Fields)}, true, nil

@@ -2,7 +2,7 @@
 
 ## 模块定位
 
-Transfer 模块是 ADDP 的数据传输中枢，统一负责 `sync` 任务、任务配置、字段映射 / 转换编排、写后 Meta 扫描触发和执行运行时。bounded execution 由 Asynq worker 承担；continuous execution 由独立 Transfer continuous worker/supervisor 承担。导入 / 导出是 Manager 等调用方的用户动作语义，不是 Transfer 的 `task_type`。
+Transfer 模块是 ADDP 的数据传输中枢，统一负责 `sync` 任务、任务配置、字段映射 / 转换编排、写后 Meta 扫描触发和执行运行时。bounded execution 由独立 `transfer-bounded-worker` 通过 PostgreSQL execution claim 承担；continuous execution 由独立 `transfer-continuous-worker`/supervisor 承担。导入 / 导出是 Manager 等调用方的用户动作语义，不是 Transfer 的 `task_type`。
 
 当前主路径基于 `common/engine`、`common/format`、`common/contentio` 和 `common/engine/contentadapter`：
 
@@ -19,7 +19,7 @@ table 类型 Transfer 主链路已经稳定：native table、encoded single file
 - 后端：Go + Gin + GORM，默认端口 `8083`，环境变量 `TRANSFER_BACKEND_PORT`。
 - 前端：Vue 3 + Element Plus，开发端口 `5176`，启动脚本环境变量 `TRANSFER_FE_PORT`。
 - 数据库：PostgreSQL `transfer` schema。
-- 依赖：System、Meta、Redis/Asynq、MinIO/S3。
+- 依赖：System、Meta、PostgreSQL、Redis、MinIO/S3。
 
 ## 重要目录
 
@@ -33,7 +33,7 @@ transfer/
 │   ├── internal/planner/      # source/target endpoint -> table transfer plan
 │   ├── internal/executor/     # 基于 common engine/format/contentio 的 table transfer executor
 │   ├── internal/service/      # task、execution、system engine resolver、Meta scan 触发
-│   ├── internal/worker/       # Asynq queue、handler、scheduler
+│   ├── internal/worker/       # PostgreSQL bounded runner；owner scheduler 位于 Backend
 │   └── pkg/vfs/               # 底层虚拟文件辅助能力，非新 transfer reader/writer 主入口
 ├── docs/
 │   ├── 数据库架构.md
@@ -76,7 +76,7 @@ Transfer 是 `transfer.task.*` 的 Permission owner；定义只存在于 `author
 - overwrite / append 是 Transfer policy；删除指定资源由 `common/engine` ResourceDeleteProvider 提供。
 - checkpoint 当前只用于进度展示、故障定位和 provider marker 观测；失败执行 retry 按 restartable 从头重新入队，append 任务 retry 会被拒绝。不得宣称 table Transfer 已支持 checkpoint resumable。
 - 大数据传输要优先考虑批大小、连续读取 / 写入 session、进度日志和 restartable retry。
-- Worker 任务载荷只保存 ID 和必要上下文，不要塞入大对象。
+- bounded Worker 不使用消息载荷；以 `common.task_executions` 中冻结的执行配置为唯一输入，并通过 `lease_token` 条件写入。
 - 工作包 2B/2C 已实现业务 Kafka keyed JSON record -> PostgreSQL/MySQL monotonic upsert；数据库 CDC 已在同一 continuous worker 主循环中实现 PostgreSQL/MySQL/Oracle Debezium envelope -> PostgreSQL/MySQL/Oracle snapshot/upsert/delete。两条路线共用 `ChangeStreamReaderProvider`、partition position、目标 ledger、Infra state CAS、runtime lease/fencing 和 retention 防护；不得新增第二套 CDC consumer。
 - continuous resume 前必须验证 committed `next_offset` 仍在 Kafka 保留范围内；低于 earliest offset 时明确失败，不能静默跳到 earliest。PostgreSQL/MySQL/Oracle 目标被锁时必须响应 context 取消并回滚业务写入与 apply ledger；Oracle 通过 `FOR UPDATE NOWAIT` 有界重试检查 runtime context。
 - 工作包 4B 已完成：业务 Kafka DLQ 按确定性 record error -> Infra Kafka payload -> `transfer.dead_letters` -> 目标 `skip` ledger -> Infra CAS 运行；公开任务 API 接受显式 `runtime.record_failure.mode=block|dead_letter`，Console 默认显式发送 `block`。唯一 replay API 为 `POST /task-definitions/:id/replay`，只接受显式 partition offset ranges 与不存在的新 PostgreSQL `parent_locator + name`，并通过独立 bounded execution/apply identity 写隔离目标，不能触碰主任务状态、水位或目标。

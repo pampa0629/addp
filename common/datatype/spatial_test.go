@@ -166,6 +166,22 @@ func TestSpatialInfoFromPayloadUsesSingleColumnAsPrimary(t *testing.T) {
 	}
 }
 
+func TestSpatialInfoPayloadRoundTripsPROJJSONDefinition(t *testing.T) {
+	info := NewSingleGeometrySpatialInfo("shape", "Point", 4490, 2)
+	info.GeometryColumns[0].CRSRef = "EPSG:4490"
+	info.CRSDefinitions = []CRSDefinition{{
+		ID:                 "EPSG:4490",
+		DefinitionEncoding: CRSDefinitionEncodingPROJJSON,
+		Definition:         `{"type":"GeographicCRS","id":{"authority":"EPSG","code":4490}}`,
+		Source:             CRSDefinitionSourceGeoParquetMetadata,
+	}}
+	roundTrip := SpatialInfoFromPayload(SpatialInfoPayload(info))
+	definition := roundTrip.CRSDefinitionByID("EPSG:4490")
+	if definition == nil || definition.DefinitionEncoding != CRSDefinitionEncodingPROJJSON || definition.Source != CRSDefinitionSourceGeoParquetMetadata {
+		t.Fatalf("round-trip definition = %#v, want GeoParquet PROJJSON", definition)
+	}
+}
+
 func TestSpatialInfoFromPayloadRestoresObjectSpatialReference(t *testing.T) {
 	payload := map[string]interface{}{
 		"srid":              int64(4326),

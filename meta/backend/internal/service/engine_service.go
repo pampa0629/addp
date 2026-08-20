@@ -98,6 +98,10 @@ func (s *EngineService) GetWorkflowRuntimesByTenant(ctx context.Context, tenantI
 // GetResourceByID returns decrypted connection details through System's
 // Service Principal branch after enforcing the execution Tenant Context.
 func (s *EngineService) GetResourceByID(engineID, tenantID uint) (*commonModels.Engine, error) {
+	return s.GetResourceByIDWithContext(context.Background(), engineID, tenantID)
+}
+
+func (s *EngineService) GetResourceByIDWithContext(ctx context.Context, engineID, tenantID uint) (*commonModels.Engine, error) {
 	if engineID == 0 || tenantID == 0 {
 		return nil, errors.New("engine ID and tenant ID are required")
 	}
@@ -120,7 +124,7 @@ func (s *EngineService) GetResourceByID(engineID, tenantID uint) (*commonModels.
 		return nil, errors.New("System service client is not configured")
 	}
 
-	resource, err := s.systemClient.WithTenantID(tenantID).GetEngine(context.Background(), engineID)
+	resource, err := s.systemClient.WithTenantID(tenantID).GetEngine(ctx, engineID)
 	if err != nil {
 		return nil, fmt.Errorf("get tenant engine from System: %w", err)
 	}

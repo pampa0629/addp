@@ -51,6 +51,9 @@ func (s *DatabaseRuntime) scanTables(
 	scannedTables := make(map[string]bool)
 
 	for i, tableInfo := range pluginTables {
+		if err := ctx.Err(); err != nil {
+			return totalTables, totalFields, err
+		}
 		s.log.Info(fmt.Sprintf("处理第 %d/%d 张表", i+1, len(pluginTables)),
 			"table_name", tableInfo.Name,
 			"row_count", tableInfo.RowCount,
@@ -110,7 +113,7 @@ func (s *DatabaseRuntime) scanTables(
 		)
 
 		if isDeepScan && s.tableIndexer != nil {
-			s.tableIndexer.IndexTableAsset(resource, tenantID, schemaName, tableInfo, fields, item)
+			s.tableIndexer.IndexTableAsset(ctx, resource, tenantID, schemaName, tableInfo, fields, item)
 		}
 
 		totalTables++

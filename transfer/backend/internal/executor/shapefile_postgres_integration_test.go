@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -17,10 +18,13 @@ import (
 	"github.com/addp/common/engine/plugins/postgresql"
 	"github.com/addp/common/format"
 	geojsonformat "github.com/addp/common/format/plugins/geojson"
+	parquetformat "github.com/addp/common/format/plugins/parquet"
 	shapefileformat "github.com/addp/common/format/plugins/shapefile"
+	commonSpatial "github.com/addp/common/spatial"
 	"github.com/addp/transfer/internal/testpg"
 	"github.com/jonas-p/go-shp"
 	_ "github.com/lib/pq"
+	"github.com/twpayne/go-geom"
 )
 
 const integrationWGS84CRSDefinition = `GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]]`
@@ -446,6 +450,96 @@ func TestIntegrationPostgresSpatialTableToGeoJSONTransformsTo4326(t *testing.T) 
 	properties, ok := feature["properties"].(map[string]interface{})
 	if !ok || properties["name"] != "Mercator point" {
 		t.Fatalf("properties = %#v, want name preserved", feature["properties"])
+	}
+}
+
+func TestIntegrationPostgresSpatialTableToGeoParquetRoundTrip(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL/PostGIS integration test")
+	}
+
+	ctx := context.Background()
+	connInfo := integrationPostgresConnInfo(t)
+	pg := &postgresql.PostgreSQLPlugin{}
+	db := openIntegrationPostgres(t, ctx, pg, connInfo)
+
+	schemaName := integrationPostgresTestSchema(t, ctx, db)
+	tableName := fmt.Sprintf("pg_to_geoparquet_%d", time.Now().UnixNano())
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`
+		CREATE TABLE "%s"."%s" (
+			id integer PRIMARY KEY,
+			name text,
+			shape geometry(Point,4326)
+		)
+	`, schemaName, tableName)); err != nil {
+		t.Fatalf("create source table failed: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`
+		INSERT INTO "%s"."%s" (id, name, shape)
+		VALUES
+			(1, 'Alpha', ST_SetSRID(ST_MakePoint(120, 30), 4326)),
+			(2, 'Beta', ST_SetSRID(ST_MakePoint(121, 31), 4326))
+	`, schemaName, tableName)); err != nil {
+		t.Fatalf("insert source rows failed: %v", err)
+	}
+
+	target := &fakeContentWriter{}
+	parquetPlugin := parquetformat.NewPlugin()
+	exec := &TableTransferExecutor{
+		SourceNativeReader:         pg,
+		SourceTableSessionProvider: pg,
+		TargetContentWriter:        target,
+		TargetTableWriterProvider:  parquetPlugin,
+	}
+	metrics, err := exec.Execute(ctx, TableTransferPlan{
+		Source: TableSourcePlan{
+			Kind:     TableEndpointNative,
+			ConnInfo: connInfo,
+			Path:     integrationPostgresTablePath(schemaName, tableName),
+			ReadOptions: map[string]interface{}{
+				engineplugin.TableReadHintGeometryEncoding: string(format.GeometryEncodingEWKB),
+			},
+		},
+		Target: TableTargetPlan{
+			Kind:   TableEndpointEncoded,
+			Path:   engineplugin.FileItemPath(0, "exports/"+tableName+".parquet"),
+			Format: format.FormatParquet,
+		},
+		BatchSize: 1,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if metrics.RecordsRead != 2 || metrics.RecordsWritten != 2 || metrics.Batches != 2 {
+		t.Fatalf("metrics = %#v, want two rows in two batches", metrics)
+	}
+
+	described, err := parquetPlugin.DescribeTable(ctx, bytes.NewReader(target.buf.Bytes()), nil)
+	if err != nil {
+		t.Fatalf("DescribeTable failed: %v", err)
+	}
+	if described.Spatial == nil || described.Spatial.PrimaryGeometryName() != "shape" || described.Spatial.CRSRef != "OGC:CRS84" {
+		t.Fatalf("GeoParquet spatial = %#v, want shape with default OGC:CRS84", described.Spatial)
+	}
+	if field := described.Table.GetField("shape"); field == nil || field.Type != datatype.FieldTypeGeometry {
+		t.Fatalf("GeoParquet shape field = %#v, want geometry", field)
+	}
+	rows, err := parquetPlugin.SampleTable(ctx, bytes.NewReader(target.buf.Bytes()), 0, 2, nil)
+	if err != nil {
+		t.Fatalf("SampleTable failed: %v", err)
+	}
+	if len(rows) != 2 || rows[0]["name"] != "Alpha" || rows[1]["name"] != "Beta" {
+		t.Fatalf("rows = %#v, want Alpha/Beta", rows)
+	}
+	for index, expected := range [][2]float64{{120, 30}, {121, 31}} {
+		geometry, err := commonSpatial.DecodeGeometryValue(rows[index]["shape"], string(format.GeometryEncodingWKB), 0)
+		if err != nil {
+			t.Fatalf("decode row %d WKB: %v", index, err)
+		}
+		point, ok := geometry.(*geom.Point)
+		if !ok || point.X() != expected[0] || point.Y() != expected[1] || point.SRID() != 0 {
+			t.Fatalf("row %d geometry = %#v, want standard WKB point %v without embedded SRID", index, geometry, expected)
+		}
 	}
 }
 

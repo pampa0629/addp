@@ -101,7 +101,7 @@ Kafka poll 会分批读取，但不因此成为 bounded；数据库 CDC 的 init
 
 ### 4.1 Snapshot
 
-bounded snapshot 使用 Asynq bounded worker，经 planner 和 executor 执行。execution checkpoint 用于进度、故障定位和 Provider marker 观测，不表示可以从中间 checkpoint 自动续写。
+bounded snapshot 使用独立 `transfer-bounded-worker` 从 `common.task_executions` PostgreSQL claim，经 planner 和 executor 执行。execution checkpoint 用于进度、故障定位和 Provider marker 观测，不表示可以从中间 checkpoint 自动续写。
 
 失败后的 retry 语义是：
 
@@ -147,7 +147,7 @@ continuous task 删除前必须先通过唯一 Stop/cleanup 路径停止 runtime
 
 ## 六、Continuous 运行时
 
-continuous session 不进入 Asynq。Transfer 使用独立 continuous worker 进程角色，一个进程承载多个 task session，每个 session 再按 partition 运行受限 worker。
+continuous session 不进入 bounded execution claim。Transfer 使用独立 continuous worker 进程角色，一个进程承载多个 task session，每个 session 再按 partition 运行受限 worker。
 
 同一 task 同一时刻只有一个合法 runtime owner。`transfer.runtime_leases` 提供 lease、heartbeat 和 fencing；`transfer.sync_states` 按 partition 保存 `kafka_offset/v1.next_offset`。Kafka auto commit 禁用，consumer group 只承担 partition assignment。
 
@@ -284,8 +284,8 @@ Meta 提交失败不回滚已经提交的数据或 schema。Transfer 只触发�
 
 ## 十、当前架构取舍
 
-- bounded worker 继续使用 Go + Asynq；continuous worker 使用独立常驻进程角色。
-- 不把 continuous consumer 放入一次性 Asynq handler 无限运行。
+- bounded worker 使用 Go + PostgreSQL execution claim/lease；continuous worker 使用独立常驻进程角色。
+- 不把 continuous consumer 放入一次性 bounded execution handler 无限运行。
 - 不依赖 Kafka auto commit 作为 Transfer committed position。
 - 不把 Infra Kafka topic 暴露为用户资源。
 - 不把 watermark 轮询称为 CDC。

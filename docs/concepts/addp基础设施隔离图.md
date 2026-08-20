@@ -22,7 +22,7 @@ graph TB
         InfraTitle[docker-compose.infra.yml<br/>项目名: addp-infra]
 
         PostgreSQL[(PostgreSQL<br/>系统数据库<br/>:15432)]
-        Redis[(Redis<br/>缓存/队列<br/>:16379)]
+        Redis[(Redis<br/>缓存/事件/锁<br/>:16379)]
         MinIO[(MinIO<br/>系统文件存储<br/>:19000-19001)]
         Meilisearch[(Meilisearch<br/>全文搜索<br/>:17700)]
     end
@@ -79,7 +79,7 @@ graph TB
 - 用户会话缓存
 - 引擎配置缓存
 - 元数据缓存
-- Asynq 任务队列 (Transfer 模块)
+- 事件发布、缓存和扫描范围锁；不承担 bounded execution 队列
 - Key 命名规范: `{module}:{middleware}:{function}:{id}`
 
 **MinIO** (端口 19000-19001):
@@ -127,16 +127,16 @@ graph TB
     Isolation --> PG[PostgreSQL Schema 隔离]
     Isolation --> MinIOIso[MinIO Bucket 隔离]
     Isolation --> RedisIso[Redis Key 命名规范]
-    Isolation --> AsynqIso[Redis Asynq Queue 命名规范]
+    Isolation --> ExecutionIso[PostgreSQL Execution Claim 隔离]
     Isolation --> MeiliIso[Meilisearch Index 命名规范]
 
     PG --> PGEx["system schema: 用户/引擎/日志<br/>manager schema: 数据源/预览配置<br/>meta schema: 元数据索引<br/>transfer schema: 传输任务<br/>orchestrator schema: 编排定义<br/>develop schema: 查询/工作流/Notebook<br/>service schema: 服务配置"]
 
     MinIOIso --> MinIOEx["system bucket: 用户头像/系统文件/审计日志归档<br/>manager bucket: 预览缓存/瓦片缓存对象/导入暂存/导出中转<br/>meta bucket: 扫描临时文件<br/>transfer bucket: 内部执行临时文件<br/>orchestrator bucket: 编排执行日志<br/>develop bucket: 查询结果/工作流输出<br/>service bucket: 服务缓存"]
 
-    RedisIso --> RedisEx["system:cache:user:123<br/>system:session:abc<br/>manager:cache:preview:456<br/>transfer:asynq:task:789<br/>meta:scan:status:101"]
+    RedisIso --> RedisEx["system:cache:user:123<br/>system:session:abc<br/>manager:cache:preview:456<br/>meta:scan_dedup:..."]
 
-    AsynqIso --> AsynqEx["transfer:critical (高优先级)<br/>transfer:default (默认优先级)<br/>transfer:low (低优先级)<br/>meta:default (元数据扫描队列)"]
+    ExecutionIso --> ExecutionEx["common.task_executions<br/>module + task_type + bounded + pending<br/>attempt + lease_token + lease_expires_at"]
 
     MeiliIso --> MeiliEx["assets 统一索引<br/>包含 asset_type=table (表/集合)<br/>和 asset_type=object (文件/对象)"]
 
@@ -145,8 +145,8 @@ graph TB
     classDef example fill:#e8f5e9,stroke:#1b5e20
 
     class Isolation isolation
-    class PG,MinIOIso,RedisIso,AsynqIso,MeiliIso mechanism
-    class PGEx,MinIOEx,RedisEx,AsynqEx,MeiliEx example
+    class PG,MinIOIso,RedisIso,ExecutionIso,MeiliIso mechanism
+    class PGEx,MinIOEx,RedisEx,ExecutionEx,MeiliEx example
 ```
 
 ### 隔离机制详情
@@ -196,13 +196,13 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 
 **3. Redis Key 命名规范**:
 - 格式: `{module}:{middleware}:{function}:{id}`
-- 示例: `system:cache:user:123`、`transfer:asynq:task:456`
+- 示例: `system:cache:user:123`、`meta:scan_dedup:...`
 - 便于按模块管理和清理
 
-**4. Redis Asynq Queue 命名规范**:
-- 格式: `{module}:{priority}`
-- 示例: `transfer:critical`、`meta:default`
-- 支持按优先级调度
+**4. PostgreSQL bounded execution claim 隔离**:
+- Worker 固定按 `module + task_type + execution_boundary=bounded + status=pending` 领取。
+- 运行所有权由 `attempt + lease_token + lease_expires_at` 标识，不使用 Redis key 表达 execution owner。
+- owner scheduler 只创建 durable pending execution；Worker 不可用时 execution 保留排队事实。
 
 **5. Meilisearch Index 命名**:
 - **当前实现**: 使用统一索引 `assets` (开发环境) / `metadata-assets` (生产环境)

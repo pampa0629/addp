@@ -72,6 +72,8 @@ type CheckExecutor struct {
 	sqlGen                 *SQLGenerator
 	checkTimeout           time.Duration
 	workerConcurrency      int
+	workerLease            time.Duration
+	workerPoll             time.Duration
 	workerID               string
 	workerCancel           context.CancelFunc
 	workerDone             chan struct{}
@@ -94,9 +96,20 @@ func NewCheckExecutor(
 		sqlGen:                 NewSQLGenerator(),
 		checkTimeout:           checkTimeout,
 		workerConcurrency:      workerConcurrency,
+		workerLease:            qualityWorkerLease,
+		workerPoll:             qualityWorkerPoll,
 		workerID:               "quality-" + uuid.NewString(),
 		workerDone:             make(chan struct{}),
 	}
+}
+
+func (e *CheckExecutor) ConfigureWorker(lease, poll time.Duration) error {
+	if lease <= 0 || poll <= 0 || poll >= lease {
+		return fmt.Errorf("quality worker lease and poll configuration is invalid")
+	}
+	e.workerLease = lease
+	e.workerPoll = poll
+	return nil
 }
 
 type RuleResult struct {
@@ -161,7 +174,8 @@ func (e *CheckExecutor) RunCheckWithContext(
 	taskExec := &commonExecution.TaskExecution{
 		ExecutionID: executionID, TenantID: int(tenantID), Module: commonExecution.ModuleQuality,
 		TaskType: commonExecution.TaskTypeQualityCheck, Source: normalizedSource, ParentExecutionID: parentExecutionID,
-		Status: commonExecution.ExecutionStatusPending, TriggerType: normalizedTriggerType,
+		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
+		Status:            commonExecution.ExecutionStatusPending, TriggerType: normalizedTriggerType,
 		CreatedAt: now, UpdatedAt: now, MaxAttempts: 3,
 		ExecutionConfig: commonModels.JSONMap{
 			"schema_version":   qualityExecutionConfigSchemaVersion,
@@ -252,8 +266,8 @@ func parsePositiveID(value string) (*int64, error) {
 	return &parsed, nil
 }
 
-// StartWorker starts the single durable execution route. Multiple Quality
-// instances coordinate through the database lease and SKIP LOCKED claim.
+// StartWorker starts the single durable execution route inside the independent
+// quality-worker process. Multiple workers coordinate through PostgreSQL leases.
 func (e *CheckExecutor) StartWorker(ctx context.Context) {
 	e.workerStartOnce.Do(func() {
 		workerCtx, cancel := context.WithCancel(ctx)
@@ -289,7 +303,7 @@ func (e *CheckExecutor) workerSupervisor(ctx context.Context) {
 }
 
 func (e *CheckExecutor) recoveryLoop(ctx context.Context) {
-	ticker := time.NewTicker(qualityWorkerPoll)
+	ticker := time.NewTicker(e.workerPoll)
 	defer ticker.Stop()
 	e.processExpired(ctx)
 	for {
@@ -303,7 +317,7 @@ func (e *CheckExecutor) recoveryLoop(ctx context.Context) {
 }
 
 func (e *CheckExecutor) executionWorkerLoop(ctx context.Context, workerID string) {
-	ticker := time.NewTicker(qualityWorkerPoll)
+	ticker := time.NewTicker(e.workerPoll)
 	defer ticker.Stop()
 	for {
 		if ctx.Err() != nil {
@@ -329,7 +343,7 @@ func (e *CheckExecutor) processExpired(ctx context.Context) {
 }
 
 func (e *CheckExecutor) processPending(ctx context.Context, workerID string) bool {
-	execution, task, err := e.checkTaskRepo.ClaimPendingExecution(ctx, workerID, time.Now().UTC(), qualityWorkerLease)
+	execution, task, err := e.checkTaskRepo.ClaimPendingExecution(ctx, workerID, time.Now().UTC(), e.workerLease)
 	if err != nil {
 		if ctx.Err() == nil {
 			log.Printf("quality execution claim failed: %v", err)
@@ -339,6 +353,11 @@ func (e *CheckExecutor) processPending(ctx context.Context, workerID string) boo
 	if execution == nil || task == nil {
 		return false
 	}
+	lease, err := commonExecution.LeaseFromExecution(*execution)
+	if err != nil {
+		log.Printf("quality execution %s has invalid lease identity: %v", execution.ExecutionID, err)
+		return true
+	}
 	checkTimeout, configErr := executionCheckTimeout(execution.ExecutionConfig)
 	if configErr != nil {
 		completedAt := time.Now().UTC()
@@ -346,14 +365,14 @@ func (e *CheckExecutor) processPending(ctx context.Context, workerID string) boo
 		if execution.StartedAt != nil {
 			fields["execution_time_ms"] = completedAt.Sub(*execution.StartedAt).Milliseconds()
 		}
-		if err := e.checkTaskRepo.CompleteExecutionWithLease(ctx, task.ID, int64(task.TenantID), execution.ExecutionID, workerID, fields, completedAt); err != nil {
+		if err := e.checkTaskRepo.CompleteExecutionWithLease(ctx, task.ID, int64(task.TenantID), lease, fields, completedAt); err != nil {
 			log.Printf("quality execution %s config failure completion failed: %v", execution.ExecutionID, err)
 		}
 		return true
 	}
 	checkCtx, cancelCheck := context.WithTimeout(ctx, checkTimeout)
 	heartbeatDone := make(chan error, 1)
-	go e.renewExecutionLease(checkCtx, cancelCheck, execution, workerID, heartbeatDone)
+	go e.renewExecutionLease(checkCtx, cancelCheck, lease, heartbeatDone)
 	result, observations, execErr := e.doCheck(checkCtx, task, execution)
 	timedOut := errors.Is(checkCtx.Err(), context.DeadlineExceeded) || errors.Is(execErr, context.DeadlineExceeded)
 	execErr = executionErrorForDeadline(execErr, timedOut)
@@ -377,6 +396,10 @@ func (e *CheckExecutor) processPending(ctx context.Context, workerID string) boo
 			fields[key] = value
 		}
 	} else {
+		if err := e.checkTaskRepo.RenewLease(ctx, lease, time.Now().UTC().Add(e.workerLease)); err != nil {
+			log.Printf("quality execution %s lost lease before issue reconciliation: %v", execution.ExecutionID, err)
+			return true
+		}
 		if err := e.issueRepo.Reconcile(ctx, int64(task.TenantID), execution.ExecutionID, observations, completedAt); err != nil {
 			execErr = fmt.Errorf("reconcile quality issues: %w", err)
 			log.Printf("quality execution %s issue reconciliation failed: %v", execution.ExecutionID, err)
@@ -388,7 +411,7 @@ func (e *CheckExecutor) processPending(ctx context.Context, workerID string) boo
 			fields["progress"] = 100
 		}
 	}
-	if err := e.checkTaskRepo.CompleteExecutionWithLease(ctx, task.ID, int64(task.TenantID), execution.ExecutionID, workerID, fields, completedAt); err != nil {
+	if err := e.checkTaskRepo.CompleteExecutionWithLease(ctx, task.ID, int64(task.TenantID), lease, fields, completedAt); err != nil {
 		log.Printf("quality execution %s completion failed: %v", execution.ExecutionID, err)
 	}
 	return true
@@ -414,8 +437,8 @@ func executionErrorForDeadline(execErr error, timedOut bool) error {
 	return execErr
 }
 
-func (e *CheckExecutor) renewExecutionLease(ctx context.Context, cancel context.CancelFunc, execution *commonExecution.TaskExecution, workerID string, done chan<- error) {
-	ticker := time.NewTicker(qualityWorkerLease / 3)
+func (e *CheckExecutor) renewExecutionLease(ctx context.Context, cancel context.CancelFunc, lease commonExecution.Lease, done chan<- error) {
+	ticker := time.NewTicker(e.workerLease / 3)
 	defer ticker.Stop()
 	for {
 		select {
@@ -423,7 +446,7 @@ func (e *CheckExecutor) renewExecutionLease(ctx context.Context, cancel context.
 			done <- nil
 			return
 		case now := <-ticker.C:
-			if err := e.checkTaskRepo.RenewLease(ctx, execution.ExecutionID, int64(execution.TenantID), workerID, now.UTC().Add(qualityWorkerLease)); err != nil {
+			if err := e.checkTaskRepo.RenewLease(ctx, lease, now.UTC().Add(e.workerLease)); err != nil {
 				if ctx.Err() != nil {
 					done <- nil
 					return

@@ -14,7 +14,6 @@ import (
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/service"
-	"github.com/addp/meta/internal/worker"
 	"github.com/redis/go-redis/v9"
 
 	// 导入 general 引擎插件以触发自动注册
@@ -82,9 +81,8 @@ func main() {
 	runtimeContext, cancelRuntime := context.WithCancel(context.Background())
 	defer cancelRuntime()
 
-	// 初始化 Redis 客户端（可选，用于资源变更事件同步和任务队列）
+	// 初始化 Redis 客户端（可选，仅用于事件与扫描范围锁，不承担有界执行队列职责）
 	var redisClient *redis.Client
-	var taskQueue *worker.TaskQueue
 	if cfg.RedisHost != "" && cfg.RedisPort != "" {
 		redisAddr := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)
 		redisClient = redis.NewClient(&redis.Options{
@@ -94,14 +92,8 @@ func main() {
 		})
 		logger.L().Info("Redis 客户端已初始化", "addr", redisAddr)
 
-		// 创建任务队列（用于异步扫描）
-		taskQueue = worker.NewTaskQueue(redisAddr, cfg.RedisPassword)
-		logger.L().Info("任务队列已初始化", "redis_addr", redisAddr)
 	} else {
-		logger.L().Warn("Redis 未配置，将使用本地队列执行扫描任务")
-	}
-	if taskQueue != nil {
-		defer taskQueue.Close()
+		logger.L().Warn("Redis 未配置，资源事件同步与扫描范围锁不可用")
 	}
 
 	// 初始化服务
@@ -128,12 +120,6 @@ func main() {
 	go lineageService.RunCollector(lineageContext, time.Minute)
 
 	scheduler := service.NewScanTaskScheduler(taskService, executionService)
-	if taskQueue != nil {
-		scheduler.SetTaskQueue(taskQueue)
-		logger.L().Info("扫描任务调度器将使用 Worker 队列执行任务")
-	} else {
-		logger.L().Info("扫描任务调度器将使用本地 goroutine 执行任务")
-	}
 	if err := scheduler.Start(context.Background()); err != nil {
 		logger.L().Error("扫描任务调度器启动失败", "error", err)
 		os.Exit(1)

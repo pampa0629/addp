@@ -231,11 +231,11 @@ type catalogDispatcherTestContentAdapter struct {
 	result scanflow.DispatchResult
 }
 
-func (a catalogDispatcherTestContentAdapter) ScanPaths(*commonModels.Engine, uint, []string, string, bool, scanflow.ProgressReporter) (scanflow.DispatchResult, error) {
+func (a catalogDispatcherTestContentAdapter) ScanPaths(context.Context, *commonModels.Engine, uint, []string, string, bool, scanflow.ProgressReporter) (scanflow.DispatchResult, error) {
 	return a.result, nil
 }
 
-func (a catalogDispatcherTestContentAdapter) ScanRefGroups(*commonModels.Engine, uint, []models.ScanRefGroup, string, bool, scanflow.ProgressReporter) (scanflow.DispatchResult, error) {
+func (a catalogDispatcherTestContentAdapter) ScanRefGroups(context.Context, *commonModels.Engine, uint, []models.ScanRefGroup, string, bool, scanflow.ProgressReporter) (scanflow.DispatchResult, error) {
 	return a.result, nil
 }
 

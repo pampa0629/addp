@@ -6,11 +6,11 @@
 - **HTTP 框架**: Gin
 - **ORM**: GORM
 - **数据库**: PostgreSQL 15 (所有模块使用 schema 隔离: system, manager, meta, transfer, orchestrator, develop)
-- **缓存/队列**: Redis 7
+- **缓存/事件**: Redis 7
 - **对象存储**: MinIO (兼容 S3)
 - **Infra Kafka**: Redpanda v24.3.18，唯一 Kafka API broker 实现
 - **Kafka Connect / Debezium**: `quay.io/debezium/connect:3.6.0.Final`，内置 Kafka Connect 4.3.0；PostgreSQL Connector 3.6.0.Final
-- **任务队列**: Asynq (基于 Redis,用于 Transfer 模块), Cron (用于 Meta 模块调度)
+- **有界执行领取**: PostgreSQL `common.task_executions` claim + lease；Cron 只用于 owner scheduler 计算到期 execution
 - **空间计算**: GeoPython Workflow (基于 Python 的空间工作流执行引擎,内存 GeoDataFrame 处理)
 - **Spark 工作流运行时**: PySpark 3.5 + OpenJDK 11；Workflow driver 与 Spark Master/Worker 必须使用相同的 JVM 主版本；JDBC 使用 PostgreSQL `42.7.4`、MySQL Connector/J `8.4.0`。分布式模式下，`SPARK_WORKFLOW_SHARED_HOST` 必须是 Workflow driver 自身和 Spark executor 都可访问的地址，用于公布 driver 地址，并替换本地开发中数据引擎连接的 loopback host。
 
@@ -41,10 +41,10 @@
   - **影响**: 所有需要连接 MySQL/Doris 的模块必须使用 v1.9.3+
   - **相关模块**: System (资源测试), Develop (SQL 工作台)
 
-#### 缓存与队列
+#### 缓存与执行领取
 
 - **Redis 客户端**: `github.com/redis/go-redis/v9@v9.17.2`
-- **异步任务队列**: `github.com/hibiken/asynq@v0.25.1`
+- **有界执行队列**: PostgreSQL + GORM，不引入独立消息队列依赖
 
 #### 对象存储
 
@@ -59,6 +59,7 @@
 
 - **几何处理**: `github.com/twpayne/go-geom@v1.6.1`
 - **Shapefile**: `github.com/jonas-p/go-shp@v0.1.1`
+- **CRS 定义与坐标转换 Runtime**: GeoPython Workflow `pyproj==3.7.2`；只使用镜像内本地 PROJ database，固定 `PROJ_NETWORK=OFF`
 - **向量数据库**: PostgreSQL `pgvector` 扩展；业务模块通过各自 owner 表和 repository 查询，不引入独立 `pgvector-go` 存储客户端。
 
 #### Excel 与文档处理

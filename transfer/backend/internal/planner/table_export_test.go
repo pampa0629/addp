@@ -769,6 +769,64 @@ func TestBuildTableTransferPlanAllowsParquetTableWriter(t *testing.T) {
 	}
 }
 
+func TestSourceHasSpatialRowsUsesItemFactsForConditionalParquet(t *testing.T) {
+	ordinary := &executor.TableSourcePlan{Format: format.FormatParquet}
+	if sourceHasSpatialRows(ordinary) {
+		t.Fatal("ordinary parquet without spatial facts must not be treated as spatial")
+	}
+	geoParquet := &executor.TableSourcePlan{
+		Format:      format.FormatParquet,
+		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("shape", "Point", 4326, 2),
+	}
+	if !sourceHasSpatialRows(geoParquet) {
+		t.Fatal("parquet with spatial facts must be treated as spatial")
+	}
+}
+
+func TestBuildTableTransferPlanRequestsEWKBFromGeoParquetSource(t *testing.T) {
+	spec := minimalEncodedToNativeSpec()
+	spec.Source.Format = format.FormatParquet
+	spec.Source.Locator = fileLocator(1, "imports/roads.parquet")
+	spec.Source.Attributes = tableSourceAttributes("single", "parquet", "imports/roads.parquet", nil, []map[string]interface{}{
+		{"name": "id", "type": "bigint"},
+		{"name": "shape", "type": "geometry"},
+	}, datatype.SpatialInfoPayload(datatype.NewSingleGeometrySpatialInfo("shape", "Point", 4326, 2)))
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "postgresql"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.Plan.Source.ParseOptions == nil || result.Plan.Source.ParseOptions.GeometryEncoding != format.GeometryEncodingEWKB {
+		t.Fatalf("source parse options = %#v, want GeoParquet EWKB output", result.Plan.Source.ParseOptions)
+	}
+}
+
+func TestBuildTableTransferPlanConfiguresGeoParquetWriteFromNativeSpatialSource(t *testing.T) {
+	spec := minimalNativeToEncodedSpec()
+	spec.Target.Format = format.FormatParquet
+	setFileTarget(&spec, 2, "exports/roads.parquet")
+	spec.Source.Attributes = tableSourceAttributes("single", "table", "public/roads", nil, []map[string]interface{}{
+		{"name": "shape", "type": "geometry"},
+	}, datatype.SpatialInfoPayload(datatype.NewSingleGeometrySpatialInfo("shape", "Point", 4326, 2)))
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.Plan.Source.ReadOptions[engineplugin.TableReadHintGeometryEncoding] != string(format.GeometryEncodingEWKB) {
+		t.Fatalf("source read options = %#v, want EWKB for GeoParquet writer", result.Plan.Source.ReadOptions)
+	}
+	if result.Plan.Target.FormatOptions == nil {
+		t.Fatal("target write options is nil")
+	}
+}
+
 func TestBuildTableTransferPlanAllowsShapefileMultiTableWriter(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatShapefile

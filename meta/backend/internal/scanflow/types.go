@@ -1,6 +1,7 @@
 package scanflow
 
 import (
+	"context"
 	"strings"
 
 	"github.com/addp/meta/internal/models"
@@ -24,6 +25,7 @@ type ProgressReporter interface {
 }
 
 type Options struct {
+	Context      context.Context
 	EngineID     uint
 	TenantID     uint
 	CatalogPaths []string

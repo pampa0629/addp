@@ -10,8 +10,8 @@ ARG GOOS=linux
 WORKDIR /app
 
 # 复制本地编译好的 worker 二进制文件（从扁平化 dist/ 目录）
-# 路径: dist/{build}-{os}-{arch}/transfer-worker
-COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/transfer-worker ./worker
+# 路径: dist/{build}-{os}-{arch}/transfer-bounded-worker
+COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/transfer-bounded-worker ./worker
 COPY transfer/backend/config ./transfer/backend/config
 RUN chmod +x ./worker
 

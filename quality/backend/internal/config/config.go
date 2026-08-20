@@ -15,6 +15,8 @@ type Config struct {
 	DBSchema          string
 	CheckTimeout      time.Duration
 	WorkerConcurrency int
+	WorkerLease       time.Duration
+	WorkerPoll        time.Duration
 
 	RedisHost     string
 	RedisPort     string
@@ -34,6 +36,8 @@ func LoadConfig() (*Config, error) {
 		DBSchema:          "quality",
 		CheckTimeout:      commonConfig.GetEnvDuration("QUALITY_CHECK_TIMEOUT", "30m"),
 		WorkerConcurrency: commonConfig.GetEnvInt("QUALITY_WORKER_CONCURRENCY", 4),
+		WorkerLease:       commonConfig.GetEnvDuration("QUALITY_WORKER_LEASE_DURATION", "30m"),
+		WorkerPoll:        commonConfig.GetEnvDuration("QUALITY_WORKER_POLL_INTERVAL", "500ms"),
 
 		RedisHost:     commonConfig.GetEnv("REDIS_HOST", "localhost"),
 		RedisPort:     commonConfig.GetEnv("REDIS_PORT", "16379"),
@@ -51,6 +55,9 @@ func LoadConfig() (*Config, error) {
 	}
 	if cfg.WorkerConcurrency <= 0 {
 		return nil, fmt.Errorf("QUALITY_WORKER_CONCURRENCY must be positive")
+	}
+	if cfg.WorkerLease <= 0 || cfg.WorkerPoll <= 0 || cfg.WorkerPoll >= cfg.WorkerLease {
+		return nil, fmt.Errorf("QUALITY worker lease and poll configuration is invalid")
 	}
 
 	cfg.BaseConfig.SystemServiceURL = cfg.SystemURL

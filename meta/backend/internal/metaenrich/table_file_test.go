@@ -3,6 +3,7 @@ package metaenrich
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -357,6 +358,48 @@ func TestEnrichSingleTableFileItemDetectsFormatFromContent(t *testing.T) {
 	}
 }
 
+func TestExtractSingleParquetFileWritesGeoParquetSpatialAttributes(t *testing.T) {
+	content := buildMetaitemGeoParquetRows(t, testMetaitemGeoParquetRow{ID: 1, Shape: []byte{1, 1, 0, 0, 0}})
+	info, err := ExtractSingleTableFileItem(context.Background(), staticContentReader{content: string(content)}, nil, 1, "roads.parquet", int64(len(content)), false)
+	if err != nil {
+		t.Fatalf("ExtractSingleTableFileItem() error = %v", err)
+	}
+	spatial := commonJSON.Section(info.Attributes, "capabilities.spatial")
+	if spatial["primary_geometry_column"] != "shape" || spatial["crs_ref"] != "OGC:CRS84" {
+		t.Fatalf("spatial = %#v, want shape and OGC:CRS84", spatial)
+	}
+	fields := commonJSON.InterfaceSlice(commonJSON.Section(info.Attributes, "type_info.table")["fields"])
+	foundGeometry := false
+	for _, raw := range fields {
+		field := commonJSON.InterfaceMap(raw)
+		if field["name"] == "shape" && field["type"] == "geometry" {
+			foundGeometry = true
+		}
+	}
+	if !foundGeometry {
+		t.Fatalf("table fields = %#v, want shape geometry", fields)
+	}
+	geo := commonJSON.Section(info.Attributes, "format_info.parquet.geo")
+	if geo["version"] != "1.1.0" || geo["primary_column"] != "shape" {
+		t.Fatalf("format_info.parquet.geo = %#v", geo)
+	}
+}
+
+func TestExtractSingleParquetFileDoesNotHideUnsupportedGeoParquet(t *testing.T) {
+	metadata := map[string]interface{}{
+		"version":        "2.0.0",
+		"primary_column": "shape",
+		"columns": map[string]interface{}{
+			"shape": map[string]interface{}{"encoding": "WKB", "geometry_types": []string{"Point"}},
+		},
+	}
+	content := buildMetaitemGeoParquetRowsWithMetadata(t, metadata, testMetaitemGeoParquetRow{ID: 1, Shape: []byte{1}})
+	_, err := ExtractSingleTableFileItem(context.Background(), staticContentReader{content: string(content)}, nil, 1, "roads.parquet", int64(len(content)), false)
+	if err == nil || !format.IsDefinitiveParseError(err) || !strings.Contains(err.Error(), "unsupported geoparquet version") {
+		t.Fatalf("ExtractSingleTableFileItem() error = %v, want definitive unsupported GeoParquet error", err)
+	}
+}
+
 func TestExtractJSONSingleTableFileItemStrictAcceptsObjectArray(t *testing.T) {
 	reader := staticContentReader{content: `[
 		{"id":"1","name":"A","area":"356.16704388138885"},
@@ -528,6 +571,11 @@ type testMetaitemParquetRow struct {
 	Name string `parquet:"name"`
 }
 
+type testMetaitemGeoParquetRow struct {
+	ID    int64  `parquet:"id"`
+	Shape []byte `parquet:"shape"`
+}
+
 func buildMetaitemParquetRows(t *testing.T, rows ...testMetaitemParquetRow) []byte {
 	t.Helper()
 	var buf bytes.Buffer
@@ -537,6 +585,40 @@ func buildMetaitemParquetRows(t *testing.T, rows ...testMetaitemParquetRow) []by
 	}
 	if err := writer.Close(); err != nil {
 		t.Fatalf("close parquet writer: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func buildMetaitemGeoParquetRows(t *testing.T, rows ...testMetaitemGeoParquetRow) []byte {
+	t.Helper()
+	metadata := map[string]interface{}{
+		"version":        "1.1.0",
+		"primary_column": "shape",
+		"columns": map[string]interface{}{
+			"shape": map[string]interface{}{
+				"encoding":       "WKB",
+				"geometry_types": []string{"Point"},
+				"bbox":           []float64{100, 20, 110, 30},
+			},
+		},
+	}
+	return buildMetaitemGeoParquetRowsWithMetadata(t, metadata, rows...)
+}
+
+func buildMetaitemGeoParquetRowsWithMetadata(t *testing.T, metadata map[string]interface{}, rows ...testMetaitemGeoParquetRow) []byte {
+	t.Helper()
+	encoded, err := json.Marshal(metadata)
+	if err != nil {
+		t.Fatalf("marshal geoparquet metadata: %v", err)
+	}
+	var buf bytes.Buffer
+	writer := parquetgo.NewGenericWriter[testMetaitemGeoParquetRow](&buf)
+	writer.SetKeyValueMetadata("geo", string(encoded))
+	if _, err := writer.Write(rows); err != nil {
+		t.Fatalf("write geoparquet rows: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close geoparquet writer: %v", err)
 	}
 	return buf.Bytes()
 }

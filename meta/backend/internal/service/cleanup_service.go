@@ -221,7 +221,7 @@ func (s *CleanupService) SubscribeCleanupEvents(ctx context.Context) error {
 // consumeCleanupRequests 消费资源回收请求事件
 func (s *CleanupService) consumeCleanupRequests(ctx context.Context) {
 	groupName := "meta-cleanup-consumer"
-	consumerName := "meta-worker"
+	consumerName := "meta-cleanup"
 
 	// 创建 Consumer Group（如果不存在）
 	s.redis.XGroupCreateMkStream(ctx, events.EventCleanupRequest, groupName, "$")

@@ -30,12 +30,6 @@ var ErrSchemaChangeNotAdditive = errors.New("schema change is not eligible for a
 var ErrSchemaChangeApprovalConflict = errors.New("schema change approval conflicts with current source or mapping")
 var ErrSchemaChangeControlUnavailable = errors.New("schema change control is unavailable")
 
-// TaskQueue 任务队列接口（避免循环依赖）
-type TaskQueue interface {
-	EnqueueExecuteTask(ctx context.Context, taskID, executionID, tenantID uint) error
-	Close() error
-}
-
 type CaptureControl interface {
 	Start(ctx context.Context, task *models.TransferTask) (*models.CaptureResource, error)
 	Pause(ctx context.Context, task *models.TransferTask) error
@@ -63,7 +57,6 @@ type TaskService struct {
 	executionService *ExecutionService // 使用统一执行服务
 	executionEngine  TaskExecutionEngine
 	cfg              *config.Config
-	taskQueue        TaskQueue
 	captureControl   CaptureControl
 	taskCleanup      TaskOwnedResourceCleanup
 	engineResolver   planner.EngineResolver
@@ -93,7 +86,6 @@ func NewTaskService(
 	db *gorm.DB,
 	executionEngine TaskExecutionEngine,
 	cfg *config.Config,
-	taskQueue TaskQueue,
 ) *TaskService {
 	service := &TaskService{
 		db:               db,
@@ -101,7 +93,6 @@ func NewTaskService(
 		deadLetterRepo:   repository.NewDeadLetterRepository(db),
 		schemaChangeRepo: repository.NewSchemaChangeRequestRepository(db),
 		executionEngine:  executionEngine,
-		taskQueue:        taskQueue,
 		cfg:              cfg,
 		logger:           logger.With("component", "task_service"),
 	}
@@ -460,7 +451,7 @@ func (s *TaskService) StartTask(ctx context.Context, id, tenantID, userID uint) 
 // ReplayTask 为业务 Kafka continuous owner task 创建独立 bounded replay execution。
 // 它不 claim owner task、不修改 desired_state/status/last_execution，也不创建 sync state。
 func (s *TaskService) ReplayTask(ctx context.Context, id, tenantID, userID uint, req models.ReplayTaskRequest) (*models.TaskExecution, error) {
-	if s.executionEngine == nil || s.executionService == nil || s.taskQueue == nil {
+	if s.executionEngine == nil || s.executionService == nil {
 		return nil, ErrReplayRuntimeUnavailable
 	}
 	task, err := s.GetTask(ctx, id, tenantID)
@@ -494,20 +485,14 @@ func (s *TaskService) ReplayTask(ctx context.Context, id, tenantID, userID uint,
 		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleTransfer,
 		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(task.ID), SourceTaskName: &task.Name,
 		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
-		TriggeredBy: &triggeredBy, ExecutionConfig: preparation.ExecutionConfig, Metadata: preparation.Metadata,
+		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
+		TriggeredBy:       &triggeredBy, ExecutionConfig: preparation.ExecutionConfig, Metadata: preparation.Metadata,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if err := s.executionService.taskExecutionRepo.Create(ctx, executionRecord); err != nil {
 		return nil, fmt.Errorf("create bounded replay execution: %w", err)
 	}
-	execution := s.executionService.convertToTransferExecution(executionRecord)
-	if err := s.taskQueue.EnqueueExecuteTask(ctx, task.ID, execution.ID, tenantID); err != nil {
-		if finishErr := s.executionService.FinishExecution(ctx, execution.ID, models.ExecutionStatusFailed, err.Error()); finishErr != nil {
-			s.logger.Warn("failed to mark replay execution failed after enqueue failure", "error", finishErr, "execution_id", execution.ID)
-		}
-		return nil, fmt.Errorf("enqueue bounded replay execution: %w", err)
-	}
-	return execution, nil
+	return s.executionService.convertToTransferExecution(executionRecord), nil
 }
 
 // StartTaskWithContext 启动任务并记录统一任务体系上下文。
@@ -559,7 +544,8 @@ func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, us
 		TaskType: commonExecution.TaskTypeSync, Source: source, SourceTaskID: commonExecution.NewSourceTaskIDFromUint(id),
 		SourceTaskName: &task.Name, ParentExecutionID: parentExecutionID, Status: commonExecution.ExecutionStatusPending,
 		TriggerType: normalizedTriggerType, TriggeredBy: &triggeredBy, ExecutionConfig: task.Config,
-		CreatedAt: now, UpdatedAt: now,
+		ExecutionBoundary: boundary,
+		CreatedAt:         now, UpdatedAt: now,
 	}
 	if boundary == planner.RuntimeBoundaryContinuous {
 		if task.Schedule != "" || task.Enabled {
@@ -582,9 +568,6 @@ func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, us
 		}
 		return s.executionService.convertToTransferExecution(executionRecord), nil
 	}
-	if s.taskQueue == nil {
-		return nil, fmt.Errorf("task queue is not available")
-	}
 	_, _, err = s.taskRepo.ClaimExecution(ctx, id, tenantID, executionRecord, incrementalSourceIdentity(task))
 	if err != nil {
 		if errors.Is(err, repository.ErrTaskAlreadyRunning) {
@@ -594,25 +577,7 @@ func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, us
 	}
 	execution := s.executionService.convertToTransferExecution(executionRecord)
 
-	if err := s.taskQueue.EnqueueExecuteTask(ctx, id, execution.ID, tenantID); err != nil {
-		s.logger.Error("failed to enqueue task", "error", err, "task_id", id)
-
-		// 回滚：标记执行失败
-		s.executionService.FinishExecution(ctx, execution.ID, models.ExecutionStatusFailed, err.Error())
-
-		// 回滚：恢复任务状态为空闲
-		if err := s.taskRepo.UpdateFields(id, map[string]interface{}{
-			"status":   models.TaskStatusIdle,
-			"progress": 0,
-		}); err != nil {
-			s.logger.Warn("failed to rollback task state after enqueue failure", "error", err, "task_id", id)
-		}
-
-		return nil, fmt.Errorf("failed to enqueue task: %w", err)
-	}
-	s.logger.Info("task enqueued to worker", "task_id", id, "execution_id", execution.ID)
-
-	s.logger.Info("task started", "task_id", id, "execution_id", execution.ID)
+	s.logger.Info("bounded execution created", "task_id", id, "execution_id", execution.ID)
 	return execution, nil
 }
 

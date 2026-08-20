@@ -179,7 +179,7 @@ func TestIntegrationOracleSpatialCDCSchemaDriftBlocksAndStops(t *testing.T) {
 	leaseRepo := repository.NewRuntimeLeaseRepository(infraDB, repository.ContinuousRecoveryPolicy{InitialBackoff: time.Second, MaxBackoff: 4 * time.Second, MaxFailures: 3, CircuitOpenTime: 10 * time.Second, StabilityWindow: 30 * time.Second})
 	stateRepo := repository.NewSyncStateRepository(infraDB)
 	executionService := service.NewExecutionService(infraDB, commonExecution.NewTaskExecutionRepository(infraDB))
-	taskService := service.NewTaskService(infraDB, nil, &transferconfig.Config{ContinuousRuntimeStopTimeout: 5 * time.Second, ContinuousRuntimeStopPollInterval: 50 * time.Millisecond}, nil)
+	taskService := service.NewTaskService(infraDB, nil, &transferconfig.Config{ContinuousRuntimeStopTimeout: 5 * time.Second, ContinuousRuntimeStopPollInterval: 50 * time.Millisecond})
 	taskService.SetEngineResolver(resolver)
 	taskService.SetExecutionService(executionService)
 	taskService.SetCaptureControl(captureSupervisor)
@@ -394,7 +394,7 @@ func runIntegrationOracleCDCNativeTypeMatrix(t *testing.T, targetType string) {
 	leaseRepo := repository.NewRuntimeLeaseRepository(infraDB, repository.ContinuousRecoveryPolicy{InitialBackoff: time.Second, MaxBackoff: 4 * time.Second, MaxFailures: 3, CircuitOpenTime: 10 * time.Second, StabilityWindow: 30 * time.Second})
 	stateRepo := repository.NewSyncStateRepository(infraDB)
 	executionService := service.NewExecutionService(infraDB, commonExecution.NewTaskExecutionRepository(infraDB))
-	taskService := service.NewTaskService(infraDB, nil, &transferconfig.Config{ContinuousRuntimeStopTimeout: 5 * time.Second, ContinuousRuntimeStopPollInterval: 50 * time.Millisecond}, nil)
+	taskService := service.NewTaskService(infraDB, nil, &transferconfig.Config{ContinuousRuntimeStopTimeout: 5 * time.Second, ContinuousRuntimeStopPollInterval: 50 * time.Millisecond})
 	taskService.SetEngineResolver(resolver)
 	taskService.SetExecutionService(executionService)
 	taskService.SetCaptureControl(captureSupervisor)
@@ -608,7 +608,7 @@ func runIntegrationOracleSpatialCDCGeometryCase(t *testing.T, geometryCase oracl
 	executionService := service.NewExecutionService(infraDB, commonExecution.NewTaskExecutionRepository(infraDB))
 	taskService := service.NewTaskService(infraDB, nil, &transferconfig.Config{
 		ContinuousRuntimeStopTimeout: 5 * time.Second, ContinuousRuntimeStopPollInterval: 50 * time.Millisecond,
-	}, nil)
+	})
 	taskService.SetEngineResolver(resolver)
 	taskService.SetExecutionService(executionService)
 	taskService.SetCaptureControl(captureSupervisor)

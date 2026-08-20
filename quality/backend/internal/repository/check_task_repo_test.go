@@ -21,7 +21,7 @@ func TestCheckTaskExecutionLifecycleIsAtomic(t *testing.T) {
 	db := newCheckTaskRepositoryTestDB(t)
 	repo := NewCheckTaskRepository(db)
 	task := createCheckTaskRepositoryTestTask(t, db, 7)
-	createdAt := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
+	createdAt := time.Now().UTC()
 	exec := newQualityRepositoryTestExecution("quality-atomic-1", 7, createdAt)
 
 	claimed, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, exec)
@@ -64,7 +64,11 @@ func TestCheckTaskExecutionLifecycleIsAtomic(t *testing.T) {
 	}
 
 	completedAt := startedAt.Add(2 * time.Minute)
-	if err := repo.CompleteExecutionWithLease(context.Background(), task.ID, task.TenantID, exec.ExecutionID, "worker-lifecycle", map[string]interface{}{
+	lease, err := commonExecution.LeaseFromExecution(*runningExecution)
+	if err != nil {
+		t.Fatalf("LeaseFromExecution: %v", err)
+	}
+	if err := repo.CompleteExecutionWithLease(context.Background(), task.ID, task.TenantID, lease, map[string]interface{}{
 		"status": commonExecution.ExecutionStatusSuccess, "completed_at": completedAt,
 		"execution_time_ms": completedAt.Sub(startedAt).Milliseconds(), "progress": 100,
 	}, completedAt); err != nil {
@@ -156,7 +160,7 @@ func TestClaimPendingExecutionRequiresAuthorizationAndLeaseOwner(t *testing.T) {
 	db := newCheckTaskRepositoryTestDB(t)
 	repo := NewCheckTaskRepository(db)
 	task := createCheckTaskRepositoryTestTask(t, db, 9)
-	createdAt := time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC)
+	createdAt := time.Now().UTC()
 	exec := newQualityRepositoryTestExecution("quality-worker-claim", 9, createdAt)
 	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, exec); err != nil {
 		t.Fatalf("ClaimExecution: %v", err)
@@ -194,11 +198,17 @@ func TestClaimPendingExecutionRequiresAuthorizationAndLeaseOwner(t *testing.T) {
 	if claimed.LeaseOwner == nil || *claimed.LeaseOwner != "worker-a" || claimed.LeaseExpiresAt == nil || !claimed.LeaseExpiresAt.Equal(startedAt.Add(10*time.Minute)) {
 		t.Fatalf("claimed lease = owner %v expires %v", claimed.LeaseOwner, claimed.LeaseExpiresAt)
 	}
+	lease, err := commonExecution.LeaseFromExecution(*claimed)
+	if err != nil {
+		t.Fatalf("LeaseFromExecution: %v", err)
+	}
+	wrongLease := lease
+	wrongLease.Token = "00000000-0000-0000-0000-000000000000"
 	renewedUntil := startedAt.Add(20 * time.Minute)
-	if err := repo.RenewLease(context.Background(), exec.ExecutionID, task.TenantID, "worker-b", renewedUntil); !errors.Is(err, commonAPI.ErrConflict) {
+	if err := repo.RenewLease(context.Background(), wrongLease, renewedUntil); !errors.Is(err, commonAPI.ErrConflict) {
 		t.Fatalf("wrong-owner RenewLease error = %v, want conflict", err)
 	}
-	if err := repo.RenewLease(context.Background(), exec.ExecutionID, task.TenantID, "worker-a", renewedUntil); err != nil {
+	if err := repo.RenewLease(context.Background(), lease, renewedUntil); err != nil {
 		t.Fatalf("RenewLease: %v", err)
 	}
 
@@ -207,10 +217,10 @@ func TestClaimPendingExecutionRequiresAuthorizationAndLeaseOwner(t *testing.T) {
 		"status": commonExecution.ExecutionStatusSuccess, "progress": 100,
 		"execution_time_ms": completedAt.Sub(startedAt).Milliseconds(),
 	}
-	if err := repo.CompleteExecutionWithLease(context.Background(), task.ID, task.TenantID, exec.ExecutionID, "worker-b", fields, completedAt); !errors.Is(err, commonAPI.ErrConflict) {
+	if err := repo.CompleteExecutionWithLease(context.Background(), task.ID, task.TenantID, wrongLease, fields, completedAt); !errors.Is(err, commonAPI.ErrConflict) {
 		t.Fatalf("wrong-owner completion error = %v, want conflict", err)
 	}
-	if err := repo.CompleteExecutionWithLease(context.Background(), task.ID, task.TenantID, exec.ExecutionID, "worker-a", fields, completedAt); err != nil {
+	if err := repo.CompleteExecutionWithLease(context.Background(), task.ID, task.TenantID, lease, fields, completedAt); err != nil {
 		t.Fatalf("CompleteExecutionWithLease: %v", err)
 	}
 	var stored commonExecution.TaskExecution
@@ -367,7 +377,8 @@ func newQualityRepositoryTestExecution(executionID string, tenantID int, created
 	return &commonExecution.TaskExecution{
 		ExecutionID: executionID, TenantID: tenantID, Module: commonExecution.ModuleQuality,
 		TaskType: commonExecution.TaskTypeQualityCheck, Source: commonExecution.ModuleQuality,
-		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
+		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
+		Status:            commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
 		CreatedAt: createdAt, UpdatedAt: createdAt,
 		ExecutionConfig: commonModels.JSONMap{
 			"schema_version":   "addp.quality.execution-config/v1",

@@ -65,8 +65,6 @@ services:
       - STANDARD_SERVICE_CLIENT_SECRET=${STANDARD_SERVICE_CLIENT_SECRET}
       - SPARK_WORKFLOW_SERVICE_CLIENT_SECRET=${SPARK_WORKFLOW_SERVICE_CLIENT_SECRET}
       - TRANSFER_SERVICE_CLIENT_SECRET=${TRANSFER_SERVICE_CLIENT_SECRET}
-      - TRANSFER_WORKER_CONCURRENCY=${TRANSFER_WORKER_CONCURRENCY:-10}
-      - TRANSFER_WORKER_RETRY_DELAY=${TRANSFER_WORKER_RETRY_DELAY:-30s}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -242,7 +240,9 @@ services:
       - META_URL=http://meta-backend:8082
       - META_SERVICE_CLIENT_SECRET=${META_SERVICE_CLIENT_SECRET}
       - META_WORKER_CONCURRENCY=${META_WORKER_CONCURRENCY:-10}
-      - META_WORKER_RETRY_DELAY=${META_WORKER_RETRY_DELAY:-30s}
+      - META_BOUNDED_LEASE_DURATION=${META_BOUNDED_LEASE_DURATION:-2m}
+      - META_BOUNDED_HEARTBEAT_INTERVAL=${META_BOUNDED_HEARTBEAT_INTERVAL:-30s}
+      - META_BOUNDED_CLAIM_INTERVAL=${META_BOUNDED_CLAIM_INTERVAL:-1s}
     networks:
       - addp-network
     depends_on:
@@ -394,8 +394,8 @@ services:
       - transfer-backend
     restart: unless-stopped
 
-  transfer-worker:
-    image: ${REGISTRY:-localhost:5001}/addp-transfer-worker:${IMAGE_TAG:-latest}
+  transfer-bounded-worker: &transfer-bounded-worker
+    image: ${REGISTRY:-localhost:5001}/addp-transfer-bounded-worker:${IMAGE_TAG:-latest}
     # Note: No container_name for Swarm compatibility (allows multiple replicas)
     environment:
       - DB_SCHEMA=transfer
@@ -410,8 +410,10 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - META_URL=http://meta-backend:8082
       - TRANSFER_SERVICE_CLIENT_SECRET=${TRANSFER_SERVICE_CLIENT_SECRET}
-      - TRANSFER_WORKER_CONCURRENCY=${TRANSFER_WORKER_CONCURRENCY:-10}
-      - TRANSFER_WORKER_RETRY_DELAY=${TRANSFER_WORKER_RETRY_DELAY:-30s}
+      - TRANSFER_BOUNDED_WORKER_CONCURRENCY=${TRANSFER_BOUNDED_WORKER_CONCURRENCY:-10}
+      - TRANSFER_BOUNDED_LEASE_DURATION=${TRANSFER_BOUNDED_LEASE_DURATION:-2m}
+      - TRANSFER_BOUNDED_HEARTBEAT_INTERVAL=${TRANSFER_BOUNDED_HEARTBEAT_INTERVAL:-30s}
+      - TRANSFER_BOUNDED_CLAIM_INTERVAL=${TRANSFER_BOUNDED_CLAIM_INTERVAL:-1s}
       - INFRA_KAFKA_BOOTSTRAP_SERVERS=redpanda:29092
       - INFRA_KAFKA_ADMIN_USERNAME=${INFRA_KAFKA_ADMIN_USERNAME:-admin}
       - INFRA_KAFKA_ADMIN_PASSWORD=${INFRA_KAFKA_ADMIN_PASSWORD}
@@ -475,7 +477,11 @@ services:
     #       memory: 2G     # Max 2GB memory per worker
     #     reservations:
     #       cpus: '0.5'    # Reserve at least 0.5 CPU core
-    #       memory: 512M   # Reserve at least 512MB memory
+      #       memory: 512M   # Reserve at least 512MB memory
+
+  transfer-continuous-worker:
+    <<: *transfer-bounded-worker
+    image: ${REGISTRY:-localhost:5001}/addp-transfer-continuous-worker:${IMAGE_TAG:-latest}
 
   # ==================== Orchestrator 模块 ====================
 
@@ -863,6 +869,27 @@ services:
       timeout: 5s
       retries: 30
       start_period: 60s
+
+  quality-worker:
+    image: ${REGISTRY:-localhost:5001}/addp-quality-worker:${IMAGE_TAG:-latest}
+    environment:
+      - QUALITY_CHECK_TIMEOUT=${QUALITY_CHECK_TIMEOUT:-30m}
+      - QUALITY_WORKER_CONCURRENCY=${QUALITY_WORKER_CONCURRENCY:-4}
+      - QUALITY_WORKER_LEASE_DURATION=${QUALITY_WORKER_LEASE_DURATION:-30m}
+      - QUALITY_WORKER_POLL_INTERVAL=${QUALITY_WORKER_POLL_INTERVAL:-500ms}
+      - SYSTEM_URL=http://system-backend:8180
+      - QUALITY_SERVICE_CLIENT_SECRET=${QUALITY_SERVICE_CLIENT_SECRET}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+    networks:
+      - addp-network
+    depends_on:
+      quality-backend:
+        condition: service_started
+    restart: unless-stopped
 
   quality-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-quality-frontend:${IMAGE_TAG:-latest}

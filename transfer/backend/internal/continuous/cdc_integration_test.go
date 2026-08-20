@@ -216,7 +216,7 @@ func runIntegrationPostgreSQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T,
 		MetaScanClaimTTL: 2 * time.Minute,
 	}
 	taskConfig.SystemServiceURL = systemServer.URL
-	taskService := service.NewTaskService(infraDB, nil, taskConfig, nil)
+	taskService := service.NewTaskService(infraDB, nil, taskConfig)
 	taskService.SetEngineResolver(resolver)
 	taskService.SetExecutionService(executionService)
 	taskService.SetCaptureControl(captureSupervisor)

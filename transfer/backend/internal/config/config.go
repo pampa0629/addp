@@ -23,8 +23,10 @@ type Config struct {
 	RedisHost                          string
 	RedisPort                          string
 	RedisPassword                      string
-	RetryDelay                         time.Duration
-	ConcurrentTasks                    int
+	BoundedWorkerConcurrency           int
+	BoundedLeaseDuration               time.Duration
+	BoundedHeartbeatInterval           time.Duration
+	BoundedClaimInterval               time.Duration
 	ContinuousWorkerInstanceID         string
 	ContinuousWorkerCapacity           int
 	ContinuousLeaseDuration            time.Duration
@@ -129,8 +131,10 @@ func Load() *Config {
 		RedisHost:                          commonConfig.GetEnv("REDIS_HOST", "localhost"),
 		RedisPort:                          commonConfig.GetEnv("REDIS_PORT", "6379"),
 		RedisPassword:                      commonConfig.GetEnv("REDIS_PASSWORD", ""),
-		RetryDelay:                         commonConfig.GetEnvDuration("TRANSFER_WORKER_RETRY_DELAY", "30s"),
-		ConcurrentTasks:                    commonConfig.GetEnvInt("TRANSFER_WORKER_CONCURRENCY", 10),
+		BoundedWorkerConcurrency:           commonConfig.GetEnvInt("TRANSFER_BOUNDED_WORKER_CONCURRENCY", 10),
+		BoundedLeaseDuration:               commonConfig.GetEnvDuration("TRANSFER_BOUNDED_LEASE_DURATION", "2m"),
+		BoundedHeartbeatInterval:           commonConfig.GetEnvDuration("TRANSFER_BOUNDED_HEARTBEAT_INTERVAL", "30s"),
+		BoundedClaimInterval:               commonConfig.GetEnvDuration("TRANSFER_BOUNDED_CLAIM_INTERVAL", "1s"),
 		ContinuousWorkerInstanceID:         commonConfig.GetEnv("TRANSFER_CONTINUOUS_WORKER_INSTANCE_ID", ""),
 		ContinuousWorkerCapacity:           commonConfig.GetEnvInt("TRANSFER_CONTINUOUS_WORKER_CAPACITY", 4),
 		ContinuousLeaseDuration:            commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_LEASE_DURATION", "30s"),

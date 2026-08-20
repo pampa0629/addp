@@ -6,7 +6,7 @@ numpy>=1.26,<2.3
 pandas>=2.0,<3.0
 geopandas>=0.15.0
 shapely>=2.1.0
-pyproj>=3.6.0
+pyproj==3.7.2
 pyarrow>=18.0.0
 pmtiles==3.7.0
 

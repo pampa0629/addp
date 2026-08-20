@@ -20,11 +20,6 @@ import (
 	"gorm.io/gorm"
 )
 
-type taskHandlerQueue struct{}
-
-func (taskHandlerQueue) EnqueueExecuteTask(context.Context, uint, uint, uint) error { return nil }
-func (taskHandlerQueue) Close() error                                               { return nil }
-
 func TestTaskHandlerListTasksRejectsUnsupportedTaskType(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -137,7 +132,7 @@ func TestTaskHandlerDeadLettersAreTaskScopedAndDoNotExposePayloadReference(t *te
 		t.Fatal(err)
 	}
 
-	taskSvc := service.NewTaskService(db, nil, nil, nil)
+	taskSvc := service.NewTaskService(db, nil, nil)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		setTransferTestAuthContext(t, c, 7, 9)
@@ -192,7 +187,7 @@ func TestTaskHandlerResumeSchemaBlockedCDCReturnsConflict(t *testing.T) {
 	if err := db.Create(task).Error; err != nil {
 		t.Fatal(err)
 	}
-	taskSvc := service.NewTaskService(db, nil, nil, nil)
+	taskSvc := service.NewTaskService(db, nil, nil)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		setTransferTestAuthContext(t, c, 7, 9)
@@ -245,7 +240,7 @@ func TestExecutionHandlerRetrySchemaBlockedCDCReturnsConflict(t *testing.T) {
 func TestTaskHandlerListTasksUsesStandardItemsShape(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newTransferTaskHandlerTestDB(t)
-	taskSvc := service.NewTaskService(db, nil, nil, taskHandlerQueue{})
+	taskSvc := service.NewTaskService(db, nil, nil)
 	_, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
 		Name:     "sync task",
 		TaskType: commonExecution.TaskTypeSync,
@@ -331,7 +326,7 @@ func TestProviderExecuteTaskRejectsUnknownFields(t *testing.T) {
 func TestProviderExecuteTaskUsesStandardExecutionShape(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newTransferTaskHandlerTestDB(t)
-	taskSvc := service.NewTaskService(db, nil, nil, taskHandlerQueue{})
+	taskSvc := service.NewTaskService(db, nil, nil)
 	executionSvc := service.NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
 	taskSvc.SetExecutionService(executionSvc)
 	task, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{

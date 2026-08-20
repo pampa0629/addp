@@ -1,6 +1,7 @@
 package scanruntime
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"strings"
@@ -23,7 +24,7 @@ func TestObjectScanRefGroupsPersistsSingleShapefileItem(t *testing.T) {
 	svc := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 	resource := &commonModels.Engine{ID: 9, Name: "Object Store", EngineType: provider.Type()}
 
-	result, err := svc.ScanRefGroups(resource, 1, []models.ScanRefGroup{
+	result, err := svc.ScanRefGroups(context.Background(), resource, 1, []models.ScanRefGroup{
 		{
 			Primary: "manager/a5.shp",
 			Refs: []models.ScanRef{
@@ -70,7 +71,7 @@ func TestObjectScanRefGroupsPersistsSingleUploadedObjectItem(t *testing.T) {
 	svc := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 	resource := &commonModels.Engine{ID: 19, Name: "Object Store", EngineType: provider.Type()}
 
-	result, err := svc.ScanRefGroups(resource, 1, []models.ScanRefGroup{
+	result, err := svc.ScanRefGroups(context.Background(), resource, 1, []models.ScanRefGroup{
 		{
 			Primary: "manager/ZX书单.rtf",
 			Refs: []models.ScanRef{
@@ -116,7 +117,7 @@ func TestObjectScanRefGroupsDeepScansSingleGeoJSONWithoutRepeatingBucket(t *test
 	svc := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 	resource := &commonModels.Engine{ID: 29, Name: "Object Store", EngineType: provider.Type()}
 
-	result, err := svc.ScanRefGroups(resource, 1, []models.ScanRefGroup{
+	result, err := svc.ScanRefGroups(context.Background(), resource, 1, []models.ScanRefGroup{
 		{
 			Primary: "manager/farmland.geojson",
 			Refs: []models.ScanRef{
@@ -168,7 +169,7 @@ func TestObjectScanRefGroupsRejectsUnknownBucketWithoutPersistingItem(t *testing
 	svc := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 	resource := &commonModels.Engine{ID: 39, Name: "Object Store", EngineType: provider.Type()}
 
-	_, err := svc.ScanRefGroups(resource, 1, []models.ScanRefGroup{
+	_, err := svc.ScanRefGroups(context.Background(), resource, 1, []models.ScanRefGroup{
 		{
 			Primary: "gis/a2.shp",
 			Refs: []models.ScanRef{
@@ -209,7 +210,7 @@ func TestFileScanRefGroupsPersistsSingleShapefileItem(t *testing.T) {
 	svc := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 	resource := &commonModels.Engine{ID: 26, Name: "Files", EngineType: provider.Type()}
 
-	result, err := svc.ScanRefGroups(resource, 1, []models.ScanRefGroup{
+	result, err := svc.ScanRefGroups(context.Background(), resource, 1, []models.ScanRefGroup{
 		{
 			Primary: "shp/a5.shp",
 			Refs: []models.ScanRef{
@@ -284,7 +285,7 @@ func TestFileScanRefGroupsPersistsFileGDBScopeItem(t *testing.T) {
 	svc := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 	resource := &commonModels.Engine{ID: 27, Name: "Files", EngineType: provider.Type()}
 
-	result, err := svc.ScanRefGroups(resource, 1, []models.ScanRefGroup{
+	result, err := svc.ScanRefGroups(context.Background(), resource, 1, []models.ScanRefGroup{
 		{
 			Primary: "arcgis/pgeo_roundtrip.gdb",
 			Refs: []models.ScanRef{

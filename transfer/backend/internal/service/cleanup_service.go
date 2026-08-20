@@ -197,7 +197,7 @@ func (s *TransferCleanupService) Stop() {
 
 func (s *TransferCleanupService) consumeCleanupRequests(ctx context.Context) {
 	groupName := "transfer-cleanup-consumer"
-	consumerName := "transfer-worker"
+	consumerName := "transfer-cleanup"
 	_ = s.redis.XGroupCreateMkStream(ctx, events.EventCleanupRequest, groupName, "$").Err()
 
 	for {

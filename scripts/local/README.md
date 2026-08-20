@@ -209,7 +209,9 @@ meilisearch   (port 7700)  - Meilisearch 全文搜索
 
 Worker 服务:
   meta-worker
-  transfer-worker
+  quality-worker
+  transfer-bounded-worker
+  transfer-continuous-worker
 
 前端服务:
   system-frontend      (port 8090)

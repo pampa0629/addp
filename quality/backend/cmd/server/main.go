@@ -76,8 +76,6 @@ func main() {
 	ruleEngineSvc := service.NewRuleEngineService(standardClient, systemServiceClient, ruleAppRepo)
 	checkTaskSvc := service.NewCheckTaskService(checkTaskRepo, systemServiceClient)
 	checkExecutor := service.NewCheckExecutor(systemServiceClient, executionAuthorizationClient, checkTaskRepo, issueRepo, cfg.CheckTimeout, cfg.WorkerConcurrency)
-	checkExecutor.StartWorker(context.Background())
-	defer checkExecutor.StopWorker()
 	issueSvc := service.NewIssueService(issueRepo)
 	cleanupService := service.NewCleanupService(db, redisClient, commonExecution.NewTaskExecutionRepository(db))
 	if err := cleanupService.Start(context.Background()); err != nil {

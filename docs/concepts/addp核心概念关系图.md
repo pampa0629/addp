@@ -294,7 +294,7 @@ mindmap
 
 - 基础设施架构概述
 - 系统基础设施 vs 业务数据库 (ADDP 元数据 vs 用户业务数据)
-- 资源隔离机制 (PostgreSQL Schema、MinIO Bucket、Redis Key、Asynq Queue、Meilisearch Index)
+- 资源隔离机制 (PostgreSQL Schema、MinIO Bucket、Redis Key、bounded execution claim、Meilisearch Index)
 
 📄 **[阅读完整文档 →](addp基础设施隔离图.md)**
 

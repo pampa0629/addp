@@ -33,7 +33,8 @@ quality/
 ├── authorization/
 │   └── permissions.yaml                     # Quality owner Permission Manifest
 ├── backend/
-│   ├── cmd/server/main.go                    # 应用入口
+│   ├── cmd/server/main.go                    # Backend 控制面入口
+│   ├── cmd/worker/main.go                    # 独立 Quality execution worker 入口
 │   ├── go.mod                                # github.com/addp/quality
 │   └── internal/
 │       ├── api/
@@ -284,6 +285,8 @@ worker 崩溃后由 lease 恢复：未达 max_attempts 返回 pending，达到�
 | `QUALITY_BACKEND_PORT` | `8182` | 后端服务端口 |
 | `QUALITY_CHECK_TIMEOUT` | `30m` | 整次质量检查超时；触发时冻结到 execution 配置 |
 | `QUALITY_WORKER_CONCURRENCY` | `4` | 单进程并行 execution 槽位数；必须为正整数 |
+| `QUALITY_WORKER_LEASE_DURATION` | `30m` | execution lease 时长 |
+| `QUALITY_WORKER_POLL_INTERVAL` | `500ms` | pending claim 与过期恢复轮询间隔；必须小于 lease |
 | `SYSTEM_URL` | `http://localhost:8180` | System 模块地址 |
 | `STANDARD_URL` | `http://localhost:8110` | Standard 模块地址 |
 | `QUALITY_SERVICE_CLIENT_SECRET` | - | Quality Confidential OAuth Client Secret |
@@ -309,7 +312,7 @@ Quality 的执行历史是 `common.task_executions` 的跨模块统一投影，�
 
 Quality execution 配置唯一版本为 `addp.quality.execution-config/v1`。任务触发时同时冻结 `QUALITY_CHECK_TIMEOUT` 对应的 `check_timeout_ms`；worker 对授权消费、目标连接和全部规则 SQL 使用同一个截止时间。超时必须取消目标 PostgreSQL 语句并写 `timeout + quality.execution.timeout`，不能写成普通 SQL 失败，也不能生成部分评分或更新 Issue。
 
-单个 Quality 进程使用 `QUALITY_WORKER_CONCURRENCY` 个有界执行槽位并行领取不同 CheckTask，默认并发数为 4。所有槽位和多实例仍通过 `FOR UPDATE SKIP LOCKED` 与 execution lease 协调；同一 CheckTask 的 active execution 限制保持不变。lease 恢复扫描每个进程只运行一份，不随执行槽位数重复。
+独立 `quality-worker` 进程使用 `QUALITY_WORKER_CONCURRENCY` 个有界执行槽位并行领取不同 CheckTask，默认并发数为 4。`quality-backend` 只负责 API、任务定义、授权签发和 execution 创建，不执行检查。所有 Worker 槽位和多实例通过 PostgreSQL claim、attempt 与 `lease_token` 协调；同一 CheckTask 的 active execution 限制保持不变。lease 恢复扫描每个 Worker 进程只运行一份，不随执行槽位数重复。
 
 RuleApplication 只保存 `element_id` 和规则快照，不复制数据元名称或编码。列表 API 使用 Quality 租户服务身份按当前页 ID 集合从 Standard 批量解析 `element: {id, name, code}`；这是当前展示投影，不是历史事实。浏览器不直接调用 Standard 来补全列表，也不保留搜索缓存到裸 ID 的展示旁路。
 

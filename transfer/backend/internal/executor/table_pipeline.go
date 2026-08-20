@@ -841,10 +841,16 @@ type encodedContentTableTarget struct {
 	writeOptions        engineplugin.WriteOptions
 	formatOptions       *format.WriteOptions
 	resumeMarker        *resume.Marker
+	crsRequirements     format.CRSDefinitionWriteRequirementProvider
+	crsConverter        CRSDefinitionConverter
 }
 
 func (t *encodedContentTableTarget) Open(ctx context.Context, tableInfo *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (TableBatchWriter, error) {
-	formatOptions := writeOptionsWithResumeMarker(writeOptionsWithSpatialInfo(t.formatOptions, tableInfo, spatialInfo), t.resumeMarker)
+	preparedSpatial, err := prepareCRSDefinitionsForWrite(ctx, spatialInfo, t.crsRequirements, t.crsConverter)
+	if err != nil {
+		return nil, err
+	}
+	formatOptions := writeOptionsWithResumeMarker(writeOptionsWithSpatialInfo(t.formatOptions, tableInfo, preparedSpatial), t.resumeMarker)
 	if t.deleter != nil {
 		if err := t.deleteExistingTarget(ctx); err != nil {
 			return nil, err
@@ -890,6 +896,75 @@ func (t *encodedContentTableTarget) Open(ctx context.Context, tableInfo *datatyp
 		return nil, fmt.Errorf("open encoded target table writer: %w", err)
 	}
 	return &contentTableBatchWriter{output: output, tableWriter: tableWriter, targetRef: targetRef}, nil
+}
+
+func prepareCRSDefinitionsForWrite(
+	ctx context.Context,
+	spatialInfo *datatype.SpatialInfo,
+	requirementProvider format.CRSDefinitionWriteRequirementProvider,
+	converter CRSDefinitionConverter,
+) (*datatype.SpatialInfo, error) {
+	if requirementProvider == nil {
+		return spatialInfo, nil
+	}
+	requirements, err := requirementProvider.CRSDefinitionWriteRequirements(spatialInfo)
+	if err != nil {
+		return nil, fmt.Errorf("resolve target CRS definition requirements: %w", err)
+	}
+	if len(requirements) == 0 {
+		return spatialInfo, nil
+	}
+	if converter == nil {
+		return nil, fmt.Errorf("target CRS definition conversion requires a converter")
+	}
+	next := spatialInfo.Clone()
+	if next == nil {
+		return nil, fmt.Errorf("target CRS definition conversion requires spatial info")
+	}
+	convertedRefs := map[string]bool{}
+	for _, requirement := range requirements {
+		crsRef := strings.TrimSpace(requirement.CRSRef)
+		targetEncoding := strings.TrimSpace(requirement.DefinitionEncoding)
+		if crsRef == "" || targetEncoding == "" {
+			return nil, fmt.Errorf("target returned an invalid CRS definition requirement")
+		}
+		key := strings.ToUpper(crsRef) + "\x00" + strings.ToLower(targetEncoding)
+		if convertedRefs[key] {
+			continue
+		}
+		convertedRefs[key] = true
+
+		var source *datatype.CRSDefinition
+		if existing := next.CRSDefinitionByID(crsRef); existing != nil {
+			copied := *existing
+			source = &copied
+		}
+		converted, err := converter.ConvertCRSDefinition(ctx, crsRef, source, targetEncoding)
+		if err != nil {
+			return nil, fmt.Errorf("convert CRS definition %q to %q: %w", crsRef, targetEncoding, err)
+		}
+		if converted == nil || !strings.EqualFold(strings.TrimSpace(converted.ID), crsRef) {
+			return nil, fmt.Errorf("converted CRS definition identity does not match %q", crsRef)
+		}
+		if !strings.EqualFold(strings.TrimSpace(converted.DefinitionEncoding), targetEncoding) {
+			return nil, fmt.Errorf("converted CRS definition %q returned encoding %q, want %q", crsRef, converted.DefinitionEncoding, targetEncoding)
+		}
+		if strings.TrimSpace(converted.Definition) == "" {
+			return nil, fmt.Errorf("converted CRS definition %q is empty", crsRef)
+		}
+		replaceCRSDefinition(next, *converted)
+	}
+	return next, nil
+}
+
+func replaceCRSDefinition(spatialInfo *datatype.SpatialInfo, definition datatype.CRSDefinition) {
+	for i := range spatialInfo.CRSDefinitions {
+		if strings.EqualFold(strings.TrimSpace(spatialInfo.CRSDefinitions[i].ID), strings.TrimSpace(definition.ID)) {
+			spatialInfo.CRSDefinitions[i] = definition
+			return
+		}
+	}
+	spatialInfo.CRSDefinitions = append(spatialInfo.CRSDefinitions, definition)
 }
 
 type scopeTableBatchWriter struct {

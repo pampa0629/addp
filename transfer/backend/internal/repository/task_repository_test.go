@@ -88,6 +88,45 @@ func TestClaimDueScheduledTaskAdvancesNextRunAt(t *testing.T) {
 	}
 }
 
+func TestBoundedExecutionClaimUsesDatabaseLeaseAndRecoveryFailsClosed(t *testing.T) {
+	db := newTaskRepositoryTestDB(t)
+	repo := NewTaskRepository(db)
+	task := createTaskRepositoryTestTask(t, db, 7, "bounded-lease")
+	execution := claimTestExecution(task, "bounded-lease-execution")
+	execution.ExecutionBoundary = commonExecution.ExecutionBoundaryBounded
+	if _, _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, &execution, ""); err != nil {
+		t.Fatalf("create pending execution: %v", err)
+	}
+
+	now := time.Now().UTC()
+	claimed, lease, claimedTask, err := repo.ClaimNextBoundedExecution(context.Background(), "transfer-bounded-worker-1", now, time.Minute)
+	if err != nil || claimed == nil || lease == nil || claimedTask == nil {
+		t.Fatalf("ClaimNextBoundedExecution = %#v %#v %#v, %v", claimed, lease, claimedTask, err)
+	}
+	if claimed.Status != commonExecution.ExecutionStatusRunning || lease.Token == "" || lease.Attempt != 1 {
+		t.Fatalf("claim = %#v lease = %#v", claimed, lease)
+	}
+
+	count, err := repo.FailExpiredBoundedExecutions(context.Background(), now.Add(2*time.Minute), 10)
+	if err != nil || count != 1 {
+		t.Fatalf("FailExpiredBoundedExecutions count=%d error=%v", count, err)
+	}
+	var stored commonExecution.TaskExecution
+	if err := db.First(&stored, execution.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != commonExecution.ExecutionStatusFailed || stored.ErrorDetails["code"] != "transfer.execution.lease_expired_recovery_required" {
+		t.Fatalf("recovered execution = %#v", stored)
+	}
+	var storedTask models.TransferTask
+	if err := db.First(&storedTask, task.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if storedTask.Status != models.TaskStatusIdle || storedTask.LastExecutionStatus == nil || *storedTask.LastExecutionStatus != commonExecution.ExecutionStatusFailed {
+		t.Fatalf("recovered task = %#v", storedTask)
+	}
+}
+
 func TestClaimExecutionAtomicallyRejectsSecondActiveExecution(t *testing.T) {
 	db := newTaskRepositoryTestDB(t)
 	repo := NewTaskRepository(db)

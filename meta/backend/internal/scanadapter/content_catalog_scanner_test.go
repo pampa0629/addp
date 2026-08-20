@@ -1,6 +1,7 @@
 package scanadapter
 
 import (
+	"context"
 	"testing"
 
 	commonModels "github.com/addp/common/models"
@@ -13,12 +14,12 @@ type fakeContentAdapter struct {
 	groupsCalled bool
 }
 
-func (a *fakeContentAdapter) ScanPaths(*commonModels.Engine, uint, []string, string, bool, scanflow.ProgressReporter) (scanflow.DispatchResult, error) {
+func (a *fakeContentAdapter) ScanPaths(context.Context, *commonModels.Engine, uint, []string, string, bool, scanflow.ProgressReporter) (scanflow.DispatchResult, error) {
 	a.pathsCalled = true
 	return scanflow.DispatchResult{Items: 1}, nil
 }
 
-func (a *fakeContentAdapter) ScanRefGroups(*commonModels.Engine, uint, []models.ScanRefGroup, string, bool, scanflow.ProgressReporter) (scanflow.DispatchResult, error) {
+func (a *fakeContentAdapter) ScanRefGroups(context.Context, *commonModels.Engine, uint, []models.ScanRefGroup, string, bool, scanflow.ProgressReporter) (scanflow.DispatchResult, error) {
 	a.groupsCalled = true
 	return scanflow.DispatchResult{Items: 2}, nil
 }

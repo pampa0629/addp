@@ -279,8 +279,12 @@ build-backends: ## 编译所有后端服务到 dist/ 目录（用于生产镜像
 	@cd meta/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/meta-worker ./cmd/worker
 	@echo "$(YELLOW)编译 transfer-backend...$(NC)"
 	@cd transfer/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/transfer-backend ./cmd/server
-	@echo "$(YELLOW)编译 transfer-worker...$(NC)"
-	@cd transfer/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/transfer-worker ./cmd/worker
+	@echo "$(YELLOW)编译 transfer-bounded-worker...$(NC)"
+	@cd transfer/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/transfer-bounded-worker ./cmd/worker
+	@echo "$(YELLOW)编译 transfer-continuous-worker...$(NC)"
+	@cd transfer/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/transfer-continuous-worker ./cmd/continuous-worker
+	@echo "$(YELLOW)编译 quality-worker...$(NC)"
+	@cd quality/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/quality-worker ./cmd/worker
 	@echo "$(YELLOW)编译 orchestrator-backend...$(NC)"
 	@cd orchestrator/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/orchestrator-backend ./cmd/server
 	@echo "$(YELLOW)编译 develop-backend...$(NC)"
@@ -297,7 +301,9 @@ prod-build-images: build-backends ## 构建所有生产 Docker 镜像（使用�
 	@docker build -t localhost:5001/addp-meta-backend:latest -f meta/backend/Dockerfile .
 	@docker build -t localhost:5001/addp-meta-worker:latest -f meta/worker/Dockerfile .
 	@docker build -t localhost:5001/addp-transfer-backend:latest -f transfer/backend/Dockerfile .
-	@docker build -t localhost:5001/addp-transfer-worker:latest -f transfer/worker/Dockerfile .
+	@docker build -t localhost:5001/addp-transfer-bounded-worker:latest -f transfer/worker/Dockerfile .
+	@docker build -t localhost:5001/addp-transfer-continuous-worker:latest -f transfer/continuous-worker/Dockerfile .
+	@docker build -t localhost:5001/addp-quality-worker:latest -f quality/worker/Dockerfile .
 	@docker build -t localhost:5001/addp-orchestrator-backend:latest -f orchestrator/backend/Dockerfile .
 	@docker build -t localhost:5001/addp-develop-backend:latest -f develop/backend/Dockerfile .
 	@docker build -t localhost:5001/addp-gateway:latest -f gateway/Dockerfile .
@@ -355,7 +361,7 @@ logs-meta: ## 查看 Meta 模块日志
 	@docker compose -f docker-compose.yml logs -f meta-backend
 
 logs-transfer: ## 查看 Transfer 模块日志
-	@docker compose -f docker-compose.yml logs -f transfer-backend transfer-worker
+	@docker compose -f docker-compose.yml logs -f transfer-backend transfer-bounded-worker transfer-continuous-worker
 
 logs-orchestrator: ## 查看 Orchestrator 模块日志
 	@docker compose -f docker-compose.yml logs -f orchestrator-backend orchestrator-frontend

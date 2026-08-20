@@ -19,6 +19,7 @@ import (
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/resume"
+	commonSpatial "github.com/addp/common/spatial"
 	parquetgo "github.com/parquet-go/parquet-go"
 	"github.com/parquet-go/parquet-go/compress"
 	parquetbrotli "github.com/parquet-go/parquet-go/compress/brotli"
@@ -28,6 +29,7 @@ import (
 	parquetuncompressed "github.com/parquet-go/parquet-go/compress/uncompressed"
 	parquetzstd "github.com/parquet-go/parquet-go/compress/zstd"
 	parquetfmt "github.com/parquet-go/parquet-go/format"
+	"github.com/twpayne/go-geom"
 )
 
 const FileRowCountsOption = "parquet_file_row_counts"
@@ -188,6 +190,21 @@ func (p *Plugin) Format() format.FormatType {
 	return format.FormatParquet
 }
 
+func (p *Plugin) SpatialEncodingCapability() format.SpatialEncodingCapability {
+	return format.SpatialEncodingCapability{
+		GeometryReadEncodings:  []format.GeometryEncoding{format.GeometryEncodingWKB, format.GeometryEncodingEWKB, format.GeometryEncodingWKT},
+		GeometryWriteEncodings: []format.GeometryEncoding{format.GeometryEncodingWKB, format.GeometryEncodingEWKB},
+		DefaultReadEncoding:    format.GeometryEncodingWKB,
+		DefaultWriteEncoding:   format.GeometryEncodingWKB,
+		NativeReadEncoding:     format.GeometryEncodingWKB,
+		NativeWriteEncoding:    format.GeometryEncodingWKB,
+	}
+}
+
+func (p *Plugin) CRSDefinitionWriteRequirements(spatial *datatype.SpatialInfo) ([]format.CRSDefinitionWriteRequirement, error) {
+	return geoParquetCRSDefinitionWriteRequirements(spatial)
+}
+
 func (p *Plugin) Descriptor() format.FormatDescriptor {
 	return format.FormatDescriptor{
 		ID:       "builtin-parquet",
@@ -223,6 +240,10 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInf
 	if len(fields) == 0 {
 		return nil, fmt.Errorf("parquet table writer requires table fields")
 	}
+	geoMetadata, err := geoParquetWriteMetadata(fields, options)
+	if err != nil {
+		return nil, err
+	}
 
 	group := parquetgo.Group{}
 	for _, field := range fields {
@@ -235,10 +256,14 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInf
 	}
 	writerOptions := append([]parquetgo.WriterOption{schema}, writerOptionSet.options...)
 	writer := parquetgo.NewGenericWriter[any](output, writerOptions...)
+	if geoMetadata != "" {
+		writer.SetKeyValueMetadata(geoParquetMetadataKey, geoMetadata)
+	}
 	return &tableWriter{
 		writer:          writer,
 		schema:          schema,
 		fields:          fields,
+		geometryColumns: geoParquetWriteColumns(options),
 		maxRowsPerWrite: writerOptionSet.maxRowsPerRowGroup,
 	}, nil
 }
@@ -303,14 +328,24 @@ func (p *Plugin) openTableReaderFromFile(ctx context.Context, file *parquetgo.Fi
 	}
 	rowCount := file.NumRows()
 	sourceFields := extractFields(file.Schema())
-	tableInfo := &datatype.TableInfo{
-		Fields:   sourceFields,
-		RowCount: &rowCount,
-	}
-	tableInfo, err := format.ApplyFieldSelectionToTableInfo(tableInfo, fieldSelectionFromOptions(options))
+	geoInfo, err := parseGeoParquetFile(file, sourceFields)
 	if err != nil {
 		return nil, err
 	}
+	geometryEncoding, err := geoParquetReadEncoding(geoInfo, options)
+	if err != nil {
+		return nil, err
+	}
+	sourceFields = applyGeoParquetFieldTypes(sourceFields, geoInfo)
+	describeResult := &format.TableDescribeResult{Table: &datatype.TableInfo{
+		Fields:   sourceFields,
+		RowCount: &rowCount,
+	}, Spatial: geoInfoSpatial(geoInfo)}
+	describeResult, err = format.ApplyFieldSelectionToTableDescribeResult(describeResult, fieldSelectionFromOptions(options))
+	if err != nil {
+		return nil, err
+	}
+	tableInfo := describeResult.Table
 	projectionSchema, projectionFieldNames, err := parquetProjectionForFieldSelection(file.Schema(), tableInfo.Fields, sourceFields, fieldSelectionFromOptions(options))
 	if err != nil {
 		return nil, err
@@ -330,6 +365,11 @@ func (p *Plugin) openTableReaderFromFile(ctx context.Context, file *parquetgo.Fi
 		file:                 file,
 		fieldNames:           fieldNames,
 		tableInfo:            tableInfo,
+		spatialInfo:          describeResult.Spatial,
+		geoFormatInfo:        geoParquetFormatInfo(geoInfo),
+		geometryFields:       geoParquetGeometryFieldSet(geoInfo, tableInfo.Fields),
+		geometrySRIDs:        geoParquetGeometrySRIDs(describeResult.Spatial),
+		geometryEncoding:     geometryEncoding,
 		fieldSelection:       fieldSelectionFromOptions(options),
 		projectionSchema:     projectionSchema,
 		projectionConversion: projectionConversion,
@@ -374,6 +414,11 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	}
 
 	fields := extractFields(file.Schema())
+	geoInfo, err := parseGeoParquetFile(file, fields)
+	if err != nil {
+		return nil, err
+	}
+	fields = applyGeoParquetFieldTypes(fields, geoInfo)
 	rowCount := file.NumRows()
 
 	result := &format.TableDescribeResult{
@@ -381,6 +426,8 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 			Fields:   fields,
 			RowCount: &rowCount,
 		},
+		Spatial:    geoInfoSpatial(geoInfo),
+		FormatInfo: geoParquetFormatAttributes(geoInfo),
 	}
 	selected, err := format.ApplyFieldSelectionToTableDescribeResult(result, fieldSelectionFromOptions(options))
 	if err != nil {
@@ -401,14 +448,27 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 		return nil, fmt.Errorf("failed to open parquet file: %w", err)
 	}
 
+	fields := extractFields(file.Schema())
+	geoInfo, err := parseGeoParquetFile(file, fields)
+	if err != nil {
+		return nil, err
+	}
+	fields = applyGeoParquetFieldTypes(fields, geoInfo)
+	geometryEncoding, err := geoParquetReadEncoding(geoInfo, options)
+	if err != nil {
+		return nil, err
+	}
+
 	// 提取列名（叶子列顺序）
 	fieldNames := extractLeafColumnNames(file.Schema())
 	fieldSelection := fieldSelectionFromOptions(options)
 	if _, err := format.ApplyFieldSelectionToTableInfo(&datatype.TableInfo{
-		Fields: extractFields(file.Schema()),
+		Fields: fields,
 	}, fieldSelection); err != nil {
 		return nil, err
 	}
+	geometryFields := geoParquetGeometryFieldSet(geoInfo, fields)
+	geometrySRIDs := geoParquetGeometrySRIDs(geoInfoSpatial(geoInfo))
 
 	if limit <= 0 {
 		limit = 100
@@ -439,7 +499,7 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 			remainingOffset = 0
 		}
 
-		readErr := appendRows(ctx, rows, fieldNames, limit, &result)
+		readErr := appendRows(ctx, rows, fieldNames, geometryFields, geometrySRIDs, geometryEncoding, limit, &result)
 		closeErr := rows.Close()
 		if readErr != nil {
 			return result, readErr
@@ -452,7 +512,7 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 	return format.ApplyFieldSelectionToRows(result, fieldSelection), nil
 }
 
-func appendRows(ctx context.Context, rows parquetgo.Rows, fieldNames []string, limit int64, result *[]map[string]interface{}) error {
+func appendRows(ctx context.Context, rows parquetgo.Rows, fieldNames []string, geometryFields map[string]bool, geometrySRIDs map[string]int, geometryEncoding format.GeometryEncoding, limit int64, result *[]map[string]interface{}) error {
 	const maxBatchSize = 128
 	for int64(len(*result)) < limit {
 		if err := contextErr(ctx); err != nil {
@@ -473,7 +533,12 @@ func appendRows(ctx context.Context, rows parquetgo.Rows, fieldNames []string, l
 				row := make(map[string]interface{}, len(parquetRow))
 				for j, val := range parquetRow {
 					if j < len(fieldNames) {
-						row[fieldNames[j]] = valueToInterface(val)
+						name := fieldNames[j]
+						value, err := valueToInterface(val, geometryFields[name], geometrySRIDs[name], geometryEncoding)
+						if err != nil {
+							return fmt.Errorf("decode parquet field %q: %w", name, err)
+						}
+						row[name] = value
 					}
 				}
 				*result = append(*result, row)
@@ -502,6 +567,11 @@ type tableReader struct {
 	file                 *parquetgo.File
 	fieldNames           []string
 	tableInfo            *datatype.TableInfo
+	spatialInfo          *datatype.SpatialInfo
+	geoFormatInfo        map[string]interface{}
+	geometryFields       map[string]bool
+	geometrySRIDs        map[string]int
+	geometryEncoding     format.GeometryEncoding
 	fieldSelection       *format.FieldSelectionOptions
 	projectionSchema     *parquetgo.Schema
 	projectionConversion parquetgo.Conversion
@@ -515,6 +585,13 @@ func (r *tableReader) Fields() []datatype.FieldInfo {
 		return nil
 	}
 	return append([]datatype.FieldInfo(nil), r.tableInfo.Fields...)
+}
+
+func (r *tableReader) SpatialInfo() *datatype.SpatialInfo {
+	if r == nil {
+		return nil
+	}
+	return r.spatialInfo.Clone()
 }
 
 func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
@@ -538,7 +615,7 @@ func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]int
 			}
 		}
 		before := len(result)
-		if err := appendRows(ctx, r.rows, r.fieldNames, int64(limit), &result); err != nil {
+		if err := appendRows(ctx, r.rows, r.fieldNames, r.geometryFields, r.geometrySRIDs, r.geometryEncoding, int64(limit), &result); err != nil {
 			return result, err
 		}
 		if len(result) >= limit {
@@ -593,6 +670,7 @@ type tableWriter struct {
 	writer          *parquetgo.GenericWriter[any]
 	schema          *parquetgo.Schema
 	fields          []datatype.FieldInfo
+	geometryColumns map[string]datatype.GeometryColumnInfo
 	maxRowsPerWrite int64
 	closed          bool
 }
@@ -605,11 +683,15 @@ func (w *tableWriter) WriteRows(ctx context.Context, rows []map[string]interface
 		return nil
 	}
 	parquetRows := make([]parquetgo.Row, 0, len(rows))
-	for _, row := range rows {
+	for rowIndex, row := range rows {
 		if err := contextErr(ctx); err != nil {
 			return err
 		}
-		parquetRows = append(parquetRows, w.schema.Deconstruct(nil, parquetWriterRow(row, w.fields)))
+		writerRow, err := parquetWriterRow(row, w.fields, w.geometryColumns)
+		if err != nil {
+			return fmt.Errorf("convert parquet row %d: %w", rowIndex, err)
+		}
+		parquetRows = append(parquetRows, w.schema.Deconstruct(nil, writerRow))
 	}
 	for start := 0; start < len(parquetRows); {
 		end := len(parquetRows)
@@ -730,11 +812,13 @@ func parquetNodeForField(field datatype.FieldInfo) parquetgo.Node {
 		node = parquetgo.Leaf(parquetgo.DoubleType)
 	case datatype.FieldTypeBytes:
 		node = parquetgo.Leaf(parquetgo.ByteArrayType)
+	case datatype.FieldTypeGeometry:
+		node = parquetgo.Leaf(parquetgo.ByteArrayType)
 	case datatype.FieldTypeDate:
 		node = parquetgo.Date()
 	case datatype.FieldTypeTimestamp, datatype.FieldTypeTime:
 		node = parquetgo.String()
-	case datatype.FieldTypeJSON, datatype.FieldTypeArray, datatype.FieldTypeGeometry:
+	case datatype.FieldTypeJSON, datatype.FieldTypeArray:
 		node = parquetgo.String()
 	case datatype.FieldTypeUUID:
 		node = parquetgo.UUID()
@@ -747,43 +831,94 @@ func parquetNodeForField(field datatype.FieldInfo) parquetgo.Node {
 	return node
 }
 
-func parquetWriterRow(row map[string]interface{}, fields []datatype.FieldInfo) map[string]any {
+func parquetWriterRow(row map[string]interface{}, fields []datatype.FieldInfo, geometryColumns map[string]datatype.GeometryColumnInfo) (map[string]any, error) {
 	out := make(map[string]any, len(fields))
 	for _, field := range fields {
-		out[field.Name] = parquetWriterValue(row[field.Name], field.Type)
+		geometryColumn, _ := geometryColumns[field.Name]
+		value, err := parquetWriterValue(row[field.Name], field.Type, geometryColumn)
+		if err != nil {
+			return nil, fmt.Errorf("field %q: %w", field.Name, err)
+		}
+		out[field.Name] = value
 	}
-	return out
+	return out, nil
 }
 
-func parquetWriterValue(value interface{}, fieldType datatype.FieldType) any {
+func parquetWriterValue(value interface{}, fieldType datatype.FieldType, geometryColumn datatype.GeometryColumnInfo) (any, error) {
 	if value == nil {
-		return nil
+		return nil, nil
 	}
 	switch fieldType {
 	case datatype.FieldTypeBool:
-		return boolValue(value)
+		return boolValue(value), nil
 	case datatype.FieldTypeInt:
-		return int32(int64Value(value))
+		return int32(int64Value(value)), nil
 	case datatype.FieldTypeBigInt:
-		return int64Value(value)
+		return int64Value(value), nil
 	case datatype.FieldTypeFloat:
-		return float32(float64Value(value))
+		return float32(float64Value(value)), nil
 	case datatype.FieldTypeDouble, datatype.FieldTypeDecimal:
-		return float64Value(value)
+		return float64Value(value), nil
 	case datatype.FieldTypeBytes:
 		if bytes, ok := value.([]byte); ok {
-			return bytes
+			return bytes, nil
 		}
-		return []byte(fmt.Sprint(value))
+		return []byte(fmt.Sprint(value)), nil
+	case datatype.FieldTypeGeometry:
+		data, ok := value.([]byte)
+		if !ok {
+			return nil, fmt.Errorf("geometry value must be WKB or EWKB []byte, got %T", value)
+		}
+		geometry, err := commonSpatial.ParseGeometryBytes(data)
+		if err != nil {
+			return nil, fmt.Errorf("decode WKB/EWKB geometry: %w", err)
+		}
+		if err := validateGeoParquetWriteGeometry(geometry, geometryColumn); err != nil {
+			return nil, err
+		}
+		wkb, err := commonSpatial.GeomToWKB(geometry)
+		if err != nil {
+			return nil, fmt.Errorf("encode standard WKB geometry: %w", err)
+		}
+		return wkb, nil
 	case datatype.FieldTypeDate:
-		return dateValue(value)
+		return dateValue(value), nil
 	case datatype.FieldTypeTimestamp, datatype.FieldTypeTime:
-		return temporalString(value)
-	case datatype.FieldTypeJSON, datatype.FieldTypeArray, datatype.FieldTypeGeometry:
-		return jsonString(value)
+		return temporalString(value), nil
+	case datatype.FieldTypeJSON, datatype.FieldTypeArray:
+		return jsonString(value), nil
 	default:
-		return fmt.Sprint(value)
+		return fmt.Sprint(value), nil
 	}
+}
+
+func validateGeoParquetWriteGeometry(geometry geom.T, column datatype.GeometryColumnInfo) error {
+	switch geometry.Layout() {
+	case geom.XY, geom.XYZ:
+	case geom.XYM, geom.XYZM:
+		return fmt.Errorf("GeoParquet 1.1 WKB does not support measured coordinates with layout %s", geometry.Layout())
+	default:
+		return fmt.Errorf("GeoParquet 1.1 WKB requires XY or XYZ geometry layout, got %s", geometry.Layout())
+	}
+	if column.Dimension == nil || *column.Dimension == 0 {
+		return nil
+	}
+	wantLayout := geom.XY
+	if *column.Dimension == 3 {
+		wantLayout = geom.XYZ
+	}
+	if geometry.Layout() != wantLayout {
+		return fmt.Errorf("geometry layout %s does not match declared dimension %d", geometry.Layout(), *column.Dimension)
+	}
+	expectedType := datatype.ParseGeometryType(column.GeometryType)
+	if expectedType == datatype.GeometryTypeUnknown || expectedType == datatype.GeometryTypeGeometry {
+		return nil
+	}
+	actualType := datatype.ParseGeometryType(commonSpatial.GeometryTypeName(geometry))
+	if actualType != expectedType {
+		return fmt.Errorf("geometry type %s does not match declared type %s", actualType, expectedType)
+	}
+	return nil
 }
 
 func boolValue(value interface{}) bool {
@@ -924,6 +1059,8 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 	totalRows := int64(0)
 	files := make([]PartResourceInfo, 0, len(scopedRefs))
 	partitionFields := partitionFieldsFromScopedRefs(scopedRefs)
+	var scopeGeoInfo *geoParquetInfo
+	var scopeSpatial *datatype.SpatialInfo
 	for _, scopedRef := range scopedRefs {
 		if err := contextErr(ctx); err != nil {
 			return nil, err
@@ -944,6 +1081,7 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 		info := result.Table
 		if merged == nil {
 			dataFields = append([]datatype.FieldInfo(nil), info.Fields...)
+			scopeSpatial = result.Spatial.Clone()
 			baseInfo := &format.TableDescribeResult{
 				Table: &datatype.TableInfo{
 					Name:       contentio.BaseName(scope),
@@ -951,13 +1089,24 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 					PrimaryKey: append([]string(nil), info.PrimaryKey...),
 					Native:     parquetTableNative(fieldNames(partitionFields)),
 				},
+				Spatial: scopeSpatial.Clone(),
+			}
+			if geoAttrs := commonJSON.Section(result.FormatInfo, "geo"); len(geoAttrs) > 0 {
+				scopeGeoInfo = &geoParquetInfo{formatInfo: geoAttrs}
 			}
 			merged, err = format.ApplyFieldSelectionToTableDescribeResult(baseInfo, fieldSelectionFromOptions(options))
 			if err != nil {
 				return nil, err
 			}
-		} else if !sameFieldInfoList(dataFields, info.Fields) {
-			return nil, fmt.Errorf("parquet scope %s has incompatible table fields in %s", scope.Path, ref.Path)
+		} else {
+			if !sameFieldInfoList(dataFields, info.Fields) {
+				return nil, fmt.Errorf("parquet scope %s has incompatible table fields in %s", scope.Path, ref.Path)
+			}
+			currentGeoAttrs := commonJSON.Section(result.FormatInfo, "geo")
+			if !sameGeoParquetSpatialSchema(scopeSpatial, result.Spatial) || !sameGeoParquetFormatSchema(geoParquetFormatInfo(scopeGeoInfo), currentGeoAttrs) {
+				return nil, fmt.Errorf("parquet scope %s has incompatible geoparquet spatial metadata in %s", scope.Path, ref.Path)
+			}
+			mergeGeoParquetExtent(scopeSpatial, result.Spatial)
 		}
 		if info.RowCount != nil {
 			totalRows += *info.RowCount
@@ -971,7 +1120,13 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 		return nil, fmt.Errorf("parquet scope %s has no parquet files", scope.Path)
 	}
 	merged.Table.RowCount = &totalRows
+	if merged.Spatial != nil {
+		merged.Spatial = scopeSpatial.Clone()
+	}
 	merged.FormatInfo = (&Info{Files: files}).FormatAttributes()
+	if geoAttrs := geoParquetScopeFormatAttributes(scopeGeoInfo, scopeSpatial); len(geoAttrs) > 0 {
+		merged.FormatInfo["geo"] = geoAttrs
+	}
 	return merged, nil
 }
 
@@ -1054,14 +1209,19 @@ func (p *Plugin) OpenTableScopeReader(ctx context.Context, reader contentio.Read
 	if len(scopedRefs) == 0 {
 		return nil, fmt.Errorf("parquet scope %s has no parquet files", scope.Path)
 	}
-	return &scopeTableReader{
+	result := &scopeTableReader{
 		plugin:          p,
 		reader:          reader,
 		refs:            scopedRefs,
 		partitionFields: partitionFieldsFromScopedRefs(scopedRefs),
 		parseOptions:    options,
 		fieldSelection:  fieldSelectionFromOptions(options),
-	}, nil
+	}
+	if err := result.openNext(ctx); err != nil {
+		_ = result.closeCurrent(context.Background())
+		return nil, err
+	}
+	return result, nil
 }
 
 type scopeTableReader struct {
@@ -1072,6 +1232,9 @@ type scopeTableReader struct {
 	parseOptions       *format.ParseOptions
 	fieldSelection     *format.FieldSelectionOptions
 	tableInfo          *datatype.TableInfo
+	spatialInfo        *datatype.SpatialInfo
+	spatialComplete    bool
+	geoFormatInfo      map[string]interface{}
 	dataFields         []datatype.FieldInfo
 	index              int
 	currentInput       io.Closer
@@ -1090,6 +1253,13 @@ func (r *scopeTableReader) Fields() []datatype.FieldInfo {
 		return nil
 	}
 	return append([]datatype.FieldInfo(nil), r.tableInfo.Fields...)
+}
+
+func (r *scopeTableReader) SpatialInfo() *datatype.SpatialInfo {
+	if r == nil || !r.spatialComplete {
+		return nil
+	}
+	return r.spatialInfo.Clone()
 }
 
 func (r *scopeTableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
@@ -1156,34 +1326,55 @@ func (r *scopeTableReader) openNext(ctx context.Context) error {
 		scopedRef := r.refs[refIndex]
 		r.index++
 		ref := scopedRef.Ref
-		tableReader, closer, err := r.plugin.openTableReaderFromContent(ctx, r.reader, ref, parquetDataFieldParseOptions(r.parseOptions, scopedRef.Partitions))
+		partReader, closer, err := r.plugin.openTableReaderFromContent(ctx, r.reader, ref, parquetDataFieldParseOptions(r.parseOptions, scopedRef.Partitions))
 		if err != nil {
 			return fmt.Errorf("failed to open parquet table reader for %s: %w", ref.Path, err)
 		}
-		tableInfo := &datatype.TableInfo{Fields: tableReader.Fields()}
+		tableInfo := &datatype.TableInfo{Fields: partReader.Fields()}
+		var spatialInfo *datatype.SpatialInfo
+		if provider, ok := partReader.(format.TableSpatialInfoProvider); ok {
+			spatialInfo = provider.SpatialInfo()
+		}
+		var geoFormatInfo map[string]interface{}
+		if parquetReader, ok := partReader.(*tableReader); ok {
+			geoFormatInfo = parquetReader.geoFormatInfo
+		}
 		if r.tableInfo == nil {
 			r.dataFields = append([]datatype.FieldInfo(nil), tableInfo.Fields...)
+			r.spatialInfo = spatialInfo.Clone()
+			r.geoFormatInfo = geoFormatInfo
 			r.tableInfo, err = format.ApplyFieldSelectionToTableInfo(copyTableInfoWithPartitionFields(tableInfo, r.partitionFields), r.fieldSelection)
 			if err != nil {
-				_ = tableReader.Close(ctx)
+				_ = partReader.Close(ctx)
 				if closer != nil {
 					_ = closer.Close()
 				}
 				return err
 			}
-		} else if tableInfo != nil && !sameFieldInfoList(r.dataFields, tableInfo.Fields) {
-			_ = tableReader.Close(ctx)
-			if closer != nil {
-				_ = closer.Close()
+		} else {
+			if tableInfo != nil && !sameFieldInfoList(r.dataFields, tableInfo.Fields) {
+				_ = partReader.Close(ctx)
+				if closer != nil {
+					_ = closer.Close()
+				}
+				return fmt.Errorf("parquet scope has incompatible table fields in %s", ref.Path)
 			}
-			return fmt.Errorf("parquet scope has incompatible table fields in %s", ref.Path)
+			if !sameGeoParquetSpatialSchema(r.spatialInfo, spatialInfo) || !sameGeoParquetFormatSchema(r.geoFormatInfo, geoFormatInfo) {
+				_ = partReader.Close(ctx)
+				if closer != nil {
+					_ = closer.Close()
+				}
+				return fmt.Errorf("parquet scope has incompatible geoparquet spatial metadata in %s", ref.Path)
+			}
+			mergeGeoParquetExtent(r.spatialInfo, spatialInfo)
 		}
 		r.currentInput = closer
-		r.current = tableReader
+		r.current = partReader
 		r.currentPartitions = scopedRef.Partitions
 		r.currentRefPath = ref.Path
 		r.currentRefIndex = refIndex
 		r.currentRefRowsRead = 0
+		r.spatialComplete = r.index == len(r.refs)
 		return nil
 	}
 	return nil
@@ -1481,29 +1672,43 @@ func sameFieldInfoList(left, right []datatype.FieldInfo) bool {
 }
 
 // valueToInterface 将 parquet.Value 转换为 Go 原生类型
-func valueToInterface(v parquetgo.Value) interface{} {
+func valueToInterface(v parquetgo.Value, geometry bool, srid int, geometryEncoding format.GeometryEncoding) (interface{}, error) {
 	if v.IsNull() {
-		return nil
+		return nil, nil
+	}
+	if geometry {
+		if v.Kind() != parquetgo.ByteArray {
+			return nil, fmt.Errorf("geoparquet WKB value must use parquet BYTE_ARRAY")
+		}
+		data := append([]byte(nil), v.ByteArray()...)
+		if geometryEncoding == "" || geometryEncoding == format.GeometryEncodingWKB {
+			return data, nil
+		}
+		geometry, err := commonSpatial.DecodeGeometryValue(data, string(format.GeometryEncodingWKB), srid)
+		if err != nil {
+			return nil, err
+		}
+		return commonSpatial.EncodeGeometryValue(geometry, string(geometryEncoding), srid)
 	}
 	switch v.Kind() {
 	case parquetgo.Boolean:
-		return v.Boolean()
+		return v.Boolean(), nil
 	case parquetgo.Int32:
-		return v.Int32()
+		return v.Int32(), nil
 	case parquetgo.Int64:
-		return v.Int64()
+		return v.Int64(), nil
 	case parquetgo.Int96:
-		return v.Int96().String()
+		return v.Int96().String(), nil
 	case parquetgo.Float:
-		return v.Float()
+		return v.Float(), nil
 	case parquetgo.Double:
-		return v.Double()
+		return v.Double(), nil
 	case parquetgo.ByteArray:
-		return string(v.ByteArray())
+		return string(v.ByteArray()), nil
 	case parquetgo.FixedLenByteArray:
-		return string(v.ByteArray())
+		return string(v.ByteArray()), nil
 	default:
-		return v.String()
+		return v.String(), nil
 	}
 }
 

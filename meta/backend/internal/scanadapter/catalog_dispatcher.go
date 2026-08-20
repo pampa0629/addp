@@ -68,6 +68,11 @@ func (d *CatalogDispatcher) SetLocker(locker scanLocker) {
 }
 
 func (d *CatalogDispatcher) Dispatch(req scanflow.DispatchRequest) (scanflow.DispatchResult, error) {
+	ctx := req.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req.Context = ctx
 	if req.Resource == nil {
 		return scanflow.DispatchResult{}, fmt.Errorf("scan resource is nil")
 	}
@@ -87,11 +92,11 @@ func (d *CatalogDispatcher) Dispatch(req scanflow.DispatchRequest) (scanflow.Dis
 
 	switch plan.Strategy {
 	case scanflow.CatalogScanTabular:
-		return d.dispatchTabularScan(context.Background(), enginePlugin, plan, req)
+		return d.dispatchTabularScan(ctx, enginePlugin, plan, req)
 	case scanflow.CatalogScanDirectLeaves:
-		return d.dispatchDirectLeafScan(context.Background(), enginePlugin, req)
+		return d.dispatchDirectLeafScan(ctx, enginePlugin, req)
 	case scanflow.CatalogScanBranchLeaves:
-		return d.dispatchBranchLeafScan(context.Background(), enginePlugin, req)
+		return d.dispatchBranchLeafScan(ctx, enginePlugin, req)
 	case scanflow.CatalogScanObject:
 		return d.dispatchObjectCatalogScan(req)
 	case scanflow.CatalogScanFile:

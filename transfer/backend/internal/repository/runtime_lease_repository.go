@@ -324,7 +324,9 @@ func createRecoveryExecution(tx *gorm.DB, task models.TransferTask, previous com
 		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleTransfer,
 		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(task.ID), SourceTaskName: &taskName,
 		Status: commonExecution.ExecutionStatusPending, TriggerType: previous.TriggerType,
-		ExecutionConfig: task.Config,
+		ExecutionBoundary:  commonExecution.ExecutionBoundaryContinuous,
+		RetryOfExecutionID: &previous.ExecutionID,
+		ExecutionConfig:    task.Config,
 		Metadata: commonModels.JSONMap{
 			"recovery_reason":               reason,
 			"recovered_from_execution_id":   previous.ExecutionID,

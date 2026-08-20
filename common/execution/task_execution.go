@@ -36,9 +36,13 @@ type TaskExecution struct {
 	Status      string  `gorm:"size:50;not null;index:idx_task_executions_tenant_status" json:"status"` // 'pending'/'running'/'success'/'failed'/'timeout'/'cancelled'
 	Progress    int     `gorm:"default:0" json:"progress"`                                              // 0-100
 	CurrentStep *string `gorm:"size:255" json:"current_step,omitempty"`                                 // 当前步骤（Orchestrator/Workflow）
+	// ExecutionBoundary separates finite queue work from long-running runtime sessions.
+	ExecutionBoundary  string  `gorm:"size:20;not null;default:bounded;index" json:"execution_boundary"`
+	RetryOfExecutionID *string `gorm:"size:255;index" json:"retry_of_execution_id,omitempty"`
 
 	// Lease facts make long-running owner workers recoverable across process restarts.
 	LeaseOwner     *string    `gorm:"size:100;index" json:"-"`
+	LeaseToken     *string    `gorm:"type:uuid;index" json:"-"`
 	LeaseExpiresAt *time.Time `gorm:"index" json:"-"`
 	Attempt        int        `gorm:"not null;default:0" json:"attempt"`
 	MaxAttempts    int        `gorm:"not null;default:3" json:"max_attempts"`
@@ -89,6 +93,11 @@ const (
 	ExecutionStatusFailed    = "failed"
 	ExecutionStatusTimeout   = "timeout"
 	ExecutionStatusCancelled = "cancelled"
+)
+
+const (
+	ExecutionBoundaryBounded    = "bounded"
+	ExecutionBoundaryContinuous = "continuous"
 )
 
 // StatusFromCleanupResult maps cleanup protocol results to terminal execution statuses.

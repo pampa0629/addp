@@ -10,9 +10,10 @@ import (
 )
 
 const (
-	CRSDefinitionEncodingWKT     = "wkt"
-	CRSDefinitionEncodingESRIWKT = "esri_wkt"
-	CRSDefinitionEncodingProj4   = "proj4"
+	CRSDefinitionEncodingWKT      = "wkt"
+	CRSDefinitionEncodingESRIWKT  = "esri_wkt"
+	CRSDefinitionEncodingProj4    = "proj4"
+	CRSDefinitionEncodingPROJJSON = "projjson"
 
 	CRSDefinitionSourcePostGISSpatialRefSys = "postgis_spatial_ref_sys"
 	CRSDefinitionSourceMySQLSpatialRefSys   = "mysql_st_spatial_reference_systems"
@@ -21,6 +22,8 @@ const (
 	CRSDefinitionSourceGeoPackageSRS        = "geopackage_srs"
 	CRSDefinitionSourceGeoTIFFTags          = "geotiff_tags"
 	CRSDefinitionSourceSuperMapRuntimeSDK   = "supermap_runtime_sdk"
+	CRSDefinitionSourceGeoParquetMetadata   = "geoparquet_metadata"
+	CRSDefinitionSourceNormalizationRuntime = "crs_normalization_runtime"
 )
 
 // SpatialInfo describes spatial facts that cut across data types.

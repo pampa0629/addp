@@ -7,10 +7,13 @@ import (
 	"strings"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scantask"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func validateManualScanRequestTriggerType(triggerType string) error {
@@ -85,7 +88,6 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 		return nil, err
 	}
 
-	s.enqueueExecution(execution.ExecutionID)
 	return execution, nil
 }
 
@@ -137,12 +139,49 @@ func (s *ScanExecutionService) CreateTaskRunWithContext(ctx context.Context, tas
 		return nil, err
 	}
 	storageType := s.lookupStorageType(task.EngineID, task.TenantID)
-	execution := scantask.NewTaskExecution(task, userID, storageType, normalizedTriggerType, source, parentExecutionID, time.Now())
+	var execution *commonExecution.TaskExecution
 
-	if err := s.taskExecutionRepo.Create(ctx, execution); err != nil {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var current models.ScanTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND tenant_id = ?", task.ID, task.TenantID).
+			First(&current).Error; err != nil {
+			return err
+		}
+		active, err := metaTaskActiveExecutionCount(tx, current.ID, current.TenantID)
+		if err != nil {
+			return err
+		}
+		if active > 0 {
+			return fmt.Errorf("%w: meta scan task %d already has an active execution", commonAPI.ErrConflict, current.ID)
+		}
+		execution = scantask.NewTaskExecution(&current, userID, storageType, normalizedTriggerType, source, parentExecutionID, time.Now())
+		if err := tx.Create(execution).Error; err != nil {
+			return err
+		}
+		result := tx.Model(&models.ScanTask{}).Where("id = ? AND tenant_id = ?", current.ID, current.TenantID).Updates(map[string]interface{}{
+			"last_execution_id": execution.ExecutionID, "last_execution_status": commonExecution.ExecutionStatusPending, "updated_at": execution.CreatedAt,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("meta scan task %d disappeared while creating execution", current.ID)
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 
-	s.enqueueExecution(execution.ExecutionID)
 	return execution, nil
+}
+
+func metaTaskActiveExecutionCount(tx *gorm.DB, taskID, tenantID uint) (int64, error) {
+	var count int64
+	err := tx.Model(&commonExecution.TaskExecution{}).
+		Where("tenant_id = ? AND module = ? AND task_type = ? AND source_task_id = ? AND status IN ?",
+			tenantID, commonExecution.ModuleMeta, commonExecution.TaskTypeScan, *commonExecution.NewSourceTaskIDFromUint(taskID),
+			[]string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning}).
+		Count(&count).Error
+	return count, err
 }

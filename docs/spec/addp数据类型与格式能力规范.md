@@ -283,6 +283,8 @@ Info / facts 能力负责把原始资源转成平台能理解的类型信息、�
 
 Provider 一次解析可能同时得到多个事实。为避免污染各 data type 的 type info，应通过 describe result 或等价结构将这些事实同级返回，再由 Meta normalizer 写入各自 attributes 分区。
 
+如果 provider 已从内容中发现确定性的格式语义，但该语义非法或使用了当前不支持的必需特性，应返回 `format.DefinitiveParseError`。Meta 不得把这类错误降级成只有 descriptor 的基础 item，否则会把“已确认但无法正确解释”的内容伪装成可正常消费的数据。普通 I/O 瞬时错误或尚未发现确定格式语义的探测失败不使用该错误类型。
+
 表格描述结果属于 `common/format` provider 边界，不属于 `common/datatype`。概念形态：
 
 ```go
@@ -324,6 +326,7 @@ media 已使用同一原则：`MediaDescribeResult.Media` 写入 `type_info.medi
 - CRS 转换完成后，批次和目标表的 `SpatialInfo` 必须同步为输出 CRS。未重新计算的源 `extent`、源空间索引状态和索引名不得继承到输出空间事实中，避免把源坐标范围或源物理索引误标为转换后的结果事实。
 - 格式写出空间数据时，应根据 `SpatialInfo.GeometryColumns[].GeometryType` 和 `Dimension` 选择自身 native 表达。例如 Shapefile writer 在 `dimension >= 3` 时写出 `PointZ`、`PolyLineZ`、`PolygonZ` 或 `MultiPointZ`；M / measure 不属于 ADDP 当前标准空间维度，除非后续有明确 measure 规范，否则不得伪装为 Z 坐标。
 - 格式写出 CRS 定义时，写入参数必须是 CRS 定义文本，不得把 CRS ID 当作定义。例如 Shapefile writer 的 `WriteOptions.ExtraParams["crs_definition"]` 只接受 WKT、ESRI WKT 或 proj4 文本；不得传入裸 `EPSG:<code>`。CRS ID 应写入 `SpatialInfo` / `capabilities.spatial.crs_ref`，定义文本应写入 `crs_definitions[].definition`。
+- `SpatialInfo.CRSDefinitions` 的标准定义编码为 `wkt`、`esri_wkt`、`proj4`、`projjson`。定义是跨格式可复用的空间事实；消费者只选择自己明确支持的编码。GeoParquet reader / writer 必须通过 `projjson` 定义往返 CRS，不得在 Transfer 增加格式私有 CRS 参数。
 
 字段类型与几何类型的衔接伪代码如下：
 
@@ -700,6 +703,10 @@ Transfer 不能只按 `connector type` 路由，也不能只看 format。它需�
 
 空间表写入 encoded format 时，planner / executor 只传递标准 schema、标准行值和 format 写出选项。具体 format writer 负责把 `SpatialInfo` 映射为自己的 native 几何组织方式，不能让上层为了某个格式写出而硬编码 native shape type。
 
+格式对 CRS 定义表达的写出要求由 format plugin 的通用 CRS definition requirement provider 声明，Transfer 不得按 `target=parquet`、`target=shapefile` 等格式名硬编码转换分支。requirement 以 `crs_ref + definition_encoding` 表达；没有 requirement 表示当前 `SpatialInfo` 已满足格式约束，不能解释为目标格式不支持 CRS。GeoParquet 对 `OGC:CRS84`、按 x/y 轴语义写出的 `EPSG:4326` 和未知 CRS 不声明转换需求；其他已知 CRS 缺少匹配的 PROJJSON 时声明 `definition_encoding=projjson`。
+
+CRS 定义转换只改变定义序列化，不改变 geometry 坐标、CRS 身份、字段、extent 或空间索引事实，不得建模为 `spatial_reproject`。Transfer executor 在 source table info transform 完成、target writer 创建之前按唯一 `crs_ref` 调用一次 GeoPython Workflow `crs_to_projjson` direct 算子，并把结果写入 execution-local `SpatialInfo` 副本；Meta 和 source provider 保存的 WKT / ESRI WKT / Proj4 原始事实不被覆盖。转换 Runtime 不可用、输入自定义 CRS 缺少定义、输出 authority/code 与 `crs_ref` 冲突或返回非目标编码时必须失败，不得静默写 `crs=null`、省略已知 CRS 或回退到格式私有参数。
+
 空间表 Transfer 的 geometry encoding 由 planner 统一选择，format 和 native table engine 只声明能力，不声明 `PreferredTransferEncoding`。选择规则如下：
 
 - planner 必须分别读取 source 的 geometry read encoding、target 的 geometry write encoding、source spatial facts、target format 约束和可用 transform 能力。
@@ -712,6 +719,7 @@ Transfer 不能只按 `connector type` 路由，也不能只看 format。它需�
 - 对支持源端空间函数的 native table source，planner 可以基于 `table_spatial_encoding.read_transform=true` 或等价能力选择 source-native read transform，例如 PostGIS `ST_Transform`；这是 `vector_reproject` 语义下的执行优化，不是硬编码 engine / format 类型分支。
 - GeoJSON writer 是最后一道格式约束门禁。上游明确传入非 4326 `SpatialInfo` 时，writer 必须失败；坐标转换必须在 planner 选择的源端 transform 或 `vector_reproject` 阶段完成。
 - CRS 转换完成后，下游 writer 看到的 `SpatialInfo` 必须已经更新为输出 CRS；未重新计算的源 extent、空间索引状态和索引名不得继承。
+- `crs_to_projjson` 只允许使用 Runtime 随附且版本固定的本地 PROJ 数据库解析 `EPSG:<code>`，不得联网补充 CRS 数据。`ADDP:CRS:<sha256>` 必须提供源定义，转换后的 PROJJSON 顶层 `id` 使用 `authority=ADDP`、`code=CRS:<sha256>` 保留平台 CRS 身份，不能基于转换后文本重新计算第二个 ID。
 
 批量读写需要额外确认：
 

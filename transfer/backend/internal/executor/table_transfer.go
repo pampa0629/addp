@@ -60,6 +60,10 @@ type GeometryBatchReprojectProvider interface {
 	ReprojectGeometryBatch(ctx context.Context, geometries [][]byte, sourceCRS, targetCRS, geometryColumn string) ([][]byte, error)
 }
 
+type CRSDefinitionConverter interface {
+	ConvertCRSDefinition(ctx context.Context, crsRef string, source *datatype.CRSDefinition, targetEncoding string) (*datatype.CRSDefinition, error)
+}
+
 type TableProgressCallback func(context.Context, TableProgressEvent) error
 
 type TableProgressEvent struct {
@@ -126,6 +130,8 @@ type TableTransferExecutor struct {
 	TargetNativeWriter         engineplugin.BatchWritableProvider
 	TargetTableSessionProvider engineplugin.TableWriteSessionProvider
 	GeometryBatchReprojecter   GeometryBatchReprojectProvider
+	CRSDefinitionConverter     CRSDefinitionConverter
+	TargetCRSRequirements      format.CRSDefinitionWriteRequirementProvider
 }
 
 func NewTableTransferExecutor(sourceEngineType, targetEngineType string, sourceFormat, targetFormat format.FormatType) (*TableTransferExecutor, error) {
@@ -161,6 +167,7 @@ func NewTableTransferExecutor(sourceEngineType, targetEngineType string, sourceF
 		executor.TargetTableWriterProvider, _ = format.GetTableWriterProvider(targetFormat)
 		executor.TargetMultiProvider, _ = format.GetMultiTableWriterProvider(targetFormat)
 		executor.TargetScopeWriterProvider, _ = format.GetScopeTableWriterProvider(targetFormat)
+		executor.TargetCRSRequirements, _ = format.GetCRSDefinitionWriteRequirementProvider(targetFormat)
 		if executor.TargetTableWriterProvider != nil {
 			executor.TargetMultiProvider = nil
 			executor.TargetScopeWriterProvider = nil
@@ -289,6 +296,8 @@ func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarg
 			writeOptions:        plan.ContentWrite,
 			formatOptions:       plan.FormatOptions,
 			resumeMarker:        plan.ResumeMarker,
+			crsRequirements:     e.TargetCRSRequirements,
+			crsConverter:        e.CRSDefinitionConverter,
 		}, nil
 	case TableEndpointNative:
 		if e.TargetNativeWriter == nil && e.TargetTableSessionProvider == nil {

@@ -1,17 +1,19 @@
 package scanprocessor
 
 import (
+	"context"
+
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
 )
 
-func (p Processor) indexDeepAsset(input *input, item *models.MetaItem, extraction documentExtractionResult, isDeepScan bool) scanflow.ExtractionCounts {
+func (p Processor) indexDeepAsset(ctx context.Context, input *input, item *models.MetaItem, extraction documentExtractionResult, isDeepScan bool) scanflow.ExtractionCounts {
 	counts := extraction.Counts
 	if !isDeepScan || p.indexer == nil {
 		return counts
 	}
-	indexed := p.indexer.IndexCatalogAsset(input.Resource, input.TenantID, input.EngineID, catalogResource(input), input.IndexRelativePath, input.FullName, item, extraction.Text)
+	indexed := p.indexer.IndexCatalogAsset(ctx, input.Resource, input.TenantID, input.EngineID, catalogResource(input), input.IndexRelativePath, input.FullName, item, extraction.Text)
 	if extraction.Text != "" {
 		if indexed {
 			counts.Indexed++

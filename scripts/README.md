@@ -387,7 +387,7 @@ bash scripts/prod/swarm/deploy.sh
 bash scripts/prod/swarm/status.sh
 
 # 4. 手动扩容
-docker service scale addp_transfer-worker=3
+docker service scale addp_transfer-bounded-worker=3
 ```
 
 **Swarm 优势**:

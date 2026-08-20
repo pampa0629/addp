@@ -270,7 +270,7 @@ func TestTaskServiceDeleteUsesTaskOwnedResourceCleanup(t *testing.T) {
 	cleaner := &fakeDeadLetterTopicCleaner{db: db}
 	cleanup := NewTransferCleanupService(db, nil, nil, transferCleanupTestConfig())
 	cleanup.SetDeadLetterTopicCleaner(cleaner)
-	tasks := NewTaskService(db, nil, nil, nil)
+	tasks := NewTaskService(db, nil, nil)
 	tasks.SetTaskOwnedResourceCleanup(cleanup)
 
 	if err := tasks.DeleteTask(context.Background(), task.ID, task.TenantID); err != nil {

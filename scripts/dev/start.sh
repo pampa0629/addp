@@ -286,6 +286,7 @@ START_MODEL_BACKEND=false
 START_MODEL_FRONTEND=false
 START_QUALITY_BACKEND=false
 START_QUALITY_FRONTEND=false
+START_QUALITY_WORKER=false
 START_ASSET_BACKEND=false
 START_ASSET_FRONTEND=false
 START_PORTAL_BACKEND=false
@@ -344,6 +345,7 @@ if [ "$START_ALL" = true ]; then
   START_MODEL_FRONTEND=true
   START_QUALITY_BACKEND=true
   START_QUALITY_FRONTEND=true
+  START_QUALITY_WORKER=true
   START_ASSET_BACKEND=true
   START_ASSET_FRONTEND=true
   START_PORTAL_BACKEND=true
@@ -441,6 +443,7 @@ else
       START_STANDARD_BACKEND=true
       START_QUALITY_BACKEND=true
       START_QUALITY_FRONTEND=true
+      START_QUALITY_WORKER=true
       ;;
     asset)
       START_ASSET_BACKEND=true
@@ -492,6 +495,8 @@ else
       START_INFERENCE_BACKEND=true
       START_STANDARD_BACKEND=true
       START_MODEL_BACKEND=true
+      START_QUALITY_BACKEND=true
+      START_QUALITY_WORKER=true
       START_PYTHON_WORKFLOW=true
       START_MODEL3D_WORKFLOW=true
       START_POINTCLOUD_WORKFLOW=true
@@ -526,6 +531,7 @@ else
       START_MODEL_FRONTEND=true
       START_QUALITY_BACKEND=true
       START_QUALITY_FRONTEND=true
+      START_QUALITY_WORKER=true
       START_GATEWAY=true
       START_CONSOLE=true
       START_PYTHON_WORKFLOW=true
@@ -978,6 +984,11 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     BUILD_PIDS+=($!)
   fi
 
+  if [ "$START_QUALITY_WORKER" = true ]; then
+    build_worker "quality" "quality/backend" &
+    BUILD_PIDS+=($!)
+  fi
+
   if [ "$START_TRANSFER_BOUNDED_WORKER" = true ]; then
     build_transfer_bounded_worker &
     BUILD_PIDS+=($!)
@@ -1165,6 +1176,16 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       echo $META_WORKER_PID > .dev-pids/meta-worker.pid
     else
       META_WORKER_PID=$(cat .dev-pids/meta-worker.pid 2>/dev/null)
+    fi
+  fi
+
+  if [ "$START_QUALITY_WORKER" = true ]; then
+    if check_service_running "quality-worker" ""; then
+      .dev-bins/addp-quality-worker > logs/quality-worker.log 2>&1 &
+      QUALITY_WORKER_PID=$!
+      echo $QUALITY_WORKER_PID > .dev-pids/quality-worker.pid
+    else
+      QUALITY_WORKER_PID=$(cat .dev-pids/quality-worker.pid 2>/dev/null)
     fi
   fi
 
@@ -1412,6 +1433,7 @@ echo "  Orchestrator Backend: PID $ORCHESTRATOR_PID (http://localhost:${ORCHESTR
 echo "  Develop Backend:    PID $DEVELOP_PID (http://localhost:${DEVELOP_BACKEND_PORT})"
 echo "  Service Backend:    PID $SERVICE_PID (http://localhost:${SERVICE_BACKEND_PORT})"
 echo "  Meta Worker:        PID $META_WORKER_PID"
+echo "  Quality Worker:     PID $QUALITY_WORKER_PID"
 echo "  Transfer Bounded Worker: PID $TRANSFER_BOUNDED_WORKER_PID"
 echo "  Transfer Continuous Worker: PID $TRANSFER_CONTINUOUS_WORKER_PID"
 echo ""
@@ -2699,6 +2721,7 @@ echo "  Gateway:              $GATEWAY_PID"
 echo ""
 echo "Workers PID:"
 echo "  Meta Worker:          $META_WORKER_PID"
+echo "  Quality Worker:       $QUALITY_WORKER_PID"
 echo "  Transfer Bounded Worker: $TRANSFER_BOUNDED_WORKER_PID"
 echo "  Transfer Continuous Worker: $TRANSFER_CONTINUOUS_WORKER_PID"
 echo ""
@@ -2729,6 +2752,7 @@ echo "  Gateway:  logs/gateway.log"
 echo "  Transfer Bounded Worker: logs/transfer-bounded-worker.log"
 echo "  Transfer Continuous Worker: logs/transfer-continuous-worker.log"
 echo "  Meta Worker: logs/meta-worker.log"
+echo "  Quality Worker: logs/quality-worker.log"
 echo "  Meta FE:  logs/meta-frontend.log"
 echo "  Transfer FE:  logs/transfer-frontend.log"
 echo "  Develop FE:  logs/develop-frontend.log"

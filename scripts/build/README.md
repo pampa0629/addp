@@ -61,7 +61,9 @@ dist/
 │   ├── meta-backend             # Meta 后端
 │   ├── meta-worker              # Meta Worker
 │   ├── transfer-backend         # Transfer 后端
-│   ├── transfer-worker          # Transfer Worker
+│   ├── transfer-bounded-worker  # Transfer 有界 Worker
+│   ├── transfer-continuous-worker # Transfer 持续运行时 Worker
+│   ├── quality-worker           # Quality Worker
 │   ├── orchestrator-backend     # Orchestrator 后端
 │   └── develop-backend          # Develop 后端
 │
@@ -175,9 +177,11 @@ IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
 - `graph-backend` - Graph 后端
 - `gateway` - API Gateway
 
-**Worker 服务** (2 个):
+**Worker 服务** (4 个):
 - `meta-worker` - Meta Worker
-- `transfer-worker` - Transfer Worker
+- `quality-worker` - Quality Worker
+- `transfer-bounded-worker` - Transfer Bounded Worker
+- `transfer-continuous-worker` - Transfer Continuous Worker
 
 **Engine/Runtime 服务** (6 个):
 - `geopython-workflow-engine` - GeoPython Workflow
@@ -397,9 +401,11 @@ harbor.example.com:5001/project/addp-manager-backend:latest
 - `addp-graph-backend`
 - `addp-gateway`
 
-**Worker 服务** (2 个):
+**Worker 服务** (4 个):
 - `addp-meta-worker`
-- `addp-transfer-worker`
+- `addp-quality-worker`
+- `addp-transfer-bounded-worker`
+- `addp-transfer-continuous-worker`
 
 **Engine/Runtime 服务** (6 个):
 - `addp-geopython-workflow-engine`

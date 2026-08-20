@@ -22,7 +22,10 @@ func TestEnsureSQLiteStoreCreatesCanonicalTaskExecutionSchema(t *testing.T) {
 	}
 
 	for _, column := range []string{
+		"execution_boundary",
+		"retry_of_execution_id",
 		"lease_owner",
+		"lease_token",
 		"lease_expires_at",
 		"attempt",
 		"max_attempts",

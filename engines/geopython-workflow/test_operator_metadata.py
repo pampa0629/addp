@@ -2,6 +2,7 @@ from pathlib import Path
 import sys
 import tempfile
 import base64
+import hashlib
 import json
 
 for parent in Path(__file__).resolve().parents:
@@ -27,7 +28,7 @@ from operators.vector_tile_operators import (
     _run_command_with_gdal_progress,
     vector_to_pmtiles,
 )
-from operators.spatial_transform_operators import vector_reproject
+from operators.spatial_transform_operators import crs_to_projjson, vector_reproject
 from operators.raster_operators import _authority_code_from_wkt, _translate_to_cog, _write_json, build_raster_mosaic, tiff_to_cog
 import pyarrow as pa
 from geometry_batches import decode_geometry_batch_arrow, encode_geometry_batch_arrow
@@ -35,6 +36,7 @@ from geometry_batches import decode_geometry_batch_arrow, encode_geometry_batch_
 import geopandas as gpd
 import pytest
 import shapely
+from pyproj import CRS
 from operators.io_operators import load, save
 
 
@@ -564,6 +566,57 @@ def test_vector_reproject_metadata_public_contract():
     assert direct_binary["geometry_encoding"] == "ewkb"
 
 
+def test_crs_to_projjson_metadata_public_contract():
+    operators = {operator["name"]: operator for operator in list_operators()}
+
+    assert "crs_to_projjson" in operators
+    params = {param["name"]: param for param in operators["crs_to_projjson"]["parameters"]}
+    assert set(params) == {"crs_ref", "definition_encoding", "definition"}
+    assert operators["crs_to_projjson"]["execution_modes"] == ["direct"]
+    assert operators["crs_to_projjson"]["output_ports"] == [{
+        "name": "default",
+        "type": "object",
+        "description": "PROJJSON CRS 定义",
+        "is_default": True,
+    }]
+
+
+def test_crs_to_projjson_resolves_epsg_from_local_database():
+    result = crs_to_projjson("EPSG:3857")
+    definition = json.loads(result["definition"])
+
+    assert result["crs_ref"] == "EPSG:3857"
+    assert result["definition_encoding"] == "projjson"
+    assert definition["type"] == "ProjectedCRS"
+    assert definition["id"] == {"authority": "EPSG", "code": 3857}
+
+
+def test_crs_to_projjson_converts_matching_wkt_definition():
+    source_wkt = CRS.from_epsg(3857).to_wkt(version="WKT1_GDAL")
+
+    result = crs_to_projjson("EPSG:3857", "wkt", source_wkt)
+
+    assert json.loads(result["definition"])["id"] == {"authority": "EPSG", "code": 3857}
+
+
+def test_crs_to_projjson_preserves_addp_custom_identity():
+    definition = "+proj=longlat +a=6378137 +rf=298.257223563 +no_defs"
+    digest = hashlib.sha256(definition.encode("utf-8")).hexdigest()
+
+    result = crs_to_projjson(f"ADDP:CRS:{digest}", "proj4", definition)
+    projjson = json.loads(result["definition"])
+
+    assert result["crs_ref"] == f"ADDP:CRS:{digest}"
+    assert projjson["id"] == {"authority": "ADDP", "code": f"CRS:{digest}"}
+
+
+def test_crs_to_projjson_rejects_conflicting_epsg_definition():
+    source_wkt = CRS.from_epsg(4326).to_wkt()
+
+    with pytest.raises(ValueError, match="does not match EPSG:3857"):
+        crs_to_projjson("EPSG:3857", "wkt", source_wkt)
+
+
 def test_geometry_batch_arrow_round_trip_and_reproject():
     source = gpd.GeoDataFrame(
         {"name": ["a", "b"]},
@@ -705,6 +758,27 @@ def test_api_execution_status_unknown_id():
     payload = response.get_json()
     assert payload["error_code"] == "EXECUTION_NOT_FOUND"
     assert "task_status" not in payload
+
+
+def test_crs_to_projjson_direct_returns_plain_json_result():
+    import api_server
+
+    api_server.app.config["TESTING"] = True
+    with api_server.app.test_client() as client:
+        response = client.post(
+            "/api/operators/crs_to_projjson/invoke",
+            json={"params": {"crs_ref": "EPSG:3857"}},
+        )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert "binary_payload" not in payload
+    assert payload["result"]["crs_ref"] == "EPSG:3857"
+    assert payload["result"]["definition_encoding"] == "projjson"
+    assert json.loads(payload["result"]["definition"])["id"] == {
+        "authority": "EPSG",
+        "code": 3857,
+    }
 
 
 def test_vector_reproject_direct_returns_ewkb_with_target_srid():

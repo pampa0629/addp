@@ -13,8 +13,10 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	csvformat "github.com/addp/common/format/plugins/csv"
+	parquetformat "github.com/addp/common/format/plugins/parquet"
 	shapefileformat "github.com/addp/common/format/plugins/shapefile"
 	"github.com/addp/common/resume"
+	commonSpatial "github.com/addp/common/spatial"
 )
 
 func TestTableTransferExecutorWritesNativeTableToCSV(t *testing.T) {
@@ -62,6 +64,154 @@ func TestTableTransferExecutorWritesNativeTableToCSV(t *testing.T) {
 	}
 	if len(reader.offsets) != 2 || reader.offsets[0] != 0 || reader.offsets[1] != 2 {
 		t.Fatalf("reader offsets = %#v, want [0 2]", reader.offsets)
+	}
+}
+
+func TestTableTransferExecutorWritesNativeEWKBToGeoParquetAndReadsItBack(t *testing.T) {
+	geometry, err := commonSpatial.DecodeGeometryValue([]byte{
+		1, 1, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 240, 63,
+		0, 0, 0, 0, 0, 0, 0, 64,
+	}, string(format.GeometryEncodingWKB), 0)
+	if err != nil {
+		t.Fatalf("decode WKB: %v", err)
+	}
+	ewkb, err := commonSpatial.GeomToEWKB(geometry, 4326)
+	if err != nil {
+		t.Fatalf("encode EWKB: %v", err)
+	}
+	fields := []datatype.FieldInfo{
+		{Name: "id", Type: datatype.FieldTypeBigInt},
+		{Name: "shape", Type: datatype.FieldTypeGeometry},
+	}
+	spatial := datatype.NewSingleGeometrySpatialInfo("shape", "Point", 4326, 2)
+	spatial.CRSRef = "EPSG:4326"
+	spatial.GeometryColumns[0].CRSRef = "EPSG:4326"
+	reader := &fakeBatchReader{batches: []*engineplugin.BatchData{{
+		Fields:  fields,
+		Spatial: spatial,
+		Rows:    []map[string]interface{}{{"id": int64(1), "shape": ewkb}},
+	}}}
+	output := &fakeContentWriter{}
+	parquetPlugin := parquetformat.NewPlugin()
+	exec := &TableTransferExecutor{
+		SourceNativeReader:        reader,
+		TargetContentWriter:       output,
+		TargetTableWriterProvider: parquetPlugin,
+	}
+
+	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{
+			Kind:        TableEndpointNative,
+			TableInfo:   &datatype.TableInfo{Fields: fields},
+			SpatialInfo: spatial,
+			ReadOptions: map[string]interface{}{
+				engineplugin.TableReadHintGeometryEncoding: string(format.GeometryEncodingEWKB),
+			},
+		},
+		Target: TableTargetPlan{
+			Kind:   TableEndpointEncoded,
+			Format: format.FormatParquet,
+		},
+		BatchSize: 100,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if metrics.RecordsRead != 1 || metrics.RecordsWritten != 1 {
+		t.Fatalf("metrics = %#v, want one row", metrics)
+	}
+	result, err := parquetPlugin.DescribeTable(context.Background(), bytes.NewReader(output.buf.Bytes()), nil)
+	if err != nil {
+		t.Fatalf("DescribeTable output failed: %v", err)
+	}
+	if result.Spatial == nil || result.Spatial.PrimaryGeometryName() != "shape" || result.Spatial.CRSRef != "OGC:CRS84" {
+		t.Fatalf("GeoParquet spatial = %#v, want default OGC:CRS84 shape for equivalent EPSG:4326 input", result.Spatial)
+	}
+	rows, err := parquetPlugin.SampleTable(context.Background(), bytes.NewReader(output.buf.Bytes()), 0, 1, nil)
+	if err != nil {
+		t.Fatalf("SampleTable output failed: %v", err)
+	}
+	wkb, ok := rows[0]["shape"].([]byte)
+	if !ok {
+		t.Fatalf("GeoParquet shape = %T, want WKB []byte", rows[0]["shape"])
+	}
+	decoded, err := commonSpatial.DecodeGeometryValue(wkb, string(format.GeometryEncodingWKB), 0)
+	if err != nil {
+		t.Fatalf("decode output WKB: %v", err)
+	}
+	if decoded.SRID() != 0 {
+		t.Fatalf("file WKB SRID = %d, want standard WKB without embedded SRID", decoded.SRID())
+	}
+}
+
+func TestTableTransferExecutorConvertsCRSDefinitionBeforeGeoParquetWriter(t *testing.T) {
+	geometry, err := commonSpatial.DecodeGeometryValue([]byte{
+		1, 1, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 240, 63,
+		0, 0, 0, 0, 0, 0, 0, 64,
+	}, string(format.GeometryEncodingWKB), 0)
+	if err != nil {
+		t.Fatalf("decode WKB: %v", err)
+	}
+	ewkb, err := commonSpatial.GeomToEWKB(geometry, 3857)
+	if err != nil {
+		t.Fatalf("encode EWKB: %v", err)
+	}
+	fields := []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}, {Name: "shape", Type: datatype.FieldTypeGeometry}}
+	spatial := datatype.NewSingleGeometrySpatialInfo("shape", "Point", 3857, 2)
+	spatial.CRSRef = "EPSG:3857"
+	spatial.GeometryColumns[0].CRSRef = "EPSG:3857"
+	spatial.CRSDefinitions = []datatype.CRSDefinition{{
+		ID:                 "EPSG:3857",
+		DefinitionEncoding: datatype.CRSDefinitionEncodingWKT,
+		Definition:         `PROJCS["WGS 84 / Pseudo-Mercator"]`,
+		Source:             datatype.CRSDefinitionSourcePostGISSpatialRefSys,
+	}}
+	reader := &fakeBatchReader{batches: []*engineplugin.BatchData{{
+		Fields: fields,
+		Rows:   []map[string]interface{}{{"id": 1, "shape": ewkb}},
+	}}}
+	output := &fakeContentWriter{}
+	parquetPlugin := parquetformat.NewPlugin()
+	converter := &fakeCRSDefinitionConverter{result: &datatype.CRSDefinition{
+		ID:                 "EPSG:3857",
+		DefinitionEncoding: datatype.CRSDefinitionEncodingPROJJSON,
+		Definition:         `{"type":"ProjectedCRS","name":"WGS 84 / Pseudo-Mercator","id":{"authority":"EPSG","code":3857}}`,
+		Source:             datatype.CRSDefinitionSourceNormalizationRuntime,
+	}}
+	exec := &TableTransferExecutor{
+		SourceNativeReader:        reader,
+		TargetContentWriter:       output,
+		TargetTableWriterProvider: parquetPlugin,
+		TargetCRSRequirements:     parquetPlugin,
+		CRSDefinitionConverter:    converter,
+	}
+
+	_, err = exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{
+			Kind:        TableEndpointNative,
+			TableInfo:   &datatype.TableInfo{Fields: fields},
+			SpatialInfo: spatial,
+		},
+		Target:    TableTargetPlan{Kind: TableEndpointEncoded, Format: format.FormatParquet},
+		BatchSize: 100,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if converter.calls != 1 || converter.crsRef != "EPSG:3857" || converter.targetEncoding != datatype.CRSDefinitionEncodingPROJJSON {
+		t.Fatalf("converter = %#v, want one EPSG:3857 -> PROJJSON call", converter)
+	}
+	if spatial.CRSDefinitions[0].DefinitionEncoding != datatype.CRSDefinitionEncodingWKT {
+		t.Fatalf("source spatial info was mutated: %#v", spatial.CRSDefinitions)
+	}
+	described, err := parquetPlugin.DescribeTable(context.Background(), bytes.NewReader(output.buf.Bytes()), nil)
+	if err != nil {
+		t.Fatalf("DescribeTable failed: %v", err)
+	}
+	if described.Spatial == nil || described.Spatial.CRSRef != "EPSG:3857" || len(described.Spatial.CRSDefinitions) != 1 || described.Spatial.CRSDefinitions[0].DefinitionEncoding != datatype.CRSDefinitionEncodingPROJJSON {
+		t.Fatalf("GeoParquet spatial = %#v, want EPSG:3857 PROJJSON", described.Spatial)
 	}
 }
 
@@ -972,6 +1122,30 @@ type fakeContentWriter struct {
 	closed          bool
 	openCounts      map[string]int
 	rangeOpenCounts map[string]int
+}
+
+type fakeCRSDefinitionConverter struct {
+	result         *datatype.CRSDefinition
+	err            error
+	calls          int
+	crsRef         string
+	source         *datatype.CRSDefinition
+	targetEncoding string
+}
+
+func (f *fakeCRSDefinitionConverter) ConvertCRSDefinition(_ context.Context, crsRef string, source *datatype.CRSDefinition, targetEncoding string) (*datatype.CRSDefinition, error) {
+	f.calls++
+	f.crsRef = crsRef
+	f.targetEncoding = targetEncoding
+	if source != nil {
+		copied := *source
+		f.source = &copied
+	}
+	if f.result == nil {
+		return nil, f.err
+	}
+	copied := *f.result
+	return &copied, f.err
 }
 
 type fakeNativeTableWriter struct {

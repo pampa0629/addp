@@ -3,17 +3,20 @@ package parquet
 import (
 	"bytes"
 	"context"
-	"github.com/addp/common/datatype"
+	"encoding/json"
 	"io"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	"github.com/addp/common/resume"
+	commonSpatial "github.com/addp/common/spatial"
 	parquetgo "github.com/parquet-go/parquet-go"
 	parquetfmt "github.com/parquet-go/parquet-go/format"
+	"github.com/twpayne/go-geom"
 )
 
 type testParquetRow struct {
@@ -26,6 +29,12 @@ type partitionColumnParquetRow struct {
 	DT string `parquet:"dt"`
 }
 
+type geoParquetTestRow struct {
+	ID       int64  `parquet:"id"`
+	Shape    []byte `parquet:"shape"`
+	Centroid []byte `parquet:"centroid,optional"`
+}
+
 func TestParquetPluginImplementsTargetInterfaces(t *testing.T) {
 	plugin := NewPlugin()
 	var _ format.FormatPlugin = plugin
@@ -36,6 +45,59 @@ func TestParquetPluginImplementsTargetInterfaces(t *testing.T) {
 	var _ format.ScopeTableReaderProvider = plugin
 	var _ format.TableReaderProvider = plugin
 	var _ format.TableWriterProvider = plugin
+	var _ format.SpatialEncodingCapabilityProvider = plugin
+	var _ format.CRSDefinitionWriteRequirementProvider = plugin
+	capability := plugin.SpatialEncodingCapability()
+	if capability.NativeReadEncoding != format.GeometryEncodingWKB || !containsGeometryEncoding(capability.GeometryReadEncodings, format.GeometryEncodingEWKB) {
+		t.Fatalf("spatial encoding capability = %#v, want native WKB and EWKB output", capability)
+	}
+	if capability.NativeWriteEncoding != format.GeometryEncodingWKB || !containsGeometryEncoding(capability.GeometryWriteEncodings, format.GeometryEncodingEWKB) {
+		t.Fatalf("spatial encoding capability = %#v, want native WKB and EWKB input", capability)
+	}
+}
+
+func TestParquetPluginDeclaresMissingPROJJSONRequirements(t *testing.T) {
+	plugin := NewPlugin()
+	spatial := datatype.NewSingleGeometrySpatialInfo("shape", "Point", 3857, 2)
+	spatial.CRSRef = "EPSG:3857"
+	spatial.GeometryColumns[0].CRSRef = "EPSG:3857"
+	spatial.CRSDefinitions = []datatype.CRSDefinition{{
+		ID:                 "EPSG:3857",
+		DefinitionEncoding: datatype.CRSDefinitionEncodingWKT,
+		Definition:         `PROJCS["WGS 84 / Pseudo-Mercator"]`,
+		Source:             datatype.CRSDefinitionSourcePostGISSpatialRefSys,
+	}}
+
+	requirements, err := plugin.CRSDefinitionWriteRequirements(spatial)
+	if err != nil {
+		t.Fatalf("CRSDefinitionWriteRequirements failed: %v", err)
+	}
+	if len(requirements) != 1 || requirements[0].CRSRef != "EPSG:3857" || requirements[0].DefinitionEncoding != datatype.CRSDefinitionEncodingPROJJSON {
+		t.Fatalf("requirements = %#v, want EPSG:3857 PROJJSON", requirements)
+	}
+
+	spatial.CRSDefinitions[0] = datatype.CRSDefinition{
+		ID:                 "EPSG:3857",
+		DefinitionEncoding: datatype.CRSDefinitionEncodingPROJJSON,
+		Definition:         `{"type":"ProjectedCRS","name":"WGS 84 / Pseudo-Mercator","id":{"authority":"EPSG","code":3857}}`,
+	}
+	requirements, err = plugin.CRSDefinitionWriteRequirements(spatial)
+	if err != nil || len(requirements) != 0 {
+		t.Fatalf("requirements with PROJJSON = %#v, %v, want none", requirements, err)
+	}
+}
+
+func TestParquetPluginDoesNotRequirePROJJSONForDefaultOrUnknownCRS(t *testing.T) {
+	plugin := NewPlugin()
+	for _, spatial := range []*datatype.SpatialInfo{
+		datatype.NewSingleGeometrySpatialInfo("shape", "Point", 4326, 2),
+		datatype.NewSingleGeometrySpatialInfo("shape", "Point", 0, 2),
+	} {
+		requirements, err := plugin.CRSDefinitionWriteRequirements(spatial)
+		if err != nil || len(requirements) != 0 {
+			t.Fatalf("requirements = %#v, %v, want none", requirements, err)
+		}
+	}
 }
 
 func TestParquetPluginDescribeAndSampleTable(t *testing.T) {
@@ -59,6 +121,163 @@ func TestParquetPluginDescribeAndSampleTable(t *testing.T) {
 	}
 	if len(rows) != 1 || rows[0]["name"] != "Bob" {
 		t.Fatalf("rows = %#v, want Bob", rows)
+	}
+}
+
+func TestParquetPluginDescribesGeoParquetWKBSpatialFacts(t *testing.T) {
+	data := buildGeoParquetRows(t, map[string]interface{}{
+		"version":        "1.1.0",
+		"primary_column": "shape",
+		"columns": map[string]interface{}{
+			"shape": map[string]interface{}{
+				"encoding":       "WKB",
+				"geometry_types": []string{"Polygon"},
+				"bbox":           []float64{100, 20, 110, 30},
+			},
+			"centroid": map[string]interface{}{
+				"encoding":       "WKB",
+				"geometry_types": []string{"Point Z"},
+				"crs": map[string]interface{}{
+					"type": "GeographicCRS",
+					"id":   map[string]interface{}{"authority": "EPSG", "code": 4490},
+				},
+			},
+		},
+	}, geoParquetTestRow{ID: 1, Shape: []byte{1, 2, 3}, Centroid: []byte{4, 5, 6}})
+	plugin := NewPlugin()
+
+	result, err := plugin.DescribeTable(context.Background(), bytes.NewReader(data), nil)
+	if err != nil {
+		t.Fatalf("DescribeTable failed: %v", err)
+	}
+	if field := result.Table.GetField("shape"); field == nil || field.Type != datatype.FieldTypeGeometry {
+		t.Fatalf("shape field = %#v, want geometry", field)
+	}
+	if field := result.Table.GetField("centroid"); field == nil || field.Type != datatype.FieldTypeGeometry {
+		t.Fatalf("centroid field = %#v, want geometry", field)
+	}
+	if result.Spatial == nil || result.Spatial.PrimaryGeometryName() != "shape" || result.Spatial.PrimaryGeometryType() != "Polygon" {
+		t.Fatalf("spatial = %#v, want primary Polygon shape", result.Spatial)
+	}
+	if result.Spatial.CRSRef != "OGC:CRS84" || result.Spatial.SRID != nil {
+		t.Fatalf("primary CRS = %q/%v, want OGC:CRS84 without inferred SRID", result.Spatial.CRSRef, result.Spatial.SRID)
+	}
+	if result.Spatial.Extent == nil || *result.Spatial.Extent != datatype.NewBoundingBox(100, 20, 110, 30) {
+		t.Fatalf("extent = %#v, want metadata bbox", result.Spatial.Extent)
+	}
+	if len(result.Spatial.GeometryColumns) != 2 || result.Spatial.GeometryColumns[1].CRSRef != "EPSG:4490" || result.Spatial.GeometryColumns[1].SRID == nil || *result.Spatial.GeometryColumns[1].SRID != 4490 {
+		t.Fatalf("geometry columns = %#v, want secondary EPSG:4490", result.Spatial.GeometryColumns)
+	}
+	if len(result.Spatial.CRSDefinitions) != 1 || result.Spatial.CRSDefinitions[0].ID != "EPSG:4490" || result.Spatial.CRSDefinitions[0].DefinitionEncoding != datatype.CRSDefinitionEncodingPROJJSON {
+		t.Fatalf("CRS definitions = %#v, want EPSG:4490 PROJJSON", result.Spatial.CRSDefinitions)
+	}
+	if result.Spatial.GeometryColumns[1].Dimension == nil || *result.Spatial.GeometryColumns[1].Dimension != 3 {
+		t.Fatalf("centroid dimension = %#v, want 3", result.Spatial.GeometryColumns[1].Dimension)
+	}
+	geoAttrs, ok := result.FormatInfo["geo"].(map[string]interface{})
+	if !ok || geoAttrs["version"] != "1.1.0" {
+		t.Fatalf("format_info.geo = %#v, want GeoParquet metadata", result.FormatInfo["geo"])
+	}
+}
+
+func TestParquetPluginPreservesGeoParquetPROJJSONWithoutAuthorityAsCustomCRS(t *testing.T) {
+	projJSON := map[string]interface{}{
+		"type":  "GeographicCRS",
+		"name":  "Local geographic CRS",
+		"datum": map[string]interface{}{"type": "GeodeticReferenceFrame", "name": "Local datum"},
+	}
+	metadata := testGeoParquetMetadata("shape", "WKB", map[string]interface{}{
+		"columns": map[string]interface{}{
+			"shape": map[string]interface{}{
+				"encoding":       "WKB",
+				"geometry_types": []string{"Point"},
+				"crs":            projJSON,
+			},
+		},
+	})
+	data := buildGeoParquetRows(t, metadata, geoParquetTestRow{ID: 1, Shape: testPointWKB()})
+	result, err := NewPlugin().DescribeTable(context.Background(), bytes.NewReader(data), nil)
+	if err != nil {
+		t.Fatalf("DescribeTable failed: %v", err)
+	}
+	if result.Spatial == nil || !strings.HasPrefix(result.Spatial.CRSRef, "ADDP:CRS:") {
+		t.Fatalf("spatial CRS = %#v, want deterministic custom CRS ref", result.Spatial)
+	}
+	if len(result.Spatial.CRSDefinitions) != 1 || result.Spatial.CRSDefinitions[0].ID != result.Spatial.CRSRef || result.Spatial.CRSDefinitions[0].DefinitionEncoding != datatype.CRSDefinitionEncodingPROJJSON {
+		t.Fatalf("CRS definitions = %#v, want custom PROJJSON definition", result.Spatial.CRSDefinitions)
+	}
+}
+
+func TestParquetPluginReadsGeoParquetGeometryAsWKBBytes(t *testing.T) {
+	wkb := testPointWKB()
+	data := buildGeoParquetRows(t, testGeoParquetMetadata("shape", "WKB", nil), geoParquetTestRow{ID: 1, Shape: wkb})
+	plugin := NewPlugin()
+
+	reader, err := plugin.OpenTableReader(context.Background(), bytes.NewReader(data), nil)
+	if err != nil {
+		t.Fatalf("OpenTableReader failed: %v", err)
+	}
+	defer reader.Close(context.Background())
+	spatialProvider, ok := reader.(format.TableSpatialInfoProvider)
+	if !ok || spatialProvider.SpatialInfo() == nil || spatialProvider.SpatialInfo().PrimaryGeometryName() != "shape" {
+		t.Fatalf("reader spatial provider = %T/%#v", reader, spatialProvider.SpatialInfo())
+	}
+	rows, err := reader.ReadRows(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("ReadRows failed: %v", err)
+	}
+	got, ok := rows[0]["shape"].([]byte)
+	if !ok || !bytes.Equal(got, wkb) {
+		t.Fatalf("shape = %#v, want WKB bytes %#v", rows[0]["shape"], wkb)
+	}
+}
+
+func TestParquetPluginConvertsGeoParquetWKBToRequestedEWKB(t *testing.T) {
+	epsg4490 := map[string]interface{}{"type": "GeographicCRS", "id": map[string]interface{}{"authority": "EPSG", "code": 4490}}
+	metadata := testGeoParquetMetadata("shape", "WKB", map[string]interface{}{
+		"columns": map[string]interface{}{"shape": map[string]interface{}{"encoding": "WKB", "geometry_types": []string{"Point"}, "crs": epsg4490}},
+	})
+	data := buildGeoParquetRows(t, metadata, geoParquetTestRow{ID: 1, Shape: testPointWKB()})
+	opts := format.DefaultParseOptions()
+	opts.GeometryEncoding = format.GeometryEncodingEWKB
+
+	rows, err := NewPlugin().SampleTable(context.Background(), bytes.NewReader(data), 0, 1, opts)
+	if err != nil {
+		t.Fatalf("SampleTable failed: %v", err)
+	}
+	geometry, err := commonSpatial.DecodeGeometryValue(rows[0]["shape"], string(format.GeometryEncodingEWKB), 0)
+	if err != nil {
+		t.Fatalf("decode requested EWKB: %v", err)
+	}
+	if geometry.SRID() != 4490 {
+		t.Fatalf("EWKB SRID = %d, want 4490", geometry.SRID())
+	}
+}
+
+func TestParquetPluginRejectsUnsupportedGeoParquetMetadata(t *testing.T) {
+	plugin := NewPlugin()
+	for _, testCase := range []struct {
+		name     string
+		metadata map[string]interface{}
+		want     string
+	}{
+		{name: "version", metadata: testGeoParquetMetadata("shape", "WKB", map[string]interface{}{"version": "2.0.0"}), want: "unsupported geoparquet version"},
+		{name: "encoding", metadata: testGeoParquetMetadata("shape", "point", nil), want: "unsupported geoparquet encoding"},
+		{name: "missing geometry types", metadata: testGeoParquetMetadata("shape", "WKB", map[string]interface{}{
+			"columns": map[string]interface{}{"shape": map[string]interface{}{"encoding": "WKB"}},
+		}), want: "geometry_types is required"},
+		{name: "missing column", metadata: testGeoParquetMetadata("missing", "WKB", nil), want: "does not exist in parquet schema"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			data := buildGeoParquetRows(t, testCase.metadata, geoParquetTestRow{ID: 1, Shape: []byte{1}})
+			_, err := plugin.DescribeTable(context.Background(), bytes.NewReader(data), nil)
+			if err == nil || !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("DescribeTable error = %v, want %q", err, testCase.want)
+			}
+			if !format.IsDefinitiveParseError(err) {
+				t.Fatalf("DescribeTable error = %T, want definitive parse error", err)
+			}
+		})
 	}
 }
 
@@ -374,6 +593,225 @@ func TestParquetPluginOpenTableWriterSerializesJSONLikeFields(t *testing.T) {
 	}
 	if len(rows) != 1 || !strings.Contains(rows[0]["payload"].(string), `"kind":"demo"`) {
 		t.Fatalf("rows = %#v, want JSON payload string", rows)
+	}
+}
+
+func TestParquetPluginWritesGeoParquet11WKBAndRoundTripsEWKB(t *testing.T) {
+	plugin := NewPlugin()
+	tableInfo := &datatype.TableInfo{Fields: []datatype.FieldInfo{
+		{Name: "id", Type: datatype.FieldTypeBigInt},
+		{Name: "shape", Type: datatype.FieldTypeGeometry, Nullable: true},
+	}}
+	spatial := datatype.NewSingleGeometrySpatialInfo("shape", "Point", 0, 2)
+	spatial.CRSRef = "OGC:CRS84"
+	spatial.GeometryColumns[0].CRSRef = "OGC:CRS84"
+	bbox := datatype.NewBoundingBox(1, 2, 1, 2)
+	spatial.Extent = &bbox
+	opts := format.DefaultWriteOptions()
+	opts.SpatialInfo = spatial
+
+	geometry, err := commonSpatial.DecodeGeometryValue(testPointWKB(), string(format.GeometryEncodingWKB), 0)
+	if err != nil {
+		t.Fatalf("decode test WKB: %v", err)
+	}
+	ewkb, err := commonSpatial.GeomToEWKB(geometry, 4326)
+	if err != nil {
+		t.Fatalf("encode test EWKB: %v", err)
+	}
+	var buf bytes.Buffer
+	writer, err := plugin.OpenTableWriter(context.Background(), &buf, tableInfo, opts)
+	if err != nil {
+		t.Fatalf("OpenTableWriter failed: %v", err)
+	}
+	if err := writer.WriteRows(context.Background(), []map[string]interface{}{{"id": int64(1), "shape": ewkb}}); err != nil {
+		t.Fatalf("WriteRows failed: %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	file, err := parquetgo.OpenFile(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("OpenFile failed: %v", err)
+	}
+	rawGeo, ok := file.Lookup(geoParquetMetadataKey)
+	if !ok {
+		t.Fatal("GeoParquet footer metadata is missing")
+	}
+	var metadata map[string]interface{}
+	if err := json.Unmarshal([]byte(rawGeo), &metadata); err != nil {
+		t.Fatalf("unmarshal GeoParquet footer: %v", err)
+	}
+	columns := metadata["columns"].(map[string]interface{})
+	shape := columns["shape"].(map[string]interface{})
+	if metadata["version"] != "1.1.0" || metadata["primary_column"] != "shape" || shape["encoding"] != "WKB" {
+		t.Fatalf("GeoParquet footer = %#v, want 1.1.0 primary shape WKB", metadata)
+	}
+	if _, exists := shape["crs"]; exists {
+		t.Fatalf("default OGC:CRS84 must omit crs, got %#v", shape["crs"])
+	}
+	gotBBox, ok := shape["bbox"].([]interface{})
+	if !ok || len(gotBBox) != 4 || gotBBox[0] != float64(1) || gotBBox[3] != float64(2) {
+		t.Fatalf("GeoParquet bbox = %#v, want [1 2 1 2]", shape["bbox"])
+	}
+	schemaField, exists := geoParquetSchemaField(file.Schema(), "shape")
+	if !exists || schemaField.Type().Kind() != parquetgo.ByteArray {
+		t.Fatalf("shape parquet type = %#v, want BYTE_ARRAY", schemaField)
+	}
+
+	result, err := plugin.DescribeTable(context.Background(), bytes.NewReader(buf.Bytes()), nil)
+	if err != nil {
+		t.Fatalf("DescribeTable failed: %v", err)
+	}
+	if result.Spatial == nil || result.Spatial.CRSRef != "OGC:CRS84" || result.Table.GetField("shape").Type != datatype.FieldTypeGeometry {
+		t.Fatalf("round-trip describe = table %#v spatial %#v", result.Table, result.Spatial)
+	}
+	rows, err := plugin.SampleTable(context.Background(), bytes.NewReader(buf.Bytes()), 0, 1, nil)
+	if err != nil {
+		t.Fatalf("SampleTable failed: %v", err)
+	}
+	gotWKB, ok := rows[0]["shape"].([]byte)
+	if !ok || !bytes.Equal(gotWKB, testPointWKB()) {
+		t.Fatalf("round-trip shape = %#v, want standard WKB without EWKB SRID", rows[0]["shape"])
+	}
+}
+
+func TestParquetPluginWritesExplicitGeoParquetPROJJSON(t *testing.T) {
+	plugin := NewPlugin()
+	tableInfo := &datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "shape", Type: datatype.FieldTypeGeometry}}}
+	spatial := datatype.NewSingleGeometrySpatialInfo("shape", "Point", 4326, 2)
+	spatial.CRSRef = "EPSG:4326"
+	spatial.GeometryColumns[0].CRSRef = "EPSG:4326"
+	spatial.CRSDefinitions = []datatype.CRSDefinition{{
+		ID:                 "EPSG:4326",
+		DefinitionEncoding: datatype.CRSDefinitionEncodingPROJJSON,
+		Definition:         `{"type":"GeographicCRS","name":"WGS 84","id":{"authority":"EPSG","code":4326}}`,
+		Source:             datatype.CRSDefinitionSourceGeoParquetMetadata,
+	}}
+	opts := format.DefaultWriteOptions()
+	opts.SpatialInfo = spatial
+
+	var buf bytes.Buffer
+	writer, err := plugin.OpenTableWriter(context.Background(), &buf, tableInfo, opts)
+	if err != nil {
+		t.Fatalf("OpenTableWriter failed: %v", err)
+	}
+	if err := writer.WriteRows(context.Background(), []map[string]interface{}{{"shape": testPointWKB()}}); err != nil {
+		t.Fatalf("WriteRows failed: %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+	result, err := plugin.DescribeTable(context.Background(), bytes.NewReader(buf.Bytes()), nil)
+	if err != nil {
+		t.Fatalf("DescribeTable failed: %v", err)
+	}
+	if result.Spatial == nil || result.Spatial.CRSRef != "EPSG:4326" || result.Spatial.SRID == nil || *result.Spatial.SRID != 4326 {
+		t.Fatalf("round-trip spatial = %#v, want EPSG:4326", result.Spatial)
+	}
+	if len(result.Spatial.CRSDefinitions) != 1 || result.Spatial.CRSDefinitions[0].DefinitionEncoding != datatype.CRSDefinitionEncodingPROJJSON {
+		t.Fatalf("round-trip CRS definitions = %#v, want PROJJSON", result.Spatial.CRSDefinitions)
+	}
+}
+
+func TestParquetPluginRewritesGeoParquetUsingSpatialPROJJSONFact(t *testing.T) {
+	projJSON := map[string]interface{}{
+		"type": "GeographicCRS",
+		"name": "China Geodetic Coordinate System 2000",
+		"id":   map[string]interface{}{"authority": "EPSG", "code": 4490},
+	}
+	source := buildGeoParquetRows(t, testGeoParquetMetadata("shape", "WKB", map[string]interface{}{
+		"columns": map[string]interface{}{
+			"shape": map[string]interface{}{
+				"encoding":       "WKB",
+				"geometry_types": []string{"Point"},
+				"crs":            projJSON,
+			},
+		},
+	}), geoParquetTestRow{ID: 1, Shape: testPointWKB()})
+	plugin := NewPlugin()
+	described, err := plugin.DescribeTable(context.Background(), bytes.NewReader(source), nil)
+	if err != nil {
+		t.Fatalf("DescribeTable source failed: %v", err)
+	}
+	rows, err := plugin.SampleTable(context.Background(), bytes.NewReader(source), 0, 1, nil)
+	if err != nil {
+		t.Fatalf("SampleTable source failed: %v", err)
+	}
+	opts := format.DefaultWriteOptions()
+	opts.SpatialInfo = described.Spatial
+	var target bytes.Buffer
+	writer, err := plugin.OpenTableWriter(context.Background(), &target, described.Table, opts)
+	if err != nil {
+		t.Fatalf("OpenTableWriter target failed: %v", err)
+	}
+	if err := writer.WriteRows(context.Background(), rows); err != nil {
+		t.Fatalf("WriteRows target failed: %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("Close target failed: %v", err)
+	}
+
+	roundTrip, err := plugin.DescribeTable(context.Background(), bytes.NewReader(target.Bytes()), nil)
+	if err != nil {
+		t.Fatalf("DescribeTable target failed: %v", err)
+	}
+	if roundTrip.Spatial == nil || roundTrip.Spatial.CRSRef != "EPSG:4490" || roundTrip.Spatial.SRID == nil || *roundTrip.Spatial.SRID != 4490 {
+		t.Fatalf("round-trip spatial = %#v, want EPSG:4490", roundTrip.Spatial)
+	}
+	if len(roundTrip.Spatial.CRSDefinitions) != 1 || roundTrip.Spatial.CRSDefinitions[0].Definition != described.Spatial.CRSDefinitions[0].Definition {
+		t.Fatalf("round-trip definitions = %#v, want preserved PROJJSON", roundTrip.Spatial.CRSDefinitions)
+	}
+}
+
+func TestParquetPluginRejectsInvalidGeoParquetWriteContract(t *testing.T) {
+	plugin := NewPlugin()
+	tableInfo := &datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "shape", Type: datatype.FieldTypeGeometry}}}
+	if _, err := plugin.OpenTableWriter(context.Background(), &bytes.Buffer{}, tableInfo, nil); err == nil || !strings.Contains(err.Error(), "requires spatial info") {
+		t.Fatalf("missing spatial info error = %v", err)
+	}
+
+	spatial := datatype.NewSingleGeometrySpatialInfo("shape", "Point", 3857, 2)
+	spatial.CRSRef = "EPSG:3857"
+	spatial.GeometryColumns[0].CRSRef = "EPSG:3857"
+	opts := format.DefaultWriteOptions()
+	opts.SpatialInfo = spatial
+	if _, err := plugin.OpenTableWriter(context.Background(), &bytes.Buffer{}, tableInfo, opts); err == nil || !strings.Contains(err.Error(), "requires a projjson CRS definition") {
+		t.Fatalf("missing PROJJSON error = %v", err)
+	}
+}
+
+func TestParquetPluginRejectsGeoParquetMeasuredAndMismatchedGeometryRows(t *testing.T) {
+	plugin := NewPlugin()
+	tableInfo := &datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "shape", Type: datatype.FieldTypeGeometry}}}
+	spatial := datatype.NewSingleGeometrySpatialInfo("shape", "Point", 0, 2)
+	spatial.CRSRef = "OGC:CRS84"
+	spatial.GeometryColumns[0].CRSRef = "OGC:CRS84"
+	opts := format.DefaultWriteOptions()
+	opts.SpatialInfo = spatial
+
+	for _, testCase := range []struct {
+		name     string
+		geometry geom.T
+		want     string
+	}{
+		{name: "measured", geometry: geom.NewPointFlat(geom.XYM, []float64{1, 2, 3}), want: "does not support measured coordinates"},
+		{name: "topology", geometry: geom.NewLineStringFlat(geom.XY, []float64{1, 2, 3, 4}), want: "does not match declared type Point"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			encoded, err := commonSpatial.GeomToEWKB(testCase.geometry, 0)
+			if err != nil {
+				t.Fatalf("encode test geometry: %v", err)
+			}
+			writer, err := plugin.OpenTableWriter(context.Background(), &bytes.Buffer{}, tableInfo, opts)
+			if err != nil {
+				t.Fatalf("OpenTableWriter failed: %v", err)
+			}
+			err = writer.WriteRows(context.Background(), []map[string]interface{}{{"shape": encoded}})
+			if err == nil || !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("WriteRows error = %v, want %q", err, testCase.want)
+			}
+		})
 	}
 }
 
@@ -707,6 +1145,61 @@ func TestParquetPluginScopeRejectsIncompatibleSchema(t *testing.T) {
 	}
 }
 
+func TestParquetPluginGeoParquetScopeMergesExtentAndExposesSpatialReader(t *testing.T) {
+	plugin := NewPlugin()
+	reader := parquetMemoryContentReader{data: map[string][]byte{
+		"dataset/part-000.parquet": buildGeoParquetRows(t, testGeoParquetMetadata("shape", "WKB", map[string]interface{}{
+			"columns": map[string]interface{}{"shape": map[string]interface{}{"encoding": "WKB", "geometry_types": []string{"Point"}, "bbox": []float64{100, 20, 101, 21}}},
+		}), geoParquetTestRow{ID: 1, Shape: []byte{1}}),
+		"dataset/part-001.parquet": buildGeoParquetRows(t, testGeoParquetMetadata("shape", "WKB", map[string]interface{}{
+			"columns": map[string]interface{}{"shape": map[string]interface{}{"encoding": "WKB", "geometry_types": []string{"Point"}, "bbox": []float64{99, 19, 110, 30}}},
+		}), geoParquetTestRow{ID: 2, Shape: []byte{2}}),
+	}}
+	scope := contentio.NewRef("dataset", contentio.RoleScope)
+
+	result, err := plugin.DescribeTableScope(context.Background(), reader, scope, nil)
+	if err != nil {
+		t.Fatalf("DescribeTableScope failed: %v", err)
+	}
+	if result.Spatial == nil || result.Spatial.Extent == nil || *result.Spatial.Extent != datatype.NewBoundingBox(99, 19, 110, 30) {
+		t.Fatalf("scope spatial = %#v, want merged extent", result.Spatial)
+	}
+
+	tableReader, err := plugin.OpenTableScopeReader(context.Background(), reader, scope, nil)
+	if err != nil {
+		t.Fatalf("OpenTableScopeReader failed: %v", err)
+	}
+	defer tableReader.Close(context.Background())
+	rows, err := tableReader.ReadRows(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("ReadRows failed: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %#v, want two rows", rows)
+	}
+	spatialProvider, ok := tableReader.(format.TableSpatialInfoProvider)
+	if !ok || spatialProvider.SpatialInfo() == nil || spatialProvider.SpatialInfo().Extent == nil || *spatialProvider.SpatialInfo().Extent != datatype.NewBoundingBox(99, 19, 110, 30) {
+		t.Fatalf("scope reader spatial = %#v", spatialProvider.SpatialInfo())
+	}
+}
+
+func TestParquetPluginGeoParquetScopeRejectsConflictingCRS(t *testing.T) {
+	plugin := NewPlugin()
+	epsg4490 := map[string]interface{}{"type": "GeographicCRS", "id": map[string]interface{}{"authority": "EPSG", "code": 4490}}
+	reader := parquetMemoryContentReader{data: map[string][]byte{
+		"dataset/part-000.parquet": buildGeoParquetRows(t, testGeoParquetMetadata("shape", "WKB", nil), geoParquetTestRow{ID: 1, Shape: []byte{1}}),
+		"dataset/part-001.parquet": buildGeoParquetRows(t, testGeoParquetMetadata("shape", "WKB", map[string]interface{}{
+			"columns": map[string]interface{}{"shape": map[string]interface{}{"encoding": "WKB", "geometry_types": []string{"Point"}, "crs": epsg4490}},
+		}), geoParquetTestRow{ID: 2, Shape: []byte{2}}),
+	}}
+	scope := contentio.NewRef("dataset", contentio.RoleScope)
+
+	_, err := plugin.DescribeTableScope(context.Background(), reader, scope, nil)
+	if err == nil || !strings.Contains(err.Error(), "incompatible geoparquet spatial metadata") {
+		t.Fatalf("DescribeTableScope error = %v, want spatial metadata conflict", err)
+	}
+}
+
 func buildDefaultTestParquetData(t *testing.T) []byte {
 	t.Helper()
 	return buildParquetRows(t, testParquetRow{ID: 1, Name: "Alice"}, testParquetRow{ID: 2, Name: "Bob"})
@@ -767,6 +1260,58 @@ func buildPartitionColumnParquetRows(t *testing.T, rows ...partitionColumnParque
 		t.Fatalf("close partition column parquet writer: %v", err)
 	}
 	return buf.Bytes()
+}
+
+func buildGeoParquetRows(t *testing.T, metadata map[string]interface{}, rows ...geoParquetTestRow) []byte {
+	t.Helper()
+	encoded, err := json.Marshal(metadata)
+	if err != nil {
+		t.Fatalf("marshal geoparquet metadata: %v", err)
+	}
+	var buf bytes.Buffer
+	writer := parquetgo.NewGenericWriter[geoParquetTestRow](&buf)
+	writer.SetKeyValueMetadata(geoParquetMetadataKey, string(encoded))
+	if _, err := writer.Write(rows); err != nil {
+		t.Fatalf("write geoparquet rows: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close geoparquet writer: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func testGeoParquetMetadata(primaryColumn, encoding string, overrides map[string]interface{}) map[string]interface{} {
+	metadata := map[string]interface{}{
+		"version":        "1.1.0",
+		"primary_column": primaryColumn,
+		"columns": map[string]interface{}{
+			primaryColumn: map[string]interface{}{
+				"encoding":       encoding,
+				"geometry_types": []string{"Point"},
+			},
+		},
+	}
+	for key, value := range overrides {
+		metadata[key] = value
+	}
+	return metadata
+}
+
+func testPointWKB() []byte {
+	return []byte{
+		1, 1, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 240, 63,
+		0, 0, 0, 0, 0, 0, 0, 64,
+	}
+}
+
+func containsGeometryEncoding(values []format.GeometryEncoding, target format.GeometryEncoding) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func rowNames(rows []map[string]interface{}) []string {

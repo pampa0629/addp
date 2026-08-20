@@ -1,7 +1,7 @@
 """
 GeoPython Workflow 算子模块
 
-提供 43 个算子（25 个空间算子 + 18 个非空间算子）,支持：
+提供空间与非空间算子，支持：
 - 数据 I/O、几何处理、空间关系分析
 - 属性计算、数据筛选、统计分析
 模块化重构后的算子按功能分类管理。
@@ -18,7 +18,7 @@ from .geometric_operators import (
 from .spatial_relations import contains, intersects, distance_to
 from .properties_operators import get_area, get_length, get_bounds
 from .format_operators import load_from_wkt, export_to_wkt
-from .spatial_transform_operators import vector_reproject
+from .spatial_transform_operators import crs_to_projjson, vector_reproject
 from .raster_operators import build_raster_mosaic, tiff_to_cog
 from .vector_tile_operators import vector_to_pmtiles
 from .gdal_vector_dataset import OPERATORS as GDAL_VECTOR_DATASET_OPERATORS
@@ -223,6 +223,7 @@ __all__ = [
     # 格式转换算子
     'load_from_wkt',
     'export_to_wkt',
+    'crs_to_projjson',
     'vector_reproject',
     'tiff_to_cog',
     'build_raster_mosaic',
