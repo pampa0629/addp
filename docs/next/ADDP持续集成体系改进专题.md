@@ -66,7 +66,7 @@ Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权�
 此外，`scripts/utils/check-deps-version.sh` 已改为：
 
 - 从 `docs/spec/addp技术栈规约.md` 读取 Go 依赖唯一目标版本。
-- 自动发现仓库内全部 `go.mod`。
+- 通过 Git 自动发现仓库内全部已跟踪和待提交的 `go.mod`，不依赖 Runner 额外安装 `rg`。
 - 拒绝规约对同一 Go 模块声明多个目标版本。
 - 校验所有模块中的直接和间接规约依赖声明。
 

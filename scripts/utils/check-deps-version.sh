@@ -19,11 +19,6 @@ echo "🔍 检查 ADDP 所有 Go 模块的依赖版本一致性..."
 echo "规约事实源: ${SPEC_FILE#$PROJECT_ROOT/}"
 echo ""
 
-if ! command -v rg >/dev/null 2>&1; then
-    echo "❌ 缺少 ripgrep (rg)，无法发现全部 go.mod"
-    exit 1
-fi
-
 if [ ! -f "$SPEC_FILE" ]; then
     echo "❌ 技术栈规约不存在: $SPEC_FILE"
     exit 1
@@ -41,7 +36,7 @@ if [ -z "$SPEC_REFS" ]; then
     exit 1
 fi
 
-MODULE_FILES=$(rg --files -g 'go.mod' | sort)
+MODULE_FILES=$(git ls-files --cached --others --exclude-standard -- 'go.mod' '**/go.mod' | sort -u)
 if [ -z "$MODULE_FILES" ]; then
     echo "❌ 仓库中未找到 go.mod"
     exit 1

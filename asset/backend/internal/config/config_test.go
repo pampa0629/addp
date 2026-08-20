@@ -3,7 +3,8 @@ package config
 import "testing"
 
 func TestLoadConfigLoadsSharedDeploymentFields(t *testing.T) {
-	t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	// ENCRYPTION_KEY 契约是 32 字节原始密钥的 Base64 编码。
+	t.Setenv("ENCRYPTION_KEY", "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
 
 	cfg, err := LoadConfig()
 	if err != nil {
