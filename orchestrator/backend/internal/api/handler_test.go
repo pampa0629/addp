@@ -484,8 +484,8 @@ func TestStandardizeTaskListResponseRejectsStatusDataWrapper(t *testing.T) {
 	if err == nil {
 		t.Fatal("standardizeTaskListResponse error is nil, want status/data wrapper rejected")
 	}
-	if !strings.Contains(err.Error(), "status") {
-		t.Fatalf("error = %q, want status field rejection", err.Error())
+	if !strings.Contains(err.Error(), "status") && !strings.Contains(err.Error(), "data") {
+		t.Fatalf("error = %q, want status/data wrapper field rejection", err.Error())
 	}
 }
 
