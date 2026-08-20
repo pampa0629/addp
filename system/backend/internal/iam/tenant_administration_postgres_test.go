@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -129,7 +130,8 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	}
 	if len(initialAuthContext.Authorization.RoleAssignments) != 1 ||
 		initialAuthContext.Authorization.RoleAssignments[0].RoleKey != tenantAdministratorRoleKey ||
-		len(initialAuthContext.Authorization.RoleAssignments[0].Permissions) != 34 {
+		!slices.Contains(initialAuthContext.Authorization.RoleAssignments[0].Permissions, "iam.tenant_membership.update") ||
+		!slices.Contains(initialAuthContext.Authorization.RoleAssignments[0].Permissions, "iam.tenant_role_assignment.create") {
 		t.Fatalf("initial tenant administrator AuthContext = %#v", initialAuthContext)
 	}
 

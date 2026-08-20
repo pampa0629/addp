@@ -730,6 +730,7 @@ func assertTenantAuthContext(
 				"manager.data_item.read",
 				"manager.search.execute",
 				"meta.catalog.read",
+				"meta.lineage.read",
 			}) {
 			t.Fatalf("projected role assignment %d = %#v", index, assignment)
 		}
