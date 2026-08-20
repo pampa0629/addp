@@ -34,16 +34,6 @@ func TestNotebookSessionAuthorizationServiceAgainstPostgres(t *testing.T) {
 	if err := migration.NewRunner(dsn).Run(ctx); err != nil {
 		t.Fatalf("apply IAM migrations: %v", err)
 	}
-	if err := db.Exec(`
-		CREATE TABLE system.engines (
-			id bigint PRIMARY KEY,
-			tenant_id bigint,
-			lifecycle_state text NOT NULL,
-			is_builtin boolean NOT NULL DEFAULT false
-		)
-	`).Error; err != nil {
-		t.Fatalf("create Notebook execution engine fixture table: %v", err)
-	}
 
 	repository := NewRepository(db)
 	tokenService, err := NewTokenFamilyService(repository, BrowserSessionConfig{
@@ -75,8 +65,8 @@ func TestNotebookSessionAuthorizationServiceAgainstPostgres(t *testing.T) {
 	insertRoleAssignment(t, db, user.PrincipalID, "tenant.data_engineer", "tenant", &tenant.ID, nil, nil,
 		time.Now().UTC().Add(-time.Minute), nil, "manual")
 	if err := db.Exec(`
-		INSERT INTO system.engines (id, tenant_id, lifecycle_state, is_builtin)
-		VALUES (12, ?, 'active', false)
+		INSERT INTO system.engines (id, tenant_id, name, engine_type, connection_info, lifecycle_state, is_builtin)
+		VALUES (12, ?, 'Notebook Engine', 'postgresql', '{}'::json, 'active', false)
 	`, tenant.ID).Error; err != nil {
 		t.Fatalf("insert Notebook execution engine fixture: %v", err)
 	}

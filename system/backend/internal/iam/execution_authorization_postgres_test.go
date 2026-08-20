@@ -37,13 +37,7 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		t.Fatalf("apply IAM migrations: %v", err)
 	}
 	if err := db.Exec(`
-		CREATE TABLE system.engines (
-			id bigint PRIMARY KEY,
-			tenant_id bigint,
-			lifecycle_state text NOT NULL,
-			is_builtin boolean NOT NULL DEFAULT false
-		)
-		; CREATE SCHEMA common
+		CREATE SCHEMA common
 		; CREATE TABLE common.task_executions (
 			execution_id uuid PRIMARY KEY,
 			tenant_id bigint NOT NULL,
@@ -55,7 +49,7 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 			issued_authorization_version bigint
 		)
 	`).Error; err != nil {
-		t.Fatalf("create execution engine fixture table: %v", err)
+		t.Fatalf("create execution fixture schema: %v", err)
 	}
 	t.Cleanup(func() {
 		if err := db.Exec(`DROP SCHEMA IF EXISTS common CASCADE`).Error; err != nil {
@@ -98,8 +92,11 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		t.Fatalf("issue execution source session: result=%#v error=%v", selection, err)
 	}
 	if err := db.Exec(`
-		INSERT INTO system.engines (id, tenant_id, lifecycle_state, is_builtin)
-		VALUES (12, ?, 'active', false), (13, NULL, 'active', true), (14, ?, 'active', false)
+		INSERT INTO system.engines (id, tenant_id, name, engine_type, connection_info, lifecycle_state, is_builtin)
+		VALUES
+			(12, ?, 'Tenant Engine', 'postgresql', '{}'::json, 'active', false),
+			(13, NULL, 'Builtin Engine', 'duckdb', '{}'::json, 'active', true),
+			(14, ?, 'Foreign Engine', 'postgresql', '{}'::json, 'active', false)
 	`, tenant.ID, tenant.ID+100).Error; err != nil {
 		t.Fatalf("insert engine fixtures: %v", err)
 	}

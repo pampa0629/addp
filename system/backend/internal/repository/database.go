@@ -54,136 +54,15 @@ func AutoMigrateNonIAM(db *gorm.DB) error {
 	if err := commonExecution.EnsureStore(db); err != nil {
 		return err
 	}
-	if err := migrateEngineOrigin(db); err != nil {
-		return err
-	}
-	if err := dropEngineScanConfig(db); err != nil {
-		return err
-	}
-	if err := dropDeprecatedEngineColumns(db); err != nil {
-		return err
-	}
-	if err := migrateEngineLifecycle(db); err != nil {
-		return err
-	}
 	if err := removeBuiltinMathWorkflowExample(db); err != nil {
 		return err
 	}
 	return db.AutoMigrate(
-		&models.Engine{},
 		&models.Application{},
 		&models.APIKey{},
 		&models.TaskProvider{},
 		&models.ModuleRegistry{},
 	)
-}
-
-func migrateEngineLifecycle(db *gorm.DB) error {
-	return db.Exec(`
-		DO $$
-		BEGIN
-			IF to_regclass('system.engines') IS NOT NULL THEN
-				IF NOT EXISTS (
-					SELECT 1 FROM information_schema.columns
-					WHERE table_schema = 'system' AND table_name = 'engines' AND column_name = 'lifecycle_state'
-				) THEN
-					ALTER TABLE system.engines ADD COLUMN lifecycle_state VARCHAR(20);
-					IF EXISTS (
-						SELECT 1 FROM information_schema.columns
-						WHERE table_schema = 'system' AND table_name = 'engines' AND column_name = 'is_active'
-					) THEN
-						UPDATE system.engines
-						SET lifecycle_state = CASE WHEN is_active THEN 'active' ELSE 'disabled' END;
-					ELSE
-						UPDATE system.engines SET lifecycle_state = 'active';
-					END IF;
-				END IF;
-
-				UPDATE system.engines SET lifecycle_state = 'active' WHERE lifecycle_state IS NULL OR lifecycle_state = '';
-				ALTER TABLE system.engines
-					ALTER COLUMN lifecycle_state SET DEFAULT 'active',
-					ALTER COLUMN lifecycle_state SET NOT NULL;
-
-				IF EXISTS (
-					SELECT 1 FROM information_schema.columns
-					WHERE table_schema = 'system' AND table_name = 'engines' AND column_name = 'is_active'
-				) THEN
-					ALTER TABLE system.engines DROP COLUMN is_active;
-				END IF;
-			END IF;
-		END $$;
-	`).Error
-}
-
-func migrateEngineOrigin(db *gorm.DB) error {
-	return db.Exec(`
-		DO $$
-		BEGIN
-			IF to_regclass('system.engines') IS NOT NULL THEN
-				IF EXISTS (
-					SELECT 1
-					FROM information_schema.columns
-					WHERE table_schema = 'system'
-					  AND table_name = 'engines'
-					  AND column_name = 'engine_category'
-				) AND NOT EXISTS (
-					SELECT 1
-					FROM information_schema.columns
-					WHERE table_schema = 'system'
-					  AND table_name = 'engines'
-					  AND column_name = 'engine_origin'
-				) THEN
-					ALTER TABLE system.engines RENAME COLUMN engine_category TO engine_origin;
-				END IF;
-
-				IF EXISTS (
-					SELECT 1
-					FROM information_schema.columns
-					WHERE table_schema = 'system'
-					  AND table_name = 'engines'
-					  AND column_name = 'engine_origin'
-				) THEN
-					UPDATE system.engines
-					SET engine_origin = CASE
-						WHEN engine_origin = 'standard' THEN 'general'
-						WHEN engine_origin IN ('general', 'extension') THEN engine_origin
-						ELSE 'general'
-					END;
-
-					ALTER TABLE system.engines
-						ALTER COLUMN engine_origin SET DEFAULT 'general',
-						ALTER COLUMN engine_origin SET NOT NULL;
-				END IF;
-
-				IF to_regclass('system.idx_engines_category') IS NOT NULL THEN
-					ALTER INDEX system.idx_engines_category RENAME TO idx_engines_origin;
-				END IF;
-			END IF;
-		END $$;
-	`).Error
-}
-
-func dropEngineScanConfig(db *gorm.DB) error {
-	return db.Exec(`
-		DO $$
-		BEGIN
-			IF to_regclass('system.engines') IS NOT NULL THEN
-				IF EXISTS (
-					SELECT 1
-					FROM information_schema.columns
-					WHERE table_schema = 'system'
-					  AND table_name = 'engines'
-					  AND column_name = 'scan_config'
-				) THEN
-					ALTER TABLE system.engines DROP COLUMN scan_config;
-				END IF;
-			END IF;
-		END $$;
-	`).Error
-}
-
-func dropDeprecatedEngineColumns(db *gorm.DB) error {
-	return db.Exec(dropDeprecatedEngineColumnsSQL).Error
 }
 
 func removeBuiltinMathWorkflowExample(db *gorm.DB) error {
@@ -197,47 +76,6 @@ const removeBuiltinMathWorkflowExampleSQL = `
 				DELETE FROM system.engines
 				WHERE lower(engine_type) = 'math_workflow'
 				  AND is_builtin = true;
-			END IF;
-		END $$;
-	`
-
-const dropDeprecatedEngineColumnsSQL = `
-		DO $$
-		BEGIN
-			IF to_regclass('system.engines') IS NOT NULL THEN
-				IF to_regclass('system.idx_engines_identifier') IS NOT NULL THEN
-					DROP INDEX system.idx_engines_identifier;
-				END IF;
-
-				IF EXISTS (
-					SELECT 1
-					FROM information_schema.columns
-					WHERE table_schema = 'system'
-					  AND table_name = 'engines'
-					  AND column_name = 'unique_identifier'
-				) THEN
-					ALTER TABLE system.engines DROP COLUMN unique_identifier;
-				END IF;
-
-				IF EXISTS (
-					SELECT 1
-					FROM information_schema.columns
-					WHERE table_schema = 'system'
-					  AND table_name = 'engines'
-					  AND column_name = 'extension_api_config'
-				) THEN
-					ALTER TABLE system.engines DROP COLUMN extension_api_config;
-				END IF;
-
-				IF EXISTS (
-					SELECT 1
-					FROM information_schema.columns
-					WHERE table_schema = 'system'
-					  AND table_name = 'engines'
-					  AND column_name = 'health_check_config'
-				) THEN
-					ALTER TABLE system.engines DROP COLUMN health_check_config;
-				END IF;
 			END IF;
 		END $$;
 	`

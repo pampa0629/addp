@@ -282,8 +282,8 @@ frontend/src/
 
 2. **数据库迁移**:
    - IAM 表以 `system/docs/IAM数据模型与迁移规范.md` 为准，必须使用显式版本化 SQL，不得加入 `AutoMigrate`。
-   - 非 IAM 表当前仍使用 `AutoMigrate`，后续迁移方案另行设计；不得借此改写 IAM 表或旧账号/OAuth 数据。
-   - 迁移 runner 成功后才允许执行非 IAM 初始化，不能在启动过程中用表存在性或默认数据兜底。
+   - System 统一 migration runner 同时管理 IAM 表和 IAM 约束依赖的基础资源表；`system.engines` 不得再进入 `AutoMigrate`。
+   - 迁移 runner 成功后才允许执行剩余非基础业务表初始化，不能在启动过程中用表存在性或默认数据兜底。
 
 3. **前端添加新页面**:
    - 在 `src/views/` 创建 Vue 组件

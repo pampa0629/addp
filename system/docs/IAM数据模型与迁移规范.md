@@ -133,7 +133,9 @@ OIDC 表字段是未来协议启用所需的受控预留，不表示 OIDC 已对
 
 策略更新和 `iam.security_policy.updated` 安全审计必须在同一事务提交。只有 Platform Context 中持有 `iam.security_policy.read/update` 的 User 可以访问，由 `platform.security_administrator` 承担该职责。
 
-## 十、迁移 Runner
+## 十、System 统一迁移 Runner
+
+`system/backend/internal/migration/sql` 是 System schema 的唯一版本化结构事实源，不再只管理 IAM 表。IAM 约束可以引用 System-owned 的 Engine 等资源事实，因此被引用的基础资源表必须在首次引用它的 migration 之前创建。`system.engines` 由首个 System migration 创建，后续不得再由 GORM `AutoMigrate` 建表或补列。
 
 System 启动顺序固定为：
 
@@ -143,7 +145,7 @@ System 启动顺序固定为：
 4. 获取 PostgreSQL session advisory lock，在锁内重新读取版本和 dirty 状态；
 5. 按版本分别在事务中执行向前 migration；
 6. 确认数据库版本等于嵌入最新版本，并记录新执行 migration 的文件名和摘要；
-7. 释放启动期连接，打开 GORM 运行时连接并启动 HTTP 服务。
+7. 释放启动期连接，打开 GORM 运行时连接并启动 HTTP 服务；GORM 只管理尚未迁入统一 runner 的非基础业务表，不得管理 `system.engines`。
 
 等待锁的实例必须在获得锁后重新读取版本。migration 失败会保留 dirty 状态并阻止 System 启动，不允许自动回退、跳过版本或运行时兜底。
 
