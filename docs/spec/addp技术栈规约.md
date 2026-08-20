@@ -16,12 +16,12 @@
 
 ### Go 依赖版本规范
 
-为确保所有模块依赖版本一致，ADDP 平台使用以下统一的 Go 依赖版本（最后更新: 2026-08-02）：
+为确保所有模块依赖版本一致，ADDP 平台使用以下统一的 Go 依赖版本（最后更新: 2026-08-20）。本节中反引号包裹的 `Go模块路径@版本` 是依赖版本检查脚本的唯一事实源；同一个 Go 模块路径只能声明一个目标版本：
 
 #### 核心框架
 
 - **Gin 框架**: `github.com/gin-gonic/gin@v1.11.0`
-- **GORM**: `gorm.io/gorm@v1.25.12`
+- **GORM**: `gorm.io/gorm@v1.31.2`
 - **PostgreSQL 驱动**: `gorm.io/driver/postgres@v1.6.0`
 - **PostgreSQL 客户端**: `github.com/lib/pq@v1.10.9`
 - **PostgreSQL 连接池**: `github.com/jackc/pgx/v5@v5.7.2`
@@ -29,7 +29,7 @@
 #### 认证与加密
 
 - **用户令牌**: System 生成随机 opaque Token，只保存 SHA-256 Hash
-- **密码学**: `golang.org/x/crypto@v0.43.0`
+- **密码学**: `golang.org/x/crypto@v0.47.0`
 
 #### 数据库驱动
 
@@ -48,7 +48,7 @@
 
 #### 对象存储
 
-- **MinIO**: `github.com/minio/minio-go/v7@v7.0.95`
+- **MinIO**: `github.com/minio/minio-go/v7@v7.0.97`
 - **AWS SDK**: `github.com/aws/aws-sdk-go@v1.45.0`
 
 #### 全文搜索
@@ -74,14 +74,14 @@
 
 #### API 文档
 
-- **Swagger**: `github.com/swaggo/swag@v1.16.4`
-- **Gin Swagger**: `github.com/swaggo/gin-swagger@v1.6.0`
+- **Swagger**: `github.com/swaggo/swag@v1.16.6`
+- **Gin Swagger**: `github.com/swaggo/gin-swagger@v1.6.1`
 - **Swagger Files**: `github.com/swaggo/files@v1.0.1`
 
 #### 模块特定依赖
 
 - **CORS 中间件** (Meta): `github.com/gin-contrib/cors@v1.5.0`
-- **Hive 客户端** (Develop): `github.com/beltran/gohive@v1.6.0`
+- **Hive 客户端** (Develop): `github.com/beltran/gohive@v1.8.1`
 - **SQLite 驱动** (Manager): `gorm.io/driver/sqlite@v1.6.0`
 - **MySQL 驱动** (Develop): `gorm.io/driver/mysql@v1.6.0`
 - **测试框架** (Transfer): `github.com/stretchr/testify@v1.11.1`

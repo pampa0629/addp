@@ -64,7 +64,7 @@ require (
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gorm.io/gorm v1.30.0 // indirect
+	gorm.io/gorm v1.31.2 // indirect
 )
 
 replace github.com/addp/common => ../../common

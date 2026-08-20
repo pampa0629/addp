@@ -12,8 +12,8 @@ require (
 	github.com/parquet-go/parquet-go v0.25.1
 	github.com/redis/go-redis/v9 v9.17.2
 	github.com/swaggo/files v1.0.1
-	github.com/swaggo/gin-swagger v1.6.0
-	github.com/swaggo/swag v1.16.4
+	github.com/swaggo/gin-swagger v1.6.1
+	github.com/swaggo/swag v1.16.6
 	github.com/xuri/excelize/v2 v2.10.0
 	golang.org/x/image v0.25.0
 	gorm.io/driver/postgres v1.6.0
