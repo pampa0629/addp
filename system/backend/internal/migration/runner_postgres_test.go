@@ -1477,11 +1477,11 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&managerPlatformPermissions); err != nil {
 		t.Fatalf("read platform.manager_runtime permissions: %v", err)
 	}
-	if managerTenantPermissions != "inference.runtime.execute,meta.catalog.read,meta.scan_task.execute,system.engine_descriptor.read" ||
-		metaTenantPermissions != "audit.tenant_event.create,system.engine.read,system.engine_descriptor.read" ||
-		transferTenantPermissions != "meta.catalog.read,meta.inspect.execute,meta.scan_task.execute,system.engine_descriptor.read" ||
+	if managerTenantPermissions != "inference.runtime.execute,meta.catalog.read,meta.scan_task.execute,system.engine_descriptor.read,system.engine.read" ||
+		metaTenantPermissions != "audit.tenant_event.create,system.engine_descriptor.read,system.engine.read" ||
+		transferTenantPermissions != "meta.catalog.read,meta.inspect.execute,meta.scan_task.execute,system.engine_descriptor.read,system.engine.read" ||
 		developTenantPermissions != "meta.catalog.read,meta.scan_task.execute,system.engine_descriptor.read,system.execution_authorization.execute,system.notebook_session_authorization.execute" ||
-		copilotTenantPermissions != "develop.task.read,inference.runtime.execute" ||
+		copilotTenantPermissions != "develop.task.read,inference.runtime.execute,system.engine_descriptor.read" ||
 		qualityTenantPermissions != "meta.catalog.read,standard.element.read,system.engine.read,system.execution_authorization.execute" ||
 		metaPlatformPermissions != "system.runtime_registry.update" ||
 		developPlatformPermissions != "system.runtime_registry.update" ||
