@@ -38,14 +38,6 @@ func TestStandardReferenceRuntimeForwardMigrationAgainstPostgres(t *testing.T) {
 	if err := (&Runner{DSN: dsn, FS: through48, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
 		t.Fatalf("apply migrations through 48: %v", err)
 	}
-	if _, err := db.Exec(`
-		CREATE TABLE system.engines (
-		    engine_type text NOT NULL,
-		    capabilities jsonb
-		)
-	`); err != nil {
-		t.Fatalf("create migration 49 engine fixture: %v", err)
-	}
 	if err := (&Runner{DSN: dsn, FS: through64, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
 		t.Fatalf("apply migrations through 64: %v", err)
 	}
@@ -274,8 +266,9 @@ func TestMetaServicePrincipalForwardMigrationAgainstPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("read Manager catalog migration version: %v", err)
 	}
-	if version != 49 || dirty {
-		t.Fatalf("latest migration state = (%d, %t), want (49, false)", version, dirty)
+	latestVersion := latestMigrationVersion(t)
+	if version != latestVersion || dirty {
+		t.Fatalf("latest migration state = (%d, %t), want (%d, false)", version, dirty, latestVersion)
 	}
 	var authorizationVersionAfter int64
 	if err := db.QueryRow(`SELECT authorization_version FROM system.principals WHERE id = $1`, administratorID).Scan(&authorizationVersionAfter); err != nil {
@@ -870,8 +863,9 @@ func TestNotebookSessionAuthorizationRepairAgainstPostgres(t *testing.T) {
 	`).Scan(&canonicalRoleBindingCount, &legacyRoleBindingCount); err != nil {
 		t.Fatalf("inspect repaired Notebook authorization role bindings: %v", err)
 	}
-	if version != 49 || dirty || !canonicalTable || legacyTable || !sourceColumn ||
-		!sourceConstraint || canonicalTriggerCount != 4 || checksumCount != 49 ||
+	latestVersion := latestMigrationVersion(t)
+	if version != latestVersion || dirty || !canonicalTable || legacyTable || !sourceColumn ||
+		!sourceConstraint || canonicalTriggerCount != 4 || checksumCount != latestVersion ||
 		canonicalPermissionCount != 1 || legacyActivePermissionCount != 0 || legacyDisabledPermissionCount != 1 ||
 		canonicalRoleBindingCount != 1 || legacyRoleBindingCount != 0 {
 		t.Fatalf(
@@ -956,8 +950,9 @@ func TestNotebookSessionAuthorizationRepairCreatesMissingSchemaAgainstPostgres(t
 	`).Scan(&roleBindingCount); err != nil {
 		t.Fatalf("count created Notebook authorization role binding: %v", err)
 	}
-	if version != 49 || dirty || !canonicalTable || !sourceColumn || !sourceConstraint ||
-		triggerCount != 4 || checksumCount != 49 || roleBindingCount != 1 {
+	latestVersion := latestMigrationVersion(t)
+	if version != latestVersion || dirty || !canonicalTable || !sourceColumn || !sourceConstraint ||
+		triggerCount != 4 || checksumCount != latestVersion || roleBindingCount != 1 {
 		t.Fatalf(
 			"missing-schema repair state version=(%d,%t) table=%t source=(%t,%t) triggers=%d checksums=%d role_binding=%d",
 			version, dirty, canonicalTable, sourceColumn, sourceConstraint,
@@ -997,8 +992,9 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("read migration version: %v", err)
 	}
-	if version != 49 || dirty {
-		t.Fatalf("migration state = (%d, %t), want (49, false)", version, dirty)
+	latestVersion := latestMigrationVersion(t)
+	if version != latestVersion || dirty {
+		t.Fatalf("migration state = (%d, %t), want (%d, false)", version, dirty, latestVersion)
 	}
 
 	assertIAMCatalogSeed(t, db)
@@ -3688,4 +3684,13 @@ func assertIdentityTenantConstraints(t *testing.T, db *sql.DB) {
 	if _, err := db.Exec(`UPDATE system.tenant_memberships SET principal_id = $1 WHERE principal_id = $2`, userPrincipalID, servicePrincipalID); err == nil {
 		t.Fatal("tenant membership principal identity update succeeded")
 	}
+}
+
+func latestMigrationVersion(t *testing.T) int {
+	t.Helper()
+	catalog, err := ReadCatalog(EmbeddedSQL, DefaultMigrationsRoot)
+	if err != nil {
+		t.Fatalf("read embedded migration catalog: %v", err)
+	}
+	return int(catalog.LatestVersion)
 }
