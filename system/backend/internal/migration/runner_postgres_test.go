@@ -1026,7 +1026,11 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	assertRoleKeyNamespace(t, db)
 	assertForeignKeyColumnsIndexed(t, db)
 
-	_, tampered := migrationFilesBeforeAndThrough(t, "000047_iam_managed_user_mfa_reset.up.sql")
+	catalog, err := ReadCatalog(EmbeddedSQL, DefaultMigrationsRoot)
+	if err != nil {
+		t.Fatalf("read embedded migration catalog for checksum test: %v", err)
+	}
+	_, tampered := migrationFilesBeforeAndThrough(t, catalog.Names[len(catalog.Names)-1])
 	tamperedMigration := tampered["sql/000037_iam_notebook_session_authorization.up.sql"]
 	tamperedMigration.Data = append(append([]byte(nil), tamperedMigration.Data...), []byte("\n-- rewritten\n")...)
 	if err := (&Runner{DSN: dsn, FS: tampered, Root: DefaultMigrationsRoot}).Run(ctx); err == nil || !strings.Contains(err.Error(), "does not match embedded file") {
