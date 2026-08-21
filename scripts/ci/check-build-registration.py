@@ -31,6 +31,38 @@ RETIRED_MAKE_TARGETS = {
 }
 
 
+def compiled_binary_name(service: str) -> str:
+    if service.endswith("-backend"):
+        return service.removesuffix("-backend")
+    return service
+
+
+def image_build_definition(service: str, directory: str) -> tuple[str, str | None]:
+    """返回构建定义文件及预编译二进制名；专用脚本也作为定义文件。"""
+    if service == "model3d-workflow-engine":
+        return f"{directory}/scripts/build-linux-arm64-images.sh", None
+    if service == "supermap-workflow-engine":
+        return f"{directory}/Dockerfile", None
+    if service in {"transfer-bounded-worker", "meta-worker", "quality-worker"}:
+        return f"{directory}/Dockerfile.prebuilt.worker", service
+    if service == "transfer-continuous-worker":
+        return f"{directory}/Dockerfile.prebuilt.continuous-worker", service
+    if service in {"agent-backend", "copilot-backend"}:
+        return f"{directory}/Dockerfile", None
+    if service.endswith("-backend") or service == "gateway":
+        return f"{directory}/Dockerfile.prebuilt", compiled_binary_name(service)
+    if service == "nginx":
+        return "nginx/Dockerfile", None
+    if service.endswith("-frontend") or service == "console" or service.endswith("-engine") or service == "raster-mosaic-runtime":
+        return f"{directory}/Dockerfile", None
+    raise RegistrationError(f"{service}: no static image build definition rule")
+
+
+def dockerfile_copies_binary(text: str, binary: str) -> bool:
+    expected = rf"dist/\$\{{BUILD_TYPE\}}-\$\{{GOOS\}}-\$\{{BUILD_ARCH\}}/{re.escape(binary)}"
+    return re.search(rf"(?m)^\s*COPY\s+{expected}(?:\s|$)", text) is not None
+
+
 def git_files(repository: Path, *patterns: str) -> list[str]:
     result = subprocess.run(
         ["git", "ls-files", *patterns],
@@ -107,6 +139,23 @@ def validate_registration(repository: Path) -> list[str]:
     for name, directory in sorted(images.items()):
         if not (repository / directory).is_dir():
             errors.append(f"{name}: image build directory does not exist: {directory}")
+            continue
+        try:
+            definition, binary = image_build_definition(name, directory)
+        except RegistrationError as error:
+            errors.append(str(error))
+            continue
+        definition_path = repository / definition
+        if not definition_path.is_file():
+            errors.append(f"{name}: image build definition does not exist: {definition}")
+            continue
+        if binary is not None and not dockerfile_copies_binary(
+            definition_path.read_text(encoding="utf-8"), binary
+        ):
+            errors.append(
+                f"{name}: {definition} does not COPY compiled binary {binary} "
+                "from dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}"
+            )
 
     for path in git_files(repository, "*/frontend/package.json"):
         module = path.split("/", 1)[0]

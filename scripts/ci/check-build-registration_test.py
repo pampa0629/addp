@@ -22,7 +22,12 @@ class BuildRegistrationTest(unittest.TestCase):
         self.repository = Path(self.temporary_directory.name)
         subprocess.run(["git", "init", "-q"], cwd=self.repository, check=True)
         self._write("sample/backend/cmd/server/main.go", "package main\n")
-        self._write("sample/backend/Dockerfile", "FROM scratch\n")
+        self._write(
+            "sample/backend/Dockerfile.prebuilt",
+            "FROM scratch\n"
+            "ARG BUILD_TYPE=release\nARG GOOS=linux\nARG BUILD_ARCH=amd64\n"
+            "COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/sample ./server\n",
+        )
         self._write("sample/frontend/package.json", "{}\n")
         self._write("sample/frontend/Dockerfile", "FROM scratch\n")
         self._write(
@@ -83,6 +88,37 @@ class BuildRegistrationTest(unittest.TestCase):
         self.assertIn(
             "Makefile retired build target still exists: build-release",
             MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_missing_image_build_definition(self) -> None:
+        (self.repository / "sample/frontend/Dockerfile").unlink()
+        self.assertIn(
+            "sample-frontend: image build definition does not exist: "
+            "sample/frontend/Dockerfile",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_mismatched_compiled_binary(self) -> None:
+        self._write(
+            "sample/backend/Dockerfile.prebuilt",
+            "FROM scratch\n"
+            "COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/wrong ./server\n",
+        )
+        self.assertIn(
+            "sample-backend: sample/backend/Dockerfile.prebuilt does not COPY "
+            "compiled binary sample from "
+            "dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_python_backends_use_source_dockerfile(self) -> None:
+        self.assertEqual(
+            ("agent/backend/Dockerfile", None),
+            MODULE.image_build_definition("agent-backend", "agent/backend"),
+        )
+        self.assertEqual(
+            ("copilot/Dockerfile", None),
+            MODULE.image_build_definition("copilot-backend", "copilot"),
         )
 
 
