@@ -89,13 +89,12 @@ Common Python、Quality、Agent 和 Model 已通过统一脚本按各自模块�
 
 ### 5.4 模块专项门禁结构仍待统一
 
-Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job 内路径选择。两个 PostgreSQL 门禁和 macOS CLI 使用轻量选择 Job，未命中时不会启动数据库 Service 或 macOS Runner；`v*` Tag 强制执行 CLI 与 System IAM 门禁。T2 门禁仍分散在独立 workflow，尚未形成统一声明矩阵。
+Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job 内路径选择。两个 PostgreSQL 门禁和 macOS CLI 使用轻量选择 Job，未命中时不会启动数据库 Service 或 macOS Runner；`v*` Tag 强制执行 CLI 与 System IAM 门禁。Ruleset 要求的 CLI 和 System IAM 检查由汇总 Job 提供：命中路径时等待重测试成功，未命中时明确报告跳过并稳定成功。T2 门禁仍分散在独立 workflow，尚未形成统一声明矩阵。
 
 ### 5.5 CI 与 GitHub 仓库策略没有仓库内闭环
 
-2026-08-21 直接推送返回的 Ruleset 结果已确认：`main` 要求通过 PR 和两个 required checks，但当前维护者账号具有绕过权限，因此单人开发仍可直接推送。以下状态仍未核实：
+2026-08-21 通过 GitHub API 核实 Ruleset `main release gates`：`main` 要求通过 PR，并要求 `CLI product gate (macOS Keychain)`、`System IAM gate (PostgreSQL 15)` 两个检查；当前维护者账号具有永久绕过权限，因此单人开发仍可直接推送。以下状态仍未核实：
 
-- 两个 required checks 对应的具体 Job。
 - Actions 是否允许 fork PR、是否需要人工批准。
 - macOS Runner 与浏览器门禁的实际耗时和月度成本。
 - CI 失败通知、Artifact 保留和历史趋势是否满足需要。
@@ -165,7 +164,7 @@ Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job �
 - [x] 复用统一选择脚本，将 Agent 离线评测和 Quality 前端纳入变更路径登记，并保持手工及夜间触发始终执行。
 - [x] 将 Common Python 纳入变更路径登记；`common-python/` 变化仍会同时触发依赖它的 Agent 离线评测。
 - [ ] 统一缓存键、超时和测试报告格式。
-- [ ] 明确哪些 T1 Job 是 required checks。
+- [x] 核实当前 required checks：CLI 产品门禁和 System IAM PostgreSQL 门禁；使用汇总 Job 保持路径跳过与真实验证结果都能稳定回报。
 
 ### 阶段 3：模块集成矩阵
 
