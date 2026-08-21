@@ -20,6 +20,10 @@ select_gate() {
   exit 0
 }
 
+if [[ "${ADDP_CI_FORCE:-false}" == "true" ]]; then
+  select_gate "forced by caller"
+fi
+
 if [[ "$event_name" == "schedule" || "$event_name" == "workflow_dispatch" ]]; then
   select_gate "$event_name event"
 fi

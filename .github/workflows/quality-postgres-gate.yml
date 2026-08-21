@@ -15,8 +15,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  selection:
+    name: Quality integration selection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.quality.outputs.run }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select Quality PostgreSQL gate
+        id: quality
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          bash scripts/ci/select-gate-by-paths.sh "Quality PostgreSQL" \
+            'quality/backend/*' \
+            'common/*' \
+            'scripts/test/quality-postgres-gate.sh' \
+            'scripts/ci/select-gate-by-paths.sh' \
+            'Makefile' \
+            '.github/workflows/quality-postgres-gate.yml'
+
   quality-postgres:
     name: Quality integration (PostgreSQL 15)
+    needs: selection
+    if: needs.selection.outputs.run == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:

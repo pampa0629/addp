@@ -17,8 +17,57 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  selection:
+    name: IAM and CLI gate selection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      cli: ${{ steps.cli.outputs.run }}
+      system: ${{ steps.system.outputs.run }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select CLI product gate
+        id: cli
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_FORCE: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          bash scripts/ci/select-gate-by-paths.sh "CLI product" \
+            'common-python/*' \
+            'scripts/test/common-python-cli-release-gate.sh' \
+            'scripts/ci/select-gate-by-paths.sh' \
+            'Makefile' \
+            '.github/workflows/iam-cli-release-gates.yml'
+
+      - name: Select System IAM PostgreSQL gate
+        id: system
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_FORCE: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          bash scripts/ci/select-gate-by-paths.sh "System IAM PostgreSQL" \
+            'system/backend/*' \
+            'common/*' \
+            'scripts/test/system-iam-postgres-gate.sh' \
+            'scripts/ci/select-gate-by-paths.sh' \
+            'Makefile' \
+            '.github/workflows/iam-cli-release-gates.yml'
+
   cli-product-macos:
     name: CLI product gate (macOS Keychain)
+    needs: selection
+    if: needs.selection.outputs.cli == 'true'
     runs-on: macos-14
     timeout-minutes: 30
     steps:
@@ -47,6 +96,8 @@ jobs:
 
   system-iam-postgres:
     name: System IAM gate (PostgreSQL 15)
+    needs: selection
+    if: needs.selection.outputs.system == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
@@ -96,6 +147,7 @@ jobs:
     name: Publish ADDP CLI GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
     needs:
+      - selection
       - cli-product-macos
       - system-iam-postgres
     runs-on: ubuntu-24.04

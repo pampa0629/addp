@@ -24,9 +24,9 @@ ADDP 已经具备较多本地测试、集成门禁和发布验证入口，但 Gi
 
 | Workflow | 触发方式 | Job / 执行入口 | 当前定位 |
 | --- | --- | --- | --- |
-| `.github/workflows/iam-cli-release-gates.yml` | 所有 PR；`main` push；`v*` Tag；手工触发 | macOS CLI wheel 产品门禁：`make test-common-python-cli-release`；System IAM PostgreSQL 15 门禁：`make test-system-iam-postgres`；Tag 发布 GitHub Release | T2 / T5 |
+| `.github/workflows/iam-cli-release-gates.yml` | 所有 PR；`main` push；`v*` Tag；手工触发 | 按路径选择 macOS CLI wheel 产品门禁和 System IAM PostgreSQL 15 门禁；`v*` Tag 强制执行两者后发布 GitHub Release | T2 / T5 |
 | `.github/workflows/quality-frontend-smoke.yml` | 所有 PR；`main` push；手工触发 | 按路径选择 `make test-quality-frontend`，执行 Quality 路由测试、Playwright E2E 和前端构建 | T3 |
-| `.github/workflows/quality-postgres-gate.yml` | 所有 PR；`main` push；手工触发 | `make test-quality-postgres`，使用独占 PostgreSQL 15 Service | T2 |
+| `.github/workflows/quality-postgres-gate.yml` | 所有 PR；`main` push；手工触发 | 按路径选择 `make test-quality-postgres`，命中后才启动独占 PostgreSQL 15 Service | T2 |
 | `.github/workflows/platform-ci.yml` | PR；`main` push；每日 02:30（北京时间）；手工触发 | `make test-platform`；`make test-go`；按路径选择 `make test-common-python`、`make test-agent-eval` 和 `make test-model-frontend` | T0 / T1 / T3 |
 
 当前共同特征：
@@ -48,7 +48,7 @@ ADDP 已经具备较多本地测试、集成门禁和发布验证入口，但 Gi
 
 Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权限是否完整属于 GitHub 外部状态，正式开展本专题时必须在线核实，不能只根据配置文件推断。
 
-## 四、已存在但未接入 CI 的门禁
+## 四、正式门禁入口
 
 根 `Makefile` 已经存在以下正式入口：
 
@@ -71,7 +71,7 @@ Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权�
 - 拒绝规约对同一 Go 模块声明多个目标版本。
 - 校验所有模块中的直接和间接规约依赖声明。
 
-该脚本当前未被任何 workflow 或根 `Makefile` 目标调用，因此依赖版本漂移仍只能靠人工执行发现。
+该脚本由 `make test-platform` 调用并已接入 Platform CI，依赖版本漂移会在每次 `main` 推送和夜间任务中自动发现。
 
 ## 五、当前主要缺口
 
@@ -87,16 +87,15 @@ Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权�
 
 Common Python、Quality、Agent 和 Model 已通过统一脚本按各自模块、共享依赖、根 Makefile 和 workflow 自身的变更路径选择正式门禁；手工触发及平台夜间任务始终执行。其余前端模块仍未登记。
 
-### 5.4 模块专项门禁无路径选择
+### 5.4 模块专项门禁结构仍待统一
 
-Quality 前端、Agent 离线评测和 Model 前端已经完成 Job 内路径选择。两个 PostgreSQL Job 和 macOS CLI 门禁仍会在任何 PR 上完整执行，即使改动与这些模块无关。
+Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job 内路径选择。两个 PostgreSQL 门禁和 macOS CLI 使用轻量选择 Job，未命中时不会启动数据库 Service 或 macOS Runner；`v*` Tag 强制执行 CLI 与 System IAM 门禁。T2 门禁仍分散在独立 workflow，尚未形成统一声明矩阵。
 
 ### 5.5 CI 与 GitHub 仓库策略没有仓库内闭环
 
-以下状态不在仓库中，当前尚未核实：
+2026-08-21 直接推送返回的 Ruleset 结果已确认：`main` 要求通过 PR 和两个 required checks，但当前维护者账号具有绕过权限，因此单人开发仍可直接推送。以下状态仍未核实：
 
-- `main` 是否启用 Branch Protection 或 Ruleset。
-- 哪些 Job 是 required checks。
+- 两个 required checks 对应的具体 Job。
 - Actions 是否允许 fork PR、是否需要人工批准。
 - macOS Runner 与浏览器门禁的实际耗时和月度成本。
 - CI 失败通知、Artifact 保留和历史趋势是否满足需要。
@@ -153,10 +152,10 @@ Quality 前端、Agent 离线评测和 Model 前端已经完成 Job 内路径选
 
 - [x] 新增唯一平台 T0 workflow。
 - [x] 通过根 `make test-platform` 接入 `bash scripts/utils/check-deps-version.sh`。
-- [ ] 对 PR base 与 HEAD 的提交差异执行 `git diff --check <base>...HEAD`；不能在干净 checkout 上运行无范围的 `git diff --check` 冒充有效检查。
+- [x] 对 PR base 与 HEAD 的提交差异执行 `git diff --check <base>...HEAD`；不在干净 checkout 上运行无范围的 `git diff --check` 冒充有效检查。
 - [x] 通过 `make test-platform` 接入 `make test-execution-fixtures`。
 - [x] 首期完整调用现有 `make test-authorization`，不在 workflow 中拆分或复制其内部命令；根据真实耗时再决定是否重构 owner 入口。
-- [x] 保持只读权限，不配置 required check；当前采用直接推送 `main` 后反馈失败的开发方式。
+- [x] 保持 workflow 默认只读权限；当前 Ruleset 存在两个 required checks，维护者以绕过方式直接推送 `main` 后接收失败反馈。
 
 ### 阶段 2：全仓确定性测试
 
@@ -173,7 +172,7 @@ Quality 前端、Agent 离线评测和 Model 前端已经完成 Job 内路径选
 - [ ] 将 System IAM、Quality PostgreSQL 纳入统一的 T2 结构。
 - [ ] 为 T2 建立模块 owner、所需 Service、数据库安全检查和 path mapping。
 - [ ] 迁移完成后删除被统一结构替代的独立 workflow。
-- [ ] 保证未命中相关路径时显示可解释的跳过结果，不影响 required check 稳定性。
+- [x] 保证未命中相关路径时由轻量选择 Job 输出原因，重 Job 明确显示为 skipped；发布 Tag 强制执行所需门禁。
 
 ### 阶段 4：Online 与发布门禁
 
