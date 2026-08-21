@@ -209,6 +209,7 @@ Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job �
 
 - [x] 核实仓库当前没有自托管 Runner、GitHub Environment 和 Actions Secret，现阶段不能安全启用 T4 workflow。
 - [x] 删除伪 Online 的 Standard ↔ Model 混合测试及其默认 Tenant 1、旧开关、跨 Schema SQL 和忽略清理错误路径；现有协调算法与双方数据库行为分别由 T1/T2 证明。
+- [x] 建立 Online 通用安全预检器及确定性自测，拒绝非回环地址、默认 Tenant、脏工作区、无效 Run ID 和服务构建身份不匹配。
 - [ ] 通过 Gateway、owner API 和专用身份重新建立真正的 Standard ↔ Model T4 场景，不复用已删除的跨 Schema 夹具。
 - [ ] 准备独立于开发环境的测试部署、显式测试 Tenant、专用测试身份和构建身份校验。
 - [ ] 注册带 `self-hosted`、`macOS`、`ARM64`、`addp-online` 标签的专用 Runner，并绑定 `addp-online-test` Environment；Runner 不复用开发服务进程或开发数据库。
@@ -221,7 +222,7 @@ Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job �
 T4 环境达到以下条件后才能接入 workflow：
 
 1. macOS 上使用独立 Runner 账号和独立 checkout，不能在日常开发工作区执行任务。
-2. 测试部署拥有独立数据库、Redis、对象存储和测试 Tenant；数据库名称必须明确包含 `test` 或 `online`，不得连接 `addp` 开发业务库。
+2. 测试部署拥有独立数据库、Redis、对象存储和测试 Tenant；数据库名称必须明确包含 `test` 或 `online`，不得连接 `addp` 开发业务库。所有被测服务只绑定 Runner 可访问的回环地址，通用预检拒绝外部主机。
 3. System、Gateway、Standard、Model 等参与服务的 `/health` 必须报告本次提交的 Git commit，任一服务身份不匹配立即按环境失败退出。
 4. GitHub Environment 只保存专用测试身份所需 Secret；不得复用个人账号、开发数据库密码或生产凭据。
 5. 同一 Environment 最多允许一个 T4 运行；所有资源带唯一 Run ID，失败、中断和超时都必须清理并验证零残留。

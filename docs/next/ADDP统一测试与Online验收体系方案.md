@@ -174,7 +174,7 @@ Online 门禁必须先检查：
 
 1. 必需服务 `/health` 可用。
 2. 服务 Build ID、Git commit 或源码指纹与当前工作区匹配；不允许对旧进程给出通过结论。
-3. Tenant 明确标记为测试用途，禁止默认使用 Tenant 1。
+3. Tenant ID 必须显式提供且禁止使用 Tenant 1；测试用途由独立 Runner 账号、独立测试部署和只允许回环地址访问的网络边界共同保证，不为自动化注入平台管理员 Token，也不为此给业务 Tenant 增加测试专用字段。
 4. 数据库和外部系统不属于生产环境。
 5. 所需 User / Service Principal 权限精确存在，不通过扩大运行时身份权限来迁就测试。
 6. 同一 suite 没有使用相同 Run ID 的活动任务，避免并发互相清理。
@@ -281,7 +281,8 @@ T5 按产品或运行时独立编排，例如 System IAM、CLI、Infra Kafka HA�
 
 - 在 `scripts/test/` 建立唯一 Online 门禁分发入口和 suite 登记。
 - 在根 `Makefile` 增加 `test-online`，要求显式 `ONLINE_SUITE`。
-- 实现健康、构建身份、Tenant、安全数据库、超时和报告检查。
+- [x] 建立通用 Online 预检器，拒绝非回环服务地址、默认 Tenant、脏工作区、无效 Run ID、服务健康异常和 Git commit 不匹配；其确定性自测纳入 `make test-platform`。
+- 实现 suite 级身份权限、安全数据库、超时和报告检查。
 - 通过 Gateway 和 owner API 新建 Standard ↔ Model 场景；旧环境变量、默认 Tenant 和跨 Schema SQL 不再存在。
 - 为该场景补充清理失败与残留检测测试。
 
@@ -322,6 +323,6 @@ T5 按产品或运行时独立编排，例如 System IAM、CLI、Infra Kafka HA�
 
 持续集成专题的 T0-T3 与首批 T2 门禁已经接入 GitHub Actions。开发者继续直接推送 `main`，该流程不调用 `scripts/dev/restart.sh`，不接管本地开发服务，也不连接 ADDP 开发业务库。
 
-下一步推进本文“阶段 1：统一 Online runner”。旧 Standard ↔ Model 混合测试已经删除；新的参考场景直接使用统一开关、Gateway、owner API、显式测试 Tenant、严格清理和残留检查。随后准备专用测试部署和带 `addp-online` 标签的 macOS 自托管 Runner，最后建立手工 / 夜间 T4 workflow。Online 验收不能复用本地开发环境。
+阶段 1 已建立 `scripts/test/online-preflight.py`：预检只接受回环地址上的专用部署，并校验显式非默认 Tenant、Run ID、干净源码和参与服务构建身份。下一步建立唯一 `test-online` suite 分发入口，再通过 Gateway、owner API、专用身份、严格清理和残留检查实现新的 Standard ↔ Model 参考场景。随后准备带 `addp-online` 标签的 macOS 自托管 Runner，最后建立手工 / 夜间 T4 workflow。Online 验收不能复用本地开发环境。
 
 不建议一次性实施全部测试层级。全仓测试入口和 CI 矩阵涉及多个 owner，应该按稳定入口逐步迁移，避免用一轮大改制造新的双轨体系。

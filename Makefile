@@ -1,4 +1,4 @@
-.PHONY: help init dev build up down logs clean test test-platform test-go test-asset-frontend test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats dev-all \
+.PHONY: help init dev build up down logs clean test test-platform test-online-preflight test-go test-asset-frontend test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats dev-all \
         build-backend build-frontend build-debug build-release build-iam-bootstrap build-iam-recovery clean-dist \
         infra-up infra-down infra-restart infra-status ports-validate
 
@@ -458,9 +458,13 @@ test-arcgis-open-formats: ## 使用真实 Access/PGeo 样本和 Oracle Spatial �
 test-execution-fixtures: ## 校验统一执行存储测试夹具
 	@bash scripts/test/check-execution-test-fixtures.sh
 
+test-online-preflight: ## 运行 Online 环境安全和构建身份预检的确定性测试
+	@python3 -m unittest scripts/test/online-preflight_test.py
+
 test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@bash scripts/utils/check-deps-version.sh
 	@$(MAKE) test-execution-fixtures
+	@$(MAKE) test-online-preflight
 	@$(MAKE) test-authorization
 
 test-model-frontend: ## 运行 Model 前端状态、交互与浏览器回归测试
