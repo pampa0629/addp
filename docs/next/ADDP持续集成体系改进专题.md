@@ -1,6 +1,6 @@
 # ADDP 持续集成体系改进专题
 
-> 状态：阶段 3 实施中。现状快照核实于 2026-08-21。本文记录当前 GitHub Actions 覆盖、主要缺口和后续实施路线。
+> 状态：阶段 3 已完成，阶段 4 进入环境准备。现状快照核实于 2026-08-21。本文记录当前 GitHub Actions 覆盖、主要缺口和后续实施路线。
 
 ## 一、专题定位
 
@@ -24,7 +24,7 @@ ADDP 已经具备较多本地测试、集成门禁和发布验证入口，但 Gi
 
 | Workflow | 触发方式 | Job / 执行入口 | 当前定位 |
 | --- | --- | --- | --- |
-| `.github/workflows/release-and-t2-gates.yml` | 所有 PR；`main` push；`v*` Tag；手工触发 | 统一选择 System IAM、Quality PostgreSQL T2 门禁与 macOS CLI 产品门禁；`v*` Tag 只强制 CLI、System IAM 后发布 GitHub Release | T2 / T5 |
+| `.github/workflows/release-and-t2-gates.yml` | 所有 PR；`main` push；`v*` Tag；手工触发 | 统一选择 System IAM、Quality、Standard PostgreSQL T2 门禁与 macOS CLI 产品门禁；`v*` Tag 只强制 CLI、System IAM 后发布 GitHub Release | T2 / T5 |
 | `.github/workflows/quality-frontend-smoke.yml` | 所有 PR；`main` push；手工触发 | 按路径选择 `make test-quality-frontend`，执行 Quality 路由测试、Playwright E2E 和前端构建 | T3 |
 | `.github/workflows/platform-ci.yml` | PR；`main` push；每日 02:30（北京时间）；手工触发 | `make test-platform`；`make test-go`；按路径选择 Common Python、Agent、Model 及前端确定性矩阵 | T0 / T1 / T3 |
 
@@ -77,6 +77,7 @@ Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权�
 | `make test-transfer-frontend` | Transfer 前端确定性测试和构建 | T1 |
 | `make test-agent-eval` | Agent 离线评测门禁 | T1 |
 | `make test-common-python` | common-python 全量测试 | T1 |
+| `make test-standard-postgres` | Standard migration、删除约束与引用删除协调的 disposable PostgreSQL 15 门禁 | T2 |
 | `make test-arcgis-open-formats` | Access / PGeo / Oracle Spatial 真实样本集成门禁 | T2 / T5，依赖专用环境 |
 | `make test-agent-eval-release` | Agent 在线证据发布门禁 | T5 |
 
@@ -105,12 +106,13 @@ Common Python、Quality、Agent 和 Model 已通过统一脚本按各自模块�
 
 ### 5.4 模块专项门禁结构仍待统一
 
-Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job 内路径选择。`release-and-t2-gates.yml` 通过单一选择 Job 声明 CLI、System IAM 与 Quality PostgreSQL 的 path mapping；两个 PostgreSQL Job 统一使用固定 PostgreSQL 15、30 分钟超时、关闭 Go 缓存和相同 Summary 格式，未命中时不会启动数据库 Service。`v*` Tag 只强制执行 CLI 与 System IAM 门禁。Ruleset 要求的 CLI 和 System IAM 检查由汇总 Job 提供：命中路径时等待重测试成功，未命中时明确报告跳过并稳定成功。
+Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job 内路径选择。`release-and-t2-gates.yml` 通过单一选择 Job 声明 CLI、System IAM、Quality 与 Standard PostgreSQL 的 path mapping；三个 PostgreSQL Job 统一使用固定 PostgreSQL 15、30 分钟超时、关闭 Go 缓存和相同 Summary 格式，未命中时不会启动数据库 Service。`v*` Tag 只强制执行 CLI 与 System IAM 门禁。Ruleset 要求的 CLI 和 System IAM 检查由汇总 Job 提供：命中路径时等待重测试成功，未命中时明确报告跳过并稳定成功。
 
 | T2 门禁 | Owner | Service | 数据库安全检查 | Path mapping |
 | --- | --- | --- | --- | --- |
 | System IAM PostgreSQL | System | PostgreSQL 15 disposable database | DSN 必须由 CI 注入；门禁先重置专用数据库并拒绝任何测试跳过 | `system/backend/*`、`common/*`、System IAM 门禁脚本与统一 workflow |
 | Quality PostgreSQL | Quality | PostgreSQL 15 disposable database | 数据库名必须包含 `test` 或 `disposable`，并拒绝任何测试跳过 | `quality/backend/*`、`common/*`、Quality 门禁脚本与统一 workflow |
+| Standard PostgreSQL | Standard | PostgreSQL 15 disposable database | DSN 数据库名必须包含 `test` 或 `disposable`，并拒绝任何测试跳过 | `standard/backend/*`、`common/*`、Standard 门禁脚本与统一 workflow |
 
 ### 5.5 CI 与 GitHub 仓库策略没有仓库内闭环
 
@@ -198,17 +200,32 @@ Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job �
 
 ### 阶段 3：模块集成矩阵
 
-- [x] 将 System IAM、Quality PostgreSQL 纳入统一的 T2 结构。
+- [x] 将 System IAM、Quality、Standard PostgreSQL 纳入统一的 T2 结构。
 - [x] 为 T2 建立模块 owner、PostgreSQL 15 Service、数据库安全检查和 path mapping。
 - [x] 迁移完成后删除被统一结构替代的 `quality-postgres-gate.yml`。
 - [x] 保证未命中相关路径时由轻量选择 Job 输出原因，重 Job 明确显示为 skipped；发布 Tag 强制执行所需门禁。
 
 ### 阶段 4：Online 与发布门禁
 
-- [ ] 按统一测试方案建立手工 / 夜间 T4 workflow。
-- [ ] 使用专用测试部署、显式测试 Tenant 和构建身份校验。
+- [x] 核实仓库当前没有自托管 Runner、GitHub Environment 和 Actions Secret，现阶段不能安全启用 T4 workflow。
+- [x] 删除伪 Online 的 Standard ↔ Model 混合测试及其默认 Tenant 1、旧开关、跨 Schema SQL 和忽略清理错误路径；现有协调算法与双方数据库行为分别由 T1/T2 证明。
+- [ ] 通过 Gateway、owner API 和专用身份重新建立真正的 Standard ↔ Model T4 场景，不复用已删除的跨 Schema 夹具。
+- [ ] 准备独立于开发环境的测试部署、显式测试 Tenant、专用测试身份和构建身份校验。
+- [ ] 注册带 `self-hosted`、`macOS`、`ARM64`、`addp-online` 标签的专用 Runner，并绑定 `addp-online-test` Environment；Runner 不复用开发服务进程或开发数据库。
+- [ ] 按统一测试方案建立手工 / 夜间 T4 workflow；环境准入未完成前不得提交一个会永久排队或连接开发环境的占位 workflow。
 - [ ] 保留 CLI 等产品级 T5 门禁，但统一调用、报告和 Artifact 规则。
 - [ ] 核实 Tag、GitHub Release、Artifact Attestation 与仓库 Ruleset 的闭环。
+
+阶段 4 只采用一条路线：GitHub Hosted Runner 继续承担 T0-T3 与现有 CLI T5；macOS 自托管 Runner 只承担需要访问专用 ADDP 测试部署的 T4。个人日常开发环境不注册为 Online 测试目标，`restart.sh` 也不触发 CI 或 Online 测试。
+
+T4 环境达到以下条件后才能接入 workflow：
+
+1. macOS 上使用独立 Runner 账号和独立 checkout，不能在日常开发工作区执行任务。
+2. 测试部署拥有独立数据库、Redis、对象存储和测试 Tenant；数据库名称必须明确包含 `test` 或 `online`，不得连接 `addp` 开发业务库。
+3. System、Gateway、Standard、Model 等参与服务的 `/health` 必须报告本次提交的 Git commit，任一服务身份不匹配立即按环境失败退出。
+4. GitHub Environment 只保存专用测试身份所需 Secret；不得复用个人账号、开发数据库密码或生产凭据。
+5. 同一 Environment 最多允许一个 T4 运行；所有资源带唯一 Run ID，失败、中断和超时都必须清理并验证零残留。
+6. Runner 至少应具备 Apple Silicon、16 GB 内存和 100 GB 可用空间；若同机承载完整测试部署，建议 32 GB 内存。Docker 运行时、Go、Node、Python 等具体版本继续由仓库规约和 workflow 准备，不依赖机器上的临时开发配置。
 
 ### 阶段 5：规范化与清理
 
@@ -239,6 +256,8 @@ Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job �
 3. 最近至少 30 次 workflow 的耗时、失败原因和 Runner 成本。
 4. Renovate App 安装状态、Dependency Dashboard 和实际更新记录。
 5. 是否需要自托管 Runner；没有明确资源或安全价值时，默认继续使用 GitHub Hosted Runner。
+
+2026-08-21 在线核实结果：仓库自托管 Runner、Environment 和 Actions Secret 数量均为 0；Actions 已启用，默认 workflow 权限为 `contents: read`，workflow 不能审批 Pull Request。阶段 4 必须先完成上述环境准入，不能从仓库现状推断测试机器已经可用。
 
 ## 十一、建议的首次开展范围
 

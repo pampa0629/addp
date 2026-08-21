@@ -163,11 +163,12 @@ func TestMigrateRenamesLegacyDocumentVersion(t *testing.T) {
 		id BIGSERIAL PRIMARY KEY,
 		tenant_id BIGINT NOT NULL,
 		name VARCHAR(200) NOT NULL,
+		created_by BIGINT NOT NULL,
 		version VARCHAR(50)
 	)`).Error; err != nil {
 		t.Fatalf("create legacy documents table: %v", err)
 	}
-	if err := tx.Exec(`INSERT INTO standard.documents (tenant_id, name, version) VALUES (7, 'Legacy document', '2025-R2')`).Error; err != nil {
+	if err := tx.Exec(`INSERT INTO standard.documents (tenant_id, name, created_by, version) VALUES (7, 'Legacy document', 1, '2025-R2')`).Error; err != nil {
 		t.Fatalf("insert legacy document: %v", err)
 	}
 

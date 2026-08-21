@@ -24,6 +24,7 @@ jobs:
     outputs:
       cli: ${{ steps.cli.outputs.run }}
       quality: ${{ steps.quality.outputs.run }}
+      standard: ${{ steps.standard.outputs.run }}
       system: ${{ steps.system.outputs.run }}
     steps:
       - name: Check out repository
@@ -83,6 +84,24 @@ jobs:
             'scripts/test/system-iam-postgres-gate.sh' \
             'scripts/ci/select-gate-by-paths.sh' \
             'scripts/ci/report-selected-gate.sh' \
+            '.github/actions/ci-gate-summary/*' \
+            'Makefile' \
+            '.github/workflows/release-and-t2-gates.yml'
+
+      - name: Select Standard PostgreSQL gate
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        id: standard
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          bash scripts/ci/select-gate-by-paths.sh "Standard PostgreSQL" \
+            'standard/backend/*' \
+            'common/*' \
+            'scripts/test/standard-postgres-gate.sh' \
+            'scripts/ci/select-gate-by-paths.sh' \
             '.github/actions/ci-gate-summary/*' \
             'Makefile' \
             '.github/workflows/release-and-t2-gates.yml'
@@ -227,6 +246,50 @@ jobs:
         uses: ./.github/actions/ci-gate-summary
         with:
           gate: Quality integration (PostgreSQL 15)
+          status: ${{ job.status }}
+
+  standard-postgres:
+    name: Standard integration (PostgreSQL 15)
+    needs: selection
+    if: needs.selection.outputs.standard == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+        env:
+          POSTGRES_USER: addp_ci
+          POSTGRES_PASSWORD: addp_ci_password
+          POSTGRES_DB: addp_standard_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U addp_ci -d addp_standard_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: standard/backend/go.mod
+          cache: false
+
+      - name: Run Standard PostgreSQL gate
+        env:
+          STANDARD_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_standard_test?sslmode=disable
+        run: make test-standard-postgres
+
+      - name: Summarize Standard PostgreSQL gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Standard integration (PostgreSQL 15)
           status: ${{ job.status }}
 
   cli-product-macos:

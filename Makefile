@@ -1,4 +1,4 @@
-.PHONY: help init dev build up down logs clean test test-platform test-go test-asset-frontend test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-arcgis-open-formats dev-all \
+.PHONY: help init dev build up down logs clean test test-platform test-go test-asset-frontend test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats dev-all \
         build-backend build-frontend build-debug build-release build-iam-bootstrap build-iam-recovery clean-dist \
         infra-up infra-down infra-restart infra-status ports-validate
 
@@ -448,6 +448,9 @@ test-system-iam-postgres: ## 使用一次性 PostgreSQL 数据库运行 System I
 
 test-quality-postgres: ## 使用一次性 PostgreSQL 数据库运行 Quality 集成门禁
 	@bash scripts/test/quality-postgres-gate.sh
+
+test-standard-postgres: ## 使用一次性 PostgreSQL 数据库运行 Standard 集成门禁
+	@bash scripts/test/standard-postgres-gate.sh
 
 test-arcgis-open-formats: ## 使用真实 Access/PGeo 样本和 Oracle Spatial 运行集成门禁
 	@bash scripts/test/arcgis-open-formats-integration-gate.sh

@@ -39,9 +39,6 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	if err := db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", cfg.DBSchema)).Error; err != nil {
-		log.Fatalf("Failed to create schema: %v", err)
-	}
 	if err := commonExecution.EnsureStore(db); err != nil {
 		log.Fatalf("Failed to ensure execution store: %v", err)
 	}

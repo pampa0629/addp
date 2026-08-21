@@ -436,6 +436,7 @@ scripts/test/
 ├── check-execution-test-fixtures.sh # 统一执行存储测试夹具门禁
 ├── common-python-cli-release-gate.sh # ADDP CLI wheel 与 macOS Keychain 产品发布门禁
 ├── quality-postgres-gate.sh # Quality PostgreSQL 集成门禁
+├── standard-postgres-gate.sh # Standard PostgreSQL 集成门禁
 └── system-iam-postgres-gate.sh # System IAM 与 Fosite 一次性 PostgreSQL 发布门禁
 ```
 
@@ -458,6 +459,8 @@ GitHub Actions 的 IAM/CLI 发布工作流并行运行 macOS CLI 产品门禁和
 当前唯一正式分发路径是 GitHub Release。版本发布预检复用 common-python 全量测试中的 `tests/test_version.py`，统一校验运行时、安装包、命令和长期文档版本，不增加旁路脚本。发布工作流中的第三方 `uses:` 全部固定到不可变提交 SHA；固定版本的 zizmor 只扫描该工作流，并在现有 required Job 内阻断浮动 Action Tag 和中高风险供应链问题。推送与包版本一致的 `v<version>` Tag 会在同一次工作流中重新运行上述两项门禁；两项均成功后，发布 Job 只下载 `addp-cli-wheel` artifact，校验便携 SHA-256、包名和 wheel `METADATA` 版本，使用 GitHub OIDC 为 wheel 生成 build provenance attestation，再创建 Release。发布 Job 不检出源码、不重新构建 wheel，Release 仍只包含 wheel 和 checksum；attestation 由 GitHub Attestations API 保存，使用 `gh attestation verify` 验证。PyPI 或私有包仓库待账号、权限和发布策略明确后另行设计。
 
 System IAM 和 Fosite 正式发布使用 `make test-system-iam-postgres`，必须显式提供唯一变量 `ADDP_SYSTEM_POSTGRES_TEST_DSN`，且数据库名包含独立的 `test` 或 `disposable` 段。门禁先清理一次性数据库中的 `system` 和 `common` Schema，再串行运行 IAM Domain、Fosite Storage、IAM API 和 Migration 的全部 PostgreSQL `AgainstPostgres` 测试；缺少 DSN、指向非一次性数据库或测试被阻断时立即失败。该入口只能指向专用临时数据库。
+
+Standard 的正式 PostgreSQL 集成门禁使用 `make test-standard-postgres`，必须显式提供唯一变量 `STANDARD_POSTGRES_TEST_DSN`，且数据库名包含 `test` 或 `disposable`。门禁验证 Standard migration、删除约束、引用删除协调的并发锁和失败恢复，并拒绝任何测试 Skip。该入口只操作 Standard owner Schema；Standard ↔ Model 的生产调用通过 `common/client`，不允许使用跨 Schema SQL 模拟 Online 验收。
 
 ---
 

@@ -166,7 +166,7 @@ make test-release RELEASE_SUITE=system-iam
 
 服务地址继续使用平台既有配置，如 `SYSTEM_URL`、`MODEL_URL`，不在测试体系中复制第二套端口表。场景需要的 Client Secret 或 User 凭据使用 owner 已定义的环境变量。
 
-当前 Standard ↔ Model 测试使用的 `ADDP_STANDARD_MODEL_ONLINE_TEST` 和默认 Tenant 1 仅是首个实现，不作为长期通用契约。迁移到统一门禁时应删除旧变量和默认 Tenant 路径。
+旧 Standard ↔ Model 混合测试使用的 `ADDP_STANDARD_MODEL_ONLINE_TEST`、默认 Tenant 1 和跨 Schema SQL 已删除，不再作为 Online 入口或兼容契约。新的 T4 场景必须直接采用上述平台级开关和显式测试 Tenant。
 
 ### 5.3 运行前检查
 
@@ -225,20 +225,21 @@ Online 测试按以下优先级创建夹具：
 
 ## 六、Standard ↔ Model 参考场景
 
-现有 Standard ↔ Model Online 测试已经证明以下行为：
+Standard ↔ Model 的确定性测试已经分别证明以下行为：
 
 1. Model 存在引用时，Standard 删除被阻止。
 2. 引用解除后，Standard 进入删除流程。
 3. 第一次 `deleted` 通知失败时，协调记录保留。
 4. 后台补偿最终将 Model guard 收敛到 `deleted`。
-5. 测试结束后清理临时 Domain、Entity、Guard 和协调记录。
+5. Standard 与 Model 各自的 Migration、Repository 和 Service 数据库行为可在 disposable PostgreSQL 中验证。
 
-它适合作为 T4 的首个业务场景，但统一化前还需完成两项收口：
+旧测试通过直连业务数据库、默认 Tenant 1 和跨 Schema SQL 把 T2 与 T4 混在一起，无法证明 Gateway、真实认证和 owner API 链路，已经删除。现有验证收敛为：
 
-- 从默认 Tenant 1 迁移到显式专用测试 Tenant。
-- 将直接写入 `model.entities` 和直接数据库清理改为 owner API 或受控测试夹具；若必须保留直接 SQL，则该场景应迁入 disposable 数据库集成门禁，而不能继续称为通用 Online 模板。
+- Standard 引用删除协调算法由模块内确定性测试证明。
+- Standard migration、删除约束和协调并发由 `make test-standard-postgres` 在 disposable PostgreSQL 中证明。
+- Model 引用 guard 的 Repository / Service 行为由 Model 自身测试证明。
 
-因此，应复用它的行为断言、故障注入和最终一致性验证方式，不应复制它当前的数据环境假设。
+新的 T4 仍以 Standard ↔ Model 为首个业务场景，但必须从 Gateway 和 owner 正式 API 创建、查询和删除资源，使用专用测试 User / Service 身份、显式测试 Tenant、构建身份校验和严格零残留检查。不得恢复已删除的跨 Schema 夹具。
 
 ## 七、CI 分层
 
@@ -281,7 +282,7 @@ T5 按产品或运行时独立编排，例如 System IAM、CLI、Infra Kafka HA�
 - 在 `scripts/test/` 建立唯一 Online 门禁分发入口和 suite 登记。
 - 在根 `Makefile` 增加 `test-online`，要求显式 `ONLINE_SUITE`。
 - 实现健康、构建身份、Tenant、安全数据库、超时和报告检查。
-- 将 Standard ↔ Model 场景迁入统一协议，删除旧环境变量和默认 Tenant 路径。
+- 通过 Gateway 和 owner API 新建 Standard ↔ Model 场景；旧环境变量、默认 Tenant 和跨 Schema SQL 不再存在。
 - 为该场景补充清理失败与残留检测测试。
 
 ### 阶段 2：统一模块和集成入口
@@ -313,14 +314,14 @@ T5 按产品或运行时独立编排，例如 System IAM、CLI、Infra Kafka HA�
 3. 破坏性数据库门禁无法连接 `addp` 开发业务库。
 4. Online 测试无法使用默认 Tenant，无法对构建身份不匹配的服务给出通过结论。
 5. Online 门禁能报告业务失败、环境失败和清理失败，且拒绝意外 Skip。
-6. Standard ↔ Model 场景通过统一入口执行，旧变量和旧入口已删除。
+6. Standard ↔ Model 场景通过统一入口和正式 API 执行，旧变量、旧入口和跨 Schema SQL 已删除。
 7. 根 Makefile、`scripts/README.md`、CI workflow 和模块文档一致。
 8. PR、Online、Release 三类 workflow 不重复实现业务测试逻辑。
 
 ## 十、当前建议
 
-当前优先实施持续集成专题的首期平台门禁：开发者继续直接推送 `main`，GitHub Actions 在推送后、每日定时或手工触发时运行无外部服务的平台一致性检查和全仓 Go 测试。该流程不调用 `scripts/dev/restart.sh`，不接管本地开发服务，也不连接 ADDP 开发业务库。
+持续集成专题的 T0-T3 与首批 T2 门禁已经接入 GitHub Actions。开发者继续直接推送 `main`，该流程不调用 `scripts/dev/restart.sh`，不接管本地开发服务，也不连接 ADDP 开发业务库。
 
-首期使用 GitHub Hosted Runner，不要求独立测试环境。待确定性 CI 获得真实耗时和失败数据后，再推进本文“阶段 1：统一 Online runner”；届时 Online 验收必须使用专用测试部署、显式测试 Tenant 和构建身份，不能复用本地开发环境。
+下一步推进本文“阶段 1：统一 Online runner”。旧 Standard ↔ Model 混合测试已经删除；新的参考场景直接使用统一开关、Gateway、owner API、显式测试 Tenant、严格清理和残留检查。随后准备专用测试部署和带 `addp-online` 标签的 macOS 自托管 Runner，最后建立手工 / 夜间 T4 workflow。Online 验收不能复用本地开发环境。
 
 不建议一次性实施全部测试层级。全仓测试入口和 CI 矩阵涉及多个 owner，应该按稳定入口逐步迁移，避免用一轮大改制造新的双轨体系。
