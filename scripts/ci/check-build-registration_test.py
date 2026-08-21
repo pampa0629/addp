@@ -206,6 +206,36 @@ class BuildRegistrationTest(unittest.TestCase):
         )
         self.assertEqual([], MODULE.validate_registration(self.repository))
 
+    def test_rejects_latest_seed_source_and_target(self) -> None:
+        build_script = self.repository / "scripts/build/build-images.sh"
+        build_script.write_text(
+            build_script.read_text(encoding="utf-8").replace(
+                '        "python:3.12-slim"',
+                '        "python:latest=python-runtime:latest"',
+            ),
+            encoding="utf-8",
+        )
+        errors = MODULE.validate_registration(self.repository)
+        self.assertIn(
+            "seed_base_images source uses floating latest tag: python:latest",
+            errors,
+        )
+        self.assertIn(
+            "seed_base_images target uses floating latest tag: python-runtime:latest",
+            errors,
+        )
+
+    def test_rejects_latest_local_registry_base_image(self) -> None:
+        self._write(
+            "sample/frontend/Dockerfile",
+            "FROM localhost:5001/python:latest\n",
+        )
+        self.assertIn(
+            "sample-frontend: base image localhost:5001/python:latest uses "
+            "floating latest tag",
+            MODULE.validate_registration(self.repository),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

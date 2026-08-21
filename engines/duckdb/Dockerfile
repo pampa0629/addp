@@ -1,5 +1,5 @@
 ARG GO_IMAGE=localhost:5001/golang:1.24-bookworm
-ARG RUNTIME_IMAGE=localhost:5001/debian-bookworm-slim:latest
+ARG RUNTIME_IMAGE=localhost:5001/debian-slim:bookworm
 
 FROM ${GO_IMAGE} AS builder
 

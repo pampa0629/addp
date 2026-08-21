@@ -851,18 +851,15 @@ seed_base_images() {
     arch=$(echo "$BUILD_PLATFORMS" | sed 's|linux/||' | cut -d',' -f1)
 
     local base_images=(
-        "alpine:latest"
         "nginx:alpine"
         "node:18.20.5-alpine"
         "node:20-alpine"
         "python:3.11-slim"
         "python:3.12-slim"
         "python:3.11-bullseye"
-        "golang:1.24=golang:1.24"
         "golang:1.24-bookworm=golang:1.24-bookworm"
-        "debian:bookworm-slim=debian-slim:latest"
-        "debian:bookworm-slim=debian-bookworm-slim:latest"
-        "ubuntu:24.04=ubuntu24:latest"
+        "debian:bookworm-slim=debian-slim:bookworm"
+        "ubuntu:24.04"
     )
 
     local any_failed=false

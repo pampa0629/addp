@@ -194,12 +194,21 @@ def quoted_shell_array(text: str, declaration: str) -> list[str]:
     return re.findall(r'^\s*"([^"\n]+)"\s*$', match.group("body"), re.MULTILINE)
 
 
-def seeded_base_images(text: str) -> set[str]:
-    targets: set[str] = set()
+def base_image_seed_entries(text: str) -> list[tuple[str, str]]:
+    entries: list[tuple[str, str]] = []
     for entry in quoted_shell_array(text, "base_images"):
         source, separator, target = entry.partition("=")
-        targets.add(target if separator else source)
-    return targets
+        entries.append((source, target if separator else source))
+    return entries
+
+
+def seeded_base_images(text: str) -> set[str]:
+    return {target for _, target in base_image_seed_entries(text)}
+
+
+def uses_latest_tag(image: str) -> bool:
+    name_and_tag = image.partition("@")[0]
+    return name_and_tag.rpartition(":")[2] == "latest"
 
 
 def local_registry_base_images(text: str) -> set[str]:
@@ -266,9 +275,20 @@ def validate_registration(repository: Path) -> list[str]:
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
     compiled = shell_array(compile_script, "SERVICES")
     images = shell_array(image_script, "services")
+    seed_entries = base_image_seed_entries(image_script)
     seeded_images = seeded_base_images(image_script)
     expected_compiled = expected_compile_entries(repository)
     errors: list[str] = []
+
+    for source, target in seed_entries:
+        if uses_latest_tag(source):
+            errors.append(
+                f"seed_base_images source uses floating latest tag: {source}"
+            )
+        if uses_latest_tag(target):
+            errors.append(
+                f"seed_base_images target uses floating latest tag: {target}"
+            )
 
     for name, directory in sorted(expected_compiled.items()):
         if name not in compiled:
@@ -306,6 +326,11 @@ def validate_registration(repository: Path) -> list[str]:
             for base_image in sorted(
                 local_registry_base_images(definition_path.read_text(encoding="utf-8"))
             ):
+                if uses_latest_tag(base_image):
+                    errors.append(
+                        f"{name}: base image localhost:5001/{base_image} uses "
+                        "floating latest tag"
+                    )
                 if base_image not in seeded_images:
                     errors.append(
                         f"{name}: base image localhost:5001/{base_image} is not "

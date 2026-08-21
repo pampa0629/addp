@@ -110,7 +110,7 @@ Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job �
 
 `make test-platform` 已接入 T2 CI 登记完整性检查，自动发现 `scripts/test/*-postgres-gate.sh`，并校验 Make 入口、workflow 调用、脚本路径、owner 后端路径与固定 PostgreSQL 15 镜像。新增 Hosted PostgreSQL T2 门禁时，遗漏任一登记环节都会使 Platform CI 失败。
 
-平台构建入口也已收敛为单一路线：`make build` 唯一调用 `scripts/build/compile.sh`，`make build-images` 唯一调用 `scripts/build/build-images.sh`，旧的分模块、debug/release、生产镜像和 Compose build Make 目标已删除。`make test-platform` 自动发现正式 Go Server/Worker、前端与 Compose ADDP 镜像，核对构建登记、Dockerfile/专用构建脚本、Docker build context 的 `COPY` 输入、`.dockerignore` 排除规则、本地 Registry 基础镜像预热登记以及预编译二进制名称；以后 AI 新增或调整部署单元时，遗漏编译清单、镜像清单、构建定义、context 输入或 `seed_base_images` 登记会在同次 CI 中直接暴露。
+平台构建入口也已收敛为单一路线：`make build` 唯一调用 `scripts/build/compile.sh`，`make build-images` 唯一调用 `scripts/build/build-images.sh`，旧的分模块、debug/release、生产镜像和 Compose build Make 目标已删除。`make test-platform` 自动发现正式 Go Server/Worker、前端与 Compose ADDP 镜像，核对构建登记、Dockerfile/专用构建脚本、Docker build context 的 `COPY` 输入、`.dockerignore` 排除规则、本地 Registry 基础镜像预热登记、浮动 `latest` 标签以及预编译二进制名称；以后 AI 新增或调整部署单元时，遗漏编译清单、镜像清单、构建定义、context 输入、`seed_base_images` 登记或恢复 `latest` 会在同次 CI 中直接暴露。
 
 | T2 门禁 | Owner | Service | 数据库安全检查 | Path mapping |
 | --- | --- | --- | --- | --- |
