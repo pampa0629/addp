@@ -25,16 +25,16 @@ ADDP 已经具备较多本地测试、集成门禁和发布验证入口，但 Gi
 | Workflow | 触发方式 | Job / 执行入口 | 当前定位 |
 | --- | --- | --- | --- |
 | `.github/workflows/iam-cli-release-gates.yml` | 所有 PR；`main` push；`v*` Tag；手工触发 | macOS CLI wheel 产品门禁：`make test-common-python-cli-release`；System IAM PostgreSQL 15 门禁：`make test-system-iam-postgres`；Tag 发布 GitHub Release | T2 / T5 |
-| `.github/workflows/quality-frontend-smoke.yml` | 所有 PR；`main` push；手工触发 | Quality 路由测试、Playwright E2E、前端构建 | T3 |
+| `.github/workflows/quality-frontend-smoke.yml` | 所有 PR；`main` push；手工触发 | 按路径选择 `make test-quality-frontend`，执行 Quality 路由测试、Playwright E2E 和前端构建 | T3 |
 | `.github/workflows/quality-postgres-gate.yml` | 所有 PR；`main` push；手工触发 | `make test-quality-postgres`，使用独占 PostgreSQL 15 Service | T2 |
-| `.github/workflows/platform-ci.yml` | PR；`main` push；每日 02:30（北京时间）；手工触发 | `make test-platform`；`make test-go`；`make test-common-python`；`make test-agent-eval`；按路径选择 `make test-model-frontend` | T0 / T1 / T3 |
+| `.github/workflows/platform-ci.yml` | PR；`main` push；每日 02:30（北京时间）；手工触发 | `make test-platform`；`make test-go`；`make test-common-python`；按路径选择 `make test-agent-eval` 和 `make test-model-frontend` | T0 / T1 / T3 |
 
 当前共同特征：
 
-- 三个 workflow 都设置了最小 `contents: read` 权限、超时和同 ref 并发取消。
+- 四个 workflow 都设置了最小 `contents: read` 权限、超时和同 ref 并发取消。
 - GitHub Action 引用固定到不可变 commit digest。
 - PostgreSQL 门禁使用固定 PostgreSQL 15 镜像摘要和 disposable database。
-- 三个 workflow 均无 `paths` / `paths-ignore`，任意 PR 都会触发全部门禁。
+- 四个 workflow 均不在 workflow 触发器上使用 `paths` / `paths-ignore`，以保持 Job 名称稳定；模块 Job 在内部按登记路径执行或明确报告跳过。
 - 只有 CLI Tag 发布 Job 具有写权限，其余 Job 默认只读。
 
 ## 三、当前依赖自动化
@@ -58,6 +58,7 @@ Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权�
 | `make test-authorization` | Permission Manifest、owner 常量、Tool Catalog、SQL seed 和 Swagger 路由覆盖报告 | T0 / T1 |
 | `make test-execution-fixtures` | 统一 execution 测试夹具约束 | T0 |
 | `make test-model-frontend` | Model 前端单元、E2E 和构建 | T1 / T3 |
+| `make test-quality-frontend` | Quality 前端路由、E2E 和构建 | T1 / T3 |
 | `make test-agent-eval` | Agent 离线评测门禁 | T1 |
 | `make test-common-python` | common-python 全量测试 | T1 |
 | `make test-arcgis-open-formats` | Access / PGeo / Oracle Spatial 真实样本集成门禁 | T2 / T5，依赖专用环境 |
@@ -84,11 +85,11 @@ Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权�
 
 ### 5.3 前端覆盖仍不完整
 
-Quality 具备路由、浏览器 Smoke 和构建门禁；Agent 前端测试已随 Agent 离线评测进入平台 CI；Model 已按 `model/frontend/`、`common-frontend/`、根 Makefile 和 workflow 自身的变更路径选择正式门禁。其余前端模块仍未登记。
+Quality、Agent 和 Model 已通过统一脚本按各自模块、共享依赖、根 Makefile 和 workflow 自身的变更路径选择正式门禁；手工触发及平台夜间任务始终执行。其余前端模块仍未登记。
 
 ### 5.4 模块专项门禁无路径选择
 
-当前任何 PR 都会安装 Quality Chromium、运行 Quality E2E、启动两个 PostgreSQL Job 和运行 macOS CLI 门禁，即使改动与这些模块无关。随着门禁增加，这种全量触发方式不可持续。
+Quality 前端、Agent 离线评测和 Model 前端已经完成 Job 内路径选择。两个 PostgreSQL Job 和 macOS CLI 门禁仍会在任何 PR 上完整执行，即使改动与这些模块无关。
 
 ### 5.5 CI 与 GitHub 仓库策略没有仓库内闭环
 
@@ -162,6 +163,7 @@ Quality 具备路由、浏览器 Smoke 和构建门禁；Agent 前端测试已�
 - [x] 接入 `make test-go`，保持动态模块发现，不维护手写模块列表。
 - [x] 接入 `make test-common-python` 和 Agent 离线评测。
 - [x] 建立首个前端模块变更路径登记并迁入已有 `make test-model-frontend`；未命中时保留稳定 Job 并明确报告跳过原因。
+- [x] 复用统一选择脚本，将 Agent 离线评测和 Quality 前端纳入变更路径登记，并保持手工及夜间触发始终执行。
 - [ ] 统一缓存键、超时和测试报告格式。
 - [ ] 明确哪些 T1 Job 是 required checks。
 

@@ -111,9 +111,29 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          fetch-depth: 0
           persist-credentials: false
 
+      - name: Select Agent offline evaluation gate
+        id: selection
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          bash scripts/ci/select-gate-by-paths.sh "Agent offline evaluation" \
+            'agent/*' \
+            'common-python/*' \
+            'common-frontend/*' \
+            'evals/agent-scenarios/*' \
+            'scripts/test/agent-evaluation-gate.sh' \
+            'scripts/ci/select-gate-by-paths.sh' \
+            'Makefile' \
+            '.github/workflows/platform-ci.yml'
+
       - name: Set up Python
+        if: steps.selection.outputs.run == 'true'
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.11"
@@ -123,6 +143,7 @@ jobs:
             common-python/pyproject.toml
 
       - name: Set up Node.js
+        if: steps.selection.outputs.run == 'true'
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v6
         with:
           node-version: 22
@@ -130,6 +151,7 @@ jobs:
           cache-dependency-path: agent/frontend/package-lock.json
 
       - name: Prepare Agent evaluation environments
+        if: steps.selection.outputs.run == 'true'
         run: |
           python -m venv common-python/.venv
           common-python/.venv/bin/python -m pip install --disable-pip-version-check --upgrade pip
@@ -141,7 +163,12 @@ jobs:
           npm ci --prefix agent/frontend
 
       - name: Run Agent offline evaluation
+        if: steps.selection.outputs.run == 'true'
         run: make test-agent-eval
+
+      - name: Report skipped Agent offline evaluation gate
+        if: steps.selection.outputs.run != 'true'
+        run: echo "Agent offline evaluation gate did not run because no registered path changed."
 
   model-frontend:
     name: Model frontend (unit, E2E, build)
@@ -162,39 +189,12 @@ jobs:
           ADDP_CI_HEAD: ${{ github.sha }}
           ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
         run: |
-          set -euo pipefail
-          if [[ "$ADDP_CI_EVENT" == "schedule" || "$ADDP_CI_EVENT" == "workflow_dispatch" ]]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "Model frontend gate selected for $ADDP_CI_EVENT."
-            exit 0
-          fi
-
-          if [[ "$ADDP_CI_EVENT" == "pull_request" ]]; then
-            diff_base="$ADDP_CI_PR_BASE"
-          elif [[ -n "$ADDP_CI_BEFORE" && "$ADDP_CI_BEFORE" != "0000000000000000000000000000000000000000" ]]; then
-            diff_base="$ADDP_CI_BEFORE"
-          else
-            diff_base="$ADDP_CI_HEAD^"
-          fi
-
-          changed_paths=$(git diff --name-only "$diff_base...$ADDP_CI_HEAD")
-          should_run=false
-          while IFS= read -r changed_path; do
-            case "$changed_path" in
-              model/frontend/*|common-frontend/*|Makefile|.github/workflows/platform-ci.yml)
-                should_run=true
-                break
-                ;;
-            esac
-          done <<< "$changed_paths"
-
-          if [[ "$should_run" == "true" ]]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "Model frontend gate selected by changed paths."
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Model frontend gate skipped: no registered path changed."
-          fi
+          bash scripts/ci/select-gate-by-paths.sh "Model frontend" \
+            'model/frontend/*' \
+            'common-frontend/*' \
+            'scripts/ci/select-gate-by-paths.sh' \
+            'Makefile' \
+            '.github/workflows/platform-ci.yml'
 
       - name: Set up Node.js
         if: steps.selection.outputs.run == 'true'
