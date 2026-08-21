@@ -631,9 +631,9 @@ func setupExplorerService(t *testing.T) (*ExplorerService, func()) {
 			tenantID := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer tenant-")
 			switch tenantID {
 			case "1":
-				fmt.Fprintf(w, `[{"id":1,"name":"tenant-one-db","engine_type":"postgresql","connection_info":{},"tenant_id":1,"lifecycle_state":"active","capabilities":%q}]`, capabilities)
+				fmt.Fprintf(w, `[{"id":1,"name":"tenant-one-db","engine_type":"postgresql","connection_info":{},"tenant_id":1,"lifecycle_state":"active","connection_status":"online","capabilities":%q}]`, capabilities)
 			case "2":
-				fmt.Fprintf(w, `[{"id":2,"name":"tenant-two-db","engine_type":"postgresql","connection_info":{},"tenant_id":2,"lifecycle_state":"active","capabilities":%q}]`, capabilities)
+				fmt.Fprintf(w, `[{"id":2,"name":"tenant-two-db","engine_type":"postgresql","connection_info":{},"tenant_id":2,"lifecycle_state":"active","connection_status":"online","capabilities":%q}]`, capabilities)
 			default:
 				fmt.Fprint(w, `[]`)
 			}

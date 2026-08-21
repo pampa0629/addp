@@ -34,7 +34,14 @@ func TestSystemEngineHandlerUsesCanonicalTenantContext(t *testing.T) {
 			"engine_type": "postgresql",
 			"engine_origin": "general",
 			"connection_info": {},
-			"lifecycle_state": "active"
+			"lifecycle_state": "active",
+			"connection_status": "online",
+			"capabilities": {
+				"schema_version": "engine.capabilities/v1",
+				"engine_type": "postgresql",
+				"engine_family": "tabular",
+				"storage": {"catalog": {"supported": true}}
+			}
 		}]`))
 	}))
 	defer upstream.Close()

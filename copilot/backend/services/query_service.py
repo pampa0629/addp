@@ -484,7 +484,31 @@ class QueryService:
         match = re.search(r"```(?:json)?\s*(.*?)\s*```", cleaned, re.DOTALL | re.IGNORECASE)
         if match:
             cleaned = match.group(1).strip()
-        parsed = json.loads(cleaned)
+        try:
+            parsed = json.loads(cleaned)
+        except json.JSONDecodeError as original_error:
+            decoder = json.JSONDecoder()
+            candidates: list[dict[str, Any]] = []
+            for index, character in enumerate(cleaned):
+                if character != "{":
+                    continue
+                try:
+                    candidate, end = decoder.raw_decode(cleaned, index)
+                except json.JSONDecodeError:
+                    continue
+                prefix = cleaned[:index]
+                suffix = cleaned[end:]
+                if (
+                    isinstance(candidate, dict)
+                    and "{" not in prefix
+                    and "}" not in prefix
+                    and "{" not in suffix
+                    and "}" not in suffix
+                ):
+                    candidates.append(candidate)
+            if len(candidates) != 1:
+                raise ValueError("query generation response must contain exactly one JSON object") from original_error
+            parsed = candidates[0]
         if not isinstance(parsed, dict):
             raise ValueError("query generation response must be an object")
         return parsed

@@ -36,6 +36,7 @@ func TestCreateUnscannedRunsSubmitsUnscannedEngines(t *testing.T) {
 		Name:           "Business MinIO",
 		EngineType:     "s3",
 		LifecycleState: "active",
+		ConnectionStatus: commonModels.EngineConnectionOnline,
 		Capabilities:   &capJSON,
 	}
 	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

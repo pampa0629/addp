@@ -7,6 +7,23 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from services.query_service import QueryService
 
 
+@pytest.mark.parametrize("prefix", ["collections", 'collections":["'])
+def test_decode_object_recovers_single_schema_object_from_model_prefix(prefix):
+    result = QueryService._decode_object(
+        prefix
+        + '{"collections":["Persons"],"field_paths":["entriedOutdoors"],'
+        '"operations":["filter","count"],"result_keys":["count"],"assumptions":[]}'
+    )
+
+    assert result["collections"] == ["Persons"]
+    assert result["operations"] == ["filter", "count"]
+
+
+def test_decode_object_rejects_ambiguous_multiple_objects():
+    with pytest.raises(ValueError, match="exactly one JSON object"):
+        QueryService._decode_object('{"query":"SELECT 1"} {"query":"SELECT 2"}')
+
+
 def test_parse_output_accepts_structured_query_candidate():
     result = QueryService._parse_output('''```json
     {
@@ -333,7 +350,7 @@ def test_generate_repairs_malformed_mql_json_envelope(monkeypatch):
     ))
 
     assert '"find":"Persons"' in result["query"]
-    assert "Expecting" in captured[2][1].content
+    assert "must contain exactly one JSON object" in captured[2][1].content
     assert len(captured) == 3
 
 

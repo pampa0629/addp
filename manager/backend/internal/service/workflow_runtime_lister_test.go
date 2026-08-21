@@ -36,7 +36,7 @@ func TestWorkflowRuntimeEngineListerUsesRuntimeDescriptors(t *testing.T) {
 			"data": []map[string]interface{}{
 				{
 					"id": 11, "name": "Tenant Workflow", "engine_type": "tenant_workflow",
-					"lifecycle_state":  "active",
+					"lifecycle_state": "active", "connection_status": "online",
 					"runtime_endpoint": map[string]interface{}{"protocol": "http", "host": "runtime", "port": 8103},
 					"capabilities": map[string]interface{}{
 						"schema_version": "engine.capabilities/v1", "engine_type": "tenant_workflow", "engine_family": "workflow",
@@ -44,7 +44,7 @@ func TestWorkflowRuntimeEngineListerUsesRuntimeDescriptors(t *testing.T) {
 					},
 				},
 				{
-					"id": 12, "name": "Query Runtime", "engine_type": "query_runtime", "lifecycle_state": "active",
+					"id": 12, "name": "Query Runtime", "engine_type": "query_runtime", "lifecycle_state": "active", "connection_status": "online",
 					"runtime_endpoint": map[string]interface{}{"protocol": "http", "host": "query", "port": 8104},
 					"capabilities": map[string]interface{}{
 						"schema_version": "engine.capabilities/v1", "engine_type": "query_runtime", "engine_family": "query_runtime",

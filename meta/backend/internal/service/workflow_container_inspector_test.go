@@ -49,7 +49,7 @@ func TestWorkflowContainerInspectorResolvesBuiltinRuntimeDescriptor(t *testing.T
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"data": []commonModels.EngineRuntimeDescriptor{{
 					ID: runtimeID, Name: "GeoPython", EngineType: "geopython",
-					LifecycleState: commonModels.EngineLifecycleActive, IsBuiltin: true,
+					LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline, IsBuiltin: true,
 					Capabilities:    &encodedCapabilities,
 					RuntimeEndpoint: testEngineServiceRuntimeEndpoint(t, runtimeServer.URL),
 				}},
@@ -124,7 +124,7 @@ func TestWorkflowContainerInspectorDetectsPGeoFromAccessFilePlan(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"data": []commonModels.EngineRuntimeDescriptor{{
 					ID: 42, Name: "GeoPython", EngineType: "geopython",
-					LifecycleState: commonModels.EngineLifecycleActive, IsBuiltin: true,
+					LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline, IsBuiltin: true,
 					Capabilities:    &encodedCapabilities,
 					RuntimeEndpoint: testEngineServiceRuntimeEndpoint(t, runtimeServer.URL),
 				}},
