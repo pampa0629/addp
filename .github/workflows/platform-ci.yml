@@ -252,6 +252,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - module: asset
+            name: Asset
+            target: test-asset-frontend
           - module: console
             name: Console
             target: test-console-frontend

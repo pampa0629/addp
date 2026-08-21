@@ -59,6 +59,7 @@ Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权�
 | `make test-execution-fixtures` | 统一 execution 测试夹具约束 | T0 |
 | `make test-model-frontend` | Model 前端单元、E2E 和构建 | T1 / T3 |
 | `make test-quality-frontend` | Quality 前端路由、E2E 和构建 | T1 / T3 |
+| `make test-asset-frontend` | Asset 前端公开路由测试和构建 | T1 |
 | `make test-console-frontend` | Console 前端确定性测试和构建 | T1 |
 | `make test-develop-frontend` | Develop 前端确定性测试和构建 | T1 |
 | `make test-graph-frontend` | Graph 前端确定性测试和构建 | T1 |
@@ -97,7 +98,7 @@ Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权�
 
 ### 5.3 前端覆盖仍不完整
 
-Common Python、Quality、Agent 和 Model 已通过统一脚本按各自模块、共享依赖、根 Makefile 和 workflow 自身的变更路径选择正式门禁；Console、Develop、Graph、Inference、Manager、Meta、Monitor、Orchestrator、Portal、Standard、System 和 Transfer 复用同一个确定性前端矩阵定义，手工触发及平台夜间任务始终执行。Asset 和 Service 前端目前只有构建入口、没有自动化测试，尚未登记为确定性测试门禁。
+Common Python、Quality、Agent 和 Model 已通过统一脚本按各自模块、共享依赖、根 Makefile 和 workflow 自身的变更路径选择正式门禁；Asset、Console、Develop、Graph、Inference、Manager、Meta、Monitor、Orchestrator、Portal、Standard、System 和 Transfer 复用同一个确定性前端矩阵定义，手工触发及平台夜间任务始终执行。Service 前端目前只有构建入口、没有自动化测试，尚未登记为确定性测试门禁。
 
 ### 5.4 模块专项门禁结构仍待统一
 
@@ -182,6 +183,7 @@ Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job �
 - [x] 将 Console、Standard 的确定性测试和构建入口接入前端确定性矩阵；浏览器测试仍归 T3，不混入快速门禁。
 - [x] 将 Inference 的单元测试和构建入口接入前端确定性矩阵，完成现有标准 `npm test` 前端模块的登记。
 - [x] 将 Manager 的 map、explorer、navigation 测试收敛为唯一 `npm test`，并将全量测试和构建接入前端确定性矩阵。
+- [x] 为 Asset 建立公开路由和 canonical query 的首批确定性测试，并将测试和构建接入前端确定性矩阵。
 - [ ] 统一缓存键、超时和测试报告格式。
 - [x] 核实当前 required checks：CLI 产品门禁和 System IAM PostgreSQL 门禁；使用汇总 Job 保持路径跳过与真实验证结果都能稳定回报。
 

@@ -1,4 +1,4 @@
-.PHONY: help init dev build up down logs clean test test-platform test-go test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-arcgis-open-formats dev-all \
+.PHONY: help init dev build up down logs clean test test-platform test-go test-asset-frontend test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-arcgis-open-formats dev-all \
         build-backend build-frontend build-debug build-release build-iam-bootstrap build-iam-recovery clean-dist \
         infra-up infra-down infra-restart infra-status ports-validate
 
@@ -469,6 +469,10 @@ test-quality-frontend: ## 运行 Quality 前端路由、浏览器与构建门禁
 	@cd quality/frontend && npm run test:route
 	@cd quality/frontend && npm run test:e2e
 	@cd quality/frontend && npm run build
+
+test-asset-frontend: ## 运行 Asset 前端确定性测试与构建
+	@cd asset/frontend && npm test
+	@cd asset/frontend && npm run build
 
 test-console-frontend: ## 运行 Console 前端确定性测试与构建
 	@cd console/frontend && npm test
