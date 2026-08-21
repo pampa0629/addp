@@ -76,3 +76,69 @@ jobs:
 
       - name: Run all tracked Go module tests
         run: make test-go
+
+  common-python-tests:
+    name: Common Python tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: common-python/pyproject.toml
+
+      - name: Prepare Common Python test environment
+        run: |
+          python -m venv common-python/.venv
+          common-python/.venv/bin/python -m pip install --disable-pip-version-check --upgrade pip
+          common-python/.venv/bin/python -m pip install --editable './common-python[dev]'
+
+      - name: Run Common Python tests
+        run: make test-common-python
+
+  agent-offline-evaluation:
+    name: Agent offline evaluation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            agent/backend/requirements.txt
+            common-python/pyproject.toml
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: agent/frontend/package-lock.json
+
+      - name: Prepare Agent evaluation environments
+        run: |
+          python -m venv common-python/.venv
+          common-python/.venv/bin/python -m pip install --disable-pip-version-check --upgrade pip
+          common-python/.venv/bin/python -m pip install --editable './common-python[dev]'
+          python -m venv agent/backend/venv
+          agent/backend/venv/bin/python -m pip install --disable-pip-version-check --upgrade pip
+          (cd agent/backend && venv/bin/python -m pip install --requirement requirements.txt)
+          agent/backend/venv/bin/python -m pip install --editable './common-python[dev,inference-langchain]'
+          npm ci --prefix agent/frontend
+
+      - name: Run Agent offline evaluation
+        run: make test-agent-eval

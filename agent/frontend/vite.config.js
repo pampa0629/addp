@@ -15,6 +15,7 @@ export default defineConfig({
       '@addp/common-frontend/map': resolve(__dirname, '../../common-frontend/map/src'),
       '@addp/common-frontend/agent-ui': resolve(__dirname, '../../common-frontend/agent-ui/src'),
       '@a2ui/web_core/v0_9': resolve(__dirname, 'node_modules/@a2ui/web_core/src/v0_9/index.js'),
+      '@amap/amap-jsapi-loader': resolve(__dirname, 'node_modules/@amap/amap-jsapi-loader'),
       '@vue/test-utils': resolve(__dirname, 'node_modules/@vue/test-utils/dist/vue-test-utils.esm-bundler.mjs'),
       'zod': resolve(__dirname, 'node_modules/zod'),
       '@element-plus/icons-vue': resolve(__dirname, 'node_modules/@element-plus/icons-vue'),
