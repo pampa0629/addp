@@ -27,7 +27,7 @@ ADDP 已经具备较多本地测试、集成门禁和发布验证入口，但 Gi
 | `.github/workflows/iam-cli-release-gates.yml` | 所有 PR；`main` push；`v*` Tag；手工触发 | 按路径选择 macOS CLI wheel 产品门禁和 System IAM PostgreSQL 15 门禁；`v*` Tag 强制执行两者后发布 GitHub Release | T2 / T5 |
 | `.github/workflows/quality-frontend-smoke.yml` | 所有 PR；`main` push；手工触发 | 按路径选择 `make test-quality-frontend`，执行 Quality 路由测试、Playwright E2E 和前端构建 | T3 |
 | `.github/workflows/quality-postgres-gate.yml` | 所有 PR；`main` push；手工触发 | 按路径选择 `make test-quality-postgres`，命中后才启动独占 PostgreSQL 15 Service | T2 |
-| `.github/workflows/platform-ci.yml` | PR；`main` push；每日 02:30（北京时间）；手工触发 | `make test-platform`；`make test-go`；按路径选择 `make test-common-python`、`make test-agent-eval` 和 `make test-model-frontend` | T0 / T1 / T3 |
+| `.github/workflows/platform-ci.yml` | PR；`main` push；每日 02:30（北京时间）；手工触发 | `make test-platform`；`make test-go`；按路径选择 Common Python、Agent、Model、Meta 和 Portal 确定性门禁 | T0 / T1 / T3 |
 
 当前共同特征：
 
@@ -59,6 +59,8 @@ Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权�
 | `make test-execution-fixtures` | 统一 execution 测试夹具约束 | T0 |
 | `make test-model-frontend` | Model 前端单元、E2E 和构建 | T1 / T3 |
 | `make test-quality-frontend` | Quality 前端路由、E2E 和构建 | T1 / T3 |
+| `make test-meta-frontend` | Meta 前端确定性测试和构建 | T1 |
+| `make test-portal-frontend` | Portal 前端确定性测试和构建 | T1 |
 | `make test-agent-eval` | Agent 离线评测门禁 | T1 |
 | `make test-common-python` | common-python 全量测试 | T1 |
 | `make test-arcgis-open-formats` | Access / PGeo / Oracle Spatial 真实样本集成门禁 | T2 / T5，依赖专用环境 |
@@ -85,7 +87,7 @@ Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权�
 
 ### 5.3 前端覆盖仍不完整
 
-Common Python、Quality、Agent 和 Model 已通过统一脚本按各自模块、共享依赖、根 Makefile 和 workflow 自身的变更路径选择正式门禁；手工触发及平台夜间任务始终执行。其余前端模块仍未登记。
+Common Python、Quality、Agent、Model、Meta 和 Portal 已通过统一脚本按各自模块、共享依赖、根 Makefile 和 workflow 自身的变更路径选择正式门禁；Meta 与 Portal 复用同一个确定性前端矩阵定义，手工触发及平台夜间任务始终执行。其余前端模块仍未登记。
 
 ### 5.4 模块专项门禁结构仍待统一
 
@@ -163,6 +165,7 @@ Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job �
 - [x] 建立首个前端模块变更路径登记并迁入已有 `make test-model-frontend`；未命中时保留稳定 Job 并明确报告跳过原因。
 - [x] 复用统一选择脚本，将 Agent 离线评测和 Quality 前端纳入变更路径登记，并保持手工及夜间触发始终执行。
 - [x] 将 Common Python 纳入变更路径登记；`common-python/` 变化仍会同时触发依赖它的 Agent 离线评测。
+- [x] 建立前端确定性矩阵并首批接入 Meta、Portal 的测试和构建入口。
 - [ ] 统一缓存键、超时和测试报告格式。
 - [x] 核实当前 required checks：CLI 产品门禁和 System IAM PostgreSQL 门禁；使用汇总 Job 保持路径跳过与真实验证结果都能稳定回报。
 

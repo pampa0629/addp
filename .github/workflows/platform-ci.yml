@@ -243,3 +243,60 @@ jobs:
       - name: Report skipped Model frontend gate
         if: steps.selection.outputs.run != 'true'
         run: echo "Model frontend gate did not run because no registered path changed."
+
+  frontend-deterministic:
+    name: ${{ matrix.name }} frontend (test, build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - module: meta
+            name: Meta
+            target: test-meta-frontend
+          - module: portal
+            name: Portal
+            target: test-portal-frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select ${{ matrix.name }} frontend gate
+        id: selection
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          bash scripts/ci/select-gate-by-paths.sh "${{ matrix.name }} frontend" \
+            '${{ matrix.module }}/frontend/*' \
+            'common-frontend/*' \
+            'scripts/ci/select-gate-by-paths.sh' \
+            'Makefile' \
+            '.github/workflows/platform-ci.yml'
+
+      - name: Set up Node.js
+        if: steps.selection.outputs.run == 'true'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ matrix.module }}/frontend/package-lock.json
+
+      - name: Install ${{ matrix.name }} frontend dependencies
+        if: steps.selection.outputs.run == 'true'
+        working-directory: ${{ matrix.module }}/frontend
+        run: npm ci
+
+      - name: Run ${{ matrix.name }} frontend gate
+        if: steps.selection.outputs.run == 'true'
+        run: make ${{ matrix.target }}
+
+      - name: Report skipped ${{ matrix.name }} frontend gate
+        if: steps.selection.outputs.run != 'true'
+        run: echo "${{ matrix.name }} frontend gate did not run because no registered path changed."
