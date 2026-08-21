@@ -36,6 +36,9 @@ class BuildRegistrationTest(unittest.TestCase):
         )
         self._write(
             "scripts/build/build-images.sh",
+            'seed_base_images() {\n    local base_images=(\n'
+            '        "python:3.12-slim"\n'
+            "    )\n}\n\n"
             'main() {\n    local services=(\n'
             '        "sample-backend:sample/backend"\n'
             '        "sample-frontend:sample/frontend"\n'
@@ -160,6 +163,46 @@ class BuildRegistrationTest(unittest.TestCase):
         self._write(
             ".dockerignore",
             "**/package.json\n!sample/frontend/package.json\n",
+        )
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+
+    def test_seeded_base_images_use_target_alias(self) -> None:
+        self.assertEqual(
+            {"node:20-alpine", "debian-slim:latest"},
+            MODULE.seeded_base_images(
+                'local base_images=(\n'
+                '    "node:20-alpine"\n'
+                '    "debian:bookworm-slim=debian-slim:latest"\n'
+                ")\n"
+            ),
+        )
+
+    def test_rejects_unseeded_local_registry_base_image(self) -> None:
+        self._write(
+            "sample/frontend/Dockerfile",
+            "FROM localhost:5001/node:22-alpine\n",
+        )
+        self.assertIn(
+            "sample-frontend: base image localhost:5001/node:22-alpine is not "
+            "registered in seed_base_images",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_accepts_seeded_alias_from_build_argument(self) -> None:
+        build_script = self.repository / "scripts/build/build-images.sh"
+        build_script.write_text(
+            build_script.read_text(encoding="utf-8").replace(
+                '        "python:3.12-slim"',
+                '        "python:3.12-slim"\n'
+                '        "node:22-alpine=custom-node:22"',
+            ),
+            encoding="utf-8",
+        )
+        self._write(
+            "sample/frontend/Dockerfile",
+            "ARG BASE_IMAGE=localhost:5001/custom-node:22\n"
+            "FROM ${BASE_IMAGE} AS builder\n"
+            "FROM builder\n",
         )
         self.assertEqual([], MODULE.validate_registration(self.repository))
 

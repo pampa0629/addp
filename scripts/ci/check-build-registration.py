@@ -184,6 +184,51 @@ def shell_array(text: str, declaration: str) -> dict[str, str]:
     return dict(entries)
 
 
+def quoted_shell_array(text: str, declaration: str) -> list[str]:
+    match = re.search(
+        rf"(?ms)^\s*(?:local\s+)?{re.escape(declaration)}=\(\s*(?P<body>.*?)^\s*\)",
+        text,
+    )
+    if not match:
+        raise RegistrationError(f"shell array {declaration} is missing")
+    return re.findall(r'^\s*"([^"\n]+)"\s*$', match.group("body"), re.MULTILINE)
+
+
+def seeded_base_images(text: str) -> set[str]:
+    targets: set[str] = set()
+    for entry in quoted_shell_array(text, "base_images"):
+        source, separator, target = entry.partition("=")
+        targets.add(target if separator else source)
+    return targets
+
+
+def local_registry_base_images(text: str) -> set[str]:
+    """返回 Dockerfile 从本地 Registry 引用的基础镜像，排除内部构建阶段。"""
+    arguments: dict[str, str] = {}
+    stages: set[str] = set()
+    images: set[str] = set()
+    for line in text.splitlines():
+        stripped = line.strip()
+        argument = re.match(r"(?i)^ARG\s+([A-Za-z_][A-Za-z0-9_]*)(?:=(\S+))?", stripped)
+        if argument and argument.group(2) is not None:
+            arguments[argument.group(1)] = argument.group(2)
+            continue
+        instruction = re.match(
+            r"(?i)^FROM(?:\s+--\S+)*\s+(\S+)(?:\s+AS\s+(\S+))?", stripped
+        )
+        if not instruction:
+            continue
+        image = instruction.group(1)
+        variable = re.fullmatch(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", image)
+        if variable:
+            image = arguments.get(variable.group(1), image)
+        if image not in stages and image.startswith("localhost:5001/"):
+            images.add(image.removeprefix("localhost:5001/"))
+        if instruction.group(2):
+            stages.add(instruction.group(2))
+    return images
+
+
 def expected_compile_entries(repository: Path) -> dict[str, str]:
     expected: dict[str, str] = {}
     for path in git_files(repository, "*/backend/cmd/server/main.go"):
@@ -221,6 +266,7 @@ def validate_registration(repository: Path) -> list[str]:
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
     compiled = shell_array(compile_script, "SERVICES")
     images = shell_array(image_script, "services")
+    seeded_images = seeded_base_images(image_script)
     expected_compiled = expected_compile_entries(repository)
     errors: list[str] = []
 
@@ -257,6 +303,14 @@ def validate_registration(repository: Path) -> list[str]:
             )
         if context is not None:
             errors.extend(dockerfile_context_errors(repository, name, definition, context))
+            for base_image in sorted(
+                local_registry_base_images(definition_path.read_text(encoding="utf-8"))
+            ):
+                if base_image not in seeded_images:
+                    errors.append(
+                        f"{name}: base image localhost:5001/{base_image} is not "
+                        "registered in seed_base_images"
+                    )
 
     for path in git_files(repository, "*/frontend/package.json"):
         module = path.split("/", 1)[0]
