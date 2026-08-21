@@ -1,4 +1,4 @@
-.PHONY: help init dev build up down logs clean test test-platform test-online test-online-runner test-go test-asset-frontend test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats dev-all \
+.PHONY: help init dev build up down logs clean test test-platform test-online test-online-runner test-go test-agent-frontend test-asset-frontend test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats dev-all \
         build-backend build-frontend build-debug build-release build-iam-bootstrap build-iam-recovery clean-dist \
         infra-up infra-down infra-restart infra-status ports-validate
 
@@ -467,6 +467,8 @@ test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
 
 test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@bash scripts/utils/check-deps-version.sh
+	@python3 scripts/ci/check-frontend-ci-registration_test.py
+	@python3 scripts/ci/check-frontend-ci-registration.py --repository "$(CURDIR)"
 	@$(MAKE) test-execution-fixtures
 	@$(MAKE) test-online-runner
 	@$(MAKE) test-authorization
@@ -480,6 +482,10 @@ test-quality-frontend: ## 运行 Quality 前端路由、浏览器与构建门禁
 	@cd quality/frontend && npm run test:route
 	@cd quality/frontend && npm run test:e2e
 	@cd quality/frontend && npm run build
+
+test-agent-frontend: ## 运行 Agent 前端确定性测试与构建门禁
+	@cd agent/frontend && npm test
+	@cd agent/frontend && npm run build
 
 test-asset-frontend: ## 运行 Asset 前端确定性测试与构建
 	@cd asset/frontend && npm test

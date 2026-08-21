@@ -168,9 +168,8 @@ jobs:
           ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           bash scripts/ci/select-gate-by-paths.sh "Agent offline evaluation" \
-            'agent/*' \
+            'agent/backend/*' \
             'common-python/*' \
-            'common-frontend/*' \
             'evals/agent-scenarios/*' \
             'scripts/test/agent-evaluation-gate.sh' \
             'scripts/ci/select-gate-by-paths.sh' \
@@ -188,14 +187,6 @@ jobs:
             agent/backend/requirements.txt
             common-python/pyproject.toml
 
-      - name: Set up Node.js
-        if: steps.selection.outputs.run == 'true'
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v6
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: agent/frontend/package-lock.json
-
       - name: Prepare Agent evaluation environments
         if: steps.selection.outputs.run == 'true'
         run: |
@@ -206,7 +197,6 @@ jobs:
           agent/backend/venv/bin/python -m pip install --disable-pip-version-check --upgrade pip
           (cd agent/backend && venv/bin/python -m pip install --requirement requirements.txt)
           agent/backend/venv/bin/python -m pip install --editable './common-python[dev,inference-langchain]'
-          npm ci --prefix agent/frontend
 
       - name: Run Agent offline evaluation
         if: steps.selection.outputs.run == 'true'
@@ -293,6 +283,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - module: agent
+            name: Agent
+            target: test-agent-frontend
           - module: asset
             name: Asset
             target: test-asset-frontend

@@ -456,6 +456,8 @@ Online 唯一入口为 `make test-online ONLINE_SUITE=<suite>`，并要求环境
 
 通用预检由分发器向 `scripts/test/online-preflight.py` 传入参与服务的 `module=http://loopback:port`。预检要求显式非默认 Tenant、安全 Run ID、干净工作区，并校验所有 `/health` 构建身份与当前 Git commit 一致；任何非回环服务地址都会被拒绝。分发器与预检器的无外部服务回归测试统一使用 `make test-online-runner`，并已纳入 `make test-platform`。两者不执行未登记的业务断言，不读取或保存 Token，也不接管服务生命周期。
 
+`scripts/ci/check-frontend-ci-registration.py` 是前端 CI 登记完整性检查。它从 Git 跟踪的 `*/frontend/package.json` 自动发现前端，要求每个前端同时具有 `scripts.build`、根 `Makefile` 的 `test-<module>-frontend` 标准入口，并登记到 `platform-ci.yml` 的目标和变更路径中。检查及其反例回归已纳入 `make test-platform`；新增前端时遗漏任一环节会使当次 Platform CI 失败。
+
 Agent 默认离线门禁使用 `make test-agent-eval`，并已包含在根 `make test`。该门禁分别使用 `agent/backend/venv` 运行 Agent 测试、使用 `common-python/.venv` 运行 Common-Python 全量测试；缺少后者时先执行 `cd common-python && uv sync --extra dev`。人工发布验收使用 `make test-agent-eval-release`，需要显式提供三份仓库外在线证据路径；脚本不自动执行 OAuth 登录或生成在线证据。输出统一为仓库外 `addp.agent-evaluation-gate/v2`，外部发布流程可归档其中的源码版本、契约/证据摘要和检查耗时，脚本自身不维护历史记录。
 
 两份归档报告使用 `make compare-agent-eval` 比较，需要显式提供 `ADDP_AGENT_EVAL_BASELINE` 和 `ADDP_AGENT_EVAL_CURRENT`，结果通过 `ADDP_AGENT_EVAL_REPORT` 写到仓库外。比较只读取严格 v2 报告，输出 `addp.agent-evaluation-comparison/v1`，不重跑测试、不读取在线证据、不设置耗时阈值。
