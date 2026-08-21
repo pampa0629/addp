@@ -21,6 +21,7 @@ ADDP 处于积极开发阶段，当前更重视概念统一、规范遵从、架
 - 涉及概念、术语或规范冲突时，先修订文档，再实现代码。
 - 任何变更都必须给出最小但足够的测试或验证命令。
 - 只允许单一技术路线，旧路径必须删除，不能旁路共存。
+- 本地共享 `addp-postgres` 只允许使用 `addp_test` 和 `addp_iam_test` 两个测试 database。测试必须走根 `Makefile` 或 `scripts/test/` 的标准入口，禁止为单次验证直接执行 `createdb`、`CREATE DATABASE`、`dropdb` 或 `DROP DATABASE`；如现有标准入口不能满足隔离要求，先完善标准入口及自动清理，再运行测试。GitHub Actions 独占 PostgreSQL Service 不受本地库名限制，但仍必须由 workflow 创建并随 Job 销毁。
 
 一，文档优先，统一概念
 - 优先阅读并遵守仓库规范，尤其是 `docs/spec/` 和 `docs/concepts/`。遇到核心概念边界时，先查对应规范和术语表，再看实现。
@@ -90,6 +91,7 @@ ADDP 处于积极开发阶段，当前更重视概念统一、规范遵从、架
 | 存储路径和指纹 | `docs/spec/addp存储引擎路径体系规范.md`、`docs/spec/addp路径统一和指纹计算.md` |
 | 登录认证 | `docs/spec/addp登录认证的统一要求.md`、`docs/concepts/addp登录认证的原理说明.md` |
 | 工作流计算引擎 | `docs/spec/addp工作流计算引擎接口规范.md` |
+| 本地数据库测试、PostgreSQL 门禁 | `scripts/infra/README.md` 的“PostgreSQL database 清单”、对应的 `scripts/test/*-postgres-gate.sh` |
 
 模块相关问题优先阅读对应目录下的 `CLAUDE.md`；如果模块还有 `docs/` 或 `README.md`，按 `CLAUDE.md` 中的导航继续阅读。Gateway 路由相关问题还需阅读 `gateway/docs/gateway架构说明.md`。
 
