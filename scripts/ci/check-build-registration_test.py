@@ -144,6 +144,25 @@ class BuildRegistrationTest(unittest.TestCase):
             MODULE.validate_registration(self.repository),
         )
 
+    def test_rejects_copy_source_excluded_by_dockerignore(self) -> None:
+        self._write(".dockerignore", "**/package.json\n")
+        self._write(
+            "sample/frontend/Dockerfile",
+            "FROM scratch\nCOPY sample/frontend/package.json ./package.json\n",
+        )
+        self.assertIn(
+            "sample-frontend: sample/frontend/Dockerfile:2 COPY source is "
+            "excluded by ./.dockerignore: sample/frontend/package.json",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_dockerignore_negation_restores_copy_source(self) -> None:
+        self._write(
+            ".dockerignore",
+            "**/package.json\n!sample/frontend/package.json\n",
+        )
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+
 
 if __name__ == "__main__":
     unittest.main()

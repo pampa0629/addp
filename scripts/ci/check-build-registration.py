@@ -67,6 +67,52 @@ def dockerfile_copies_binary(text: str, binary: str) -> bool:
     return re.search(rf"(?m)^\s*COPY\s+{expected}(?:\s|$)", text) is not None
 
 
+def dockerignore_pattern_regex(pattern: str) -> re.Pattern[str]:
+    anchored = pattern.startswith("/")
+    pattern = pattern.removeprefix("/").removesuffix("/")
+    contains_slash = "/" in pattern
+    result = ""
+    index = 0
+    while index < len(pattern):
+        character = pattern[index]
+        if character == "*":
+            if index + 1 < len(pattern) and pattern[index + 1] == "*":
+                index += 1
+                if index + 1 < len(pattern) and pattern[index + 1] == "/":
+                    index += 1
+                    result += "(?:.*/)?"
+                else:
+                    result += ".*"
+            else:
+                result += "[^/]*"
+        elif character == "?":
+            result += "[^/]"
+        else:
+            result += re.escape(character)
+        index += 1
+    prefix = "^" if anchored or contains_slash else r"(?:^|.*/)"
+    return re.compile(prefix + result + r"(?:/.*)?$")
+
+
+def dockerignore_excludes(context_root: Path, relative_path: str) -> bool:
+    ignore_file = context_root / ".dockerignore"
+    if not ignore_file.is_file():
+        return False
+    excluded = False
+    normalized = relative_path.strip("/")
+    for raw_line in ignore_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        negated = line.startswith("!")
+        pattern = line[1:] if negated else line
+        if not pattern or pattern == ".":
+            continue
+        if dockerignore_pattern_regex(pattern).match(normalized):
+            excluded = not negated
+    return excluded
+
+
 def dockerfile_context_errors(
     repository: Path, service: str, dockerfile: str, context: str
 ) -> list[str]:
@@ -95,9 +141,23 @@ def dockerfile_context_errors(
                 )
                 continue
             matches = glob.glob(str(source_path)) if glob.has_magic(source) else [str(source_path)]
-            if not matches or not any(Path(match).exists() for match in matches):
+            existing_matches = [Path(match) for match in matches if Path(match).exists()]
+            if not existing_matches:
                 errors.append(
                     f"{service}: {dockerfile}:{line_number} COPY source is missing from build context {context}: {source}"
+                )
+                continue
+            visible_matches = [
+                match
+                for match in existing_matches
+                if not dockerignore_excludes(
+                    context_root, match.relative_to(context_root).as_posix()
+                )
+            ]
+            if not visible_matches:
+                errors.append(
+                    f"{service}: {dockerfile}:{line_number} COPY source is excluded by "
+                    f"{context}/.dockerignore: {source}"
                 )
     return errors
 
