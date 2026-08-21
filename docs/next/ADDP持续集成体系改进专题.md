@@ -108,6 +108,8 @@ Common Python、Quality、Agent 和 Model 已通过统一脚本按各自模块�
 
 Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job 内路径选择。`release-and-t2-gates.yml` 通过单一选择 Job 声明 CLI、System IAM、Quality 与 Standard PostgreSQL 的 path mapping；三个 PostgreSQL Job 统一使用固定 PostgreSQL 15、30 分钟超时、关闭 Go 缓存和相同 Summary 格式，未命中时不会启动数据库 Service。`v*` Tag 只强制执行 CLI 与 System IAM 门禁。Ruleset 要求的 CLI 和 System IAM 检查由汇总 Job 提供：命中路径时等待重测试成功，未命中时明确报告跳过并稳定成功。
 
+`make test-platform` 已接入 T2 CI 登记完整性检查，自动发现 `scripts/test/*-postgres-gate.sh`，并校验 Make 入口、workflow 调用、脚本路径、owner 后端路径与固定 PostgreSQL 15 镜像。新增 Hosted PostgreSQL T2 门禁时，遗漏任一登记环节都会使 Platform CI 失败。
+
 | T2 门禁 | Owner | Service | 数据库安全检查 | Path mapping |
 | --- | --- | --- | --- | --- |
 | System IAM PostgreSQL | System | PostgreSQL 15 disposable database | DSN 必须由 CI 注入；门禁先重置专用数据库并拒绝任何测试跳过 | `system/backend/*`、`common/*`、System IAM 门禁脚本与统一 workflow |

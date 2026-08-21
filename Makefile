@@ -469,6 +469,8 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@bash scripts/utils/check-deps-version.sh
 	@python3 scripts/ci/check-frontend-ci-registration_test.py
 	@python3 scripts/ci/check-frontend-ci-registration.py --repository "$(CURDIR)"
+	@python3 scripts/ci/check-t2-ci-registration_test.py
+	@python3 scripts/ci/check-t2-ci-registration.py --repository "$(CURDIR)"
 	@$(MAKE) test-execution-fixtures
 	@$(MAKE) test-online-runner
 	@$(MAKE) test-authorization
