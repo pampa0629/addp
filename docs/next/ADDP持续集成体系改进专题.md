@@ -1,6 +1,6 @@
 # ADDP 持续集成体系改进专题
 
-> 状态：阶段 1 实施中。现状快照核实于 2026-08-20。本文记录当前 GitHub Actions 覆盖、主要缺口和后续实施路线。
+> 状态：阶段 3 实施中。现状快照核实于 2026-08-21。本文记录当前 GitHub Actions 覆盖、主要缺口和后续实施路线。
 
 ## 一、专题定位
 
@@ -20,21 +20,20 @@ ADDP 已经具备较多本地测试、集成门禁和发布验证入口，但 Gi
 
 ## 二、当前 CI 事实
 
-阶段 1 实施前仓库只有三个 GitHub Actions workflow；本阶段新增 `.github/workflows/platform-ci.yml`。
+当前仓库收敛为三个 GitHub Actions workflow。
 
 | Workflow | 触发方式 | Job / 执行入口 | 当前定位 |
 | --- | --- | --- | --- |
-| `.github/workflows/iam-cli-release-gates.yml` | 所有 PR；`main` push；`v*` Tag；手工触发 | 按路径选择 macOS CLI wheel 产品门禁和 System IAM PostgreSQL 15 门禁；`v*` Tag 强制执行两者后发布 GitHub Release | T2 / T5 |
+| `.github/workflows/release-and-t2-gates.yml` | 所有 PR；`main` push；`v*` Tag；手工触发 | 统一选择 System IAM、Quality PostgreSQL T2 门禁与 macOS CLI 产品门禁；`v*` Tag 只强制 CLI、System IAM 后发布 GitHub Release | T2 / T5 |
 | `.github/workflows/quality-frontend-smoke.yml` | 所有 PR；`main` push；手工触发 | 按路径选择 `make test-quality-frontend`，执行 Quality 路由测试、Playwright E2E 和前端构建 | T3 |
-| `.github/workflows/quality-postgres-gate.yml` | 所有 PR；`main` push；手工触发 | 按路径选择 `make test-quality-postgres`，命中后才启动独占 PostgreSQL 15 Service | T2 |
 | `.github/workflows/platform-ci.yml` | PR；`main` push；每日 02:30（北京时间）；手工触发 | `make test-platform`；`make test-go`；按路径选择 Common Python、Agent、Model 及前端确定性矩阵 | T0 / T1 / T3 |
 
 当前共同特征：
 
-- 四个 workflow 都设置了最小 `contents: read` 权限、超时和同 ref 并发取消。
+- 三个 workflow 都设置了最小 `contents: read` 权限、超时和同 ref 并发取消。
 - GitHub Action 引用固定到不可变 commit digest。
 - PostgreSQL 门禁使用固定 PostgreSQL 15 镜像摘要和 disposable database。
-- 四个 workflow 均不在 workflow 触发器上使用 `paths` / `paths-ignore`，以保持 Job 名称稳定；模块 Job 在内部按登记路径执行或明确报告跳过。
+- 三个 workflow 均不在 workflow 触发器上使用 `paths` / `paths-ignore`，以保持 Job 名称稳定；模块 Job 在内部按登记路径执行或明确报告跳过。
 - 只有 CLI Tag 发布 Job 具有写权限，其余 Job 默认只读。
 - 门禁超时按成本分级：选择与汇总 5 分钟，普通 T0/T1 20 分钟，浏览器或多语言门禁 25 分钟，数据库与 macOS 门禁 30 分钟，全仓 Go 45 分钟。
 - 普通 Node 和 Python 确定性测试分别按 `package-lock.json`、Python 依赖声明缓存；disposable PostgreSQL 和生成发布产物的 CLI 验证关闭缓存，避免复用环境掩盖集成问题或引入缓存投毒风险。
@@ -106,7 +105,12 @@ Common Python、Quality、Agent 和 Model 已通过统一脚本按各自模块�
 
 ### 5.4 模块专项门禁结构仍待统一
 
-Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job 内路径选择。两个 PostgreSQL 门禁和 macOS CLI 使用轻量选择 Job，未命中时不会启动数据库 Service 或 macOS Runner；`v*` Tag 强制执行 CLI 与 System IAM 门禁。Ruleset 要求的 CLI 和 System IAM 检查由汇总 Job 提供：命中路径时等待重测试成功，未命中时明确报告跳过并稳定成功。T2 门禁仍分散在独立 workflow，尚未形成统一声明矩阵。
+Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job 内路径选择。`release-and-t2-gates.yml` 通过单一选择 Job 声明 CLI、System IAM 与 Quality PostgreSQL 的 path mapping；两个 PostgreSQL Job 统一使用固定 PostgreSQL 15、30 分钟超时、关闭 Go 缓存和相同 Summary 格式，未命中时不会启动数据库 Service。`v*` Tag 只强制执行 CLI 与 System IAM 门禁。Ruleset 要求的 CLI 和 System IAM 检查由汇总 Job 提供：命中路径时等待重测试成功，未命中时明确报告跳过并稳定成功。
+
+| T2 门禁 | Owner | Service | 数据库安全检查 | Path mapping |
+| --- | --- | --- | --- | --- |
+| System IAM PostgreSQL | System | PostgreSQL 15 disposable database | DSN 必须由 CI 注入；门禁先重置专用数据库并拒绝任何测试跳过 | `system/backend/*`、`common/*`、System IAM 门禁脚本与统一 workflow |
+| Quality PostgreSQL | Quality | PostgreSQL 15 disposable database | 数据库名必须包含 `test` 或 `disposable`，并拒绝任何测试跳过 | `quality/backend/*`、`common/*`、Quality 门禁脚本与统一 workflow |
 
 ### 5.5 CI 与 GitHub 仓库策略没有仓库内闭环
 
@@ -194,9 +198,9 @@ Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job �
 
 ### 阶段 3：模块集成矩阵
 
-- [ ] 将 System IAM、Quality PostgreSQL 纳入统一的 T2 结构。
-- [ ] 为 T2 建立模块 owner、所需 Service、数据库安全检查和 path mapping。
-- [ ] 迁移完成后删除被统一结构替代的独立 workflow。
+- [x] 将 System IAM、Quality PostgreSQL 纳入统一的 T2 结构。
+- [x] 为 T2 建立模块 owner、PostgreSQL 15 Service、数据库安全检查和 path mapping。
+- [x] 迁移完成后删除被统一结构替代的 `quality-postgres-gate.yml`。
 - [x] 保证未命中相关路径时由轻量选择 Job 输出原因，重 Job 明确显示为 skipped；发布 Tag 强制执行所需门禁。
 
 ### 阶段 4：Online 与发布门禁

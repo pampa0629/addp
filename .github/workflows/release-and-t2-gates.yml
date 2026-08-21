@@ -1,4 +1,4 @@
-name: IAM and CLI release gates
+name: Release and T2 gates
 
 on:
   pull_request:
@@ -13,16 +13,17 @@ permissions:
   contents: read
 
 concurrency:
-  group: iam-cli-release-gates-${{ github.ref }}
+  group: release-and-t2-gates-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   selection:
-    name: IAM and CLI gate selection
+    name: Release and T2 gate selection
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       cli: ${{ steps.cli.outputs.run }}
+      quality: ${{ steps.quality.outputs.run }}
       system: ${{ steps.system.outputs.run }}
     steps:
       - name: Check out repository
@@ -47,7 +48,25 @@ jobs:
             'scripts/ci/report-selected-gate.sh' \
             '.github/actions/ci-gate-summary/*' \
             'Makefile' \
-            '.github/workflows/iam-cli-release-gates.yml'
+            '.github/workflows/release-and-t2-gates.yml'
+
+      - name: Select Quality PostgreSQL gate
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        id: quality
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          bash scripts/ci/select-gate-by-paths.sh "Quality PostgreSQL" \
+            'quality/backend/*' \
+            'common/*' \
+            'scripts/test/quality-postgres-gate.sh' \
+            'scripts/ci/select-gate-by-paths.sh' \
+            '.github/actions/ci-gate-summary/*' \
+            'Makefile' \
+            '.github/workflows/release-and-t2-gates.yml'
 
       - name: Select System IAM PostgreSQL gate
         id: system
@@ -66,7 +85,7 @@ jobs:
             'scripts/ci/report-selected-gate.sh' \
             '.github/actions/ci-gate-summary/*' \
             'Makefile' \
-            '.github/workflows/iam-cli-release-gates.yml'
+            '.github/workflows/release-and-t2-gates.yml'
 
   cli-product-macos-verification:
     name: CLI product verification (macOS Keychain)
@@ -135,7 +154,7 @@ jobs:
       - name: Audit release workflow
         uses: zizmorcore/zizmor-action@6fc4b006235f201fdab3722e17240ab420d580e5 # v0.6.1
         with:
-          inputs: .github/workflows/iam-cli-release-gates.yml
+          inputs: .github/workflows/release-and-t2-gates.yml
           advanced-security: false
           annotations: true
           min-severity: medium
@@ -159,6 +178,55 @@ jobs:
         uses: ./.github/actions/ci-gate-summary
         with:
           gate: System IAM verification (PostgreSQL 15)
+          status: ${{ job.status }}
+
+  quality-postgres:
+    name: Quality integration (PostgreSQL 15)
+    needs: selection
+    if: needs.selection.outputs.quality == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+        env:
+          POSTGRES_USER: addp_ci
+          POSTGRES_PASSWORD: addp_ci_password
+          POSTGRES_DB: addp_quality_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U addp_ci -d addp_quality_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: quality/backend/go.mod
+          cache: false
+
+      - name: Run Quality PostgreSQL gate
+        env:
+          ADDP_TEST_POSTGRES_HOST: 127.0.0.1
+          ADDP_TEST_POSTGRES_PORT: 5432
+          ADDP_TEST_POSTGRES_USER: addp_ci
+          ADDP_TEST_POSTGRES_PASSWORD: addp_ci_password
+          ADDP_TEST_POSTGRES_DATABASE: addp_quality_test
+          ADDP_TEST_POSTGRES_SSLMODE: disable
+        run: make test-quality-postgres
+
+      - name: Summarize Quality PostgreSQL gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Quality integration (PostgreSQL 15)
           status: ${{ job.status }}
 
   cli-product-macos:
