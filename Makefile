@@ -1,5 +1,5 @@
-.PHONY: help init dev build up down logs clean test test-platform test-online test-online-runner test-go test-agent-frontend test-asset-frontend test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats dev-all \
-        build-backend build-frontend build-debug build-release build-iam-bootstrap build-iam-recovery clean-dist \
+.PHONY: help init dev build build-images up down logs clean test test-platform test-online test-online-runner test-go test-agent-frontend test-asset-frontend test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats dev-all \
+        build-iam-bootstrap build-iam-recovery clean-dist \
         infra-up infra-down infra-restart infra-status ports-validate
 
 # 默认目标
@@ -29,9 +29,6 @@ GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 BIN_SUFFIX := $(if $(filter windows,$(GOOS)),.exe,)
 
-# 多架构编译支持
-MULTI_ARCHS := amd64 arm64
-
 # 本地 Go 构建缓存目录，避免写入系统 GOPATH 并降低权限/网络问题
 LOCAL_GOMODCACHE := $(abspath .gomodcache)
 LOCAL_GOPATH := $(abspath .gopath)
@@ -39,12 +36,10 @@ LOCAL_GOCACHE := $(abspath .cache/go-build)
 # 优先使用本机 Go 工具链，避免自动拉取 toolchain
 GOTOOLCHAIN ?= local
 
-# Go 编译参数：debug 保留符号，release 精简符号
-GOFLAGS_DEBUG := -gcflags "all=-N -l"
+# 一次性 IAM CLI 使用 release 精简符号
 GOFLAGS_RELEASE := -ldflags "-s -w"
 
-# 内部函数：为指定服务编译到统一目录（扁平化结构）
-# 参数: $(1)=模块目录, $(2)=二进制名称, $(3)=cmd路径(可选,默认cmd/server/main.go)
+# 内部函数仅供一次性 IAM CLI 使用；平台服务统一由 scripts/build/compile.sh 编译。
 define build_one_service
   @if [ -d $(1)/cmd ]; then \
     name=$(2); \
@@ -52,32 +47,8 @@ define build_one_service
     outdir=$(CURDIR)/$(OUT_DIR)/$(BUILD_TYPE)-$(GOOS)-$(GOARCH); \
     mkdir -p $$outdir $(LOCAL_GOCACHE); \
     echo "$(GREEN)编译 $$name ($(BUILD_TYPE)) → $$outdir/$$name$(NC)"; \
-    if [ "$(BUILD_TYPE)" = "debug" ]; then \
-      (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOCACHE=$(LOCAL_GOCACHE) GOTOOLCHAIN=$(GOTOOLCHAIN) \
-       cd $(1) && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_DEBUG) -o $$outdir/$$name$(BIN_SUFFIX) $$cmd_path 2>&1) || exit 1; \
-    else \
-      (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOCACHE=$(LOCAL_GOCACHE) GOTOOLCHAIN=$(GOTOOLCHAIN) \
-       cd $(1) && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_RELEASE) -o $$outdir/$$name$(BIN_SUFFIX) $$cmd_path 2>&1) || exit 1; \
-    fi; \
-  else \
-    true; \
-  fi
-endef
-
-# 内部函数：为 Worker 服务编译到统一目录（与 backend 合并）
-define build_one_worker
-  @if [ -d $(1)/cmd/worker ]; then \
-    name=$(2)-worker; \
-    outdir=$(CURDIR)/$(OUT_DIR)/$(BUILD_TYPE)-$(GOOS)-$(GOARCH); \
-    mkdir -p $$outdir $(LOCAL_GOCACHE); \
-    echo "$(GREEN)编译 $$name ($(BUILD_TYPE)) → $$outdir/$$name$(NC)"; \
-    if [ "$(BUILD_TYPE)" = "debug" ]; then \
-      (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOCACHE=$(LOCAL_GOCACHE) GOTOOLCHAIN=$(GOTOOLCHAIN) \
-       cd $(1) && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_DEBUG) -o $$outdir/$$name$(BIN_SUFFIX) cmd/worker/main.go 2>&1) || exit 1; \
-    else \
-      (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOCACHE=$(LOCAL_GOCACHE) GOTOOLCHAIN=$(GOTOOLCHAIN) \
-       cd $(1) && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_RELEASE) -o $$outdir/$$name$(BIN_SUFFIX) cmd/worker/main.go 2>&1) || exit 1; \
-    fi; \
+    (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOCACHE=$(LOCAL_GOCACHE) GOTOOLCHAIN=$(GOTOOLCHAIN) \
+     cd $(1) && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_RELEASE) -o $$outdir/$$name$(BIN_SUFFIX) $$cmd_path 2>&1) || exit 1; \
   else \
     true; \
   fi
@@ -185,140 +156,15 @@ dev-health: ## 检查开发模式服务健康状态
 	@curl -sf http://localhost:8099/health > /dev/null && echo "  $(GREEN)✓ GeoPython Workflow healthy$(NC)" || echo "  $(RED)✗ GeoPython Workflow unhealthy$(NC)"
 	@curl -sf http://localhost:8000/health > /dev/null && echo "  $(GREEN)✓ Gateway healthy$(NC)" || echo "  $(RED)✗ Gateway unhealthy$(NC)"
 
-build: build-release ## 编译所有服务（默认 release 输出到 dist）
+build: ## 编译全部正式 Go 服务与 Worker；附加参数使用 BUILD_ARGS="..."
+	@bash scripts/build/compile.sh $(BUILD_ARGS)
 
-# ===== 后端统一构建 =====
-build-backend: ## 编译所有后端服务到 dist/{BUILD_TYPE}-{GOOS}-{GOARCH}/
-	@echo "$(GREEN)编译后端（$(BUILD_TYPE)）→ $(OUT_DIR)$(NC)"
-	$(call build_one_service,system/backend,system)
-	$(call build_one_service,gateway,gateway,cmd/gateway/main.go)
-	$(call build_one_service,manager/backend,manager)
-	$(call build_one_service,meta/backend,meta)
-	$(call build_one_service,transfer/backend,transfer)
-	@echo "$(GREEN)后端编译完成！$(NC)"
-
-# ===== Worker 构建 (合并到同一目录) =====
-build-workers: ## 编译所有 Worker 到 dist/{BUILD_TYPE}-{GOOS}-{GOARCH}/
-	@echo "$(GREEN)编译 Worker 服务（$(BUILD_TYPE)）→ $(OUT_DIR)$(NC)"
-	$(call build_one_worker,transfer/backend,transfer)
-	$(call build_one_worker,meta/backend,meta)
-	@echo "$(GREEN)Worker 编译完成！$(NC)"
-
-# ===== 多架构编译 =====
-build-backend-multiarch: ## 编译所有后端服务（amd64 + arm64）
-	@echo "$(GREEN)编译后端（多架构: $(MULTI_ARCHS)）→ $(OUT_DIR)$(NC)"
-	@for arch in $(MULTI_ARCHS); do \
-		echo "$(YELLOW)编译架构: $$arch$(NC)"; \
-		$(MAKE) GOARCH=$$arch build-backend; \
-	done
-	@echo "$(GREEN)多架构后端编译完成！$(NC)"
-
-build-workers-multiarch: ## 编译所有 Worker 服务（amd64 + arm64）
-	@echo "$(GREEN)编译 Worker（多架构: $(MULTI_ARCHS)）→ $(OUT_DIR)$(NC)"
-	@for arch in $(MULTI_ARCHS); do \
-		echo "$(YELLOW)编译架构: $$arch$(NC)"; \
-		$(MAKE) GOARCH=$$arch build-workers; \
-	done
-	@echo "$(GREEN)多架构 Worker 编译完成！$(NC)"
-
-build-backend-all-multiarch: build-backend-multiarch build-workers-multiarch ## 编译所有服务（后端 + Worker，多架构）
-
-build-backend-all-local: ## 编译所有服务（仅当前架构，快速）
-	@echo "$(GREEN)编译所有服务（当前架构: $(GOARCH)）→ $(OUT_DIR)$(NC)"
-	@$(MAKE) build-backend build-workers
-	@echo "$(GREEN)本地架构编译完成！$(NC)"
-
-# ===== 前端统一构建 =====
-build-frontend: ## 编译所有前端到 dist/{BUILD_TYPE}/frontend/{system|console}
-	@echo "$(GREEN)编译前端（$(BUILD_TYPE)）→ $(OUT_DIR)$(NC)"
-	@if [ -f system/frontend/package.json ]; then \
-	  echo "  - system/frontend"; \
-	  if [ "$(BUILD_TYPE)" = "debug" ]; then \
-	    (cd system/frontend && BUILD_TYPE=$(BUILD_TYPE) OUT_DIR=../../$(OUT_DIR) npm run build --silent -- --mode development); \
-	  else \
-	    (cd system/frontend && BUILD_TYPE=$(BUILD_TYPE) OUT_DIR=../../$(OUT_DIR) npm run build --silent); \
-	  fi; \
-	fi
-	@if [ -f console/frontend/package.json ]; then \
-	  echo "  - console/frontend"; \
-	  if [ "$(BUILD_TYPE)" = "debug" ]; then \
-	    (cd console/frontend && BUILD_TYPE=$(BUILD_TYPE) OUT_DIR=../../$(OUT_DIR) npm run build --silent -- --mode development); \
-	  else \
-	    (cd console/frontend && BUILD_TYPE=$(BUILD_TYPE) OUT_DIR=../../$(OUT_DIR) npm run build --silent); \
-	  fi; \
-	fi
-	@echo "$(GREEN)前端编译完成！$(NC)"
-
-# 便捷目标
-build-debug: ## 构建 debug（后端 + 前端 + workers）输出到 dist/debug
-	@$(MAKE) BUILD_TYPE=debug build-backend
-	@$(MAKE) BUILD_TYPE=debug build-workers
-	@$(MAKE) BUILD_TYPE=debug build-frontend
-
-build-release: ## 构建 release（后端 + 前端 + workers）输出到 dist/release
-	@$(MAKE) BUILD_TYPE=release build-backend
-	@$(MAKE) BUILD_TYPE=release build-workers
-	@$(MAKE) BUILD_TYPE=release build-frontend
+build-images: ## 构建全部正式 ADDP 镜像；附加参数使用 IMAGE_BUILD_ARGS="..."
+	@bash scripts/build/build-images.sh $(IMAGE_BUILD_ARGS)
 
 clean-dist: ## 清理 dist 构建产物
 	@rm -rf $(OUT_DIR)
 	@echo "$(YELLOW)已清理 $(OUT_DIR)$(NC)"
-
-# ==================== 生产环境本地编译 ====================
-
-build-backends: ## 编译所有后端服务到 dist/ 目录（用于生产镜像）
-	@echo "$(GREEN)编译所有后端服务（Linux AMD64）...$(NC)"
-	@mkdir -p dist
-	@echo "$(YELLOW)编译 system-backend...$(NC)"
-	@cd system/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/system-backend ./cmd/server
-	@echo "$(YELLOW)编译 manager-backend...$(NC)"
-	@cd manager/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/manager-backend ./cmd/server
-	@echo "$(YELLOW)编译 meta-backend...$(NC)"
-	@cd meta/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/meta-backend ./cmd/server
-	@echo "$(YELLOW)编译 meta-worker...$(NC)"
-	@cd meta/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/meta-worker ./cmd/worker
-	@echo "$(YELLOW)编译 transfer-backend...$(NC)"
-	@cd transfer/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/transfer-backend ./cmd/server
-	@echo "$(YELLOW)编译 transfer-bounded-worker...$(NC)"
-	@cd transfer/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/transfer-bounded-worker ./cmd/worker
-	@echo "$(YELLOW)编译 transfer-continuous-worker...$(NC)"
-	@cd transfer/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/transfer-continuous-worker ./cmd/continuous-worker
-	@echo "$(YELLOW)编译 quality-worker...$(NC)"
-	@cd quality/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/quality-worker ./cmd/worker
-	@echo "$(YELLOW)编译 orchestrator-backend...$(NC)"
-	@cd orchestrator/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/orchestrator-backend ./cmd/server
-	@echo "$(YELLOW)编译 develop-backend...$(NC)"
-	@cd develop/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/develop-backend ./cmd/server
-	@echo "$(YELLOW)编译 gateway...$(NC)"
-	@cd gateway && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../dist/gateway ./cmd/gateway
-	@echo "$(GREEN)所有后端编译完成！$(NC)"
-	@ls -lh dist/
-
-prod-build-images: build-backends ## 构建所有生产 Docker 镜像（使用预编译二进制）
-	@echo "$(GREEN)构建所有生产镜像（从项目根目录）...$(NC)"
-	@docker build -t localhost:5001/addp-system-backend:latest -f system/backend/Dockerfile .
-	@docker build -t localhost:5001/addp-manager-backend:latest -f manager/backend/Dockerfile .
-	@docker build -t localhost:5001/addp-meta-backend:latest -f meta/backend/Dockerfile .
-	@docker build -t localhost:5001/addp-meta-worker:latest -f meta/worker/Dockerfile .
-	@docker build -t localhost:5001/addp-transfer-backend:latest -f transfer/backend/Dockerfile .
-	@docker build -t localhost:5001/addp-transfer-bounded-worker:latest -f transfer/worker/Dockerfile .
-	@docker build -t localhost:5001/addp-transfer-continuous-worker:latest -f transfer/continuous-worker/Dockerfile .
-	@docker build -t localhost:5001/addp-quality-worker:latest -f quality/worker/Dockerfile .
-	@docker build -t localhost:5001/addp-orchestrator-backend:latest -f orchestrator/backend/Dockerfile .
-	@docker build -t localhost:5001/addp-develop-backend:latest -f develop/backend/Dockerfile .
-	@docker build -t localhost:5001/addp-gateway:latest -f gateway/Dockerfile .
-	@echo "$(GREEN)所有后端镜像构建完成！$(NC)"
-	@echo "$(YELLOW)提示：前端镜像需要在各自目录单独构建$(NC)"
-
-docker-build: ## 构建 Docker 镜像（仅 System 模块）
-	@echo "$(GREEN)构建 System 模块 Docker 镜像...$(NC)"
-	@docker compose -f docker-compose.yml build system-backend system-frontend
-	@echo "$(GREEN)构建完成！$(NC)"
-
-docker-build-all: ## 构建所有服务的 Docker 镜像
-	@echo "$(GREEN)构建所有服务的 Docker 镜像...$(NC)"
-	@docker compose -f docker-compose.yml --profile full build
-	@echo "$(GREEN)所有镜像构建完成！$(NC)"
 
 up: ## 启动 System 模块（基础服务）
 	@echo "$(GREEN)启动 System 模块...$(NC)"
@@ -467,6 +313,8 @@ test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
 
 test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@bash scripts/utils/check-deps-version.sh
+	@python3 scripts/ci/check-build-registration_test.py
+	@python3 scripts/ci/check-build-registration.py --repository "$(CURDIR)"
 	@python3 scripts/ci/check-frontend-ci-registration_test.py
 	@python3 scripts/ci/check-frontend-ci-registration.py --repository "$(CURDIR)"
 	@python3 scripts/ci/check-t2-ci-registration_test.py

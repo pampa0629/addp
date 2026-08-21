@@ -149,6 +149,8 @@ bash scripts/dev/stop.sh
 
 **用途**: 编译二进制文件、构建 Docker 镜像、打包部署
 
+根 `Makefile` 只提供两个标准入口：`make build` 调用 `scripts/build/compile.sh`，`make build-images` 调用 `scripts/build/build-images.sh`。构建事实只维护在这两个脚本中，不得在 Makefile、Workflow 或其他脚本中复制服务清单和构建命令。需要传递参数时分别使用 `BUILD_ARGS="..."` 和 `IMAGE_BUILD_ARGS="..."`。
+
 ### 核心脚本
 
 | 脚本 | 功能 | 输入 | 输出 |
@@ -162,16 +164,16 @@ bash scripts/dev/stop.sh
 
 ```bash
 # 容器构建（默认，Linux 二进制用于 Docker）
-bash scripts/build/compile.sh
+make build
 
 # 本地开发（编译本机 OS 可执行文件）
-bash scripts/build/compile.sh --local
+make build BUILD_ARGS=--local
 
 # 多架构编译（amd64 + arm64）
-bash scripts/build/compile.sh --arch both
+make build BUILD_ARGS="--arch both"
 
 # 强制重新编译（忽略缓存）
-bash scripts/build/compile.sh --force
+make build BUILD_ARGS=--force
 ```
 
 **输出**: `dist/release-{os}-{arch}/` 目录下的二进制文件
@@ -179,19 +181,19 @@ bash scripts/build/compile.sh --force
 ### 2. build-images.sh - 构建镜像
 
 ```bash
-# ⚠️ 必须先运行 compile.sh
+# ⚠️ 必须先运行 make build
 
 # 单架构构建
-bash scripts/build/build-images.sh
+make build-images
 
 # 多架构构建（amd64 + arm64）
-bash scripts/build/build-images.sh --multi-arch
+make build-images IMAGE_BUILD_ARGS=--multi-arch
 
 # 指定 Registry
-bash scripts/build/build-images.sh --registry harbor.example.com:5001
+make build-images IMAGE_BUILD_ARGS="--registry harbor.example.com:5001"
 
 # 指定镜像标签
-IMAGE_TAG=v1.0.0 bash scripts/build/build-images.sh
+IMAGE_TAG=v1.0.0 make build-images
 ```
 
 **输出**: Docker 镜像 `{REGISTRY}/addp-{service}:{TAG}`
@@ -244,10 +246,10 @@ bash scripts/build/package.sh --server ubuntu@192.168.1.100
 ```bash
 # 生产发布示例（完整流程）
 # 1. 编译多架构二进制
-./scripts/build/compile.sh --arch both
+make build BUILD_ARGS="--arch both"
 
 # 2. 构建多架构镜像
-IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh --multi-arch --registry localhost:5001
+IMAGE_TAG=v1.0.0 make build-images IMAGE_BUILD_ARGS="--multi-arch --registry localhost:5001"
 
 # 3. 推送镜像到 Registry
 docker login  # 或: docker login harbor.example.com:5001
@@ -281,8 +283,8 @@ docker login  # 或: docker login harbor.example.com:5001
 open -a Docker  # macOS
 
 # 2. 构建镜像
-bash scripts/build/compile.sh
-bash scripts/build/build-images.sh
+make build
+make build-images
 ```
 
 ### 快速使用
@@ -458,6 +460,8 @@ Online 唯一入口为 `make test-online ONLINE_SUITE=<suite>`，并要求环境
 
 `scripts/ci/check-frontend-ci-registration.py` 是前端 CI 登记完整性检查。它从 Git 跟踪的 `*/frontend/package.json` 自动发现前端，要求每个前端同时具有 `scripts.build`、根 `Makefile` 的 `test-<module>-frontend` 标准入口，并登记到 `platform-ci.yml` 的目标和变更路径中。检查及其反例回归已纳入 `make test-platform`；新增前端时遗漏任一环节会使当次 Platform CI 失败。
 
+`scripts/ci/check-build-registration.py` 是构建登记完整性检查。它自动发现正式 Go Server/Worker、Git 跟踪的前端和 `docker-compose.yml` 中的 ADDP 镜像，校验它们已登记到 `compile.sh`、`build-images.sh`，并禁止恢复已经删除的重复 Make 构建目标。检查及其反例回归已纳入 `make test-platform`；新增模块、Worker、前端或 Compose 镜像却遗漏构建登记时，当次 Platform CI 会直接失败。
+
 `scripts/ci/check-t2-ci-registration.py` 是 GitHub Hosted Runner 上 disposable PostgreSQL T2 门禁的登记完整性检查。它从 Git 跟踪的 `scripts/test/*-postgres-gate.sh` 自动发现门禁，要求每条门禁同时具有根 `Makefile` 标准入口、`release-and-t2-gates.yml` 调用、脚本路径触发和 owner `backend` 路径触发，并要求 PostgreSQL 15 Service 镜像按 digest 固定。ArcGIS 开放格式等需要专用样本或 Oracle 的 T2/T5 不属于该 Hosted Runner 契约，不会被伪装成普通 PostgreSQL 门禁。
 
 Agent 默认离线门禁使用 `make test-agent-eval`，并已包含在根 `make test`。该门禁分别使用 `agent/backend/venv` 运行 Agent 测试、使用 `common-python/.venv` 运行 Common-Python 全量测试；缺少后者时先执行 `cd common-python && uv sync --extra dev`。人工发布验收使用 `make test-agent-eval-release`，需要显式提供三份仓库外在线证据路径；脚本不自动执行 OAuth 登录或生成在线证据。输出统一为仓库外 `addp.agent-evaluation-gate/v2`，外部发布流程可归档其中的源码版本、契约/证据摘要和检查耗时，脚本自身不维护历史记录。
@@ -516,8 +520,8 @@ bash scripts/dev/stop.sh
 
 ```bash
 # 1. 构建镜像
-bash scripts/build/compile.sh
-bash scripts/build/build-images.sh
+make build
+make build-images
 
 # 2. 启动 Docker 环境
 bash scripts/local/start.sh
@@ -536,12 +540,11 @@ bash scripts/local/stop.sh
 
 ```bash
 # 1. 编译多架构二进制
-bash scripts/build/compile.sh --arch both
+make build BUILD_ARGS="--arch both"
 
 # 2. 构建多架构镜像
-IMAGE_TAG=v1.0.0 bash scripts/build/build-images.sh \
-  --multi-arch \
-  --registry localhost:5001
+IMAGE_TAG=v1.0.0 make build-images \
+  IMAGE_BUILD_ARGS="--multi-arch --registry localhost:5001"
 
 # 3. 登录并推送镜像到 Registry
 docker login  # Docker Hub
@@ -605,8 +608,8 @@ curl http://localhost:8180/health
 
 ```bash
 # 重新构建镜像
-bash scripts/build/compile.sh
-bash scripts/build/build-images.sh
+make build
+make build-images
 
 # 验证镜像
 docker images | grep addp

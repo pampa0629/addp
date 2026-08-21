@@ -382,8 +382,8 @@ cd /opt/addp
 git pull
 
 # 2. 重新构建镜像（如果有代码变更）
-./scripts/build/compile.sh --arch both
-IMAGE_TAG=v1.1.0 ./scripts/build/build-images.sh --multi-arch
+make build BUILD_ARGS="--arch both"
+IMAGE_TAG=v1.1.0 make build-images IMAGE_BUILD_ARGS=--multi-arch
 
 # 3. 重启服务
 ./scripts/prod/stop.sh

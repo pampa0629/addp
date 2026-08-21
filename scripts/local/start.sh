@@ -96,8 +96,8 @@ check_images() {
         done
         echo ""
         echo -e "${YELLOW}Please build images first:${NC}"
-        echo "  bash scripts/build/compile.sh"
-        echo "  bash scripts/build/build-images.sh"
+        echo "  make build"
+        echo "  make build-images"
         echo ""
         exit 1
     fi

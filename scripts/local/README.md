@@ -38,10 +38,10 @@ docker info
 # 从项目根目录执行
 
 # 步骤 1: 编译所有二进制文件
-bash scripts/build/compile.sh
+make build
 
 # 步骤 2: 构建 Docker 镜像
-bash scripts/build/build-images.sh
+make build-images
 
 # 验证镜像已创建
 docker images | grep localhost:5001/addp
@@ -106,8 +106,8 @@ bash scripts/local/start.sh
   - localhost:5001/addp-system-backend:latest
 
 Please build images first:
-  bash scripts/build/compile.sh
-  bash scripts/build/build-images.sh
+  make build
+  make build-images
 ```
 
 #### 2. stop.sh - 停止服务
@@ -263,8 +263,8 @@ sudo systemctl start docker
   - localhost:5001/addp-system-backend:latest
 
 # 解决方法
-bash scripts/build/compile.sh
-bash scripts/build/build-images.sh
+make build
+make build-images
 ```
 
 ### 3. 端口被占用

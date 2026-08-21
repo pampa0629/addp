@@ -89,8 +89,8 @@ bash scripts/dev/stop.sh
 
 ```bash
 # 1. 编译和构建镜像
-bash scripts/build/compile.sh
-bash scripts/build/build-images.sh
+make build
+make build-images
 
 # 2. 启动完整平台
 bash scripts/local/start.sh
@@ -109,8 +109,8 @@ bash scripts/local/start.sh
 
 ```bash
 # 1. 准备部署包
-bash scripts/build/compile.sh --arch both
-IMAGE_TAG=v1.0.0 bash scripts/build/build-images.sh --multi-arch
+make build BUILD_ARGS="--arch both"
+IMAGE_TAG=v1.0.0 make build-images IMAGE_BUILD_ARGS=--multi-arch
 bash scripts/build/package.sh --mode registry
 
 # 2. 部署到生产服务器
@@ -293,8 +293,8 @@ bash scripts/dev/start.sh
 
 ```bash
 # 1. Build images
-bash scripts/build/compile.sh
-bash scripts/build/build-images.sh
+make build
+make build-images
 
 # 2. Start platform
 bash scripts/local/start.sh
@@ -307,8 +307,8 @@ bash scripts/local/start.sh
 
 ```bash
 # 1. Build and package
-bash scripts/build/compile.sh --arch both
-IMAGE_TAG=v1.0.0 bash scripts/build/build-images.sh --multi-arch
+make build BUILD_ARGS="--arch both"
+IMAGE_TAG=v1.0.0 make build-images IMAGE_BUILD_ARGS=--multi-arch
 bash scripts/build/package.sh --mode registry
 
 # 2. Deploy to production

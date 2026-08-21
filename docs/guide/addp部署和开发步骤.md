@@ -82,20 +82,22 @@ bash scripts/dev/restart.sh -supermap-workflow
 
 ```bash
 # 编译 Go 二进制文件
-bash scripts/build/compile.sh
+make build
 
 # 构建 Docker 镜像
-bash scripts/build/build-images.sh
+make build-images
 
 # 只构建三维模型转换运行时镜像（Apple Silicon 默认为 linux/arm64）
-bash scripts/build/build-images.sh --services model3d-workflow-engine --force
+make build-images IMAGE_BUILD_ARGS="--services model3d-workflow-engine --force"
 
 # 只构建点云转换运行时镜像（内置 PDAL）
-bash scripts/build/build-images.sh --services pointcloud-workflow-engine --force
+make build-images IMAGE_BUILD_ARGS="--services pointcloud-workflow-engine --force"
 
 # 打包并推送镜像 (如需要)
 bash scripts/build/package.sh
 ```
+
+`make build` 与 `make build-images` 是平台唯一标准构建入口，分别薄调用 `scripts/build/compile.sh` 与 `scripts/build/build-images.sh`。新增正式服务、Worker、前端或 Compose 镜像时，必须在同一次变更中补齐对应构建登记；`make test-platform` 会自动校验完整性。
 
 `model3d-workflow-engine` 使用专用镜像构建链路：先构建绑定 `_3dtile` 的 `addp-model3d-converter`，再构建内置转换器的 `addp-model3d-workflow-engine`。当前转换器构建一次只支持一个 Linux 平台，Apple Silicon 本机优先使用默认的 `linux/arm64` 容器路径。
 
