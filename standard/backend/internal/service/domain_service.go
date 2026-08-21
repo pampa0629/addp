@@ -129,8 +129,8 @@ func (s *DomainService) validateParent(id, tenantID int64, parentID *int64) erro
 	return nil
 }
 
-func (s *DomainService) DeleteDomain(ctx context.Context, id, tenantID int64) error {
+func (s *DomainService) DeleteDomain(ctx context.Context, id, tenantID, expectedVersion int64) error {
 	return s.deletion.Delete(ctx, tenantID, "domain", id, func(tx *gorm.DB, resourceID, resourceTenantID int64) error {
-		return mapDeleteConflict(s.repo.DeleteTx(tx, resourceID, resourceTenantID), ErrDomainReferenced)
+		return mapDeleteConflict(s.repo.DeleteVersionedTx(tx, resourceID, resourceTenantID, expectedVersion), ErrDomainReferenced)
 	})
 }

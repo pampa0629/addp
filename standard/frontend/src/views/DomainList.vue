@@ -181,7 +181,7 @@ const handleDelete = async (domain) => {
       await ElMessageBox.confirm(t('standard.domain.confirmDelete', { name: domain.name }), t('standard.common.hint'), {
         type: 'warning'
       })
-      await domainAPI.delete(domain.id)
+      await domainAPI.delete(domain.id, domain.version)
       ElMessage.success(t('standard.common.deleteSuccess'))
       await loadDomains()
     } catch (e) {

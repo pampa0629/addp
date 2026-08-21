@@ -47,6 +47,21 @@ class OnlineGateTest(unittest.TestCase):
         self.assertEqual(owner.kwargs["timeout"], 898)
         self.assertRegex(self.environment["ADDP_ONLINE_TEST_RUN_ID"], r"^run-[0-9a-f]{32}$")
 
+    def test_registers_only_the_executable_standard_model_suite(self):
+        self.assertEqual(
+            set(ONLINE_GATE.SUITES), {"standard-model-reference-deletion"}
+        )
+        suite = ONLINE_GATE.SUITES["standard-model-reference-deletion"]
+        self.assertEqual(
+            suite.services,
+            (
+                ("gateway", "GATEWAY_URL"),
+                ("system", "SYSTEM_URL"),
+                ("standard", "STANDARD_URL"),
+                ("model", "MODEL_URL"),
+            ),
+        )
+
     @patch.object(ONLINE_GATE.subprocess, "run")
     def test_preserves_explicit_run_id(self, run):
         self.environment["ADDP_ONLINE_TEST_RUN_ID"] = "nightly-42"

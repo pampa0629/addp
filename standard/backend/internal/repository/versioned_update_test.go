@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -30,6 +31,37 @@ func openVersionedTestDB(t *testing.T, statements ...string) *gorm.DB {
 		}
 	}
 	return db
+}
+
+func TestDomainDeleteRequiresCurrentVersionAndTenant(t *testing.T) {
+	db := openVersionedTestDB(t,
+		`CREATE TABLE standard.domains (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, version INTEGER NOT NULL, deleted_at DATETIME)`,
+		`INSERT INTO standard.domains (id, tenant_id, version) VALUES (1, 7, 2)`,
+	)
+	repo := NewDomainRepository(db)
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return repo.DeleteVersionedTx(tx, 1, 7, 1)
+	}); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("stale delete error = %v, want ErrVersionConflict", err)
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return repo.DeleteVersionedTx(tx, 1, 8, 2)
+	}); !errors.Is(err, commonapi.ErrNotFound) {
+		t.Fatalf("cross-tenant delete error = %v, want not found", err)
+	}
+	var count int64
+	if err := db.Table("standard.domains").Where("id = ?", 1).Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("domain after rejected deletes count=%d error=%v, want 1", count, err)
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return repo.DeleteVersionedTx(tx, 1, 7, 2)
+	}); err != nil {
+		t.Fatalf("current-version delete: %v", err)
+	}
+	if err := db.Table("standard.domains").Where("id = ?", 1).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("domain after accepted delete count=%d error=%v, want 0", count, err)
+	}
 }
 
 func TestDirectResourceUpdatesRejectStaleVersion(t *testing.T) {

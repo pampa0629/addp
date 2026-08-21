@@ -10,7 +10,7 @@ export const domainAPI = {
   create(data) { return client.post('/standard/domains', data) },
   get(id) { return client.get(`/standard/domains/${id}`) },
   update(id, data) { return client.put(`/standard/domains/${id}`, data) },
-  delete(id) { return client.delete(`/standard/domains/${id}`) }
+  delete(id, version) { return client.delete(`/standard/domains/${id}`, { data: { version } }) }
 }
 
 // ========== 业务术语 API ==========

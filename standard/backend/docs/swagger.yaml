@@ -920,6 +920,7 @@ definitions:
   github_com_addp_standard_internal_models.VersionRequest:
     properties:
       version:
+        minimum: 1
         type: integer
     required:
     - version
@@ -2191,6 +2192,13 @@ paths:
       - standard.domain.create
   /domains/{id}:
     delete:
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.VersionRequest'
       produces:
       - application/json
       responses:
@@ -2198,6 +2206,12 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "400":
+          description: 请求无效 | Invalid request
+          schema:
+            additionalProperties:
+              type: string
             type: object
         "401":
           description: 需要登录 | Authentication required
@@ -2218,7 +2232,8 @@ paths:
               type: string
             type: object
         "409":
-          description: 资源仍被 Model 引用 | Resource is still referenced by Model
+          description: 资源版本冲突或仍被 Model 引用 | Resource version conflict or still referenced
+            by Model
           schema:
             additionalProperties: true
             type: object

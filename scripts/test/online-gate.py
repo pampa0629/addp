@@ -30,7 +30,17 @@ class Suite:
 
 # Only executable owner-maintained Online suites belong here. Do not register
 # placeholders: an entry means the suite is ready for real Online acceptance.
-SUITES: Mapping[str, Suite] = {}
+SUITES: Mapping[str, Suite] = {
+    "standard-model-reference-deletion": Suite(
+        command=(sys.executable, "scripts/test/standard-model-reference-deletion-online.py"),
+        services=(
+            ("gateway", "GATEWAY_URL"),
+            ("system", "SYSTEM_URL"),
+            ("standard", "STANDARD_URL"),
+            ("model", "MODEL_URL"),
+        ),
+    ),
+}
 
 
 def parse_positive_timeout(value: str) -> float:

@@ -439,6 +439,8 @@ scripts/test/
 ├── online-gate_test.py # Online 分发协议确定性回归测试
 ├── online-preflight.py # T4 专用部署安全边界与构建身份预检
 ├── online-preflight_test.py # Online 预检确定性回归测试
+├── standard-model-reference-deletion-online.py # Standard ↔ Model 正式 API 引用删除验收
+├── standard-model-reference-deletion-online_test.py # 首个 Online suite 的确定性协议测试
 ├── quality-postgres-gate.sh # Quality PostgreSQL 集成门禁
 ├── standard-postgres-gate.sh # Standard PostgreSQL 集成门禁
 └── system-iam-postgres-gate.sh # System IAM 与 Fosite 一次性 PostgreSQL 发布门禁
@@ -448,7 +450,9 @@ scripts/test/
 
 Go 全量测试使用 `make test-go`，根据 Git 已跟踪的全部 `go.mod` 在系统临时目录生成独立 workspace，再逐一运行 `go test ./...`，不依赖或修改本地被忽略的 `go.work`，也不维护第二份模块清单。`make test-execution-fixtures` 禁止业务测试手写 `task_executions` 表；Common 仓储自测、System PostgreSQL 专项测试及 Manager 历史表清理测试使用精确文件白名单。Model 的权限错误、URL 状态、ER 图过滤、DDL 请求和主题 token 回归使用 `make test-model-frontend`；该入口同时运行独立端口上的浏览器 E2E，覆盖 403 明确提示、业务域详情往返恢复和窄窗口深色 DDL 预览，并执行生产构建与 500 KiB 入口分块预算校验。三项均已纳入根目录 `make test`。
 
-Online 唯一入口为 `make test-online ONLINE_SUITE=<suite>`，并要求环境中显式设置 `ADDP_ONLINE_TEST=1`。`scripts/test/online-gate.py` 只接受代码中已登记且已有 owner 门禁实现的 suite；未登记名称直接失败，不以占位场景冒充验收。分发器为整次运行生成或传递统一 Run ID，依次执行通用预检和 owner 门禁，并对二者施加总超时。当前尚无已登记 suite，因此该入口会明确拒绝执行，直到首个 Standard ↔ Model 正式 API 场景完成。
+Online 唯一入口为 `make test-online ONLINE_SUITE=<suite>`，并要求环境中显式设置 `ADDP_ONLINE_TEST=1`。`scripts/test/online-gate.py` 只接受代码中已登记且已有 owner 门禁实现的 suite；未登记名称直接失败，不以占位场景冒充验收。分发器为整次运行生成或传递统一 Run ID，依次执行通用预检和 owner 门禁，并对二者施加总超时。
+
+首个登记项为 `standard-model-reference-deletion`。它要求 `GATEWAY_URL`、`SYSTEM_URL`、`STANDARD_URL`、`MODEL_URL`、显式测试 Tenant 和 `ADDP_ONLINE_TEST_USER_ACCESS_TOKEN`；Token 对应专用测试 User，必须拥有 Standard Domain 和 Model Entity 的 create/read/delete Permission。业务创建、读取和删除请求全部经 Gateway 转发，直连服务地址只用于构建身份预检。场景创建 Standard Domain 和引用它的 Model Entity，断言 Domain 删除返回 `409 standard_resource_referenced`，删除 Entity 后再删除 Domain，最终通过双方 GET 404 证明零残留；任何业务或清理错误均使门禁失败。
 
 通用预检由分发器向 `scripts/test/online-preflight.py` 传入参与服务的 `module=http://loopback:port`。预检要求显式非默认 Tenant、安全 Run ID、干净工作区，并校验所有 `/health` 构建身份与当前 Git commit 一致；任何非回环服务地址都会被拒绝。分发器与预检器的无外部服务回归测试统一使用 `make test-online-runner`，并已纳入 `make test-platform`。两者不执行未登记的业务断言，不读取或保存 Token，也不接管服务生命周期。
 

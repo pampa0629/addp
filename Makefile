@@ -463,7 +463,7 @@ test-online: ## 运行指定 Online suite（必须设置 ONLINE_SUITE 和 ADDP_O
 	@python3 scripts/test/online-gate.py --repository "$(CURDIR)" --suite "$(ONLINE_SUITE)"
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
-	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py
+	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/standard-model-reference-deletion-online_test.py
 
 test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@bash scripts/utils/check-deps-version.sh

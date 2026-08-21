@@ -163,6 +163,9 @@ make test-release RELEASE_SUITE=system-iam
 - `ADDP_ONLINE_TEST=1`：确认允许执行 Online 测试。
 - `ADDP_ONLINE_TEST_TENANT_ID`：专用测试 Tenant，必须显式提供。
 - `ADDP_ONLINE_TEST_RUN_ID`：可选；未提供时由门禁生成并传给全部子测试。
+- `ADDP_ONLINE_TEST_USER_ACCESS_TOKEN`：专用测试 User 的短期 Access Token，只在需要用户写操作的 suite 中提供；不得使用个人会话或平台管理员 Token。
+- `ADDP_ONLINE_TEST_TIMEOUT_SECONDS`：预检与业务场景共享的总超时，默认 900 秒。
+- `ADDP_ONLINE_TEST_HTTP_TIMEOUT_SECONDS`：单次业务 HTTP 请求超时，默认 10 秒。
 
 服务地址继续使用平台既有配置，如 `SYSTEM_URL`、`MODEL_URL`，不在测试体系中复制第二套端口表。场景需要的 Client Secret 或 User 凭据使用 owner 已定义的环境变量。
 
@@ -283,8 +286,8 @@ T5 按产品或运行时独立编排，例如 System IAM、CLI、Infra Kafka HA�
 - [x] 在根 `Makefile` 增加 `test-online`，要求显式 `ONLINE_SUITE`，统一 Run ID 和总超时；未完成 owner 门禁的场景不得以占位形式登记。
 - [x] 建立通用 Online 预检器，拒绝非回环服务地址、默认 Tenant、脏工作区、无效 Run ID、服务健康异常和 Git commit 不匹配；其确定性自测纳入 `make test-platform`。
 - 实现 suite 级身份权限、安全数据库、超时和报告检查。
-- 通过 Gateway 和 owner API 新建 Standard ↔ Model 场景；旧环境变量、默认 Tenant 和跨 Schema SQL 不再存在。
-- 为该场景补充清理失败与残留检测测试。
+- [x] 通过 Gateway 和 owner API 建立 Standard Domain ↔ Model Entity 引用删除场景；旧环境变量、默认 Tenant 和跨 Schema SQL 不再存在。
+- [x] 为该场景补充失败清理、清理失败升级和双方 GET 404 零残留检查。
 
 ### 阶段 2：统一模块和集成入口
 
@@ -323,6 +326,6 @@ T5 按产品或运行时独立编排，例如 System IAM、CLI、Infra Kafka HA�
 
 持续集成专题的 T0-T3 与首批 T2 门禁已经接入 GitHub Actions。开发者继续直接推送 `main`，该流程不调用 `scripts/dev/restart.sh`，不接管本地开发服务，也不连接 ADDP 开发业务库。
 
-阶段 1 已建立唯一 `make test-online ONLINE_SUITE=<suite>` 分发入口和 `scripts/test/online-preflight.py`：分发器只运行已完成并登记的 owner 门禁，统一生成 Run ID、执行预检并施加总超时；预检只接受回环地址上的专用部署，并校验显式非默认 Tenant、干净源码和参与服务构建身份。当前不登记占位 suite。下一步通过 Gateway、owner API、专用身份、严格清理和残留检查实现新的 Standard ↔ Model 参考场景，完成后再登记。随后准备带 `addp-online` 标签的 macOS 自托管 Runner，最后建立手工 / 夜间 T4 workflow。Online 验收不能复用本地开发环境。
+阶段 1 已建立唯一 `make test-online ONLINE_SUITE=standard-model-reference-deletion`：分发器统一生成 Run ID、执行预检并施加总超时；预检只接受回环地址上的专用部署，并校验显式非默认 Tenant、干净源码和 Gateway、System、Standard、Model 的构建身份。业务场景使用专用测试 User，经 Gateway 和 owner API 创建 Standard Domain 与引用它的 Model Entity，验证删除屏障、解除引用、最终删除和双方 GET 404 零残留。下一步准备独立测试部署、最小 Permission 测试身份和带 `addp-online` 标签的 macOS 自托管 Runner，再执行首次真实 T4 验收；通过后建立手工 / 夜间 workflow。Online 验收不能复用本地开发环境。
 
 不建议一次性实施全部测试层级。全仓测试入口和 CI 矩阵涉及多个 owner，应该按稳定入口逐步迁移，避免用一轮大改制造新的双轨体系。

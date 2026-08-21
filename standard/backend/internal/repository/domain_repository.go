@@ -51,6 +51,25 @@ func (r *DomainRepository) DeleteTx(tx *gorm.DB, id, tenantID int64) error {
 	return requireAffectedRow(tx.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Domain{}))
 }
 
+func (r *DomainRepository) DeleteVersionedTx(tx *gorm.DB, id, tenantID, expectedVersion int64) error {
+	result := tx.Where("id = ? AND tenant_id = ? AND version = ?", id, tenantID, expectedVersion).
+		Delete(&models.Domain{})
+	if result.Error != nil {
+		return wrapDBError(result.Error)
+	}
+	if result.RowsAffected > 0 {
+		return nil
+	}
+	var count int64
+	if err := tx.Model(&models.Domain{}).Where("id = ? AND tenant_id = ?", id, tenantID).Count(&count).Error; err != nil {
+		return wrapDBError(err)
+	}
+	if count == 0 {
+		return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
+	}
+	return ErrVersionConflict
+}
+
 func (r *DomainRepository) ExistsByCode(code string, tenantID int64, excludeID int64) (bool, error) {
 	var count int64
 	query := r.db.Model(&models.Domain{}).Where("code = ? AND tenant_id = ?", code, tenantID)

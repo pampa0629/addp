@@ -2045,12 +2045,32 @@ const docTemplate = `{
                     "Standard"
                 ],
                 "summary": "删除业务域 | Delete business domain",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.VersionRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "401": {
@@ -2081,7 +2101,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "资源仍被 Model 引用 | Resource is still referenced by Model",
+                        "description": "资源版本冲突或仍被 Model 引用 | Resource version conflict or still referenced by Model",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -6291,7 +6311,8 @@ const docTemplate = `{
             ],
             "properties": {
                 "version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },

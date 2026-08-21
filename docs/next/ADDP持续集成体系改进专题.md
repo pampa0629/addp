@@ -211,7 +211,7 @@ Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job �
 - [x] 删除伪 Online 的 Standard ↔ Model 混合测试及其默认 Tenant 1、旧开关、跨 Schema SQL 和忽略清理错误路径；现有协调算法与双方数据库行为分别由 T1/T2 证明。
 - [x] 建立 Online 通用安全预检器及确定性自测，拒绝非回环地址、默认 Tenant、脏工作区、无效 Run ID 和服务构建身份不匹配。
 - [x] 建立唯一 Online suite 分发入口、显式登记、统一 Run ID 和总超时；未实现的场景不登记。
-- [ ] 通过 Gateway、owner API 和专用身份重新建立真正的 Standard ↔ Model T4 场景，不复用已删除的跨 Schema 夹具。
+- [x] 通过 Gateway、owner API 和专用身份建立 Standard Domain ↔ Model Entity T4 场景，不复用已删除的跨 Schema 夹具。
 - [ ] 准备独立于开发环境的测试部署、显式测试 Tenant、专用测试身份和构建身份校验。
 - [ ] 注册带 `self-hosted`、`macOS`、`ARM64`、`addp-online` 标签的专用 Runner，并绑定 `addp-online-test` Environment；Runner 不复用开发服务进程或开发数据库。
 - [ ] 按统一测试方案建立手工 / 夜间 T4 workflow；环境准入未完成前不得提交一个会永久排队或连接开发环境的占位 workflow。

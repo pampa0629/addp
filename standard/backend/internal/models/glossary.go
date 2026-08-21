@@ -119,5 +119,5 @@ type UpdateGlossaryRequest struct {
 }
 
 type VersionRequest struct {
-	Version int64 `json:"version" binding:"required"`
+	Version int64 `json:"version" binding:"required,gt=0" minimum:"1"`
 }

@@ -504,6 +504,7 @@ test('shows the backend domain conflict message after confirmed deletion', async
   )
   await expect(outdoorRow).toBeVisible()
   expect(backend.getDeleteRequests()).toEqual(['/api/v1/standard/domains/2'])
+  expect(backend.getDomainDeleteRequests()).toEqual([{ id: 2, version: 1 }])
 })
 
 test('cancels document deletion without sending a request', async ({ page }) => {
@@ -750,6 +751,7 @@ async function installMockBackend(page, options = {}) {
   let glossaryListRaceRequests = 0
   let glossaryCreateRequests = 0
   const domainUpdateRequests = []
+  const domainDeleteRequests = []
   let metricDocumentLinked = false
   const documents = (options.documents || []).map(item => ({ ...item }))
   const elements = (options.elements || []).map(item => ({ ...item }))
@@ -770,6 +772,7 @@ async function installMockBackend(page, options = {}) {
 
     if (request.method() === 'DELETE' && path === '/api/v1/standard/domains/2' && options.domainDeleteConflict) {
       deleteRequests.push(path)
+      domainDeleteRequests.push({ id: 2, version: request.postDataJSON().version })
       return fulfillJSON(route, {
         error: '业务域仍被子业务域、业务术语、数据元、指标或维度层级引用，无法删除'
       }, 409)
@@ -928,6 +931,7 @@ async function installMockBackend(page, options = {}) {
     getActionRequests: () => [...actionRequests],
     getDeleteRequests: () => [...deleteRequests],
     getDomainUpdateRequests: () => [...domainUpdateRequests],
+    getDomainDeleteRequests: () => [...domainDeleteRequests],
     getGlossaryCreateRequests: () => glossaryCreateRequests,
     isMetricDocumentLinked: () => metricDocumentLinked
   }
