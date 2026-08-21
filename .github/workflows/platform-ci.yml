@@ -255,9 +255,15 @@ jobs:
           - module: meta
             name: Meta
             target: test-meta-frontend
+          - module: monitor
+            name: Monitor
+            target: test-monitor-frontend
           - module: portal
             name: Portal
             target: test-portal-frontend
+          - module: transfer
+            name: Transfer
+            target: test-transfer-frontend
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
