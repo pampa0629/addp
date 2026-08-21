@@ -41,6 +41,7 @@ jobs:
             'common/*' \
             'scripts/test/quality-postgres-gate.sh' \
             'scripts/ci/select-gate-by-paths.sh' \
+            '.github/actions/ci-gate-summary/*' \
             'Makefile' \
             '.github/workflows/quality-postgres-gate.yml'
 
@@ -85,3 +86,10 @@ jobs:
           ADDP_TEST_POSTGRES_DATABASE: addp_quality_test
           ADDP_TEST_POSTGRES_SSLMODE: disable
         run: make test-quality-postgres
+
+      - name: Summarize Quality PostgreSQL gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Quality integration (PostgreSQL 15)
+          status: ${{ job.status }}

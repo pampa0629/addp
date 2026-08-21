@@ -36,6 +36,9 @@ ADDP 已经具备较多本地测试、集成门禁和发布验证入口，但 Gi
 - PostgreSQL 门禁使用固定 PostgreSQL 15 镜像摘要和 disposable database。
 - 四个 workflow 均不在 workflow 触发器上使用 `paths` / `paths-ignore`，以保持 Job 名称稳定；模块 Job 在内部按登记路径执行或明确报告跳过。
 - 只有 CLI Tag 发布 Job 具有写权限，其余 Job 默认只读。
+- 门禁超时按成本分级：选择与汇总 5 分钟，普通 T0/T1 20 分钟，浏览器或多语言门禁 25 分钟，数据库与 macOS 门禁 30 分钟，全仓 Go 45 分钟。
+- Node 和 Python 确定性依赖分别按 `package-lock.json`、Python 依赖声明缓存；disposable PostgreSQL 验证关闭 Go 缓存，避免复用环境掩盖集成问题。
+- 核心门禁统一通过 `.github/actions/ci-gate-summary` 输出 Gate、Selected、Result 三列 Step Summary；CLI 验证 wheel 只保留 7 天。
 
 ## 三、当前依赖自动化
 
@@ -186,7 +189,7 @@ Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job �
 - [x] 将 Manager 的 map、explorer、navigation 测试收敛为唯一 `npm test`，并将全量测试和构建接入前端确定性矩阵。
 - [x] 为 Asset 建立公开路由和 canonical query 的首批确定性测试，并将测试和构建接入前端确定性矩阵。
 - [x] 将 Service 的查询、引擎、样例和瓦片预览测试收敛为唯一 `npm test`，并将全量测试和构建接入前端确定性矩阵。
-- [ ] 统一缓存键、超时和测试报告格式。
+- [x] 统一缓存、分级超时和 Step Summary 报告格式；数据库验证保持无 Go 缓存，CLI wheel 保留 7 天。
 - [x] 核实当前 required checks：CLI 产品门禁和 System IAM PostgreSQL 门禁；使用汇总 Job 保持路径跳过与真实验证结果都能稳定回报。
 
 ### 阶段 3：模块集成矩阵

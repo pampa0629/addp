@@ -1,0 +1,32 @@
+name: CI gate summary
+description: Write one normalized ADDP gate result to the GitHub Actions step summary.
+
+inputs:
+  gate:
+    description: Human-readable gate name.
+    required: true
+  selected:
+    description: Whether path selection ran the gate.
+    required: false
+    default: "true"
+  status:
+    description: Final job status reported by the GitHub job context.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Write gate summary
+      shell: bash
+      env:
+        ADDP_CI_GATE: ${{ inputs.gate }}
+        ADDP_CI_SELECTED: ${{ inputs.selected }}
+        ADDP_CI_STATUS: ${{ inputs.status }}
+      run: |
+        {
+          echo "## ADDP CI gate result"
+          echo
+          echo "| Gate | Selected | Result |"
+          echo "| --- | --- | --- |"
+          echo "| ${ADDP_CI_GATE} | ${ADDP_CI_SELECTED} | ${ADDP_CI_STATUS} |"
+        } >> "$GITHUB_STEP_SUMMARY"

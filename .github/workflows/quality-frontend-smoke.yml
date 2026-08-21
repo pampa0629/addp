@@ -18,7 +18,7 @@ jobs:
   quality-frontend:
     name: Quality frontend (route, E2E, build)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -38,6 +38,7 @@ jobs:
             'quality/frontend/*' \
             'common-frontend/*' \
             'scripts/ci/select-gate-by-paths.sh' \
+            '.github/actions/ci-gate-summary/*' \
             'Makefile' \
             '.github/workflows/quality-frontend-smoke.yml'
 
@@ -66,3 +67,11 @@ jobs:
       - name: Report skipped Quality frontend gate
         if: steps.selection.outputs.run != 'true'
         run: echo "Quality frontend gate did not run because no registered path changed."
+
+      - name: Summarize Quality frontend gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Quality frontend
+          selected: ${{ steps.selection.outputs.run }}
+          status: ${{ job.status }}
