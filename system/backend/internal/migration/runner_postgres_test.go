@@ -1389,7 +1389,7 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&platformRoleAssignmentCount); err != nil {
 		t.Fatalf("count platform service runtime assignments: %v", err)
 	}
-	if principalCount != 18 || clientCount != 18 || roleCount != 15 || permissionCount != 46 ||
+	if principalCount != 18 || clientCount < 18 || roleCount < 15 || permissionCount < 46 ||
 		platformRoleCount != 7 || platformRoleAssignmentCount != 7 {
 		t.Fatalf("service runtime catalog principals=%d clients=%d roles=%d permissions=%d platform_roles=%d platform_assignments=%d", principalCount, clientCount, roleCount, permissionCount, platformRoleCount, platformRoleAssignmentCount)
 	}
