@@ -261,6 +261,9 @@ jobs:
           - module: graph
             name: Graph
             target: test-graph-frontend
+          - module: inference
+            name: Inference
+            target: test-inference-frontend
           - module: meta
             name: Meta
             target: test-meta-frontend

@@ -1,4 +1,4 @@
-.PHONY: help init dev build up down logs clean test test-platform test-go test-console-frontend test-develop-frontend test-graph-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-arcgis-open-formats dev-all \
+.PHONY: help init dev build up down logs clean test test-platform test-go test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-arcgis-open-formats dev-all \
         build-backend build-frontend build-debug build-release build-iam-bootstrap build-iam-recovery clean-dist \
         infra-up infra-down infra-restart infra-status ports-validate
 
@@ -481,6 +481,10 @@ test-develop-frontend: ## 运行 Develop 前端确定性测试与构建
 test-graph-frontend: ## 运行 Graph 前端确定性测试与构建
 	@cd graph/frontend && npm test
 	@cd graph/frontend && npm run build
+
+test-inference-frontend: ## 运行 Inference 前端确定性测试与构建
+	@cd inference/frontend && npm test
+	@cd inference/frontend && npm run build
 
 test-meta-frontend: ## 运行 Meta 前端确定性测试与构建
 	@cd meta/frontend && npm test
