@@ -56,7 +56,7 @@
 | `last_check_at` | TIMESTAMP | | 上次检测时间 |
 | `check_message` | TEXT | | 检测结果消息 |
 
-`connection_status` 不改变 Engine Instance 生命周期，但参与业务候选派生。System 引擎管理清单展示全部可见实例；新建任务或功能选择的业务候选只包含 `lifecycle_state=active`、`connection_status=online` 且 capability 匹配的实例。已有绑定继续保留原 `engine_id` 和不可用状态，不因离线而删除或自动替换。
+`connection_status` 不改变 Engine Instance 生命周期，但参与业务选择项的可选性判定。System 引擎管理清单展示全部可见实例；业务选择器展示 `lifecycle_state=active` 且 capability 匹配的注册实例，其中仅 `connection_status=online` 的实例可选，其他状态必须保留展示并说明不可用原因。已有绑定继续保留原 `engine_id` 和不可用状态，不因离线而删除或自动替换。
 
 ### 2.4 数据库索引
 
@@ -616,9 +616,11 @@ System 根据 Service Principal 与 `engine_type` 的固定归属校验注册请
    - API：`POST /api/v1/system/engines/:id/test`
    - 同步返回检测结果并更新状态
 
-3. **不实施后台定时检测**
-   - 连接状态仍是最近一次检测缓存，不做后台持续探测
-   - 原因：节省资源，避免频繁连接；用户按需检测即可
+3. **后台周期复查**
+   - System 就绪后按固定周期异步复查所有 `active` 引擎，每个实例独立更新最近连接状态
+   - 周期复查不阻塞 System 启动，不因单个引擎失败影响其他引擎或业务模块
+   - 引擎晚于 System 启动时，后续复查成功即可把状态更新为 `online`，业务选择器再次读取后自动恢复可选
+   - 执行入口仍须重新校验当前状态，不能把周期观测缓存当作长期连接保证
 
 ---
 

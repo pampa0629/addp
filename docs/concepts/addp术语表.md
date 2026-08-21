@@ -15,7 +15,8 @@
 | Engine Runtime Descriptor | 引擎运行时描述 | System 面向受信 Runtime Service Principal 提供的脱敏 Engine Instance 控制面投影。 | 只包含实例身份、生命周期、能力声明和工作流/脚本运行时的 `protocol/host/port`；不包含数据引擎凭据、数据库连接参数或可直接读取业务数据的明文连接。 |
 | engine lifecycle state | 引擎生命周期状态 | Engine Instance 当前能否被正常消费或正在退出平台的状态。 | 统一使用 `active`、`disabled`、`deleting`；`deleting` 保留连接只用于删除前 cleanup，不进入正常业务选择。 |
 | engine connectivity observation | 引擎连通性观测 | System 对 Engine Instance 最近一次连接检测得到的运行时观测结果。 | 统一使用 `online`、`offline`、`unknown`、`checking`；它是带检测时间和消息的缓存，不改变生命周期，也不等同于持续保持的物理连接。 |
-| available engine candidate | 可用引擎候选 | 可供用户新建绑定或当前业务功能选择的 Engine Instance。 | 必须同时满足 `lifecycle_state=active`、`connection_status=online` 和目标 capability；System 引擎管理清单不按此规则隐藏实例，已有绑定也保留原 ID 并显示不可用状态。 |
+| engine selection option | 引擎选择项 | 业务选择器中展示的、已在 System 注册且 capability 与当前功能匹配的 Engine Instance。 | 选择项保留最近连接状态；离线、未知或检测中的实例仍展示，但必须禁选并说明原因。 |
+| available engine candidate | 可用引擎候选 | 引擎选择项中当前允许建立新绑定或发起使用的 Engine Instance。 | 必须同时满足 `lifecycle_state=active`、`connection_status=online` 和目标 capability；System 引擎管理清单及业务选择项不按此规则隐藏实例，已有绑定也保留原 ID 并显示不可用状态。 |
 | storage engine binding | 存储引擎绑定 | owner 任务或配置通过标准 ResourceLocator 对某个存储 Engine Instance 的显式引用集合。 | Engine 删除后绑定保持原 ID 并变为不可执行；重绑定由 owner 在用户确认后原子改写 Locator，不按名称或连接信息自动匹配。 |
 | external artifact abandonment | 外部产物放弃 | 当外部引擎不可达时，管理员明确接受平台不再删除某个 owner 已登记外部产物，并把后续处置交给外部系统管理员。 | 必须保留对象身份、最后错误、放弃时间和审计；不得伪装成物理删除成功。 |
 | node | 资源节点 | 引擎内用于组织资源树的节点。 | 例如目录、bucket、prefix、schema。node 不等同于 data item。 |

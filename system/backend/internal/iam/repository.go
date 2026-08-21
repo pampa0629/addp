@@ -553,6 +553,7 @@ func (r *Repository) ExecutionAuthorizationEngineAvailable(
 			FROM system.engines engine
 			WHERE engine.id = ?
 			  AND engine.lifecycle_state = 'active'
+			  AND engine.connection_status = 'online'
 			  AND (
 				  engine.tenant_id = ?
 				  OR (engine.tenant_id IS NULL AND engine.is_builtin = true)

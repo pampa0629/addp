@@ -922,14 +922,14 @@ func (s *EngineService) GetForConnection(id, tenantID uint) (*models.Engine, err
 	return &engineCopy, nil
 }
 
-// GetForExecution returns decrypted connection information only for an active
-// engine inside the already-authorized execution tenant boundary.
+// GetForExecution returns decrypted connection information only for an active,
+// currently online engine inside the already-authorized execution tenant boundary.
 func (s *EngineService) GetForExecution(id, tenantID uint) (*models.Engine, error) {
 	engine, err := s.GetForConnection(id, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	if engine.LifecycleState != models.EngineLifecycleActive {
+	if !engineselection.IsAvailable(engine) {
 		return nil, ErrResourceForbidden
 	}
 	return engine, nil
@@ -1416,11 +1416,15 @@ func (s *EngineService) CheckAndUpdateConnectionStatus(engineID uint) bool {
 
 	fmt.Printf("[ConnectionCheck] ✅ 连接测试成功\n")
 	checkMessage := "连接正常"
-	if err := s.refreshEngineCapabilities(engineID); err != nil {
+	// 周期探测只在离线/未知 -> 在线的边沿刷新能力，避免每轮健康检查
+	// 都对同一引擎重复执行较重的能力探测。
+	if engine.ConnectionStatus != models.EngineConnectionOnline {
+		if err := s.refreshEngineCapabilities(engineID); err != nil {
 		checkMessage = fmt.Sprintf("连接正常；能力刷新失败: %v", err)
 		fmt.Printf("[ConnectionCheck] ⚠️  能力刷新失败，保留最后一次成功结果: %v\n", err)
+		}
 	}
-	s.updateConnectionStatus(engineID, "online", checkMessage)
+	s.updateConnectionStatus(engineID, models.EngineConnectionOnline, checkMessage)
 	return true
 }
 

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"log/slog"
 	"strings"
 	"sync"
@@ -14,10 +15,11 @@ import (
 const (
 	startupCheckRetryWindow   = 60 * time.Second
 	startupCheckRetryInterval = 2 * time.Second
+	DefaultHealthCheckInterval = 30 * time.Second
 )
 
 // HealthChecker 资源健康检查器
-// 负责在 System 启动时检测所有资源的最近连通性
+// 负责在 System 启动时及运行期间检测所有资源的最近连通性
 type HealthChecker struct {
 	resourceService *EngineService
 	log             *slog.Logger
@@ -38,9 +40,38 @@ func NewHealthChecker(resourceService *EngineService) *HealthChecker {
 // CheckAllResourcesOnStartup 启动时检测所有资源健康状态
 // 并发检测，限制并发数为10，避免同时检测过多资源导致资源耗尽
 func (h *HealthChecker) CheckAllResourcesOnStartup() {
+	h.checkAllResources(context.Background(), true)
+}
+
+// Run performs the bounded startup check and then periodically refreshes the
+// observation cache. A failed instance never blocks other instances or System
+// readiness, and a runtime started later can recover on a subsequent pass.
+func (h *HealthChecker) Run(ctx context.Context, interval time.Duration) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if interval <= 0 {
+		interval = DefaultHealthCheckInterval
+	}
+
+	h.checkAllResources(ctx, true)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			h.checkAllResources(ctx, false)
+		}
+	}
+}
+
+func (h *HealthChecker) checkAllResources(ctx context.Context, retryOffline bool) {
 	h.log.Info("开始检测所有资源健康状态...",
 		"retry_window", h.retryWindow,
-		"retry_interval", h.retryInterval)
+		"retry_interval", h.retryInterval,
+		"retry_offline", retryOffline)
 
 	// 获取所有资源列表
 	engines, _, err := h.resourceService.repo.List(0, 9999, "")
@@ -68,7 +99,11 @@ func (h *HealthChecker) CheckAllResourcesOnStartup() {
 
 			// 信号量只包围实际探测，不包围重试等待，避免前面的慢资源阻塞后续资源首次检测。
 			check := func() bool {
-				semaphore <- struct{}{}
+				select {
+				case semaphore <- struct{}{}:
+				case <-ctx.Done():
+					return false
+				}
 				defer func() { <-semaphore }()
 				return h.resourceService.CheckAndUpdateConnectionStatus(resource.ID)
 			}
@@ -85,7 +120,7 @@ func (h *HealthChecker) CheckAllResourcesOnStartup() {
 				return
 			}
 
-			if retryConnectionCheck(check, h.retryWindow, h.retryInterval) {
+			if retryOffline && retryConnectionCheckContext(ctx, check, h.retryWindow, h.retryInterval) {
 				onlineCount.Add(1)
 			} else {
 				offlineCount.Add(1)
@@ -103,8 +138,15 @@ func (h *HealthChecker) CheckAllResourcesOnStartup() {
 // retryConnectionCheck retries a transiently failed probe within a bounded startup window.
 // The first probe is performed by the caller so that only an offline result enters this path.
 func retryConnectionCheck(probe func() bool, retryWindow, retryInterval time.Duration) bool {
+	return retryConnectionCheckContext(context.Background(), probe, retryWindow, retryInterval)
+}
+
+func retryConnectionCheckContext(ctx context.Context, probe func() bool, retryWindow, retryInterval time.Duration) bool {
 	if probe == nil {
 		return false
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	if retryWindow <= 0 {
 		return probe()
@@ -126,6 +168,14 @@ func retryConnectionCheck(probe func() bool, retryWindow, retryInterval time.Dur
 		if retryInterval > remaining {
 			retryInterval = remaining
 		}
-		time.Sleep(retryInterval)
+		timer := time.NewTimer(retryInterval)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return false
+		case <-timer.C:
+		}
 	}
 }

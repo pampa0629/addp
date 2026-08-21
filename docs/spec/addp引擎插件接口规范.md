@@ -531,7 +531,7 @@ type InferenceRuntimeProvider interface {
 
 所有上层模块 Backend 与附属 Worker 都必须支持零 Engine Instance 启动。具体请求或 execution 引用的实例不存在、不可用或能力不匹配时，只失败该请求或 execution；Worker 不得退出，Backend readiness 不得降级。模块自身必需 Infra 不属于 Engine Instance，仍按各模块部署契约管理。
 
-面向用户新建绑定或发起功能选择的 Engine 候选列表必须使用统一可用性规则：`lifecycle_state=active`、`connection_status=online`，并匹配目标 capability。System 引擎管理清单不应用该过滤；已有任务或配置的旧绑定必须保留展示并标记不可用，但不得继续执行、静默清空或自动替换。候选列表过滤不能替代执行期按具体 Engine Instance 重新校验。
+面向用户新建绑定或发起功能选择的业务接口，必须返回已在 System 注册、`lifecycle_state=active` 且匹配目标 capability 的 Engine 选择项，并携带 `connection_status`。选择器不得隐藏离线、未知或检测中的相关实例，而应展示并禁选；只有 `connection_status=online` 的选择项才可建立新绑定或发起使用。System 引擎管理清单继续展示全部可见实例；已有任务或配置的旧绑定必须保留展示并标记不可用，不得静默清空或自动替换。候选状态不能替代执行期按具体 Engine Instance 重新校验。
 
 ### Catalog 错误契约
 

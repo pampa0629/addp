@@ -190,7 +190,8 @@ func main() {
 		go moduleRegistryService.StartCleanupTask(ctx, 60*time.Second)
 	}()
 
-	// 启动健康检查（在后台goroutine中）
+	// 启动健康检查（在后台 goroutine 中持续更新最近连接状态）
+	healthCheckContext, cancelHealthChecks := context.WithCancel(context.Background())
 	go func() {
 		// 初始化 Redis 客户端（用于 EngineService）
 		var redisClient *redis.Client
@@ -208,7 +209,7 @@ func main() {
 
 		// 创建并运行健康检查器
 		healthChecker := service.NewHealthChecker(engineService)
-		healthChecker.CheckAllResourcesOnStartup()
+		healthChecker.Run(healthCheckContext, service.DefaultHealthCheckInterval)
 	}()
 
 	// 等待中断信号以优雅关闭服务器
@@ -217,6 +218,7 @@ func main() {
 	<-quit
 
 	logger.L().Info("正在关闭 System 服务器...")
+	cancelHealthChecks()
 
 	// 关闭所有数据库连接池
 	dbbridge.CloseAllPools()
