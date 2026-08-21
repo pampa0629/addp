@@ -17,11 +17,20 @@ describe('Console navigation bridge', () => {
     })
     expect(buildConsoleNavigationRequest('/manager/data-explorer?tab=profile', {
       history: 'replace',
-      synchronized: true
+      synchronized: true,
+      pageDescriptor: {
+        title: ' 图谱浏览 ',
+        subject: ' 企业关系图谱 '
+      }
     })).toEqual({
       route: '/manager/data-explorer?tab=profile',
       history: 'replace',
-      synchronized: true
+      synchronized: true,
+      pageDescriptor: {
+        title: '图谱浏览',
+        subject: '企业关系图谱',
+        recent: true
+      }
     })
   })
 

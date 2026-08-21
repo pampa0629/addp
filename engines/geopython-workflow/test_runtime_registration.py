@@ -27,7 +27,7 @@ def test_register_to_system_uses_canonical_runtime_identity(monkeypatch):
             "engine_type": "geopython_workflow",
             "name": "GeoPython Workflow",
             "description": "基于 Python 地理计算生态的工作流引擎，支持 Pandas、GeoPandas、GDAL/OGR 等能力",
-            "connection_info": {"protocol": "http", "port": 8099},
+            "connection_info": {"protocol": "http", "port": 8099, "host": "localhost"},
             "capabilities": {
                 "schema_version": "engine.capabilities/v1",
                 "engine_type": "geopython_workflow",

@@ -434,8 +434,10 @@ func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateReques
 	if req.Capabilities != nil {
 		engine.Capabilities = req.Capabilities
 	}
-	if err := s.prepareEngineCapabilities(engine); err != nil {
-		return nil, err
+	if req.ConnectionInfo != nil || req.Capabilities != nil {
+		if err := s.prepareEngineCapabilities(engine); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := s.repo.Update(engine); err != nil {
@@ -1313,38 +1315,6 @@ func (s *EngineService) ValidateSystemEngineRegistration(engineType string, capa
 	return s.validateSystemEngineType(engineType, capabilities)
 }
 
-// RefreshAllEngineCapabilities 将空能力、旧能力声明或内置引擎能力刷新为当前实例能力结构。
-func (s *EngineService) RefreshAllEngineCapabilities() error {
-	engines, err := s.repo.ListAll()
-	if err != nil {
-		return err
-	}
-
-	for i := range engines {
-		engine := engines[i]
-		if !s.usesPluginCapabilities(engine.EngineType) && !s.shouldRefreshCapabilities(engine.Capabilities) {
-			continue
-		}
-		capabilities, err := s.resolveCapabilitiesForEngine(&engine)
-		if err != nil {
-			return fmt.Errorf("生成引擎 %d(%s) 能力声明失败: %w", engine.ID, engine.EngineType, err)
-		}
-		capabilitiesJSON := toJSONStringPtr(capabilities)
-		if err := s.validateCapabilitiesForEngine(engine.EngineType, capabilitiesJSON); err != nil {
-			return fmt.Errorf("生成引擎 %d(%s) 能力声明失败: %w", engine.ID, engine.EngineType, err)
-		}
-		if engine.Capabilities != nil && string(*engine.Capabilities) == capabilities {
-			continue
-		}
-		engine.Capabilities = capabilitiesJSON
-		if err := s.repo.Update(&engine); err != nil {
-			return fmt.Errorf("刷新引擎 %d(%s) 能力声明失败: %w", engine.ID, engine.EngineType, err)
-		}
-	}
-
-	return nil
-}
-
 func (s *EngineService) shouldRefreshCapabilities(capabilities *models.JSONString) bool {
 	if capabilities == nil || *capabilities == "" {
 		return true
@@ -1445,8 +1415,42 @@ func (s *EngineService) CheckAndUpdateConnectionStatus(engineID uint) bool {
 	}
 
 	fmt.Printf("[ConnectionCheck] ✅ 连接测试成功\n")
-	s.updateConnectionStatus(engineID, "online", "连接正常")
+	checkMessage := "连接正常"
+	if err := s.refreshEngineCapabilities(engineID); err != nil {
+		checkMessage = fmt.Sprintf("连接正常；能力刷新失败: %v", err)
+		fmt.Printf("[ConnectionCheck] ⚠️  能力刷新失败，保留最后一次成功结果: %v\n", err)
+	}
+	s.updateConnectionStatus(engineID, "online", checkMessage)
 	return true
+}
+
+// refreshEngineCapabilities refreshes one Engine Instance after a successful connection probe.
+// A failure is returned to the caller but never clears the last successfully persisted facts.
+func (s *EngineService) refreshEngineCapabilities(engineID uint) error {
+	if engineID == 0 {
+		return errors.New("无效的引擎数据")
+	}
+	engine, err := s.repo.GetByID(engineID)
+	if err != nil {
+		return err
+	}
+	if !s.usesPluginCapabilities(engine.EngineType) && !s.shouldRefreshCapabilities(engine.Capabilities) {
+		return nil
+	}
+	capabilities, err := s.resolveCapabilitiesForEngine(engine)
+	if err != nil {
+		return err
+	}
+	capabilitiesJSON := toJSONStringPtr(capabilities)
+	if err := s.validateCapabilitiesForEngine(engine.EngineType, capabilitiesJSON); err != nil {
+		return fmt.Errorf("能力声明验证失败: %w", err)
+	}
+	if engine.Capabilities != nil && string(*engine.Capabilities) == capabilities {
+		return nil
+	}
+	return s.repo.UpdateByID(context.Background(), engine.ID, map[string]interface{}{
+		"capabilities": capabilitiesJSON,
+	})
 }
 
 // AsyncCheckConnection 异步检测资源连接状态（用于被动触发）

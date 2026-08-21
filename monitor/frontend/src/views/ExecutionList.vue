@@ -495,7 +495,8 @@ import {
   getContinuousCapture,
   getContinuousDiagnostics,
   hasContinuousExecutionMetadata,
-  resolveTaskTypeDisplayName
+  resolveTaskTypeDisplayName,
+  useConsolePageDescriptor
 } from '@common-ui'
 import { listExecutions, getExecutionTreeByExecutionID, listTaskProviders } from '@/api/monitor'
 import ExecutionTable from '@/components/ExecutionTable.vue'
@@ -530,6 +531,11 @@ const selectedPreset = ref('')
 const loading = ref(false)
 const detailDialogVisible = ref(false)
 const currentExecution = ref(null)
+useConsolePageDescriptor(router, 'monitor', {
+  title: computed(() => t('monitor.execution.recentDetailTitle')),
+  subject: computed(() => currentExecution.value?.source_task_name || currentExecution.value?.execution_id || ''),
+  ready: computed(() => Boolean(route.query.execution_id && currentExecution.value?.execution_id))
+})
 const executionTreeData = ref([])
 const openedExecutionID = ref('')
 let autoRefreshTimer = null

@@ -204,15 +204,16 @@ def register_to_system() -> bool:
     client_secret = os.getenv("MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET", "")
     port = int(os.getenv("PORT", 8101))
     protocol = os.getenv("PROTOCOL", "http")
+    runtime_host = os.getenv("RUNTIME_HOST", "localhost").strip()
+    connection_info = {"protocol": protocol, "port": port}
+    if runtime_host:
+        connection_info["host"] = runtime_host
 
     payload = {
         "engine_type": "model3d_workflow",
         "name": "Model3D 工作流引擎",
         "description": "三维模型与 Gaussian Splat 持久化转换工作流运行时，算子同时支持 workflow 与受控 direct 调用",
-        "connection_info": {
-            "protocol": protocol,
-            "port": port,
-        },
+        "connection_info": connection_info,
         "capabilities": {
             "schema_version": "engine.capabilities/v1",
             "engine_type": "model3d_workflow",
@@ -243,20 +244,9 @@ def register_to_system() -> bool:
 
 
 def register_to_system_with_retry() -> None:
-    import threading
+    from addp_common.client import retry_runtime_registration
 
-    max_retries = 5
-    retry_interval = 10
-
-    for attempt in range(1, max_retries + 1):
-        logger.info("attempting to register model3d_workflow to System (%s/%s)", attempt, max_retries)
-        if register_to_system():
-            logger.info("model3d_workflow registration succeeded on attempt %s", attempt)
-            return
-        if attempt < max_retries:
-            threading.Event().wait(retry_interval)
-
-    logger.error("model3d_workflow registration failed after %s attempts", max_retries)
+    retry_runtime_registration(register_to_system, "model3d_workflow", logger)
 
 
 def _execution_snapshot(execution_id: str, status: str, response: dict[str, Any]) -> ExecutionSnapshot:

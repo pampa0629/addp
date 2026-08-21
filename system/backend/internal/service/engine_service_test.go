@@ -1001,6 +1001,42 @@ func TestUpdateRejectsInvalidLifecycleAndDeletingEngine(t *testing.T) {
 	}
 }
 
+func TestUpdateMetadataAndLifecycleDoesNotProbeOfflineEngine(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.Engine{}); err != nil {
+		t.Fatal(err)
+	}
+	repo := repository.NewEngineRepository(db)
+	tenantID := uint(7)
+	capabilities := toJSONStringPtr(`{"schema_version":"engine.capabilities/v1","engine_type":"postgresql","engine_family":"tabular","storage":{}}`)
+	engine := &models.Engine{
+		TenantID: &tenantID, Name: "offline", EngineType: "postgresql", EngineOrigin: "general",
+		LifecycleState: models.EngineLifecycleActive, ConnectionStatus: "offline", Capabilities: capabilities,
+		ConnectionInfo: models.ConnectionInfo{"host": "127.0.0.1", "port": 1, "database": "offline", "user": "offline"},
+	}
+	if err := repo.Create(engine); err != nil {
+		t.Fatal(err)
+	}
+
+	description := "仍可维护的离线引擎"
+	disabled := models.EngineLifecycleDisabled
+	updated, err := NewEngineService(repo, nil, nil).Update(engine.ID, tenantID, &models.EngineUpdateRequest{
+		Description: &description, LifecycleState: &disabled,
+	})
+	if err != nil {
+		t.Fatalf("Update() probed an offline engine: %v", err)
+	}
+	if updated.Description != description || updated.LifecycleState != disabled {
+		t.Fatalf("updated engine = %#v", updated)
+	}
+	if updated.Capabilities == nil || string(*updated.Capabilities) != string(*capabilities) {
+		t.Fatalf("capabilities changed: got %v want %v", updated.Capabilities, capabilities)
+	}
+}
+
 func TestBeginDeletionWaitsForCleanupBeforeDeletingEngine(t *testing.T) {
 	repo := newEngineServiceTestRepository(t)
 	tenantID := uint(7)

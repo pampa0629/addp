@@ -144,6 +144,7 @@
       "detail": "详情"
     },
     "taskDetail": {
+      "recentVisitTitle": "传输任务",
       "back": "返回",
       "taskDetailTitle": "任务详情 - {name}",
       "execute": "执行",
@@ -355,6 +356,7 @@
       "loadSystemResourcesFailed": "加载系统资源失败"
     },
     "executionDetail": {
+      "recentVisitTitle": "传输执行",
       "back": "返回",
       "executionDetailTitle": "执行详情 #{id}",
       "executionId": "执行ID",

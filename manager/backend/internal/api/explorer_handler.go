@@ -139,6 +139,42 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// ResourceFacts 返回不含原始数据行的资源事实。
+// @Summary 获取数据项资源事实 | Get data item resource facts
+// @Description 按 locator 返回 Source Engine、查询名称、Schema coverage、字段路径及空间事实，不读取原始数据行 | Return source engine, query names, schema coverage, field paths and spatial facts without reading source rows
+// @Tags Manager
+// @Produce json
+// @Param locator query string true "ResourceLocator URI"
+// @Success 200 {object} preview.ResourceFacts "资源事实 | Resource facts"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
+// @Failure 404 {object} map[string]interface{} "缺少已扫描的数据项事实 | Scanned item facts not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.data_item.read"]
+// @Router /resource-facts [get]
+// @Security BearerAuth
+func (h *ExplorerHandler) ResourceFacts(c *gin.Context) {
+	locatorURI := c.Query("locator")
+	if locatorURI == "" {
+		missingLocator(c)
+		return
+	}
+	facts, err := h.previewResolver.ResourceFactsFromURI(c.Request.Context(), locatorURI, tenantIDFromContext(c))
+	if err != nil {
+		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
+			accessDeniedToEngine(c)
+			return
+		}
+		if err == preview.ErrPreviewRequiresScannedMeta {
+			managerError(c, http.StatusNotFound, manageri18n.MsgMetaScanRequired)
+			return
+		}
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, facts)
+}
+
 func graphSampleFilterFromQuery(c *gin.Context) plugin.GraphSampleFilter {
 	if c == nil {
 		return plugin.GraphSampleFilter{}
@@ -174,7 +210,7 @@ func queryCSV(c *gin.Context, key string) []string {
 // ListEngines 获取可用引擎列表
 // GET /api/explorer/engines
 // @Summary 获取引擎列表 | List engines
-// @Description 获取当前租户可用的存储引擎列表 | Get available storage engine list for the current tenant
+// @Description 获取当前租户 active、online 且具备存储能力的引擎列表 | Get active, online storage-capable engines for the current tenant
 // @Tags Manager
 // @Produce json
 // @Success 200 {object} map[string]interface{} "引擎列表 | Engine list"

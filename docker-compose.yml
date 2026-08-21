@@ -48,7 +48,6 @@ services:
       - DEVELOP_SERVICE_CLIENT_SECRET=${DEVELOP_SERVICE_CLIENT_SECRET}
       - DUCKDB_SERVICE_CLIENT_SECRET=${DUCKDB_SERVICE_CLIENT_SECRET}
       - GATEWAY_SERVICE_CLIENT_SECRET=${GATEWAY_SERVICE_CLIENT_SECRET}
-      - DUCKDB_RUNTIME_URL=http://duckdb-engine:8104
       - GRAPH_SERVICE_CLIENT_SECRET=${GRAPH_SERVICE_CLIENT_SECRET}
       - GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET=${GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET}
       - INFERENCE_SERVICE_CLIENT_SECRET=${INFERENCE_SERVICE_CLIENT_SECRET}
@@ -78,15 +77,13 @@ services:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
       - MINIO_BUCKET=${MINIO_BUCKET:-system}
-      # 内置引擎服务 URL（Docker 环境使用服务名）
+      # 模块间服务 URL（Docker 环境使用服务名）
       - SYSTEM_URL=http://system-backend:8180
       - META_URL=http://meta-backend:8082
       - TRANSFER_URL=http://transfer-backend:8083
       - MANAGER_URL=http://manager-backend:8081
       - ORCHESTRATOR_URL=http://orchestrator-backend:8084
       - DEVELOP_URL=http://develop-backend:8185
-      - GEOPYTHON_WORKFLOW_URL=http://geopython-workflow-engine:8099
-      - INFERENCE_URL=http://inference-backend:8191
       - GIN_MODE=release
     ports:
       - "8180:8180"
@@ -147,8 +144,6 @@ services:
       - addp-network
     depends_on:
       system-backend:
-        condition: service_started
-      inference-backend:
         condition: service_started
     restart: unless-stopped
     healthcheck:
@@ -283,6 +278,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-duckdb-engine:${IMAGE_TAG:-latest}
     container_name: duckdb-engine
     environment:
+      - SERVICE_HOST=duckdb-engine
       - SYSTEM_URL=http://system-backend:8180
       - META_URL=http://meta-backend:8082
       - DUCKDB_SERVICE_CLIENT_SECRET=${DUCKDB_SERVICE_CLIENT_SECRET}
@@ -300,11 +296,6 @@ services:
       - "8104"
     networks:
       - addp-network
-    depends_on:
-      system-backend:
-        condition: service_healthy
-      meta-backend:
-        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8104/health"]
@@ -545,7 +536,6 @@ services:
       - DEVELOP_SERVICE_CLIENT_SECRET=${DEVELOP_SERVICE_CLIENT_SECRET}
       - TRANSFER_URL=http://transfer-backend:8083
       - MANAGER_URL=http://manager-backend:8081
-      - GEOPYTHON_WORKFLOW_URL=http://geopython-workflow-engine:8099
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -561,8 +551,6 @@ services:
     depends_on:
       system-backend:
         condition: service_started
-      duckdb-engine:
-        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8185'"]
@@ -618,8 +606,6 @@ services:
     depends_on:
       system-backend:
         condition: service_started
-      duckdb-engine:
-        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8086'"]
@@ -768,8 +754,6 @@ services:
       - addp-network
     depends_on:
       system-backend:
-        condition: service_started
-      inference-backend:
         condition: service_started
     restart: unless-stopped
     healthcheck:
@@ -1065,9 +1049,6 @@ services:
       - "8191:8191"
     networks:
       - addp-network
-    depends_on:
-      system-backend:
-        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8191'"]
@@ -1138,8 +1119,6 @@ services:
         condition: service_started
       graph-backend:
         condition: service_started
-      inference-backend:
-        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8190/health', timeout=3)\""]
@@ -1204,6 +1183,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-geopython-workflow-engine:${IMAGE_TAG:-latest}
     container_name: geopython-workflow-engine
     environment:
+      - RUNTIME_HOST=geopython-workflow-engine
       - PORT=8099
       - SYSTEM_URL=http://system-backend:8180
       - GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET=${GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET}
@@ -1221,9 +1201,6 @@ services:
       - ./logs:/app/logs
     networks:
       - addp-network
-    depends_on:
-      system-backend:
-        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8099/health', timeout=3)\""]
@@ -1238,6 +1215,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-model3d-workflow-engine:${IMAGE_TAG:-latest}
     container_name: model3d-workflow-engine
     environment:
+      - RUNTIME_HOST=model3d-workflow-engine
       - PORT=8101
       - SYSTEM_URL=http://system-backend:8180
       - MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET=${MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET}
@@ -1255,9 +1233,6 @@ services:
       - ${MODEL3D_DATA_HOST_PATH:-./business/nfs/data}:${MODEL3D_DATA_CONTAINER_PATH:-/Users/pampa/code/addp/business/nfs/data}:ro
     networks:
       - addp-network
-    depends_on:
-      system-backend:
-        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8101/health', timeout=3)\""]
@@ -1291,9 +1266,6 @@ services:
       - ${POINTCLOUD_DATA_HOST_PATH:-./business/nfs/data}:${POINTCLOUD_DATA_CONTAINER_PATH:-/Users/pampa/code/addp/business/nfs/data}:ro
     networks:
       - addp-network
-    depends_on:
-      system-backend:
-        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8102/health', timeout=3)\""]
@@ -1324,9 +1296,6 @@ services:
       - ${SUPERMAP_DATA_HOST_PATH:-./business/nfs/data}:/mnt/supermap/data:ro
     networks:
       - addp-network
-    depends_on:
-      system-backend:
-        condition: service_started
     restart: unless-stopped
     mem_limit: ${SUPERMAP_WORKFLOW_MEMORY_LIMIT:-8g}
     healthcheck:
@@ -1343,6 +1312,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-spark-workflow-engine:${IMAGE_TAG:-latest}
     container_name: spark-workflow-engine
     environment:
+      - RUNTIME_HOST=spark-workflow-engine
       - PORT=8098
       - SYSTEM_URL=http://system-backend:8180
       - SPARK_WORKFLOW_SERVICE_CLIENT_SECRET=${SPARK_WORKFLOW_SERVICE_CLIENT_SECRET}
@@ -1360,9 +1330,6 @@ services:
       - ./logs:/app/logs
     networks:
       - addp-network
-    depends_on:
-      system-backend:
-        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8098/health"]

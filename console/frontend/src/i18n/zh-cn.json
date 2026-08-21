@@ -165,6 +165,8 @@
 	  "reload": "重新加载",
 	  "back": "返回配置入口",
 	  "save": "保存",
+	  "saveAll": "统一保存",
+	  "pendingChanges": "{count} 项待保存",
 	  "saveSuccess": "配置已保存",
 	  "saveFailed": "保存配置失败",
 	  "versionConflict": "配置已被其他操作修改，当前内容已重新加载",
@@ -286,12 +288,14 @@
       "transfer": {
         "label": "数据传输",
         "tasks": "传输任务",
-        "executions": "执行记录"
+        "executions": "执行记录",
+        "recentExecutions": "传输执行记录"
       },
       "meta": {
         "label": "元数据",
         "scan": "元数据扫描",
-        "tasks": "任务监控"
+        "tasks": "任务监控",
+        "recentTasks": "元数据任务监控"
       },
       "manager": {
         "label": "数据管理",
@@ -319,8 +323,10 @@
         "codeSets": "码值集管理",
         "units": "计量单位",
         "classifications": "分类与分级",
+        "recentClassifications": "数据分类与分级",
         "dimensionHierarchies": "维度层级",
         "metrics": "指标管理",
+        "recentMetrics": "数据指标管理",
         "documents": "标准文档"
       },
       "modeling": {
@@ -336,7 +342,11 @@
         "ruleApplications": "规则应用配置",
         "checkTasks": "检查任务",
         "executions": "执行记录",
-        "issues": "问题工单"
+        "issues": "问题工单",
+        "recentRuleApplications": "质量规则应用配置",
+        "recentCheckTasks": "质量检查任务",
+        "recentExecutions": "质量检查执行记录",
+        "recentIssues": "质量问题工单"
       },
       "develop": {
         "label": "数据开发",
@@ -344,7 +354,9 @@
         "notebook": "Notebook 开发",
         "workflow": "工作流编辑器",
         "tasks": "任务管理",
-        "executions": "执行监控"
+        "executions": "执行监控",
+        "recentTasks": "开发任务管理",
+        "recentExecutions": "开发执行监控"
       },
       "service": {
         "label": "数据服务",
@@ -352,19 +364,25 @@
         "tile": "瓦片服务",
         "graphServices": "图查询服务",
         "services": "服务注册",
-        "catalog": "服务目录"
+        "catalog": "服务目录",
+        "recentCatalog": "数据服务目录"
       },
       "orchestrator": {
         "label": "任务编排",
         "orchestrations": "编排任务",
-        "executions": "执行记录"
+        "executions": "执行记录",
+        "recentExecutions": "编排执行记录"
       },
       "monitor": {
         "label": "执行监控",
         "dashboard": "监控仪表盘",
         "executions": "执行记录",
         "alerts": "告警事件",
-        "notifications": "告警通知"
+        "notifications": "告警通知",
+        "recentDashboard": "执行监控仪表盘",
+        "recentExecutions": "全域执行记录",
+        "recentAlerts": "执行告警事件",
+        "recentNotifications": "执行告警通知"
       },
       "asset": {
         "label": "资产管理",
@@ -372,7 +390,10 @@
         "categories": "目录管理",
         "assets": "资产工作台",
         "applications": "审批管理",
-        "dashboard": "运营看板"
+        "dashboard": "运营看板",
+        "recentCategories": "资产目录管理",
+        "recentApplications": "资产审批管理",
+        "recentDashboard": "资产运营看板"
       },
       "agent": {
         "label": "智能体"
@@ -382,7 +403,8 @@
         "ontologies": "本体建模",
         "graphs": "知识图谱",
         "analysis": "图算法分析",
-        "knowledgeService": "知识服务"
+        "knowledgeService": "知识服务",
+        "recentKnowledgeService": "知识图谱服务"
       },
       "inference": {
         "label": "AI 推理",
@@ -393,7 +415,11 @@
         "iam": "身份与访问管理",
         "engines": "引擎管理",
         "applications": "应用管理",
-        "cleanup": "资源回收"
+        "cleanup": "资源回收",
+        "recentEngines": "数据引擎管理",
+        "recentApplications": "系统应用管理",
+        "recentCleanup": "系统资源回收",
+        "recentConfiguration": "平台配置管理"
       }
     }
   }

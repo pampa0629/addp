@@ -5598,7 +5598,7 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 注册内置工作流 Runtime | Register built-in workflow runtime
+      summary: 注册内置 Engine Runtime | Register built-in engine runtime
       tags:
       - 运行时注册 | Runtime Registry
       x-addp-auth-mode: permission

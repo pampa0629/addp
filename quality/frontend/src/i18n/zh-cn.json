@@ -135,6 +135,7 @@
       "deleteFailed": "删除失败"
     },
     "execution": {
+      "recentVisitTitle": "质量检查执行",
       "title": "执行记录",
       "executionId": "执行 ID",
       "taskName": "任务名称",
@@ -195,6 +196,7 @@
       "filteredEmpty": "没有符合筛选条件的执行记录"
     },
     "issue": {
+      "recentVisitTitle": "质量问题工单",
       "title": "问题工单",
       "statusFilter": "状态",
       "engineFilter": "引擎",

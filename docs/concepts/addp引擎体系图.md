@@ -23,13 +23,23 @@
 - 插件通过 `ConnectionIdentityFields()` 声明 Engine Instance 身份字段。PostgreSQL 一类数据库通常使用 `host + port + database`；MongoDB 使用 `host + port + user + auth_source`，其中 `database` 仅是可选初始数据库；对象存储通常使用 `endpoint`，NFS 使用 `server + export_path`。
 - 名称、描述、凭据和非身份连接参数可以原地更新；任何身份字段变化都必须创建新的 Engine Instance，不得保留原 ID 并改指向另一物理端点。
 - 删除后重新注册始终产生新的自增 ID。平台不根据相似连接信息自动关联新旧 Engine Instance，也不迁移旧 locator、fingerprint 或 owner 状态。
-- 生命周期统一为 `active`、`disabled`、`deleting`。只有 `active` 进入业务消费列表。删除前先在原生命周期执行只读影响评估；用户确认后才进入 `deleting`，冻结新绑定和新执行并保留连接配置供权威复扫和 cleanup 使用。参与模块不可用、存在运行任务或复扫影响变化时删除必须暂停；cleanup 完成后才物理删除 System 记录和凭据。
-- 生命周期是平台管理意图，表示引擎实例是否允许进入正常业务选择；连通性观测是 System 最近一次检测的运行事实，两者独立维护。`active + offline` 表示实例仍被启用，但最近检测未通过，不表示生命周期已自动停用。
+- 生命周期统一为 `active`、`disabled`、`deleting`。`active` 只是进入业务候选的必要条件；新建绑定或功能选择还必须满足 `connection_status=online` 和目标 capability。删除前先在原生命周期执行只读影响评估；用户确认后才进入 `deleting`，冻结新绑定和新执行并保留连接配置供权威复扫和 cleanup 使用。参与模块不可用、存在运行任务或复扫影响变化时删除必须暂停；cleanup 完成后才物理删除 System 记录和凭据。
+- 生命周期是平台管理意图，表示引擎实例是否被启用；连通性观测是 System 最近一次检测的运行事实，两者独立维护。`active + offline` 表示实例仍被启用但当前不是可用引擎候选，不表示生命周期已自动停用。System 引擎管理清单必须继续展示该实例，供用户查看失败原因、修改连接、重新测试或删除。
+- 业务模块返回的新建任务、查询、工作流、Notebook、扫描、传输等引擎选择列表，只能包含 `active + online + capability matched` 的 Engine Instance。该规则必须在 Backend 候选接口或共享选择层执行，不得依赖各前端自行隐藏。
+- 已保存任务或配置引用的 Engine Instance 后续变为 offline、unknown、checking、disabled、deleting 或缺失时，owner 仍显示原绑定及其不可用原因，但禁止新执行；不得静默清空、自动改选或按名称匹配替代实例。
 - Engine 删除不物理删除用户创建的任务、服务或治理配置；owner 模块将其保留为可重绑定状态，或禁用并标记 `missing_engine`。Meta 快照、缓存和明确登记的派生产物可由各 owner cleanup executor 物理回收。
 - 删除后重新注册产生新的 Engine Instance。旧任务不会按名称或连接信息自动迁移；用户必须在 owner 模块显式选择目标 Engine，由 owner 校验能力并原子改写其私有绑定。ResourceLocator 重绑定保留 path/type，清除旧 Meta `node_id/item_id`。
 - 用户登记的 Engine Instance 归当前 Tenant，不归登记人。`created_by` 只记录审计来源，不能成为后续读取、写入、DDL 或执行授权依据。
 - `tenant_id=NULL` 只允许平台共享的内置计算 Runtime；共享 Runtime 只提供计算能力，不因此获得任意 Tenant 数据权限。
 - `inference_runtime` Engine Instance 绑定一个确定的 Inference Runtime 服务端点，而不是一个在线厂商账号或模型端点。Provider Connection、Model Deployment 和 Model Profile 归 Inference owner，不进入 `system.engines`。
+
+### 模块启动独立性
+
+- 零个 Engine Instance 是平台合法状态。System 及各业务模块 Backend、Worker 的启动和 readiness 不得依赖任何 Engine Instance 存在、active 或在线，内置 Engine Runtime 也不例外。
+- 模块自身必需的 Infra 不在此限制内。owner 数据库、队列、缓存、对象存储等 Infra 仍可作为模块启动或 readiness 的必要条件；Infra 不因此登记为 Engine Instance。
+- System 只维护 Engine Instance 控制面事实。连接巡检与实例能力刷新在 System 就绪后按实例异步执行；单个实例失败不得终止 System、阻塞其他实例或清空最后一次成功的能力事实。
+- Engine Runtime 在自身服务就绪后通过统一 Runtime 注册接口异步自注册，System 不代注册。注册失败只表示该 Runtime 尚不可被平台发现，不影响 System 或其他模块启动。
+- 上层模块只在具体请求或 execution 需要引擎时解析绑定。实例缺失、disabled、deleting、offline、unknown、checking 或能力不匹配时，失败范围限定为当前请求或 execution，不得退出 Backend 或 Worker，也不得自动改选其他实例。可用候选过滤只是提前排除已知不可用实例，不能代替执行期再次校验。
 
 ### 实时 Catalog、元数据快照和数据预览的边界
 
@@ -332,6 +342,7 @@ pg.sql("SELECT * FROM public.farmland WHERE id > $1", params=[100], max_rows=100
 
 ## 六、调用原则
 
+- 模块启动、健康检查和 readiness 不查询或探测可选 Engine Instance；引擎存在性与可用性只在后台协调和具体业务调用阶段处理。模块自身必需 Infra 的健康状态仍按模块部署契约判定。
 - 上层模块优先按 capabilities 判断可用性，不按 `engine_type` 硬编码功能入口。
 - `engine_family` 只保留粗分类意义；涉及 catalog 层级、leaf 术语和 Meta 扫描编排时，统一以 `CatalogModelSpec` 与 provider 组合为准。
 - Meta 的扫描目标字段使用 `catalog_paths` 表达文件系统、对象存储等 catalog model 下的路径。

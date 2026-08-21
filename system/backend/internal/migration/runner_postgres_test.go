@@ -35,6 +35,7 @@ func TestManagerTransferRuntimeForwardMigrationsAgainstPostgres(t *testing.T) {
 	defer cancel()
 	through48, _ := migrationFilesBeforeAndThrough(t, "000049_query_parameter_capabilities.up.sql")
 	through65, through66 := migrationFilesBeforeAndThrough(t, "000066_iam_manager_transfer_runtime.up.sql")
+	_, through67 := migrationFilesBeforeAndThrough(t, "000067_iam_manager_transfer_read.up.sql")
 	if err := (&Runner{DSN: dsn, FS: through48, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
 		t.Fatalf("apply migrations through 48: %v", err)
 	}
@@ -70,8 +71,18 @@ func TestManagerTransferRuntimeForwardMigrationsAgainstPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("read migration 66 version: %v", err)
 	}
-	if count := countManagerTransferPermissions(); version != 66 || dirty || count != 3 {
+	if count := countManagerTransferPermissions(); version != 66 || dirty || count != 2 {
 		t.Fatalf("migration 66 state=(%d,%t) Manager Transfer runtime permissions=%d", version, dirty, count)
+	}
+
+	if err := (&Runner{DSN: dsn, FS: through67, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply Manager Transfer read migration 67: %v", err)
+	}
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read migration 67 version: %v", err)
+	}
+	if count := countManagerTransferPermissions(); version != 67 || dirty || count != 3 {
+		t.Fatalf("migration 67 state=(%d,%t) Manager Transfer runtime permissions=%d", version, dirty, count)
 	}
 }
 

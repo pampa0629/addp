@@ -65,6 +65,46 @@ func TestStructuredCapabilitiesInferenceEntrypoint(t *testing.T) {
 	}
 }
 
+func TestAvailableEngineCandidateRequiresActiveOnlineAndCapability(t *testing.T) {
+	caps := models.JSONString(`{
+		"schema_version":"engine.capabilities/v1",
+		"engine_type":"postgresql",
+		"engine_family":"tabular",
+		"storage":{"catalog":{"supported":true}},
+		"compute":{"query":{"supported":true,"languages":["sql"]}}
+	}`)
+	base := models.Engine{
+		LifecycleState:   models.EngineLifecycleActive,
+		ConnectionStatus: models.EngineConnectionOnline,
+		Capabilities:     &caps,
+	}
+
+	if !IsAvailableForComputeEntrypoint(&base, "query") || !IsAvailableStorageEngine(&base) {
+		t.Fatal("active online engine with matching capabilities must be available")
+	}
+
+	for _, test := range []struct {
+		name       string
+		lifecycle  string
+		connection string
+	}{
+		{name: "offline", lifecycle: models.EngineLifecycleActive, connection: models.EngineConnectionOffline},
+		{name: "unknown", lifecycle: models.EngineLifecycleActive, connection: models.EngineConnectionUnknown},
+		{name: "checking", lifecycle: models.EngineLifecycleActive, connection: models.EngineConnectionChecking},
+		{name: "disabled", lifecycle: models.EngineLifecycleDisabled, connection: models.EngineConnectionOnline},
+		{name: "deleting", lifecycle: models.EngineLifecycleDeleting, connection: models.EngineConnectionOnline},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := base
+			candidate.LifecycleState = test.lifecycle
+			candidate.ConnectionStatus = test.connection
+			if IsAvailable(&candidate) || IsAvailableForComputeEntrypoint(&candidate, "query") || IsAvailableStorageEngine(&candidate) {
+				t.Fatalf("candidate lifecycle=%q connection=%q must not be available", test.lifecycle, test.connection)
+			}
+		})
+	}
+}
+
 func TestCapabilityFilterRejectsLegacyCapabilities(t *testing.T) {
 	capabilities := models.JSONString(`{"compute":[{"dev_modes":["workflow"]}]}`)
 	engine := &models.Engine{Capabilities: &capabilities}

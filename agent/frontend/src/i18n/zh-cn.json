@@ -11,6 +11,7 @@
       "failed": "登录失败，请检查用户名和密码"
     },
     "chat": {
+      "recentVisitTitle": "智能体对话",
       "newSession": "新对话",
       "noSessions": "暂无对话",
       "sessionUnavailable": "会话不存在或无权访问",

@@ -8,10 +8,83 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/addp/common/models"
 )
+
+func TestRegisterRuntimeEngineUsesPlatformBearer(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/system/runtime/engines" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer platform-token" {
+			t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))
+		}
+		var request models.CapabilityRegistrationRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request.EngineType != "duckdb" || !request.IsBuiltin || request.ConnectionInfo["port"] != float64(8104) {
+			t.Fatalf("runtime registration = %#v", request)
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+
+	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
+	if err := client.RegisterRuntimeEngine(context.Background(), &models.CapabilityRegistrationRequest{
+		Name: "DuckDB", EngineType: "duckdb", IsBuiltin: true,
+		ConnectionInfo: map[string]interface{}{"protocol": "http", "port": 8104},
+	}); err != nil {
+		t.Fatalf("RegisterRuntimeEngine() error = %v", err)
+	}
+}
+
+func TestRegisterRuntimeEngineWithRetryDoesNotBlockAndRecovers(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+	registered := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if attempts.Add(1) < 3 {
+			http.Error(w, "system not ready", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		select {
+		case <-registered:
+		default:
+			close(registered)
+		}
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
+	started := time.Now()
+	client.RegisterRuntimeEngineWithRetry(ctx, &models.CapabilityRegistrationRequest{
+		Name: "Inference", EngineType: "inference_runtime", IsBuiltin: true,
+		ConnectionInfo: map[string]interface{}{"protocol": "http", "port": 8191},
+	}, time.Millisecond, 2*time.Millisecond)
+	if time.Since(started) > 20*time.Millisecond {
+		t.Fatal("RegisterRuntimeEngineWithRetry blocked the caller")
+	}
+	select {
+	case <-registered:
+	case <-time.After(time.Second):
+		t.Fatalf("runtime was not registered; attempts=%d", attempts.Load())
+	}
+	if attempts.Load() != 3 {
+		t.Fatalf("attempts = %d, want 3", attempts.Load())
+	}
+}
 
 func TestSystemServiceClientRefreshesRejectedContextTokenOnce(t *testing.T) {
 	t.Parallel()

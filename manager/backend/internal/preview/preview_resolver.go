@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/instanceprovider"
 	"github.com/addp/common/engine/plugin"
@@ -155,6 +156,26 @@ type PreviewMetadata struct {
 	SizeBytes       *int64            `json:"size_bytes"`                 // 大小（来自 Meta）
 }
 
+// ResourceFacts 是供生成类 Tool 消费的受限资源事实，不包含原始数据行。
+type ResourceFacts struct {
+	Locator          string               `json:"locator"`
+	EngineID         uint                 `json:"engine_id"`
+	EngineName       string               `json:"engine_name"`
+	SourceEngineType string               `json:"source_engine_type"`
+	ItemID           uint                 `json:"item_id"`
+	ItemType         string               `json:"item_type"`
+	DataType         string               `json:"data_type"`
+	FullName         string               `json:"full_name"`
+	ItemFingerprint  string               `json:"item_fingerprint"`
+	ScannedDepth     string               `json:"scanned_depth"`
+	SchemaCoverage   string               `json:"schema_coverage"`
+	QueryNames       map[string]string    `json:"query_names"`
+	Fields           []datatype.FieldInfo `json:"fields,omitempty"`
+	GeometryColumn   string               `json:"geometry_column,omitempty"`
+	GeometryType     string               `json:"geometry_type,omitempty"`
+	CRS              string               `json:"crs,omitempty"`
+}
+
 // Preview 执行预览。预览必须基于已经由 Meta 扫描入库的节点或 item。
 func (r *PreviewResolver) Preview(ctx context.Context, req *PreviewResolverRequest) (*PreviewResult, error) {
 	// 1. 验证参数
@@ -230,6 +251,68 @@ func (r *PreviewResolver) resolveRefPreviewProvider(req *PreviewResolverRequest,
 // PreviewFromURI 从 URI 执行预览（便捷方法）
 func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string, page, pageSize int, childName string, tenantID *uint) (*PreviewResult, error) {
 	return r.PreviewFromURIWithSelection(ctx, locatorURI, page, pageSize, childName, "", "", plugin.GraphSampleFilter{}, tenantID)
+}
+
+// ResourceFactsFromURI 只解析 Engine 与 Meta 扫描事实，不调用 PreviewProvider 读取数据行。
+func (r *PreviewResolver) ResourceFactsFromURI(ctx context.Context, locatorURI string, tenantID *uint) (*ResourceFacts, error) {
+	req, err := r.ResolveRequestFromURIWithSelection(ctx, locatorURI, 1, 1, "", "", "", plugin.GraphSampleFilter{}, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if req.MetaItemID == nil || *req.MetaItemID == 0 {
+		return nil, ErrPreviewRequiresScannedMeta
+	}
+	return r.buildResourceFacts(req)
+}
+
+func (r *PreviewResolver) buildResourceFacts(req *PreviewResolverRequest) (*ResourceFacts, error) {
+	if req == nil || req.Locator == nil || req.Engine == nil || req.MetaItemID == nil || *req.MetaItemID == 0 {
+		return nil, ErrPreviewRequiresScannedMeta
+	}
+	dataType := itemDataTypeFromMetaAttributes(req.MetadataAttributes())
+	if dataType == "" {
+		return nil, ErrPreviewRequiresScannedMeta
+	}
+	metadata := r.buildMetadata(req)
+	queryNames := metadata.QueryNames
+	if queryNames == nil {
+		queryNames = map[string]string{}
+	}
+	facts := &ResourceFacts{
+		Locator:          req.Locator.ToURI(),
+		EngineID:         req.Engine.ID,
+		EngineName:       req.Engine.Name,
+		SourceEngineType: metadata.EngineType,
+		ItemID:           *req.MetaItemID,
+		ItemType:         req.ItemType,
+		DataType:         dataType,
+		FullName:         metadata.FullName,
+		ItemFingerprint:  metadata.ItemFingerprint,
+		ScannedDepth:     metadata.ScannedDepth,
+		SchemaCoverage:   metadata.SchemaCoverage,
+		QueryNames:       queryNames,
+	}
+	if tableInfo := tableInfoFromMetaAttributes(req.MetadataAttributes(), req.ItemName); tableInfo != nil {
+		fields := tableInfo.Fields
+		if len(fields) > 200 {
+			fields = fields[:200]
+		}
+		facts.Fields = append([]datatype.FieldInfo(nil), fields...)
+	}
+	if spatialInfo := spatialInfoFromMetaAttributes(req.MetadataAttributes()); spatialInfo != nil {
+		facts.GeometryColumn = spatialInfo.PrimaryGeometryColumn
+		facts.CRS = spatialInfo.CRSRef
+		for _, column := range spatialInfo.GeometryColumns {
+			if column.Name == facts.GeometryColumn {
+				facts.GeometryType = column.GeometryType
+				if facts.CRS == "" {
+					facts.CRS = column.CRSRef
+				}
+				break
+			}
+		}
+	}
+	return facts, nil
 }
 
 func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locatorURI string, page, pageSize int, childName, refPath, nestedChildPath string, graphSample plugin.GraphSampleFilter, tenantID *uint) (*PreviewResult, error) {

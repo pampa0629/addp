@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	engineselection "github.com/addp/common/engine/selection"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/models"
 )
@@ -76,7 +77,7 @@ func (c *Catalog) Sources(
 
 	sources := make([]Source, 0)
 	for _, descriptor := range descriptors {
-		if descriptor.ID == runtimeEngineID || descriptor.LifecycleState != models.EngineLifecycleActive {
+		if descriptor.ID == runtimeEngineID || !engineselection.IsAvailableStorageEngine(descriptor.AsEngine()) {
 			continue
 		}
 		if _, ok := supported[descriptor.EngineType]; !ok {

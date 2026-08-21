@@ -21,18 +21,18 @@
         <div class="info-grid">
           <div class="info-item"><span class="label">{{ t('graph.common.status') }}</span><el-tag :type="statusTagType(task.status)">{{ statusLabel(task.status) }}</el-tag></div>
           <div class="info-item"><span class="label">{{ t('graph.build.confidenceThreshold') }}</span>{{ task.confidence_threshold }}</div>
-          <div class="info-item"><span class="label">{{ t('graph.build.chunkSize') }}</span>{{ task.chunk_size }} {{ t('graph.build.chars') }}</div>
-          <div class="info-item"><span class="label">Overlap</span>{{ task.chunk_overlap }} {{ t('graph.build.chars') }}</div>
+          <div class="info-item"><span class="label">{{ t('graph.build.chunkSize') }}</span>{{ task.chunk_size }} {{ t('graph.build.characters') }}</div>
+          <div class="info-item"><span class="label">{{ t('graph.build.chunkOverlap') }}</span>{{ task.chunk_overlap }} {{ t('graph.build.characters') }}</div>
           <div class="info-item" v-if="task.execution_id">
-            <span class="label">Monitor ID</span>
+            <span class="label">{{ t('graph.build.monitorId') }}</span>
             <el-text type="info" size="small">{{ task.execution_id }}</el-text>
           </div>
         </div>
         <div v-if="task.stats && task.stats.total_materials" class="stats-row">
-          <el-statistic :title="t('graph.build.statTotalMaterials')" :value="task.stats.total_materials" />
-          <el-statistic :title="t('graph.build.statProcessed')" :value="task.stats.processed" />
-          <el-statistic :title="t('graph.build.statAutoWritten')" :value="task.stats.auto_written" />
-          <el-statistic :title="t('graph.build.statPendingReview')" :value="task.stats.pending_review" />
+          <el-statistic :title="t('graph.build.totalMaterials')" :value="task.stats.total_materials" />
+          <el-statistic :title="t('graph.build.processed')" :value="task.stats.processed" />
+          <el-statistic :title="t('graph.build.autoWritten')" :value="task.stats.auto_written" />
+          <el-statistic :title="t('graph.build.pendingReview')" :value="task.stats.pending_review" />
         </div>
         <div v-if="task.error_message" class="error-msg">{{ task.error_message }}</div>
       </el-card>
@@ -99,6 +99,7 @@ import { Loading } from '@element-plus/icons-vue'
 import { buildAPI } from '../api/graphBuild'
 import { useI18n } from 'vue-i18n'
 import { navigateGraphRoute } from '@/utils/moduleNavigation'
+import { useConsolePageDescriptor } from '@common-ui'
 
 const { t } = useI18n()
 
@@ -110,6 +111,11 @@ const returnToBuild = () => navigateGraphRoute(router, `/graphs/${graphId}/build
 const openReview = () => navigateGraphRoute(router, `/graphs/${graphId}/review`)
 
 const task = ref(null)
+useConsolePageDescriptor(router, 'graph', {
+  title: computed(() => t('graph.build.taskRecentVisitTitle')),
+  subject: computed(() => task.value?.name || ''),
+  ready: computed(() => Boolean(task.value?.name))
+})
 const materials = ref([])
 const pendingCount = ref(0)
 const running = ref(false)
@@ -231,9 +237,9 @@ function matStatusType(s) {
 }
 function matStatusLabel(s) {
   return {
-    pending: t('graph.build.matPending'),
-    processing: t('graph.build.matProcessing'),
-    completed: t('graph.build.matCompleted'),
+    pending: t('graph.build.matStatusPending'),
+    processing: t('graph.build.matStatusProcessing'),
+    completed: t('graph.build.matStatusCompleted'),
     failed: t('graph.build.statusFailed')
   }[s] || s
 }

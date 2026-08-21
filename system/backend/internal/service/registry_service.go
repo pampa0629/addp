@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
-	"strconv"
 	"strings"
 
 	commonapi "github.com/addp/common/api"
@@ -116,46 +114,6 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 	}
 
 	return resource.ID, nil
-}
-
-func (s *RegistryService) RegisterBuiltinRuntime(
-	ctx context.Context,
-	engineType, runtimeURL, description string,
-) (uint, error) {
-	connectionInfo, err := runtimeConnectionInfo(runtimeURL)
-	if err != nil {
-		return 0, err
-	}
-	return s.RegisterCapability(ctx, &models.CapabilityRegistrationRequest{
-		Name:           engineType,
-		EngineType:     engineType,
-		IsBuiltin:      true,
-		Description:    description,
-		ConnectionInfo: connectionInfo,
-	})
-}
-
-func runtimeConnectionInfo(rawURL string) (map[string]interface{}, error) {
-	parsed, err := url.Parse(strings.TrimSpace(rawURL))
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" ||
-		parsed.User != nil || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return nil, fmt.Errorf("invalid runtime URL %q", rawURL)
-	}
-	port := 80
-	if parsed.Scheme == "https" {
-		port = 443
-	}
-	if parsed.Port() != "" {
-		port, err = strconv.Atoi(parsed.Port())
-		if err != nil || port <= 0 || port > 65535 {
-			return nil, fmt.Errorf("invalid runtime URL port %q", parsed.Port())
-		}
-	}
-	return map[string]interface{}{
-		"protocol": parsed.Scheme,
-		"host":     parsed.Hostname(),
-		"port":     port,
-	}, nil
 }
 
 func (s *RegistryService) prepareRegistrationCapabilities(req *models.CapabilityRegistrationRequest) (*string, error) {

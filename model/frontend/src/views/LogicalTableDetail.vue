@@ -410,6 +410,7 @@
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useConsolePageDescriptor } from '@common-ui'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Plus, Refresh, View } from '@element-plus/icons-vue'
 import { logicalTableAPI, domainAPI, elementAPI, standardMetricAPI, dwLayerAPI } from '../api/model'
@@ -460,6 +461,11 @@ const metrics = ref([])
 const availableMetrics = ref([])
 
 const table = ref({})
+useConsolePageDescriptor(router, 'modeling', {
+  title: computed(() => t('model.logical_table.recentVisitTitle')),
+  subject: computed(() => table.value?.name || ''),
+  ready: computed(() => Boolean(table.value?.name))
+})
 const canEdit = computed(() => isEditableDraft(table.value.status, authStore.hasPermission('model.logical_model.update')))
 const canCreateField = computed(() => canPerformDraftAction(
   table.value.status,

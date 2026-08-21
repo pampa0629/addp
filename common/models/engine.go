@@ -15,6 +15,11 @@ const (
 	EngineLifecycleDisabled = "disabled"
 	EngineLifecycleDeleting = "deleting"
 
+	EngineConnectionOnline   = "online"
+	EngineConnectionOffline  = "offline"
+	EngineConnectionUnknown  = "unknown"
+	EngineConnectionChecking = "checking"
+
 	ExternalArtifactPolicyDelete  = "delete"
 	ExternalArtifactPolicyAbandon = "abandon"
 )

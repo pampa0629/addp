@@ -80,7 +80,7 @@ bash scripts/dev/modtidy.sh
 
 **功能**: 启动完整开发环境
 
-指定单个模块启动时，脚本仍会统一启动公共依赖：System Backend、Meta Backend、Meta Worker、Gateway 和 Console。模块自己的前端和额外依赖在此基础上按需启动，例如 `-manager` 会额外启动 Transfer Backend / Worker、Model3D Workflow Engine 和 PointCloud Workflow Engine，`-develop` 会额外启动 Python/Math/Spark Workflow Engine 和 Jupyter。全量启动会启动 SuperMap Workflow Engine；单独验证超图算子时也可以通过 `-supermap-workflow` 显式启动。SuperMap Workflow Engine 依赖预先构建的 iObjects C++ 基础镜像和许可，当前通过 System 引擎管理手动登记。
+指定单个模块启动时，脚本仍会统一启动公共依赖：System Backend、Meta Backend、Meta Worker、Gateway 和 Console。模块自己的前端和真实模块依赖在此基础上按需启动，例如 `-manager` 会额外启动 Transfer Backend / Worker。Engine Runtime 不属于模块启动依赖：`-manager`、`-develop`、`-service`、`-agent`、`-copilot`、`-gateway`、`-console` 都不会隐式拉起 DuckDB、Inference、Workflow 或 Jupyter Runtime；需要本地运行某个 Runtime 时使用其显式参数。无参数全量启动仍包含默认部署的 Runtime。SuperMap Workflow Engine 依赖预先构建的 iObjects C++ 基础镜像和许可，当前通过 System 引擎管理手动登记。
 
 **执行步骤**:
 1. **Step 0**: Go 依赖检查(`go mod tidy`,可跳过)

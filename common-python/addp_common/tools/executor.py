@@ -37,6 +37,7 @@ class ToolExecutor:
             "data.search": self._data_search,
             "resource.children.list": self._resource_children_list,
             "resource.ancestors.get": self._resource_ancestors_get,
+            "resource.facts.get": self._resource_facts_get,
             "data.preview": self._data_preview,
             "workflow.operators.list": self._workflow_operators_list,
             "workflow.draft.generate": self._workflow_draft_generate,
@@ -190,6 +191,10 @@ class ToolExecutor:
                 page=1,
                 page_size=arguments.get("limit", 10),
             )
+
+    async def _resource_facts_get(self, arguments: dict[str, Any], delegated_token: str) -> Any:
+        async with self._client(ManagerClient, delegated_token) as client:
+            return await client.get_resource_facts(arguments["locator"])
 
     async def _workflow_operators_list(self, arguments: dict[str, Any], delegated_token: str) -> Any:
         async with self._client(DevelopClient, delegated_token) as client:

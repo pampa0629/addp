@@ -56,6 +56,8 @@
 | `last_check_at` | TIMESTAMP | | 上次检测时间 |
 | `check_message` | TEXT | | 检测结果消息 |
 
+`connection_status` 不改变 Engine Instance 生命周期，但参与业务候选派生。System 引擎管理清单展示全部可见实例；新建任务或功能选择的业务候选只包含 `lifecycle_state=active`、`connection_status=online` 且 capability 匹配的实例。已有绑定继续保留原 `engine_id` 和不可用状态，不因离线而删除或自动替换。
+
 ### 2.4 数据库索引
 
 | 索引名 | 字段 | 类型 | 说明 |

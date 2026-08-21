@@ -1,6 +1,6 @@
 import httpx
 
-from addp_common.client.runtime_registration import register_runtime_engine
+from addp_common.client.runtime_registration import register_runtime_engine, retry_runtime_registration
 from addp_common.client.service_token import SyncOAuthServiceTokenSource
 
 
@@ -77,3 +77,28 @@ def test_register_runtime_engine_uses_platform_bearer(monkeypatch):
         {"Authorization": "Bearer addp_at_platform_runtime_token"},
     )
     assert captured["closed"] is True
+
+
+def test_retry_runtime_registration_uses_bounded_backoff_until_success():
+    attempts = []
+    waits = []
+
+    class Logger:
+        def info(self, *_args):
+            pass
+
+    def register():
+        attempts.append(len(attempts) + 1)
+        return len(attempts) == 4
+
+    retry_runtime_registration(
+        register,
+        "test_runtime",
+        Logger(),
+        initial_interval=1,
+        max_interval=2,
+        wait=waits.append,
+    )
+
+    assert attempts == [1, 2, 3, 4]
+    assert waits == [1, 2, 2]

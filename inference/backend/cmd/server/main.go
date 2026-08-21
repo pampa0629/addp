@@ -3,10 +3,14 @@ package main
 import (
 	"context"
 	"log"
+	"net"
+	"strconv"
+	"time"
 
 	commonclient "github.com/addp/common/client"
 	commonconfig "github.com/addp/common/config"
 	commonconfiguration "github.com/addp/common/configuration"
+	commonmodels "github.com/addp/common/models"
 	_ "github.com/addp/inference/i18n"
 	"github.com/addp/inference/internal/api"
 	inferenceauthorization "github.com/addp/inference/internal/authorization"
@@ -48,8 +52,12 @@ func main() {
 	control := service.NewControlPlane(store, cfg.EncryptionKey)
 	runtime := service.NewRuntime(store, cfg.EncryptionKey)
 	router := api.SetupRouter(cfg, api.NewHandler(control, runtime))
+	listener, err := net.Listen("tcp", ":"+cfg.Port)
+	if err != nil {
+		log.Fatal(err)
+	}
 	register(cfg)
-	log.Fatal(router.Run(":" + cfg.Port))
+	log.Fatal(router.RunListener(listener))
 }
 
 func register(cfg *config.Config) {
@@ -65,6 +73,22 @@ func register(cfg *config.Config) {
 	host := commonconfig.GetServiceHost()
 	url := commonconfig.BuildServiceURL(host, cfg.Port)
 	client.RegisterAndHeartbeat(context.Background(), &commonclient.ModuleRegistrationRequest{ModuleName: "inference", ModuleURL: url, RoutePrefix: "/inference", HealthCheckURL: url + "/health", Metadata: map[string]interface{}{"runtime_api": "addp.inference/v1"}, ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{ID: "inference.configuration", OwnerModule: "inference", ScopeTypes: []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride}, FrontendRoute: "/inference/settings/models", ReadPermission: inferenceauthorization.PermissionInferenceProviderRead, UpdatePermission: inferenceauthorization.PermissionInferenceProviderUpdate}}}})
+	port, err := strconv.Atoi(cfg.Port)
+	if err != nil || port <= 0 || port > 65535 {
+		log.Printf("inference runtime engine registration disabled: invalid port %q", cfg.Port)
+		return
+	}
+	client.RegisterRuntimeEngineWithRetry(context.Background(), &commonmodels.CapabilityRegistrationRequest{
+		Name:        "Inference Runtime",
+		EngineType:  "inference_runtime",
+		IsBuiltin:   true,
+		Description: "ADDP 内置统一 AI 推理 Runtime",
+		ConnectionInfo: map[string]interface{}{
+			"protocol": "http",
+			"host":     host,
+			"port":     port,
+		},
+	}, time.Second, 30*time.Second)
 }
 
 func ensureSchemaConstraints(db *gorm.DB) error {

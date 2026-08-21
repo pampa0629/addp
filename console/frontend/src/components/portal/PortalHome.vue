@@ -63,7 +63,7 @@
           @click="handleRecentClick(item)"
         >
           <el-icon :size="14"><component :is="item.icon" /></el-icon>
-          <span>{{ t(item.label) }}</span>
+          <span>{{ recentVisitLabel(item) }}</span>
         </div>
       </div>
     </div>
@@ -260,7 +260,7 @@ const recommendedScenarios = computed(() => {
 
 // ─── 最近访问 ────────────────────────────────────────────────────────────────
 
-const RECENT_KEY = 'addp_recent_visits'
+const RECENT_KEY = 'addp_recent_visits_v2'
 const recentVisitsRaw = ref([])
 
 function loadRecentVisits() {
@@ -281,6 +281,11 @@ const recentVisits = computed(() =>
 
 function handleRecentClick(item) {
   emit('navigate', item.route)
+}
+
+function recentVisitLabel(item) {
+  const pageTitle = item.title || t(item.label)
+  return item.subject ? `${pageTitle} · ${item.subject}` : pageTitle
 }
 
 // ─── 折叠所有模块 ────────────────────────────────────────────────────────────

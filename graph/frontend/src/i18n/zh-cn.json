@@ -31,7 +31,7 @@
       "identifier": "标识符",
       "displayName": "显示名",
       "properties": "属性定义",
-      "fieldName": "字段名(name)",
+      "fieldName": "字段名",
       "dataType": "数据类型",
       "required": "必填",
       "unique": "唯一",
@@ -51,7 +51,7 @@
     },
     "login": {
       "title": "知识图谱",
-      "subtitle": "Graph Module",
+      "subtitle": "知识图谱模块",
       "username": "用户名",
       "password": "密码",
       "loginBtn": "登录",
@@ -73,6 +73,8 @@
       "knowledgeService": "知识服务"
     },
     "ontology": {
+      "recentVisitTitle": "知识图谱本体",
+      "detailTitle": "本体详情",
       "management": "本体管理",
       "create": "新建本体",
       "edit": "编辑本体",
@@ -91,7 +93,7 @@
       "addRelationType": "添加关系类型",
       "editRelationType": "编辑关系类型",
       "createVersionSnapshot": "创建版本快照",
-      "importFromModel": "从 Model 导入",
+      "importFromModel": "从数据模型导入",
       "inferFromNeo4j": "从 Neo4j 推导",
       "spatialLayer": "空间图层",
       "nodeLabels": "节点标签",
@@ -110,6 +112,8 @@
       "geomField": "几何字段",
       "pointGeom": "点（lon + lat）",
       "wktGeom": "线/面（WKT）",
+      "point": "点",
+      "linePolygon": "线/面",
       "parentType": "父类型",
       "noParent": "无（顶级类型）",
       "color": "颜色",
@@ -170,6 +174,7 @@
       "statusArchived": "归档"
     },
     "browser": {
+      "recentVisitTitle": "图谱浏览",
       "searchPlaceholder": "搜索节点...",
       "resetView": "重置视图",
       "graphAnalysis": "图分析",
@@ -207,6 +212,7 @@
       "graphPrefix": "图谱 #"
     },
     "build": {
+      "taskRecentVisitTitle": "图谱构建任务",
       "title": "图谱构建",
       "createTask": "+ 新建任务",
       "noTasks": "暂无构建任务，点击右上角新建",
@@ -216,9 +222,9 @@
       "taskNameRequired": "请输入任务名称",
       "confidenceThreshold": "置信度阈值",
       "advancedChunk": "高级分块设置",
-      "chunkSize": "Chunk 大小",
+      "chunkSize": "分块大小",
       "chunkSizeHint": "字符数（默认 1000）",
-      "chunkOverlap": "Overlap 大小",
+      "chunkOverlap": "重叠字符数",
       "chunkOverlapHint": "字符数（默认 200）",
       "docContext": "文档上下文",
       "docContextHint": "头部字符数（默认 200）",
@@ -246,7 +252,8 @@
       "taskDetail": "构建任务详情",
       "runTask": "运行任务",
       "reviewQueue": "审核队列",
-      "monitorId": "Monitor ID",
+      "monitorId": "监控执行编号",
+      "characters": "字符",
       "totalMaterials": "总材料",
       "processed": "已处理",
       "buildMaterials": "构建材料",
@@ -264,6 +271,7 @@
       "matStatusFailed": "失败"
     },
     "review": {
+      "recentVisitTitle": "图谱审核",
       "title": "审核队列",
       "pending": "待审核",
       "pendingCount": "待审核 {count}",
@@ -317,6 +325,7 @@
       "modifySuccess": "已修改并写入 Neo4j"
     },
     "service": {
+      "recentVisitTitle": "知识服务",
       "title": "知识图谱",
       "knowledgeGraph": "知识图谱",
       "serviceConfig": "服务配置",
@@ -378,8 +387,8 @@
       "selectGraph": "请选择知识图谱",
       "selectGraphHint": "请先选择知识图谱",
       "gdsUnavailable": "GDS 不可用",
-      "spatialUnavailable": "Spatial 不可用",
-      "spatialAvailable": "Spatial 可用",
+      "spatialUnavailable": "空间分析不可用",
+      "spatialAvailable": "空间分析可用",
       "syncSpatialLayers": "同步空间图层 ({count})",
       "selectAlgo": "选择算法",
       "selectAlgoPlaceholder": "请选择算法",
@@ -395,7 +404,7 @@
       "paramConfig": "参数配置",
       "basicAlgos": "基础算法",
       "gdsAlgos": "GDS 算法",
-      "spatialAlgos": "Spatial 算法",
+      "spatialAlgos": "空间算法",
       "needPlugin": "需插件",
       "execute": "执行分析",
       "executing": "算法执行中...",
@@ -486,7 +495,7 @@
       "applyColors": "在画布中着色",
       "clearColors": "清除着色",
       "loadToCanvas": "加载到画布",
-      "topN": "返回数量 Top-N",
+      "topN": "返回数量",
       "returnCount": "返回数量",
       "hopsRange": "跳数 (1-4)",
       "pathPairs": "路径对（最多5对）",
@@ -505,8 +514,8 @@
       "clickToView": "点击节点或关系查看详情"
     },
     "importFromModel": {
-      "title": "从 Model 模块导入本体",
-      "loading": "加载 Model 数据中...",
+      "title": "从数据模型导入本体",
+      "loading": "正在加载数据模型...",
       "selectEntities": "选择实体",
       "selectRelations": "选择关系",
       "entityCount": "共 {count} 个实体，选择要导入的实体类型",
@@ -521,7 +530,7 @@
       "directed": "有向",
       "conflictLabel": "已存在时：",
       "importBtn": "导入 ({entities} 实体 + {relations} 关系)",
-      "loadFailed": "获取 Model 数据失败：{msg}",
+      "loadFailed": "获取数据模型失败：{msg}",
       "importSuccess": "导入完成：新增 {created}，更新 {updated}，跳过 {skipped}",
       "importWarning": "，{count} 个失败",
       "importFailed": "导入失败：{msg}"
@@ -531,7 +540,7 @@
       "selectEngine": "Neo4j 引擎",
       "selectEnginePlaceholder": "选择 Neo4j 引擎",
       "startInfer": "开始推导",
-      "inferring": "推导中，正在分析 Neo4j Schema...",
+      "inferring": "推导中，正在分析 Neo4j 模式...",
       "noLabels": "该 Neo4j 引擎中未发现任何节点形状或关系模式",
       "found": "发现 {entities} 个节点形状，{relations} 个关系模式",
       "reselect": "重新选择引擎",
@@ -554,7 +563,7 @@
     },
     "schemaInference": {
       "title": "从 Neo4j 图谱推导本体",
-      "inferring": "推导中，正在分析图谱 Schema...",
+      "inferring": "推导中，正在分析图谱模式...",
       "noLabels": "图谱中未发现任何节点形状或关系模式",
       "found": "发现 {entities} 个节点形状，{relations} 个关系模式",
       "suggestedEntities": "建议添加的实体类型",

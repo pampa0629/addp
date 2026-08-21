@@ -295,6 +295,14 @@ graph LR
 
 ADDP 的 execution worker 是执行 owner 的运行时角色。Quality、Meta 和 Transfer bounded 使用各模块附属的独立 Worker 进程，Transfer continuous 使用专用长期运行时 Worker；对应 Backend 只承担控制面。Manager 当前没有独立 Worker；PostgreSQL/PostGIS 原生 MVT、MySQL/Oracle 临时 FlatGeobuf 到 GeoPython PMTiles、文件或对象到 GeoPython PMTiles，以及矢量物化视图均由 Manager Backend 在手动或 Orchestrator 编排触发时执行。Manager 受管当前结果任务不启动 owner scheduler；Embedding 的逐 item 调度器独立保留。若后续格式实现需要多执行器并发或独立资源隔离，应先把文档和任务运行时统一切换到 Manager Worker 或 GIS 执行引擎，再实现代码，不保留 Backend 与 Worker 双轨。
 
+### 模块启动与引擎可用性边界
+
+- 零个 Engine Instance 是平台合法状态。任何模块 Backend、附属 Worker 的进程启动和 readiness 都不得要求某个 Engine Instance 已登记、处于 active 或在线，也不得因为内置 Engine Runtime 缺失而失败。
+- 模块可以依赖自身必需的 Infra，例如 owner PostgreSQL schema、执行队列使用的 PostgreSQL、Redis、MinIO、Meilisearch 或 Infra Kafka。Infra 是部署基础设施，不属于 Engine Instance 启动解耦范围；必需 Infra 不可用时，模块可以启动失败或保持 not ready。
+- Engine Plugin 的静态注册表完整性属于进程代码完整性，不等同于 Engine Instance 存在。独立 Engine Runtime 的内部依赖只约束该 Runtime 自身，不得反向成为 System 或业务模块的启动条件。
+- Backend 在具体 API 调用需要引擎时才解析 Engine Instance；缺失或离线只失败当前请求。Worker 必须能够在零引擎状态下空闲运行，并在领取到引用缺失或离线引擎的 execution 时只失败该 execution，进程继续处理后续任务。
+- 引擎连接巡检、实例能力刷新和 Runtime 自注册只能在 HTTP 服务就绪后异步执行，并按 Engine Instance 隔离失败；不得进入模块启动关键路径。
+
 ```mermaid
 graph TB
     subgraph "Transfer 模块"
@@ -778,9 +786,10 @@ graph TB
 | **jupyter** | 脚本运行时 | Notebook 开发 | Python Notebook，变量传递 |
 
 **注册机制**：
-- 生产内置运行时可以启动时自注册为**内置引擎** (`is_builtin = true`)；参考实现或需要外部 SDK 绑定的运行时可以通过 System 扩展引擎表单手动注册。
+- 生产内置运行时在自身服务就绪后异步自注册为**内置引擎** (`is_builtin = true`)；System 不代替 Runtime 预注册。System 尚未可用时，Runtime 退避重试注册，注册失败不得阻塞 Runtime 自身 readiness。
 - 用户自研扩展运行时按同一张 System 引擎注册表管理，不要求某个内置工作流运行时必然存在。
 - 调用方只发现已注册、启用且声明对应能力的运行时实例；工作流算子通过 `addp.workflow/v1` 动态发现。
+- Runtime 与业务模块可以按任意顺序启动。模块选择启动不隐式要求或拉起可选 Runtime；需要本地运行某个 Runtime 时必须显式选择该 Runtime，或使用包含 Runtime 的全量部署组合。
 
 ---
 

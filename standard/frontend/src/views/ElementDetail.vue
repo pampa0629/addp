@@ -248,6 +248,7 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useConsolePageDescriptor } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, CircleCheck, List } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -269,6 +270,11 @@ const loading = ref(false)
 const saving = ref(false)
 const actionKey = computed(() => `element:${route.params.id}`)
 const element = ref({})
+useConsolePageDescriptor(router, 'standard', {
+  title: computed(() => t('standard.element.recentVisitTitle')),
+  subject: computed(() => element.value?.name || ''),
+  ready: computed(() => Boolean(element.value?.name))
+})
 const codeSets = ref([])
 const codeItems = ref([])
 const codeItemsLoading = ref(false)

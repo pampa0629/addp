@@ -7,6 +7,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
+	engineselection "github.com/addp/common/engine/selection"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/repository"
@@ -72,7 +73,7 @@ func (s *SchemaInferenceService) ListNeo4jEngines(tenantID uint) ([]commonModels
 	}
 	filtered := make([]commonModels.Engine, 0, len(engines))
 	for _, engine := range engines {
-		if engine.EngineType == "neo4j" {
+		if engine.EngineType == "neo4j" && engineselection.IsAvailableForComputeEntrypoint(&engine, "query") {
 			filtered = append(filtered, engine)
 		}
 	}

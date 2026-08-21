@@ -57,6 +57,7 @@
       "copy_failed": "复制失败"
     },
     "entity": {
+      "recentVisitTitle": "业务实体",
       "title": "业务实体",
       "detail": "实体详情",
       "new": "新建实体",
@@ -155,6 +156,7 @@
       "generate_failed": "生成ER图失败"
     },
     "logical_table": {
+      "recentVisitTitle": "逻辑表",
       "title": "逻辑表",
       "detail": "逻辑表详情",
       "new": "新建逻辑表",

@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"time"
 
 	commonclient "github.com/addp/common/client"
+	commonconfig "github.com/addp/common/config"
+	commonmodels "github.com/addp/common/models"
 	duckapi "github.com/addp/engines/duckdb/internal/api"
 	"github.com/addp/engines/duckdb/internal/config"
 	"github.com/addp/engines/duckdb/internal/duckdb"
@@ -36,7 +39,22 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := router.Run(cfg.Addr); err != nil {
+	listener, err := net.Listen("tcp", cfg.Addr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	systemClient.RegisterRuntimeEngineWithRetry(context.Background(), &commonmodels.CapabilityRegistrationRequest{
+		Name:        "DuckDB",
+		EngineType:  "duckdb",
+		IsBuiltin:   true,
+		Description: "ADDP 内置联邦只读查询 Runtime",
+		ConnectionInfo: map[string]interface{}{
+			"protocol": "http",
+			"host":     commonconfig.GetServiceHost(),
+			"port":     cfg.Port,
+		},
+	}, time.Second, 30*time.Second)
+	if err := router.RunListener(listener); err != nil {
 		log.Fatal(err)
 	}
 }

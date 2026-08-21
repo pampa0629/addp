@@ -178,6 +178,7 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import graphApi from '../api/graphQueryService'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
+import { useConsolePageDescriptor } from '@common-ui'
 
 const route = useRoute()
 const router = useRouter()
@@ -188,6 +189,11 @@ const goToEdit = () => navigateServiceRoute(router, `/graph-services/${id}/edit`
 
 const loading = ref(false)
 const service = ref(null)
+useConsolePageDescriptor(router, 'service', {
+  title: computed(() => t('service.graph.recentVisitTitle')),
+  subject: computed(() => service.value?.title || service.value?.name || ''),
+  ready: computed(() => Boolean(service.value?.title || service.value?.name))
+})
 const testing = ref(false)
 const testParams = ref({})
 const testPage = ref(1)

@@ -48,6 +48,7 @@ type EnginePlugin interface {
 - `TestConnection()` 必须执行需要认证的最小只读真实操作，不能只做网络连通检查，也不得创建、更新、删除外部资源。
 - `Capabilities()` 必须返回结构化 `engine.capabilities/v1` 能力模板。该方法不得连接具体实例，不做运行时探测，只表达插件和 Provider 实现的能力上限。
 - 需要按实例探测扩展、版本或函数可用性的插件，应额外实现 `InstanceCapabilitiesResolver`，由 System 在保存或刷新具体引擎记录时调用并生成落库能力声明。
+- `InstanceCapabilitiesResolver` 只用于创建或变更连接、显式连接测试以及 System 就绪后的逐实例后台协调。模块启动和 readiness 不得调用实例能力解析；解析失败只影响当前 Engine Instance 或当前请求，不得终止 System、业务 Backend 或 Worker。
 
 ```go
 type InstanceCapabilitiesResolver interface {
@@ -518,7 +519,7 @@ type InferenceRuntimeProvider interface {
 
 ## 五、上层消费规则
 
-- System：通过 `EnginePlugin` 做注册、连接测试、连接信息校验和能力声明刷新；通过 `CatalogProvider.ListChildren()` 对外提供实时 catalog 浏览控制面 API：`POST /api/v1/system/engines/:id/catalog/children`。
+- System：通过 `EnginePlugin` 做注册、连接测试、连接信息校验和能力声明刷新；通过 `CatalogProvider.ListChildren()` 对外提供实时 catalog 浏览控制面 API：`POST /api/v1/system/engines/:id/catalog/children`。System 必须先完成自身 Infra 初始化并进入就绪状态，再异步逐实例巡检；零个 Engine Instance 或任一实例离线不得影响 System 启动。
 - Meta：使用 `CatalogProvider` 扫描目录并落库，使用 `CatalogFactsProvider` / `DynamicSchemaSamplingProvider` 获取 catalog leaf facts；扫描编排必须先读取 `CatalogModelSpec`，再结合 provider 组合选择 catalog scan strategy。`engine_family` 只能作为粗分类或展示字段，不能单独决定 namespace 术语、leaf 术语、扫描层级和内容读取方式。公开 API 应聚焦扫描后元数据快照，不再新增实时浏览公共接口。
 - Meta 扫描 API 和任务参数中的路径型目标统一命名为 `catalog_paths`。它表示引擎 catalog model 下的路径。
 - Manager：使用 Meta 树构建探查树；预览由 Manager 自身 preview provider / composer 组合完成。结构化数据优先消费 `BatchReadableProvider` 或只读 sample query；graph 预览优先消费 `type_info.graph` / `CatalogFactsProvider` 得到 schema 视图，并通过 `GraphSampleProvider` 或 `GraphQueryProvider` 获取轻量子图样本；对象/文件优先消费 `ContentReadableProvider` 并结合格式解析。
@@ -527,6 +528,10 @@ type InferenceRuntimeProvider interface {
 - Service：发布普通查询服务时使用 query runtime 和 Meta item/spatial 元数据；图查询服务使用 `GraphQueryProvider`。图查询服务的易用向导应消费 graph item 的 `type_info.graph.node_shapes`，不得再从 Meta 树读取 Neo4j label item。
 - Transfer：使用 source / target endpoint 生成执行计划。snapshot native table 读写消费 `TableReadSessionProvider`、`BatchReadableProvider`、`TableWritePreparer`、`TableWriteSessionProvider`、`BatchWritableProvider`；watermark bounded incremental 必须消费 `BoundedWatermarkReadProvider` 和幂等 `TableUpsertProvider`；encoded file/object 读写先通过 engine content provider 和 `common/engine/contentadapter` 构造 `common/contentio` 抽象，再交给 `common/format` provider。高吞吐数据搬运优先消费 batch / table session / content stream 能力，而不是 query runtime。
 - Transfer continuous runtime：业务 Kafka source 必须消费 `ChangeStreamReaderProvider`，由 Transfer adapter 生成 ChangeEvent 并通过 ChangeApplyWriter 组合目标 Provider。目标必须声明原子、单调且覆盖所需 operation 的 `PartitionedTableChangeApplyProvider`；当前 PostgreSQL 与 MySQL 实现该 Provider。Infra Kafka 连接来自 ADDP infra 配置，不注册 System Engine，但复用同一 Kafka reader/client 底层实现。
+
+所有上层模块 Backend 与附属 Worker 都必须支持零 Engine Instance 启动。具体请求或 execution 引用的实例不存在、不可用或能力不匹配时，只失败该请求或 execution；Worker 不得退出，Backend readiness 不得降级。模块自身必需 Infra 不属于 Engine Instance，仍按各模块部署契约管理。
+
+面向用户新建绑定或发起功能选择的 Engine 候选列表必须使用统一可用性规则：`lifecycle_state=active`、`connection_status=online`，并匹配目标 capability。System 引擎管理清单不应用该过滤；已有任务或配置的旧绑定必须保留展示并标记不可用，但不得继续执行、静默清空或自动替换。候选列表过滤不能替代执行期按具体 Engine Instance 重新校验。
 
 ### Catalog 错误契约
 

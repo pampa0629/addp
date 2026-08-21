@@ -51,6 +51,7 @@
       "deleteFailed": "Delete failed"
     },
     "orchestrationForm": {
+      "recentVisitTitle": "Orchestration",
       "createTitle": "Create Orchestration",
       "statusLabel": "Orchestration status",
       "editTitle": "Edit Orchestration",
@@ -90,6 +91,7 @@
       "jsonDownloaded": "JSON downloaded"
     },
     "executionList": {
+      "recentVisitTitle": "Orchestration Execution History",
       "title": "Execution Records",
       "backBtn": "Back",
       "colExecutionId": "Execution ID",

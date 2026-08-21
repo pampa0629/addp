@@ -115,6 +115,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useConsolePageDescriptor } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -136,6 +137,11 @@ const loading = ref(false)
 const saving = ref(false)
 const actionKey = computed(() => `metric:${route.params.id}`)
 const metric = ref({})
+useConsolePageDescriptor(router, 'standard', {
+  title: computed(() => t('standard.metric.recentVisitTitle')),
+  subject: computed(() => metric.value?.name || ''),
+  ready: computed(() => Boolean(metric.value?.name))
+})
 const categories = ref([])
 const atomicMetrics = ref([])
 const relatedElements = ref([])

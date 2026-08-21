@@ -14,6 +14,10 @@ assert.match(editor, /currentQueryLanguage\.value/)
 assert.match(editor, /collectSelectedQueryResources/)
 assert.match(editor, /isQueryInputResource\(parsed\)/)
 assert.match(editor, /resolveMQLQueryResources/)
+assert.match(
+  editor,
+  /currentQueryLanguage\.value === 'mql'[\s\S]{0,160}selectedLocator[\s\S]{0,160}queryContent\.value\.trim\(\)[\s\S]{0,160}resolveMQLQueryResources\(selectedLocator\)/
+)
 assert.match(editor, /matchMQLCollectionReferences/)
 assert.doesNotMatch(editor, /resourceCandidatesWithinScope/)
 assert.match(editor, /getResourceTreeNode\('\/api\/v1\/meta', selected\.engineId, databaseLocator\)/)

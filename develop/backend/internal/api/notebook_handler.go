@@ -131,8 +131,9 @@ type ListKernelsResponse struct {
 
 type NotebookEngineListResponse []commonModels.EngineRuntimeDescriptor
 
-// ListNotebookEngines 列出可用于 Notebook 的 Script Engine 实例。
+// ListNotebookEngines 列出当前在线且可用于 Notebook 的 Script Engine 实例。
 // @Summary 列出 Notebook 引擎 | List Notebook engines
+// @Description 仅返回 active、online 且支持 notebook 模式的 Script Engine | Return only active, online Script Engines supporting notebook mode
 // @Tags Notebook
 // @Produce json
 // @Success 200 {array} commonModels.EngineRuntimeDescriptor "Notebook引擎列表 | Notebook engine list"

@@ -46,8 +46,8 @@ func TestWorkflowStorageEngineBindingHandlers(t *testing.T) {
 	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []commonModels.EngineRuntimeDescriptor{
-				{ID: 15, Name: "Replacement Doris", EngineType: "doris", LifecycleState: commonModels.EngineLifecycleActive, Capabilities: &tabularCapabilities},
-				{ID: 16, Name: "Object Storage", EngineType: "minio", LifecycleState: commonModels.EngineLifecycleActive, Capabilities: &objectCapabilities},
+				{ID: 15, Name: "Replacement Doris", EngineType: "doris", LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline, Capabilities: &tabularCapabilities},
+				{ID: 16, Name: "Object Storage", EngineType: "minio", LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline, Capabilities: &objectCapabilities},
 			},
 			"total": 2, "page": 1, "page_size": 100,
 		})

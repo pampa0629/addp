@@ -24,8 +24,9 @@ func NewEngineHandler(systemClient *commonClient.SystemServiceClient) *EngineHan
 	}
 }
 
-// ListEngines 获取查询工作台可用的引擎列表。
+// ListEngines 获取查询工作台当前在线可用的引擎列表。
 // @Summary 获取查询工作台引擎列表 | List engines available to the query workbench
+// @Description 仅返回 active、online 且声明 compute.query 能力的引擎 | Return only active, online engines declaring compute.query capability
 // @Tags Engines
 // @Produce json
 // @Success 200 {array} models.EngineRuntimeDescriptor "引擎运行时描述列表 | Engine runtime descriptor list"
@@ -50,6 +51,7 @@ func (h *EngineHandler) ListEngines(c *gin.Context) {
 
 // ListWorkflowEngines 获取工作流引擎列表
 // @Summary 获取支持 workflow 的计算引擎列表 | List workflow-capable compute engines
+// @Description 仅返回 active、online 且声明 compute.workflow 能力的引擎 | Return only active, online engines declaring compute.workflow capability
 // @Tags Engines
 // @Produce json
 // @Success 200 {array} models.EngineRuntimeDescriptor "工作流引擎运行时描述列表 | Workflow engine runtime descriptor list"
@@ -76,6 +78,7 @@ func (h *EngineHandler) ListWorkflowEngines(c *gin.Context) {
 
 // ListSparkRuntimes 获取 Apache Spark 通用引擎资源列表
 // @Summary 获取所有 Apache Spark 通用引擎资源列表 | List all Apache Spark general engine resources
+// @Description 仅返回 active 且 online 的 Spark 引擎 | Return only active and online Spark engines
 // @Tags Engines
 // @Produce json
 // @Success 200 {array} models.EngineRuntimeDescriptor "Spark通用引擎描述列表 | Spark general engine descriptor list"
@@ -108,7 +111,7 @@ func filterDevelopEngineDescriptors(
 	for index := range descriptors {
 		descriptor := &descriptors[index]
 		engine := descriptor.AsEngine()
-		if descriptor.LifecycleState == commonModels.EngineLifecycleActive && include(engine) {
+		if engineselection.IsAvailable(engine) && include(engine) {
 			filtered = append(filtered, *descriptor)
 		}
 	}

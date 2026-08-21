@@ -183,8 +183,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useConsolePageDescriptor } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document } from '@element-plus/icons-vue'
@@ -216,6 +217,11 @@ const filterType = ref(typeof route.query.doc_type === 'string' ? route.query.do
 const showCreateDialog = ref(false)
 const showDetail = ref(false)
 const currentDoc = ref(null)
+useConsolePageDescriptor(router, 'standard', {
+  title: computed(() => t('standard.document.recentVisitTitle')),
+  subject: computed(() => currentDoc.value?.name || ''),
+  ready: computed(() => Boolean(route.params.id && currentDoc.value?.name))
+})
 const mappings = ref({ elements: [], glossaries: [], metrics: [] })
 let selectedFile = null
 const uploadRef = ref(null)

@@ -334,6 +334,7 @@
 <script setup>
 import { ref, reactive, onMounted, onBeforeUnmount, nextTick, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useConsolePageDescriptor } from '@common-ui'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Plus, Refresh, DocumentCopy } from '@element-plus/icons-vue'
 import { entityAPI, entityRelationAPI, domainAPI, elementAPI } from '../api/model'
@@ -386,6 +387,11 @@ const relationFormRef = ref(null)
 const mermaidContainer = ref(null)
 
 const entity = ref({})
+useConsolePageDescriptor(router, 'modeling', {
+  title: computed(() => t('model.entity.recentVisitTitle')),
+  subject: computed(() => entity.value?.name || ''),
+  ready: computed(() => Boolean(entity.value?.name))
+})
 const entityIsDraft = computed(() => entity.value.status === 'draft')
 const canEditEntity = computed(() => isEditableDraft(entity.value.status, can('model.entity.update')))
 const canCreateAttribute = computed(() => canPerformDraftAction(entity.value.status, can('model.entity.create')))

@@ -8,12 +8,12 @@ show_usage() {
   echo "选项:"
   echo "  无参数        启动所有模块"
   echo "  -system       启动 System 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
-  echo "  -manager      启动 Manager 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Transfer + Model3D/PointCloud Workflow Engine)"
+  echo "  -manager      启动 Manager 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Transfer)"
   echo "  -meta         启动 Meta 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -transfer     启动 Transfer 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -orchestrator 启动 Orchestrator 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
-  echo "  -develop      启动 Develop 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + DuckDB + Python/Math/Spark Workflow Engine + Jupyter)"
-  echo "  -service      启动 Service 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + DuckDB)"
+  echo "  -develop      启动 Develop 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -service      启动 Service 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -monitor      启动 Monitor 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -copilot      启动 Copilot 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Develop)"
   echo "  -agent        启动 Agent 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
@@ -38,13 +38,14 @@ show_usage() {
   echo "说明:"
   echo "  - 指定模块时,会自动启动其依赖的模块"
   echo "  - 单模块启动统一带上 System Backend、Meta Backend/Worker、Gateway 和 Console"
+  echo "  - Engine Runtime 不随业务模块隐式启动；请使用对应的显式 Runtime 参数"
   echo "  - 基础设施(PostgreSQL/Redis/MinIO/Meilisearch)总是会启动"
   echo ""
   echo "示例:"
   echo "  $0                # 启动所有模块"
   echo "  $0 -system        # 启动 System Backend/Frontend + Meta Backend/Worker + Gateway + Console"
-  echo "  $0 -manager       # 启动 Manager + 公共依赖 + Transfer + 三维/点云工作流"
-  echo "  $0 -develop       # 启动 Develop + 公共依赖 + 工作流引擎"
+  echo "  $0 -manager       # 启动 Manager + 公共依赖 + Transfer"
+  echo "  $0 -develop       # 启动 Develop + 公共依赖"
   echo "  $0 -geopython-workflow     # 启动 GeoPython Workflow + 公共依赖"
   echo "  $0 -math-workflow       # 启动 Math Workflow Engine + 公共依赖"
   echo "  $0 -model3d-workflow    # 启动 Model3D Workflow Engine + 公共依赖"
@@ -77,9 +78,6 @@ export MODEL3D_WORKFLOW_PORT="${MODEL3D_WORKFLOW_PORT:-8101}"
 export POINTCLOUD_WORKFLOW_PORT="${POINTCLOUD_WORKFLOW_PORT:-8102}"
 export SUPERMAP_WORKFLOW_PORT="${SUPERMAP_WORKFLOW_PORT:-8103}"
 export DUCKDB_RUNTIME_PORT="${DUCKDB_RUNTIME_PORT:-8104}"
-if [ -z "${DUCKDB_RUNTIME_URL:-}" ]; then
-  export DUCKDB_RUNTIME_URL="http://${SERVICE_HOST:-localhost}:${DUCKDB_RUNTIME_PORT}"
-fi
 
 ensure_model3d_node_dependencies() {
   local dir="engines/model3d-workflow"
@@ -117,11 +115,6 @@ generate_service_urls() {
 
     # 特殊服务
     [ -n "$MEILISEARCH_PORT" ] && export MEILISEARCH_URL="http://${SERVICE_HOST}:${MEILISEARCH_PORT}"
-    [ -n "$GEOPYTHON_WORKFLOW_PORT" ] && export GEOPYTHON_WORKFLOW_URL="http://${SERVICE_HOST}:${GEOPYTHON_WORKFLOW_PORT}"
-    [ -n "$MODEL3D_WORKFLOW_PORT" ] && export MODEL3D_WORKFLOW_URL="http://${SERVICE_HOST}:${MODEL3D_WORKFLOW_PORT}"
-    [ -n "$POINTCLOUD_WORKFLOW_PORT" ] && export POINTCLOUD_WORKFLOW_URL="http://${SERVICE_HOST}:${POINTCLOUD_WORKFLOW_PORT}"
-    [ -n "$SUPERMAP_WORKFLOW_PORT" ] && export SUPERMAP_WORKFLOW_URL="http://${SERVICE_HOST}:${SUPERMAP_WORKFLOW_PORT}"
-    [ -n "$SPARK_WORKFLOW_PORT" ] && export SPARK_WORKFLOW_URL="http://${SERVICE_HOST}:${SPARK_WORKFLOW_PORT}"
 }
 
 generate_service_urls
@@ -371,15 +364,9 @@ else
     manager)
       START_MANAGER_BACKEND=true
       START_MANAGER_FRONTEND=true
-      START_INFERENCE_BACKEND=true
       START_TRANSFER_BACKEND=true
       START_TRANSFER_BOUNDED_WORKER=true
       START_TRANSFER_CONTINUOUS_WORKER=true
-      START_MODEL3D_WORKFLOW=true
-      START_POINTCLOUD_WORKFLOW=true
-      # Manager 预览/Transfer 读取 SuperMap SDX+ for PostgreSQL
-      # 时必须通过绑定的 SuperMap Workflow Runtime 访问私有 geometry。
-      START_SUPERMAP_WORKFLOW=true
       ;;
     meta)
       START_META_FRONTEND=true
@@ -397,16 +384,10 @@ else
     develop)
       START_DEVELOP_BACKEND=true
       START_DEVELOP_FRONTEND=true
-      START_PYTHON_WORKFLOW=true
-      START_MATH_WORKFLOW=true
-      START_SPARK_WORKFLOW=true
-      START_JUPYTER=true
-      START_DUCKDB=true
       ;;
     service)
       START_SERVICE_BACKEND=true
       START_SERVICE_FRONTEND=true
-      START_DUCKDB=true
       ;;
     monitor)
       START_MONITOR_BACKEND=true
@@ -414,16 +395,11 @@ else
       ;;
     copilot)
       START_DEVELOP_BACKEND=true
-      START_PYTHON_WORKFLOW=true
-      START_JUPYTER=true
-      START_DUCKDB=true
       START_COPILOT_BACKEND=true
-      START_INFERENCE_BACKEND=true
       ;;
     agent)
       START_AGENT_BACKEND=true
       START_AGENT_FRONTEND=true
-      START_INFERENCE_BACKEND=true
       ;;
     inference)
       START_INFERENCE_BACKEND=true
@@ -492,17 +468,10 @@ else
       START_SERVICE_BACKEND=true
       START_MONITOR_BACKEND=true
       START_COPILOT_BACKEND=true
-      START_INFERENCE_BACKEND=true
       START_STANDARD_BACKEND=true
       START_MODEL_BACKEND=true
       START_QUALITY_BACKEND=true
       START_QUALITY_WORKER=true
-      START_PYTHON_WORKFLOW=true
-      START_MODEL3D_WORKFLOW=true
-      START_POINTCLOUD_WORKFLOW=true
-      START_SPARK_WORKFLOW=true
-      START_JUPYTER=true
-      START_DUCKDB=true
       START_GATEWAY=true
       ;;
     console)
@@ -523,8 +492,6 @@ else
       START_MONITOR_BACKEND=true
       START_MONITOR_FRONTEND=true
       START_COPILOT_BACKEND=true
-      START_INFERENCE_BACKEND=true
-      START_INFERENCE_FRONTEND=true
       START_STANDARD_BACKEND=true
       START_STANDARD_FRONTEND=true
       START_MODEL_BACKEND=true
@@ -534,12 +501,6 @@ else
       START_QUALITY_WORKER=true
       START_GATEWAY=true
       START_CONSOLE=true
-      START_PYTHON_WORKFLOW=true
-      START_MODEL3D_WORKFLOW=true
-      START_POINTCLOUD_WORKFLOW=true
-      START_SPARK_WORKFLOW=true
-      START_JUPYTER=true
-      START_DUCKDB=true
       ;;
   esac
 

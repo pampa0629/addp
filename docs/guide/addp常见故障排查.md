@@ -1105,3 +1105,37 @@ docker run --rm --entrypoint jupyter addp-jupyter-engine \
 docker run --rm --entrypoint sh addp-jupyter-engine \
   -lc '! command -v node && ! command -v npm'
 ```
+
+---
+
+## System Backend 因数据库迁移版本超前而启动超时
+
+### 现象
+
+`scripts/dev/start.sh` 在“等待 System Backend 就绪”阶段超时，`logs/system-backend.log` 中出现：
+
+```text
+IAM 数据库迁移失败: database migration version <database_version> is newer than embedded version <code_version>
+```
+
+或出现已执行迁移的 checksum 不匹配错误。
+
+### 根因
+
+System 会在启动时校验数据库迁移版本和已执行 SQL 的 checksum。某个迁移一旦已被任何持久化环境执行，其版本号、文件名和内容就是不可变历史。合并、删除、重命名或改写已执行迁移，都会使代码与数据库的历史不一致，System 因此拒绝启动。
+
+### 正确处理
+
+1. 先核对 `system.schema_migrations` 和 `system.schema_migration_checksums`，再与 `system/backend/internal/migration/sql/` 中的迁移目录比较。
+2. 如果仓库错误改写了已执行迁移，应恢复当时已执行的原始文件；新变更只能使用新的递增版本前向迁移。
+3. 如果数据库确实来自更新版本的代码，应切换到包含该迁移的同版或更新代码。
+4. 只有明确不需要数据的一次性开发或测试库，才可在确认数据丢失范围后重建。
+
+不要手工修改 `schema_migrations` 或 `schema_migration_checksums` 来绕过校验；这会伪造迁移历史，并可能让结构或授权数据与声称版本不一致。
+
+### 验证
+
+```bash
+cd system/backend && go test ./internal/migration
+ADDP_SYSTEM_POSTGRES_TEST_DSN='<disposable-postgres-dsn>' make test-system-iam-postgres
+```

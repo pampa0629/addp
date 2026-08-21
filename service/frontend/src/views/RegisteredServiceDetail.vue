@@ -200,9 +200,15 @@
 import registeredServiceAPI from '@/api/registeredService'
 import { copyToClipboard as copyTextToClipboard } from '../utils/serviceHelper'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
+import { publishConsolePageDescriptor } from '@common-ui'
 
 export default {
   name: 'RegisteredServiceDetail',
+  watch: {
+    '$i18n.locale'() {
+      this.publishPageDescriptor()
+    }
+  },
   data() {
     return {
       service: null,
@@ -215,12 +221,20 @@ export default {
     this.loadService()
   },
   methods: {
+    publishPageDescriptor() {
+      if (!this.service) return
+      publishConsolePageDescriptor(this.$router, 'service', {
+        title: this.$t('service.registered.recentVisitTitle'),
+        subject: this.service.title || this.service.name || ''
+      }).catch(() => {})
+    },
     async loadService() {
       this.loading = true
       try {
         const id = this.$route.params.id
         const response = await registeredServiceAPI.getService(id)
         this.service = response
+        this.publishPageDescriptor()
       } catch (error) {
         alert(this.$t('service.registered.loadFailed2') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to load service:', error)

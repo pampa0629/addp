@@ -603,6 +603,7 @@
       "triggerSchedule": "定时"
     },
     "executionDetail": {
+      "recentVisitTitle": "开发任务执行",
       "title": "执行详情",
       "back": "返回",
       "reExecute": "重新执行",

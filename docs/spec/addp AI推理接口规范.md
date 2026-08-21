@@ -10,7 +10,7 @@ addp.inference/v1
 
 ADDP 的 Agent、Copilot、Manager 和后续业务模块只调用 Inference Runtime，不直接集成在线厂商 SDK、OpenAI-compatible endpoint 或内网模型私有协议。Inference Runtime 负责 Provider 协议适配、凭据解密、模型调用和统一错误；业务调用方负责场景语义、上下文组装和结果消费。
 
-第一版 System 中只登记一个平台内置、`engine_type=inference_runtime` 的 Engine Instance。Agent、Copilot、Manager 等调用方按 `compute.inference` 从 System Runtime Descriptor 精确发现该实例，零个或多个候选都明确失败，不读取 `INFERENCE_URL`、固定端口或列表第一项。后续如需按网络区域、安全域、GPU 集群、故障域或 SLA 拆分多个 Runtime，必须先引入显式 Runtime Engine Instance 绑定和身份规则；不得按厂商账号、上游 endpoint 或模型数量拆分，也不得隐藏自动切换。
+第一版 System 中只登记一个平台内置、`engine_type=inference_runtime` 的 Engine Instance。Inference 在自身 HTTP 监听就绪后通过统一 Runtime 注册接口异步自注册；System 不预置、不等待该实例，注册失败也不影响任何模块 readiness。Agent、Copilot、Manager 等调用方按 `compute.inference` 从 System Runtime Descriptor 精确发现该实例，零个或多个候选都明确失败，不读取 `INFERENCE_URL`、固定端口或列表第一项。后续如需按网络区域、安全域、GPU 集群、故障域或 SLA 拆分多个 Runtime，必须先引入显式 Runtime Engine Instance 绑定和身份规则；不得按厂商、账号、上游 endpoint 或模型数量拆分，也不得隐藏自动切换。
 
 第一版禁止：
 

@@ -12,6 +12,7 @@
       "failed": "登录失败，请检查用户名和密码"
     },
     "execution": {
+      "recentDetailTitle": "监控执行",
       "title": "执行记录查询",
       "system_module": "系统运维",
       "filter": {

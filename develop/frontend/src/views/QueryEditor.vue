@@ -620,7 +620,8 @@ import {
   formatLocatorDisplayPath,
   listResourceTreeEngines,
   parseLocator,
-  useResizable
+  useResizable,
+  useConsolePageDescriptor
 } from '@common-ui'
 import { GraphResultView } from '@addp/common-frontend/graph'
 import MonacoEditor from '../components/MonacoEditor.vue'
@@ -669,6 +670,11 @@ const { t } = useI18n()
 
 const currentTaskId = ref(null)
 const currentTaskName = ref('')
+useConsolePageDescriptor(router, 'develop', {
+  title: computed(() => t('develop.query.title')),
+  subject: currentTaskName,
+  ready: computed(() => Boolean(currentTaskId.value && currentTaskName.value))
+})
 const currentTask = ref(null)
 const selectedQueryTarget = ref('')
 const engines = ref([])
@@ -1747,7 +1753,11 @@ const generateQueryWithCopilot = async () => {
   }
   const selectedLocator = catalogSelection.value?.identity?.locator || targetLocator.value || ''
   let resources = collectSelectedQueryResources()
-  if (currentQueryLanguage.value === 'mql' && selectedLocator) {
+  if (
+    currentQueryLanguage.value === 'mql'
+    && selectedLocator
+    && queryContent.value.trim()
+  ) {
     resources = await resolveMQLQueryResources(selectedLocator)
   }
   if (selectedLocator && resources.length === 0) {

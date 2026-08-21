@@ -26,6 +26,32 @@ def test_manager_search_unwraps_canonical_data(monkeypatch):
     asyncio.run(_assert_manager_search_unwraps_canonical_data(monkeypatch))
 
 
+async def _assert_manager_reads_resource_facts(monkeypatch):
+    client = ManagerClient(base_url="http://manager")
+
+    async def fake_get(path, params=None):
+        assert path == "/api/v1/manager/resource-facts"
+        assert params == {"locator": "addp://fact"}
+        return {
+            "locator": "addp://fact",
+            "source_engine_type": "mongodb",
+            "fields": [{"name": "activity.name", "type": "string"}],
+        }
+
+    monkeypatch.setattr(client, "get", fake_get)
+    try:
+        result = await client.get_resource_facts("addp://fact")
+    finally:
+        await client.close()
+
+    assert result["source_engine_type"] == "mongodb"
+    assert result["fields"] == [{"name": "activity.name", "type": "string"}]
+
+
+def test_manager_reads_resource_facts(monkeypatch):
+    asyncio.run(_assert_manager_reads_resource_facts(monkeypatch))
+
+
 async def _assert_meta_client_reads_resource_ancestors(monkeypatch):
     client = MetaClient(base_url="http://meta")
 

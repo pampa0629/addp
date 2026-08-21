@@ -88,19 +88,25 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import serviceAPI from '../api/service'
 import { copyToClipboard } from '../utils/serviceHelper'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
+import { useConsolePageDescriptor } from '@common-ui'
 
 const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
 const loading = ref(false)
 const service = ref(null)
+useConsolePageDescriptor(router, 'service', {
+  title: computed(() => t('service.serviceDetail.recentVisitTitle')),
+  subject: computed(() => service.value?.display_name || service.value?.name || ''),
+  ready: computed(() => Boolean(service.value?.display_name || service.value?.name))
+})
 const layers = ref([])
 
 const loadService = async () => {

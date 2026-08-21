@@ -162,7 +162,7 @@ import DAGEditor from '../components/DAGEditor.vue'
 import TaskPanel from '../components/TaskPanel.vue'
 import orchestrationAPI from '../api/orchestration'
 import { buildOrchestrationPayload } from '../utils/orchestrationPayload'
-import { focusElement, ScheduleConfig, ScheduleDisplay, StatusAnnouncer, useResizable } from '@common-ui'
+import { focusElement, ScheduleConfig, ScheduleDisplay, StatusAnnouncer, useResizable, useConsolePageDescriptor } from '@common-ui'
 import { navigateOrchestratorRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
@@ -193,6 +193,11 @@ const form = reactive({
   schedule: '',
   steps: [],
   editor_layout: {}
+})
+useConsolePageDescriptor(router, 'orchestrator', {
+  title: computed(() => t('orchestrator.orchestrationForm.recentVisitTitle')),
+  subject: computed(() => form.name),
+  ready: computed(() => isEdit.value && Boolean(form.name))
 })
 
 const metadataDraft = reactive({

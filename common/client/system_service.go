@@ -170,6 +170,64 @@ func (c *SystemServiceClient) RegisterModule(ctx context.Context, request *Modul
 	return c.doPlatformJSON(ctx, http.MethodPost, "/api/v1/system/runtime/modules", request, nil)
 }
 
+// RegisterRuntimeEngine registers or updates one platform runtime Engine Instance.
+// Runtime processes call this only after their own HTTP server is ready to accept probes.
+func (c *SystemServiceClient) RegisterRuntimeEngine(ctx context.Context, request *models.CapabilityRegistrationRequest) error {
+	if request == nil {
+		return errors.New("runtime engine registration request is required")
+	}
+	return c.doPlatformJSON(ctx, http.MethodPost, "/api/v1/system/runtime/engines", request, nil)
+}
+
+// RegisterRuntimeEngineWithRetry starts a non-blocking registration loop and stops after
+// the first successful idempotent registration or when ctx is cancelled.
+func (c *SystemServiceClient) RegisterRuntimeEngineWithRetry(
+	ctx context.Context,
+	request *models.CapabilityRegistrationRequest,
+	initialRetryInterval time.Duration,
+	maxRetryInterval time.Duration,
+) {
+	go func() {
+		if request == nil {
+			return
+		}
+		if initialRetryInterval <= 0 {
+			initialRetryInterval = time.Second
+		}
+		if maxRetryInterval < initialRetryInterval {
+			maxRetryInterval = initialRetryInterval
+		}
+		retryInterval := initialRetryInterval
+		for {
+			if err := c.RegisterRuntimeEngine(ctx, request); err == nil {
+				log.Printf("%s runtime engine registration succeeded", request.EngineType)
+				return
+			} else {
+				log.Printf("%s runtime engine registration failed: %v", request.EngineType, err)
+			}
+
+			timer := time.NewTimer(retryInterval)
+			select {
+			case <-ctx.Done():
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				return
+			case <-timer.C:
+			}
+			if retryInterval < maxRetryInterval {
+				retryInterval *= 2
+				if retryInterval > maxRetryInterval {
+					retryInterval = maxRetryInterval
+				}
+			}
+		}
+	}()
+}
+
 func (c *SystemServiceClient) SendModuleHeartbeat(ctx context.Context, moduleName string) error {
 	return c.doPlatformJSON(ctx, http.MethodPost, "/api/v1/system/runtime/modules/heartbeat", map[string]string{"module_name": moduleName}, nil)
 }

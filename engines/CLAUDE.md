@@ -27,6 +27,7 @@ engines/
 
 - 新增或修改引擎接口前，阅读 `docs/spec/addp工作流计算引擎接口规范.md`、`docs/spec/addp引擎插件接口规范.md` 和 `docs/spec/addp引擎能力声明规范.md`。
 - 引擎应提供健康检查、算子发现、执行接口；所有实现 `addp.workflow/v1` 的运行时在注册时都必须提交完整 `engine.capabilities/v1`，System 按协议探测并保存，Common 通过唯一的通用 HTTP Provider 消费。参考实现可以随开发环境自动启动服务但不自注册，由用户在 System 中按扩展引擎手动注册。
+- 生产 Runtime 必须先监听、再异步自注册，并在 System 尚未就绪时持续退避重试；注册失败不得阻塞 Runtime readiness。容器部署必须声明稳定服务名，不能把临时容器 IP 当作 Engine Instance 身份。
 - 算子元数据要包含输入、输出、参数、示例和开发模式，保证 Develop 工作流画布可动态消费。
 - `pointcloud-workflow` 的 PDAL 属于该 engine runtime 内部依赖；不得要求 Manager、System 或宿主机全局安装 PDAL。未绑定 PDAL 时健康检查应保持 `degraded`，且不自注册。
 - `supermap-workflow` 的 SuperMap iObjects C++ 属于该 engine runtime 内部依赖；完整 SDK 作为外部只读母版保存，通过 Docker build context 构建稳定基础镜像，不提交 SDK、native `.so` 或许可文件到仓库。

@@ -57,6 +57,7 @@
       "copy_failed": "Copy failed"
     },
     "entity": {
+      "recentVisitTitle": "Business Entity",
       "title": "Business Entity",
       "detail": "Entity Details",
       "new": "New Entity",
@@ -155,6 +156,7 @@
       "generate_failed": "Failed to generate ER diagram"
     },
     "logical_table": {
+      "recentVisitTitle": "Logical Table",
       "title": "Logical Table",
       "detail": "Logical Table Details",
       "new": "New Logical Table",

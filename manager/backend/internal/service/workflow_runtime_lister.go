@@ -6,6 +6,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	engineplugin "github.com/addp/common/engine/plugin"
+	engineselection "github.com/addp/common/engine/selection"
 	commonModels "github.com/addp/common/models"
 )
 
@@ -39,7 +40,7 @@ func (l *WorkflowRuntimeEngineLister) ListWorkflowEngines(tenantID uint) ([]comm
 }
 
 func isADDPWorkflowRuntime(engine *commonModels.Engine) bool {
-	if engine == nil || engine.LifecycleState != commonModels.EngineLifecycleActive || engine.Capabilities == nil {
+	if !engineselection.IsAvailableForComputeEntrypoint(engine, "workflow") || engine.Capabilities == nil {
 		return false
 	}
 	capabilities, err := engineplugin.ParseEngineCapabilities(string(*engine.Capabilities))

@@ -12,6 +12,7 @@
       "failed": "Login failed, please check your credentials"
     },
     "execution": {
+      "recentDetailTitle": "Monitored Execution",
       "title": "Execution Records",
       "system_module": "System Ops",
       "filter": {

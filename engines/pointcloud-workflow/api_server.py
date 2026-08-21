@@ -204,7 +204,7 @@ def register_to_system() -> bool:
     client_secret = os.getenv("POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET", "")
     port = int(os.getenv("PORT", 8102))
     protocol = os.getenv("PROTOCOL", "http")
-    runtime_host = os.getenv("RUNTIME_HOST", "").strip()
+    runtime_host = os.getenv("RUNTIME_HOST", "localhost").strip()
     connection_info = {
         "protocol": protocol,
         "port": port,
@@ -251,18 +251,9 @@ def register_to_system_with_retry() -> None:
         logger.warning("skip pointcloud_workflow registration because PDAL is not bound: %s", converter.get("details"))
         return
 
-    try:
-        retry_interval = max(1, int(os.getenv("REGISTRATION_RETRY_INTERVAL_SECONDS", "10")))
-    except ValueError:
-        retry_interval = 10
-    attempt = 1
-    while True:
-        logger.info("attempting to register pointcloud_workflow to System (attempt %s)", attempt)
-        if register_to_system():
-            logger.info("pointcloud_workflow registration succeeded on attempt %s", attempt)
-            return
-        attempt += 1
-        threading.Event().wait(retry_interval)
+    from addp_common.client import retry_runtime_registration
+
+    retry_runtime_registration(register_to_system, "pointcloud_workflow", logger)
 
 
 def _execution_snapshot(execution_id: str, status: str, response: dict[str, Any]) -> ExecutionSnapshot:

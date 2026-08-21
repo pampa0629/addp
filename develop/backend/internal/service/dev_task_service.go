@@ -434,7 +434,7 @@ func (s *DevTaskService) listStorageEngineDescriptors(ctx context.Context, tenan
 	candidates := make([]commonModels.EngineRuntimeDescriptor, 0, len(descriptors))
 	for index := range descriptors {
 		descriptor := &descriptors[index]
-		if descriptor.LifecycleState != commonModels.EngineLifecycleActive || !engineselection.HasStorageCapability(descriptor.AsEngine()) {
+		if !engineselection.IsAvailableStorageEngine(descriptor.AsEngine()) {
 			continue
 		}
 		candidates = append(candidates, *descriptor)
@@ -449,7 +449,7 @@ func (s *DevTaskService) listStorageEngineDescriptors(ctx context.Context, tenan
 }
 
 func storageEngineSupportsResourceTypes(engine *commonModels.EngineRuntimeDescriptor, resourceTypes []string) bool {
-	if engine == nil || engine.LifecycleState != commonModels.EngineLifecycleActive {
+	if engine == nil || !engineselection.IsAvailableStorageEngine(engine.AsEngine()) {
 		return false
 	}
 	capabilities, err := engineselection.ParseCapabilities(engine.Capabilities)

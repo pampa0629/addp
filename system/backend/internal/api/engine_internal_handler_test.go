@@ -108,3 +108,38 @@ func TestRegisterRuntimeEngineKeepsSubmittedCapabilitiesForBuiltinCustomRuntime(
 		t.Fatalf("stored capabilities = %v, want submitted workflow declaration", stored.Capabilities)
 	}
 }
+
+func TestRegisterRuntimeEnginePreservesStableAdvertisedHost(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.Engine{}); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := repository.NewEngineRepository(db)
+	router := gin.New()
+	handler := NewEngineHandler(service.NewEngineService(repo, nil, nil))
+	router.POST("/api/v1/system/runtime/engines", handler.RegisterRuntimeEngine)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/system/runtime/engines", bytes.NewBufferString(`{
+		"engine_type":"custom_runtime",
+		"name":"Stable Runtime",
+		"connection_info":{"protocol":"http","host":"stable-runtime","port":18080},
+		"capabilities":{"schema_version":"engine.capabilities/v1","engine_type":"custom_runtime","engine_family":"custom"},
+		"is_builtin":true
+	}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("register status = %d body=%s, want 202", response.Code, response.Body.String())
+	}
+	stored, err := repo.GetByEngineTypeAndTenant("custom_runtime", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.ConnectionInfo["host"] != "stable-runtime" {
+		t.Fatalf("stored host = %#v, want stable-runtime", stored.ConnectionInfo["host"])
+	}
+}

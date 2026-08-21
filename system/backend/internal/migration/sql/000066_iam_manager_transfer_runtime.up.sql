@@ -9,8 +9,7 @@ INSERT INTO system.role_permissions (
 SELECT role.id, permission.id, 'product', NULL
 FROM (VALUES
     ('transfer.task.create'),
-    ('transfer.task.execute'),
-    ('transfer.task.read')
+    ('transfer.task.execute')
 ) AS seed(permission_key)
 JOIN system.roles AS role
   ON role.tenant_id IS NULL

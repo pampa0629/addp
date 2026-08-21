@@ -118,6 +118,7 @@
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useConsolePageDescriptor } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Plus } from '@element-plus/icons-vue'
@@ -140,6 +141,11 @@ const goBack = () => navigateStandardRoute(router, {
 }, { history: 'replace' })
 
 const hierarchy = ref({})
+useConsolePageDescriptor(router, 'standard', {
+  title: computed(() => t('standard.dimHierarchy.recentVisitTitle')),
+  subject: computed(() => hierarchy.value?.name || ''),
+  ready: computed(() => Boolean(hierarchy.value?.name))
+})
 const form = reactive({ name: '', description: '', domain_id: null })
 const saving = ref(false)
 const editableState = computed(() => ({ ...form }))

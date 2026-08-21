@@ -38,14 +38,19 @@ func TestListEnginesReturnsOnlySystemQueryEngines(t *testing.T) {
 			t.Fatalf("Authorization = %q", got)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"data": []commonModels.EngineRuntimeDescriptor{{
-				ID:             12,
-				Name:           "pg-main",
-				EngineType:     "postgresql",
-				LifecycleState: commonModels.EngineLifecycleActive,
-				Capabilities:   &capabilities,
-			}},
-			"total": 1, "page": 1, "page_size": 100,
+			"data": []commonModels.EngineRuntimeDescriptor{
+				{
+					ID: 12, Name: "pg-main", EngineType: "postgresql",
+					LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline,
+					Capabilities: &capabilities,
+				},
+				{
+					ID: 21, Name: "SuperMap SDX+ for PostgreSQL", EngineType: "postgresql",
+					LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOffline,
+					Capabilities: &capabilities,
+				},
+			},
+			"total": 2, "page": 1, "page_size": 100,
 		})
 	}))
 	defer systemServer.Close()
@@ -74,7 +79,7 @@ func TestListEnginesReturnsOnlySystemQueryEngines(t *testing.T) {
 	if len(engines) != 1 {
 		t.Fatalf("engines len = %d, want 1; body=%s", len(engines), resp.Body.String())
 	}
-	if engines[0].ID == 0 || engines[0].EngineType == "duckdb" {
+	if engines[0].ID != 12 || engines[0].EngineType == "duckdb" {
 		t.Fatalf("ListEngines must not append DuckDB pseudo engine: %#v", engines[0])
 	}
 	var raw []map[string]json.RawMessage

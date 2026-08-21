@@ -367,7 +367,7 @@ import { OntologyView } from '@addp/common-frontend/graph'
 import ImportFromModelDialog from '../components/ImportFromModelDialog.vue'
 import InferFromEngineDialog from '../components/InferFromEngineDialog.vue'
 import { useI18n } from 'vue-i18n'
-import { resolveCanonicalTabRouteState } from '@common-ui'
+import { resolveCanonicalTabRouteState, useConsolePageDescriptor } from '@common-ui'
 import { navigateGraphRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
@@ -376,6 +376,11 @@ const route = useRoute()
 const router = useRouter()
 const ontologyId = route.params.id
 const ontology = ref(null)
+useConsolePageDescriptor(router, 'graph', {
+  title: computed(() => t('graph.ontology.recentVisitTitle')),
+  subject: computed(() => ontology.value?.name || ''),
+  ready: computed(() => Boolean(ontology.value?.name))
+})
 const entityTypes = ref([])
 const relationTypes = ref([])
 const versions = ref([])

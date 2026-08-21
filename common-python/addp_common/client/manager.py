@@ -16,6 +16,13 @@ class ManagerClient(BaseClient):
         """
         return await self.get("/api/v1/manager/preview", params={"locator": locator, "page": page, "page_size": page_size})
 
+    async def get_resource_facts(self, locator: str) -> Dict[str, Any]:
+        """按 ResourceLocator 获取不含原始数据行的资源与 Schema 事实。"""
+        response = await self.get("/api/v1/manager/resource-facts", params={"locator": locator})
+        if not isinstance(response, dict):
+            raise ValueError("manager resource facts response must be an object")
+        return response
+
     async def search(
         self,
         q: str,

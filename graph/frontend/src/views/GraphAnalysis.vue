@@ -34,7 +34,7 @@
     </div>
 
     <div v-if="!selectedGraphId" class="empty-hint">
-      <el-empty :description="t('graph.analysis.selectGraphFirst')" />
+      <el-empty :description="t('graph.analysis.selectGraphHint')" />
     </div>
 
     <div v-else class="main-area">
@@ -124,7 +124,7 @@
                 filterable
                 remote
                 clearable
-                :placeholder="t('graph.analysis.searchNodePlaceholder')"
+                :placeholder="t('graph.analysis.startNodePlaceholder')"
                 :remote-method="(q) => fetchNodes(q, 'khop')"
                 :loading="nodeSearch.khop.loading"
                 style="width:100%"
@@ -192,7 +192,7 @@
                 v-if="params.pairs.length > 1"
                 link type="danger" size="small" style="margin-top:4px"
                 @click="removePair(idx)"
-              >{{ t('graph.analysis.remove') }}</el-button>
+              >{{ t('graph.analysis.removePair') }}</el-button>
             </div>
             <el-button
               v-if="params.pairs.length < 5"
@@ -213,7 +213,7 @@
                 <el-option v-for="shape in nodeShapes" :key="shape.name" :label="shape.name" :value="shape.name" />
               </el-select>
             </el-form-item>
-            <el-form-item :label="t('graph.analysis.relationType')">
+            <el-form-item :label="t('graph.analysis.relTypeFilter')">
               <el-select v-model="params.relTypes" multiple :placeholder="t('graph.analysis.allRelations')" style="width:100%">
                 <el-option v-for="r in availableRelTypes" :key="r" :label="r" :value="r" />
               </el-select>
@@ -248,7 +248,7 @@
               <el-select
                 v-model="params.nearbyNodeId"
                 filterable remote clearable
-                :placeholder="t('graph.analysis.searchNodePlaceholder')"
+                :placeholder="t('graph.analysis.startNodePlaceholder')"
                 :remote-method="(q) => fetchNodes(q, 'nearby')"
                 :loading="nodeSearch.nearby?.loading"
                 style="width:100%"
@@ -293,7 +293,7 @@
               <el-select
                 v-model="params.areaNodeId"
                 filterable remote clearable
-                :placeholder="t('graph.analysis.searchAreaNode')"
+                :placeholder="t('graph.analysis.areaNodePlaceholder')"
                 :remote-method="(q) => fetchNodes(q, 'area')"
                 :loading="nodeSearch.area?.loading"
                 style="width:100%"
@@ -326,7 +326,7 @@
           style="width:100%; margin-top:8px"
           @click="runAlgorithm"
         >
-          {{ t('graph.analysis.runAnalysis') }}
+          {{ t('graph.analysis.execute') }}
         </el-button>
       </div>
 
@@ -336,26 +336,26 @@
           <el-empty :description="t('graph.analysis.resultEmpty')" />
         </div>
 
-        <div v-if="running" class="result-empty" v-loading="true" :element-loading-text="t('graph.analysis.running')" style="min-height:300px" />
+        <div v-if="running" class="result-empty" v-loading="true" :element-loading-text="t('graph.analysis.executing')" style="min-height:300px" />
 
         <template v-if="result && !running">
           <div class="result-header">
             <span class="result-title">{{ result.algorithm_name }}</span>
             <div class="result-meta">
               <el-tag v-if="result.metadata?.elapsed_ms !== undefined" size="small" type="info">
-                {{ t('graph.analysis.elapsed') }} {{ result.metadata.elapsed_ms }}ms
+                {{ t('graph.analysis.elapsed', { ms: result.metadata.elapsed_ms }) }}
               </el-tag>
               <el-tag v-if="result.metadata?.node_count !== undefined" size="small" type="success">
-                {{ result.metadata.node_count }} {{ t('graph.analysis.nodeCount') }}
+                {{ t('graph.analysis.nodeCount', { count: result.metadata.node_count }) }}
               </el-tag>
               <el-tag v-if="result.metadata?.relationship_count !== undefined" size="small" type="success">
-                {{ result.metadata.relationship_count }} {{ t('graph.analysis.edgeCount') }}
+                {{ t('graph.analysis.edgeCount', { count: result.metadata.relationship_count }) }}
               </el-tag>
               <el-tag v-if="result.metadata?.community_count !== undefined" size="small" type="warning">
-                {{ result.metadata.community_count }} {{ t('graph.analysis.communityCount') }}
+                {{ t('graph.analysis.communityCount', { count: result.metadata.community_count }) }}
               </el-tag>
               <el-tag v-if="result.metadata?.score_unit" size="small" type="info">
-                {{ t('graph.analysis.distanceUnit') }}: {{ result.metadata.score_unit }}
+                {{ t('graph.analysis.distanceUnit', { unit: result.metadata.score_unit }) }}
               </el-tag>
             </div>
             <el-tag v-if="result.warning" type="warning" size="small" style="margin-top:4px">
@@ -396,10 +396,10 @@
           </div>
 
           <div v-if="result.subgraph && result.subgraph.nodes?.length === 0" class="result-empty">
-            <el-empty :description="t('graph.analysis.noPathOrNeighbors')" />
+            <el-empty :description="t('graph.analysis.noPath')" />
           </div>
           <div v-if="result.node_scores && result.node_scores.length === 0 && !(result.subgraph?.nodes?.length > 0)" class="result-empty">
-            <el-empty :description="t('graph.analysis.noMatchingData')" />
+            <el-empty :description="t('graph.analysis.noData')" />
           </div>
         </template>
       </div>

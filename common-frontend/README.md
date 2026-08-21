@@ -81,6 +81,30 @@ await syncConsoleRoute('/manager/data-explorer?locator=...', { history: 'replace
 
 `openConsoleRoute()` 默认新增浏览器历史并由 Console 加载目标页面；`syncConsoleRoute()` 只允许当前 iframe 同步自身模块路由，支持 `push` / `replace`，且不得重载已经完成导航的 iframe。完整约束见 [`docs/spec/addp前端路由与可恢复状态规范.md`](../docs/spec/addp前端路由与可恢复状态规范.md)。
 
+### Console 页面描述与最近访问
+
+Console 只自动记录侧边栏中的固定菜单路由。固定菜单的短标签若依赖侧边栏模块上下文，Console 配置必须另设全局语境下可独立识别的 `recentLabel`。详情、工作台、任务和执行等动态页面必须由业务模块在对象加载完成后通过 `useConsolePageDescriptor()` 提供页面语义；Console 不解析业务路由，也不跨模块查询对象名称。
+
+```js
+import { computed } from 'vue'
+import { useConsolePageDescriptor } from '@common-ui'
+
+useConsolePageDescriptor(router, 'graph', {
+  title: computed(() => t('graph.browser.recentVisitTitle')),
+  subject: computed(() => graph.value?.name || ''),
+  ready: computed(() => Boolean(graph.value)),
+})
+```
+
+- 展示统一为“页面标题 · 业务对象名称”；没有业务对象时只显示页面标题。
+- `title` 是 Console 全局语境中的业务对象类型，必须脱离模块和页面上下文后仍能独立识别，例如“传输任务”“图谱构建任务”“质量检查执行”。不要直接复用“任务详情”“执行详情”“服务信息”等局部页面标题。
+- `subject` 只承载具体对象的名称、标题或业务编码；不能依赖名称中恰好出现“导入”“导出”等词来补足 `title` 的业务语义。
+- `title`、`subject`、`ready` 和 `recent` 可以是普通值、`ref` 或 `computed`，语言或对象变化后会自动重新发布。
+- `subject` 优先使用名称、标题或业务编码；仅当对象确实没有业务名称时使用 ID。
+- 创建、编辑、登录、OAuth 回调等临时页面不声明页面描述，因此不进入最近访问。
+- 稳定动态页面必须等对象加载完成后再令 `ready=true`，不得先用模块名或路由参数占位。
+- 最近访问保存完整公开 `fullPath`，包括可恢复状态所需的 query。
+
 多个页面共享的稳定 Tab 使用 `resolveCanonicalTabRouteState()` 解析。业务模块负责提供允许值、默认值，以及已经按 owner 事实验证过的伴随 query；该函数统一省略默认 Tab、删除未知参数，并返回是否需要 `replace` 到 canonical URL。
 
 ### 导入类型定义

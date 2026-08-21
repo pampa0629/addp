@@ -5,7 +5,28 @@
         <h2>{{ t(`console.configuration.ai.${owner}.title`) }}</h2>
         <p>{{ contextLabel }}</p>
       </div>
-      <el-button :icon="Refresh" circle :loading="loading" :title="t('console.configuration.reload')" @click="load" />
+      <div class="binding-actions">
+        <span v-if="hasChanges" class="pending-changes">
+          {{ t('console.configuration.pendingChanges', { count: changedRows.length }) }}
+        </span>
+        <el-button
+          type="primary"
+          :icon="Check"
+          :loading="saving"
+          :disabled="!canUpdate || !hasChanges"
+          @click="saveAll"
+        >
+          {{ t('console.configuration.saveAll') }}
+        </el-button>
+        <el-button
+          :icon="Refresh"
+          circle
+          :loading="loading"
+          :disabled="saving"
+          :title="t('console.configuration.reload')"
+          @click="load"
+        />
+      </div>
     </header>
 
     <el-table v-loading="loading" :data="rows" row-key="scenarioCode" class="binding-table">
@@ -17,7 +38,7 @@
       </el-table-column>
       <el-table-column :label="t('console.configuration.ai.modelProfile')" min-width="300">
         <template #default="{ row }">
-          <el-select v-model="row.modelProfileId" filterable :disabled="!canUpdate" class="profile-select">
+          <el-select v-model="row.modelProfileId" filterable :disabled="!canUpdate || saving" class="profile-select">
             <el-option
               v-for="profile in profiles"
               :key="profile.id"
@@ -40,19 +61,6 @@
       </el-table-column>
       <el-table-column :label="t('console.configuration.ai.version')" width="100" align="center">
         <template #default="{ row }">{{ row.version || '-' }}</template>
-      </el-table-column>
-      <el-table-column width="110" align="right">
-        <template #default="{ row }">
-          <el-button
-            type="primary"
-            :icon="Check"
-            :loading="row.saving"
-            :disabled="!canUpdate || !row.modelProfileId"
-            @click="save(row)"
-          >
-            {{ t('console.configuration.save') }}
-          </el-button>
-        </template>
       </el-table-column>
     </el-table>
   </section>
@@ -87,6 +95,7 @@ const SCENARIOS = {
 const { t } = useI18n()
 const authStore = useAuthStore()
 const loading = ref(false)
+const saving = ref(false)
 const profiles = ref([])
 const rows = ref([])
 const contextType = computed(() => authStore.contextType || 'tenant')
@@ -94,6 +103,10 @@ const contextLabel = computed(() => contextType.value === 'tenant'
   ? t('console.configuration.tenantContext')
   : t('console.configuration.platformContext'))
 const canUpdate = computed(() => authStore.hasPermission(`${props.owner}.configuration.update`))
+const changedRows = computed(() => rows.value.filter(row => (
+  row.modelProfileId && row.modelProfileId !== row.originalModelProfileId
+)))
+const hasChanges = computed(() => changedRows.value.length > 0)
 const scenarioLabel = scenarioCode => translateDynamicKey(
   t,
   'console.configuration.ai.scenarios',
@@ -114,11 +127,11 @@ async function load() {
       return {
         scenarioCode,
         modelProfileId: binding.model_profile_id || '',
+        originalModelProfileId: binding.model_profile_id || '',
         version: binding.version || 0,
         expectedVersion: binding.scope_type === contextType.value ? binding.version : 0,
         inherited: configured && binding.scope_type !== contextType.value,
-        configured,
-        saving: false
+        configured
       }
     })
   } catch (error) {
@@ -129,24 +142,30 @@ async function load() {
   }
 }
 
-async function save(row) {
-  row.saving = true
+async function saveAll() {
+  if (!hasChanges.value) return
+
+  saving.value = true
   try {
-    await updateInferenceBinding(props.owner, row.scenarioCode, {
-      version: row.expectedVersion,
-      model_profile_id: row.modelProfileId
-    })
+    await Promise.all(changedRows.value.map(row => updateInferenceBinding(
+      props.owner,
+      row.scenarioCode,
+      {
+        version: row.expectedVersion,
+        model_profile_id: row.modelProfileId
+      }
+    )))
     ElMessage.success(t('console.configuration.saveSuccess'))
     await load()
   } catch (error) {
     if (error?.response?.status === 409) {
       ElMessage.warning(t('console.configuration.versionConflict'))
-      await load()
     } else {
       ElMessage.error(error?.response?.data?.error || t('console.configuration.saveFailed'))
     }
+    await load()
   } finally {
-    row.saving = false
+    saving.value = false
   }
 }
 
@@ -156,6 +175,8 @@ onMounted(load)
 <style scoped>
 .binding-configuration { width: 100%; }
 .binding-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
+.binding-actions { display: flex; align-items: center; gap: 12px; }
+.pending-changes { color: var(--addp-text-secondary); font-size: 13px; white-space: nowrap; }
 .binding-header h2 { margin: 0 0 6px; color: var(--addp-text-primary); font-size: 20px; font-weight: 600; letter-spacing: 0; }
 .binding-header p { margin: 0; color: var(--addp-text-secondary); font-size: 14px; }
 .binding-table { width: 100%; }

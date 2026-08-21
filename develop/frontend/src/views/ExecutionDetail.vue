@@ -238,7 +238,7 @@ import QueryResult from '@/components/QueryResult.vue'
 import { navigateDevelopRoute } from '@/utils/developNavigation'
 import { resolveExecutionDetailRouteState } from '@/utils/executionDetailRouteState'
 import { queryErrorMessage, queryResultFromExecution } from '@/utils/queryWorkbench.mjs'
-import { formatLocatorDisplayPath, listResourceTreeEngines, parseLocatorSafe } from '@addp/common-frontend'
+import { formatLocatorDisplayPath, listResourceTreeEngines, parseLocatorSafe, useConsolePageDescriptor } from '@addp/common-frontend'
 
 const route = useRoute()
 const router = useRouter()
@@ -246,6 +246,11 @@ const { t } = useI18n()
 
 // 状态管理
 const execution = ref(null)
+useConsolePageDescriptor(router, 'develop', {
+  title: computed(() => t('develop.executionDetail.recentVisitTitle')),
+  subject: computed(() => execution.value?.dev_task?.name || execution.value?.execution_id || ''),
+  ready: computed(() => Boolean(execution.value?.execution_id))
+})
 const logs = ref([])
 const resourceEngines = ref([])
 const activeTab = ref(resolveExecutionDetailRouteState(route.query).tab)

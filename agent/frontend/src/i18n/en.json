@@ -11,6 +11,7 @@
       "failed": "Login failed, please check your credentials"
     },
     "chat": {
+      "recentVisitTitle": "Agent Chat",
       "newSession": "New Chat",
       "noSessions": "No conversations",
       "sessionUnavailable": "This conversation does not exist or is not accessible",

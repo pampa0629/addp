@@ -1,51 +1,13 @@
 package service
 
 import (
-	"context"
 	"strings"
 	"testing"
 
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
-	systemmodels "github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
-
-func TestRegisterBuiltinRuntimeCreatesThenUpdatesSameEngine(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.AutoMigrate(&systemmodels.Engine{}); err != nil {
-		t.Fatal(err)
-	}
-	service := NewRegistryService(repository.NewEngineRepository(db))
-
-	firstID, err := service.RegisterBuiltinRuntime(context.Background(), "duckdb", "http://localhost:8104", "first")
-	if err != nil {
-		t.Fatalf("first RegisterBuiltinRuntime() error = %v", err)
-	}
-	secondID, err := service.RegisterBuiltinRuntime(context.Background(), "duckdb", "http://duckdb-engine:8104", "updated")
-	if err != nil {
-		t.Fatalf("second RegisterBuiltinRuntime() error = %v", err)
-	}
-	if firstID == 0 || secondID != firstID {
-		t.Fatalf("runtime IDs = (%d, %d), want same non-zero ID", firstID, secondID)
-	}
-
-	var engines []systemmodels.Engine
-	if err := db.Find(&engines).Error; err != nil {
-		t.Fatal(err)
-	}
-	if len(engines) != 1 || engines[0].TenantID != nil || !engines[0].IsBuiltin || engines[0].EngineType != "duckdb" {
-		t.Fatalf("registered engines = %#v", engines)
-	}
-	if engines[0].ConnectionInfo["host"] != "duckdb-engine" || engines[0].Description != "updated" {
-		t.Fatalf("updated runtime = %#v", engines[0])
-	}
-}
 
 func TestPrepareRegistrationCapabilitiesKeepsSubmittedSchemaForBuiltinExternalRuntime(t *testing.T) {
 	service := NewRegistryService(&repository.EngineRepository{})
@@ -136,21 +98,6 @@ func TestPrepareRegistrationCapabilitiesRejectsMissingOrMismatchedNonBuiltinCapa
 	})
 	if err == nil || !strings.Contains(err.Error(), "does not match engine_type") {
 		t.Fatalf("mismatched capabilities error = %v, want engine_type mismatch", err)
-	}
-}
-
-func TestRuntimeConnectionInfo(t *testing.T) {
-	connectionInfo, err := runtimeConnectionInfo("https://duckdb.internal:8104")
-	if err != nil {
-		t.Fatalf("runtimeConnectionInfo() error = %v", err)
-	}
-	if connectionInfo["protocol"] != "https" || connectionInfo["host"] != "duckdb.internal" || connectionInfo["port"] != 8104 {
-		t.Fatalf("connection info = %#v", connectionInfo)
-	}
-	for _, invalid := range []string{"", "ftp://duckdb:8104", "http://duckdb:0", "http://duckdb:8104/api", "http://user@duckdb:8104"} {
-		if _, err := runtimeConnectionInfo(invalid); err == nil {
-			t.Fatalf("runtimeConnectionInfo(%q) error = nil", invalid)
-		}
 	}
 }
 

@@ -155,6 +155,7 @@
       "loadFailed": "加载服务目录失败"
     },
     "query": {
+      "recentVisitTitle": "查询服务",
       "listTitle": "查询服务",
       "searchPlaceholder": "搜索查询服务...",
       "createBtn": "+ 创建查询服务",
@@ -376,6 +377,7 @@
 	  "snapshotUnknownCRS": "未知坐标系"
     },
     "published": {
+      "recentVisitTitle": "数据服务",
       "listTitle": "服务发布",
       "searchPlaceholder": "搜索已发布服务...",
       "createBtn": "+ 创建服务",
@@ -530,6 +532,7 @@
       "requestFailed": "请求失败"
     },
     "registered": {
+      "recentVisitTitle": "注册服务",
       "listTitle": "注册服务",
       "searchPlaceholder": "搜索注册服务...",
       "createBtn": "+ 注册外部服务",
@@ -625,6 +628,7 @@
       "loadDetailFailed": "无法加载服务详情"
     },
     "tile": {
+      "recentVisitTitle": "瓦片服务",
       "listTitle": "瓦片服务",
       "searchPlaceholder": "搜索瓦片服务...",
       "createBtn": "+ 创建瓦片服务",
@@ -747,6 +751,7 @@
       "tileLoadFailed": "瓦片加载失败，请检查服务配置"
     },
     "graph": {
+      "recentVisitTitle": "图查询服务",
       "listTitle": "图查询服务",
       "createBtn": "+ 创建图查询服务",
       "searchPlaceholder": "搜索服务名称、标题...",
@@ -869,6 +874,7 @@
       "viewRawGraphData": "查看原始图数据（JSON）"
     },
     "serviceDetail": {
+      "recentVisitTitle": "外部服务",
       "title": "服务详情",
       "refreshBtn": "刷新元数据",
       "serviceIdLabel": "服务ID",

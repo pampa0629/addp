@@ -147,6 +147,7 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useConsolePageDescriptor } from '@common-ui'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -168,6 +169,11 @@ const loading = ref(false)
 const saving = ref(false)
 const actionKey = computed(() => `glossary:${route.params.id}`)
 const glossary = ref({})
+useConsolePageDescriptor(router, 'standard', {
+  title: computed(() => t('standard.glossary.recentVisitTitle')),
+  subject: computed(() => glossary.value?.name || ''),
+  ready: computed(() => Boolean(glossary.value?.name))
+})
 const domains = ref([])
 const mappedElements = ref([])
 const addElementDialogVisible = ref(false)

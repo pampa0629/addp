@@ -80,6 +80,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
+import { useConsolePageDescriptor } from '@common-ui'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { issueAPI } from '../api/quality'
 import { navigateQualityRoute } from '../utils/moduleNavigation'
@@ -90,6 +91,11 @@ const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const issue = ref(null)
+useConsolePageDescriptor(router, 'quality', {
+  title: computed(() => t('quality.issue.recentVisitTitle')),
+  subject: computed(() => issue.value?.title || issue.value?.name || `#${issue.value?.id || ''}`),
+  ready: computed(() => Boolean(issue.value?.id))
+})
 const loading = ref(false)
 const loadError = ref('')
 const updating = ref(false)

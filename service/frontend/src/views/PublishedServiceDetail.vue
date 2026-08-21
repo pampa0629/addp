@@ -216,6 +216,7 @@ import client from '../api/client'
 import { copyToClipboard } from '../utils/serviceHelper'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
 import { LineageViewer, createLineageApi, normalizeLineageGraph } from '@common-ui-graph'
+import { useConsolePageDescriptor } from '@common-ui'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -223,6 +224,11 @@ const router = useRouter()
 
 const loading = ref(false)
 const service = ref(null)
+useConsolePageDescriptor(router, 'service', {
+  title: computed(() => t('service.published.recentVisitTitle')),
+  subject: computed(() => service.value?.title || service.value?.name || ''),
+  ready: computed(() => Boolean(service.value?.title || service.value?.name))
+})
 const lineageLoading = ref(false)
 const lineageError = ref('')
 const lineageGraph = ref(normalizeLineageGraph())

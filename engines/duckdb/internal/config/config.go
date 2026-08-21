@@ -10,6 +10,7 @@ import (
 
 type Config struct {
 	Addr               string
+	Port               int
 	SystemURL          string
 	MetaURL            string
 	ClientSecret       string
@@ -22,7 +23,10 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	port := env("DUCKDB_RUNTIME_PORT", "8104")
+	port, err := positiveInt("DUCKDB_RUNTIME_PORT", 8104)
+	if err != nil || port > 65535 {
+		return Config{}, fmt.Errorf("DUCKDB_RUNTIME_PORT must be an integer between 1 and 65535")
+	}
 	maxRows, err := positiveInt("DUCKDB_MAX_ROWS", 10000)
 	if err != nil {
 		return Config{}, err
@@ -40,7 +44,8 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("DUCKDB_SERVICE_CLIENT_SECRET must contain at least 32 bytes")
 	}
 	return Config{
-		Addr:               ":" + port,
+		Addr:               fmt.Sprintf(":%d", port),
+		Port:               port,
 		SystemURL:          strings.TrimRight(env("SYSTEM_URL", "http://localhost:8180"), "/"),
 		MetaURL:            strings.TrimRight(env("META_URL", "http://localhost:8182"), "/"),
 		ClientSecret:       secret,

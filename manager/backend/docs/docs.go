@@ -5040,6 +5040,65 @@ const docTemplate = `{
                 ]
             }
         },
+        "/resource-facts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按 locator 返回 Source Engine、查询名称、Schema coverage、字段路径及空间事实，不读取原始数据行 | Return source engine, query names, schema coverage, field paths and spatial facts without reading source rows",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取数据项资源事实 | Get data item resource facts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ResourceLocator URI",
+                        "name": "locator",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "资源事实 | Resource facts",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_preview.ResourceFacts"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "缺少已扫描的数据项事实 | Scanned item facts not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.data_item.read"
+                ]
+            }
+        },
         "/search": {
             "get": {
                 "security": [
@@ -6928,6 +6987,56 @@ const docTemplate = `{
                 }
             }
         },
+        "datatype.FieldInfo": {
+            "type": "object",
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "default_expression": {
+                    "type": "string"
+                },
+                "generated": {
+                    "type": "boolean"
+                },
+                "generation_expression": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "native_type": {
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "ordinal_position": {
+                    "type": "integer"
+                },
+                "path": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "precision": {
+                    "type": "integer"
+                },
+                "primary_key": {
+                    "type": "boolean"
+                },
+                "scale": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                }
+            }
+        },
         "datatype.FieldType": {
             "type": "string",
             "enum": [
@@ -8060,6 +8169,65 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_preview.ResourceFacts": {
+            "type": "object",
+            "properties": {
+                "crs": {
+                    "type": "string"
+                },
+                "data_type": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "engine_name": {
+                    "type": "string"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.FieldInfo"
+                    }
+                },
+                "full_name": {
+                    "type": "string"
+                },
+                "geometry_column": {
+                    "type": "string"
+                },
+                "geometry_type": {
+                    "type": "string"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
+                "item_type": {
+                    "type": "string"
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "query_names": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "scanned_depth": {
+                    "type": "string"
+                },
+                "schema_coverage": {
+                    "type": "string"
+                },
+                "source_engine_type": {
                     "type": "string"
                 }
             }

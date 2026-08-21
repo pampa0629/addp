@@ -94,7 +94,7 @@ func newNotebookBindingHandlerForTest(t *testing.T) (*NotebookHandler, *service.
 		}
 		_ = json.NewEncoder(w).Encode(commonModels.EngineRuntimeDescriptor{
 			ID: 10, Name: "Jupyter Engine", EngineType: "jupyter",
-			LifecycleState: commonModels.EngineLifecycleActive, Capabilities: &capabilities,
+			LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline, Capabilities: &capabilities,
 			RuntimeEndpoint: &commonModels.EngineRuntimeEndpoint{
 				Protocol: runtimeURL.Scheme, Host: runtimeURL.Hostname(), Port: runtimePort,
 			},

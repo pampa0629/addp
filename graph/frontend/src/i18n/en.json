@@ -73,6 +73,8 @@
       "knowledgeService": "Knowledge Service"
     },
     "ontology": {
+      "recentVisitTitle": "Knowledge Graph Ontology",
+      "detailTitle": "Ontology Details",
       "management": "Ontology Management",
       "create": "New Ontology",
       "edit": "Edit Ontology",
@@ -110,6 +112,8 @@
       "geomField": "Geometry Field",
       "pointGeom": "Point (lon + lat)",
       "wktGeom": "Line/Polygon (WKT)",
+      "point": "Point",
+      "linePolygon": "Line/Polygon",
       "parentType": "Parent Type",
       "noParent": "None (Top-level)",
       "color": "Color",
@@ -170,6 +174,7 @@
       "statusArchived": "Archived"
     },
     "browser": {
+      "recentVisitTitle": "Graph Browser",
       "searchPlaceholder": "Search nodes...",
       "resetView": "Reset View",
       "graphAnalysis": "Graph Analysis",
@@ -207,6 +212,7 @@
       "graphPrefix": "Graph #"
     },
     "build": {
+      "taskRecentVisitTitle": "Graph Build Task",
       "title": "Graph Build",
       "createTask": "+ New Task",
       "noTasks": "No build tasks, click top-right to create",
@@ -247,6 +253,7 @@
       "runTask": "Run Task",
       "reviewQueue": "Review Queue",
       "monitorId": "Monitor ID",
+      "characters": "characters",
       "totalMaterials": "Total Materials",
       "processed": "Processed",
       "buildMaterials": "Build Materials",
@@ -264,6 +271,7 @@
       "matStatusFailed": "Failed"
     },
     "review": {
+      "recentVisitTitle": "Graph Review",
       "title": "Review Queue",
       "pending": "Pending",
       "pendingCount": "Pending {count}",
@@ -317,6 +325,7 @@
       "modifySuccess": "Modified and written to Neo4j"
     },
     "service": {
+      "recentVisitTitle": "Knowledge Service",
       "title": "Knowledge Graphs",
       "knowledgeGraph": "Knowledge Graphs",
       "serviceConfig": "Service Config",

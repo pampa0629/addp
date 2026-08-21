@@ -16,6 +16,8 @@ engine.capabilities/v1
 
 - capabilities 是引擎实例自身能力与 Provider 实现承诺共同收敛后的事实来源。
 - 插件 `Capabilities()` 只返回不连接实例的静态能力模板；实现了实例能力解析接口的插件，必须由 System 在保存或刷新具体引擎记录时执行只读探测，并将解析后的实例能力写入 `system.engines.capabilities`。
+- 实例能力探测不得进入任何模块的启动或 readiness 关键路径。System 就绪后的后台刷新必须逐 Engine Instance 隔离；探测失败时保留该实例最后一次成功落库的能力事实并记录失败，不得清空能力、终止进程或阻塞其他实例。
+- 创建 Engine Instance、变更连接或凭据以及显式连接测试可以同步探测并把失败返回给当前操作；仅修改名称、描述或生命周期不得要求实例在线，也不得触发能力探测。
 - 声明了可调用能力，就必须有对应 Provider 或明确的模块执行面。
 - Catalog、Facts、Store、Query、Workflow、Script 是不同能力面，不能混用。
 - 核心结构只表达引擎自身原生能力与对应 Provider 能力，不承载模块适配状态。
@@ -514,6 +516,7 @@ type CapabilitiesView struct {
 - capabilities 由插件返回结构体，System 统一序列化为 JSONB。插件 `Capabilities()` 是 Provider 能力模板，不得做实例连接或运行时探测。
 - 已注册编译期插件引擎的落库能力事实源是插件 `Capabilities()` 与可选实例能力解析结果。普通 Engine API、内部自注册接口和 Registry 能力注册接口收到此类插件引擎提交的 `capabilities` 时都必须忽略，并改用插件模板和实例解析结果生成落库声明。未编译独立插件的 `addp.workflow/v1` Runtime 无论是否属于 ADDP 默认部署，都必须在自注册或手动注册时提交完整 `engine.capabilities/v1`；System 校验并保存该声明，不能按 `engine_type` 生成内置能力。自注册脚本不得额外声明 `workflow_runtime`、`script_runtime` 等平行运行时能力。
 - 旧 capabilities 结构不再兼容，发现旧结构可直接刷新或清空。
+- Runtime Engine Instance 由对应 Runtime 在自身服务就绪后通过统一接口异步注册。System 不在启动阶段预置或等待内置 Runtime；注册失败不改变模块 readiness，调用方在实际需要该能力时返回明确的 Runtime 不可用错误。
 
 ---
 

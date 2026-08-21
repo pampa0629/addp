@@ -442,6 +442,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useConsolePageDescriptor } from '@common-ui'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
@@ -460,6 +461,11 @@ const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
 const task = ref({})
+useConsolePageDescriptor(router, 'transfer', {
+  title: computed(() => t('transfer.taskDetail.recentVisitTitle')),
+  subject: computed(() => task.value?.name || ''),
+  ready: computed(() => Boolean(task.value?.name))
+})
 const executions = ref([])
 const jsonDialogVisible = ref(false)
 const deadLetters = ref([])

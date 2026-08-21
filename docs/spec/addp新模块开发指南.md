@@ -31,6 +31,22 @@
    - ✅ 后端用户可见错误消息必须通过 `common/middleware/i18n` 翻译
    - ✅ Swagger 注解必须使用 `中文 | English` 双语格式
 
+6. **Console 页面描述原则**
+   - ✅ 侧边栏固定菜单页由 Console 自动记录最近访问；若侧边栏短标签依赖模块上下文，必须在 `SIDEBAR_MENUS` 中另设可独立识别的 `recentLabel`
+   - ✅ 稳定动态页面在业务对象加载后使用 `useConsolePageDescriptor()` 声明页面标题和对象名称
+   - ✅ 页面标题和对象名称必须国际化，并在语言切换后自动更新
+   - ✅ 页面描述的 `title` 必须是脱离当前模块和页面上下文后仍可独立识别的业务对象类型，如“传输任务”“质量检查执行”；“任务详情”“执行详情”“服务信息”等局部页面标题不得直接复用
+   - ✅ 页面描述的 `subject` 只承载具体对象名称、标题或业务编码；不得依赖对象名称中的偶然动词来补足 `title` 语义
+   - ❌ Console 不解析模块动态路由，不跨模块查询业务对象
+   - ❌ 创建、编辑、登录、OAuth 回调等临时页面不得进入最近访问
+
+7. **启动依赖边界**
+   - ✅ Backend 和附属 Worker 必须支持零 Engine Instance 启动并进入各自正常空闲状态
+   - ✅ 模块可以把自身必需 Infra 作为启动或 readiness 条件；Infra 不属于 Engine Instance 启动解耦范围
+   - ✅ 引擎缺失、离线或能力不匹配只失败实际使用该引擎的请求或 execution
+   - ✅ Engine Runtime 在自身服务就绪后异步自注册，注册失败不得阻塞 Runtime readiness
+   - ❌ 模块启动、健康检查或构造函数不得查询、连接、等待或隐式拉起可选 Engine Instance / Engine Runtime
+
 **违反以上原则的代码将无法通过 Code Review。**
 
 ---
@@ -192,6 +208,7 @@
    - 使用 `profile: full` 将服务添加到 `docker-compose.yml`
    - 使用健康检查进行依赖管理
    - 连接到 `addp-network` 进行服务间通信
+   - `depends_on` 和健康检查只登记模块自身必需 Infra 与真实控制面依赖；不得为了可选功能把 Engine Runtime 设为 Backend/Worker 启动条件
 
 7. **开发脚本集成**（新模块必做）:
 
@@ -228,6 +245,8 @@
         START_YOUR_MODULE_FRONTEND=true
         ;;
       ```
+
+      模块分支不得隐式设置 `START_*_ENGINE`、`START_*_WORKFLOW`、`START_DUCKDB_RUNTIME` 或 `START_INFERENCE_BACKEND`。Engine Runtime 只由它自己的显式启动参数或全量部署组合选择。
 
    6. 添加编译逻辑（约第690行）:
       ```bash

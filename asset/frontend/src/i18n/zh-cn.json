@@ -67,6 +67,7 @@
       "deleteFailed": "删除失败"
     },
     "assetDetail": {
+      "recentVisitTitle": "数据资产",
       "backToList": "返回列表",
       "createAsset": "新建资产",
       "editAsset": "编辑资产",

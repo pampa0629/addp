@@ -389,7 +389,7 @@ import { TilePreview } from '@common-ui-map'
 import { copyToClipboard } from '../utils/serviceHelper'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
 import { tilePreviewConfig, tilePreviewCoordinate } from '../utils/tileServicePreview'
-import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection } from '@common-ui'
+import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection, useConsolePageDescriptor } from '@common-ui'
 import {
   NATIVE_TABLE_ENGINE_TYPES,
   PMTILES_ENGINE_TYPES,
@@ -406,6 +406,11 @@ const { t } = useI18n()
 
 // 状态
 const service = ref(null)
+useConsolePageDescriptor(router, 'service', {
+  title: computed(() => t('service.tile.recentVisitTitle')),
+  subject: computed(() => service.value?.title || service.value?.name || ''),
+  ready: computed(() => Boolean(service.value?.title || service.value?.name))
+})
 const loading = ref(false)
 const selectedLayerForPreview = ref(null)
 let mapInstance = null

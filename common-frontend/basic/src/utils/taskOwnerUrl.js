@@ -48,11 +48,22 @@ export function buildConsoleNavigationRequest(route, options = {}) {
     throw new Error('console navigation history must be push or replace')
   }
 
-  return {
+  const request = {
     route: normalizedRoute,
     history,
     synchronized: options.synchronized === true
   }
+
+  const pageDescriptor = options.pageDescriptor
+  if (pageDescriptor && hasValue(pageDescriptor.title)) {
+    request.pageDescriptor = {
+      title: String(pageDescriptor.title).trim(),
+      subject: hasValue(pageDescriptor.subject) ? String(pageDescriptor.subject).trim() : '',
+      recent: pageDescriptor.recent !== false
+    }
+  }
+
+  return request
 }
 
 export function fillTaskOwnerUrlTemplate(rawUrl, replacements = {}) {
@@ -159,7 +170,11 @@ export async function syncConsoleRoute(route, options = {}) {
   } = options
   await requestConsoleBridge(
     CONSOLE_NAVIGATION_CHANNEL,
-    buildConsoleNavigationRequest(route, { history, synchronized: true }),
+    buildConsoleNavigationRequest(route, {
+      history,
+      synchronized: true,
+      pageDescriptor: options.pageDescriptor
+    }),
     { source, timeout }
   )
   return true

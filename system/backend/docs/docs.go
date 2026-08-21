@@ -4494,7 +4494,7 @@ const docTemplate = `{
                 "tags": [
                     "运行时注册 | Runtime Registry"
                 ],
-                "summary": "注册内置工作流 Runtime | Register built-in workflow runtime",
+                "summary": "注册内置 Engine Runtime | Register built-in engine runtime",
                 "parameters": [
                     {
                         "description": "Runtime 注册信息 | Runtime registration",

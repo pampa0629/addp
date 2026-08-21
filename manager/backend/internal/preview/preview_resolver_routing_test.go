@@ -883,3 +883,32 @@ func TestBuildMetadataDeclaresOwnerVerifiedQueryFacts(t *testing.T) {
 		t.Fatalf("unexpected object query facts: %#v", object)
 	}
 }
+
+func TestBuildResourceFactsUsesMetaSchemaWithoutPreviewRows(t *testing.T) {
+	itemID := uint(51657)
+	resolver := NewPreviewResolver(nil, nil, nil)
+	facts, err := resolver.buildResourceFacts(&PreviewResolverRequest{
+		Locator: &resourcetree.ResourceLocator{EngineID: 11, Path: []string{"Outdoor", "Persons"}, Type: resourcetree.ResourceType("collection"), ItemID: &itemID},
+		Engine:  &commonModels.Engine{ID: 11, Name: "Business MongoDB", EngineType: "mongodb"},
+		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
+			"item": map[string]interface{}{"data_type": "table", "layout": "single"},
+			"type_info": map[string]interface{}{"table": map[string]interface{}{
+				"fields": []interface{}{
+					map[string]interface{}{"name": "_id", "path": []interface{}{"_id"}, "type": "string", "nullable": true},
+					map[string]interface{}{"name": "userInfo.nickName", "path": []interface{}{"userInfo", "nickName"}, "type": "string", "nullable": true},
+				},
+			}},
+		}},
+		MetaItemID: &itemID, ItemName: "Persons", ItemFullName: "Outdoor.Persons",
+		ItemFingerprint: "fingerprint", ItemType: "collection", ItemScannedDepth: "deep",
+	})
+	if err != nil {
+		t.Fatalf("buildResourceFacts() error = %v", err)
+	}
+	if facts.QueryNames["mql"] != "Persons" || facts.SchemaCoverage != "sampled" || len(facts.Fields) != 2 {
+		t.Fatalf("unexpected resource facts: %#v", facts)
+	}
+	if facts.Fields[1].Name != "userInfo.nickName" || len(facts.Fields[1].Path) != 2 {
+		t.Fatalf("nested field facts missing: %#v", facts.Fields)
+	}
+}

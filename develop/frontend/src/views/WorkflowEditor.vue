@@ -709,7 +709,8 @@ import {
   focusElement,
   listResourceTreeEngines,
   openMonitorExecution,
-  StatusAnnouncer
+  StatusAnnouncer,
+  useConsolePageDescriptor
 } from '@addp/common-frontend'
 
 const route = useRoute()
@@ -746,6 +747,11 @@ const editorLayout = ref({})
 const selectedNode = ref(null)
 const currentTaskId = ref(null)
 const currentTaskName = ref('')
+useConsolePageDescriptor(router, 'develop', {
+  title: computed(() => t('develop.workflow.title')),
+  subject: currentTaskName,
+  ready: computed(() => Boolean(currentTaskId.value && currentTaskName.value))
+})
 const currentTask = ref(null)
 const savedStateSignature = ref('')
 

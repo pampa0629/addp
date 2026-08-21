@@ -89,6 +89,7 @@
       "loadFailed": "Failed to load domains"
     },
     "glossary": {
+      "recentVisitTitle": "Business Term",
       "title": "Business Glossary",
       "create": "New Term",
       "createTitle": "New Business Term",
@@ -118,6 +119,7 @@
       "confirmAdd": "Confirm Add"
     },
     "element": {
+      "recentVisitTitle": "Data Element",
       "title": "Data Element Management",
       "create": "New Data Element",
       "createTitle": "New Data Element",
@@ -180,6 +182,8 @@
       "basicInfo": "Basic Info"
     },
     "codeSet": {
+      "recentVisitTitle": "Code Set",
+      "detailTitle": "Code Set Details",
       "title": "Code Set Management",
       "create": "New Code Set",
       "createTitle": "New Code Set",
@@ -248,6 +252,7 @@
       "confirmDelete": "Confirm delete classification \"{name}\"?"
     },
     "metric": {
+      "recentVisitTitle": "Data Metric",
       "title": "Metric Management",
       "create": "New Metric",
       "createTitle": "New Metric",
@@ -290,6 +295,8 @@
       "basicInfo": "Basic Info"
     },
     "document": {
+      "recentVisitTitle": "Standard Document",
+      "detailTitle": "Standard Document Details",
       "title": "Document Library",
       "subtitle": "View all standard documents. To link to a specific standard item, go to its detail page.",
       "create": "Add Document",
@@ -368,6 +375,8 @@
       "fileExceedWarning": "Only one file can be uploaded"
     },
     "dimHierarchy": {
+      "recentVisitTitle": "Dimension Hierarchy",
+      "detailTitle": "Dimension Hierarchy Details",
       "title": "Dimension Hierarchies",
       "create": "New Hierarchy",
       "createTitle": "New Dimension Hierarchy",

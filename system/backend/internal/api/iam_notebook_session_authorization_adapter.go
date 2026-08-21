@@ -10,6 +10,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	engineplugin "github.com/addp/common/engine/plugin"
+	engineselection "github.com/addp/common/engine/selection"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/system/i18n"
 	"github.com/addp/system/internal/iam"
@@ -210,7 +211,7 @@ func (h *IAMNotebookSessionAuthorizationHandler) ListCatalogChildren(c *gin.Cont
 
 // ListEngineDescriptors godoc
 // @Summary      使用 Notebook 会话授权列出可访问数据引擎 | List accessible data engines with Notebook session authorization
-// @Description  仅返回 active 且声明实时 CatalogModel 的数据引擎；授权复核与引擎发现在同一请求完成 | Only active data engines declaring a live CatalogModel are returned; authorization review and engine discovery complete in one request
+// @Description  仅返回 active、online 且声明实时 CatalogModel 的数据引擎；授权复核与引擎发现在同一请求完成 | Only active, online data engines declaring a live CatalogModel are returned; authorization review and engine discovery complete in one request
 // @Tags         Notebook 会话授权 | Notebook Session Authorization
 // @Produce      json
 // @Security     BearerAuth
@@ -277,7 +278,7 @@ func (h *IAMNotebookSessionAuthorizationHandler) ListEngineDescriptors(c *gin.Co
 }
 
 func notebookDataEngineDescriptor(descriptor *models.EngineRuntimeDescriptor) bool {
-	if descriptor == nil || descriptor.LifecycleState != models.EngineLifecycleActive || descriptor.Capabilities == nil {
+	if descriptor == nil || !engineselection.IsAvailableStorageEngine(descriptor.AsEngine()) || descriptor.Capabilities == nil {
 		return false
 	}
 	capabilities, err := engineplugin.ParseEngineCapabilities(string(*descriptor.Capabilities))

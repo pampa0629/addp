@@ -51,8 +51,6 @@ type Config struct {
 	ManagerServiceURL      string
 	OrchestratorServiceURL string
 	DevelopServiceURL      string
-	DuckDBRuntimeURL       string
-	InferenceRuntimeURL    string
 
 	// CORS 配置
 	AllowedOrigins []string // CORS 白名单
@@ -166,8 +164,6 @@ func Load() *Config {
 		ManagerServiceURL:      getEnv("MANAGER_URL", "http://localhost:8081"),
 		OrchestratorServiceURL: getEnv("ORCHESTRATOR_URL", "http://localhost:8084"),
 		DevelopServiceURL:      getEnv("DEVELOP_URL", "http://localhost:8185"),
-		DuckDBRuntimeURL:       getEnv("DUCKDB_RUNTIME_URL", "http://localhost:8104"),
-		InferenceRuntimeURL:    getEnv("INFERENCE_URL", "http://localhost:8191"),
 
 		// CORS 配置
 		AllowedOrigins: allowedOrigins,

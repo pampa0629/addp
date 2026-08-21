@@ -345,6 +345,7 @@ func SetupRouter(
 		api.GET("/engines", permission(managerauthorization.PermissionManagerDataItemRead), explorerHandler.ListEngines) // 获取可用引擎列表（只读）
 		api.POST("/engines/:id/items/refresh", permission(managerauthorization.PermissionManagerDataItemUpdate), metadataHandler.RefreshItem)
 		api.GET("/preview", permission(managerauthorization.PermissionManagerDataItemRead), explorerHandler.Preview)
+		api.GET("/resource-facts", permission(managerauthorization.PermissionManagerDataItemRead), explorerHandler.ResourceFacts)
 		api.GET("/downloads/file", permission(managerauthorization.PermissionManagerContentRead), downloadHandler.DownloadFile)
 		api.GET("/storage-stream", permission(managerauthorization.PermissionManagerContentRead), explorerHandler.StorageStream)
 		api.GET("/storage-assets/:engine_id/*storage_ref", permission(managerauthorization.PermissionManagerContentRead), explorerHandler.StorageAsset)
@@ -397,6 +398,10 @@ func managerDelegatedToolPolicies() map[string]auth.DelegatedRoutePolicyEntry {
 		},
 		"GET /api/v1/manager/preview": {
 			RequiredScopes:      []string{"data.preview"},
+			RequiredPermissions: []string{managerauthorization.PermissionManagerDataItemRead},
+		},
+		"GET /api/v1/manager/resource-facts": {
+			RequiredScopes:      []string{"resource.facts.get"},
 			RequiredPermissions: []string{managerauthorization.PermissionManagerDataItemRead},
 		},
 	}

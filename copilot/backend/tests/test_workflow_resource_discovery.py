@@ -9,6 +9,21 @@ from services.resource_discovery import ResourceDiscovery
 QUERY_DATA_TYPES = frozenset({"table", "graph"})
 
 
+def resource_facts(locator, *, data_type="table", source_engine_type="postgresql", fields=None, **extra):
+    engine_id = extra.pop("engine_id", int(locator.split("/engine/", 1)[1].split("/", 1)[0]))
+    return {
+        "locator": locator,
+        "engine_id": engine_id,
+        "data_type": data_type,
+        "source_engine_type": source_engine_type,
+        "full_name": extra.pop("full_name", None),
+        "query_names": extra.pop("query_names", {}),
+        "schema_coverage": extra.pop("schema_coverage", "complete"),
+        "fields": fields or [],
+        **extra,
+    }
+
+
 class FakeToolExecutor:
     def __init__(self, *, reject_preview_locator: str = "", mismatched_ancestor_locator: str = ""):
         self.calls = []
@@ -43,28 +58,18 @@ class FakeToolExecutor:
                 "target_locator": self.mismatched_ancestor_locator or arguments["locator"],
                 "ancestors": [{"label": "public", "type": "schema", "locator": "schema-locator"}],
             }
-        if name == "data.preview":
+        if name == "resource.facts.get":
             if arguments["locator"] == self.reject_preview_locator:
-                raise ToolExecutionError("owner_api_error", "preview unavailable")
+                raise ToolExecutionError("owner_api_error", "resource facts unavailable")
             is_document = arguments["locator"].endswith("railway.pdf?type=file&item_id=61")
-            return {
-                "preview_type": "object" if is_document else "table",
-                "metadata": {"locator": arguments["locator"]},
-                "data": {
-                    "item_meta": {
-                        "item_type": "file" if is_document else "table",
-                        "attributes": [
-                            {
-                                "key": "item",
-                                "value": {"data_type": "document" if is_document else "table"},
-                            },
-                        ],
-                    },
-                    "column_metadata": [{"column_name": "shape", "type": "geometry(LineString,32650)", "nullable": True}],
-                    "geometry_column": "shape",
-                    "source_crs": "EPSG:32650",
-                },
-            }
+            return resource_facts(
+                arguments["locator"],
+                data_type="document" if is_document else "table",
+                fields=[{"name": "shape", "type": "geometry(LineString,32650)", "nullable": True}],
+                geometry_column="shape",
+                geometry_type="LineString",
+                crs="EPSG:32650",
+            )
         raise AssertionError(f"unexpected tool {name}")
 
 
@@ -90,6 +95,9 @@ def test_discovery_reuses_owner_tools_and_returns_verified_resource_facts():
         "score": 0.9,
         "ancestors": [{"label": "public", "type": "schema", "locator": "schema-locator"}],
         "data_type": "table",
+        "source_engine_type": "postgresql",
+        "query_names": {},
+        "schema_coverage": "complete",
         "geometry_column": "shape",
         "geometry_type": "LineString",
         "crs": "EPSG:32650",
@@ -102,12 +110,12 @@ def test_discovery_reuses_owner_tools_and_returns_verified_resource_facts():
     assert [name for name, _, _ in executor.calls] == [
         "data.search",
         "resource.ancestors.get",
-        "data.preview",
+        "resource.facts.get",
         "resource.ancestors.get",
-        "data.preview",
+        "resource.facts.get",
         "data.search",
         "resource.ancestors.get",
-        "data.preview",
+        "resource.facts.get",
     ]
 
 
@@ -160,13 +168,8 @@ def test_verify_uses_owner_data_type_for_mongodb_collection():
 
 class ContainerPreviewExecutor:
     async def call(self, name, arguments, **_audit):
-        if name == "resource.ancestors.get":
-            return {"target_locator": arguments["locator"], "ancestors": []}
-        if name == "data.preview":
-            return {
-                "metadata": {"locator": arguments["locator"]},
-                "data": {"item_meta": {"item_type": "database", "attributes": []}},
-            }
+        if name == "resource.facts.get":
+            raise ToolExecutionError("invalid_arguments", "请选择具体数据项")
         raise AssertionError(f"unexpected tool {name}")
 
 
@@ -206,20 +209,8 @@ class MongoDiscoveryExecutor:
             }
         if name == "resource.ancestors.get":
             return {"target_locator": locator, "ancestors": []}
-        if name == "data.preview":
-            return {
-                "preview_type": "table",
-                "metadata": {"locator": locator},
-                "data": {
-                    "item_meta": {
-                        "item_type": "collection",
-                        "attributes": [
-                            {"key": "item", "value": {"data_type": "table"}},
-                        ],
-                    },
-                    "column_metadata": [{"column_name": "_id", "type": "string"}],
-                },
-            }
+        if name == "resource.facts.get":
+            return resource_facts(locator, source_engine_type="mongodb", fields=[{"name": "_id", "type": "string"}], query_names={"mql": "Persons"}, schema_coverage="sampled")
         raise AssertionError(f"unexpected tool {name}")
 
 
@@ -256,21 +247,12 @@ class ScopedMongoDiscoveryExecutor:
                 "type": "database",
                 "children": [{"locator": locator, "label": "Outdoors", "type": "collection"}],
             }
-        if name == "data.preview":
-            return {
-                "metadata": {"locator": locator},
-                "data": {
-                    "item_meta": {
-                        "item_type": "collection",
-                        "attributes": [{"key": "item", "value": {"data_type": "table"}}],
-                    },
-                    "column_metadata": [{"column_name": "members.userInfo.nickName", "type": "string"}],
-                },
-            }
+        if name == "resource.facts.get":
+            return resource_facts(locator, source_engine_type="mongodb", fields=[{"name": "members.userInfo.nickName", "type": "string"}], query_names={"mql": "Outdoors"}, schema_coverage="sampled")
         raise AssertionError(f"unexpected tool {name}")
 
 
-def test_scoped_discovery_lists_direct_children_and_previews_data_items():
+def test_scoped_discovery_lists_direct_children_and_reads_resource_facts():
     executor = ScopedMongoDiscoveryExecutor()
     discovery = ResourceDiscovery("http://gateway", "addp_at_user", executor=executor)
     scope = "addp://engine/11/path/Outdoor?type=database&node_id=276"
@@ -290,7 +272,7 @@ def test_scoped_discovery_lists_direct_children_and_previews_data_items():
         "locator": scope,
     }]
     assert result.candidates[0]["fields"][0]["name"] == "members.userInfo.nickName"
-    assert [name for name, _ in executor.calls] == ["resource.children.list", "data.preview"]
+    assert [name for name, _ in executor.calls] == ["resource.children.list", "resource.facts.get"]
 
 
 def test_discovery_propagates_owner_error_when_no_candidate_can_be_verified():
@@ -305,7 +287,7 @@ def test_discovery_propagates_owner_error_when_no_candidate_can_be_verified():
     except ToolExecutionError as error:
         assert error.code == "owner_api_error"
     else:
-        raise AssertionError("owner preview failure must not be reported as no search result")
+        raise AssertionError("owner resource facts failure must not be reported as no search result")
 
 
 def test_discovery_drops_candidate_when_ancestors_do_not_confirm_search_locator():
@@ -332,9 +314,9 @@ def test_discovery_merges_synonym_searches_by_role_and_locator():
     assert [name for name, _, _ in executor.calls] == [
         "data.search",
         "resource.ancestors.get",
-        "data.preview",
+        "resource.facts.get",
         "resource.ancestors.get",
-        "data.preview",
+        "resource.facts.get",
         "data.search",
     ]
 
@@ -366,24 +348,14 @@ class SameNameAcrossEnginesExecutor:
             }
         if name == "resource.ancestors.get":
             return {"target_locator": arguments["locator"], "ancestors": []}
-        if name == "data.preview":
-            return {
-                "preview_type": "table",
-                "metadata": {"locator": arguments["locator"]},
-                "data": {
-                    "item_meta": {
-                        "item_type": "table",
-                        "attributes": [
-                            {"key": "item", "value": {"data_type": "table"}},
-                        ],
-                    },
-                    "column_metadata": [
-                        {"column_name": "shape", "type": "geometry(Polygon,32650)", "nullable": True}
-                    ],
-                    "geometry_column": "shape",
-                    "source_crs": "EPSG:32650",
-                },
-            }
+        if name == "resource.facts.get":
+            return resource_facts(
+                arguments["locator"],
+                fields=[{"name": "shape", "type": "geometry(Polygon,32650)", "nullable": True}],
+                geometry_column="shape",
+                geometry_type="Polygon",
+                crs="EPSG:32650",
+            )
         raise AssertionError(f"unexpected tool {name}")
 
 

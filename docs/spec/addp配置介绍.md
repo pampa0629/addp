@@ -391,8 +391,6 @@ CONSOLE_URL=http://localhost:5170
 DEVELOP_URL=http://localhost:8185
 # Develop 查询 execution 保存的最大预览行数；实际读取多一行用于判断 truncated。
 QUERY_RESULT_LIMIT=500
-# System 用此控制面地址注册唯一内置 DuckDB Federated Query Runtime；容器环境使用 duckdb-engine:8104。
-DUCKDB_RUNTIME_URL=http://localhost:8104
 # DuckDB Runtime 请求期只加载此目录中的扩展，扩展由开发启动或镜像构建阶段预先准备。
 DUCKDB_EXTENSION_DIRECTORY=.cache/duckdb/extensions
 # 容器 Runtime 访问登记为 loopback 的业务 Engine 时使用；根 Compose 固定为 host.docker.internal，本地二进制留空。

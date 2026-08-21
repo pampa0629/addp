@@ -164,7 +164,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh, DataAnalysis } from '@element-plus/icons-vue'
 import { browseAPI } from '../api/browse'
@@ -180,15 +180,22 @@ import {
   readGraphTheme
 } from '../utils/graphVisualEncoding'
 import { createLatestOperationController } from '../utils/graphOperationController'
+import { useConsolePageDescriptor } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
 
 const route = useRoute()
+const router = useRouter()
 const graphId = computed(() => route.params.id)
 
 // 图谱基本信息
 const graphName = ref('')
+useConsolePageDescriptor(router, 'graph', {
+  title: computed(() => t('graph.browser.recentVisitTitle')),
+  subject: graphName,
+  ready: computed(() => Boolean(graphName.value))
+})
 const stats = ref(null)
 const schema = ref({ node_shapes: [], relationship_shapes: [] })
 

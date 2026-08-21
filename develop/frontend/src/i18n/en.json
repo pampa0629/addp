@@ -592,6 +592,7 @@
       "triggerSchedule": "Scheduled"
     },
     "executionDetail": {
+      "recentVisitTitle": "Development Task Execution",
       "title": "Execution Detail",
       "back": "Back",
       "reExecute": "Re-execute",

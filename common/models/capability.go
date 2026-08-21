@@ -3,7 +3,7 @@ package models
 import "github.com/addp/common/engine/plugin"
 
 // CapabilityRegistrationRequest 能力注册请求。
-// 注意：工作流和脚本运行时通过 common/engine provider 调用，
+// 注意：计算运行时通过 common/engine provider 调用，
 // 注册请求只提交连接信息和 engine.capabilities/v1 能力声明，不提交端点配置。
 // 内置引擎注册时以插件 Capabilities() 为事实源，服务端会忽略请求中的 Capabilities。
 type CapabilityRegistrationRequest struct {

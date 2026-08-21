@@ -138,6 +138,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useConsolePageDescriptor } from '@common-ui'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { assetAPI, catalogAPI } from '../api/asset'
@@ -155,6 +156,11 @@ const assetId = computed(() => route.params.id)
 const loading = ref(false)
 const submitting = ref(false)
 const asset = ref(null)
+useConsolePageDescriptor(router, 'asset', {
+  title: computed(() => t('asset.assetDetail.recentVisitTitle')),
+  subject: computed(() => asset.value?.name || ''),
+  ready: computed(() => !editMode.value && Boolean(asset.value?.name))
+})
 const categoryTree = ref([])
 
 const formRef = ref()

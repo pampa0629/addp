@@ -1,6 +1,8 @@
 package migration
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"io/fs"
 	"strings"
 	"testing"
@@ -12,8 +14,26 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 66 {
-		t.Fatalf("LatestVersion = %d, want 66", catalog.LatestVersion)
+	if catalog.LatestVersion != 68 {
+		t.Fatalf("LatestVersion = %d, want 68", catalog.LatestVersion)
+	}
+}
+
+func TestDuckDBPlatformRuntimeMigrationPublishesRegistrationAuthorization(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000068_iam_duckdb_platform_runtime.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 68: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'platform.duckdb_runtime'",
+		"'system.runtime_registry.update'",
+		"'addp-duckdb'",
+		"INSERT INTO system.role_assignments",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 68 missing %q", fragment)
+		}
 	}
 }
 
@@ -251,11 +271,50 @@ func TestManagerTransferRuntimeMigrationPublishesAuthorization(t *testing.T) {
 		"'tenant.manager_runtime'",
 		"'transfer.task.create'",
 		"'transfer.task.execute'",
-		"'transfer.task.read'",
 		"INSERT INTO system.role_permissions",
 	} {
 		if !strings.Contains(sql, fragment) {
 			t.Fatalf("migration 66 missing %q", fragment)
+		}
+	}
+	if strings.Contains(sql, "'transfer.task.read'") {
+		t.Fatal("migration 66 must not contain the read permission introduced by migration 67")
+	}
+}
+
+func TestManagerTransferReadMigrationPublishesAuthorization(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000067_iam_manager_transfer_read.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 67: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'tenant.manager_runtime'",
+		"'transfer.task.read'",
+		"INSERT INTO system.role_permissions",
+		"ON CONFLICT (role_id, permission_id) DO NOTHING",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 67 missing %q", fragment)
+		}
+	}
+	if strings.Contains(sql, "'transfer.task.create'") || strings.Contains(sql, "'transfer.task.execute'") {
+		t.Fatal("migration 67 must contain only the read permission introduced at version 67")
+	}
+}
+
+func TestManagerTransferMigrationChecksumsRemainImmutable(t *testing.T) {
+	expected := map[string]string{
+		"sql/000066_iam_manager_transfer_runtime.up.sql": "a3fe083cd62b9ab05c75eeed74d0ce0d0233485ce3f819973f12d4eeb66c5d15",
+		"sql/000067_iam_manager_transfer_read.up.sql":    "e57358874ef50612a737e12986b609f73524515b551c3d8c8fc918f141f843f2",
+	}
+	for filename, want := range expected {
+		data, err := fs.ReadFile(EmbeddedSQL, filename)
+		if err != nil {
+			t.Fatalf("read %s: %v", filename, err)
+		}
+		if got := fmt.Sprintf("%x", sha256.Sum256(data)); got != want {
+			t.Fatalf("%s checksum = %s, want %s", filename, got, want)
 		}
 	}
 }

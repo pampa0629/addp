@@ -110,19 +110,26 @@
 </template>
 
 <script setup>
-import { ref, onBeforeUnmount, onMounted } from 'vue'
+import { ref, onBeforeUnmount, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { openMonitorExecution } from '@addp/common-frontend'
 import orchestrationAPI from '../api/orchestration'
 import { navigateOrchestratorRoute } from '@/utils/moduleNavigation'
+import { useConsolePageDescriptor } from '@common-ui'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 
 const executions = ref([])
+const orchestration = ref(null)
+useConsolePageDescriptor(router, 'orchestrator', {
+  title: computed(() => t('orchestrator.executionList.recentVisitTitle')),
+  subject: computed(() => orchestration.value?.name || ''),
+  ready: computed(() => Boolean(orchestration.value?.name))
+})
 const loading = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(20)
@@ -133,6 +140,7 @@ const currentExecution = ref(null)
 let refreshTimer = null
 
 onMounted(() => {
+  orchestrationAPI.get(route.params.id).then(data => { orchestration.value = data }).catch(() => {})
   loadExecutions()
   refreshTimer = window.setInterval(() => loadExecutions(false), 5000)
 })

@@ -98,6 +98,27 @@ func SupportsComputeEntrypoint(resource *models.Engine, entrypoint string) bool 
 	return supportsComputeEntrypoint(cap, entrypoint)
 }
 
+// IsAvailable reports whether an Engine Instance may enter a new business
+// selection. Management views and existing bindings must not use this helper
+// to hide registered instances.
+func IsAvailable(resource *models.Engine) bool {
+	return resource != nil &&
+		resource.LifecycleState == models.EngineLifecycleActive &&
+		resource.ConnectionStatus == models.EngineConnectionOnline
+}
+
+// IsAvailableForComputeEntrypoint applies the single business-candidate rule
+// before matching a compute capability.
+func IsAvailableForComputeEntrypoint(resource *models.Engine, entrypoint string) bool {
+	return IsAvailable(resource) && SupportsComputeEntrypoint(resource, entrypoint)
+}
+
+// IsAvailableStorageEngine applies the single business-candidate rule before
+// matching storage capability.
+func IsAvailableStorageEngine(resource *models.Engine) bool {
+	return IsAvailable(resource) && HasStorageCapability(resource)
+}
+
 // GetSupportedComputeEntrypoints 获取资源支持的计算入口名称，名称由 compute 能力派生。
 func GetSupportedComputeEntrypoints(resource *models.Engine) []string {
 	cap, err := ParseCapabilities(resource.Capabilities)

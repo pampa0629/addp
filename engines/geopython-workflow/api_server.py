@@ -624,17 +624,17 @@ def register_to_system():
     # 读取自身配置
     port = int(os.getenv('PORT', 8099))
     protocol = os.getenv('PROTOCOL', 'http')
+    runtime_host = os.getenv('RUNTIME_HOST', 'localhost').strip()
+    connection_info = {"protocol": protocol, "port": port}
+    if runtime_host:
+        connection_info["host"] = runtime_host
 
     # 构建注册请求
     payload = {
         "engine_type": "geopython_workflow",
         "name": "GeoPython Workflow",
         "description": "基于 Python 地理计算生态的工作流引擎，支持 Pandas、GeoPandas、GDAL/OGR 等能力",
-        "connection_info": {
-            "protocol": protocol,
-            "port": port
-            # host 由 System 自动填充
-        },
+        "connection_info": connection_info,
         "capabilities": {
             "schema_version": "engine.capabilities/v1",
             "engine_type": "geopython_workflow",
@@ -671,27 +671,9 @@ def register_to_system():
 
 
 def register_to_system_with_retry():
-    """
-    后台线程定期重试注册（最多5次，间隔10秒）
-    """
-    import threading
-    import time
+    from addp_common.client import retry_runtime_registration
 
-    max_retries = 5
-    retry_interval = 10
-
-    for attempt in range(1, max_retries + 1):
-        logger.info(f"🔄 Attempting to register to System (attempt {attempt}/{max_retries})")
-
-        if register_to_system():
-            logger.info(f"✅ Registration successful on attempt {attempt}")
-            return
-
-        if attempt < max_retries:
-            logger.info(f"⏳ Waiting {retry_interval}s before retry...")
-            time.sleep(retry_interval)
-
-    logger.error(f"❌ Registration failed after {max_retries} attempts")
+    retry_runtime_registration(register_to_system, "geopython_workflow", logger)
 
 
 # ========================================

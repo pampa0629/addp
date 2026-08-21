@@ -155,6 +155,7 @@
       "loadFailed": "Failed to load service catalog"
     },
     "query": {
+      "recentVisitTitle": "Query Service",
       "listTitle": "Query Services",
       "searchPlaceholder": "Search query services...",
       "createBtn": "+ Create Query Service",
@@ -376,6 +377,7 @@
 	  "snapshotUnknownCRS": "Unknown CRS"
     },
     "published": {
+      "recentVisitTitle": "Data Service",
       "listTitle": "Published Services",
       "searchPlaceholder": "Search published services...",
       "createBtn": "+ Create Service",
@@ -530,6 +532,7 @@
       "requestFailed": "Request failed"
     },
     "registered": {
+      "recentVisitTitle": "Registered Service",
       "listTitle": "Registered Services",
       "searchPlaceholder": "Search registered services...",
       "createBtn": "+ Register External Service",
@@ -625,6 +628,7 @@
       "loadDetailFailed": "Failed to load service details"
     },
     "tile": {
+      "recentVisitTitle": "Tile Service",
       "listTitle": "Tile Services",
       "searchPlaceholder": "Search tile services...",
       "createBtn": "+ Create Tile Service",
@@ -747,6 +751,7 @@
       "tileLoadFailed": "Tile load failed, please check service configuration"
     },
     "graph": {
+      "recentVisitTitle": "Graph Query Service",
       "listTitle": "Graph Query Services",
       "createBtn": "+ Create Graph Query Service",
       "searchPlaceholder": "Search service name, title...",
@@ -869,6 +874,7 @@
       "viewRawGraphData": "View raw graph data (JSON)"
     },
     "serviceDetail": {
+      "recentVisitTitle": "External Service",
       "title": "Service Detail",
       "refreshBtn": "Refresh Metadata",
       "serviceIdLabel": "Service ID",

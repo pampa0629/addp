@@ -165,6 +165,8 @@
 	  "reload": "Reload",
 	  "back": "Back to configuration entries",
 	  "save": "Save",
+	  "saveAll": "Save all",
+	  "pendingChanges": "{count} pending",
 	  "saveSuccess": "Configuration saved",
 	  "saveFailed": "Failed to save configuration",
 	  "versionConflict": "The configuration changed elsewhere and has been reloaded",
@@ -286,12 +288,14 @@
       "transfer": {
         "label": "Data Transfer",
         "tasks": "Transfer Tasks",
-        "executions": "Executions"
+        "executions": "Executions",
+        "recentExecutions": "Transfer Executions"
       },
       "meta": {
         "label": "Metadata",
         "scan": "Metadata Scan",
-        "tasks": "Task Monitor"
+        "tasks": "Task Monitor",
+        "recentTasks": "Metadata Task Monitor"
       },
       "manager": {
         "label": "Data Management",
@@ -319,8 +323,10 @@
         "codeSets": "Code Sets",
         "units": "Units of Measure",
         "classifications": "Classifications",
+        "recentClassifications": "Data Classifications",
         "dimensionHierarchies": "Dimension Hierarchies",
         "metrics": "Metrics",
+        "recentMetrics": "Data Metric Management",
         "documents": "Standard Documents"
       },
       "modeling": {
@@ -336,7 +342,11 @@
         "ruleApplications": "Rule Applications",
         "checkTasks": "Check Tasks",
         "executions": "Executions",
-        "issues": "Issues"
+        "issues": "Issues",
+        "recentRuleApplications": "Quality Rule Applications",
+        "recentCheckTasks": "Quality Check Tasks",
+        "recentExecutions": "Quality Check Executions",
+        "recentIssues": "Data Quality Issues"
       },
       "develop": {
         "label": "Data Development",
@@ -344,7 +354,9 @@
         "notebook": "Notebook",
         "workflow": "Workflow Editor",
         "tasks": "Task Management",
-        "executions": "Execution Monitor"
+        "executions": "Execution Monitor",
+        "recentTasks": "Development Task Management",
+        "recentExecutions": "Development Execution Monitor"
       },
       "service": {
         "label": "Data Services",
@@ -352,19 +364,25 @@
         "tile": "Tile Services",
         "graphServices": "Graph Services",
         "services": "Service Registry",
-        "catalog": "Service Catalog"
+        "catalog": "Service Catalog",
+        "recentCatalog": "Data Service Catalog"
       },
       "orchestrator": {
         "label": "Task Orchestration",
         "orchestrations": "Orchestrations",
-        "executions": "Executions"
+        "executions": "Executions",
+        "recentExecutions": "Orchestration Executions"
       },
       "monitor": {
         "label": "Execution Monitor",
         "dashboard": "Dashboard",
         "executions": "Executions",
         "alerts": "Alerts",
-        "notifications": "Alert Notifications"
+        "notifications": "Alert Notifications",
+        "recentDashboard": "Execution Monitoring Dashboard",
+        "recentExecutions": "Platform Executions",
+        "recentAlerts": "Execution Alerts",
+        "recentNotifications": "Execution Alert Notifications"
       },
       "asset": {
         "label": "Asset Management",
@@ -372,7 +390,10 @@
         "categories": "Categories",
         "assets": "Assets",
         "applications": "Applications",
-        "dashboard": "Dashboard"
+        "dashboard": "Dashboard",
+        "recentCategories": "Asset Catalog Management",
+        "recentApplications": "Asset Approval Management",
+        "recentDashboard": "Asset Operations Dashboard"
       },
       "agent": {
         "label": "AI Agent"
@@ -382,7 +403,8 @@
         "ontologies": "Ontologies",
         "graphs": "Graphs",
         "analysis": "Graph Analysis",
-        "knowledgeService": "Knowledge Service"
+        "knowledgeService": "Knowledge Service",
+        "recentKnowledgeService": "Knowledge Graph Service"
       },
       "inference": {
         "label": "AI Inference",
@@ -393,7 +415,11 @@
         "iam": "Identity & Access",
         "engines": "Engines",
         "applications": "Applications",
-        "cleanup": "Resource Reclaim"
+        "cleanup": "Resource Reclaim",
+        "recentEngines": "Data Engine Management",
+        "recentApplications": "System Application Management",
+        "recentCleanup": "System Resource Reclaim",
+        "recentConfiguration": "Platform Configuration"
       }
     }
   }

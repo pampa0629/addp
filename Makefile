@@ -1,4 +1,4 @@
-.PHONY: help init dev build build-images up down logs clean test test-platform test-online test-online-runner test-go test-agent-frontend test-asset-frontend test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats dev-all \
+.PHONY: help init dev build build-images up down logs clean test test-platform test-engine-startup-isolation test-online test-online-runner test-go test-agent-frontend test-asset-frontend test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats dev-all \
         build-iam-bootstrap build-iam-recovery clean-dist \
         infra-up infra-down infra-restart infra-status ports-validate
 
@@ -319,9 +319,19 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@python3 scripts/ci/check-frontend-ci-registration.py --repository "$(CURDIR)"
 	@python3 scripts/ci/check-t2-ci-registration_test.py
 	@python3 scripts/ci/check-t2-ci-registration.py --repository "$(CURDIR)"
+	@$(MAKE) test-engine-startup-isolation
 	@$(MAKE) test-execution-fixtures
 	@$(MAKE) test-online-runner
 	@$(MAKE) test-authorization
+
+test-engine-startup-isolation: ## 校验模块启动不依赖 Engine Instance 或可选 Engine Runtime
+	@python3 scripts/ci/check-engine-startup-isolation_test.py
+	@python3 scripts/ci/check-engine-startup-isolation.py --repository "$(CURDIR)"
+	@python3 -m py_compile common-python/addp_common/client/runtime_registration.py engines/geopython-workflow/api_server.py engines/spark-workflow/api_server.py engines/model3d-workflow/api_server.py engines/pointcloud-workflow/api_server.py
+	@cd common && go test ./client -run 'TestRegisterRuntimeEngine' -count=1
+	@cd system/backend && go test ./internal/service ./internal/api -run 'Test(UpdateMetadataAndLifecycleDoesNotProbeOfflineEngine|HealthCheckerRetriesOfflineRuntimeUntilItIsReady|HealthCheckerIsolatesOfflineEngineFromOtherInstances|RegisterRuntimeEnginePreservesStableAdvertisedHost)' -count=1
+	@cd engines/duckdb && go test ./cmd/server ./internal/config -count=1
+	@cd inference/backend && go test ./cmd/server ./internal/config -count=1
 
 test-model-frontend: ## 运行 Model 前端状态、交互与浏览器回归测试
 	@cd model/frontend && npm test

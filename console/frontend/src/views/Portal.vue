@@ -145,6 +145,7 @@ import PortalIframe from '../components/portal/PortalIframe.vue'
 import ApiDocs from './ApiDocs.vue'
 import ConfigurationManagement from './ConfigurationManagement.vue'
 import { consoleRouteModule, isSynchronizedIframeRoute, splitConsoleRoute } from '../utils/consoleNavigation'
+import { buildRecentVisitEntry, prependRecentVisit } from '../utils/recentVisits'
 
 const router = useRouter()
 const route = useRoute()
@@ -263,6 +264,9 @@ const handleConsoleNavigationBridge = async (payload = {}, _message, event) => {
   await nextTick()
   if (synchronizedIframeModule === targetModule) {
     synchronizedIframeModule = ''
+  }
+  if (payload.pageDescriptor && targetModule) {
+    recordRecentVisit(targetModule, resolvedRoute, payload.pageDescriptor)
   }
   return { route: resolvedRoute, history }
 }
@@ -402,8 +406,8 @@ function syncRouteToPortal(fullPath) {
     console.error('[Console] Module URL not found for:', module)
   }
 
-  // 记录最近访问
-  recordRecentVisit(module, pagePath)
+  // 固定菜单页自动记录；动态页面等待所属模块发布页面描述。
+  recordRecentVisit(module, fullPath)
 }
 
 watch(
@@ -412,23 +416,14 @@ watch(
   { immediate: true }
 )
 
-const RECENT_KEY = 'addp_recent_visits'
-function recordRecentVisit(module, page) {
+const RECENT_KEY = 'addp_recent_visits_v2'
+function recordRecentVisit(module, fullPath, descriptor = null) {
   const menuConfig = SIDEBAR_MENUS[module]
-  if (!menuConfig) return
-  const route = page ? `/${module}/${page}` : `/${module}`
-  let label = menuConfig.label
-  if (page && menuConfig.items) {
-    const item = menuConfig.items.find(i => i.index === route)
-    if (item) label = item.label
-  }
-  const entry = { key: route, route, label, module, icon: module }
+  const entry = buildRecentVisitEntry({ module, fullPath, menuConfig, descriptor })
+  if (!entry) return
   try {
     const raw = localStorage.getItem(RECENT_KEY)
-    let list = raw ? JSON.parse(raw) : []
-    list = list.filter(i => i.key !== entry.key)
-    list.unshift(entry)
-    list = list.slice(0, 5)
+    const list = prependRecentVisit(raw ? JSON.parse(raw) : [], entry)
     localStorage.setItem(RECENT_KEY, JSON.stringify(list))
   } catch { /* ignore */ }
 }

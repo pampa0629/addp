@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
+	engineselection "github.com/addp/common/engine/selection"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/transfer/internal/service"
@@ -22,7 +23,7 @@ func NewSystemEngineHandler(systemClient *commonClient.SystemClient) *SystemEngi
 
 // List returns system engines visible to the current tenant.
 // @Summary 列出系统引擎 | List system engines
-// @Description 返回当前租户可见且启用的 System 引擎，用于 Transfer 任务选择 | Returns active System engines visible to the current tenant for Transfer task configuration
+// @Description 返回当前租户可见、active、online 且具备存储能力的 System 引擎，用于 Transfer 任务选择 | Returns visible, active, online, storage-capable System engines for Transfer task configuration
 // @Tags 系统引擎 | System Engines
 // @Produce json
 // @Param engine_type query string false "引擎类型 | Engine type"
@@ -53,7 +54,7 @@ func (h *SystemEngineHandler) List(c *gin.Context) {
 		if engine.TenantID != nil && *engine.TenantID != 0 && *engine.TenantID != tenantID {
 			continue
 		}
-		if !engine.IsUsable() {
+		if !engineselection.IsAvailableStorageEngine(&engine) {
 			continue
 		}
 		sanitizeEngineConnectionInfo(&engine)

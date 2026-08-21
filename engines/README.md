@@ -141,7 +141,7 @@ GET /health
 
 ## 引擎注册
 
-工作流运行时必须先注册到 System 资源中心，才会成为 ADDP 可发现和可调用的引擎实例。生产内置运行时可以在启动时自注册；参考实现和用户自研扩展运行时可以在 System 引擎管理中手动注册。
+工作流运行时注册到 System 资源中心后，才会成为 ADDP 可发现和可调用的引擎实例。生产内置运行时在自身监听就绪后异步自注册；System 未就绪时持续进行有上限的退避重试，注册过程不阻塞 Runtime readiness。参考实现和用户自研扩展运行时可以在 System 引擎管理中手动注册。
 
 **生产内置运行时自注册端点**: `POST http://system-backend:8180/api/v1/system/runtime/engines`
 
@@ -155,13 +155,16 @@ Runtime 使用自身 Confidential OAuth Client 获取 Platform Service Access To
   "description": "基于 Python 的工作流执行引擎",
   "connection_info": {
     "protocol": "http",
+    "host": "geopython-workflow-engine",
     "port": 8099
   },
   "is_builtin": true
 }
 ```
 
-Math Workflow 是参考实现，随 `scripts/dev/start.sh -all` / `-develop` 启动服务，但不会自动注册。需要使用时，在 System 引擎管理中使用扩展引擎注册表单填入示例值、测试连接并保存。
+容器 Runtime 必须通过 `host` 声明稳定、可从其他 ADDP 服务访问的服务名；本地 Runtime 未声明时由 System 根据请求来源规范化为 `localhost`。不得把临时容器 IP 保存为 Engine Instance 身份。
+
+Math Workflow 是参考实现，随无参数全量启动运行服务，但不会随 `-develop` 隐式启动，也不会自动注册。需要使用时，显式执行 `scripts/dev/start.sh -math-workflow`，再在 System 引擎管理中使用扩展引擎注册表单填入示例值、测试连接并保存。
 
 ## 新增独立 Runtime checklist
 

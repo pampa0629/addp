@@ -32,7 +32,7 @@ from .module_registry import (
     ModuleRegistration,
     ModuleRegistryClient,
 )
-from .runtime_registration import register_runtime_engine
+from .runtime_registration import register_runtime_engine, retry_runtime_registration
 
 __all__ = [
     "BaseClient",
@@ -62,4 +62,5 @@ __all__ = [
     "ModuleRegistration",
     "ModuleRegistryClient",
     "register_runtime_engine",
+    "retry_runtime_registration",
 ]

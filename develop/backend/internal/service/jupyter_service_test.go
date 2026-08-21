@@ -136,7 +136,7 @@ func TestJupyterServiceOpenInteractiveSessionUsesStandardControlPlane(t *testing
 	}
 }
 
-func TestJupyterServiceListQueryEnginesReturnsOnlyActiveQueryDescriptors(t *testing.T) {
+func TestJupyterServiceListQueryEnginesReturnsOnlyAvailableQueryDescriptors(t *testing.T) {
 	queryCapabilitiesJSON, err := dbbridge.GenerateCapabilities("postgresql")
 	if err != nil {
 		t.Fatal(err)
@@ -153,11 +153,12 @@ func TestJupyterServiceListQueryEnginesReturnsOnlyActiveQueryDescriptors(t *test
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []commonModels.EngineRuntimeDescriptor{
-				{ID: 21, Name: "PostgreSQL", EngineType: "postgresql", LifecycleState: commonModels.EngineLifecycleActive, Capabilities: &queryCapabilities},
-				{ID: 22, Name: "Disabled PostgreSQL", EngineType: "postgresql", LifecycleState: commonModels.EngineLifecycleDisabled, Capabilities: &queryCapabilities},
-				{ID: 23, Name: "Jupyter", EngineType: "jupyter", LifecycleState: commonModels.EngineLifecycleActive, Capabilities: &notebookCapabilities},
+				{ID: 21, Name: "PostgreSQL", EngineType: "postgresql", LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline, Capabilities: &queryCapabilities},
+				{ID: 22, Name: "Disabled PostgreSQL", EngineType: "postgresql", LifecycleState: commonModels.EngineLifecycleDisabled, ConnectionStatus: commonModels.EngineConnectionOnline, Capabilities: &queryCapabilities},
+				{ID: 23, Name: "Jupyter", EngineType: "jupyter", LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline, Capabilities: &notebookCapabilities},
+				{ID: 24, Name: "Offline PostgreSQL", EngineType: "postgresql", LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOffline, Capabilities: &queryCapabilities},
 			},
-			"total": 3, "page": 1, "page_size": 100,
+			"total": 4, "page": 1, "page_size": 100,
 		})
 	}))
 	t.Cleanup(systemServer.Close)
@@ -193,7 +194,7 @@ func TestValidateNotebookEngineDescriptorRejectsScriptEngineWithoutNotebookMode(
 	}`)
 	err := validateNotebookEngineDescriptor(&commonModels.EngineRuntimeDescriptor{
 		ID: 11, EngineType: "custom_script", LifecycleState: commonModels.EngineLifecycleActive,
-		Capabilities: &capabilities,
+		ConnectionStatus: commonModels.EngineConnectionOnline, Capabilities: &capabilities,
 	})
 	if err == nil {
 		t.Fatal("expected non-notebook Script Engine to be rejected")
@@ -224,7 +225,7 @@ func newJupyterServiceForRuntimeTest(t *testing.T, runtimeURL string) *JupyterSe
 		}
 		_ = json.NewEncoder(w).Encode(commonModels.EngineRuntimeDescriptor{
 			ID: 10, Name: "Jupyter Engine", EngineType: "jupyter",
-			LifecycleState: commonModels.EngineLifecycleActive, Capabilities: &capabilities,
+			LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline, Capabilities: &capabilities,
 			RuntimeEndpoint: &commonModels.EngineRuntimeEndpoint{
 				Protocol: parsed.Scheme, Host: parsed.Hostname(), Port: port,
 			},

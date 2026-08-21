@@ -99,7 +99,7 @@ func FilterQueryEngineDescriptors(descriptors []commonModels.EngineRuntimeDescri
 	filtered := make([]commonModels.EngineRuntimeDescriptor, 0, len(descriptors))
 	for index := range descriptors {
 		descriptor := &descriptors[index]
-		if descriptor.LifecycleState == commonModels.EngineLifecycleActive && engineselection.SupportsComputeEntrypoint(descriptor.AsEngine(), "query") {
+		if engineselection.IsAvailableForComputeEntrypoint(descriptor.AsEngine(), "query") {
 			filtered = append(filtered, *descriptor)
 		}
 	}
@@ -332,8 +332,8 @@ func validateNotebookEngineDescriptor(descriptor *commonModels.EngineRuntimeDesc
 	if descriptor == nil {
 		return fmt.Errorf("notebook engine descriptor is required")
 	}
-	if descriptor.LifecycleState != commonModels.EngineLifecycleActive {
-		return fmt.Errorf("notebook engine %d is not active", descriptor.ID)
+	if !engineselection.IsAvailable(descriptor.AsEngine()) {
+		return fmt.Errorf("notebook engine %d is unavailable", descriptor.ID)
 	}
 	capabilities, err := engineselection.ParseCapabilities(descriptor.Capabilities)
 	if err != nil {

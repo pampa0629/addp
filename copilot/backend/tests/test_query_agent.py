@@ -24,24 +24,16 @@ class FakeExecutor:
                     "compute": {"query": {"supported": True, "languages": ["sql"]}}
                 },
             }]
-        if name == "resource.ancestors.get":
-            return {"target_locator": arguments["locator"], "ancestors": []}
-        if name == "data.preview":
+        if name == "resource.facts.get":
             return {
-                "metadata": {"locator": arguments["locator"]},
-                "data": {
-                    "item_meta": {
-                        "item_type": "table",
-                        "attributes": [
-                            {"key": "item", "value": {"data_type": "table"}},
-                        ],
-                    },
-                    "column_metadata": [
-                        {"column_name": "shape", "type": "geometry(LineString,32650)"}
-                    ],
-                    "geometry_column": "shape",
-                    "source_crs": "EPSG:32650",
-                },
+                "locator": arguments["locator"],
+                "engine_id": int(arguments["locator"].split("/engine/", 1)[1].split("/", 1)[0]),
+                "data_type": "table",
+                "source_engine_type": "postgresql",
+                "fields": [{"name": "shape", "type": "geometry(LineString,32650)"}],
+                "geometry_column": "shape",
+                "geometry_type": "LineString",
+                "crs": "EPSG:32650",
             }
         raise AssertionError(name)
 
@@ -84,8 +76,7 @@ def test_query_generation_uses_only_current_engine_and_verified_resource(monkeyp
     assert response.query_parameters == []
     assert [name for name, _ in executor.calls] == [
         "engine.list",
-        "resource.ancestors.get",
-        "data.preview",
+        "resource.facts.get",
     ]
 
 

@@ -2,13 +2,13 @@
   <div class="build-manager">
     <div class="page-header">
       <h2>{{ t('graph.build.title') }}</h2>
-      <el-button type="primary" @click="showCreateDialog = true">+ {{ t('graph.build.newTask') }}</el-button>
+      <el-button type="primary" @click="showCreateDialog = true">{{ t('graph.build.createTask') }}</el-button>
     </div>
 
     <div v-if="loading" class="loading-wrap"><el-icon class="is-loading"><Loading /></el-icon></div>
 
     <div v-else-if="tasks.length === 0" class="empty-tip">
-      <el-empty :description="t('graph.build.emptyTip')" />
+      <el-empty :description="t('graph.build.noTasks')" />
     </div>
 
     <div v-else class="task-list">
@@ -19,9 +19,9 @@
         </div>
         <div v-if="task.description" class="task-desc">{{ task.description }}</div>
         <div class="task-stats" v-if="task.stats && task.stats.total_materials">
-          <span>{{ t('graph.build.statMaterials') }} {{ task.stats.total_materials }}</span>
-          <span>{{ t('graph.build.statAutoWritten') }} {{ task.stats.auto_written }}</span>
-          <span>{{ t('graph.build.statPendingReview') }} {{ task.stats.pending_review }}</span>
+          <span>{{ t('graph.build.materials') }} {{ task.stats.total_materials }}</span>
+          <span>{{ t('graph.build.autoWritten') }} {{ task.stats.auto_written }}</span>
+          <span>{{ t('graph.build.pendingReview') }} {{ task.stats.pending_review }}</span>
         </div>
         <div class="task-footer">
           <span class="task-date">{{ formatDate(task.created_at) }}</span>
@@ -30,7 +30,7 @@
             <el-button v-if="task.status === 'running'" size="small" type="warning" @click="handleCancel(task)">{{ t('graph.build.cancel') }}</el-button>
             <el-button v-if="task.status === 'success' || task.status === 'cancelled'" size="small" type="primary" plain @click="handleRerun(task)">{{ t('graph.build.rerun') }}</el-button>
             <el-button size="small" @click="goReview(task)">
-              {{ t('graph.build.review') }}
+              {{ t('graph.build.reviewBtn') }}
               <el-badge v-if="pendingCounts[task.id]" :value="pendingCounts[task.id]" class="review-badge" />
             </el-button>
             <el-button size="small" type="danger" @click="handleDelete(task.id)">{{ t('graph.common.delete') }}</el-button>
@@ -40,7 +40,7 @@
     </div>
 
     <!-- 新建任务弹窗 -->
-    <el-dialog v-model="showCreateDialog" :title="t('graph.build.createDialogTitle')" width="480px">
+    <el-dialog v-model="showCreateDialog" :title="t('graph.build.createTaskTitle')" width="480px">
       <el-form :model="createForm" label-width="120px" @submit.prevent>
         <el-form-item :label="t('graph.build.taskName')" required>
           <el-input v-model="createForm.name" :placeholder="t('graph.build.taskNamePlaceholder')" />
@@ -77,18 +77,24 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { buildAPI } from '../api/graphBuild'
 import { useI18n } from 'vue-i18n'
 import { navigateGraphRoute } from '@/utils/moduleNavigation'
+import { useKnowledgeGraphPageDescriptor } from '../composables/useKnowledgeGraphPageDescriptor'
 
 const { t } = useI18n()
 
 const props = defineProps({ graphId: { type: [String, Number], required: true } })
 const router = useRouter()
+useKnowledgeGraphPageDescriptor(
+  router,
+  computed(() => props.graphId),
+  computed(() => t('graph.build.title'))
+)
 
 const tasks = ref([])
 const loading = ref(false)
@@ -174,7 +180,7 @@ async function handleRerun(task) {
 }
 
 async function handleDelete(taskId) {
-  await ElMessageBox.confirm(t('graph.build.confirmDelete'), t('graph.common.confirmDelete'), { type: 'warning' })
+  await ElMessageBox.confirm(t('graph.build.confirmDeleteTask'), t('graph.common.confirmDelete'), { type: 'warning' })
   try {
     await buildAPI.deleteTask(props.graphId, taskId)
     ElMessage.success(t('graph.common.deleteSuccess'))

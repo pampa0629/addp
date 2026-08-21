@@ -54,6 +54,12 @@ var toolAuthorizations = map[string]commonauth.ToolAuthorization{
 		RequiredScopes:      []string{"resource.children.list"},
 		RequiredPermissions: []string{"meta.catalog.read"},
 	},
+	"resource.facts.get": {
+		Name:                "resource.facts.get",
+		Owner:               "manager",
+		RequiredScopes:      []string{"resource.facts.get"},
+		RequiredPermissions: []string{"manager.data_item.read"},
+	},
 	"transfer.draft.generate": {
 		Name:                "transfer.draft.generate",
 		Owner:               "copilot",

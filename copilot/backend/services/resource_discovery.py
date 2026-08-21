@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
-from addp_common.tools import ToolExecutionError, ToolExecutor, preview_resource_fact
+from addp_common.tools import ToolExecutionError, ToolExecutor
 from chains.resource_intent_chain import ResourceIntent
 from addp_common.resources import ResourceFact
 
@@ -90,29 +90,35 @@ class ResourceDiscovery:
                                 agent_run_id=self.agent_run_id,
                                 tool_call_id=f"resource-ancestors-{uuid4()}",
                             )
-                            preview = await self.executor.call(
-                                "data.preview",
-                                {"locator": locator, "limit": 5},
+                            facts = await self.executor.call(
+                                "resource.facts.get",
+                                {"locator": locator},
                                 agent_run_id=self.agent_run_id,
-                                tool_call_id=f"data-preview-{uuid4()}",
+                                tool_call_id=f"resource-facts-{uuid4()}",
                             )
                         except ToolExecutionError as error:
                             verification_errors.append(error)
                             verified[locator] = None
                             continue
-                        verified[locator] = (ancestors, preview)
+                        verified[locator] = (ancestors, facts)
 
                     verification = verified[locator]
                     if verification is None:
                         continue
-                    ancestors, preview = verification
+                    ancestors, facts = verification
                     if not _ancestors_confirm_locator(ancestors, locator):
                         continue
-                    fact = _resource_fact(preview, locator)
+                    fact = _resource_fact(facts, locator)
                     if not fact:
                         verification_errors.append(ToolExecutionError(
                             "invalid_owner_response",
-                            "数据预览未返回规范化资源事实",
+                            "资源事实接口未返回规范化资源事实",
+                        ))
+                        continue
+                    if fact["engine_id"] != hit_engine_id:
+                        verification_errors.append(ToolExecutionError(
+                            "invalid_owner_response",
+                            "资源事实接口返回的 engine_id 与搜索结果不一致",
                         ))
                         continue
                     if allowed_data_types and fact["data_type"] not in allowed_data_types:
@@ -172,7 +178,7 @@ class ResourceDiscovery:
         allowed_data_types: set[str] | frozenset[str] | None = None,
         source_engine_types: set[str] | frozenset[str] | None = None,
     ) -> ResourceDiscoveryResult:
-        """枚举 Owner 已确认 scope 的直接子资源，并用 preview 收敛候选事实。"""
+        """枚举 Owner 已确认 scope 的直接子资源，并收敛候选资源事实。"""
         scope = await self.executor.call(
             "resource.children.list",
             {"engine_id": engine_id, "parent_locator": scope_locator},
@@ -199,17 +205,23 @@ class ResourceDiscovery:
             if not locator:
                 continue
             try:
-                preview = await self.executor.call(
-                    "data.preview",
-                    {"locator": locator, "limit": 5},
+                facts = await self.executor.call(
+                    "resource.facts.get",
+                    {"locator": locator},
                     agent_run_id=self.agent_run_id,
-                    tool_call_id=f"data-preview-{uuid4()}",
+                    tool_call_id=f"resource-facts-{uuid4()}",
                 )
             except ToolExecutionError as error:
                 verification_errors.append(error)
                 continue
-            fact = _resource_fact(preview, locator)
+            fact = _resource_fact(facts, locator)
             if not fact:
+                continue
+            if fact["engine_id"] != engine_id:
+                verification_errors.append(ToolExecutionError(
+                    "invalid_owner_response",
+                    "资源事实接口返回的 engine_id 与限定范围不一致",
+                ))
                 continue
             if allowed_data_types and fact["data_type"] not in allowed_data_types:
                 continue
@@ -297,30 +309,17 @@ class ResourceDiscovery:
             resolved_engine_id = engine_id or resource.engine_id
             if resolved_engine_id is None or resolved_engine_id <= 0:
                 raise ToolExecutionError("invalid_arguments", "资源事实缺少有效 engine_id")
-            ancestors = await self.executor.call(
-                "resource.ancestors.get",
-                {"engine_id": resolved_engine_id, "locator": resource.locator},
+            facts = await self.executor.call(
+                "resource.facts.get",
+                {"locator": resource.locator},
                 agent_run_id=self.agent_run_id,
-                tool_call_id=f"resource-ancestors-{uuid4()}",
+                tool_call_id=f"resource-facts-{uuid4()}",
             )
-            preview = await self.executor.call(
-                "data.preview",
-                {"locator": resource.locator, "limit": 5},
-                agent_run_id=self.agent_run_id,
-                tool_call_id=f"data-preview-{uuid4()}",
-            )
-            if not _ancestors_confirm_locator(ancestors, resource.locator):
-                raise ToolExecutionError("invalid_owner_response", "Meta 未确认资源 locator")
-            preview_fact = preview_resource_fact(preview)
-            if (
-                preview_fact is not None
-                and preview_fact.get("locator") == resource.locator
-                and not preview_fact.get("data_type")
-            ):
-                raise ToolExecutionError("invalid_arguments", "请选择具体可查询的数据项，不能使用数据库或目录容器")
-            fact = _resource_fact(preview, resource.locator)
+            fact = _resource_fact(facts, resource.locator)
             if not fact:
-                raise ToolExecutionError("invalid_owner_response", "数据预览未返回可用资源事实")
+                raise ToolExecutionError("invalid_owner_response", "资源事实接口未返回可用资源事实")
+            if fact["engine_id"] != resolved_engine_id:
+                raise ToolExecutionError("invalid_owner_response", "资源事实接口返回的 engine_id 与资源不一致")
             verified_type = fact["data_type"]
             if allowed_data_types and verified_type not in allowed_data_types:
                 raise ToolExecutionError("invalid_arguments", "资源类型不符合当前场景约束")
@@ -343,20 +342,26 @@ class ResourceDiscovery:
         return verified
 
 
-def _resource_fact(preview: dict[str, Any], locator: str) -> dict[str, Any] | None:
-    preview_fact = preview_resource_fact(preview)
-    if preview_fact is None or preview_fact["locator"] != locator or not preview_fact.get("data_type"):
+def _resource_fact(facts: dict[str, Any], locator: str) -> dict[str, Any] | None:
+    if (
+        not isinstance(facts, dict)
+        or facts.get("locator") != locator
+        or not isinstance(facts.get("engine_id"), int)
+        or facts["engine_id"] <= 0
+        or not facts.get("data_type")
+    ):
         return None
     return {
-        "data_type": preview_fact["data_type"],
-        "source_engine_type": preview_fact.get("engine_type") or preview_fact.get("source_engine_type"),
-        "full_name": preview_fact.get("full_name"),
-        "query_names": preview_fact.get("query_names") or {},
-        "schema_coverage": preview_fact.get("schema_coverage") or "unknown",
-        "geometry_column": preview_fact.get("geometry_column"),
-        "geometry_type": preview_fact.get("geometry_type"),
-        "crs": preview_fact.get("source_crs"),
-        "fields": preview_fact.get("fields", [])[:200],
+        "engine_id": facts["engine_id"],
+        "data_type": facts["data_type"],
+        "source_engine_type": facts.get("source_engine_type"),
+        "full_name": facts.get("full_name"),
+        "query_names": facts.get("query_names") or {},
+        "schema_coverage": facts.get("schema_coverage") or "unknown",
+        "geometry_column": facts.get("geometry_column"),
+        "geometry_type": facts.get("geometry_type"),
+        "crs": facts.get("crs"),
+        "fields": facts.get("fields", [])[:200],
     }
 
 

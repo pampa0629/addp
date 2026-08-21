@@ -143,12 +143,18 @@ import { buildAPI } from '../api/graphBuild'
 import { useI18n } from 'vue-i18n'
 import { resolveCanonicalTabRouteState } from '@common-ui'
 import { navigateGraphRoute } from '@/utils/moduleNavigation'
+import { useKnowledgeGraphPageDescriptor } from '../composables/useKnowledgeGraphPageDescriptor'
 
 const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
 const graphId = route.params.id
+useKnowledgeGraphPageDescriptor(
+  router,
+  computed(() => graphId),
+  computed(() => t('graph.review.recentVisitTitle'))
+)
 
 const items = ref([])
 const loading = ref(false)

@@ -89,6 +89,7 @@
       "loadFailed": "加载业务域失败"
     },
     "glossary": {
+      "recentVisitTitle": "业务术语",
       "title": "业务术语词典",
       "create": "新建术语",
       "createTitle": "新建业务术语",
@@ -118,6 +119,7 @@
       "confirmAdd": "确认添加"
     },
     "element": {
+      "recentVisitTitle": "数据元",
       "title": "数据元管理",
       "create": "新建数据元",
       "createTitle": "新建数据元",
@@ -180,6 +182,8 @@
       "basicInfo": "基本信息"
     },
     "codeSet": {
+      "recentVisitTitle": "码值集",
+      "detailTitle": "码值集详情",
       "title": "码值集管理",
       "create": "新建码值集",
       "createTitle": "新建码值集",
@@ -248,6 +252,7 @@
       "confirmDelete": "确认删除数据分类「{name}」？"
     },
     "metric": {
+      "recentVisitTitle": "数据指标",
       "title": "指标管理",
       "create": "新增指标",
       "createTitle": "新增指标",
@@ -290,6 +295,8 @@
       "basicInfo": "基本信息"
     },
     "document": {
+      "recentVisitTitle": "标准文档",
+      "detailTitle": "标准文档详情",
       "title": "全局文档库",
       "subtitle": "集中查看所有已录入的标准文档。如需关联到具体标准项，请前往对应标准项的详情页操作。",
       "create": "录入文档",
@@ -368,6 +375,8 @@
       "fileExceedWarning": "只能上传一个文件"
     },
     "dimHierarchy": {
+      "recentVisitTitle": "维度层级",
+      "detailTitle": "维度层级详情",
       "title": "维度层级",
       "create": "新建维度层级",
       "createTitle": "新建维度层级",

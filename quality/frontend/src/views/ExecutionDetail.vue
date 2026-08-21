@@ -78,6 +78,7 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useConsolePageDescriptor } from '@common-ui'
 import { executionAPI } from '../api/quality'
 import { useI18n } from 'vue-i18n'
 import { navigateQualityRoute } from '../utils/moduleNavigation'
@@ -88,6 +89,11 @@ const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const execution = ref(null)
+useConsolePageDescriptor(router, 'quality', {
+  title: computed(() => t('quality.execution.recentVisitTitle')),
+  subject: computed(() => execution.value?.task_name || execution.value?.execution_id || ''),
+  ready: computed(() => Boolean(execution.value?.execution_id))
+})
 const loading = ref(false)
 const loadError = ref('')
 let pollTimer = null

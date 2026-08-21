@@ -154,7 +154,7 @@ Copilot Permission 只授予“生成候选结果”，不授予候选查询、W
 
 1. **接收工作台上下文**：自然语言、当前 `engine_id`、当前 `query_language`、可选资源事实和可选 `current_query`；`current_query` 只表示编辑器已有候选文本，不表示资源身份，也不接收客户端身份字段
 2. **验证当前引擎**：通过共享 `engine.list` Tool 确认当前用户可访问该引擎，查询语言必须属于其 `compute.query` capability
-3. **限定资源发现**：已有具体 data item locator 时直接校验；Develop 在 MongoDB database 上下文中必须把已有 MQL 的主 collection 和 `$lookup/$graphLookup/$unionWith` 引用解析为当前 database 下的具体 collection locator 后提交；编辑器为空时提交独立的 `resource_scope_locator`，执行 `resource.children.list → data.preview`；没有明确 Catalog 范围时才调用带当前 `engine_id` 的 `data.search → resource.ancestors.get → data.preview`
+3. **限定资源发现**：已有具体 data item locator 时通过 `resource.facts.get` 直接校验；Develop 在 MongoDB database 上下文中必须把已有 MQL 的主 collection 和 `$lookup/$graphLookup/$unionWith` 引用解析为当前 database 下的具体 collection locator 后提交；编辑器为空时提交独立的 `resource_scope_locator`，执行 `resource.children.list → resource.facts.get`；没有明确 Catalog 范围时才调用带当前 `engine_id` 的 `data.search → resource.facts.get`
 4. **确认歧义**：同一输入角色多个候选时返回全部候选，用户每个角色选择一个
 5. **调用 Inference Runtime**：使用 `query_generation` 场景绑定的 Model Profile；资源解析统一使用 `resource_resolution`
 6. **生成与校验候选**：先生成结构化 Query Plan；Plan 的 `collections`、`field_paths`、`operations`、`result_keys`、`assumptions` 固定为字符串数组，`collections` 必须使用资源事实提供的规范查询名，`operations` 只能使用平台枚举。Plan 解析或校验失败时最多受限修复一次；Plan 通过后，再只使用已验证 collection、可查询字段路径、几何列、CRS、引擎 capability 和允许的 `current_query` 内容生成候选，并校验只读命令、collection、字段路径、参数引用/定义一致性和计划覆盖；MQL 还必须拒绝记录键枚举等绕过字段事实的动态取值。候选失败时最多受限重生成一次
@@ -164,7 +164,7 @@ Copilot Permission 只授予“生成候选结果”，不授予候选查询、W
 
 ### Workflow Agent 工作流程
 
-1. **接收用户请求**：通过 `common-python` 调用 System AuthContext 验证 ADDP 用户访问令牌，取得权威用户和租户；Develop 普通用户首次请求缺少 `resources[]` 时，Copilot 先理解独立输入数据意图，再通过共享 ToolExecutor 对每个输入执行 `data.search → resource.ancestors.get → data.preview` 并返回候选；某个角色首轮零召回时只为该角色生成未尝试的新检索词并补充搜索一次；LLM 只对已验证候选排序和标记推荐项，不删除仍然合理的候选；同一输入角色存在多个候选时由用户选择一个；Agent/确认后的请求直接携带 owner Tool 已验证的 resources
+1. **接收用户请求**：通过 `common-python` 调用 System AuthContext 验证 ADDP 用户访问令牌，取得权威用户和租户；Develop 普通用户首次请求缺少 `resources[]` 时，Copilot 先理解独立输入数据意图，再通过共享 ToolExecutor 对每个输入执行 `data.search → resource.ancestors.get → resource.facts.get` 并返回候选；某个角色首轮零召回时只为该角色生成未尝试的新检索词并补充搜索一次；LLM 只对已验证候选排序和标记推荐项，不删除仍然合理的候选；同一输入角色存在多个候选时由用户选择一个；Agent/确认后的请求直接携带 owner Tool 已验证的 resources
 2. **生成工作流**：`WorkflowService` 通过 `OperatorCatalogService` 读取当前 Runtime 的 Public Operator Spec，完成算子筛选、DAG 生成、验证和有限自动修复
 3. **返回结果**：workflow DAG、解释、资源事实和验证结果；不保存 Copilot 对话记忆
 

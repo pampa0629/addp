@@ -135,6 +135,7 @@
       "deleteFailed": "Delete failed"
     },
     "execution": {
+      "recentVisitTitle": "Quality Check Execution",
       "title": "Executions",
       "executionId": "Execution ID",
       "taskName": "Task Name",
@@ -195,6 +196,7 @@
       "filteredEmpty": "No executions match the filter"
     },
     "issue": {
+      "recentVisitTitle": "Data Quality Issue",
       "title": "Issues",
       "statusFilter": "Status",
       "engineFilter": "Engine",

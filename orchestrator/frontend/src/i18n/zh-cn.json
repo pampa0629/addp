@@ -51,6 +51,7 @@
       "deleteFailed": "删除失败"
     },
     "orchestrationForm": {
+      "recentVisitTitle": "编排任务",
       "createTitle": "创建编排",
       "statusLabel": "编排状态",
       "editTitle": "编辑编排",
@@ -90,6 +91,7 @@
       "jsonDownloaded": "JSON 已下载"
     },
     "executionList": {
+      "recentVisitTitle": "编排执行历史",
       "title": "执行记录",
       "backBtn": "返回",
       "colExecutionId": "执行ID",

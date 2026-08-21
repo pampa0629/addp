@@ -92,6 +92,7 @@ Manifest 不保存第二套 HTTP 路径事实。ToolExecutor 通过 Python SDK �
 | `data.search` | Manager | `manager.search.execute` | read | none | locator | 128 KiB |
 | `resource.children.list` | Meta | `meta.catalog.read` | read | none | locator | 512 KiB |
 | `resource.ancestors.get` | Meta | `meta.catalog.read` | read | none | locator | 128 KiB |
+| `resource.facts.get` | Manager | `manager.data_item.read` | read | none | locator | 128 KiB |
 | `data.preview` | Manager | `manager.data_item.read` | read | none | locator | 256 KiB |
 | `workflow.operators.list` | Develop | `develop.task.read` | read | none | none | 512 KiB |
 | `workflow.draft.generate` | Copilot | `copilot.workflow.execute` | propose | none | none | 256 KiB |
@@ -138,17 +139,23 @@ Tool 不同步等待长任务完成。标准路径为 owner 创建 execution，T
 
 ### 4.4 `resource.children.list`
 
-`resource.children.list` 接收 `engine_id + parent_locator`，由 Meta 按当前 Tenant 和 Catalog 事实校验父资源，并返回父资源及其直接子资源的标准资源树投影。它只表达已限定容器内的候选枚举，不递归展开、不接受客户端拼接路径，也不替代 `data.preview` 的具体数据项事实确认。
+`resource.children.list` 接收 `engine_id + parent_locator`，由 Meta 按当前 Tenant 和 Catalog 事实校验父资源，并返回父资源及其直接子资源的标准资源树投影。它只表达已限定容器内的候选枚举，不递归展开、不接受客户端拼接路径，也不替代 `resource.facts.get` 的具体数据项事实确认。
 
-该 Tool 用于调用方已有明确 Catalog 范围、但尚未确定具体 data item 的场景。父容器 locator 是 discovery scope，不是输入资源或执行目标；具体子资源必须继续通过 owner preview 校验后，才能进入生成类 Tool 的 `resources[]`。
+该 Tool 用于调用方已有明确 Catalog 范围、但尚未确定具体 data item 的场景。父容器 locator 是 discovery scope，不是输入资源或执行目标；具体子资源必须继续通过 `resource.facts.get` 校验后，才能进入生成类 Tool 的 `resources[]`。
 
-### 4.5 `query.draft.generate`
+### 4.5 `resource.facts.get`
+
+`resource.facts.get` 接收具体 data item 的 `locator`，由 Manager 基于当前 Tenant 可访问的 Engine 和 Meta 扫描事实返回受限资源事实投影。结果只包含规范 locator、Source Engine、原生查询名称、schema coverage、字段路径和必要空间事实，不读取或返回原始数据行。
+
+该 Tool 是生成类 Tool 确认具体输入资源的唯一入口。`data.preview` 只用于用户或 Agent 明确请求查看样本数据的场景，不得再用于查询、Workflow、Notebook 或 Transfer 生成前的 Schema 校验。动态 schema 的字段事实来自 Meta 深度扫描；缺少可用扫描事实时明确失败并由用户刷新扫描，不得隐式读取原始行兜底。
+
+### 4.6 `query.draft.generate`
 
 `query.draft.generate` 的 `resources[]` 只承载由 owner Tool 验证过的具体 data item，不承载 database、schema、directory 等执行容器。查询执行范围由 Develop 的任务或 execution 契约持有，不进入 `resources[]`。可选 `resource_scope_locator` 只表示本次数据源发现的 Catalog 容器范围；它与 `resources[]`、`current_query` 互斥，不是查询执行参数。
 
 调用方可以传入可选 `current_query` 表示编辑器已有候选文本。它不是资源事实，也不产生第二条执行路径。生成成功时返回一份完整查询草稿：`query` 候选文本与 `query_parameters[]` 参数定义。参数定义必须与 SQL `:name`、Cypher `$name` 或 MQL `{"$param":"name"}` 引用完全一致，并提供符合当前 Engine capability 的 `type` 和可执行 `default`；无参数引用时必须返回空数组。Develop 只将草稿原子回填到编辑器和参数面板，最终任务事实、预检与执行仍归 Develop 持有。对于 MQL，Develop 必须从单个 JSON command object 中解析 `find`、`aggregate`、`count`、`distinct` 主 collection，以及 `$lookup.from`、`$graphLookup.from`、`$unionWith` 引用的其他 collection；在当前选中 database 的 Owner Catalog 中逐一解析为具体 data item locator，并通过 `resources[]` 提交。用户只需选择 database，不需要额外点选每个 collection；引用不存在、跨出当前 database 或引用不唯一时必须要求澄清。
 
-当 MongoDB 工作台只选中 database 且编辑器为空时，Develop 以 `resources=[] + resource_scope_locator=<database locator>` 调用同一共享资源确认流程。Copilot 必须通过 `resource.children.list → data.preview` 枚举并验证当前 database 的直接 collection，再按自然语言输入角色排序并返回候选；用户确认后的具体 collection 才能进入 `resources[]`。该流程不依赖全局搜索是否能从业务词命中 collection 名，也不把 database 当作资源事实或执行参数。已有 MQL 时仍优先执行确定性的 collection 引用解析，解析失败不得退回范围枚举或模糊搜索。
+当 MongoDB 工作台只选中 database 且编辑器为空时，Develop 以 `resources=[] + resource_scope_locator=<database locator>` 调用同一共享资源确认流程。Copilot 必须通过 `resource.children.list → resource.facts.get` 枚举并验证当前 database 的直接 collection，再按自然语言输入角色排序并返回候选；用户确认后的具体 collection 才能进入 `resources[]`。该流程不依赖全局搜索是否能从业务词命中 collection 名，也不把 database 当作资源事实或执行参数。已有 MQL 时仍优先执行确定性的 collection 引用解析，解析失败不得退回范围枚举或模糊搜索。
 
 Copilot 默认保留 `current_query` 已声明的主 collection，除非用户明确要求修改。合法 MQL 已声明 collection 时不得以 `resources=[]` 跳过字段事实确认；`current_query` 不能替代 metadata。MongoDB database locator 仍不得写入 `resources[]`、`current_query` 或生成的 MQL，只有解析后的具体 collection locator 可以进入 `resources[]`。Copilot 生成前先形成结构化 Query Plan；Plan 的 collection 必须使用已验证资源事实提供的规范查询名，operation 必须使用平台枚举，五类 Plan 字段统一为字符串数组。Plan 解析或校验失败时最多进行一次受限修复；Plan 通过后再生成候选，并校验只读命令、collection、可查询字段路径、参数引用/定义一致性和计划覆盖。MQL 只能通过已验证的字面字段路径取值，不得通过 `$objectToArray` 等记录键枚举绕过字段事实。候选失败时最多进行一次受限重生成，不保留未校验 Plan 或候选旁路。
 
@@ -225,7 +232,7 @@ make test-agent-eval
 
 Native SQL/MQL/Cypher 分别消费 `query_names.sql/mql/cypher`；联邦 SQL 消费 Runtime 规范定义的 `query_names.federated_sql`。Copilot 只能逐字使用 Owner 事实，不得从 locator、engine name 或 full name 拼接查询名称。
 
-Owner preview 必须提供 `source_engine_type`、`full_name`、按语言声明的 `query_names` 和 `schema_coverage`（`complete|sampled|unknown`）；Copilot 不得从 locator 推导查询名称。Query Runtime 与 Source Engine 的 `engine_id` 是两个身份：native runtime 要求一致，联邦 runtime 只能接受 capability 声明的 `federation.source_engine_types`。当前只允许 `sql`、`mql`、`cypher` 三种已注册 validator 的语言；其他语言返回 `query_language_unsupported`，不得使用泛化 prompt。SQL 必须通过 AST 单语句、只读、已验证表和字段校验；Cypher 必须拒绝写操作并校验已验证属性；动态 schema 为 `sampled/unknown` 时不能断言字段不存在。
+Owner 的 `resource.facts.get` 必须提供 `source_engine_type`、`full_name`、按语言声明的 `query_names` 和 `schema_coverage`（`complete|sampled|unknown`）；Copilot 不得从 locator 推导查询名称。Query Runtime 与 Source Engine 的 `engine_id` 是两个身份：native runtime 要求一致，联邦 runtime 只能接受 capability 声明的 `federation.source_engine_types`。当前只允许 `sql`、`mql`、`cypher` 三种已注册 validator 的语言；其他语言返回 `query_language_unsupported`，不得使用泛化 prompt。SQL 必须通过 AST 单语句、只读、已验证表和字段校验；Cypher 必须拒绝写操作并校验已验证属性；动态 schema 为 `sampled/unknown` 时不能断言字段不存在。
 
 - `docs/concepts/addp术语表.md`
 - `docs/skills/addp-Skill规范.md`

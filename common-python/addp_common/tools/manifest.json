@@ -105,6 +105,49 @@
       "output_schema": {"type": "object"}
     },
     {
+      "name": "resource.facts.get",
+      "version": "1.0.0",
+      "description": "按 locator 返回不含原始数据行的受限资源、Schema 与查询事实。",
+      "owner": "manager",
+      "risk": "read",
+      "approval": {"mode": "none"},
+      "auth": {"type": "delegated_access_token", "audience": "manager", "required_scopes": ["resource.facts.get"], "required_permissions": ["manager.data_item.read"]},
+      "permission_enforced_by": "owner",
+      "audit": {"mode": "owner"},
+      "result_ref": {"mode": "locator"},
+      "limits": {"max_bytes": 131072},
+      "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "input_schema": {
+        "type": "object",
+        "properties": {"locator": {"type": "string", "minLength": 1}},
+        "required": ["locator"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "required": ["locator", "engine_id", "source_engine_type", "item_id", "item_type", "data_type", "full_name", "item_fingerprint", "scanned_depth", "schema_coverage", "query_names"],
+        "properties": {
+          "locator": {"type": "string", "minLength": 1},
+          "engine_id": {"type": "integer", "minimum": 1},
+          "engine_name": {"type": "string"},
+          "source_engine_type": {"type": "string", "minLength": 1},
+          "item_id": {"type": "integer", "minimum": 1},
+          "item_type": {"type": "string", "minLength": 1},
+          "data_type": {"type": "string", "minLength": 1},
+          "full_name": {"type": "string", "minLength": 1},
+          "item_fingerprint": {"type": "string", "minLength": 1},
+          "scanned_depth": {"type": "string", "minLength": 1},
+          "schema_coverage": {"enum": ["complete", "sampled", "unknown"]},
+          "query_names": {"type": "object", "additionalProperties": {"type": "string"}},
+          "fields": {"type": "array", "maxItems": 200, "items": {"type": "object"}},
+          "geometry_column": {"type": "string"},
+          "geometry_type": {"type": "string"},
+          "crs": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "data.preview",
       "version": "1.0.0",
       "description": "按 locator 返回受限字段、样本和空间事实预览。",

@@ -126,6 +126,7 @@ import { knowledgeServiceApi } from '../api/knowledgeService'
 import { useI18n } from 'vue-i18n'
 import { resolveKnowledgeServiceRouteState } from '@/utils/knowledgeServiceRouteState'
 import { navigateGraphRoute } from '@/utils/moduleNavigation'
+import { useConsolePageDescriptor } from '@common-ui'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -146,6 +147,11 @@ const entityTypes = ref([])
 const selectedGraph = computed(() =>
   graphs.value.find(g => g.id === selectedGraphId.value) || null
 )
+useConsolePageDescriptor(router, 'graph', {
+  title: computed(() => t('graph.service.recentVisitTitle')),
+  subject: computed(() => selectedGraph.value?.name || ''),
+  ready: computed(() => Boolean(selectedGraph.value?.name))
+})
 
 const serviceBaseUrl = computed(() => {
   if (!selectedGraphId.value) return ''

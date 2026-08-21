@@ -216,9 +216,9 @@ func newWorkflowBindingSystemServer(t *testing.T) *httptest.Server {
 		"storage":{"catalog_model":{"path_version":"catalog.path/v1","root_term":"service","levels":[{"term":"bucket","kinds":["bucket"],"role":"branch"},{"term":"prefix","kinds":["prefix"],"role":"branch"},{"term":"object","kinds":["object"],"role":"leaf"}]},"catalog":{"supported":true}}
 	}`)
 	descriptors := []commonModels.EngineRuntimeDescriptor{
-		{ID: 2, Name: "Current PostgreSQL", EngineType: "postgresql", LifecycleState: commonModels.EngineLifecycleActive, Capabilities: &postgresCapabilities},
-		{ID: 15, Name: "Replacement Doris", EngineType: "doris", LifecycleState: commonModels.EngineLifecycleActive, Capabilities: &dorisCapabilities},
-		{ID: 16, Name: "Object Storage", EngineType: "minio", LifecycleState: commonModels.EngineLifecycleActive, Capabilities: &objectCapabilities},
+		{ID: 2, Name: "Current PostgreSQL", EngineType: "postgresql", LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline, Capabilities: &postgresCapabilities},
+		{ID: 15, Name: "Replacement Doris", EngineType: "doris", LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline, Capabilities: &dorisCapabilities},
+		{ID: 16, Name: "Object Storage", EngineType: "minio", LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline, Capabilities: &objectCapabilities},
 		{ID: 17, Name: "Inactive PostgreSQL", EngineType: "postgresql", LifecycleState: "inactive", Capabilities: &postgresCapabilities},
 	}
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {

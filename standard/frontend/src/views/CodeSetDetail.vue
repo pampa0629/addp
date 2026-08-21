@@ -128,6 +128,7 @@
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useConsolePageDescriptor } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Plus } from '@element-plus/icons-vue'
@@ -155,6 +156,11 @@ const editingItem = ref(null)
 const itemFormRef = ref(null)
 
 const codeSet = ref({})
+useConsolePageDescriptor(router, 'standard', {
+  title: computed(() => t('standard.codeSet.recentVisitTitle')),
+  subject: computed(() => codeSet.value?.name || ''),
+  ready: computed(() => Boolean(codeSet.value?.name))
+})
 const form = reactive({ name: '', type: 'custom', description: '' })
 const items = ref([])
 const editableState = computed(() => ({ ...form }))

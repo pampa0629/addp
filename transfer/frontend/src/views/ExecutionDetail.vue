@@ -263,6 +263,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useConsolePageDescriptor } from '@common-ui'
 import { executionAPI } from '@/api/tasks'
 import { ElMessage, ElIcon } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -287,6 +288,11 @@ const handleBack = () => navigateTransferRoute(router, '/executions', { history:
 const loading = ref(false)
 const refreshing = ref(false)
 const execution = ref({})
+useConsolePageDescriptor(router, 'transfer', {
+  title: computed(() => t('transfer.executionDetail.recentVisitTitle')),
+  subject: computed(() => execution.value?.task_name || execution.value?.execution_id || ''),
+  ready: computed(() => Boolean(execution.value?.execution_id))
+})
 const logs = ref('')
 const logLevel = ref('all')
 const autoRefreshInterval = ref(null)

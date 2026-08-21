@@ -108,34 +108,6 @@ func main() {
 
 	// 注释：MigrateExistingEnginesDisplayName 已删除（display_name 字段已移除）
 
-	// 统一刷新引擎能力声明。旧 capabilities 结构不再保留，Meta/Develop 等消费端只读取新结构。
-	{
-		engineRepo := repository.NewEngineRepository(db)
-		registryService := service.NewRegistryService(engineRepo)
-		registrationContext, cancelRegistration := context.WithTimeout(context.Background(), 10*time.Second)
-		builtinRuntimes := []struct {
-			engineType  string
-			endpoint    string
-			description string
-		}{
-			{engineType: "duckdb", endpoint: cfg.DuckDBRuntimeURL, description: "ADDP 内置联邦只读查询 Runtime"},
-			{engineType: "inference_runtime", endpoint: cfg.InferenceRuntimeURL, description: "ADDP 内置统一 AI 推理 Runtime"},
-		}
-		for _, runtime := range builtinRuntimes {
-			if _, err := registryService.RegisterBuiltinRuntime(registrationContext, runtime.engineType, runtime.endpoint, runtime.description); err != nil {
-				cancelRegistration()
-				logger.L().Error("注册内置 Runtime 失败", "engine_type", runtime.engineType, "error", err)
-				os.Exit(1)
-			}
-		}
-		cancelRegistration()
-		engineService := service.NewEngineService(engineRepo, cfg.EncryptionKey, nil)
-		if err := engineService.RefreshAllEngineCapabilities(); err != nil {
-			logger.L().Error("刷新引擎能力声明失败", "error", err)
-			os.Exit(1)
-		}
-	}
-
 	// 设置 Gin 模式
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)

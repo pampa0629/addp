@@ -59,8 +59,8 @@ func (s *EngineService) GetEnginesByTenant(tenantID uint) ([]*commonModels.Engin
 	engines := make([]*commonModels.Engine, 0, len(resources))
 	for i := range resources {
 		resource := resources[i]
-		if !resource.IsUsable() || resource.TenantID == nil || *resource.TenantID != tenantID ||
-			!engineselection.HasStorageCapability(&resource) {
+		if resource.TenantID == nil || *resource.TenantID != tenantID ||
+			!engineselection.IsAvailableStorageEngine(&resource) {
 			continue
 		}
 		resourceCopy := resource
@@ -86,7 +86,7 @@ func (s *EngineService) GetWorkflowRuntimesByTenant(ctx context.Context, tenantI
 	runtimes := make([]*commonModels.Engine, 0, len(descriptors))
 	for index := range descriptors {
 		runtime := descriptors[index].AsEngine()
-		if !runtime.IsUsable() || !engineselection.SupportsComputeEntrypoint(runtime, "workflow") {
+		if !engineselection.IsAvailableForComputeEntrypoint(runtime, "workflow") {
 			continue
 		}
 		runtimes = append(runtimes, runtime)

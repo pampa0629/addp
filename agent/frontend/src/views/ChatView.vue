@@ -133,6 +133,7 @@ import { ChatDotRound, CircleClose, Delete, Loading, Plus, Position, RefreshRigh
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
+import { useConsolePageDescriptor } from '@common-ui'
 import { resolveTaskOwnerUrl } from '@common-ui'
 
 import { createAgentClient, replayAgentRunEvents } from '../agent/createAgentClient'
@@ -149,6 +150,12 @@ const router = useRouter()
 
 const sessions = ref([])
 const currentSessionId = ref(null)
+const currentSession = computed(() => sessions.value.find(session => String(session.id) === currentSessionId.value) || null)
+useConsolePageDescriptor(router, 'agent', {
+  title: computed(() => t('agent.chat.recentVisitTitle')),
+  subject: computed(() => currentSession.value?.title || ''),
+  ready: computed(() => Boolean(currentSession.value?.title))
+})
 const sessionUnavailable = ref(false)
 const sessionsLoaded = ref(false)
 const messages = ref([])

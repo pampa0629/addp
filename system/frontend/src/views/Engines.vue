@@ -683,6 +683,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { StorageEngineForm, requestConsoleBridge } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
+import { useConsolePageDescriptor } from '@common-ui'
 import { paginateEngines } from '../utils/engineList'
 import { switchStorageEngineType } from '../utils/engineForm'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
@@ -771,6 +772,11 @@ const extensionRuntimeStatusTagType = computed(() => {
 // 引擎详情弹窗相关
 const detailsVisible = ref(false)
 const selectedEngine = ref(null)
+useConsolePageDescriptor(router, 'system', {
+  title: computed(() => t('system.engine.recentDetailTitle')),
+  subject: computed(() => selectedEngine.value?.name || ''),
+  ready: computed(() => Boolean(route.params.id && selectedEngine.value?.name))
+})
 const detailsLoading = ref(false)
 const detailError = ref('')
 const detailTab = ref('basic')

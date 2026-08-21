@@ -739,7 +739,7 @@ func (h *EngineHandler) DescribeCatalogFacts(c *gin.Context) {
 	commonapi.RespondSuccess(c, facts)
 }
 
-// RuntimeEngineRegistrationRequest 是内置工作流 Runtime 的平台注册请求。
+// RuntimeEngineRegistrationRequest 是内置 Engine Runtime 的平台注册请求。
 type RuntimeEngineRegistrationRequest struct {
 	EngineType     string                 `json:"engine_type" binding:"required"`
 	Name           string                 `json:"name" binding:"required"`
@@ -750,7 +750,7 @@ type RuntimeEngineRegistrationRequest struct {
 }
 
 // RegisterRuntimeEngine godoc
-// @Summary      注册内置工作流 Runtime | Register built-in workflow runtime
+// @Summary      注册内置 Engine Runtime | Register built-in engine runtime
 // @Description  平台 Service Principal 创建或更新与自身身份对应的内置 Runtime，并异步触发连接检查 | A platform service principal creates or updates its owned built-in runtime and asynchronously starts a connection check
 // @Tags         运行时注册 | Runtime Registry
 // @Accept       json
@@ -779,15 +779,19 @@ func (h *EngineHandler) RegisterRuntimeEngine(c *gin.Context) {
 		return
 	}
 
-	// 1. 自动填充 host（从请求来源 IP，规范化回环地址）
-	clientIP := c.ClientIP()
-	// 将 IPv6/IPv4 回环地址统一规范化为 localhost
-	if clientIP == "::1" || clientIP == "127.0.0.1" || clientIP == "localhost" {
-		req.ConnectionInfo["host"] = "localhost"
-	} else {
-		req.ConnectionInfo["host"] = clientIP
+	// 1. Runtime 可以声明稳定的可达服务名；未声明时才使用请求来源地址。
+	requestedHost, _ := req.ConnectionInfo["host"].(string)
+	requestedHost = strings.TrimSpace(requestedHost)
+	if requestedHost == "" {
+		clientIP := c.ClientIP()
+		if clientIP == "::1" || clientIP == "127.0.0.1" || clientIP == "localhost" {
+			requestedHost = "localhost"
+		} else {
+			requestedHost = clientIP
+		}
 	}
-	fmt.Printf("[RegisterEngine] 🌐 自动填充 host: %s (来源 IP: %s)\n", req.ConnectionInfo["host"], clientIP)
+	req.ConnectionInfo["host"] = requestedHost
+	fmt.Printf("[RegisterEngine] 🌐 Runtime advertised host: %s\n", requestedHost)
 
 	// 2. 查找是否已存在（engine_type + tenant_id IS NULL 表示平台级引擎）
 	existingEngine, err := h.engineService.GetByEngineTypeAndTenant(req.EngineType, nil)

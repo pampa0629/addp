@@ -67,6 +67,7 @@
       "deleteFailed": "Delete failed"
     },
     "assetDetail": {
+      "recentVisitTitle": "Data Asset",
       "backToList": "Back to List",
       "createAsset": "Create Asset",
       "editAsset": "Edit Asset",

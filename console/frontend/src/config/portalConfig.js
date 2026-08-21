@@ -186,14 +186,14 @@ export const SIDEBAR_MENUS = {
     label: 'console.menus.transfer.label', icon: Upload,
     items: [
       { index: '/transfer/tasks',        icon: List,       label: 'console.menus.transfer.tasks' },
-      { index: '/transfer/executions',   icon: Timer,      label: 'console.menus.transfer.executions' },
+      { index: '/transfer/executions',   icon: Timer,      label: 'console.menus.transfer.executions', recentLabel: 'console.menus.transfer.recentExecutions' },
     ],
   },
   meta: {
     label: 'console.menus.meta.label', icon: Box,
     items: [
       { index: '/meta/scan',  icon: Search,  label: 'console.menus.meta.scan' },
-      { index: '/meta/tasks', icon: Monitor, label: 'console.menus.meta.tasks' },
+      { index: '/meta/tasks', icon: Monitor, label: 'console.menus.meta.tasks', recentLabel: 'console.menus.meta.recentTasks' },
     ],
   },
   manager: {
@@ -236,9 +236,9 @@ export const SIDEBAR_MENUS = {
       { index: '/standard/elements',             icon: DataBoard,    label: 'console.menus.standard.elements' },
       { index: '/standard/code-sets',            icon: List,         label: 'console.menus.standard.codeSets' },
       { index: '/standard/units',                icon: Odometer,     label: 'console.menus.standard.units' },
-      { index: '/standard/classifications',      icon: Share,        label: 'console.menus.standard.classifications' },
+      { index: '/standard/classifications',      icon: Share,        label: 'console.menus.standard.classifications', recentLabel: 'console.menus.standard.recentClassifications' },
       { index: '/standard/dimension-hierarchies',icon: SortDown,     label: 'console.menus.standard.dimensionHierarchies' },
-      { index: '/standard/metrics',              icon: TrendCharts,  label: 'console.menus.standard.metrics' },
+      { index: '/standard/metrics',              icon: TrendCharts,  label: 'console.menus.standard.metrics', recentLabel: 'console.menus.standard.recentMetrics' },
       { index: '/standard/documents',            icon: FolderOpened, label: 'console.menus.standard.documents' },
     ],
   },
@@ -255,10 +255,10 @@ export const SIDEBAR_MENUS = {
   quality: {
     label: 'console.menus.quality.label', icon: CircleCheck,
     items: [
-      { index: '/quality/rule-applications', icon: Setting, label: 'console.menus.quality.ruleApplications' },
-      { index: '/quality/check-tasks',       icon: List,    label: 'console.menus.quality.checkTasks' },
-      { index: '/quality/executions',        icon: Timer,   label: 'console.menus.quality.executions' },
-      { index: '/quality/issues',            icon: Warning, label: 'console.menus.quality.issues' },
+      { index: '/quality/rule-applications', icon: Setting, label: 'console.menus.quality.ruleApplications', recentLabel: 'console.menus.quality.recentRuleApplications' },
+      { index: '/quality/check-tasks',       icon: List,    label: 'console.menus.quality.checkTasks', recentLabel: 'console.menus.quality.recentCheckTasks' },
+      { index: '/quality/executions',        icon: Timer,   label: 'console.menus.quality.executions', recentLabel: 'console.menus.quality.recentExecutions' },
+      { index: '/quality/issues',            icon: Warning, label: 'console.menus.quality.issues', recentLabel: 'console.menus.quality.recentIssues' },
     ],
   },
   develop: {
@@ -267,8 +267,8 @@ export const SIDEBAR_MENUS = {
       { index: '/develop/sql',       icon: Monitor,    label: 'console.menus.develop.sql' },
       { index: '/develop/notebook',  icon: Notebook,   label: 'console.menus.develop.notebook' },
       { index: '/develop/workflow',  icon: Connection, label: 'console.menus.develop.workflow' },
-      { index: '/develop/tasks',     icon: List,       label: 'console.menus.develop.tasks' },
-      { index: '/develop/executions',icon: Timer,      label: 'console.menus.develop.executions' },
+      { index: '/develop/tasks',     icon: List,       label: 'console.menus.develop.tasks', recentLabel: 'console.menus.develop.recentTasks' },
+      { index: '/develop/executions',icon: Timer,      label: 'console.menus.develop.executions', recentLabel: 'console.menus.develop.recentExecutions' },
     ],
   },
   service: {
@@ -278,33 +278,33 @@ export const SIDEBAR_MENUS = {
       { index: '/service/tile',            icon: Grid,         label: 'console.menus.service.tile' },
       { index: '/service/graph-services',  icon: Share,        label: 'console.menus.service.graphServices' },
       { index: '/service/services',        icon: Connection,   label: 'console.menus.service.services' },
-      { index: '/service/catalog',         icon: FolderOpened, label: 'console.menus.service.catalog' },
+      { index: '/service/catalog',         icon: FolderOpened, label: 'console.menus.service.catalog', recentLabel: 'console.menus.service.recentCatalog' },
     ],
   },
   orchestrator: {
     label: 'console.menus.orchestrator.label', icon: Operation,
     items: [
       { index: '/orchestrator/orchestrations', icon: List,  label: 'console.menus.orchestrator.orchestrations' },
-      { index: '/orchestrator/executions',     icon: Timer, label: 'console.menus.orchestrator.executions' },
+      { index: '/orchestrator/executions',     icon: Timer, label: 'console.menus.orchestrator.executions', recentLabel: 'console.menus.orchestrator.recentExecutions' },
     ],
   },
   monitor: {
     label: 'console.menus.monitor.label', icon: DataLine,
     items: [
-      { index: '/monitor/dashboard',  icon: Monitor, label: 'console.menus.monitor.dashboard' },
-      { index: '/monitor/executions', icon: List,    label: 'console.menus.monitor.executions' },
-      { index: '/monitor/alerts',     icon: Warning, label: 'console.menus.monitor.alerts' },
-      { index: '/monitor/notifications', icon: Connection, label: 'console.menus.monitor.notifications' },
+      { index: '/monitor/dashboard',  icon: Monitor, label: 'console.menus.monitor.dashboard', recentLabel: 'console.menus.monitor.recentDashboard' },
+      { index: '/monitor/executions', icon: List,    label: 'console.menus.monitor.executions', recentLabel: 'console.menus.monitor.recentExecutions' },
+      { index: '/monitor/alerts',     icon: Warning, label: 'console.menus.monitor.alerts', recentLabel: 'console.menus.monitor.recentAlerts' },
+      { index: '/monitor/notifications', icon: Connection, label: 'console.menus.monitor.notifications', recentLabel: 'console.menus.monitor.recentNotifications' },
     ],
   },
   asset: {
     label: 'console.menus.asset.label', icon: Folder,
     items: [
       { index: '/asset/type-definitions', icon: Grid,         label: 'console.menus.asset.typeDefinitions' },
-      { index: '/asset/categories',       icon: Files,        label: 'console.menus.asset.categories' },
+      { index: '/asset/categories',       icon: Files,        label: 'console.menus.asset.categories', recentLabel: 'console.menus.asset.recentCategories' },
       { index: '/asset/assets',           icon: List,         label: 'console.menus.asset.assets' },
-      { index: '/asset/applications',     icon: Tickets,      label: 'console.menus.asset.applications' },
-      { index: '/asset/dashboard',        icon: DataAnalysis, label: 'console.menus.asset.dashboard' },
+      { index: '/asset/applications',     icon: Tickets,      label: 'console.menus.asset.applications', recentLabel: 'console.menus.asset.recentApplications' },
+      { index: '/asset/dashboard',        icon: DataAnalysis, label: 'console.menus.asset.dashboard', recentLabel: 'console.menus.asset.recentDashboard' },
     ],
   },
   agent: {
@@ -318,7 +318,7 @@ export const SIDEBAR_MENUS = {
       { index: '/graph/ontologies',        icon: Share,      label: 'console.menus.graph.ontologies' },
       { index: '/graph/graphs',            icon: Connection, label: 'console.menus.graph.graphs' },
       { index: '/graph/analysis',          icon: DataLine,   label: 'console.menus.graph.analysis' },
-      { index: '/graph/knowledge-service', icon: Link,       label: 'console.menus.graph.knowledgeService' },
+      { index: '/graph/knowledge-service', icon: Link,       label: 'console.menus.graph.knowledgeService', recentLabel: 'console.menus.graph.recentKnowledgeService' },
     ],
   },
   system: {
@@ -327,10 +327,10 @@ export const SIDEBAR_MENUS = {
       {
         index: '/system/iam', icon: Lock, label: 'console.menus.system.iam',
       },
-      { index: '/system/engines',      icon: Connection, label: 'console.menus.system.engines', permissions: ['system.engine.read'] },
-      { index: '/configuration',       icon: SetUp,      label: 'console.configuration.title' },
-      { index: '/system/applications', icon: Key,        label: 'console.menus.system.applications', permissions: ['system.application.read'] },
-      { index: '/system/cleanup',      icon: Refresh,    label: 'console.menus.system.cleanup', permissions: ['system.cleanup.read'] },
+      { index: '/system/engines',      icon: Connection, label: 'console.menus.system.engines', recentLabel: 'console.menus.system.recentEngines', permissions: ['system.engine.read'] },
+      { index: '/configuration',       icon: SetUp,      label: 'console.configuration.title', recentLabel: 'console.menus.system.recentConfiguration' },
+      { index: '/system/applications', icon: Key,        label: 'console.menus.system.applications', recentLabel: 'console.menus.system.recentApplications', permissions: ['system.application.read'] },
+      { index: '/system/cleanup',      icon: Refresh,    label: 'console.menus.system.cleanup', recentLabel: 'console.menus.system.recentCleanup', permissions: ['system.cleanup.read'] },
     ],
   },
 }

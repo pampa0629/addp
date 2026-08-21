@@ -200,7 +200,7 @@ def test_register_to_system_posts_model3d_workflow_payload(monkeypatch):
                 "engine_type": "model3d_workflow",
                 "name": "Model3D 工作流引擎",
                 "description": "三维模型与 Gaussian Splat 持久化转换工作流运行时，算子同时支持 workflow 与受控 direct 调用",
-                "connection_info": {"protocol": "http", "port": 8101},
+                "connection_info": {"protocol": "http", "port": 8101, "host": "localhost"},
                 "capabilities": {
                     "schema_version": "engine.capabilities/v1",
                     "engine_type": "model3d_workflow",

@@ -345,12 +345,18 @@ import queryServiceAPI from '@/api/queryService'
 import { buildQueryServicePreview, queryServicePreviewFields } from '@/utils/queryServicePreview'
 import { copyToClipboard } from '../utils/serviceHelper'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
+import { useConsolePageDescriptor } from '@common-ui'
 
 const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 
 const service = ref(null)
+useConsolePageDescriptor(router, 'service', {
+  title: computed(() => t('service.query.recentVisitTitle')),
+  subject: computed(() => service.value?.title || service.value?.name || ''),
+  ready: computed(() => Boolean(service.value?.title || service.value?.name))
+})
 const loading = ref(false)
 const snapshotChecking = ref(false)
 const snapshotRefreshing = ref(false)

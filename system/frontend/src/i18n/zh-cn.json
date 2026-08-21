@@ -289,6 +289,7 @@
       "versionConflict": "策略已被其他管理员更新，已重新加载"
     },
     "engine": {
+      "recentDetailTitle": "数据引擎",
       "title": "引擎管理",
       "typeNfs": "NFS 文件系统",
       "addStorage": "注册通用引擎",
