@@ -30,6 +30,8 @@ class BuildRegistrationTest(unittest.TestCase):
         )
         self._write("sample/frontend/package.json", "{}\n")
         self._write("sample/frontend/Dockerfile", "FROM scratch\n")
+        for dockerfile in MODULE.AUXILIARY_DOCKERFILES:
+            self._write(dockerfile, "FROM scratch\n")
         self._write(
             "scripts/build/compile.sh",
             'SERVICES=(\n    "sample-backend:sample/backend"\n)\n',
@@ -233,6 +235,16 @@ class BuildRegistrationTest(unittest.TestCase):
         self.assertIn(
             "sample-frontend: base image localhost:5001/python:latest uses "
             "floating latest tag",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_unclassified_dockerfile(self) -> None:
+        self._write("legacy/Dockerfile", "FROM scratch\n")
+        subprocess.run(
+            ["git", "add", "legacy/Dockerfile"], cwd=self.repository, check=True
+        )
+        self.assertIn(
+            "legacy/Dockerfile: Dockerfile is not registered or classified as auxiliary",
             MODULE.validate_registration(self.repository),
         )
 

@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM localhost:5001/python:3.11-slim
 
 LABEL maintainer="ADDP Team"
 LABEL description="Math Workflow Engine - 基础数学运算工作流引擎"

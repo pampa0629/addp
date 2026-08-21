@@ -31,9 +31,11 @@ go run cmd/gateway/main.go
 ### Docker 部署
 
 ```bash
-docker build -t addp-gateway .
-docker run -d -p 8000:8000 addp-gateway
+make build
+make build-images IMAGE_BUILD_ARGS="--services gateway"
 ```
+
+平台镜像只允许通过仓库根标准入口构建；Gateway 使用 `gateway/Dockerfile.prebuilt`，不维护源码构建 Dockerfile。
 
 ## 🔀 路由规则
 

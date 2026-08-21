@@ -1,12 +1,9 @@
-.PHONY: help dev build docker-build docker-up docker-down clean
+.PHONY: help dev build clean
 
 help:
 	@echo "可用命令:"
 	@echo "  make dev          - 开发模式运行（后端）"
 	@echo "  make build        - 编译后端到 ../../dist/{debug|release}"
-	@echo "  make docker-build - 构建 Docker 镜像"
-	@echo "  make docker-up    - 启动 Docker 容器"
-	@echo "  make docker-down  - 停止 Docker 容器"
 	@echo "  make clean        - 清理本服务在 dist 下的产物"
 
 # 统一输出目录与参数（与仓库根 Makefile 保持一致）
@@ -36,15 +33,6 @@ build:
 	  (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOTOOLCHAIN=$(GOTOOLCHAIN) \
 	   cd backend && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_RELEASE) -o ../../dist/$(BUILD_TYPE)/backend/system/$(GOOS)-$(GOARCH)/system$(BIN_SUFFIX) cmd/server/main.go); \
 	fi
-
-docker-build:
-	docker-compose build
-
-docker-up:
-	docker-compose up -d
-
-docker-down:
-	docker-compose down
 
 clean:
 	rm -rf ../../dist/debug/backend/system

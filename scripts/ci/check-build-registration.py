@@ -32,6 +32,13 @@ RETIRED_MAKE_TARGETS = {
     "docker-build-all",
 }
 
+AUXILIARY_DOCKERFILES = {
+    "engines/model3d-workflow/docker/converter/Dockerfile": "model3d converter build",
+    "engines/model3d-workflow/docker/runtime/Dockerfile": "model3d runtime build",
+    "engines/supermap-workflow/Dockerfile.base": "SuperMap SDK base image build",
+    "scripts/infra/Dockerfile.postgres": "infra PostgreSQL image build",
+}
+
 
 def compiled_binary_name(service: str) -> str:
     if service.endswith("-backend"):
@@ -279,6 +286,7 @@ def validate_registration(repository: Path) -> list[str]:
     seeded_images = seeded_base_images(image_script)
     expected_compiled = expected_compile_entries(repository)
     errors: list[str] = []
+    registered_dockerfiles: set[str] = set()
 
     for source, target in seed_entries:
         if uses_latest_tag(source):
@@ -314,6 +322,8 @@ def validate_registration(repository: Path) -> list[str]:
         if not definition_path.is_file():
             errors.append(f"{name}: image build definition does not exist: {definition}")
             continue
+        if definition_path.name.startswith("Dockerfile"):
+            registered_dockerfiles.add(definition)
         if binary is not None and not dockerfile_copies_binary(
             definition_path.read_text(encoding="utf-8"), binary
         ):
@@ -342,6 +352,15 @@ def validate_registration(repository: Path) -> list[str]:
         image = "console" if module == "console" else f"{module}-frontend"
         if image not in images:
             errors.append(f"{path}: image registration {image} is missing")
+
+    tracked_dockerfiles = set(git_files(repository, "*Dockerfile*"))
+    for path in sorted(
+        tracked_dockerfiles - registered_dockerfiles - set(AUXILIARY_DOCKERFILES)
+    ):
+        errors.append(f"{path}: Dockerfile is not registered or classified as auxiliary")
+    for path, purpose in sorted(AUXILIARY_DOCKERFILES.items()):
+        if not (repository / path).is_file():
+            errors.append(f"{path}: auxiliary Dockerfile is missing ({purpose})")
 
     for name in sorted(expected_compiled):
         if name not in images:
