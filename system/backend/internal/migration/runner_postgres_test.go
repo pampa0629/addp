@@ -1918,7 +1918,7 @@ func assertStandardAuthorizationCatalog(t *testing.T, db *sql.DB) {
 		JOIN system.roles role ON role.id = role_permission.role_id
 		JOIN system.permissions permission ON permission.id = role_permission.permission_id
 		WHERE role.tenant_id IS NULL
-		  AND role.role_key = 'tenant.governance_manager'
+		  AND role.role_key = 'tenant.data_architect'
 		  AND permission.owner_module = 'standard'
 		  AND role_permission.source_type = 'product'
 	`).Scan(&rolePermissionCount); err != nil {
