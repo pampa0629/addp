@@ -85,9 +85,25 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          fetch-depth: 0
           persist-credentials: false
 
+      - name: Select Common Python gate
+        id: selection
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          bash scripts/ci/select-gate-by-paths.sh "Common Python" \
+            'common-python/*' \
+            'scripts/ci/select-gate-by-paths.sh' \
+            'Makefile' \
+            '.github/workflows/platform-ci.yml'
+
       - name: Set up Python
+        if: steps.selection.outputs.run == 'true'
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.11"
@@ -95,13 +111,19 @@ jobs:
           cache-dependency-path: common-python/pyproject.toml
 
       - name: Prepare Common Python test environment
+        if: steps.selection.outputs.run == 'true'
         run: |
           python -m venv common-python/.venv
           common-python/.venv/bin/python -m pip install --disable-pip-version-check --upgrade pip
           common-python/.venv/bin/python -m pip install --editable './common-python[dev]'
 
       - name: Run Common Python tests
+        if: steps.selection.outputs.run == 'true'
         run: make test-common-python
+
+      - name: Report skipped Common Python gate
+        if: steps.selection.outputs.run != 'true'
+        run: echo "Common Python gate did not run because no registered path changed."
 
   agent-offline-evaluation:
     name: Agent offline evaluation
