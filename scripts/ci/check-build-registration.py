@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import glob
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -37,30 +39,67 @@ def compiled_binary_name(service: str) -> str:
     return service
 
 
-def image_build_definition(service: str, directory: str) -> tuple[str, str | None]:
-    """返回构建定义文件及预编译二进制名；专用脚本也作为定义文件。"""
+def image_build_definition(service: str, directory: str) -> tuple[str, str | None, str | None]:
+    """返回构建定义、预编译二进制名和 Docker build context。"""
     if service == "model3d-workflow-engine":
-        return f"{directory}/scripts/build-linux-arm64-images.sh", None
+        return f"{directory}/scripts/build-linux-arm64-images.sh", None, None
     if service == "supermap-workflow-engine":
-        return f"{directory}/Dockerfile", None
+        return f"{directory}/Dockerfile", None, directory
     if service in {"transfer-bounded-worker", "meta-worker", "quality-worker"}:
-        return f"{directory}/Dockerfile.prebuilt.worker", service
+        return f"{directory}/Dockerfile.prebuilt.worker", service, "."
     if service == "transfer-continuous-worker":
-        return f"{directory}/Dockerfile.prebuilt.continuous-worker", service
+        return f"{directory}/Dockerfile.prebuilt.continuous-worker", service, "."
     if service in {"agent-backend", "copilot-backend"}:
-        return f"{directory}/Dockerfile", None
+        return f"{directory}/Dockerfile", None, "."
     if service.endswith("-backend") or service == "gateway":
-        return f"{directory}/Dockerfile.prebuilt", compiled_binary_name(service)
+        return f"{directory}/Dockerfile.prebuilt", compiled_binary_name(service), "."
     if service == "nginx":
-        return "nginx/Dockerfile", None
+        return "nginx/Dockerfile", None, "nginx"
+    if service == "spark-workflow-engine":
+        return f"{directory}/Dockerfile", None, directory
     if service.endswith("-frontend") or service == "console" or service.endswith("-engine") or service == "raster-mosaic-runtime":
-        return f"{directory}/Dockerfile", None
+        return f"{directory}/Dockerfile", None, "."
     raise RegistrationError(f"{service}: no static image build definition rule")
 
 
 def dockerfile_copies_binary(text: str, binary: str) -> bool:
     expected = rf"dist/\$\{{BUILD_TYPE\}}-\$\{{GOOS\}}-\$\{{BUILD_ARCH\}}/{re.escape(binary)}"
     return re.search(rf"(?m)^\s*COPY\s+{expected}(?:\s|$)", text) is not None
+
+
+def dockerfile_context_errors(
+    repository: Path, service: str, dockerfile: str, context: str
+) -> list[str]:
+    errors: list[str] = []
+    context_root = (repository / context).resolve()
+    text = (repository / dockerfile).read_text(encoding="utf-8")
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped.upper().startswith("COPY ") or "--from=" in stripped:
+            continue
+        try:
+            tokens = shlex.split(stripped)
+        except ValueError as error:
+            errors.append(f"{service}: {dockerfile}:{line_number} invalid COPY: {error}")
+            continue
+        arguments = [token for token in tokens[1:] if not token.startswith("--")]
+        for source in arguments[:-1]:
+            if "$" in source:
+                continue
+            source_path = (context_root / source.removesuffix("/")).resolve()
+            try:
+                source_path.relative_to(context_root)
+            except ValueError:
+                errors.append(
+                    f"{service}: {dockerfile}:{line_number} COPY source escapes build context {context}: {source}"
+                )
+                continue
+            matches = glob.glob(str(source_path)) if glob.has_magic(source) else [str(source_path)]
+            if not matches or not any(Path(match).exists() for match in matches):
+                errors.append(
+                    f"{service}: {dockerfile}:{line_number} COPY source is missing from build context {context}: {source}"
+                )
+    return errors
 
 
 def git_files(repository: Path, *patterns: str) -> list[str]:
@@ -141,7 +180,7 @@ def validate_registration(repository: Path) -> list[str]:
             errors.append(f"{name}: image build directory does not exist: {directory}")
             continue
         try:
-            definition, binary = image_build_definition(name, directory)
+            definition, binary, context = image_build_definition(name, directory)
         except RegistrationError as error:
             errors.append(str(error))
             continue
@@ -156,6 +195,8 @@ def validate_registration(repository: Path) -> list[str]:
                 f"{name}: {definition} does not COPY compiled binary {binary} "
                 "from dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}"
             )
+        if context is not None:
+            errors.extend(dockerfile_context_errors(repository, name, definition, context))
 
     for path in git_files(repository, "*/frontend/package.json"):
         module = path.split("/", 1)[0]

@@ -113,12 +113,35 @@ class BuildRegistrationTest(unittest.TestCase):
 
     def test_python_backends_use_source_dockerfile(self) -> None:
         self.assertEqual(
-            ("agent/backend/Dockerfile", None),
+            ("agent/backend/Dockerfile", None, "."),
             MODULE.image_build_definition("agent-backend", "agent/backend"),
         )
         self.assertEqual(
-            ("copilot/Dockerfile", None),
+            ("copilot/Dockerfile", None, "."),
             MODULE.image_build_definition("copilot-backend", "copilot"),
+        )
+
+    def test_module_local_image_uses_module_build_context(self) -> None:
+        self.assertEqual(
+            (
+                "engines/spark-workflow/Dockerfile",
+                None,
+                "engines/spark-workflow",
+            ),
+            MODULE.image_build_definition(
+                "spark-workflow-engine", "engines/spark-workflow"
+            ),
+        )
+
+    def test_rejects_copy_source_missing_from_build_context(self) -> None:
+        self._write(
+            "sample/frontend/Dockerfile",
+            "FROM scratch\nCOPY missing-package.json ./package.json\n",
+        )
+        self.assertIn(
+            "sample-frontend: sample/frontend/Dockerfile:2 COPY source is "
+            "missing from build context .: missing-package.json",
+            MODULE.validate_registration(self.repository),
         )
 
 
