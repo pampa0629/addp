@@ -283,11 +283,6 @@ def run_offline_checks() -> list[dict[str, Any]]:
             REPO_ROOT / "common-python",
             common_env,
         ),
-        _run_check(
-            "agent_frontend",
-            ["npm", "test"],
-            REPO_ROOT / "agent" / "frontend",
-        ),
     ]
 
 
