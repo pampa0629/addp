@@ -252,6 +252,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - module: graph
+            name: Graph
+            target: test-graph-frontend
           - module: meta
             name: Meta
             target: test-meta-frontend
@@ -261,6 +264,9 @@ jobs:
           - module: portal
             name: Portal
             target: test-portal-frontend
+          - module: system
+            name: System
+            target: test-system-frontend
           - module: transfer
             name: Transfer
             target: test-transfer-frontend

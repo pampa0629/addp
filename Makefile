@@ -1,4 +1,4 @@
-.PHONY: help init dev build up down logs clean test test-platform test-go test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-portal-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-arcgis-open-formats dev-all \
+.PHONY: help init dev build up down logs clean test test-platform test-go test-graph-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-portal-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-arcgis-open-formats dev-all \
         build-backend build-frontend build-debug build-release build-iam-bootstrap build-iam-recovery clean-dist \
         infra-up infra-down infra-restart infra-status ports-validate
 
@@ -470,6 +470,10 @@ test-quality-frontend: ## 运行 Quality 前端路由、浏览器与构建门禁
 	@cd quality/frontend && npm run test:e2e
 	@cd quality/frontend && npm run build
 
+test-graph-frontend: ## 运行 Graph 前端确定性测试与构建
+	@cd graph/frontend && npm test
+	@cd graph/frontend && npm run build
+
 test-meta-frontend: ## 运行 Meta 前端确定性测试与构建
 	@cd meta/frontend && npm test
 	@cd meta/frontend && npm run build
@@ -481,6 +485,10 @@ test-monitor-frontend: ## 运行 Monitor 前端确定性测试与构建
 test-portal-frontend: ## 运行 Portal 前端确定性测试与构建
 	@cd portal/frontend && npm test
 	@cd portal/frontend && npm run build
+
+test-system-frontend: ## 运行 System 前端确定性测试与构建
+	@cd system/frontend && npm test
+	@cd system/frontend && npm run build
 
 test-transfer-frontend: ## 运行 Transfer 前端确定性测试与构建
 	@cd transfer/frontend && npm test
