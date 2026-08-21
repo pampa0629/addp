@@ -252,6 +252,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - module: console
+            name: Console
+            target: test-console-frontend
           - module: develop
             name: Develop
             target: test-develop-frontend
@@ -270,6 +273,9 @@ jobs:
           - module: portal
             name: Portal
             target: test-portal-frontend
+          - module: standard
+            name: Standard
+            target: test-standard-frontend
           - module: system
             name: System
             target: test-system-frontend
