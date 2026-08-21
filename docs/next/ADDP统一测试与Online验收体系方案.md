@@ -279,8 +279,8 @@ T5 按产品或运行时独立编排，例如 System IAM、CLI、Infra Kafka HA�
 
 ### 阶段 1：统一 Online runner
 
-- 在 `scripts/test/` 建立唯一 Online 门禁分发入口和 suite 登记。
-- 在根 `Makefile` 增加 `test-online`，要求显式 `ONLINE_SUITE`。
+- [x] 在 `scripts/test/` 建立唯一 Online 门禁分发入口和显式 suite 登记。
+- [x] 在根 `Makefile` 增加 `test-online`，要求显式 `ONLINE_SUITE`，统一 Run ID 和总超时；未完成 owner 门禁的场景不得以占位形式登记。
 - [x] 建立通用 Online 预检器，拒绝非回环服务地址、默认 Tenant、脏工作区、无效 Run ID、服务健康异常和 Git commit 不匹配；其确定性自测纳入 `make test-platform`。
 - 实现 suite 级身份权限、安全数据库、超时和报告检查。
 - 通过 Gateway 和 owner API 新建 Standard ↔ Model 场景；旧环境变量、默认 Tenant 和跨 Schema SQL 不再存在。
@@ -323,6 +323,6 @@ T5 按产品或运行时独立编排，例如 System IAM、CLI、Infra Kafka HA�
 
 持续集成专题的 T0-T3 与首批 T2 门禁已经接入 GitHub Actions。开发者继续直接推送 `main`，该流程不调用 `scripts/dev/restart.sh`，不接管本地开发服务，也不连接 ADDP 开发业务库。
 
-阶段 1 已建立 `scripts/test/online-preflight.py`：预检只接受回环地址上的专用部署，并校验显式非默认 Tenant、Run ID、干净源码和参与服务构建身份。下一步建立唯一 `test-online` suite 分发入口，再通过 Gateway、owner API、专用身份、严格清理和残留检查实现新的 Standard ↔ Model 参考场景。随后准备带 `addp-online` 标签的 macOS 自托管 Runner，最后建立手工 / 夜间 T4 workflow。Online 验收不能复用本地开发环境。
+阶段 1 已建立唯一 `make test-online ONLINE_SUITE=<suite>` 分发入口和 `scripts/test/online-preflight.py`：分发器只运行已完成并登记的 owner 门禁，统一生成 Run ID、执行预检并施加总超时；预检只接受回环地址上的专用部署，并校验显式非默认 Tenant、干净源码和参与服务构建身份。当前不登记占位 suite。下一步通过 Gateway、owner API、专用身份、严格清理和残留检查实现新的 Standard ↔ Model 参考场景，完成后再登记。随后准备带 `addp-online` 标签的 macOS 自托管 Runner，最后建立手工 / 夜间 T4 workflow。Online 验收不能复用本地开发环境。
 
 不建议一次性实施全部测试层级。全仓测试入口和 CI 矩阵涉及多个 owner，应该按稳定入口逐步迁移，避免用一轮大改制造新的双轨体系。
