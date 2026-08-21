@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 44
+manifest_version: 45
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -641,6 +641,9 @@ roles:
       - meta.scan_task.execute
       - system.engine.read
       - system.engine_descriptor.read
+      - transfer.task.create
+      - transfer.task.execute
+      - transfer.task.read
   - key: tenant.meta_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.meta_runtime.name

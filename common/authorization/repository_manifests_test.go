@@ -62,6 +62,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"meta.scan_task.execute",
 		"system.engine.read",
 		"system.engine_descriptor.read",
+		"transfer.task.create",
+		"transfer.task.execute",
+		"transfer.task.read",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.meta_runtime", []string{
 		"audit.tenant_event.create",

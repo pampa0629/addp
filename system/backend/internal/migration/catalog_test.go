@@ -12,8 +12,8 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 65 {
-		t.Fatalf("LatestVersion = %d, want 65", catalog.LatestVersion)
+	if catalog.LatestVersion != 66 {
+		t.Fatalf("LatestVersion = %d, want 66", catalog.LatestVersion)
 	}
 }
 
@@ -237,6 +237,25 @@ func TestRuntimeEngineDescriptorConsumersMigrationPublishesAuthorization(t *test
 	} {
 		if !strings.Contains(sql, fragment) {
 			t.Fatalf("migration 48 missing %q", fragment)
+		}
+	}
+}
+
+func TestManagerTransferRuntimeMigrationPublishesAuthorization(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000066_iam_manager_transfer_runtime.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 66: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'tenant.manager_runtime'",
+		"'transfer.task.create'",
+		"'transfer.task.execute'",
+		"'transfer.task.read'",
+		"INSERT INTO system.role_permissions",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 66 missing %q", fragment)
 		}
 	}
 }

@@ -15,6 +15,66 @@ import (
 	"github.com/addp/system/internal/testsupport"
 )
 
+func TestManagerTransferRuntimeForwardMigrationsAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset Manager Transfer runtime migration schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	through48, _ := migrationFilesBeforeAndThrough(t, "000049_query_parameter_capabilities.up.sql")
+	through65, through66 := migrationFilesBeforeAndThrough(t, "000066_iam_manager_transfer_runtime.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through48, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 48: %v", err)
+	}
+	if err := (&Runner{DSN: dsn, FS: through65, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 65: %v", err)
+	}
+
+	countManagerTransferPermissions := func() int {
+		t.Helper()
+		var count int
+		if err := db.QueryRow(`
+			SELECT count(*)
+			FROM system.role_permissions AS role_permission
+			JOIN system.roles AS role ON role.id = role_permission.role_id
+			JOIN system.permissions AS permission ON permission.id = role_permission.permission_id
+			WHERE role.tenant_id IS NULL
+			  AND role.role_key = 'tenant.manager_runtime'
+			  AND permission.permission_key IN ('transfer.task.create', 'transfer.task.execute', 'transfer.task.read')
+		`).Scan(&count); err != nil {
+			t.Fatalf("count Manager Transfer runtime permissions: %v", err)
+		}
+		return count
+	}
+	if count := countManagerTransferPermissions(); count != 0 {
+		t.Fatalf("Manager Transfer runtime permissions before migration 66 = %d, want 0", count)
+	}
+
+	if err := (&Runner{DSN: dsn, FS: through66, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply Manager Transfer runtime migration 66: %v", err)
+	}
+	var version int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read migration 66 version: %v", err)
+	}
+	if count := countManagerTransferPermissions(); version != 66 || dirty || count != 3 {
+		t.Fatalf("migration 66 state=(%d,%t) Manager Transfer runtime permissions=%d", version, dirty, count)
+	}
+}
+
 func TestStandardReferenceRuntimeForwardMigrationAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
@@ -1481,7 +1541,7 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&managerPlatformPermissions); err != nil {
 		t.Fatalf("read platform.manager_runtime permissions: %v", err)
 	}
-	if managerTenantPermissions != "inference.runtime.execute,meta.catalog.read,meta.scan_task.execute,system.engine_descriptor.read,system.engine.read" ||
+	if managerTenantPermissions != "inference.runtime.execute,meta.catalog.read,meta.scan_task.execute,system.engine_descriptor.read,system.engine.read,transfer.task.create,transfer.task.execute,transfer.task.read" ||
 		metaTenantPermissions != "audit.tenant_event.create,system.engine_descriptor.read,system.engine.read" ||
 		transferTenantPermissions != "meta.catalog.read,meta.inspect.execute,meta.scan_task.execute,system.engine_descriptor.read,system.engine.read" ||
 		developTenantPermissions != "meta.catalog.read,meta.scan_task.execute,system.engine_descriptor.read,system.execution_authorization.execute,system.notebook_session_authorization.execute" ||
