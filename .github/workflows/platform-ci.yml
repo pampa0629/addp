@@ -264,6 +264,9 @@ jobs:
           - module: inference
             name: Inference
             target: test-inference-frontend
+          - module: manager
+            name: Manager
+            target: test-manager-frontend
           - module: meta
             name: Meta
             target: test-meta-frontend

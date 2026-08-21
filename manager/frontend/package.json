@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "vite --port 5174",
+    "test": "vitest run tests",
     "build": "vite build",
-    "preview": "vite preview",
-    "test:map": "vitest run tests/map"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@addp/common-frontend": "file:../../common-frontend",
