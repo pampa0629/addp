@@ -5,11 +5,9 @@
   "private": true,
   "scripts": {
     "dev": "vite",
+    "test": "node --test tests/*.test.js",
     "build": "vite build",
-    "preview": "vite preview",
-    "test:query-preview": "node --test tests/queryServicePreview.test.js",
-    "test:query-engines": "node --test tests/queryServiceEngines.test.js",
-    "test:query-sample": "node --test tests/queryServiceSample.test.js"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@addp/common-frontend": "file:../../common-frontend",

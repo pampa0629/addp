@@ -282,6 +282,9 @@ jobs:
           - module: portal
             name: Portal
             target: test-portal-frontend
+          - module: service
+            name: Service
+            target: test-service-frontend
           - module: standard
             name: Standard
             target: test-standard-frontend

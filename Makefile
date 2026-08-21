@@ -1,4 +1,4 @@
-.PHONY: help init dev build up down logs clean test test-platform test-go test-asset-frontend test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-arcgis-open-formats dev-all \
+.PHONY: help init dev build up down logs clean test test-platform test-go test-asset-frontend test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-arcgis-open-formats dev-all \
         build-backend build-frontend build-debug build-release build-iam-bootstrap build-iam-recovery clean-dist \
         infra-up infra-down infra-restart infra-status ports-validate
 
@@ -509,6 +509,10 @@ test-orchestrator-frontend: ## 运行 Orchestrator 前端确定性测试与构�
 test-portal-frontend: ## 运行 Portal 前端确定性测试与构建
 	@cd portal/frontend && npm test
 	@cd portal/frontend && npm run build
+
+test-service-frontend: ## 运行 Service 前端确定性测试与构建
+	@cd service/frontend && npm test
+	@cd service/frontend && npm run build
 
 test-standard-frontend: ## 运行 Standard 前端确定性测试与构建
 	@cd standard/frontend && npm test
