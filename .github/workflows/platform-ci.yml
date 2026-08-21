@@ -252,6 +252,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - module: develop
+            name: Develop
+            target: test-develop-frontend
           - module: graph
             name: Graph
             target: test-graph-frontend
@@ -261,6 +264,9 @@ jobs:
           - module: monitor
             name: Monitor
             target: test-monitor-frontend
+          - module: orchestrator
+            name: Orchestrator
+            target: test-orchestrator-frontend
           - module: portal
             name: Portal
             target: test-portal-frontend
