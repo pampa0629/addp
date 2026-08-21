@@ -108,3 +108,6 @@ other = "加载 SMTP Relay 失败"
 other = "SMTP Relay 配置无效"
 [monitor.smtp_relay.credential_required]
 other = "SMTP 凭据不能为空"
+
+[monitor.statistics.invalid_runtime_metric_duration]
+other = "统计窗口无效，仅支持 24h、7d 或 30d"

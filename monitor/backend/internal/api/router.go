@@ -31,6 +31,7 @@ func SetupRouter(
 	systemURL string,
 	redisClient *redis.Client,
 	systemClient *commonClient.SystemServiceClient,
+	runtimeHealthServices ...*service.RuntimeHealthService,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -58,6 +59,10 @@ func SetupRouter(
 	executionHandler := NewExecutionHandler(queryService)
 	statisticsHandler := NewStatisticsHandler(statisticsService)
 	healthHandler := NewHealthHandler(healthService)
+	var runtimeHealthHandler *RuntimeHealthHandler
+	if len(runtimeHealthServices) > 0 && runtimeHealthServices[0] != nil {
+		runtimeHealthHandler = NewRuntimeHealthHandler(runtimeHealthServices[0])
+	}
 	alertHandler := NewAlertHandler(alertService)
 	alertRuleHandler := NewAlertRuleHandler(alertRuleService)
 	webhookHandler := NewWebhookHandler(webhookService)
@@ -104,6 +109,7 @@ func SetupRouter(
 		// 统计数据
 		api.GET("/executions/stats", permission(monitorauthorization.PermissionMonitorStatisticsRead), statisticsHandler.GetStatistics)
 		api.GET("/executions/trend", permission(monitorauthorization.PermissionMonitorStatisticsRead), statisticsHandler.GetTrendData)
+		api.GET("/executions/runtime-metrics", permission(monitorauthorization.PermissionMonitorStatisticsRead), statisticsHandler.GetExecutionRuntimeMetrics)
 
 		api.GET("/executions/by-execution-id/:execution_id/tree", permission(monitorauthorization.PermissionMonitorExecutionRead), executionHandler.GetExecutionTreeByExecutionID)
 		api.GET("/executions/by-execution-id/:execution_id", permission(monitorauthorization.PermissionMonitorExecutionRead), executionHandler.GetExecutionByExecutionID)
@@ -140,6 +146,9 @@ func SetupRouter(
 		api.GET("/modules", permission(monitorauthorization.PermissionMonitorHealthRead), healthHandler.GetModules)
 		api.GET("/modules/:module/health", permission(monitorauthorization.PermissionMonitorHealthRead), healthHandler.CheckModuleHealth)
 		api.GET("/modules/health/all", permission(monitorauthorization.PermissionMonitorHealthRead), healthHandler.CheckAllModules)
+		if runtimeHealthHandler != nil {
+			api.GET("/runtime-instances/health", permission(monitorauthorization.PermissionMonitorHealthRead), runtimeHealthHandler.ListHealth)
+		}
 	}
 
 	// 健康检查（无认证）

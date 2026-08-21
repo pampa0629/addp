@@ -107,3 +107,6 @@ other = "Failed to load SMTP relay"
 other = "Invalid SMTP relay configuration"
 [monitor.smtp_relay.credential_required]
 other = "SMTP credential is required"
+
+[monitor.statistics.invalid_runtime_metric_duration]
+other = "Invalid observation window; supported values are 24h, 7d, and 30d"

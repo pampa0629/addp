@@ -116,6 +116,53 @@ func TestSupervisorMarksSchemaChangeBlocked(t *testing.T) {
 	}
 }
 
+func TestSupervisorMarksActiveSessionCancelledOnWorkerShutdown(t *testing.T) {
+	store := &fakeLeaseStore{
+		claim: &repository.RuntimeLeaseClaim{
+			Task:      models.TransferTask{ID: 45, DesiredState: models.TaskDesiredStateRunning},
+			Execution: commonExecution.TaskExecution{ExecutionID: "exec-45", Status: commonExecution.ExecutionStatusRunning},
+			Lease:     models.RuntimeLease{TaskID: 45, OwnerInstanceID: "worker-a", FencingToken: 10},
+		},
+		desiredState: models.TaskDesiredStateRunning,
+		finished:     make(chan finishCall, 1),
+	}
+	runnerStarted := make(chan struct{})
+	runner := SessionRunnerFunc(func(ctx context.Context, _ repository.RuntimeLeaseClaim) error {
+		close(runnerStarted)
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	supervisor, err := NewSupervisor(store, runner, Config{
+		OwnerInstanceID: "worker-a", Capacity: 1, LeaseDuration: time.Second,
+		HeartbeatInterval: 100 * time.Millisecond, ClaimInterval: 5 * time.Millisecond,
+	}, nil)
+	if err != nil {
+		t.Fatalf("NewSupervisor() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- supervisor.Run(ctx) }()
+	select {
+	case <-runnerStarted:
+		cancel()
+	case <-time.After(time.Second):
+		t.Fatal("continuous session did not start")
+	}
+	select {
+	case finished := <-store.finished:
+		if finished.status != commonExecution.ExecutionStatusCancelled || finished.reason != "worker_shutdown" {
+			t.Fatalf("finish = %#v, want worker_shutdown cancellation", finished)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("worker shutdown did not finish active session")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("supervisor did not stop after worker shutdown")
+	}
+}
+
 type finishCall struct {
 	status string
 	reason string

@@ -35,6 +35,11 @@ export function getTrendData(params) {
   return client.get('/monitor/executions/trend', { params })
 }
 
+// 获取按模块、任务类型和执行边界分组的执行运行时指标
+export function getExecutionRuntimeMetrics(params) {
+  return client.get('/monitor/executions/runtime-metrics', { params })
+}
+
 // 获取所有模块列表
 export function listModules() {
   return client.get('/monitor/modules')
@@ -53,6 +58,11 @@ export function checkAllModules() {
 // 检查所有任务提供者运行态健康状态
 export function checkAllProviderHealth() {
   return client.get('/monitor/providers/health')
+}
+
+// 查询 execution worker、continuous worker 和 dispatcher 进程健康
+export function listRuntimeHealth() {
+  return client.get('/monitor/runtime-instances/health')
 }
 
 // 获取所有任务提供者

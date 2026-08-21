@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
+	"time"
 
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
@@ -31,6 +34,38 @@ func TestGetExecutionTreeByExecutionID(t *testing.T) {
 	}
 	if tree.Children[0].Execution.ExecutionID != "child-exec" {
 		t.Fatalf("child execution_id = %s, want child-exec", tree.Children[0].Execution.ExecutionID)
+	}
+}
+
+func TestObserveExecutionProjectsDurationsAndSafeLeaseFacts(t *testing.T) {
+	createdAt := time.Date(2026, 8, 20, 1, 0, 0, 0, time.UTC)
+	startedAt := createdAt.Add(12 * time.Second)
+	expiresAt := startedAt.Add(30 * time.Second)
+	owner := "meta-worker-1"
+	token := "secret-lease-token"
+	currentStep := "worker lease expired; retry pending"
+	execution := &commonExecution.TaskExecution{
+		ExecutionID: "observed", Status: commonExecution.ExecutionStatusRunning,
+		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
+		CreatedAt:         createdAt, StartedAt: &startedAt, LeaseOwner: &owner,
+		LeaseToken: &token, LeaseExpiresAt: &expiresAt, Attempt: 2, CurrentStep: &currentStep,
+	}
+	observed := observeExecution(execution, startedAt.Add(35*time.Second))
+	if observed.QueueDurationMs != 12000 || observed.RunDurationMs != 35000 {
+		t.Fatalf("durations = queue %d run %d", observed.QueueDurationMs, observed.RunDurationMs)
+	}
+	if observed.LeaseState != "expired" || observed.LeaseOwner == nil || *observed.LeaseOwner != owner {
+		t.Fatalf("lease observation = %#v", observed)
+	}
+	if observed.RecoveryReason != "lease_expired" {
+		t.Fatalf("recovery reason = %q", observed.RecoveryReason)
+	}
+	payload, err := json.Marshal(observed)
+	if err != nil {
+		t.Fatalf("marshal observation: %v", err)
+	}
+	if strings.Contains(string(payload), token) || strings.Contains(string(payload), "lease_token") {
+		t.Fatalf("safe execution observation exposed lease token: %s", payload)
 	}
 }
 

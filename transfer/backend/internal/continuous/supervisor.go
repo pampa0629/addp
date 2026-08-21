@@ -194,6 +194,8 @@ func (s *Supervisor) activeCount() int {
 	return len(s.active)
 }
 
+func (s *Supervisor) ActiveCount() int { return s.activeCount() }
+
 func (s *Supervisor) stopAll() {
 	s.mu.Lock()
 	defer s.mu.Unlock()

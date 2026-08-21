@@ -35,8 +35,11 @@ import (
 const FileRowCountsOption = "parquet_file_row_counts"
 const ParquetWriterMaxRowsPerRowGroupOption = "max_rows_per_row_group"
 const ParquetWriterCompressionOption = "compression"
+const DefaultParquetWriterCompression = "zstd"
 const parquetScopeReaderMarkerProvider = "parquet.scope_table_reader"
 const parquetScopeReaderMarkerPositionUnit = "ref_row"
+
+var parquetWriterCompressions = []string{"zstd", "snappy", "lz4_raw", "brotli", "gzip", "uncompressed"}
 
 // Plugin 实现 Parquet 格式 plugin。
 type Plugin struct{}
@@ -198,6 +201,13 @@ func (p *Plugin) SpatialEncodingCapability() format.SpatialEncodingCapability {
 		DefaultWriteEncoding:   format.GeometryEncodingWKB,
 		NativeReadEncoding:     format.GeometryEncodingWKB,
 		NativeWriteEncoding:    format.GeometryEncodingWKB,
+	}
+}
+
+func (p *Plugin) ColumnarCompressionCapability() format.ColumnarCompressionCapability {
+	return format.ColumnarCompressionCapability{
+		Codecs:  append([]string(nil), parquetWriterCompressions...),
+		Default: DefaultParquetWriterCompression,
 	}
 }
 
@@ -750,48 +760,50 @@ type parquetWriterOptionSet struct {
 }
 
 func parquetWriterOptions(options *format.WriteOptions) (parquetWriterOptionSet, error) {
-	if options == nil || len(options.ExtraParams) == 0 {
-		return parquetWriterOptionSet{}, nil
-	}
 	optionSet := parquetWriterOptionSet{}
 	writerOptions := make([]parquetgo.WriterOption, 0, 2)
-	if value, ok := options.ExtraParams[ParquetWriterMaxRowsPerRowGroupOption]; ok {
-		rows := commonJSON.InterfaceInt64(value)
-		if rows <= 0 {
-			return parquetWriterOptionSet{}, fmt.Errorf("parquet %s must be positive", ParquetWriterMaxRowsPerRowGroupOption)
+	if options != nil {
+		if value, ok := options.ExtraParams[ParquetWriterMaxRowsPerRowGroupOption]; ok {
+			rows := commonJSON.InterfaceInt64(value)
+			if rows <= 0 {
+				return parquetWriterOptionSet{}, fmt.Errorf("parquet %s must be positive", ParquetWriterMaxRowsPerRowGroupOption)
+			}
+			writerOptions = append(writerOptions, parquetgo.MaxRowsPerRowGroup(rows))
+			optionSet.maxRowsPerRowGroup = rows
 		}
-		writerOptions = append(writerOptions, parquetgo.MaxRowsPerRowGroup(rows))
-		optionSet.maxRowsPerRowGroup = rows
 	}
-	if value, ok := options.ExtraParams[ParquetWriterCompressionOption]; ok {
-		codecName := strings.ToLower(strings.TrimSpace(commonJSON.InterfaceString(value)))
-		if codecName == "" {
-			return parquetWriterOptionSet{}, fmt.Errorf("parquet %s must not be empty", ParquetWriterCompressionOption)
+	codecName := DefaultParquetWriterCompression
+	if options != nil {
+		if value, ok := options.ExtraParams[ParquetWriterCompressionOption]; ok {
+			codecName = commonJSON.InterfaceString(value)
+			if codecName == "" || codecName != strings.TrimSpace(strings.ToLower(codecName)) {
+				return parquetWriterOptionSet{}, fmt.Errorf("parquet %s must be a canonical lowercase codec", ParquetWriterCompressionOption)
+			}
 		}
-		codec, err := parquetCompressionCodec(codecName)
-		if err != nil {
-			return parquetWriterOptionSet{}, err
-		}
-		writerOptions = append(writerOptions, parquetgo.Compression(codec))
 	}
+	codec, err := parquetCompressionCodec(codecName)
+	if err != nil {
+		return parquetWriterOptionSet{}, err
+	}
+	writerOptions = append(writerOptions, parquetgo.Compression(codec))
 	optionSet.options = writerOptions
 	return optionSet, nil
 }
 
 func parquetCompressionCodec(name string) (compress.Codec, error) {
-	switch strings.ReplaceAll(name, "-", "_") {
-	case "none", "uncompressed":
+	switch name {
+	case "uncompressed":
 		return &parquetuncompressed.Codec{}, nil
 	case "snappy":
 		return &parquetsnappy.Codec{}, nil
 	case "gzip":
-		return &parquetgzip.Codec{}, nil
+		return &parquetgzip.Codec{Level: parquetgzip.DefaultCompression}, nil
 	case "zstd":
-		return &parquetzstd.Codec{}, nil
-	case "lz4", "lz4_raw":
-		return &parquetlz4.Codec{}, nil
+		return &parquetzstd.Codec{Level: parquetzstd.DefaultLevel}, nil
+	case "lz4_raw":
+		return &parquetlz4.Codec{Level: parquetlz4.DefaultLevel}, nil
 	case "brotli":
-		return &parquetbrotli.Codec{}, nil
+		return &parquetbrotli.Codec{Quality: parquetbrotli.DefaultQuality, LGWin: parquetbrotli.DefaultLGWin}, nil
 	default:
 		return nil, fmt.Errorf("unsupported parquet compression %q", name)
 	}

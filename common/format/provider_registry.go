@@ -3,6 +3,7 @@ package format
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -72,6 +73,47 @@ func GetCRSDefinitionWriteRequirementProvider(formatType FormatType) (CRSDefinit
 
 func (r *ProviderRegistry) GetCRSDefinitionWriteRequirementProvider(formatType FormatType) (CRSDefinitionWriteRequirementProvider, error) {
 	return pluginCapability[CRSDefinitionWriteRequirementProvider](r, formatType, "CRS definition write requirement provider")
+}
+
+func GetColumnarCompressionCapabilityProvider(formatType FormatType) (ColumnarCompressionCapabilityProvider, error) {
+	return globalProviderRegistry.GetColumnarCompressionCapabilityProvider(formatType)
+}
+
+func (r *ProviderRegistry) GetColumnarCompressionCapabilityProvider(formatType FormatType) (ColumnarCompressionCapabilityProvider, error) {
+	return pluginCapability[ColumnarCompressionCapabilityProvider](r, formatType, "columnar compression capability provider")
+}
+
+func GetColumnarCompressionCapability(formatType FormatType) (ColumnarCompressionCapability, error) {
+	provider, err := GetColumnarCompressionCapabilityProvider(formatType)
+	if err != nil {
+		return ColumnarCompressionCapability{}, err
+	}
+	capability := provider.ColumnarCompressionCapability()
+	capability.Codecs = append([]string(nil), capability.Codecs...)
+	if err := validateColumnarCompressionCapability(capability); err != nil {
+		return ColumnarCompressionCapability{}, fmt.Errorf("format %s has invalid columnar compression capability: %w", formatType, err)
+	}
+	return capability, nil
+}
+
+func validateColumnarCompressionCapability(capability ColumnarCompressionCapability) error {
+	if capability.Default == "" || capability.Default != strings.TrimSpace(strings.ToLower(capability.Default)) {
+		return fmt.Errorf("default codec must be a canonical lowercase value")
+	}
+	seen := make(map[string]struct{}, len(capability.Codecs))
+	for _, codec := range capability.Codecs {
+		if codec == "" || codec != strings.TrimSpace(strings.ToLower(codec)) {
+			return fmt.Errorf("codec %q must be a canonical lowercase value", codec)
+		}
+		if _, exists := seen[codec]; exists {
+			return fmt.Errorf("codec %q is duplicated", codec)
+		}
+		seen[codec] = struct{}{}
+	}
+	if _, exists := seen[capability.Default]; !exists {
+		return fmt.Errorf("default codec %q is not declared", capability.Default)
+	}
+	return nil
 }
 
 func GetMultiTableInfoProvider(formatType FormatType) (MultiTableInfoProvider, error) {

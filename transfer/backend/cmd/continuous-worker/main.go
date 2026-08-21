@@ -13,8 +13,10 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonRepo "github.com/addp/common/repository"
+	commonRuntimeHealth "github.com/addp/common/runtimehealth"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/continuous"
 	"github.com/addp/transfer/internal/deadletter"
@@ -33,6 +35,9 @@ func main() {
 	db, err := connectDatabase(cfg)
 	if err != nil {
 		log.Fatalf("continuous worker 连接 Infra PostgreSQL 失败: %v", err)
+	}
+	if err := commonRuntimeHealth.EnsureStore(db); err != nil {
+		log.Fatalf("初始化后台运行实例心跳失败: %v", err)
 	}
 	continuousPolicyService := service.NewContinuousPolicyService(repository.NewContinuousPolicyRepository(db))
 	if err := continuousPolicyService.Apply(context.Background(), cfg); err != nil {
@@ -134,6 +139,16 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	reporter, err := commonRuntimeHealth.NewReporter(commonRuntimeHealth.NewRepository(db), commonRuntimeHealth.ReporterConfig{
+		InstanceID: owner, Module: commonExecution.ModuleTransfer, Role: commonRuntimeHealth.RoleContinuousWorker,
+		RuntimeName: "continuous_sync", Capacity: cfg.ContinuousWorkerCapacity,
+		Interval: commonRuntimeHealth.DefaultInterval, TTL: commonRuntimeHealth.DefaultTTL,
+		ActiveCount: supervisor.ActiveCount, Logger: logger.With("component", "runtime_health"),
+	})
+	if err != nil {
+		log.Fatalf("Transfer continuous worker 心跳配置无效: %v", err)
+	}
+	go reporter.Run(ctx)
 	go func() {
 		if err := deadLetterReconciler.Run(ctx); err != nil && err != context.Canceled {
 			logger.L().Error("DLQ payload availability reconciler 已退出", "error", err)

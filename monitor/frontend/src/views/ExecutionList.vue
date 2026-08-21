@@ -175,7 +175,27 @@
             {{ getTriggerText(currentExecution.trigger_type) }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('monitor.execution.detail.duration')">
-            {{ formatDuration(currentExecution.execution_time_ms) }}
+            {{ formatDuration(currentExecution.run_duration_ms) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.execution.detail.queue_duration')">
+            {{ formatDuration(currentExecution.queue_duration_ms) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.execution.detail.attempt')">
+            {{ currentExecution.attempt || 0 }} / {{ currentExecution.max_attempts || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.execution.detail.lease_state')">
+            <el-tag :type="leaseStateTagType(currentExecution.lease_state)" size="small">
+              {{ leaseStateText(currentExecution.lease_state) }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.execution.detail.lease_owner')">
+            <span class="runtime-identity">{{ currentExecution.lease_owner || '-' }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.execution.detail.lease_expires_at')">
+            {{ formatDate(currentExecution.lease_expires_at) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.execution.detail.recovery_reason')">
+            {{ currentExecution.recovery_reason || '-' }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('monitor.execution.detail.created_at')">
             {{ formatDate(currentExecution.created_at) }}
@@ -218,7 +238,7 @@
                   </el-tag>
                 </div>
                 <div class="execution-tree-node-meta">
-                  <span>{{ t('monitor.execution.detail.duration') }}: {{ formatDuration(data.execution.execution_time_ms) }}</span>
+                  <span>{{ t('monitor.execution.detail.duration') }}: {{ formatDuration(data.execution.run_duration_ms) }}</span>
                   <span>{{ t('monitor.execution.detail.source') }}: {{ data.execution.source || '-' }}</span>
                   <span>{{ t('monitor.execution.detail.source_task_id') }}: {{ data.execution.source_task_id || '-' }}</span>
                   <span>{{ t('monitor.execution.detail.uuid') }}: {{ data.execution.execution_id }}</span>
@@ -482,7 +502,7 @@ import ExecutionTable from '@/components/ExecutionTable.vue'
 import { executionDetailLocation } from '@/utils/executionNavigation'
 import { navigateMonitorRoute } from '@/utils/moduleNavigation'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const route = useRoute()
 const router = useRouter()
 
@@ -624,9 +644,9 @@ function isContinuousExecution(execution) {
 }
 
 function continuousSignalText(code) {
+  if (!code) return '-'
   const key = `monitor.execution.detail.continuous.signals.${code}.title`
-  const translated = t(key)
-  return translated === key ? code : translated
+  return te(key) ? t(key) : code
 }
 
 function continuousSignalDescription(signal) {
@@ -648,8 +668,7 @@ function continuousSignalAlertType(severity) {
 function continuousTransactionStatusText(status) {
   if (!status) return '-'
   const key = `monitor.execution.detail.continuous.capture.transaction_status_values.${status}`
-  const translated = t(key)
-  return translated === key ? status : translated
+  return te(key) ? t(key) : status
 }
 
 function formatPercent(value) {
@@ -783,8 +802,7 @@ function formatBoolean(value) {
 function formatTargetKind(targetKind) {
   if (!hasValue(targetKind)) return '-'
   const key = `monitor.execution.detail.target_kind.${targetKind}`
-  const translated = t(key)
-  return translated === key ? targetKind : translated
+  return te(key) ? t(key) : targetKind
 }
 
 function targetKindTagType(targetKind) {
@@ -978,8 +996,7 @@ function formatTaskType(execution) {
   )
   if (capabilityName) return capabilityName
   const key = `monitor.execution.task_type_names.${taskType}`
-  const translated = t(key)
-  return translated === key ? taskType : translated
+  return te(key) ? t(key) : taskType
 }
 
 // 辅助函数
@@ -1009,6 +1026,17 @@ function getStatusText(status) {
     cancelled: t('monitor.execution.status.cancelled'),
   }
   return textMap[status] || status
+}
+
+function leaseStateText(state) {
+  const key = `monitor.execution.detail.lease_states.${state || 'none'}`
+  return te(key) ? t(key) : (state || '-')
+}
+
+function leaseStateTagType(state) {
+  if (state === 'active') return 'success'
+  if (state === 'expired' || state === 'missing') return 'danger'
+  return 'info'
 }
 
 async function refreshOpenedExecution() {
@@ -1083,7 +1111,7 @@ function formatDate(date) {
 }
 
 function formatDuration(ms) {
-  if (!ms) return '-'
+  if (ms === null || ms === undefined) return '-'
   if (ms < 1000) return `${ms}ms`
   if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`
   return `${(ms / 60000).toFixed(2)}min`
@@ -1094,9 +1122,9 @@ function continuousMetric(value) {
 }
 
 function continuousHealthText(health) {
+  if (!health) return '-'
   const key = `monitor.execution.detail.continuous.health_values.${health}`
-  const translated = t(key)
-  return translated === key ? health : translated
+  return te(key) ? t(key) : health
 }
 
 // 初始化

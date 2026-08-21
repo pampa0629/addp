@@ -16,6 +16,7 @@ import (
 	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/common/logger"
 	commonRepo "github.com/addp/common/repository"
+	commonRuntimeHealth "github.com/addp/common/runtimehealth"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/continuous"
 	"github.com/addp/transfer/internal/repository"
@@ -33,6 +34,9 @@ func main() {
 	db, err := connectDatabase(cfg)
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
+	}
+	if err := commonRuntimeHealth.EnsureStore(db); err != nil {
+		log.Fatalf("初始化后台运行实例心跳失败: %v", err)
 	}
 	taskRepo := repository.NewTaskRepository(db)
 	executionRepo := commonExecution.NewTaskExecutionRepository(db)
@@ -57,8 +61,9 @@ func main() {
 	taskService := service.NewTaskService(db, executionEngineService, cfg)
 
 	hostname, _ := os.Hostname()
+	workerInstanceID := fmt.Sprintf("%s-%d-%s", hostname, os.Getpid(), uuid.NewString())
 	runner, err := worker.NewBoundedRunner(taskRepo, taskService, executionService, worker.BoundedRunnerConfig{
-		WorkerID:    fmt.Sprintf("%s-%d-%s", hostname, os.Getpid(), uuid.NewString()),
+		WorkerID:    workerInstanceID,
 		Concurrency: cfg.BoundedWorkerConcurrency, LeaseDuration: cfg.BoundedLeaseDuration,
 		HeartbeatInterval: cfg.BoundedHeartbeatInterval, ClaimInterval: cfg.BoundedClaimInterval,
 	}, logger.With("component", "transfer_bounded_runner"))
@@ -68,6 +73,16 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	reporter, err := commonRuntimeHealth.NewReporter(commonRuntimeHealth.NewRepository(db), commonRuntimeHealth.ReporterConfig{
+		InstanceID: workerInstanceID, Module: commonExecution.ModuleTransfer, Role: commonRuntimeHealth.RoleExecutionWorker,
+		RuntimeName: commonExecution.TaskTypeSync, Capacity: cfg.BoundedWorkerConcurrency,
+		Interval: commonRuntimeHealth.DefaultInterval, TTL: commonRuntimeHealth.DefaultTTL,
+		ActiveCount: runner.ActiveCount, Logger: logger.With("component", "runtime_health"),
+	})
+	if err != nil {
+		log.Fatalf("Transfer bounded worker 心跳配置无效: %v", err)
+	}
+	go reporter.Run(ctx)
 	logger.L().Info("transfer bounded worker started", "concurrency", cfg.BoundedWorkerConcurrency, "lease", cfg.BoundedLeaseDuration)
 	runner.Run(ctx)
 	logger.L().Info("transfer bounded worker stopped")

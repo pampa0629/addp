@@ -38,7 +38,7 @@ endpoint 只决定 reader / writer 来源：
 | encoded multi file/object | contentio + `[]format.RelatedRef` + `common/format` multi table reader / writer |
 | encoded whole scope | contentio reader/lister + `common/format` scope table reader |
 
-当前已经接入的 table 格式包括 CSV / TSV、JSON / JSONL、Parquet、Shapefile。native table 写侧已经接入 PostgreSQL、MySQL、Doris、ClickHouse 第一版。
+当前已经接入的 table 格式包括 CSV / TSV、JSON / JSONL、Parquet / GeoParquet、Shapefile。Parquet writer 默认使用 ZSTD 列式压缩，可选 codec 由 `GET /capabilities` 动态声明。native table 写侧已经接入 PostgreSQL、MySQL、Doris、ClickHouse 第一版。
 
 non-table raw copy 已形成第一版最小闭环：`document`、`media`、`cad`、`unknown` 的 encoded single file/object 可按原始字节复制。raw copy 不进入 `common/format` table reader / writer，不解析正文、不抽取媒体元数据，也不做格式转换；目标应用只支持 `replace`。
 

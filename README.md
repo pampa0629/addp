@@ -182,9 +182,9 @@ ADDP 提供完整的自动化脚本工具链，覆盖开发、构建、部署全
 - **Web 框架**: Gin
 - **ORM**: GORM
 - **数据库**: PostgreSQL 15 (schema 隔离)
-- **缓存/队列**: Redis 7
+- **缓存/事件**: Redis 7
 - **对象存储**: MinIO (S3 兼容)
-- **任务队列**: Asynq (Redis 基础)
+- **有界执行领取**: PostgreSQL claim + execution lease
 - **全文搜索**: Meilisearch
 
 #### 前端
@@ -219,7 +219,7 @@ ADDP 不创建默认全权管理员、默认租户或共享弱密码账号。首
 | Transfer Backend | 8083 | 8083 | 数据传输 |
 | Orchestrator Backend | 8084 | 8084 | 工作流编排 |
 | PostgreSQL | 5432 | 5432 | 系统数据库 |
-| Redis | 6379 | 6379 | 缓存和队列 |
+| Redis | 6379 | 6379 | 缓存、事件和分布式锁 |
 | MinIO API | 9000 | 9000 | 对象存储 |
 | MinIO Console | 9001 | 9001 | MinIO 管理界面 |
 
@@ -334,7 +334,7 @@ Complete automation scripts for development, build, and deployment:
 
 ### 🏗️ Tech Stack
 
-**Backend**: Go 1.23+, Gin, GORM, PostgreSQL 15, Redis 7, MinIO, Asynq
+**Backend**: Go 1.23+, Gin, GORM, PostgreSQL 15, Redis 7 (cache/events), MinIO
 
 **Frontend**: Vue 3, Vite, Element Plus, Pinia, OpenLayers
 

@@ -60,10 +60,18 @@
         {{ formatDate(row.created_at) }}
       </template>
     </el-table-column>
-    <el-table-column prop="execution_time_ms" :label="t('monitor.table.duration')" width="120">
+    <el-table-column prop="queue_duration_ms" :label="t('monitor.table.queue_duration')" width="120">
       <template #default="{ row }">
-        {{ formatDuration(row.execution_time_ms) }}
+        {{ formatDuration(row.queue_duration_ms) }}
       </template>
+    </el-table-column>
+    <el-table-column prop="run_duration_ms" :label="t('monitor.table.duration')" width="120">
+      <template #default="{ row }">
+        {{ formatDuration(row.run_duration_ms) }}
+      </template>
+    </el-table-column>
+    <el-table-column prop="attempt" :label="t('monitor.table.attempt')" width="100">
+      <template #default="{ row }">{{ row.attempt || 0 }} / {{ row.max_attempts || '-' }}</template>
     </el-table-column>
     <el-table-column :label="t('monitor.table.actions')" width="100" fixed="right">
       <template #default="{ row }">
@@ -79,7 +87,7 @@
 import { useI18n } from 'vue-i18n'
 import { buildContinuousSignals, continuousSignalTagType, hasContinuousExecutionMetadata, resolveTaskTypeDisplayName } from '@common-ui'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 
 const props = defineProps({
   executions: {
@@ -127,9 +135,9 @@ function continuousPrimarySignal(row) {
 }
 
 function continuousSignalText(code) {
+  if (!code) return '-'
   const key = `monitor.execution.detail.continuous.signals.${code}.title`
-  const translated = t(key)
-  return translated === key ? code : translated
+  return te(key) ? t(key) : code
 }
 
 function getTriggerText(triggerType) {
@@ -147,8 +155,7 @@ function formatTaskType(row) {
   const capabilityName = resolveTaskTypeDisplayName(props.taskProviders, row?.module, taskType)
   if (capabilityName) return capabilityName
   const key = `monitor.execution.task_type_names.${taskType}`
-  const translated = t(key)
-  return translated === key ? taskType : translated
+  return te(key) ? t(key) : taskType
 }
 
 function getProgressStatus(status) {
@@ -163,7 +170,7 @@ function formatDate(date) {
 }
 
 function formatDuration(ms) {
-  if (!ms) return '-'
+  if (ms === null || ms === undefined) return '-'
   if (ms < 1000) return `${ms}ms`
   if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`
   return `${(ms / 60000).toFixed(2)}min`

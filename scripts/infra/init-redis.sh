@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # ADDP Infrastructure Redis Initialization
-# 初始化 Redis 任务队列和缓存配置
+# 检查 Redis 缓存、事件和分布式锁运行状态
 # 由 infra-up.sh 自动调用
 
 set -euo pipefail
@@ -41,14 +41,15 @@ fi
 
 # 确认 Redis 容器正在运行
 if ! docker compose -f docker-compose.infra.yml ps --status running redis >/dev/null 2>&1; then
-  echo -e "${RED}✗ Redis 容器未运行，无法初始化${NC}"
+  echo -e "${RED}✗ Redis 容器未运行，无法检查${NC}"
   echo -e "${YELLOW}  请先执行: bash scripts/infra/up.sh${NC}"
   exit 1
 fi
 
 # Helper function to execute Redis commands
 redis_exec() {
-  docker exec redis redis-cli -a "${REDIS_PASSWORD}" "$@" 2>/dev/null
+  docker compose -f docker-compose.infra.yml exec -T \
+    -e REDISCLI_AUTH="${REDIS_PASSWORD}" redis redis-cli "$@" 2>/dev/null
 }
 
 # Parse command line arguments
@@ -64,13 +65,13 @@ if [[ "$CLEAN_MODE" == true ]]; then
   echo -e "===========================================${NC}"
   echo ""
   echo -e "${RED}⚠️  警告：此操作将清空 Redis 中所有数据，包括：${NC}"
-  echo -e "  ${YELLOW}- 所有任务队列（Asynq: transfer:*/meta:*）${NC}"
-  echo -e "  ${YELLOW}- 所有缓存（cache:system:*/cache:manager:*）${NC}"
-  echo -e "  ${YELLOW}- 所有临时数据${NC}"
+  echo -e "  ${YELLOW}- 所有缓存${NC}"
+  echo -e "  ${YELLOW}- 所有扫描去重锁和限流状态${NC}"
+  echo -e "  ${YELLOW}- 所有临时协调数据${NC}"
   echo -e "  ${YELLOW}- 所有 Pub/Sub 订阅将断开${NC}"
   echo ""
-  echo -e "${BLUE}数据类型：${NC}缓存和队列（非关键业务数据）"
-  echo -e "${BLUE}清空后：${NC}服务会自动重建缓存和队列"
+  echo -e "${BLUE}数据类型：${NC}缓存、事件和临时协调状态（非关键业务事实）"
+  echo -e "${BLUE}清空后：${NC}服务会按需重建缓存和协调状态"
   echo -e "${BLUE}持久化：${NC}保留 Redis 容器和数据卷"
   echo ""
 
@@ -108,7 +109,7 @@ if [[ "$CLEAN_MODE" == true ]]; then
   echo -e "${YELLOW}==========================================="
   echo -e "  提示"
   echo -e "===========================================${NC}"
-  echo "  服务会自动重建缓存和任务队列"
+  echo "  服务会按需重建缓存和临时协调状态"
   echo "  无需手动干预，继续使用即可"
   echo ""
 
@@ -117,7 +118,7 @@ fi
 
 # ==================== DEFAULT MODE (VERIFICATION) ====================
 echo -e "${YELLOW}==========================================="
-echo -e "  初始化 Redis 任务队列和缓存配置"
+echo -e "  检查 Redis 缓存、事件和分布式锁"
 echo -e "===========================================${NC}"
 echo ""
 
@@ -136,18 +137,10 @@ fi
 
 echo ""
 
-# Display task queue namespaces
-echo -e "${YELLOW}▶ 任务队列命名空间...${NC}"
-echo -e "  ${GREEN}✓ transfer:critical${NC} (紧急任务队列)"
-echo -e "  ${GREEN}✓ transfer:default${NC} (普通任务队列)"
-echo -e "  ${GREEN}✓ transfer:low${NC} (低优先级任务队列)"
-
-echo ""
-
 # Display Pub/Sub channels
 echo -e "${YELLOW}▶ Pub/Sub 事件通道配置...${NC}"
-echo -e "  ${GREEN}✓ system:engine:*${NC} (引擎变更事件)"
-echo -e "  ${GREEN}✓ meta:scan:*${NC} (元数据扫描事件)"
+echo -e "  ${GREEN}✓ engine:changed / engine:deleted${NC} (引擎变更事件)"
+echo -e "  ${GREEN}✓ meta:scan_completed${NC} (元数据扫描完成事件)"
 
 echo ""
 
@@ -196,25 +189,23 @@ count_keys_by_pattern() {
   echo "$count"
 }
 
-ASYNQ_COUNT=$(count_keys_by_pattern "asynq:*")
-CACHE_SYSTEM_COUNT=$(count_keys_by_pattern "cache:system:*")
-CACHE_MANAGER_COUNT=$(count_keys_by_pattern "cache:manager:*")
-CACHE_META_COUNT=$(count_keys_by_pattern "cache:meta:*")
+META_COUNT=$(count_keys_by_pattern "meta:*")
+MANAGER_COUNT=$(count_keys_by_pattern "manager:*")
+CLEANUP_COUNT=$(count_keys_by_pattern "cleanup:*")
 TOTAL_KEYS=$(redis_exec DBSIZE | tr -d '\r')
 
-echo -e "  ${BLUE}asynq:*${NC}           : ${ASYNQ_COUNT} 个键"
-echo -e "  ${BLUE}cache:system:*${NC}    : ${CACHE_SYSTEM_COUNT} 个键"
-echo -e "  ${BLUE}cache:manager:*${NC}   : ${CACHE_MANAGER_COUNT} 个键"
-echo -e "  ${BLUE}cache:meta:*${NC}      : ${CACHE_META_COUNT} 个键"
-echo -e "  ${BLUE}总计${NC}              : ${TOTAL_KEYS} 个键"
+echo -e "  ${BLUE}meta:*${NC}       : ${META_COUNT} 个键"
+echo -e "  ${BLUE}manager:*${NC}    : ${MANAGER_COUNT} 个键"
+echo -e "  ${BLUE}cleanup:*${NC}    : ${CLEANUP_COUNT} 个键"
+echo -e "  ${BLUE}总计${NC}         : ${TOTAL_KEYS} 个键"
 
 echo ""
-echo -e "${GREEN}✓ Redis 初始化完成${NC}"
+echo -e "${GREEN}✓ Redis 检查完成${NC}"
 echo ""
 echo -e "${YELLOW}==========================================="
 echo -e "  Redis 访问信息"
 echo -e "===========================================${NC}"
-echo "  连接命令: docker exec -it redis redis-cli -a ${REDIS_PASSWORD}"
-echo "  监控命令: docker exec redis redis-cli -a ${REDIS_PASSWORD} INFO"
+echo "  连接命令: docker compose -f docker-compose.infra.yml exec redis redis-cli"
+echo "  监控命令: docker compose -f docker-compose.infra.yml exec -T redis redis-cli INFO"
 echo "  清理数据: bash scripts/infra/init-redis.sh --clean"
 echo ""

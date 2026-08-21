@@ -15,6 +15,7 @@ import (
 	"github.com/addp/common/resume"
 	commonSpatial "github.com/addp/common/spatial"
 	parquetgo "github.com/parquet-go/parquet-go"
+	parquetgzip "github.com/parquet-go/parquet-go/compress/gzip"
 	parquetfmt "github.com/parquet-go/parquet-go/format"
 	"github.com/twpayne/go-geom"
 )
@@ -43,6 +44,7 @@ func TestParquetPluginImplementsTargetInterfaces(t *testing.T) {
 	var _ format.ScopeTableInfoProvider = plugin
 	var _ format.ScopeTableSampleReader = plugin
 	var _ format.ScopeTableReaderProvider = plugin
+	var _ format.ColumnarCompressionCapabilityProvider = plugin
 	var _ format.TableReaderProvider = plugin
 	var _ format.TableWriterProvider = plugin
 	var _ format.SpatialEncodingCapabilityProvider = plugin
@@ -53,6 +55,31 @@ func TestParquetPluginImplementsTargetInterfaces(t *testing.T) {
 	}
 	if capability.NativeWriteEncoding != format.GeometryEncodingWKB || !containsGeometryEncoding(capability.GeometryWriteEncodings, format.GeometryEncodingEWKB) {
 		t.Fatalf("spatial encoding capability = %#v, want native WKB and EWKB input", capability)
+	}
+}
+
+func TestParquetPluginDeclaresColumnarCompressionCapability(t *testing.T) {
+	capability, err := format.GetColumnarCompressionCapability(format.FormatParquet)
+	if err != nil {
+		t.Fatalf("GetColumnarCompressionCapability failed: %v", err)
+	}
+
+	wantCodecs := []string{"zstd", "snappy", "lz4_raw", "brotli", "gzip", "uncompressed"}
+	if capability.Default != "zstd" {
+		t.Fatalf("default compression = %q, want zstd", capability.Default)
+	}
+	if len(capability.Codecs) != len(wantCodecs) {
+		t.Fatalf("compression codecs = %#v, want %#v", capability.Codecs, wantCodecs)
+	}
+	for index := range wantCodecs {
+		if capability.Codecs[index] != wantCodecs[index] {
+			t.Fatalf("compression codecs = %#v, want %#v", capability.Codecs, wantCodecs)
+		}
+	}
+	capability.Codecs[0] = "changed"
+	next, err := format.GetColumnarCompressionCapability(format.FormatParquet)
+	if err != nil || next.Codecs[0] != "zstd" {
+		t.Fatalf("compression capability is mutable: %#v, %v", next, err)
 	}
 }
 
@@ -546,6 +573,80 @@ func TestParquetPluginOpenTableWriterUsesWriterOptions(t *testing.T) {
 	}
 }
 
+func TestParquetPluginOpenTableWriterUsesZSTDByDefault(t *testing.T) {
+	data := writeParquetCompressionRows(t, "")
+	file, err := parquetgo.OpenFile(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("OpenFile failed: %v", err)
+	}
+	if got := file.Metadata().RowGroups[0].Columns[0].MetaData.Codec; got != parquetfmt.Zstd {
+		t.Fatalf("default compression codec = %v, want zstd", got)
+	}
+}
+
+func TestParquetPluginOpenTableWriterSupportsDeclaredCompressionCodecs(t *testing.T) {
+	want := map[string]parquetfmt.CompressionCodec{
+		"zstd":         parquetfmt.Zstd,
+		"snappy":       parquetfmt.Snappy,
+		"lz4_raw":      parquetfmt.Lz4Raw,
+		"brotli":       parquetfmt.Brotli,
+		"gzip":         parquetfmt.Gzip,
+		"uncompressed": parquetfmt.Uncompressed,
+	}
+	for _, codec := range parquetWriterCompressions {
+		t.Run(codec, func(t *testing.T) {
+			data := writeParquetCompressionRows(t, codec)
+			file, err := parquetgo.OpenFile(bytes.NewReader(data), int64(len(data)))
+			if err != nil {
+				t.Fatalf("OpenFile failed: %v", err)
+			}
+			if got := file.Metadata().RowGroups[0].Columns[0].MetaData.Codec; got != want[codec] {
+				t.Fatalf("compression codec = %v, want %v", got, want[codec])
+			}
+			rows, err := NewPlugin().SampleTable(context.Background(), bytes.NewReader(data), 0, 1, nil)
+			if err != nil || len(rows) != 1 || rows[0]["name"] != "ADDP" {
+				t.Fatalf("compressed parquet round trip = %#v, %v", rows, err)
+			}
+		})
+	}
+}
+
+func TestParquetGZIPUsesLibraryDefaultCompressionLevel(t *testing.T) {
+	codec, err := parquetCompressionCodec("gzip")
+	if err != nil {
+		t.Fatalf("parquetCompressionCodec failed: %v", err)
+	}
+	gzipCodec, ok := codec.(*parquetgzip.Codec)
+	if !ok || gzipCodec.Level != parquetgzip.DefaultCompression {
+		t.Fatalf("gzip codec = %#v, want default compression level", codec)
+	}
+}
+
+func writeParquetCompressionRows(t *testing.T, compression string) []byte {
+	t.Helper()
+	plugin := NewPlugin()
+	tableInfo := &datatype.TableInfo{Fields: []datatype.FieldInfo{
+		{Name: "id", Type: datatype.FieldTypeBigInt},
+		{Name: "name", Type: datatype.FieldTypeString},
+	}}
+	options := format.DefaultWriteOptions()
+	if compression != "" {
+		options.ExtraParams = map[string]interface{}{ParquetWriterCompressionOption: compression}
+	}
+	var buf bytes.Buffer
+	writer, err := plugin.OpenTableWriter(context.Background(), &buf, tableInfo, options)
+	if err != nil {
+		t.Fatalf("OpenTableWriter failed: %v", err)
+	}
+	if err := writer.WriteRows(context.Background(), []map[string]interface{}{{"id": int64(1), "name": "ADDP"}}); err != nil {
+		t.Fatalf("WriteRows failed: %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+	return buf.Bytes()
+}
+
 func TestParquetPluginOpenTableWriterRejectsInvalidWriterOptions(t *testing.T) {
 	plugin := NewPlugin()
 	tableInfo := &datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}}}
@@ -562,6 +663,13 @@ func TestParquetPluginOpenTableWriterRejectsInvalidWriterOptions(t *testing.T) {
 	}
 	if _, err := plugin.OpenTableWriter(context.Background(), &bytes.Buffer{}, tableInfo, opts); err == nil {
 		t.Fatal("OpenTableWriter succeeded with invalid compression, want error")
+	}
+
+	for _, alias := range []string{"none", "lz4", "ZSTD", " zstd "} {
+		opts.ExtraParams = map[string]interface{}{ParquetWriterCompressionOption: alias}
+		if _, err := plugin.OpenTableWriter(context.Background(), &bytes.Buffer{}, tableInfo, opts); err == nil {
+			t.Fatalf("OpenTableWriter succeeded with non-canonical compression %q, want error", alias)
+		}
 	}
 }
 
@@ -633,6 +741,13 @@ func TestParquetPluginWritesGeoParquet11WKBAndRoundTripsEWKB(t *testing.T) {
 	file, err := parquetgo.OpenFile(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
 	if err != nil {
 		t.Fatalf("OpenFile failed: %v", err)
+	}
+	for rowGroupIndex, rowGroup := range file.Metadata().RowGroups {
+		for columnIndex, column := range rowGroup.Columns {
+			if column.MetaData.Codec != parquetfmt.Zstd {
+				t.Fatalf("GeoParquet row group %d column %d compression = %v, want zstd", rowGroupIndex, columnIndex, column.MetaData.Codec)
+			}
+		}
 	}
 	rawGeo, ok := file.Lookup(geoParquetMetadataKey)
 	if !ok {

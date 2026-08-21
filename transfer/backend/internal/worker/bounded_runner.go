@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
@@ -26,7 +27,10 @@ type BoundedRunner struct {
 	executions *service.ExecutionService
 	config     BoundedRunnerConfig
 	logger     *slog.Logger
+	active     atomic.Int64
 }
+
+func (r *BoundedRunner) ActiveCount() int { return int(r.active.Load()) }
 
 func NewBoundedRunner(tasks *repository.TaskRepository, taskService *service.TaskService, executions *service.ExecutionService, config BoundedRunnerConfig, logger *slog.Logger) (*BoundedRunner, error) {
 	if tasks == nil || taskService == nil || executions == nil {
@@ -90,6 +94,8 @@ func (r *BoundedRunner) processNext(ctx context.Context, workerID string) bool {
 	if execution == nil || lease == nil || task == nil {
 		return false
 	}
+	r.active.Add(1)
+	defer r.active.Add(-1)
 
 	executionID := uint(execution.ID)
 	execCtx, cancel := context.WithCancel(commonExecution.ContextWithLease(ctx, *lease))

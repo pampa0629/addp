@@ -528,7 +528,7 @@ init-minio: ## 初始化 MinIO buckets（包括 PMTiles 快显缓存等）
 
 init-minio-mvt: init-minio ## 初始化 MVT 瓦片缓存 bucket (alias for init-minio)
 
-init-redis: ## 初始化 Redis 任务队列和缓存配置
+init-redis: ## 检查 Redis 缓存、事件和分布式锁
 	@./scripts/infra/init-redis.sh
 
 install-deps: ## 安装所有依赖

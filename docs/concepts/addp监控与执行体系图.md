@@ -51,10 +51,18 @@ graph TB
         Orchestrator --> |写入执行记录| TaskExec
     end
 
+    subgraph "后台运行实例观测 (common.background_runtime_heartbeats)"
+        RuntimeHeartbeat[(后台运行实例心跳)]
+        Meta --> |execution worker 心跳| RuntimeHeartbeat
+        Transfer --> |bounded / continuous worker 心跳| RuntimeHeartbeat
+        Quality --> |execution worker 心跳| RuntimeHeartbeat
+    end
+
     subgraph "监控层 (Monitor 模块)"
         Monitor[Monitor 模块]
 
         Monitor --> |查询| TaskExec
+        Monitor --> |只读查询| RuntimeHeartbeat
         Monitor --> Dashboard[监控看板<br/>实时状态/统计]
         Monitor --> Analysis[执行分析<br/>成功率/耗时分析]
         Monitor --> Alert[告警通知<br/>失败告警]
@@ -66,7 +74,7 @@ graph TB
     classDef monitor fill:#e8f5e9,stroke:#1b5e20
 
     class Meta,Transfer,Develop,Manager,Quality,Graph,Orchestrator module
-    class TaskExec storage
+    class TaskExec,RuntimeHeartbeat storage
     class Monitor,Dashboard,Analysis,Alert,Log monitor
 ```
 
@@ -82,6 +90,11 @@ graph TB
 | `source_task_id` | string | 任务 ID (对应模块内的任务定义 ID) |
 | `trigger_type` | string | `manual` / `scheduled` |
 | `status` | string | 执行状态 (pending/running/success/failed/timeout/cancelled) |
+| `execution_boundary` | string | `bounded` / `continuous` |
+| `attempt` | int | 当前 execution 已取得合法 claim 的次数 |
+| `max_attempts` | int | owner 为当前 execution 定义的最大 attempt 数 |
+| `lease_owner` | string | 当前 bounded attempt 的可观测 owner；不是写入凭据 |
+| `lease_expires_at` | timestamp | 当前 bounded attempt 的租约到期时间 |
 | `started_at` | timestamp | 开始时间 |
 | `completed_at` | timestamp | 完成时间 |
 | `execution_time_ms` | bigint | 执行时长 (毫秒) |
@@ -106,6 +119,8 @@ graph TB
 - Orchestrator scheduler、Manager embedding scheduler、Meta lineage collector 和各模块 cleanup 属于 scheduler/maintenance loop，不自动等同 execution worker。
 - Quality、Meta、Transfer bounded 只使用 PostgreSQL claim 单一路线；Backend 只创建 execution，不执行 bounded 业务逻辑，也不保留 Asynq 或本地 channel fallback。
 - 每次 claim 生成不可复用 `lease_token`。heartbeat、进度和终态写入同时校验 attempt 与 token；仅凭 Worker 名称或消息 active 状态不能证明所有权。
+- `common.background_runtime_heartbeats` 只回答后台进程是否仍在上报，以及其容量与当前占用；Monitor 必须把它与 execution lease、continuous runtime lease 和 delivery lease 分开展示。实例心跳过期不能直接改写任何业务 execution。
+- Monitor 对外只投影 `lease_owner`、`lease_expires_at`、attempt、排队/执行时长和恢复原因等安全观测字段，绝不返回 `lease_token` 或 continuous fencing token。
 
 ---
 
@@ -213,6 +228,27 @@ sequenceDiagram
 - 按模块分组的成功率/失败率
 - 按任务类型分组的平均耗时
 - TaskProvider provider health：注册状态、模块 `/health`、capabilities 基础结构，以及标准 `GET /tasks?task_type=` 任务发现响应体是否符合 `{items,total,page,page_size}`
+- 后台运行实例健康：分别展示 bounded execution worker、continuous worker 和 dispatcher 的存活实例、容量、当前占用、最近心跳与过期时间
+- 执行运行指标：按模块、任务类型和执行边界展示当前积压、吞吐、平均/P95 排队时长、平均/P95 运行时长、失败率、自动 attempt 重试、用户 retry 和恢复次数
+
+执行运行指标使用以下统一口径：
+
+| 指标 | 口径 |
+| --- | --- |
+| 统计窗口 | 固定允许 `24h`、`7d`、`30d`，以 `created_at` 进入窗口 |
+| 当前积压 | 当前全部 `pending` / `running` execution，跨统计窗口计算 |
+| 排队时长 | `started_at - created_at`；尚未开始使用查询时刻，未开始即终态使用 `completed_at` |
+| 运行时长 | owner 已写入 `execution_time_ms` 优先；否则使用 `completed_at/query_now - started_at` |
+| P95 | 窗口内同组 execution 的 PostgreSQL `percentile_cont(0.95)`，不按客户端样本估算 |
+| 自动 attempt 重试 | 同一 execution 的 `attempt > 1`，与用户 retry 分离 |
+| 用户 retry | 新 execution 的 `retry_of_execution_id` 非空，原 execution 历史不改写 |
+| 恢复 | owner 公共 metadata 的 `recovery_reason`，或稳定 `lease_expired` 错误/步骤事实 |
+| 吞吐 | 窗口内终态 execution 数除以窗口小时数；不使用当前 Worker 容量伪造理论吞吐 |
+| 失败率 | 窗口内 `(failed + timeout) / (success + failed + timeout + cancelled)`；尚未终态的 execution 不进入分母 |
+
+这些指标只用于容量与调度决策，不反向修改 owner task、execution 或 Worker 容量。只有在实际 P95 排队、积压和槽位利用事实持续证明存在隔离需求后，才讨论优先级、租户配额或任务级限流。
+
+Monitor 通过 `GET /executions/runtime-metrics?duration=24h|7d|30d` 暴露上述分组指标，使用 `monitor.statistics.read` 权限；Dashboard 默认展示最近 24 小时，并以低于执行状态列表的频率刷新聚合查询。
 
 **2. 历史执行记录**:
 - 按模块、任务类型、状态筛选
@@ -221,7 +257,9 @@ sequenceDiagram
 
 **3. 执行详情**:
 - 任务参数
-- 执行时长
+- 排队时长、执行时长、attempt / max attempts
+- bounded attempt 的 lease owner、lease expiry 和当前 lease 状态；不展示 lease token
+- owner 写入的恢复原因或稳定恢复错误码
 - 执行元数据摘要和原始 JSON
 - 执行结果或错误信息
 - 关联日志

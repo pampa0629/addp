@@ -920,8 +920,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.ListExecutionsResponse"
                         }
                     }
                 },
@@ -958,8 +957,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.ExecutionObservation"
                         }
                     }
                 },
@@ -1003,6 +1001,67 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "monitor.execution.read"
+                ]
+            }
+        },
+        "/executions/runtime-metrics": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按模块、任务类型和执行边界聚合窗口内吞吐、失败、重试、恢复与耗时指标；积压数量为查询时的全量当前状态 | Aggregate windowed throughput, failure, retry, recovery, and duration metrics by module, task type, and execution boundary; backlog counts reflect the current state across all time",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor"
+                ],
+                "summary": "获取执行运行时指标 | Get execution runtime metrics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "模块名 | Module",
+                        "name": "module",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "24h",
+                            "7d",
+                            "30d"
+                        ],
+                        "type": "string",
+                        "default": "24h",
+                        "description": "统计窗口 | Observation window",
+                        "name": "duration",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "执行运行时指标 | Execution runtime metrics",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.ExecutionRuntimeMetricsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "统计窗口无效 | Invalid observation window",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误 | Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.statistics.read"
                 ]
             }
         },
@@ -1121,8 +1180,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.ExecutionObservation"
                         }
                     }
                 },
@@ -1338,6 +1396,44 @@
                         "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.health.read"
+                ]
+            }
+        },
+        "/runtime-instances/health": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "分角色返回 execution worker、continuous worker 和 dispatcher 的公共进程心跳；该接口不返回任何 lease token 或 fencing token。| Return public process heartbeats for execution workers, continuous workers, and dispatchers by role; no lease token or fencing token is returned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor"
+                ],
+                "summary": "查询后台运行实例健康状态 | List background runtime health",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_monitor_internal_service.RuntimeHealthSummary"
+                            }
                         }
                     },
                     "500": {
@@ -2038,161 +2134,6 @@
         }
     },
     "definitions": {
-        "execution.TaskExecution": {
-            "type": "object",
-            "properties": {
-                "actor_principal_id": {
-                    "description": "User-derived execution authorization facts. The raw User/Service tokens\nand engine connection details are never persisted in task executions.",
-                    "type": "integer"
-                },
-                "actor_tenant_membership_id": {
-                    "type": "integer"
-                },
-                "attempt": {
-                    "type": "integer"
-                },
-                "authorization_effects": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "authorization_expires_at": {
-                    "type": "string"
-                },
-                "bytes_read": {
-                    "description": "Transfer 读取字节数",
-                    "type": "integer"
-                },
-                "bytes_written": {
-                    "description": "Transfer 写入字节数",
-                    "type": "integer"
-                },
-                "completed_at": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "current_step": {
-                    "description": "当前步骤（Orchestrator/Workflow）",
-                    "type": "string"
-                },
-                "error_details": {
-                    "description": "错误详情（仅失败时有值）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
-                },
-                "execution_authorization_id": {
-                    "type": "integer"
-                },
-                "execution_boundary": {
-                    "description": "ExecutionBoundary separates finite queue work from long-running runtime sessions.",
-                    "type": "string"
-                },
-                "execution_config": {
-                    "description": "JSONB 字段",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
-                },
-                "execution_id": {
-                    "description": "执行标识",
-                    "type": "string"
-                },
-                "execution_time_ms": {
-                    "description": "性能指标",
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "issued_authorization_version": {
-                    "type": "integer"
-                },
-                "max_attempts": {
-                    "type": "integer"
-                },
-                "metadata": {
-                    "description": "模块特有扩展数据（结果、断点、步骤结果等）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
-                },
-                "module": {
-                    "description": "模块标识",
-                    "type": "string"
-                },
-                "parent_execution_id": {
-                    "description": "父执行（Orchestrator 子步骤追踪父编排）",
-                    "type": "string"
-                },
-                "progress": {
-                    "description": "0-100",
-                    "type": "integer"
-                },
-                "records_read": {
-                    "description": "Transfer 读取记录数",
-                    "type": "integer"
-                },
-                "records_written": {
-                    "description": "Transfer 写入记录数",
-                    "type": "integer"
-                },
-                "retry_of_execution_id": {
-                    "type": "string"
-                },
-                "rows_affected": {
-                    "description": "SQL 影响行数",
-                    "type": "integer"
-                },
-                "source": {
-                    "description": "触发来源模块",
-                    "type": "string"
-                },
-                "source_task_id": {
-                    "description": "关联原始任务",
-                    "type": "string"
-                },
-                "source_task_name": {
-                    "description": "任务名称（冗余，便于查询）",
-                    "type": "string"
-                },
-                "started_at": {
-                    "description": "时间戳",
-                    "type": "string"
-                },
-                "status": {
-                    "description": "执行状态",
-                    "type": "string"
-                },
-                "task_type": {
-                    "description": "稳定执行类型；可来自任务定义或 ad-hoc execution",
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "trigger_type": {
-                    "description": "触发信息",
-                    "type": "string"
-                },
-                "triggered_by": {
-                    "description": "触发用户ID",
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
         "github_com_addp_monitor_internal_models.AlertIncident": {
             "type": "object",
             "properties": {
@@ -2474,6 +2415,273 @@
                 }
             }
         },
+        "github_com_addp_monitor_internal_service.ExecutionObservation": {
+            "type": "object",
+            "properties": {
+                "actor_principal_id": {
+                    "description": "User-derived execution authorization facts. The raw User/Service tokens\nand engine connection details are never persisted in task executions.",
+                    "type": "integer"
+                },
+                "actor_tenant_membership_id": {
+                    "type": "integer"
+                },
+                "attempt": {
+                    "type": "integer"
+                },
+                "authorization_effects": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "authorization_expires_at": {
+                    "type": "string"
+                },
+                "bytes_read": {
+                    "description": "Transfer 读取字节数",
+                    "type": "integer"
+                },
+                "bytes_written": {
+                    "description": "Transfer 写入字节数",
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "description": "当前步骤（Orchestrator/Workflow）",
+                    "type": "string"
+                },
+                "error_details": {
+                    "description": "错误详情（仅失败时有值）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.JSONMap"
+                        }
+                    ]
+                },
+                "execution_authorization_id": {
+                    "type": "integer"
+                },
+                "execution_boundary": {
+                    "description": "ExecutionBoundary separates finite queue work from long-running runtime sessions.",
+                    "type": "string"
+                },
+                "execution_config": {
+                    "description": "JSONB 字段",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.JSONMap"
+                        }
+                    ]
+                },
+                "execution_id": {
+                    "description": "执行标识",
+                    "type": "string"
+                },
+                "execution_time_ms": {
+                    "description": "性能指标",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "issued_authorization_version": {
+                    "type": "integer"
+                },
+                "lease_expires_at": {
+                    "type": "string"
+                },
+                "lease_owner": {
+                    "type": "string"
+                },
+                "lease_state": {
+                    "type": "string"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "description": "模块特有扩展数据（结果、断点、步骤结果等）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.JSONMap"
+                        }
+                    ]
+                },
+                "module": {
+                    "description": "模块标识",
+                    "type": "string"
+                },
+                "parent_execution_id": {
+                    "description": "父执行（Orchestrator 子步骤追踪父编排）",
+                    "type": "string"
+                },
+                "progress": {
+                    "description": "0-100",
+                    "type": "integer"
+                },
+                "queue_duration_ms": {
+                    "type": "integer"
+                },
+                "records_read": {
+                    "description": "Transfer 读取记录数",
+                    "type": "integer"
+                },
+                "records_written": {
+                    "description": "Transfer 写入记录数",
+                    "type": "integer"
+                },
+                "recovery_reason": {
+                    "type": "string"
+                },
+                "retry_of_execution_id": {
+                    "type": "string"
+                },
+                "rows_affected": {
+                    "description": "SQL 影响行数",
+                    "type": "integer"
+                },
+                "run_duration_ms": {
+                    "type": "integer"
+                },
+                "source": {
+                    "description": "触发来源模块",
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "description": "关联原始任务",
+                    "type": "string"
+                },
+                "source_task_name": {
+                    "description": "任务名称（冗余，便于查询）",
+                    "type": "string"
+                },
+                "started_at": {
+                    "description": "时间戳",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "执行状态",
+                    "type": "string"
+                },
+                "task_type": {
+                    "description": "稳定执行类型；可来自任务定义或 ad-hoc execution",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "trigger_type": {
+                    "description": "触发信息",
+                    "type": "string"
+                },
+                "triggered_by": {
+                    "description": "触发用户ID",
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ExecutionRuntimeMetric": {
+            "type": "object",
+            "properties": {
+                "automatic_retry_count": {
+                    "type": "integer"
+                },
+                "automatic_retry_rate": {
+                    "type": "number"
+                },
+                "avg_execution_duration_ms": {
+                    "type": "number"
+                },
+                "avg_queue_duration_ms": {
+                    "type": "number"
+                },
+                "cancelled_count": {
+                    "type": "integer"
+                },
+                "completed_count": {
+                    "type": "integer"
+                },
+                "created_count": {
+                    "type": "integer"
+                },
+                "execution_boundary": {
+                    "type": "string"
+                },
+                "failed_count": {
+                    "type": "integer"
+                },
+                "failure_rate": {
+                    "type": "number"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "p95_execution_duration_ms": {
+                    "type": "number"
+                },
+                "p95_queue_duration_ms": {
+                    "type": "number"
+                },
+                "pending_count": {
+                    "type": "integer"
+                },
+                "recovery_count": {
+                    "type": "integer"
+                },
+                "recovery_rate": {
+                    "type": "number"
+                },
+                "running_count": {
+                    "type": "integer"
+                },
+                "success_count": {
+                    "type": "integer"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "throughput_per_hour": {
+                    "type": "number"
+                },
+                "timeout_count": {
+                    "type": "integer"
+                },
+                "user_retry_count": {
+                    "type": "integer"
+                },
+                "user_retry_rate": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ExecutionRuntimeMetricsResponse": {
+            "type": "object",
+            "properties": {
+                "duration": {
+                    "type": "string"
+                },
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.ExecutionRuntimeMetric"
+                    }
+                },
+                "window_ended_at": {
+                    "type": "string"
+                },
+                "window_started_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_monitor_internal_service.ExecutionTreeNode": {
             "type": "object",
             "properties": {
@@ -2484,7 +2692,7 @@
                     }
                 },
                 "execution": {
-                    "$ref": "#/definitions/execution.TaskExecution"
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.ExecutionObservation"
                 }
             }
         },
@@ -2549,6 +2757,26 @@
                     "type": "integer"
                 },
                 "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ListExecutionsResponse": {
+            "type": "object",
+            "properties": {
+                "executions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.ExecutionObservation"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
                     "type": "integer"
                 }
             }
@@ -2661,6 +2889,79 @@
                     "type": "integer"
                 },
                 "task_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.RuntimeHealthInstance": {
+            "type": "object",
+            "properties": {
+                "active_count": {
+                    "type": "integer"
+                },
+                "capacity": {
+                    "type": "integer"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "heartbeat_age_ms": {
+                    "type": "integer"
+                },
+                "heartbeat_at": {
+                    "type": "string"
+                },
+                "instance_id": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "stopped_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.RuntimeHealthSummary": {
+            "type": "object",
+            "properties": {
+                "active_count": {
+                    "type": "integer"
+                },
+                "capacity": {
+                    "type": "integer"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "healthy_instances": {
+                    "type": "integer"
+                },
+                "instances": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.RuntimeHealthInstance"
+                    }
+                },
+                "known_instances": {
+                    "type": "integer"
+                },
+                "last_heartbeat_at": {
+                    "type": "string"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "runtime_name": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 }
             }

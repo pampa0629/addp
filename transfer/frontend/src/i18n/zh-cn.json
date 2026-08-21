@@ -779,6 +779,16 @@
       "taskUpdateSuccess": "任务更新成功",
       "taskUpdateFailed": "任务更新失败",
       "outputFormatLabel": "输出格式",
+      "columnCompressionLabel": "列式压缩",
+      "columnCompressionHint": "对所有列的 Parquet Column Chunk / Data Page 应用同一 codec。",
+      "columnCompressionCodecs": {
+        "zstd": "ZSTD（推荐）",
+        "snappy": "Snappy",
+        "lz4_raw": "LZ4_RAW",
+        "brotli": "Brotli",
+        "gzip": "GZIP",
+        "uncompressed": "不压缩"
+      },
       "outputPathLabel": "输出目录",
       "outputPathHint": "选择对象存储中的目标目录",
       "outputFileNameLabel": "输出文件名",

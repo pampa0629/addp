@@ -88,6 +88,19 @@ type CRSDefinitionWriteRequirementProvider interface {
 	CRSDefinitionWriteRequirements(spatial *datatype.SpatialInfo) ([]CRSDefinitionWriteRequirement, error)
 }
 
+// ColumnarCompressionCapability 描述列式格式 writer 的 Column Chunk / Data Page 压缩能力。
+// Codecs 只包含可写出的 canonical codec；Default 必须是 Codecs 中唯一默认值。
+type ColumnarCompressionCapability struct {
+	Codecs  []string `json:"codecs"`
+	Default string   `json:"default"`
+}
+
+// ColumnarCompressionCapabilityProvider 表示格式插件能声明当前 writer 实现支持的列式压缩能力。
+type ColumnarCompressionCapabilityProvider interface {
+	FormatPlugin
+	ColumnarCompressionCapability() ColumnarCompressionCapability
+}
+
 // ContentReader 是内容读取能力的标记接口。
 //
 // Reader 命名用于区分“读取内容数据”和“提供元数据”的 provider。

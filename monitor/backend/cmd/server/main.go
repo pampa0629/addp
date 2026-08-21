@@ -11,6 +11,7 @@ import (
 	commonconfiguration "github.com/addp/common/configuration"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
+	commonRuntimeHealth "github.com/addp/common/runtimehealth"
 	_ "github.com/addp/monitor/i18n"
 	"github.com/addp/monitor/internal/api"
 	monitorauthorization "github.com/addp/monitor/internal/authorization"
@@ -61,6 +62,9 @@ func main() {
 	if err := commonExecution.EnsureStore(db); err != nil {
 		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
+	if err := commonRuntimeHealth.EnsureStore(db); err != nil {
+		log.Fatalf("Failed to ensure background runtime health store: %v", err)
+	}
 	if err := service.EnsureMonitorStore(db); err != nil {
 		log.Fatalf("Failed to ensure monitor store: %v", err)
 	}
@@ -95,8 +99,12 @@ func main() {
 
 	// 创建 Services
 	queryService := service.NewExecutionQueryService(taskExecutionRepo)
-	statisticsService := service.NewStatisticsService(taskExecutionRepo)
+	statisticsService := service.NewStatisticsServiceWithRuntimeMetrics(
+		taskExecutionRepo,
+		repository.NewExecutionRuntimeMetricsRepository(db),
+	)
 	healthService := service.NewHealthCheckService(systemTaskProviderLister, serviceTokenSource)
+	runtimeHealthService := service.NewRuntimeHealthService(commonRuntimeHealth.NewRepository(db))
 	webhookSender := service.NewHTTPWebhookSender(cfg.WebhookHTTPTimeout, cfg.WebhookAllowPrivate)
 	webhookService := service.NewWebhookService(db, cfg.EncryptionKey, cfg.WebhookAllowPrivate, cfg.ConsoleBaseURL, webhookSender)
 	var emailSender service.EmailSender
@@ -114,11 +122,12 @@ func main() {
 	notificationService := service.NewNotificationService(webhookService, emailService)
 	alertService := service.NewAlertService(db, notificationService)
 	alertRuleService := service.NewAlertRuleService(db, alertService, systemTaskProviderLister)
+	webhookWorkerID := "monitor-webhook-" + uuid.NewString()
 	webhookDispatcher := service.NewWebhookDispatcher(
 		db,
 		webhookSender,
 		service.WebhookDispatcherConfig{
-			WorkerID: "monitor-webhook-" + uuid.NewString(), DispatchInterval: cfg.WebhookDispatchInterval,
+			WorkerID: webhookWorkerID, DispatchInterval: cfg.WebhookDispatchInterval,
 			LeaseDuration: cfg.WebhookLeaseDuration, MaxAttempts: cfg.WebhookMaxAttempts,
 			RetryInitial: cfg.WebhookRetryInitial, RetryMax: cfg.WebhookRetryMax, EncryptionKey: cfg.EncryptionKey,
 		},
@@ -138,6 +147,7 @@ func main() {
 		cfg.SystemURL,
 		redisClient,
 		systemServiceClient,
+		runtimeHealthService,
 	)
 
 	go func() {
@@ -150,18 +160,38 @@ func main() {
 			<-ticker.C
 		}
 	}()
-	go webhookDispatcher.Run(context.Background())
+	processCtx := context.Background()
+	webhookReporter, err := commonRuntimeHealth.NewReporter(commonRuntimeHealth.NewRepository(db), commonRuntimeHealth.ReporterConfig{
+		InstanceID: webhookWorkerID, Module: commonExecution.ModuleMonitor, Role: commonRuntimeHealth.RoleDispatcher,
+		RuntimeName: "webhook", Capacity: 1, Interval: commonRuntimeHealth.DefaultInterval, TTL: commonRuntimeHealth.DefaultTTL,
+		ActiveCount: webhookDispatcher.ActiveCount,
+	})
+	if err != nil {
+		log.Fatalf("Webhook dispatcher heartbeat config is invalid: %v", err)
+	}
+	go webhookReporter.Run(processCtx)
+	go webhookDispatcher.Run(processCtx)
 	if emailSender != nil {
+		emailWorkerID := "monitor-email-" + uuid.NewString()
 		emailDispatcher := service.NewEmailDispatcher(
 			db,
 			emailSender,
 			service.EmailDispatcherConfig{
-				WorkerID: "monitor-email-" + uuid.NewString(), DispatchInterval: cfg.EmailDispatchInterval,
+				WorkerID: emailWorkerID, DispatchInterval: cfg.EmailDispatchInterval,
 				LeaseDuration: cfg.EmailLeaseDuration, MaxAttempts: cfg.EmailMaxAttempts,
 				RetryInitial: cfg.EmailRetryInitial, RetryMax: cfg.EmailRetryMax,
 			},
 		)
-		go emailDispatcher.Run(context.Background())
+		emailReporter, reporterErr := commonRuntimeHealth.NewReporter(commonRuntimeHealth.NewRepository(db), commonRuntimeHealth.ReporterConfig{
+			InstanceID: emailWorkerID, Module: commonExecution.ModuleMonitor, Role: commonRuntimeHealth.RoleDispatcher,
+			RuntimeName: "email", Capacity: 1, Interval: commonRuntimeHealth.DefaultInterval, TTL: commonRuntimeHealth.DefaultTTL,
+			ActiveCount: emailDispatcher.ActiveCount,
+		})
+		if reporterErr != nil {
+			log.Fatalf("Email dispatcher heartbeat config is invalid: %v", reporterErr)
+		}
+		go emailReporter.Run(processCtx)
+		go emailDispatcher.Run(processCtx)
 	} else {
 		log.Printf("Email dispatcher disabled: SMTP relay is not configured")
 	}

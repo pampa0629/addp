@@ -1023,6 +1023,8 @@ export function useTaskWizardState() {
 
     return {
       format,
+      backendOptions: options,
+      compression: options.compression || '',
       parentLocator: target.parent_locator || '',
       resourcePath: parentPath,
       resourceFile: target.name || '',

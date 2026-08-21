@@ -129,6 +129,21 @@
         <div v-else-if="isRawCopySource" class="field-hint">{{ t('transfer.taskWizard.rawCopyFormatHint') }}</div>
       </el-form-item>
 
+      <el-form-item
+        v-if="isContentTarget && selectedColumnarCompressionCapability"
+        :label="t('transfer.taskWizard.columnCompressionLabel')"
+      >
+        <el-select v-model="outputCompression" @change="syncTarget">
+          <el-option
+            v-for="codec in selectedColumnarCompressionCapability.codecs"
+            :key="codec"
+            :label="columnarCompressionLabel(codec)"
+            :value="codec"
+          />
+        </el-select>
+        <div class="field-hint">{{ t('transfer.taskWizard.columnCompressionHint') }}</div>
+      </el-form-item>
+
       <el-form-item v-if="isContentTarget" :label="t('transfer.taskWizard.outputFileNameLabel')">
         <el-input
           v-model="outputFileName"
@@ -186,6 +201,11 @@ import {
   sameNativeTargetParentIdentity
 } from './nativeTargetSelection.mjs'
 import {
+  normalizeColumnarCompressionCapability,
+  resolveColumnarCompression,
+  withColumnarCompressionOption
+} from './columnarCompression.mjs'
+import {
   dataTypeLabel,
   engineOptionLabel,
   formatLabel,
@@ -213,6 +233,7 @@ const formData = reactive({
 })
 
 const outputFormat = ref('')
+const outputCompression = ref('')
 const outputPath = ref('')
 const outputFileName = ref('')
 const csvHeaders = ref(true)
@@ -310,7 +331,9 @@ const canProceed = computed(() => {
   if (isContentTarget.value) {
     const hasRequiredPath = !!targetParentLocator.value
     const hasOutputFormat = isRawCopySource.value || !!selectedOutputFormat.value.value
-    return !!(formData.engineID && hasRequiredPath && hasOutputFormat && outputFileName.value.trim() && !outputFileNameError.value)
+    const hasValidCompression = !selectedColumnarCompressionCapability.value ||
+      selectedColumnarCompressionCapability.value.codecs.includes(outputCompression.value)
+    return !!(formData.engineID && hasRequiredPath && hasOutputFormat && hasValidCompression && outputFileName.value.trim() && !outputFileNameError.value)
   }
   return false
 })
@@ -327,6 +350,11 @@ const selectedOutputFormat = computed(() => {
     return rawCopyOutputFormat()
   }
   return outputFormats.value.find(format => format.value === outputFormat.value) || outputFormats.value[0] || emptyOutputFormat()
+})
+
+const selectedColumnarCompressionCapability = computed(() => {
+  if (isRawCopySource.value) return null
+  return selectedOutputFormat.value.columnarCompression || null
 })
 
 const outputFileNamePlaceholder = computed(() => {
@@ -469,7 +497,7 @@ function syncTarget() {
         delimiter: isRawCopySource.value ? '' : (outputFormat.value === 'tsv' ? '\t' : csvDelimiter.value),
         geometryField: isRawCopySource.value ? '' : primaryGeometryFieldName.value,
         geometryType: isRawCopySource.value ? '' : primaryGeometryType.value,
-        backendOptions: isRawCopySource.value ? {} : selectedOutputFormat.value.options || {},
+        backendOptions: selectedFormatBackendOptions(),
         writeMode: 'overwrite',
         extensionError: outputFileNameError.value
       }
@@ -527,7 +555,7 @@ function buildTargetDraftExtra() {
       delimiter: isRawCopySource.value ? '' : (outputFormat.value === 'tsv' ? '\t' : csvDelimiter.value),
       geometryField: isRawCopySource.value ? '' : primaryGeometryFieldName.value,
       geometryType: isRawCopySource.value ? '' : primaryGeometryType.value,
-      backendOptions: isRawCopySource.value ? {} : selectedOutputFormat.value.options || {},
+      backendOptions: selectedFormatBackendOptions(),
       writeMode: 'overwrite',
       extensionError: outputFileNameError.value
     }
@@ -536,6 +564,7 @@ function buildTargetDraftExtra() {
 }
 
 function handleOutputFormatChange() {
+  resetColumnarCompression()
   applyOutputFileExtension({ replaceKnown: true })
   if (isSpatialFormat.value) {
     applyDefaultGeometryConfig()
@@ -561,6 +590,7 @@ async function handleTargetEngineChange() {
   restoredParentLocator.value = ''
   targetSchema.value = ''
   targetTable.value = ''
+  outputCompression.value = ''
   props.wizardState.resetTargetFields?.()
   syncTarget()
 }
@@ -763,6 +793,7 @@ function applyOutputFormatFromFileName(fileName) {
   const matchedFormat = outputFormats.value.find(format => normalizeExtension(format.extension) === extension)
   if (!matchedFormat || matchedFormat.value === outputFormat.value) return
   outputFormat.value = matchedFormat.value
+  resetColumnarCompression()
   if (isSpatialFormat.value) {
     applyDefaultGeometryConfig()
   }
@@ -831,6 +862,7 @@ async function loadCapabilities() {
     if (!writableOutputFormats.value.some(format => format.value === outputFormat.value)) {
       outputFormat.value = writableOutputFormats.value[0]?.value || ''
     }
+		resetColumnarCompression(outputCompression.value)
 		if (!outputFormat.value && !isRawCopySource.value && props.wizardState.targetRepresentation.value === 'encoded') {
       clearTarget()
     }
@@ -838,6 +870,7 @@ async function loadCapabilities() {
     props.wizardState.updateFormatCapabilities()
     writableOutputFormats.value = []
     outputFormat.value = ''
+    outputCompression.value = ''
     clearTarget()
     ElMessage.warning(t('transfer.taskWizard.loadCapabilitiesFailedMsg'))
   }
@@ -856,6 +889,10 @@ async function restoreState() {
     formData.engineID = normalizeEngineID(state.targetEngineID.value)
     await nextTick()
     outputFormat.value = isRawCopySource.value ? sourceFormat.value : (config.format || '')
+    outputCompression.value = resolveColumnarCompression(
+      selectedColumnarCompressionCapability.value,
+      config.compression || config.backendOptions?.compression || ''
+    )
     outputPath.value = normalizeFileCatalogPath(config.resourcePath || '')
     outputFileName.value = config.resourceFile || (isRawCopySource.value ? sourceFileName.value : '')
     csvHeaders.value = config.includeHeader !== false
@@ -925,6 +962,7 @@ function resetLocalTargetForm() {
   formData.engineID = null
   outputPath.value = ''
   outputFileName.value = ''
+  outputCompression.value = ''
   targetParentSelection.value = null
   normalizedTargetParentLocator.value = ''
   restoredParentLocator.value = ''
@@ -938,6 +976,7 @@ function targetStateMatchesLocal() {
   const config = state.targetConfig.value || {}
   return normalizeEngineID(formData.engineID) === normalizeEngineID(state.targetEngineID.value) &&
     outputFormat.value === (isRawCopySource.value ? sourceFormat.value : (config.format || '')) &&
+    outputCompression.value === targetConfigCompression(config) &&
     outputPath.value === normalizeFileCatalogPath(config.resourcePath || '') &&
     outputFileName.value === targetConfigResourceFileForLocalCompare(config) &&
     targetSchema.value === (config.schema || state.targetSchema?.value || '') &&
@@ -960,6 +999,7 @@ function targetConfigSignature(config) {
     resourceFile: config.resourceFile || '',
     includeHeader: config.includeHeader !== false,
     delimiter: config.delimiter || ',',
+    compression: targetConfigCompression(config),
     schema: config.schema || '',
     table: config.table || '',
     parentLocator: config.parentLocator || '',
@@ -1087,8 +1127,40 @@ function normalizeOutputFormatSupport(item) {
     extension: item.extension || '',
     spatial: item.spatial === true,
     backendType: item.backend_type || item.backendType || value,
-    options: item.options || {}
+    options: item.options || {},
+    columnarCompression: normalizeColumnarCompressionCapability(
+      item.columnar_compression || item.columnarCompression
+    )
   }
+}
+
+function selectedFormatBackendOptions() {
+  if (isRawCopySource.value) return {}
+  return withColumnarCompressionOption(
+    selectedOutputFormat.value.options || {},
+    selectedColumnarCompressionCapability.value,
+    outputCompression.value
+  )
+}
+
+function resetColumnarCompression(selected = '') {
+  outputCompression.value = resolveColumnarCompression(
+    selectedColumnarCompressionCapability.value,
+    selected
+  )
+}
+
+function targetConfigCompression(config) {
+  return resolveColumnarCompression(
+    selectedColumnarCompressionCapability.value,
+    config.compression || config.backendOptions?.compression || ''
+  )
+}
+
+function columnarCompressionLabel(codec) {
+  const key = `transfer.taskWizard.columnCompressionCodecs.${codec}`
+  const label = t(key)
+  return label === key ? codec : label
 }
 
 function rawCopyOutputFormat() {

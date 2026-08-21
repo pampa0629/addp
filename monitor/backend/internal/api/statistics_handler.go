@@ -1,9 +1,12 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	moni18n "github.com/addp/monitor/i18n"
 	"github.com/addp/monitor/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -82,4 +85,41 @@ func (h *StatisticsHandler) GetTrendData(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, trendData)
+}
+
+// GetExecutionRuntimeMetrics 获取分组执行运行时指标
+// @Summary 获取执行运行时指标 | Get execution runtime metrics
+// @Description 按模块、任务类型和执行边界聚合窗口内吞吐、失败、重试、恢复与耗时指标；积压数量为查询时的全量当前状态 | Aggregate windowed throughput, failure, retry, recovery, and duration metrics by module, task type, and execution boundary; backlog counts reflect the current state across all time
+// @Tags Monitor
+// @Produce json
+// @Param module query string false "模块名 | Module"
+// @Param duration query string false "统计窗口 | Observation window" default(24h) Enums(24h,7d,30d)
+// @Success 200 {object} service.ExecutionRuntimeMetricsResponse "执行运行时指标 | Execution runtime metrics"
+// @Failure 400 {object} ErrorResponse "统计窗口无效 | Invalid observation window"
+// @Failure 500 {object} ErrorResponse "内部错误 | Internal error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.statistics.read"]
+// @Router /executions/runtime-metrics [get]
+// @Security BearerAuth
+func (h *StatisticsHandler) GetExecutionRuntimeMetrics(c *gin.Context) {
+	tenantID, ok := requireTenantID(c)
+	if !ok {
+		return
+	}
+
+	result, err := h.statisticsService.GetExecutionRuntimeMetrics(c.Request.Context(), service.ExecutionRuntimeMetricsRequest{
+		TenantID: tenantID,
+		Module:   c.Query("module"),
+		Duration: c.DefaultQuery("duration", "24h"),
+	})
+	if errors.Is(err, service.ErrInvalidRuntimeMetricDuration) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, moni18n.MsgInvalidRuntimeMetricDuration)})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
 }

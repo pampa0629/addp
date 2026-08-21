@@ -51,18 +51,26 @@ type TransferReplayCapability struct {
 }
 
 type TransferTableFormatSupport struct {
-	Value        string         `json:"value"`
-	BackendType  string         `json:"backend_type"`
-	Label        string         `json:"label"`
-	Extension    string         `json:"extension,omitempty"`
-	Group        string         `json:"group"`
-	Spatial      bool           `json:"spatial,omitempty"`
-	Read         bool           `json:"read"`
-	Write        bool           `json:"write"`
-	Options      map[string]any `json:"options,omitempty"`
-	Layouts      []string       `json:"layouts,omitempty"`
-	MultiFile    bool           `json:"multi_file,omitempty"`
-	ProviderKind string         `json:"provider_kind,omitempty"`
+	Value               string                                 `json:"value"`
+	BackendType         string                                 `json:"backend_type"`
+	Label               string                                 `json:"label"`
+	Extension           string                                 `json:"extension,omitempty"`
+	Group               string                                 `json:"group"`
+	Spatial             bool                                   `json:"spatial,omitempty"`
+	Read                bool                                   `json:"read"`
+	Write               bool                                   `json:"write"`
+	Options             map[string]any                         `json:"options,omitempty"`
+	ColumnarCompression *TransferColumnarCompressionCapability `json:"columnar_compression,omitempty"`
+	Layouts             []string                               `json:"layouts,omitempty"`
+	MultiFile           bool                                   `json:"multi_file,omitempty"`
+	ProviderKind        string                                 `json:"provider_kind,omitempty"`
+}
+
+type TransferColumnarCompressionCapability struct {
+	// Codecs 是 writer 当前支持的 canonical Parquet column/page compression codec。
+	Codecs []string `json:"codecs"`
+	// Default 是未指定 target.options.compression 时使用的唯一默认 codec。
+	Default string `json:"default"`
 }
 
 type TransferRawCopyFormatSupport struct {
@@ -79,7 +87,7 @@ func NewTransferCapabilityHandler() *TransferCapabilityHandler {
 
 // Get returns Transfer capabilities backed by common format descriptors and loaded plugins.
 // @Summary 获取传输能力 | Get transfer capabilities
-// @Description 返回 Transfer 当前可用的格式能力、业务 Kafka continuous 能力和数据库 CDC 支持矩阵。| Returns available Transfer format capabilities, business Kafka continuous features, and the database CDC support matrix.
+// @Description 返回 Transfer 当前可用的格式读写、列式压缩、业务 Kafka continuous 能力和数据库 CDC 支持矩阵。| Returns available Transfer format read/write and columnar compression capabilities, business Kafka continuous features, and the database CDC support matrix.
 // @Tags 传输能力 | Capabilities
 // @Produce json
 // @Success 200 {object} api.TransferCapabilitiesResponse
@@ -169,18 +177,33 @@ func tableCapabilityFromDescriptor(descriptor format.FormatDescriptor, value str
 	write, providerKind := transferWritable(backendType)
 	spatial := format.IsGeospatialFormat(backendType)
 	return TransferTableFormatSupport{
-		Value:        value,
-		BackendType:  string(backendType),
-		Label:        tableFormatLabel(value),
-		Extension:    tableFormatExtension(backendType, value, options),
-		Group:        tableFormatGroup(spatial),
-		Spatial:      spatial,
-		Read:         read,
-		Write:        write,
-		Options:      options,
-		Layouts:      append([]string(nil), descriptor.Layouts...),
-		MultiFile:    containsString(descriptor.Layouts, format.LayoutMulti),
-		ProviderKind: providerKind,
+		Value:               value,
+		BackendType:         string(backendType),
+		Label:               tableFormatLabel(value),
+		Extension:           tableFormatExtension(backendType, value, options),
+		Group:               tableFormatGroup(spatial),
+		Spatial:             spatial,
+		Read:                read,
+		Write:               write,
+		Options:             options,
+		ColumnarCompression: tableColumnarCompressionCapability(backendType, write),
+		Layouts:             append([]string(nil), descriptor.Layouts...),
+		MultiFile:           containsString(descriptor.Layouts, format.LayoutMulti),
+		ProviderKind:        providerKind,
+	}
+}
+
+func tableColumnarCompressionCapability(formatType format.FormatType, writable bool) *TransferColumnarCompressionCapability {
+	if !writable {
+		return nil
+	}
+	capability, err := format.GetColumnarCompressionCapability(formatType)
+	if err != nil {
+		return nil
+	}
+	return &TransferColumnarCompressionCapability{
+		Codecs:  append([]string(nil), capability.Codecs...),
+		Default: capability.Default,
 	}
 }
 

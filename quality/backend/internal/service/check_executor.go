@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	commonAPI "github.com/addp/common/api"
@@ -78,7 +79,12 @@ type CheckExecutor struct {
 	workerCancel           context.CancelFunc
 	workerDone             chan struct{}
 	workerStartOnce        sync.Once
+	workerActive           atomic.Int64
 }
+
+func (e *CheckExecutor) WorkerID() string { return e.workerID }
+
+func (e *CheckExecutor) ActiveCount() int { return int(e.workerActive.Load()) }
 
 func NewCheckExecutor(
 	systemClient *commonClient.SystemServiceClient,
@@ -353,6 +359,8 @@ func (e *CheckExecutor) processPending(ctx context.Context, workerID string) boo
 	if execution == nil || task == nil {
 		return false
 	}
+	e.workerActive.Add(1)
+	defer e.workerActive.Add(-1)
 	lease, err := commonExecution.LeaseFromExecution(*execution)
 	if err != nil {
 		log.Printf("quality execution %s has invalid lease identity: %v", execution.ExecutionID, err)

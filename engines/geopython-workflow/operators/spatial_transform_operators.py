@@ -10,6 +10,7 @@ import re
 
 import geopandas as gpd
 from pyproj import CRS, network
+from pyproj.exceptions import CRSError
 
 from .base import (
     OperatorCategory,
@@ -101,7 +102,7 @@ def crs_to_projjson(
 
     if authority == "EPSG":
         canonical_crs = CRS.from_epsg(int(code))
-        if source_crs is not None and not source_crs.equals(canonical_crs, ignore_axis_order=True):
+        if source_crs is not None and not _matches_epsg_definition(source_crs, canonical_crs):
             raise ValueError(f"CRS definition does not match {normalized_ref}")
         output_crs = canonical_crs
     else:
@@ -148,6 +149,21 @@ def _parse_crs_definition(encoding: str, definition: str) -> CRS:
     if encoding == "projjson":
         return CRS.from_json(definition)
     raise ValueError(f"unsupported CRS definition encoding: {encoding}")
+
+
+def _matches_epsg_definition(source_crs: CRS, canonical_crs: CRS) -> bool:
+    if source_crs.equals(canonical_crs, ignore_axis_order=True):
+        return True
+
+    # PostGIS spatial_ref_sys 常见 WKT1 使用 GIS 坐标顺序（Easting, Northing），
+    # EPSG 的 WKT2/PROJJSON 则可能声明相反的权威轴顺序。GeoParquet 明确要求
+    # WKB 始终使用 (x, y)，并覆盖 CRS 轴顺序。通过 PROJ 自身的 WKT1_GDAL
+    # 表达验证这种受限差异，仍由 PROJ 比较投影、基准面、单位等 CRS 语义。
+    try:
+        legacy_canonical = CRS.from_wkt(canonical_crs.to_wkt(version="WKT1_GDAL"))
+    except CRSError:
+        return False
+    return source_crs.equals(legacy_canonical)
 
 
 VECTOR_REPROJECT_METADATA = OperatorMetadata(

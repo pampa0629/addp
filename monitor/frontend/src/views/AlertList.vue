@@ -74,7 +74,7 @@ import AlertRuleList from './AlertRuleList.vue'
 import { navigateMonitorRoute } from '@/utils/moduleNavigation'
 import { resolveMonitorTabRouteState } from '@/utils/tabRouteState'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const resolveRouteState = routeQuery => resolveMonitorTabRouteState(routeQuery, ['incidents', 'rules'], 'incidents')
@@ -97,12 +97,12 @@ async function loadAlerts() {
 function search() { pagination.page = 1; loadAlerts() }
 function alertStatusText(status) { return status ? t(`monitor.alert.status_values.${status}`) : '-' }
 function signalText(code) {
+  if (!code) return '-'
   if (['last_terminal_failed', 'last_terminal_timeout', 'consecutive_failures'].includes(code)) {
     return t(`monitor.alert_rule.rule_types.${code}`)
   }
   const key = `monitor.execution.detail.continuous.signals.${code}.title`
-  const translated = t(key)
-  return translated === key ? code : translated
+  return te(key) ? t(key) : code
 }
 function formatDate(value) { return value ? new Date(value).toLocaleString() : '-' }
 function openExecution(row) { navigateMonitorRoute(router, { path: '/executions', query: { execution_id: row.execution_id } }) }

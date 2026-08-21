@@ -69,6 +69,18 @@
         "continuous_mode": "Continuous",
         "trigger_type": "Trigger Type",
         "duration": "Duration",
+        "queue_duration": "Queue Duration",
+        "attempt": "Attempt",
+        "lease_state": "Lease State",
+        "lease_owner": "Lease Owner",
+        "lease_expires_at": "Lease Expires At",
+        "recovery_reason": "Recovery Reason",
+        "lease_states": {
+          "none": "No Active Lease",
+          "active": "Active",
+          "expired": "Expired",
+          "missing": "Missing Lease"
+        },
         "created_at": "Created At",
         "started_at": "Started At",
         "completed_at": "Completed At",
@@ -229,7 +241,9 @@
       "progress": "Progress",
       "continuous": "Continuous",
       "created_at": "Created At",
+      "queue_duration": "Queue Duration",
       "duration": "Duration",
+      "attempt": "Attempt",
       "actions": "Actions",
       "view_detail": "View Detail"
     },
@@ -240,6 +254,51 @@
       "running": "Running",
       "failed_count": "Failed",
       "module_health": "Module Health",
+      "runtime_health": {
+        "title": "Background Runtime Health",
+        "role": "Runtime Role",
+        "runtime": "Runtime",
+        "instances": "Healthy/Known Instances",
+        "load": "Active/Capacity",
+        "last_heartbeat": "Last Heartbeat",
+        "expires_at": "Heartbeat Expires",
+        "empty": "No background runtime heartbeat is available",
+        "load_failed": "Failed to load background runtime health",
+        "roles": {
+          "execution_worker": "Bounded Execution Worker",
+          "continuous_worker": "Continuous Worker",
+          "dispatcher": "Notification Dispatcher"
+        },
+        "statuses": {
+          "up": "Up",
+          "down": "Lost",
+          "stopped": "Stopped"
+        }
+      },
+      "runtime_metrics": {
+        "title": "Execution Runtime Metrics",
+        "description": "Grouped by module, task type, and boundary; backlog is current across all time, while other metrics use the selected window",
+        "boundary": "Boundary",
+        "backlog": "Pending/Running",
+        "throughput": "Throughput/Hour",
+        "queue_duration": "Queue Avg/P95",
+        "execution_duration": "Execution Avg/P95",
+        "failure_rate": "Failure Rate",
+        "automatic_retry": "Automatic Retry Count/Rate",
+        "user_retry": "User Retry Count/Rate",
+        "recovery": "Lease Recovery Count/Rate",
+        "empty": "No execution runtime metrics are available for this range",
+        "load_failed": "Failed to load execution runtime metrics",
+        "windows": {
+          "24h": "Last 24 Hours",
+          "7d": "Last 7 Days",
+          "30d": "Last 30 Days"
+        },
+        "boundaries": {
+          "bounded": "Bounded",
+          "continuous": "Continuous"
+        }
+      },
       "refresh": "Refresh",
       "no_modules": "No modules available",
       "trend_title": "Execution Trend (Last 7 Days)",

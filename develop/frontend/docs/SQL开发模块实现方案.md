@@ -274,36 +274,13 @@ _ = sqlparser.Walk(func(node sqlparser.SQLNode) (bool, error) {
 
 ---
 
-#### 8. 任务调度 - Asynq (项目已使用)
+#### 8. 任务执行 - Develop Backend 与统一 execution
 
 **理由**:
-- ✅ Transfer 模块已使用 Asynq
-- ✅ 支持延迟任务、重试、优先级
-- ✅ 基于 Redis,与现有基础设施一致
-
-**SQL 任务执行**:
-```go
-import "github.com/hibiken/asynq"
-
-// 定义 SQL 执行任务
-type SQLExecutionPayload struct {
-    QueryID  uint   `json:"query_id"`
-    SQL      string `json:"sql"`
-    EngineID uint `json:"engine_id"`
-}
-
-// 任务处理器
-func HandleSQLExecution(ctx context.Context, task *asynq.Task) error {
-    var payload SQLExecutionPayload
-    json.Unmarshal(task.Payload(), &payload)
-
-    // 执行 SQL
-    results, err := executionService.Execute(payload.EngineID, payload.SQL)
-
-    // 保存结果到数据库
-    return queryRepository.SaveResults(payload.QueryID, results)
-}
-```
+- ✅ 即时查询统一通过 Develop execution API 执行
+- ✅ 持久任务定义归 `develop.dev_tasks`，执行事实写入 `common.task_executions`
+- ✅ Develop Backend 是当前 `query` 执行运行体；如果未来切换到独立 Worker，必须整体切换且不保留双轨
+- ✅ Redis 只用于缓存、事件和临时协调，不承载 bounded execution 队列
 
 ---
 
@@ -697,7 +674,7 @@ POST /api/develop/scripts/batch-execute
 | **前端图表** | 依赖图 | **@antv/g6** (已有) | 项目已使用 |
 | **后端执行** | SQL 执行 | **GORM + Raw SQL** | 项目已使用 |
 | **后端解析** | SQL 分析 | **go-sql-parser** (可选) | 依赖提取 |
-| **后端任务** | 异步执行 | **Asynq** (已有) | 项目已使用 |
+| **后端任务** | 查询执行 | **Develop execution + `common.task_executions`** | 复用统一执行事实 |
 
 ---
 

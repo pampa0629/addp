@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	monitorModels "github.com/addp/monitor/internal/models"
@@ -25,7 +26,10 @@ type WebhookDispatcher struct {
 	db     *gorm.DB
 	sender WebhookSender
 	config WebhookDispatcherConfig
+	active atomic.Int64
 }
+
+func (d *WebhookDispatcher) ActiveCount() int { return int(d.active.Load()) }
 
 func NewWebhookDispatcher(db *gorm.DB, sender WebhookSender, config WebhookDispatcherConfig) *WebhookDispatcher {
 	return &WebhookDispatcher{db: db, sender: sender, config: config}
@@ -58,6 +62,8 @@ func (d *WebhookDispatcher) DispatchOnce(ctx context.Context, now time.Time) (bo
 	if err != nil || delivery == nil {
 		return false, err
 	}
+	d.active.Add(1)
+	defer d.active.Add(-1)
 	secret, decryptErr := DecryptWebhookSecret(delivery.SecretCiphertext, d.config.EncryptionKey)
 	if decryptErr != nil {
 		return true, d.finishAttempt(ctx, *delivery, WebhookSendResult{}, decryptErr, now)

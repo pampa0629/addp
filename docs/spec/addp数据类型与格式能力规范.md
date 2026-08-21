@@ -197,7 +197,23 @@ import _ "github.com/addp/common/format/builtin"
 | Content Reader | 能否提供按 data type 组织后的内容数据 | 行样本、文本片段、容器树、二进制片段 | Manager、Transfer |
 | Runtime provider | 当前进程是否已经加载可调用的 reader / writer provider | batch read / write、multi read / write、commit policy | Transfer |
 
-当前代码中 `FormatDescriptor` 是静态声明事实源；`FormatPlugin` 是格式包的代码入口；`FormatDescriptorProvider` 是 plugin 可选实现的静态描述能力；`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`TableWriterProvider`、`MultiTableReaderProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`BinaryContentReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`、`Model3DInfoProvider`、`PointCloudInfoProvider`、`GaussianSplatInfoProvider`、type mapper 等是具体实现能力。静态声明可以先于 plugin / provider 完整实现存在，因此文档必须区分“声明支持”和“已有实现”。
+当前代码中 `FormatDescriptor` 是静态声明事实源；`FormatPlugin` 是格式包的代码入口；`FormatDescriptorProvider` 是 plugin 可选实现的静态描述能力；`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`TableWriterProvider`、`MultiTableReaderProvider`、`MultiTableWriterProvider`、`ColumnarCompressionCapabilityProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`BinaryContentReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`、`Model3DInfoProvider`、`PointCloudInfoProvider`、`GaussianSplatInfoProvider`、type mapper 等是具体实现能力。静态声明可以先于 plugin / provider 完整实现存在，因此文档必须区分“声明支持”和“已有实现”。
+
+### 列式压缩能力
+
+Parquet、ORC 等列式格式的 Column Chunk / Data Page 压缩能力属于 writer 实现状态，由 `ColumnarCompressionCapabilityProvider` 动态声明，不写入静态 `FormatDescriptor`，也不与 ZIP、GZIP 文件封装混为一谈。
+
+能力包含唯一默认 codec 和 canonical codec 列表。上层只能从 provider registry 读取这份事实，并通过 `WriteOptions.ExtraParams["compression"]` 传递选中的 canonical 值；不得按格式名复制 codec 列表或维护第二套默认值。provider 收到未声明的值必须报错，不能静默回退。
+
+Parquet 当前唯一能力契约为：
+
+- 默认 codec：`zstd`。
+- 支持 codec：`zstd`、`snappy`、`lz4_raw`、`brotli`、`gzip`、`uncompressed`。
+- 普通 Parquet 与 GeoParquet 使用同一个 writer 和同一份压缩能力；GeoParquet 的 `geo` metadata 不建立第二套配置。
+- codec 统一作用于 writer 的全部列，不支持逐列 codec。
+- 当前不开放压缩级别；各 codec 使用实现固定的标准默认级别。
+- `PLAIN`、`RLE_DICTIONARY`、`DELTA_BINARY_PACKED` 等 Parquet value encoding 是另一层能力，当前由底层库选择，不通过 `compression` 配置。
+- 不支持 `lzo`、已废弃的 legacy `lz4` 或 `none` 等非 canonical 别名。
 
 ### Format Identity 与 Format Detection
 

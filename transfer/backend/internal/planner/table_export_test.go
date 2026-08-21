@@ -752,6 +752,9 @@ func TestBuildTableTransferPlanKeepsNativeEncodingForShapefileToShapefile(t *tes
 func TestBuildTableTransferPlanAllowsParquetTableWriter(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatParquet
+	spec.Target.Options = map[string]interface{}{
+		"compression": "snappy",
+	}
 	setFileTarget(&spec, 2, "exports/roads.parquet")
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
@@ -766,6 +769,9 @@ func TestBuildTableTransferPlanAllowsParquetTableWriter(t *testing.T) {
 	}
 	if result.Plan.Target.FormatOptions == nil {
 		t.Fatal("write options is nil")
+	}
+	if result.Plan.Target.FormatOptions.ExtraParams["compression"] != "snappy" {
+		t.Fatalf("write options = %#v, want compression passthrough", result.Plan.Target.FormatOptions)
 	}
 }
 

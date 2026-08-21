@@ -12,9 +12,11 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
+	commonExecution "github.com/addp/common/execution"
 	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/common/logger"
 	commonRepo "github.com/addp/common/repository"
+	commonRuntimeHealth "github.com/addp/common/runtimehealth"
 	"github.com/addp/meta/internal/config"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/service"
@@ -32,6 +34,9 @@ func main() {
 	db, err := connectDatabase(cfg)
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
+	}
+	if err := commonRuntimeHealth.EnsureStore(db); err != nil {
+		log.Fatalf("初始化后台运行实例心跳失败: %v", err)
 	}
 	tokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-meta", cfg.ServiceClientSecret, nil)
 	if err != nil {
@@ -54,8 +59,9 @@ func main() {
 	executionService := service.NewScanExecutionService(db, scanService, engineService, redisClient)
 
 	hostname, _ := os.Hostname()
+	workerInstanceID := fmt.Sprintf("%s-%d-%s", hostname, os.Getpid(), uuid.NewString())
 	runner, err := worker.NewBoundedRunner(executionService, worker.BoundedRunnerConfig{
-		WorkerID:    fmt.Sprintf("%s-%d-%s", hostname, os.Getpid(), uuid.NewString()),
+		WorkerID:    workerInstanceID,
 		Concurrency: cfg.ConcurrentTasks, LeaseDuration: cfg.BoundedLeaseDuration,
 		HeartbeatInterval: cfg.BoundedHeartbeatInterval, ClaimInterval: cfg.BoundedClaimInterval,
 	}, logger.With("component", "meta_bounded_runner"))
@@ -65,6 +71,16 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	reporter, err := commonRuntimeHealth.NewReporter(commonRuntimeHealth.NewRepository(db), commonRuntimeHealth.ReporterConfig{
+		InstanceID: workerInstanceID, Module: commonExecution.ModuleMeta, Role: commonRuntimeHealth.RoleExecutionWorker,
+		RuntimeName: commonExecution.TaskTypeScan, Capacity: cfg.ConcurrentTasks,
+		Interval: commonRuntimeHealth.DefaultInterval, TTL: commonRuntimeHealth.DefaultTTL,
+		ActiveCount: runner.ActiveCount, Logger: logger.With("component", "runtime_health"),
+	})
+	if err != nil {
+		log.Fatalf("Meta worker 心跳配置无效: %v", err)
+	}
+	go reporter.Run(ctx)
 	logger.L().Info("meta bounded worker started", "concurrency", cfg.ConcurrentTasks, "lease", cfg.BoundedLeaseDuration)
 	runner.Run(ctx)
 	logger.L().Info("meta bounded worker stopped")

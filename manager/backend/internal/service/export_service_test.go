@@ -15,6 +15,17 @@ func TestBuildTableExportTaskConfigUsesTransferSyncShape(t *testing.T) {
 		"roads.geojson",
 		format.FormatGeoJSON,
 	)
+	if _, ok := config["mode"]; ok {
+		t.Fatalf("config = %#v, must not contain legacy mode", config)
+	}
+	runtime := config["runtime"].(map[string]interface{})
+	if runtime["boundary"] != "bounded" {
+		t.Fatalf("runtime = %#v, want bounded", runtime)
+	}
+	load := config["load"].(map[string]interface{})
+	if load["mode"] != "snapshot" {
+		t.Fatalf("load = %#v, want snapshot", load)
+	}
 
 	source := config["source"].(map[string]interface{})
 	if source["locator"] != "addp://engine/8/path/public/roads?type=table&item_id=54" ||
@@ -30,8 +41,11 @@ func TestBuildTableExportTaskConfigUsesTransferSyncShape(t *testing.T) {
 		t.Fatalf("target config = %#v", target)
 	}
 	policy := target["policy"].(map[string]interface{})
-	if policy["write_mode"] != "overwrite" {
-		t.Fatalf("policy = %#v, want overwrite", policy)
+	if _, ok := policy["write_mode"]; ok {
+		t.Fatalf("policy = %#v, must not contain legacy write_mode", policy)
+	}
+	if policy["apply_mode"] != "replace" {
+		t.Fatalf("policy = %#v, want replace", policy)
 	}
 }
 

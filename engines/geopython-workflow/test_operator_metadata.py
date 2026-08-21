@@ -599,6 +599,16 @@ def test_crs_to_projjson_converts_matching_wkt_definition():
     assert json.loads(result["definition"])["id"] == {"authority": "EPSG", "code": 3857}
 
 
+def test_crs_to_projjson_accepts_postgis_wkt1_projected_axis_order():
+    source_wkt = CRS.from_epsg(4549).to_wkt(version="WKT1_GDAL")
+
+    result = crs_to_projjson("EPSG:4549", "wkt", source_wkt)
+    projjson = json.loads(result["definition"])
+
+    assert projjson["id"] == {"authority": "EPSG", "code": 4549}
+    assert [axis["abbreviation"] for axis in projjson["coordinate_system"]["axis"]] == ["X", "Y"]
+
+
 def test_crs_to_projjson_preserves_addp_custom_identity():
     definition = "+proj=longlat +a=6378137 +rf=298.257223563 +no_defs"
     digest = hashlib.sha256(definition.encode("utf-8")).hexdigest()

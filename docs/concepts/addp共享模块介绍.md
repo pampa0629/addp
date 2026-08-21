@@ -12,6 +12,7 @@
 - `common/buildinfo` - Go 服务统一构建身份与 `/health` 响应；构建脚本通过链接参数注入 build ID、Git commit、源码指纹和构建时间，进程启动时间由包初始化记录
 - `common/jsonmap` - decoded JSON map 的通用读取工具,不承载 `meta_item.attributes` 业务规范
 - `common/taskprovider` - `task.capabilities/v2`、标准任务列表响应、任务级 `execution_contract` 和执行输入实例校验；校验失败返回包含稳定 rule、path 和约束值的结构化错误。任务类型能力不再保存静态 `execution_schema`，Orchestrator 必须从具体任务详情取得精确输入/输出契约
+- `common/runtimehealth` - ADDP 应用层后台运行实例的公共心跳模型、发布器和查询仓库；只发布进程活性、角色、容量与当前占用，不承载 execution/runtime/delivery 的领取权或 fencing token
 - `common/query` - 查询参数绑定、SQL 副作用分析和跨 SQL 引擎的基础方言能力；不承载 catalog facts 或 PostGIS 空间扩展语义
 - `common/engine/selection` - 基于规范化 Engine capabilities 的 Engine Instance 解析和筛选 helper
 - `common/middleware/ratelimit` - Redis 原子固定窗口限流能力，供认证等多实例安全边界复用；Redis 不可用时由调用方定义失败关闭响应，不提供进程内存回退路径

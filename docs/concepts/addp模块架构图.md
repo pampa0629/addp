@@ -134,9 +134,9 @@ graph TB
     Transfer -.-> TransferContinuousWorker
     Meta --> MetaWorker
     Quality --> QualityWorker
-    TransferBoundedWorker --> Redis
+    TransferBoundedWorker --> PostgreSQL
     TransferContinuousWorker --> PostgreSQL
-    MetaWorker --> Redis
+    MetaWorker --> PostgreSQL
     QualityWorker --> PostgreSQL
 
     Develop --> Common
@@ -346,7 +346,7 @@ graph TB
     class TB,MB,QB,MB2 backend
     class TW,TCW,MW,QW worker
     class TCT,QVO scheduler
-    class Redis,Redis2,QDB,PostgreSQL,PostgreSQL2,PostgreSQL3,PostgreSQL4 infra
+    class QDB,PostgreSQL,PostgreSQL2,PostgreSQL3,PostgreSQL4 infra
 ```
 
 **后台运行时说明**:

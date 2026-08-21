@@ -114,7 +114,7 @@ AI 把实现的门槛降到接近于零，但把设计的门槛反而提高了�
 
 **模块架构**（14 个微服务）：控制台（Console）、API 网关（Gateway）、系统管理（System）、数据管理（Manager）、元数据（Meta）、数据传输（Transfer）、任务编排（Orchestrator）、数据开发（Develop）、数据服务（Service）、执行监控（Monitor）、数据标准（Standard）、数据建模（Model）、数据质量（Quality）、AI 助手（Copilot）。
 
-**技术栈**：后端 Go + Gin + GORM，前端 Vue3 + Vite，PostgreSQL 多 Schema 隔离，Redis 缓存与异步队列，MinIO 对象存储，Meilisearch 全文搜索，Python/Spark 计算引擎。
+**技术栈**：后端 Go + Gin + GORM，前端 Vue3 + Vite，PostgreSQL 多 Schema 隔离与有界 execution claim，Redis 缓存、事件和分布式锁，MinIO 对象存储，Meilisearch 全文搜索，Python/Spark 计算引擎。
 
 **功能亮点**：
 - 支持 11 种存储/计算引擎（PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、Spark、MinIO、S3 等）

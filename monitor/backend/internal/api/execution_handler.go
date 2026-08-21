@@ -34,7 +34,7 @@ func NewExecutionHandler(queryService *service.ExecutionQueryService) *Execution
 // @Param trigger_type query string false "触发类型 | Trigger type"
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(20)
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} service.ListExecutionsResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["monitor.execution.read"]
 // @Router /executions [get]
@@ -83,7 +83,7 @@ func stringPtrFromQuery(value string) *string {
 // @Tags Monitor
 // @Produce json
 // @Param id path int true "执行ID | Execution ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} service.ExecutionObservation
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["monitor.execution.read"]
 // @Router /executions/{id} [get]
@@ -116,7 +116,7 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 // @Tags Monitor
 // @Produce json
 // @Param execution_id path string true "执行 UUID | Execution UUID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} service.ExecutionObservation
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["monitor.execution.read"]
 // @Router /executions/by-execution-id/{execution_id} [get]

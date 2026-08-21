@@ -801,6 +801,16 @@
       "taskUpdateSuccess": "Task updated successfully",
       "taskUpdateFailed": "Task update failed",
       "outputFormatLabel": "Output Format",
+      "columnCompressionLabel": "Column Compression",
+      "columnCompressionHint": "Applies one codec to every Parquet Column Chunk / Data Page.",
+      "columnCompressionCodecs": {
+        "zstd": "ZSTD (Recommended)",
+        "snappy": "Snappy",
+        "lz4_raw": "LZ4_RAW",
+        "brotli": "Brotli",
+        "gzip": "GZIP",
+        "uncompressed": "Uncompressed"
+      },
       "outputPathLabel": "Output Directory",
       "outputPathHint": "File stored in specified directory of object storage.",
       "outputFileNameLabel": "Output Filename",

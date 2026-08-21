@@ -322,7 +322,7 @@ ${GREEN}选项:${RESET}
 ${GREEN}示例:${RESET}
   ./show-redis.sh                        # 显示所有 keys
   ./show-redis.sh --get my-key           # 查看特定 key
-  ./show-redis.sh --pattern "asynq:*"   # 查找所有 asynq 相关 keys
+  ./show-redis.sh --pattern "meta:scan:lock:*" # 查找 Meta 扫描锁
   ./show-redis.sh --info                 # 显示服务器信息
   ./show-redis.sh --monitor              # 监控实时命令
 

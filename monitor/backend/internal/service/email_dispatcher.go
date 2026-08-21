@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	monitorModels "github.com/addp/monitor/internal/models"
@@ -24,7 +25,10 @@ type EmailDispatcher struct {
 	db     *gorm.DB
 	sender EmailSender
 	config EmailDispatcherConfig
+	active atomic.Int64
 }
+
+func (d *EmailDispatcher) ActiveCount() int { return int(d.active.Load()) }
 
 func NewEmailDispatcher(db *gorm.DB, sender EmailSender, config EmailDispatcherConfig) *EmailDispatcher {
 	return &EmailDispatcher{db: db, sender: sender, config: config}
@@ -57,6 +61,8 @@ func (d *EmailDispatcher) DispatchOnce(ctx context.Context, now time.Time) (bool
 	if err != nil || delivery == nil {
 		return false, err
 	}
+	d.active.Add(1)
+	defer d.active.Add(-1)
 	sendErr := d.sender.Send(ctx, *delivery, now)
 	return true, d.finishAttempt(ctx, *delivery, sendErr, now)
 }

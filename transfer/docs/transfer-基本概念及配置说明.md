@@ -123,8 +123,28 @@ Transfer 不为 PostgreSQL -> PostgreSQL、NFS -> MinIO、MinIO -> NFS 等具体
 | CSV / TSV | single table read / write。 |
 | JSON / JSONL | single table read / write；JSONL 是 `json` 的用户侧编码变体。 |
 | GeoJSON | single table read / write；独立 `format=geojson`，空间事实由解析结果表达为 `capabilities.spatial`。 |
-| Parquet | single table read / write；whole scope dataset read；支持 field_selection 下推。 |
+| Parquet | single table read / write；whole scope dataset read；支持 field_selection 下推；普通 Parquet 与 GeoParquet 共用列式压缩配置。 |
 | Shapefile | multi table read / write；完整 refs 由 format specs 或 Meta attributes 提供。 |
+
+Parquet writer 的列式压缩通过 `target.options.compression` 配置，该值作用于所有列的 Column Chunk / Data Page，不是文件封装压缩，也不是 Parquet value encoding。当前契约为：
+
+- 默认：`zstd`。
+- 支持：`zstd`、`snappy`、`lz4_raw`、`brotli`、`gzip`、`uncompressed`。
+- 普通 Parquet 和 GeoParquet 使用同一份契约；当源数据含空间事实时，压缩后的 WKB 几何列和 `geo` metadata 一起写出。
+- 不开放压缩级别和逐列 codec；未声明的 codec 直接报错。
+
+`GET /api/v1/transfer/capabilities` 的 `table_formats[].columnar_compression` 是唯一能力事实源，包含 `default` 和 canonical `codecs`。控制台必须消费该声明，不按格式名硬编码列表。
+
+```json
+{
+  "target": {
+    "format": "parquet",
+    "options": {
+      "compression": "zstd"
+    }
+  }
+}
+```
 
 ### 3.3 Native table target
 

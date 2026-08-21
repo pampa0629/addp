@@ -23,6 +23,8 @@
   -> 补测试和内置规范
 ```
 
+列式格式如果开放 Column Chunk / Data Page 压缩，还必须由格式 plugin 实现 `ColumnarCompressionCapabilityProvider`，声明唯一默认 codec 和 canonical codec 列表。Transfer 等上层模块只消费该动态能力，不按格式名硬编码支持矩阵；压缩 codec、Parquet value encoding 与文件级压缩封装必须保持三个独立概念。
+
 ## 1. 判断数据类型
 
 先判断用户和平台如何理解这个 data item，而不是先看后缀。

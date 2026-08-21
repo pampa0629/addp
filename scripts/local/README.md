@@ -190,7 +190,7 @@ ADDP 本地部署采用**分层架构**:
 
 ```
 postgres      (port 5433)  - PostgreSQL 数据库
-redis         (port 6379)  - Redis 缓存和队列
+redis         (port 6379)  - Redis 缓存、事件和分布式锁
 minio         (port 9000-9001) - MinIO 对象存储
 meilisearch   (port 7700)  - Meilisearch 全文搜索
 ```

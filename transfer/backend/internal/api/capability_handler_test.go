@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"io"
+	"slices"
 	"testing"
 
 	"github.com/addp/common/datatype"
@@ -42,6 +43,18 @@ func TestBuildTableFormatCapabilitiesExposeUserFacingFormats(t *testing.T) {
 	json := byValue["json"]
 	if json.Spatial {
 		t.Fatal("json spatial = true, want false")
+	}
+
+	parquet := byValue["parquet"]
+	if parquet.ColumnarCompression == nil {
+		t.Fatal("parquet columnar_compression is nil")
+	}
+	if parquet.ColumnarCompression.Default != "zstd" {
+		t.Fatalf("parquet default compression = %q, want zstd", parquet.ColumnarCompression.Default)
+	}
+	wantCodecs := []string{"zstd", "snappy", "lz4_raw", "brotli", "gzip", "uncompressed"}
+	if !slices.Equal(parquet.ColumnarCompression.Codecs, wantCodecs) {
+		t.Fatalf("parquet compression codecs = %#v, want %#v", parquet.ColumnarCompression.Codecs, wantCodecs)
 	}
 
 	geojson := byValue["geojson"]

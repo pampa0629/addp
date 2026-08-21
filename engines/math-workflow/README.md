@@ -332,7 +332,7 @@ Math Workflow Engine 是第三方开发者的最佳实践示例：
 
 **易于扩展**:
 - 添加新算子：在 `math_operators.py` 中定义函数和元数据
-- 支持异步：集成 Celery 或 Asynq 任务队列
+- 支持异步：复用标准 Workflow Runtime 协议和 `common-python` 异步状态核心，不另建 ADDP 执行事实源
 - 多输出端口：修改 `output_ports` 定义和 `resolve_params` 逻辑
 
 **生产就绪**:

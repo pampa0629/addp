@@ -9,7 +9,7 @@
 | 容器名称 | 服务 | 用途 |
 |---------|------|------|
 | addp-postgres | PostgreSQL 15 + PostGIS | ADDP 系统元数据 |
-| addp-redis | Redis 7 | 缓存和任务队列 |
+| addp-redis | Redis 7 | 缓存、事件和分布式锁 |
 | addp-minio | MinIO | 系统文件存储 |
 | addp-meilisearch | Meilisearch | 全文搜索 |
 | addp-redpanda | Redpanda v24.3.18 | 唯一内部 Kafka API CDC 总线 |
@@ -143,7 +143,7 @@ bash scripts/infra/up.sh
 
 删除数据卷会丢失：
 - PostgreSQL 所有数据库和表
-- Redis 所有缓存和队列
+- Redis 所有缓存和临时协调状态
 - MinIO 所有文件
 - Meilisearch 所有索引
 
@@ -274,7 +274,7 @@ make init-redis
 # 初始化 Meilisearch 索引
 ./scripts/infra/init-meilisearch.sh
 
-# 初始化 Redis（配置任务队列和缓存）
+# 检查 Redis 缓存、事件和分布式锁
 ./scripts/infra/init-redis.sh
 
 # 查看所有服务状态
@@ -322,23 +322,15 @@ MinIO
 
 示例:
 ```
-meta:cache:scan_task:1:123:full           → Meta 模块扫描任务缓存
-meta:cache:scan_last_time:123             → Meta 模块上次扫描时间
-manager:cache:mvt:spatial:fingerprint:*   → Manager 模块 MVT 瓦片缓存
-transfer:cache:checkpoint:456             → Transfer 模块检查点缓存
+meta:cache:scan_last_time:123                  → Meta 模块上次扫描时间
+meta:scan:lock:tenant:1:engine:123:namespace:* → Meta 扫描范围锁
+manager:tenant_1:cache:mvt:spatial:*           → Manager 空间瓦片缓存
+cleanup:tasks:<task-id>                        → Cleanup 临时协调状态
 ```
 
-### Asynq Queue 命名规范
-
-格式: `{module}:{priority}`
-
-示例:
-```
-meta:default      → Meta 模块默认队列
-transfer:critical → Transfer 模块高优先级队列
-transfer:default  → Transfer 模块默认队列
-transfer:low      → Transfer 模块低优先级队列
-```
+Redis 不承载 ADDP bounded execution 队列。Quality、Meta 和 Transfer bounded
+统一从 PostgreSQL `common.task_executions` claim execution；Redis 仅保存可重建的
+缓存、事件、分布式锁、限流和临时协调状态。
 
 ### Meilisearch Index 命名规范
 
@@ -496,7 +488,7 @@ POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4 ./scripts/infra/up.sh
 
 ### init-redis.sh
 
-**功能**: 初始化 Redis 配置和验证连接
+**功能**: 验证 Redis 连接并显示缓存、事件和临时协调状态
 
 **特性**:
 - ✅ 连接验证
@@ -508,7 +500,7 @@ POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4 ./scripts/infra/up.sh
 # 验证连接和显示统计
 ./scripts/infra/init-redis.sh
 
-# 清空所有 Asynq 队列数据（慎用！）
+# 清空所有 Redis 缓存和临时协调数据（慎用！）
 ./scripts/infra/init-redis.sh --clean
 ```
 

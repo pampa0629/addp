@@ -370,7 +370,12 @@ func (s *ExportService) refreshSessionStatus(ctx context.Context, session *model
 
 func buildTableExportTaskConfig(sourceLocator, parentLocator, fileName string, formatType format.FormatType) map[string]interface{} {
 	return map[string]interface{}{
-		"mode": "batch",
+		"runtime": map[string]interface{}{
+			"boundary": "bounded",
+		},
+		"load": map[string]interface{}{
+			"mode": "snapshot",
+		},
 		"source": map[string]interface{}{
 			"locator":        sourceLocator,
 			"data_type":      "table",
@@ -383,9 +388,10 @@ func buildTableExportTaskConfig(sourceLocator, parentLocator, fileName string, f
 			"representation": "encoded",
 			"format":         string(formatType),
 			"policy": map[string]interface{}{
-				"write_mode": "overwrite",
+				"apply_mode": "replace",
 			},
 		},
+		"transforms": []interface{}{},
 	}
 }
 

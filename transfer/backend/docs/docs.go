@@ -22,7 +22,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回 Transfer 当前可用的格式能力、业务 Kafka continuous 能力和数据库 CDC 支持矩阵。| Returns available Transfer format capabilities, business Kafka continuous features, and the database CDC support matrix.",
+                "description": "返回 Transfer 当前可用的格式读写、列式压缩、业务 Kafka continuous 能力和数据库 CDC 支持矩阵。| Returns available Transfer format read/write and columnar compression capabilities, business Kafka continuous features, and the database CDC support matrix.",
                 "produces": [
                     "application/json"
                 ],
@@ -3250,6 +3250,22 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.TransferColumnarCompressionCapability": {
+            "type": "object",
+            "properties": {
+                "codecs": {
+                    "description": "Codecs 是 writer 当前支持的 canonical Parquet column/page compression codec。",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "default": {
+                    "description": "Default 是未指定 target.options.compression 时使用的唯一默认 codec。",
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.TransferContinuousCapabilities": {
             "type": "object",
             "properties": {
@@ -3355,6 +3371,9 @@ const docTemplate = `{
             "properties": {
                 "backend_type": {
                     "type": "string"
+                },
+                "columnar_compression": {
+                    "$ref": "#/definitions/internal_api.TransferColumnarCompressionCapability"
                 },
                 "extension": {
                     "type": "string"

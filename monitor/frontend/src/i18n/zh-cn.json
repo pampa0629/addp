@@ -69,6 +69,18 @@
         "continuous_mode": "持续运行",
         "trigger_type": "触发方式",
         "duration": "执行时长",
+        "queue_duration": "排队时长",
+        "attempt": "执行尝试",
+        "lease_state": "租约状态",
+        "lease_owner": "租约 Owner",
+        "lease_expires_at": "租约到期时间",
+        "recovery_reason": "恢复原因",
+        "lease_states": {
+          "none": "无活动租约",
+          "active": "有效",
+          "expired": "已过期",
+          "missing": "租约缺失"
+        },
         "created_at": "创建时间",
         "started_at": "开始时间",
         "completed_at": "完成时间",
@@ -229,7 +241,9 @@
       "progress": "进度",
       "continuous": "持续",
       "created_at": "创建时间",
+      "queue_duration": "排队时长",
       "duration": "执行时长",
+      "attempt": "尝试",
       "actions": "操作",
       "view_detail": "查看详情"
     },
@@ -240,6 +254,51 @@
       "running": "运行中",
       "failed_count": "失败次数",
       "module_health": "模块健康状态",
+      "runtime_health": {
+        "title": "后台运行实例健康",
+        "role": "运行时角色",
+        "runtime": "运行时",
+        "instances": "健康/已知实例",
+        "load": "占用/容量",
+        "last_heartbeat": "最近心跳",
+        "expires_at": "心跳到期",
+        "empty": "暂无后台运行实例心跳",
+        "load_failed": "加载后台运行实例健康失败",
+        "roles": {
+          "execution_worker": "有界执行 Worker",
+          "continuous_worker": "持续运行 Worker",
+          "dispatcher": "通知投递器"
+        },
+        "statuses": {
+          "up": "正常",
+          "down": "失联",
+          "stopped": "已停止"
+        }
+      },
+      "runtime_metrics": {
+        "title": "执行运行时指标",
+        "description": "按模块、任务类型和执行边界聚合；积压为当前全量状态，其余指标按所选窗口统计",
+        "boundary": "执行边界",
+        "backlog": "待执行/运行中",
+        "throughput": "吞吐/小时",
+        "queue_duration": "排队 平均/P95",
+        "execution_duration": "执行 平均/P95",
+        "failure_rate": "失败率",
+        "automatic_retry": "自动重试 次数/率",
+        "user_retry": "用户重试 次数/率",
+        "recovery": "租约恢复 次数/率",
+        "empty": "所选范围内暂无执行运行时指标",
+        "load_failed": "加载执行运行时指标失败",
+        "windows": {
+          "24h": "最近 24 小时",
+          "7d": "最近 7 天",
+          "30d": "最近 30 天"
+        },
+        "boundaries": {
+          "bounded": "有界执行",
+          "continuous": "持续运行"
+        }
+      },
       "refresh": "刷新",
       "no_modules": "暂无模块信息",
       "trend_title": "执行趋势（最近7天）",
