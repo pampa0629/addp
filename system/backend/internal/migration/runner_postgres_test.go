@@ -1956,7 +1956,7 @@ func assertModelAuthorizationCatalog(t *testing.T, db *sql.DB) {
 		JOIN system.roles role ON role.id = role_permission.role_id
 		JOIN system.permissions permission ON permission.id = role_permission.permission_id
 		WHERE role.tenant_id IS NULL
-		  AND role.role_key = 'tenant.governance_manager'
+		  AND role.role_key = 'tenant.data_architect'
 		  AND permission.permission_key IN (
 		      'model.entity.approve',
 		      'model.entity.create',
@@ -1970,10 +1970,10 @@ func assertModelAuthorizationCatalog(t *testing.T, db *sql.DB) {
 		  )
 		  AND role_permission.source_type = 'product'
 	`).Scan(&rolePermissionCount); err != nil {
-		t.Fatalf("read Governance Manager Model permissions: %v", err)
+		t.Fatalf("read Data Architect Model permissions: %v", err)
 	}
 	if rolePermissionCount != 9 {
-		t.Fatalf("Governance Manager Model permission count = %d, want 9", rolePermissionCount)
+		t.Fatalf("Data Architect Model permission count = %d, want 9", rolePermissionCount)
 	}
 }
 
