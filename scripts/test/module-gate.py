@@ -62,7 +62,7 @@ def discover_modules(repository: Path) -> set[str]:
     return modules
 
 
-def plan_module(repository: Path, module: str) -> list[Step]:
+def plan_module(repository: Path, module: str, include_platform: bool = True) -> list[Step]:
     if not re.fullmatch(r"[a-z][a-z0-9-]*", module):
         raise ModuleGateError("MODULE must be a lowercase ADDP module name")
     modules = discover_modules(repository)
@@ -71,7 +71,9 @@ def plan_module(repository: Path, module: str) -> list[Step]:
         raise ModuleGateError(f"unknown MODULE {module!r}; available modules: {available}")
 
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
-    steps = [Step("platform T0", ("make", "test-platform"), repository)]
+    steps = []
+    if include_platform:
+        steps.append(Step("platform T0", ("make", "test-platform"), repository))
 
     go_modules = []
     for path in git_files(repository, "go.mod", "*/go.mod", "*/*/go.mod"):
@@ -122,7 +124,8 @@ def plan_module(repository: Path, module: str) -> list[Step]:
             raise ModuleGateError(f"Makefile target {target} is missing")
         steps.append(Step(f"{module} PostgreSQL T2", ("make", target), repository))
 
-    if len(steps) == 1:
+    minimum_step_count = 1 if include_platform else 0
+    if len(steps) == minimum_step_count:
         raise ModuleGateError(f"MODULE {module!r} has no registered module gate")
     return steps
 

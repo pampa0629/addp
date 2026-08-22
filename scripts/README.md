@@ -453,6 +453,8 @@ scripts/test/
 
 单模块交付使用 `make test-module MODULE=<模块>`。`scripts/test/module-gate.py` 从 Git 跟踪的 Go module、`*/frontend/package.json`、`*/pyproject.toml` 和 `scripts/test/*-postgres-gate.sh` 自动生成该模块的 T0-T3 执行计划：先运行 `test-platform`，再串行执行语言测试、前端测试与生产构建、已登记 PostgreSQL T2。`--dry-run` 只用于检查计划；正式入口不跳过缺少连接条件的 T2。模块发现与执行计划的确定性测试已纳入 `make test-platform`。
 
+AI 完成一组改动后使用 `make test-changed`；默认读取相对 `HEAD` 的已跟踪改动及未跟踪文件，或通过 `BASE_REF=<ref>` 指定比较基线。`scripts/test/changed-gate.py` 始终保留平台 T0，把普通路径映射到已登记 owner，并从 `go.mod`、前端 `file:` 依赖和 Python requirements 推导共享模块消费者，再复用模块门禁计划且去重。若受影响模块含 PostgreSQL T2，仍须提供对应安全连接条件，不会自动跳过。
+
 Go 全量测试使用 `make test-go`，根据 Git 已跟踪的全部 `go.mod` 在系统临时目录生成独立 workspace，再逐一运行 `go test ./...`，不依赖或修改本地被忽略的 `go.work`，也不维护第二份模块清单。`make test-execution-fixtures` 禁止业务测试手写 `task_executions` 表；Common 仓储自测、System PostgreSQL 专项测试及 Manager 历史表清理测试使用精确文件白名单。Model 的权限错误、URL 状态、ER 图过滤、DDL 请求和主题 token 回归使用 `make test-model-frontend`；该入口同时运行独立端口上的浏览器 E2E，覆盖 403 明确提示、业务域详情往返恢复和窄窗口深色 DDL 预览，并执行生产构建与 500 KiB 入口分块预算校验。
 
 Online 唯一入口为 `make test-online ONLINE_SUITE=<suite>`，并要求环境中显式设置 `ADDP_ONLINE_TEST=1`。`scripts/test/online-gate.py` 只接受代码中已登记且已有 owner 门禁实现的 suite；未登记名称直接失败，不以占位场景冒充验收。分发器为整次运行生成或传递统一 Run ID，依次执行通用预检和 owner 门禁，并对二者施加总超时。

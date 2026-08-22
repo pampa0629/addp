@@ -146,6 +146,8 @@ make test-release RELEASE_SUITE=system-iam
 
 `test-module` 从 Git 跟踪的 Go module、前端 package、Python package 和 PostgreSQL gate 自动发现模块及其标准入口，不维护第二份模块清单。它先运行平台 T0，再运行所选模块的 Go/Python T1、前端 T1/T3 和已登记 PostgreSQL T2；T2 所需安全连接条件必须由调用方显式提供，缺失时失败，不能自动跳过或降级。
 
+`test-changed` 面向 AI 完成一次代码修改后的本地交付：默认比较工作区与 `HEAD`，也可通过 `BASE_REF=<ref>` 比较指定基线。它始终运行一次平台 T0，再将普通路径映射到 owner 模块，并根据实际依赖声明把 `common/`、`common-frontend/`、`common-python/` 的改动扩散到已登记消费者；最终复用 `test-module` 的计划能力并对重复门禁去重，不维护第二份影响矩阵。
+
 ## 五、Online 验收协议
 
 ### 5.1 命名
