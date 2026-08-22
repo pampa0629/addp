@@ -1,6 +1,6 @@
-.PHONY: help init dev build build-images up down logs clean test test-platform test-engine-startup-isolation test-online test-online-runner test-go test-agent-frontend test-asset-frontend test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats dev-all \
+.PHONY: help init build build-images test test-platform test-engine-startup-isolation test-online test-online-runner test-go test-agent-frontend test-asset-frontend test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats \
         build-iam-bootstrap build-iam-recovery clean-dist \
-        infra-up infra-down infra-restart infra-status ports-validate
+        dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
 # 默认目标
 .DEFAULT_GOAL := help
@@ -16,10 +16,6 @@ help: ## 显示帮助信息
 	@echo ""
 	@echo "$(YELLOW)可用命令:$(NC)"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-20s$(NC) %s\n", $$1, $$2}'
-	@echo ""
-	@echo "$(YELLOW)部署模式:$(NC)"
-	@echo "  - System Only:  仅启动 System 模块（默认）"
-	@echo "  - Full Platform: 启动所有模块 (使用 --profile full)"
 
 # ===== 统一构建产物目录与变量 =====
 # 扁平化输出目录：dist/{type}-{build}-{os}-{arch}/
@@ -61,100 +57,20 @@ init: ## 初始化项目（创建必要的目录和配置文件）
 	@if [ ! -f .env ]; then cp .env.example .env && echo "$(GREEN)已创建 .env 文件$(NC)"; fi
 	@echo "$(GREEN)初始化完成！$(NC)"
 
-dev-system: ## 开发模式运行 System 模块
-	@echo "$(GREEN)启动 System 模块开发环境...$(NC)"
-	@bash -c 'set -a; [ -f .env ] && source .env; set +a; \
-	  export POSTGRES_HOST=localhost; \
-	  export REDIS_ADDR=localhost:6379; \
-	  export REDIS_PASSWORD=$${REDIS_PASSWORD:-addp_redis}; \
-	  cd system/backend && go run cmd/server/main.go'
-
 build-iam-bootstrap: ## 构建一次性离线 IAM Bootstrap CLI
 	$(call build_one_service,system/backend,addp-iam-bootstrap,cmd/iam-bootstrap/main.go)
 
 build-iam-recovery: ## 构建离线 IAM 三员凭据恢复 CLI
 	$(call build_one_service,system/backend,addp-iam-recovery,cmd/iam-recovery/main.go)
 
-dev-manager: ## 开发模式运行 Manager 模块
-	@echo "$(GREEN)启动 Manager 模块开发环境...$(NC)"
-	@bash -c 'set -a; [ -f .env ] && source .env; set +a; \
-	  export POSTGRES_HOST=localhost; \
-	  export REDIS_ADDR=localhost:6379; \
-	  export REDIS_PASSWORD=$${REDIS_PASSWORD:-addp_redis}; \
-	  cd manager/backend && go run cmd/server/main.go'
-
-dev-meta: ## 开发模式运行 Meta 模块
-	@echo "$(GREEN)启动 Meta 模块开发环境...$(NC)"
-	@bash -c 'set -a; [ -f .env ] && source .env; set +a; \
-	  export POSTGRES_HOST=localhost; \
-	  export REDIS_ADDR=localhost:6379; \
-	  export REDIS_PASSWORD=$${REDIS_PASSWORD:-addp_redis}; \
-	  cd meta/backend && go run cmd/server/main.go'
-
-dev-transfer: ## 开发模式运行 Transfer 模块
-	@echo "$(GREEN)启动 Transfer 模块开发环境...$(NC)"
-	@bash -c 'set -a; [ -f .env ] && source .env; set +a; \
-	  export REDIS_HOST=localhost; \
-	  export REDIS_PORT=6379; \
-	  export REDIS_PASSWORD=$${REDIS_PASSWORD:-addp_redis}; \
-	  export POSTGRES_HOST=localhost; \
-	  export GOCACHE=$(abspath .cache/go-build); \
-	  cd transfer/backend && go run cmd/server/main.go'
-
-dev-orchestrator: ## 开发模式运行 Orchestrator 模块
-	@echo "$(GREEN)启动 Orchestrator 模块开发环境...$(NC)"
-	@bash -c 'set -a; [ -f .env ] && source .env; set +a; \
-	  export REDIS_HOST=localhost; \
-	  export REDIS_PORT=6379; \
-	  export REDIS_PASSWORD=$${REDIS_PASSWORD:-addp_redis}; \
-	  export POSTGRES_HOST=localhost; \
-	  export GOCACHE=$(abspath .cache/go-build); \
-	  cd orchestrator/backend && go run cmd/server/main.go'
-
-dev-gateway: ## 开发模式运行 Gateway 模块
-	@echo "$(GREEN)启动 Gateway 模块开发环境...$(NC)"
-	@cd gateway && go run cmd/gateway/main.go
-
-dev-geopython-workflow: ## 开发模式运行 GeoPython Workflow
-	@echo "$(GREEN)启动 GeoPython Workflow 开发环境...$(NC)"
-	@cd engines/geopython-workflow && \
-	if [ ! -d "venv" ]; then \
-		echo "创建 Python 虚拟环境..." && \
-		python3 -m venv venv; \
-	fi && \
-	if ! ./venv/bin/python -c "import flask, geopandas, pyarrow, pyproj" >/dev/null 2>&1; then \
-		echo "检测到虚拟环境缺少依赖，重新安装..." && \
-		./venv/bin/python -m pip install --quiet -r requirements.txt; \
-	fi && \
-	export PORT=8099 && \
-	export SYSTEM_URL=http://localhost:8180 && \
-	export POSTGRES_HOST=localhost && \
-	export POSTGRES_PORT=5432 && \
-	export POSTGRES_USER=addp && \
-	export POSTGRES_PASSWORD=addp_password && \
-	export POSTGRES_DB=addp && \
-	export DB_SCHEMA=develop && \
-	./venv/bin/python api_server.py
-
 dev-start: ## 开发模式启动所有服务（按正确顺序）
-	@echo "$(GREEN)启动完整开发环境...$(NC)"
 	@bash scripts/dev/start.sh
 
+dev-restart: ## 重启开发环境；参数使用 ARGS="-<模块名>"
+	@bash scripts/dev/restart.sh $(ARGS)
+
 dev-stop: ## 停止所有开发模式服务
-	@echo "$(YELLOW)停止开发环境...$(NC)"
 	@bash scripts/dev/stop.sh
-
-dev-all: ## 本地开发模式启动全部后端与前端服务
-	@echo "$(GREEN)启动完整开发环境（Go + Vite）...$(NC)"
-	@bash scripts/dev/run.sh
-
-dev-health: ## 检查开发模式服务健康状态
-	@echo "$(GREEN)检查服务健康状态...$(NC)"
-	@curl -sf http://localhost:8180/health > /dev/null && echo "  $(GREEN)✓ System healthy$(NC)" || echo "  $(RED)✗ System unhealthy$(NC)"
-	@curl -sf http://localhost:8081/health > /dev/null && echo "  $(GREEN)✓ Manager healthy$(NC)" || echo "  $(RED)✗ Manager unhealthy$(NC)"
-	@curl -sf http://localhost:8082/health > /dev/null && echo "  $(GREEN)✓ Meta healthy$(NC)" || echo "  $(RED)✗ Meta unhealthy$(NC)"
-	@curl -sf http://localhost:8099/health > /dev/null && echo "  $(GREEN)✓ GeoPython Workflow healthy$(NC)" || echo "  $(RED)✗ GeoPython Workflow unhealthy$(NC)"
-	@curl -sf http://localhost:8000/health > /dev/null && echo "  $(GREEN)✓ Gateway healthy$(NC)" || echo "  $(RED)✗ Gateway unhealthy$(NC)"
 
 build: ## 编译全部正式 Go 服务与 Worker；附加参数使用 BUILD_ARGS="..."
 	@bash scripts/build/compile.sh $(BUILD_ARGS)
@@ -166,79 +82,7 @@ clean-dist: ## 清理 dist 构建产物
 	@rm -rf $(OUT_DIR)
 	@echo "$(YELLOW)已清理 $(OUT_DIR)$(NC)"
 
-up: ## 启动 System 模块（基础服务）
-	@echo "$(GREEN)启动 System 模块...$(NC)"
-	@docker compose -f docker-compose.yml up -d system-backend system-frontend
-	@echo "$(GREEN)System 模块已启动！$(NC)"
-	@echo "$(YELLOW)访问地址:$(NC)"
-	@echo "  - System Backend:  http://localhost:8180"
-	@echo "  - System Frontend: http://localhost:8090"
-
-up-full: ## 启动所有服务（完整平台）
-	@echo "$(GREEN)启动完整平台（所有服务）...$(NC)"
-	@docker compose -f docker-compose.yml --profile full up -d
-	@echo "$(GREEN)所有服务已启动！$(NC)"
-	@$(MAKE) status
-
-up-infra: ## 仅启动基础设施服务（PostgreSQL, Redis, MinIO, Meilisearch）
-	@echo "$(GREEN)启动基础设施服务...$(NC)"
-	@docker compose -f docker-compose.infra.yml up -d
-	@echo "$(GREEN)基础设施服务已启动！$(NC)"
-
-down: ## 停止所有服务
-	@echo "$(YELLOW)停止所有服务...$(NC)"
-	@docker compose -f docker-compose.yml --profile full down
-	@echo "$(GREEN)所有服务已停止$(NC)"
-
-restart: down up ## 重启 System 模块
-
-restart-full: down up-full ## 重启所有服务
-
-logs: ## 查看所有服务日志
-	@docker compose -f docker-compose.yml --profile full logs -f
-
-logs-system: ## 查看 System 模块日志
-	@docker compose -f docker-compose.yml logs -f system-backend system-frontend
-
-logs-manager: ## 查看 Manager 模块日志
-	@docker compose -f docker-compose.yml logs -f manager-backend
-
-logs-meta: ## 查看 Meta 模块日志
-	@docker compose -f docker-compose.yml logs -f meta-backend
-
-logs-transfer: ## 查看 Transfer 模块日志
-	@docker compose -f docker-compose.yml logs -f transfer-backend transfer-bounded-worker transfer-continuous-worker
-
-logs-orchestrator: ## 查看 Orchestrator 模块日志
-	@docker compose -f docker-compose.yml logs -f orchestrator-backend orchestrator-frontend
-
-logs-gateway: ## 查看 Gateway 模块日志
-	@docker compose -f docker-compose.yml logs -f gateway
-
-status: ## 显示所有服务状态
-	@echo "$(GREEN)服务状态:$(NC)"
-	@docker compose -f docker-compose.yml --profile full ps
-	@echo ""
-	@echo "$(YELLOW)服务访问地址:$(NC)"
-	@echo "  - Gateway:          http://localhost:8000  (未实现)"
-	@echo "  - System Backend:   http://localhost:8180"
-	@echo "  - System Frontend:  http://localhost:8090"
-	@echo "  - Manager Backend:  http://localhost:8081  (未实现)"
-	@echo "  - Manager Frontend: http://localhost:8091  (未实现)"
-	@echo "  - Meta Backend:     http://localhost:8082  (未实现)"
-	@echo "  - Meta Frontend:    http://localhost:8092  (未实现)"
-	@echo "  - Transfer Backend: http://localhost:8083  (未实现)"
-	@echo "  - Transfer Frontend:http://localhost:8093  (未实现)"
-	@echo "  - Orchestrator Backend: http://localhost:8084"
-	@echo "  - Orchestrator Frontend:http://localhost:8094"
-	@echo ""
-	@echo "$(YELLOW)基础设施服务:$(NC)"
-	@echo "  - PostgreSQL:       localhost:5432"
-	@echo "  - Redis:            localhost:6379"
-	@echo "  - MinIO Console:    http://localhost:9001"
-	@echo "  - MinIO API:        http://localhost:9000"
-
-# ===== 基础设施脚本别名 =====
+# ===== 基础设施脚本入口 =====
 infra-up: ## 启动系统库基础设施（带端口预检与健康检查）
 	@bash scripts/infra/up.sh
 
@@ -254,28 +98,6 @@ infra-status: ## 查看系统库基础设施状态与健康
 
 ports-validate: ## 校验 System/Business 端口分配是否符合策略
 	@bash scripts/utils/ports-validate.sh
-
-ps: status ## 显示服务状态（别名）
-
-clean: ## 清理编译产物和临时文件
-	@echo "$(YELLOW)清理编译产物...$(NC)"
-	@rm -rf bin/
-	@rm -rf system/backend/server
-	@rm -rf system/frontend/dist
-	@cd system && $(MAKE) clean
-	@echo "$(GREEN)清理完成$(NC)"
-
-clean-all: clean ## 清理所有数据（包括 Docker volumes 和数据库）
-	@echo "$(RED)警告: 此操作将删除所有数据！$(NC)"
-	@read -p "确认删除所有数据？(yes/no): " confirm; \
-	if [ "$$confirm" = "yes" ]; then \
-		docker compose -f docker-compose.yml --profile full down -v; \
-		docker compose -f docker-compose.infra.yml down -v; \
-		rm -rf system/data/*.db; \
-		echo "$(GREEN)所有数据已清理$(NC)"; \
-	else \
-		echo "$(YELLOW)操作已取消$(NC)"; \
-	fi
 
 test-agent-eval: ## 运行 Agent 统一离线评测门禁
 	@bash scripts/test/agent-evaluation-gate.sh offline
@@ -455,16 +277,8 @@ db-shell: ## 连接到 PostgreSQL 数据库
 redis-cli: ## 连接到 Redis
 	@docker compose -f docker-compose.infra.yml exec redis redis-cli -a addp_redis
 
-minio-setup: ## 初始化 MinIO bucket (legacy, 使用 init-minio 替代)
-	@echo "$(GREEN)初始化 MinIO...$(NC)"
-	@docker compose -f docker-compose.infra.yml exec minio mc alias set local http://localhost:9000 minioadmin minioadmin
-	@docker compose -f docker-compose.infra.yml exec minio mc mb local/addp-data --ignore-existing
-	@echo "$(GREEN)MinIO 初始化完成$(NC)"
-
 init-minio: ## 初始化 MinIO buckets（包括 PMTiles 快显缓存等）
 	@./scripts/infra/init-minio.sh
-
-init-minio-mvt: init-minio ## 初始化 MVT 瓦片缓存 bucket (alias for init-minio)
 
 init-redis: ## 检查 Redis 缓存、事件和分布式锁
 	@./scripts/infra/init-redis.sh
@@ -490,18 +304,6 @@ fmt: ## 格式化代码
 	@echo "$(GREEN)格式化代码...$(NC)"
 	@find . -name "*.go" -not -path "*/vendor/*" -not -path "*/node_modules/*" -exec gofmt -w {} \;
 	@echo "$(GREEN)代码格式化完成$(NC)"
-
-health: ## 检查所有服务健康状态
-	@echo "$(GREEN)检查服务健康状态...$(NC)"
-	@echo "System Backend:"
-	@curl -s http://localhost:8180/health || echo "$(RED)  ✗ 不可用$(NC)"
-	@echo ""
-	@echo "PostgreSQL:"
-	@docker compose -f docker-compose.infra.yml exec postgres pg_isready -U addp > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
-	@echo "Redis:"
-	@docker compose -f docker-compose.infra.yml exec redis redis-cli -a addp_redis ping > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
-	@echo "MinIO:"
-	@curl -s http://localhost:9000/minio/health/live > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
 
 backup: ## 备份数据库
 	@echo "$(GREEN)备份数据库...$(NC)"
@@ -548,92 +350,17 @@ registry-restart: ## 重启本地 Docker Registry
 registry-status: ## 检查本地 Docker Registry 状态
 	@./scripts/setup/check-registry.sh
 
-# ==================== 生产环境命令 ====================
+# ==================== 生产环境脚本入口 ====================
 
-prod-up-infra: ## 启动基础设施层（Postgres, Redis, MinIO, Meilisearch）
-	@echo "$(GREEN)启动基础设施层...$(NC)"
-	@docker compose -f docker-compose.yml --profile infra up -d
-	@echo "$(GREEN)等待基础设施就绪...$(NC)"
-	@bash scripts/prod/wait-infra.sh
-	@echo "$(GREEN)基础设施已就绪！$(NC)"
+prod-start: ## 启动完整生产环境
+	@bash scripts/prod/start.sh
 
-prod-down-infra: ## 停止基础设施层
-	@echo "$(YELLOW)停止基础设施层...$(NC)"
-	@docker compose -f docker-compose.yml --profile infra down
-	@echo "$(GREEN)基础设施已停止$(NC)"
+prod-restart: ## 重启完整生产环境
+	@bash scripts/prod/stop.sh
+	@bash scripts/prod/start.sh
 
-prod-restart-infra: ## 重启基础设施层
-	@$(MAKE) prod-down-infra
-	@$(MAKE) prod-up-infra
+prod-stop: ## 停止生产环境；参数使用 ARGS="--remove|--volumes"
+	@bash scripts/prod/stop.sh $(ARGS)
 
-prod-up-addp: ## 启动所有 ADDP 应用服务（需要先启动 infra）
-	@echo "$(GREEN)启动 ADDP 应用服务...$(NC)"
-	@docker compose -f docker-compose.yml --profile addp up -d
-	@echo "$(GREEN)ADDP 应用服务已启动$(NC)"
-	@$(MAKE) prod-status
-
-prod-down-addp: ## 停止所有 ADDP 应用服务（保留基础设施）
-	@echo "$(YELLOW)停止 ADDP 应用服务...$(NC)"
-	@docker compose -f docker-compose.yml --profile addp down
-	@echo "$(GREEN)ADDP 应用服务已停止（基础设施保持运行）$(NC)"
-
-prod-restart-addp: ## 重启所有 ADDP 应用服务
-	@$(MAKE) prod-down-addp
-	@$(MAKE) prod-up-addp
-
-prod-up: ## 启动完整平台（基础设施 + ADDP 应用）
-	@echo "$(GREEN)启动完整 ADDP 平台...$(NC)"
-	@docker compose -f docker-compose.yml --profile infra --profile addp up -d
-	@echo "$(GREEN)完整平台已启动$(NC)"
-	@$(MAKE) prod-status
-
-prod-down: ## 停止完整平台
-	@echo "$(YELLOW)停止完整平台...$(NC)"
-	@docker compose -f docker-compose.yml --profile infra --profile addp down
-	@echo "$(GREEN)完整平台已停止$(NC)"
-
-prod-restart: ## 重启完整平台
-	@$(MAKE) prod-down
-	@$(MAKE) prod-up
-
-prod-logs-infra: ## 查看基础设施日志
-	@docker compose -f docker-compose.yml logs -f postgres redis minio meilisearch
-
-prod-logs-addp: ## 查看所有 ADDP 应用日志
-	@docker compose -f docker-compose.yml --profile addp logs -f
-
-prod-logs-orchestrator: ## 查看 Orchestrator 日志
-	@docker compose -f docker-compose.yml logs -f orchestrator-backend orchestrator-frontend
-
-prod-logs-develop: ## 查看 Develop 日志
-	@docker compose -f docker-compose.yml logs -f develop-backend develop-frontend
-
-prod-status: ## 显示所有服务状态和访问地址
-	@echo "$(GREEN)生产环境服务状态:$(NC)"
-	@docker compose -f docker-compose.yml --profile infra --profile addp ps
-	@echo ""
-	@echo "$(YELLOW)访问地址:$(NC)"
-	@echo "  Console (控制台):      http://localhost:8000"
-	@echo "  System 管理界面:        http://localhost:8090"
-	@echo "  Manager 管理界面:       http://localhost:8091"
-	@echo "  Meta 管理界面:          http://localhost:8092"
-	@echo "  Transfer 管理界面:      http://localhost:8093"
-	@echo "  Orchestrator 管理界面:  http://localhost:8094"
-	@echo "  Develop SQL 工作台:     http://localhost:8095"
-	@echo ""
-	@echo "$(YELLOW)API 端点:$(NC)"
-	@echo "  Gateway API:            http://localhost:8000/api"
-	@echo "  System Backend:         http://localhost:8180"
-	@echo "  Manager Backend:        http://localhost:8081"
-	@echo "  Meta Backend:           http://localhost:8082"
-	@echo "  Transfer Backend:       http://localhost:8083"
-	@echo "  Orchestrator Backend:   http://localhost:8084"
-	@echo "  Develop Backend:        http://localhost:8185"
-
-prod-health: ## 检查所有服务健康状态
+prod-health: ## 检查生产环境服务健康状态
 	@bash scripts/prod/health-check.sh
-
-# 向后兼容别名（可选）
-prod-start: prod-up  ## 别名：启动生产环境
-prod-stop: prod-down ## 别名：停止生产环境
-prod-logs: prod-logs-addp ## 别名：查看应用日志

@@ -72,7 +72,7 @@ make ports-validate
 
 - 同机运行 System 与 Business：
   - 先启动 Business：`cd business && ./scripts/start.sh`
-  - 再启动 System 基础设施：`bash scripts/infra-up.sh` 或 `make up-infra`
+  - 再启动 System 基础设施：`bash scripts/infra/up.sh` 或 `make infra-up`
   - 注册到 ADDP 的 Business 引擎地址应使用容器可访问地址，例如 `business-postgres:5432`、`business-minio:9000`；不要使用 `localhost`，因为连接测试由 ADDP 容器内服务发起。
 - 如遇端口冲突：
   - 参考本文件调整 `business/.env` 或根目录 `.env`

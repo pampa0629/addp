@@ -91,7 +91,19 @@ class BuildRegistrationTest(unittest.TestCase):
             encoding="utf-8",
         )
         self.assertIn(
-            "Makefile retired build target still exists: build-release",
+            "Makefile retired target still exists: build-release",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_retired_lifecycle_target(self) -> None:
+        makefile = self.repository / "Makefile"
+        makefile.write_text(
+            makefile.read_text(encoding="utf-8")
+            + "\nup-full:\n\t@docker compose up -d\n",
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "Makefile retired target still exists: up-full",
             MODULE.validate_registration(self.repository),
         )
 

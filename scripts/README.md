@@ -151,6 +151,8 @@ bash scripts/dev/stop.sh
 
 仓库只维护根 `Makefile`，不允许模块级 Makefile。正式构建只提供两个标准入口：`make build` 调用 `scripts/build/compile.sh`，`make build-images` 调用 `scripts/build/build-images.sh`。构建事实只维护在这两个脚本中，不得在 Makefile、Workflow 或其他脚本中复制服务清单和构建命令。需要传递参数时分别使用 `BUILD_ARGS="..."` 和 `IMAGE_BUILD_ARGS="..."`。
 
+生命周期入口同样只做脚本薄封装：开发环境使用 `make dev-start/dev-restart/dev-stop`，基础设施使用 `make infra-up/infra-restart/infra-down/infra-status`，生产环境使用 `make prod-start/prod-restart/prod-stop/prod-health`。模块级 `go run`、直接 Compose 生命周期目标和兼容别名均不保留；模块参数通过 `make dev-restart ARGS="-<模块名>"` 传递。
+
 ### 核心脚本
 
 | 脚本 | 功能 | 输入 | 输出 |

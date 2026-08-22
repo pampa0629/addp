@@ -649,7 +649,7 @@ SKIP_MEILISEARCH_INIT=0
 ### 执行顺序
 
 1. ✅ **先启动基础设施**: `./scripts/infra/up.sh`
-2. ✅ **再启动应用服务**: `make dev-start` 或 `make up-full`
+2. ✅ **再启动应用服务**: `make dev-start` 或 `bash scripts/dev/start.sh`
 
 `up.sh` 会自动完成所有初始化,无需手动执行其他脚本。
 

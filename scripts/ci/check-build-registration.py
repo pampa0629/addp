@@ -30,6 +30,49 @@ RETIRED_MAKE_TARGETS = {
     "prod-build-images",
     "docker-build",
     "docker-build-all",
+    "clean",
+    "clean-all",
+    "dev-all",
+    "dev-gateway",
+    "dev-geopython-workflow",
+    "dev-health",
+    "dev-manager",
+    "dev-meta",
+    "dev-orchestrator",
+    "dev-system",
+    "dev-transfer",
+    "down",
+    "health",
+    "init-minio-mvt",
+    "logs",
+    "logs-gateway",
+    "logs-manager",
+    "logs-meta",
+    "logs-orchestrator",
+    "logs-system",
+    "logs-transfer",
+    "minio-setup",
+    "prod-down",
+    "prod-down-addp",
+    "prod-down-infra",
+    "prod-logs",
+    "prod-logs-addp",
+    "prod-logs-develop",
+    "prod-logs-infra",
+    "prod-logs-orchestrator",
+    "prod-restart-addp",
+    "prod-restart-infra",
+    "prod-status",
+    "prod-up",
+    "prod-up-addp",
+    "prod-up-infra",
+    "ps",
+    "restart",
+    "restart-full",
+    "status",
+    "up",
+    "up-full",
+    "up-infra",
 }
 
 AUXILIARY_DOCKERFILES = {
@@ -374,7 +417,7 @@ def validate_registration(repository: Path) -> list[str]:
         errors.append("Makefile target build-images must invoke scripts/build/build-images.sh")
     for target in sorted(RETIRED_MAKE_TARGETS):
         if make_recipe(makefile, target) is not None:
-            errors.append(f"Makefile retired build target still exists: {target}")
+            errors.append(f"Makefile retired target still exists: {target}")
     for path in git_files(repository, "*Makefile"):
         if path != "Makefile":
             errors.append(f"{path}: module Makefile duplicates the root build entry point")
