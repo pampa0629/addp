@@ -249,11 +249,13 @@ test-authorization: ## 校验 IAM Manifest、生成常量和授权覆盖报告
 	@cd common && go run ./authorization/cmd/manifest --coverage-report --repository-root .. > /tmp/addp-authorization-coverage.json
 	@SWAGGER_COVERAGE_WARN_ONLY=1 bash scripts/swagger/check-route-coverage.sh all
 
-test: test-execution-fixtures test-model-frontend test-agent-eval test-authorization test-go ## 运行所有测试
-	@echo "$(GREEN)所有测试完成$(NC)"
-
-test-system: ## 运行 System 模块测试
-	@cd system/backend && go test ./...
+test: test-platform test-go test-agent-eval \
+	test-asset-frontend test-console-frontend test-develop-frontend \
+	test-graph-frontend test-inference-frontend test-manager-frontend test-meta-frontend \
+	test-model-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend \
+	test-quality-frontend test-service-frontend test-standard-frontend test-system-frontend \
+	test-transfer-frontend ## 运行全部无外部服务的确定性测试与构建门禁
+	@echo "$(GREEN)全部确定性测试与构建门禁完成$(NC)"
 
 init-minio: ## 初始化 MinIO buckets（包括 PMTiles 快显缓存等）
 	@./scripts/infra/init-minio.sh

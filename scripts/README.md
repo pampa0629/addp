@@ -449,7 +449,9 @@ scripts/test/
 
 平台无外部服务的一致性门禁使用 `make test-platform`，依次校验技术栈规约与全部 `go.mod` 的依赖版本、统一 execution 测试夹具、IAM Manifest、owner 常量、Tool Catalog、SQL seed 和 Swagger 路由覆盖。该入口不启动或重启 ADDP 服务，不连接开发数据库；GitHub Actions 的 Platform CI 在 `main` 推送、每日定时和手工触发时直接调用该入口。
 
-Go 全量测试使用 `make test-go`，根据 Git 已跟踪的全部 `go.mod` 在系统临时目录生成独立 workspace，再逐一运行 `go test ./...`，不依赖或修改本地被忽略的 `go.work`，也不维护第二份模块清单。`make test-execution-fixtures` 禁止业务测试手写 `task_executions` 表；Common 仓储自测、System PostgreSQL 专项测试及 Manager 历史表清理测试使用精确文件白名单。Model 的权限错误、URL 状态、ER 图过滤、DDL 请求和主题 token 回归使用 `make test-model-frontend`；该入口同时运行独立端口上的浏览器 E2E，覆盖 403 明确提示、业务域详情往返恢复和窄窗口深色 DDL 预览，并执行生产构建与 500 KiB 入口分块预算校验。三项均已纳入根目录 `make test`。
+根 `make test` 是 T0-T1 全部无外部服务确定性门禁的唯一聚合入口，包含 `make test-platform`、全部 Go 模块、Agent 离线评测，以及所有已登记前端的测试和生产构建。前端 CI 登记检查同时要求每个自动发现的前端进入该聚合入口，新增前端不能只登记 CI 矩阵而遗漏本地总门禁。需要专用 PostgreSQL、真实运行服务、在线证据或发布环境的 T2-T5 门禁不并入 `make test`，必须使用各自显式入口。
+
+Go 全量测试使用 `make test-go`，根据 Git 已跟踪的全部 `go.mod` 在系统临时目录生成独立 workspace，再逐一运行 `go test ./...`，不依赖或修改本地被忽略的 `go.work`，也不维护第二份模块清单。`make test-execution-fixtures` 禁止业务测试手写 `task_executions` 表；Common 仓储自测、System PostgreSQL 专项测试及 Manager 历史表清理测试使用精确文件白名单。Model 的权限错误、URL 状态、ER 图过滤、DDL 请求和主题 token 回归使用 `make test-model-frontend`；该入口同时运行独立端口上的浏览器 E2E，覆盖 403 明确提示、业务域详情往返恢复和窄窗口深色 DDL 预览，并执行生产构建与 500 KiB 入口分块预算校验。
 
 Online 唯一入口为 `make test-online ONLINE_SUITE=<suite>`，并要求环境中显式设置 `ADDP_ONLINE_TEST=1`。`scripts/test/online-gate.py` 只接受代码中已登记且已有 owner 门禁实现的 suite；未登记名称直接失败，不以占位场景冒充验收。分发器为整次运行生成或传递统一 Run ID，依次执行通用预检和 owner 门禁，并对二者施加总超时。
 

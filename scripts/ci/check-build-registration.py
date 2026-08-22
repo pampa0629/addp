@@ -85,6 +85,7 @@ RETIRED_MAKE_TARGETS = {
     "redis-cli",
     "restore",
     "status",
+    "test-system",
     "up",
     "up-full",
     "up-infra",

@@ -42,6 +42,7 @@ def discover_frontends(repository: Path) -> list[str]:
 
 def validate_registration(repository: Path) -> list[str]:
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
+    logical_makefile = re.sub(r"\\\n\s*", " ", makefile)
     workflow_paths = sorted((repository / ".github/workflows").glob("*.yml"))
     workflow_paths.extend(sorted((repository / ".github/workflows").glob("*.yaml")))
     if not workflow_paths:
@@ -60,6 +61,15 @@ def validate_registration(repository: Path) -> list[str]:
             r"(?m)^\s*- module:\s*([a-z][a-z0-9-]*)\s*$", workflows
         ):
             errors.append(f"{module}: GitHub Actions path registration is missing")
+        test_target = re.search(r"(?m)^test\s*:(?P<dependencies>[^\n]*)", logical_makefile)
+        aggregate_dependency = "test-agent-eval" if module == "agent" else target
+        if (
+            test_target is None
+            or aggregate_dependency not in test_target.group("dependencies").split()
+        ):
+            errors.append(
+                f"{module}: root test target dependency {aggregate_dependency} is missing"
+            )
     return errors
 
 

@@ -29,6 +29,7 @@ class FrontendCIRegistrationTest(unittest.TestCase):
         )
         (self.repository / ".github/workflows").mkdir(parents=True)
         (self.repository / "Makefile").write_text(
+            "test: test-sample-frontend\n\n"
             "test-sample-frontend:\n\t@cd sample/frontend && npm test\n",
             encoding="utf-8",
         )
@@ -51,6 +52,19 @@ class FrontendCIRegistrationTest(unittest.TestCase):
         errors = MODULE.validate_registration(self.repository)
         self.assertIn("sample: GitHub Actions target test-sample-frontend is missing", errors)
         self.assertIn("sample: GitHub Actions path registration is missing", errors)
+
+    def test_rejects_missing_root_test_dependency(self) -> None:
+        makefile = self.repository / "Makefile"
+        makefile.write_text(
+            makefile.read_text(encoding="utf-8").replace(
+                "test: test-sample-frontend", "test:"
+            ),
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "sample: root test target dependency test-sample-frontend is missing",
+            MODULE.validate_registration(self.repository),
+        )
 
 
 if __name__ == "__main__":
