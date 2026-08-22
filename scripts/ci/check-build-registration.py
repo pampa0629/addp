@@ -369,6 +369,7 @@ def validate_registration(repository: Path) -> list[str]:
     image_script = (repository / "scripts/build/build-images.sh").read_text(encoding="utf-8")
     compose = (repository / "docker-compose.yml").read_text(encoding="utf-8")
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
+    platform_workflow_path = repository / ".github/workflows/platform-ci.yml"
     compiled = shell_array(compile_script, "SERVICES")
     images = shell_array(image_script, "services")
     seed_entries = base_image_seed_entries(image_script)
@@ -377,6 +378,14 @@ def validate_registration(repository: Path) -> list[str]:
     tracked_files = set(git_files(repository))
     errors: list[str] = []
     registered_dockerfiles: set[str] = set()
+
+    if not platform_workflow_path.is_file():
+        errors.append(".github/workflows/platform-ci.yml is missing")
+    elif not re.search(
+        r"(?m)^\s*(?:-\s*)?run:\s*make\s+build\s+BUILD_ARGS=--force\s*$",
+        platform_workflow_path.read_text(encoding="utf-8"),
+    ):
+        errors.append("Platform CI must run make build BUILD_ARGS=--force")
 
     for source, target in seed_entries:
         if uses_latest_tag(source):

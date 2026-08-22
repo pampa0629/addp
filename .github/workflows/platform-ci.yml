@@ -91,6 +91,39 @@ jobs:
           gate: Go workspace tests
           status: ${{ job.status }}
 
+  product-build:
+    name: Product binary build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache-dependency-path: |
+            **/go.sum
+
+      - name: Reuse setup-go cache paths
+        run: |
+          echo "ADDP_BUILD_GOMODCACHE=$(go env GOMODCACHE)" >> "$GITHUB_ENV"
+          echo "ADDP_BUILD_GOPATH=$(go env GOPATH)" >> "$GITHUB_ENV"
+          echo "ADDP_BUILD_GOCACHE=$(go env GOCACHE)" >> "$GITHUB_ENV"
+
+      - name: Compile all product binaries
+        run: make build BUILD_ARGS=--force
+
+      - name: Summarize product build gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Product binary build
+          status: ${{ job.status }}
+
   common-python-tests:
     name: Common Python tests
     runs-on: ubuntu-24.04

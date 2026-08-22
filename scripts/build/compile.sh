@@ -22,9 +22,9 @@ GOOS="${GOOS:-linux}"  # Default to Linux for container builds
 DIST_DIR="${PROJECT_ROOT}/dist"
 
 # Local Go caches to avoid writing system GOPATH and avoid toolchain fetches
-LOCAL_GOMODCACHE="${PROJECT_ROOT}/.gomodcache"
-LOCAL_GOPATH="${PROJECT_ROOT}/.gopath"
-LOCAL_GOCACHE="${PROJECT_ROOT}/.cache/go-build"
+LOCAL_GOMODCACHE="${ADDP_BUILD_GOMODCACHE:-${PROJECT_ROOT}/.gomodcache}"
+LOCAL_GOPATH="${ADDP_BUILD_GOPATH:-${PROJECT_ROOT}/.gopath}"
+LOCAL_GOCACHE="${ADDP_BUILD_GOCACHE:-${PROJECT_ROOT}/.cache/go-build}"
 export GOMODCACHE="${LOCAL_GOMODCACHE}"
 export GOPATH="${LOCAL_GOPATH}"
 export GOCACHE="${LOCAL_GOCACHE}"

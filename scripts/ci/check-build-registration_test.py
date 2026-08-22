@@ -56,6 +56,11 @@ class BuildRegistrationTest(unittest.TestCase):
             "build:\n\t@bash scripts/build/compile.sh $(BUILD_ARGS)\n\n"
             "build-images:\n\t@bash scripts/build/build-images.sh $(IMAGE_BUILD_ARGS)\n",
         )
+        self._write(
+            ".github/workflows/platform-ci.yml",
+            "jobs:\n  product-build:\n    steps:\n"
+            "      - run: make build BUILD_ARGS=--force\n",
+        )
         subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
 
     def tearDown(self) -> None:
@@ -81,6 +86,13 @@ class BuildRegistrationTest(unittest.TestCase):
         self.assertIn(
             "extra/frontend/package.json: image registration extra-frontend is missing",
             errors,
+        )
+
+    def test_rejects_missing_product_build_ci_gate(self) -> None:
+        self._write(".github/workflows/platform-ci.yml", "jobs: {}\n")
+        self.assertIn(
+            "Platform CI must run make build BUILD_ARGS=--force",
+            MODULE.validate_registration(self.repository),
         )
 
     def test_rejects_retired_make_target(self) -> None:
