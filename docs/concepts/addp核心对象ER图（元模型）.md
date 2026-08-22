@@ -42,7 +42,8 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 
 **关于 Module 与 TaskProvider**：
 - `TaskProvider` 不是独立对象，而是 `Module` 的一种可选角色，通过注册时声明任务 API 来体现
-- `module_definitions`、`module_runtime_instances` 与 `task_providers` 分别保存模块定义、进程租约和任务调用契约；三类事实生命周期不同，不合并存储
+- `module_definitions` 保存稳定模块身份、管理员意图和可选 `task_provider` 声明；`module_runtime_instances` 单独保存进程租约和运行端点
+- TaskProvider 的 `base_url` 和 `available` 是 System 根据当前有效 Backend 租约生成的读取投影，不是持久事实
 - 不是所有模块都是任务提供者：Console / Gateway / Monitor 不暴露任务接口
 
 **关于 Engine**：
@@ -310,7 +311,7 @@ erDiagram
 
 | # | 问题描述 | 当前状态 | 影响 |
 |---|----------|----------|------|
-| S-1 | `TaskProvider` 与 `Module` 通过 `module_name` 字符串关联，无 FK 约束 | 两张独立表 | 数据一致性依赖应用层保证；考虑合并到 `Module.metadata` 中 |
+| S-1 | TaskProvider 过去与 Module 通过 `module_name` 跨表关联 | 已收敛 | 声明已纳入 `module_definitions.task_provider`，Provider ID 复用 Module ID，无独立生命周期 |
 | S-2 | `Module` 无 `tenant_id`，模块是全局的而非租户级的 | 设计如此 | 确认模块注册是否需要按租户隔离（当前不需要） |
 | S-3 | `Engine.created_by` 记录创建人 ID，但无对应 FK 约束（跨 schema 引用 User） | 应用层维护 | 合理，跨 schema 不用数据库 FK |
 

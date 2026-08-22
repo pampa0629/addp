@@ -572,6 +572,8 @@ graph TB
 - `module_definitions` 保存稳定 `module_name`、路由前缀、管理员启用状态和配置管理入口声明；模块进程离线不会删除该定义。
 - `enabled` 是管理员意图，与实例心跳健康独立。禁用模块时所有实例即使仍有心跳也不得进入 Gateway 路由或 Console 动态入口。
 - 模块首次注册创建定义；后续注册按 `module_name` 幂等更新允许由 owner 发布的声明，不改变定义 ID。
+- 模块定义是可变持久化主资源，使用正整数 `version` 进行乐观并发控制。平台系统管理员只能通过 `/api/v1/system/platform/modules` 读取定义和实例投影，并通过带 `version` 的更新请求修改 `enabled`；路由前缀和配置入口声明仍由 owner 注册发布，不提供管理员手工编辑路径。
+- 相同 owner 声明的重复注册保持幂等且不递增 `version`；路由前缀或配置入口声明实际变化时，System 原子更新声明并递增 `version`，同时保持管理员 `enabled` 不变。
 
 **2. 临时运行实例租约**:
 - 每个 Backend 或 Worker 进程启动时生成本次进程唯一的 `instance_id`，并以 `module_name + instance_id` 注册到 `module_runtime_instances`。
@@ -583,6 +585,11 @@ graph TB
 - 模块每 **10 秒**发送一次心跳到 System
 - System 将超过租约超时时间未心跳的运行实例标记为 `down`，但不删除运行实例历史，也不删除持久模块定义。
 - 同一 `instance_id` 重新注册可恢复为 `up`；新进程必须使用新的 `instance_id`。
+
+**管理面边界**:
+- `platform.module.read` 允许平台系统管理员查看模块定义及其 Backend、Worker、Scheduler 实例投影；`platform.module.update` 只允许修改模块定义的 `enabled` 管理意图。
+- 管理界面不得创建模块定义、删除运行实例、手工修改 `status` 或延长租约。定义由 owner 首次注册产生，实例健康只能由注册、心跳和租约到期推进。
+- 管理界面按固定周期重新读取 System 当前投影；进程稍后启动并重新注册后，无需重启 System 或前端即可显示为可用。
 
 **4. Gateway 动态发现**:
 - Gateway 启动时从 System 获取已启用模块及其 `up` 的 Backend 实例
@@ -854,12 +861,12 @@ graph LR
 
 #### 二、任务编排层：各模块向 System 注册 → Orchestrator 编排
 
-各业务模块向 System 注册自己提供的 **TaskProvider capabilities**，Orchestrator 读取注册表后动态调用。
+各业务模块在模块注册时向 System 声明自己提供的 **TaskProvider capabilities**，Orchestrator 在具体调用前从模块控制面动态解析当前有效 Backend。
 
 ```mermaid
 graph TB
-    subgraph System["System（任务注册中心）"]
-        TaskRegistry[(任务提供者注册表<br/>task_providers)]
+    subgraph System["System（模块控制面）"]
+        ModuleRegistry[(模块定义与运行实例<br/>module_definitions<br/>module_runtime_instances)]
     end
 
     subgraph Providers["任务提供者（各业务模块）"]
@@ -871,18 +878,18 @@ graph TB
         GraphT["Graph<br/>kg_build"]
         OrchestratorT["Orchestrator<br/>orchestration"]
 
-        MetaT   -->|"启动时注册 capabilities"| TaskRegistry
-        TransferT -->|"启动时注册 capabilities"| TaskRegistry
-        DevelopT -->|"启动时注册 capabilities"| TaskRegistry
-        ManagerT -->|"启动时注册 capabilities"| TaskRegistry
-        QualityT -->|"启动时注册 capabilities"| TaskRegistry
-        GraphT -->|"启动时注册 capabilities"| TaskRegistry
-        OrchestratorT -->|"启动时注册 capabilities"| TaskRegistry
+        MetaT   -->|"模块注册同时声明 capabilities"| ModuleRegistry
+        TransferT -->|"模块注册同时声明 capabilities"| ModuleRegistry
+        DevelopT -->|"模块注册同时声明 capabilities"| ModuleRegistry
+        ManagerT -->|"模块注册同时声明 capabilities"| ModuleRegistry
+        QualityT -->|"模块注册同时声明 capabilities"| ModuleRegistry
+        GraphT -->|"模块注册同时声明 capabilities"| ModuleRegistry
+        OrchestratorT -->|"模块注册同时声明 capabilities"| ModuleRegistry
     end
 
     subgraph Orchestrator["Orchestrator（编排调度）"]
         DAGEngine["DAG 调度引擎"]
-        DAGEngine -->|"① 拉取 TaskProvider capabilities"| TaskRegistry
+        DAGEngine -->|"① 动态解析 Provider 与有效 Backend"| ModuleRegistry
         DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| MetaT
         DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| TransferT
         DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| DevelopT
@@ -896,13 +903,15 @@ graph TB
     classDef provider fill:#f3e5f5,stroke:#4a148c
     classDef orch fill:#e8eaf6,stroke:#283593,stroke-width:2px
 
-    class System,TaskRegistry system
+    class System,ModuleRegistry system
     class MetaT,TransferT,DevelopT,ManagerT,QualityT,GraphT,OrchestratorT provider
     class Orchestrator,DAGEngine orch
 ```
 
 **要点**：
-- 各模块启动时向 System 注册 TaskProvider capabilities（任务类型、定义 schema、执行 schema、owner 前端入口和标准 API endpoint）
+- 各模块 Backend 启动时通过模块注册一次性发布实例与 TaskProvider capabilities（任务类型、定义 schema、owner 前端入口和标准 API endpoint）；不再存在独立 Provider 注册请求
+- Provider 声明是模块定义的一部分，管理员 `enabled` 与运行实例租约是可用性的唯一事实；Provider 不保存独立地址或启用状态
+- Orchestrator 和 Monitor 每次实际使用前从 System 解析当前有效 Backend；模块离线期间保留声明但不可调用，Backend 恢复租约后立即可用
 - Orchestrator 不硬编码对任何模块的依赖，完全由注册信息驱动
 - DAG 步骤只能引用 owner 模块已保存的任务定义，通过 `provider + task_type + task_id` 调用标准 TaskProvider API
 
@@ -920,7 +929,7 @@ graph LR
     end
 
     subgraph "编排层"
-        System_T["System 任务注册表"]
+        System_T["System 模块定义与 TaskProvider 声明"]
         Orchestrator["Orchestrator DAG 调度"]
         Develop -->|"注册 capabilities"| System_T
         Orchestrator -->|"调用 Develop 任务 API"| Develop

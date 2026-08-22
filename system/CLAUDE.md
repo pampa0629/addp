@@ -186,7 +186,7 @@ frontend/src/
 | iam_security_policy | system | System IAM 平台安全策略及已应用版本 |
 | module_definitions | system | 持久模块身份、路由、管理员启用状态和配置入口声明 |
 | module_runtime_instances | system | Backend、Worker、Scheduler 进程实例及短期租约 |
-| task_providers | system | 任务提供者表，供 Orchestrator 调用 |
+| module_definitions.task_provider | system | 模块 TaskProvider 能力声明，供 Orchestrator 与 Monitor 动态解析 |
 
 ### 单表文档
 
@@ -251,13 +251,15 @@ frontend/src/
 
 **system.module_definitions / system.module_runtime_instances 表**:
 - `module_definitions` 按稳定 `module_name` 保存持久定义和管理员 `enabled` 状态，进程离线不删除定义
+- `module_definitions.version` 是聚合根乐观并发版本；心跳不得递增它，幂等重复注册保持版本不变，只有 owner 模块级声明实际变化时才原子递增且不得覆盖管理员 `enabled`
 - `module_runtime_instances` 按 `(module_definition_id, instance_id)` 保存进程角色、端点、元数据、心跳和租约
 - 心跳只续租实例；只有 `enabled + backend + up + lease valid` 的实例可供 Gateway 路由
 - `configuration_management` 只保存版本化配置管理入口声明（owner、scope、前端路由和读写 Permission），不保存模块配置键、配置值或 Secret
 
-**task_providers 表**（public schema）:
-- 任务提供者注册，供 Orchestrator 查询和调用
-- 字段: `id`, `module_name`, `display_name`, `base_url`, 各端点 URL, `capabilities`, `is_enabled`
+**TaskProvider 模块角色**:
+- Provider 声明保存在 `system.module_definitions.task_provider`，不建立独立注册实体或独立启用状态
+- Provider ID 复用模块定义 ID，重复相同声明保持模块版本不变；声明变化递增模块定义版本
+- `base_url` 只在读取时从当前有效 Backend 实例解析，不写入模块定义；模块离线时声明保留但 `available=false`
 
 ### 日志中间件
 
@@ -348,6 +350,7 @@ frontend/src/
 - `/api/v1/system/platform/users` - 全局 User 查询、创建、更新、暂停和重新激活；
 - `/api/v1/system/platform/identity_changes` - 平台身份变更申请、复核和监督；
 - `/api/v1/system/platform/audit/events` - 平台审计查询、汇总、趋势和导出。
+- `/api/v1/system/platform/modules` - 模块定义、运行实例观测和带版本的启用状态管理。
 
 ### Tenant IAM 管理（Tenant Context + 精确 Permission）
 - `/api/v1/system/tenant/memberships` - 当前 Tenant Membership 查询、有效期和生命周期；
@@ -372,7 +375,7 @@ frontend/src/
 - `POST /api/v1/system/runtime/modules/heartbeat` - Platform Service Principal 更新自身心跳；
 - `GET /api/v1/system/runtime/modules` - Gateway Platform Service Principal 查询模块注册表；
 - `GET /api/v1/system/runtime/modules/:module_name` - Gateway Platform Service Principal 查询模块详情；
-- `POST /api/v1/system/runtime/task-providers` - Platform Service Principal 发布自身 TaskProvider；
+- `GET /api/v1/system/runtime/task-providers` - Platform Service Principal 读取模块定义中的 TaskProvider 声明及当前动态可用性；
 - `POST /api/v1/system/runtime/engines` - Workflow Runtime Platform Service Principal 注册自身内置 Runtime；
 - `GET /api/v1/system/runtime/api-keys/validate` - Gateway Platform Service Principal 验证外部 API Key Hash；
 - `GET /api/v1/system/runtime/engine-descriptors` - Tenant Service Principal 列出当前 Tenant 可见的脱敏 Engine Runtime Descriptor；
@@ -404,3 +407,4 @@ Engine Runtime Descriptor 不包含 `connection_info`。只有工作流或脚本
 - IAM 使用 `/iam?tab=...` 恢复当前权限上下文下可用的稳定 Tab；默认 Tab 省略，无权限或无效 Tab 规范化为默认值。
 - 引擎详情唯一使用 `/engines/:id`，详情稳定子视图使用 `tab=connection|capabilities`，默认基础信息省略。
 - 审计入口使用 IAM 的 `platform-audit` 或 `tenant-audit` Tab，并支持 `module_name`、`entity_type`、`entity_id` 稳定筛选；资源回收不再跳转不存在的 `Logs` route。
+- 模块管理唯一使用 `/modules`；页面只对持有 `platform.module.read` 的 Platform User 显示，启停还要求 `platform.module.update`。

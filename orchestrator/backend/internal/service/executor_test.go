@@ -265,20 +265,14 @@ func TestExecuteWithTaskProviderUsesTenantServiceBearer(t *testing.T) {
 	defer server.Close()
 
 	executor := &Executor{
-		taskProviderRegistry: &TaskProviderRegistry{
-			providers: map[string]*commonModels.TaskProvider{
-				"quality": {
-					ModuleName:          "quality",
-					BaseURL:             server.URL,
-					TaskExecuteEndpoint: "/api/v1/quality/tasks/{task_type}/{id}/execute",
-					TaskStatusEndpoint:  "/api/v1/quality/executions/{execution_id}",
-					Capabilities:        jsonStringPtr(taskCapabilitiesForTest("check", false, `{"type":"object","additionalProperties":false}`)),
-				},
+		taskProviderResolver: taskProviderResolverWithProvider(&commonModels.TaskProvider{
+			ModuleName: "quality", BaseURL: server.URL, Available: true,
+			TaskProviderDeclaration: commonModels.TaskProviderDeclaration{
+				TaskExecuteEndpoint: "/api/v1/quality/tasks/{task_type}/{id}/execute",
+				TaskStatusEndpoint:  "/api/v1/quality/executions/{execution_id}",
+				Capabilities:        jsonStringPtr(taskCapabilitiesForTest("check", false, `{"type":"object","additionalProperties":false}`)),
 			},
-			cacheTTL:              time.Hour,
-			lastRefresh:           time.Now(),
-			loadExecutionContract: executionContractLoaderForTest(`{"type":"object","additionalProperties":false}`),
-		},
+		}, `{"type":"object","additionalProperties":false}`),
 		serviceTokens: commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
 			return "addp_at_orchestrator", nil
 		}),
@@ -324,24 +318,18 @@ func TestExecuteWithTaskProviderForwardsScheduledExistingResultActionWithoutOwne
 	defer server.Close()
 
 	executor := &Executor{
-		taskProviderRegistry: &TaskProviderRegistry{
-			providers: map[string]*commonModels.TaskProvider{
-				"manager": {
-					ModuleName:          "manager",
-					BaseURL:             server.URL,
-					TaskExecuteEndpoint: "/api/v1/manager/tasks/{task_type}/{id}/execute",
-					TaskStatusEndpoint:  "/api/v1/manager/executions/{execution_id}",
-					Capabilities: jsonStringPtr(taskCapabilitiesForTest(
-						"vector_tile_cache_generation",
-						false,
-						`{"type":"object","properties":{"existing_result_action":{"type":"string","enum":["overwrite"]}},"additionalProperties":false}`,
-					)),
-				},
+		taskProviderResolver: taskProviderResolverWithProvider(&commonModels.TaskProvider{
+			ModuleName: "manager", BaseURL: server.URL, Available: true,
+			TaskProviderDeclaration: commonModels.TaskProviderDeclaration{
+				TaskExecuteEndpoint: "/api/v1/manager/tasks/{task_type}/{id}/execute",
+				TaskStatusEndpoint:  "/api/v1/manager/executions/{execution_id}",
+				Capabilities: jsonStringPtr(taskCapabilitiesForTest(
+					"vector_tile_cache_generation",
+					false,
+					`{"type":"object","properties":{"existing_result_action":{"type":"string","enum":["overwrite"]}},"additionalProperties":false}`,
+				)),
 			},
-			cacheTTL:              time.Hour,
-			lastRefresh:           time.Now(),
-			loadExecutionContract: executionContractLoaderForTest(`{"type":"object","properties":{"existing_result_action":{"type":"string","enum":["overwrite"]}},"additionalProperties":false}`),
-		},
+		}, `{"type":"object","properties":{"existing_result_action":{"type":"string","enum":["overwrite"]}},"additionalProperties":false}`),
 		serviceTokens: commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
 			return "addp_at_orchestrator", nil
 		}),
@@ -377,20 +365,14 @@ func TestExecuteWithTaskProviderRejectsDeprecatedTaskTypeBeforeHTTPCall(t *testi
 	defer server.Close()
 
 	executor := &Executor{
-		taskProviderRegistry: &TaskProviderRegistry{
-			providers: map[string]*commonModels.TaskProvider{
-				"develop": {
-					ModuleName:          "develop",
-					BaseURL:             server.URL,
-					TaskExecuteEndpoint: "/api/v1/develop/tasks/{task_type}/{id}/execute",
-					TaskStatusEndpoint:  "/api/v1/develop/executions/{execution_id}",
-					Capabilities:        jsonStringPtr(taskCapabilitiesForTest("workflow", true, `{"type":"object","additionalProperties":false}`)),
-				},
+		taskProviderResolver: taskProviderResolverWithProvider(&commonModels.TaskProvider{
+			ModuleName: "develop", BaseURL: server.URL, Available: true,
+			TaskProviderDeclaration: commonModels.TaskProviderDeclaration{
+				TaskExecuteEndpoint: "/api/v1/develop/tasks/{task_type}/{id}/execute",
+				TaskStatusEndpoint:  "/api/v1/develop/executions/{execution_id}",
+				Capabilities:        jsonStringPtr(taskCapabilitiesForTest("workflow", true, `{"type":"object","additionalProperties":false}`)),
 			},
-			cacheTTL:              time.Hour,
-			lastRefresh:           time.Now(),
-			loadExecutionContract: executionContractLoaderForTest(`{"type":"object","additionalProperties":false}`),
-		},
+		}, `{"type":"object","additionalProperties":false}`),
 	}
 
 	result, err := executor.executeWithTaskProvider(
@@ -418,20 +400,14 @@ func TestExecuteWithTaskProviderRejectsDisallowedParametersBeforeHTTPCall(t *tes
 	defer server.Close()
 
 	executor := &Executor{
-		taskProviderRegistry: &TaskProviderRegistry{
-			providers: map[string]*commonModels.TaskProvider{
-				"meta": {
-					ModuleName:          "meta",
-					BaseURL:             server.URL,
-					TaskExecuteEndpoint: "/api/v1/meta/tasks/{task_type}/{id}/execute",
-					TaskStatusEndpoint:  "/api/v1/meta/executions/{execution_id}",
-					Capabilities:        jsonStringPtr(taskCapabilitiesForTest("scan", false, `{"type":"object","additionalProperties":false}`)),
-				},
+		taskProviderResolver: taskProviderResolverWithProvider(&commonModels.TaskProvider{
+			ModuleName: "meta", BaseURL: server.URL, Available: true,
+			TaskProviderDeclaration: commonModels.TaskProviderDeclaration{
+				TaskExecuteEndpoint: "/api/v1/meta/tasks/{task_type}/{id}/execute",
+				TaskStatusEndpoint:  "/api/v1/meta/executions/{execution_id}",
+				Capabilities:        jsonStringPtr(taskCapabilitiesForTest("scan", false, `{"type":"object","additionalProperties":false}`)),
 			},
-			cacheTTL:              time.Hour,
-			lastRefresh:           time.Now(),
-			loadExecutionContract: executionContractLoaderForTest(`{"type":"object","additionalProperties":false}`),
-		},
+		}, `{"type":"object","additionalProperties":false}`),
 	}
 
 	result, err := executor.executeWithTaskProvider(
@@ -464,20 +440,14 @@ func TestExecuteWithTaskProviderStrictlyValidatesResolvedParametersBeforeHTTPCal
 		"additionalProperties":false
 	}`
 	executor := &Executor{
-		taskProviderRegistry: &TaskProviderRegistry{
-			providers: map[string]*commonModels.TaskProvider{
-				"develop": {
-					ModuleName:          "develop",
-					BaseURL:             server.URL,
-					TaskExecuteEndpoint: "/api/v1/develop/tasks/{task_type}/{id}/execute",
-					TaskStatusEndpoint:  "/api/v1/develop/executions/{execution_id}",
-					Capabilities:        jsonStringPtr(taskCapabilitiesForTest("query", false, executionSchema)),
-				},
+		taskProviderResolver: taskProviderResolverWithProvider(&commonModels.TaskProvider{
+			ModuleName: "develop", BaseURL: server.URL, Available: true,
+			TaskProviderDeclaration: commonModels.TaskProviderDeclaration{
+				TaskExecuteEndpoint: "/api/v1/develop/tasks/{task_type}/{id}/execute",
+				TaskStatusEndpoint:  "/api/v1/develop/executions/{execution_id}",
+				Capabilities:        jsonStringPtr(taskCapabilitiesForTest("query", false, executionSchema)),
 			},
-			cacheTTL:              time.Hour,
-			lastRefresh:           time.Now(),
-			loadExecutionContract: executionContractLoaderForTest(executionSchema),
-		},
+		}, executionSchema),
 	}
 
 	result, err := executor.executeWithTaskProvider(
@@ -508,6 +478,15 @@ func executionContractLoaderForTest(inputSchemaJSON string) func(context.Context
 			"input_ui_schema": map[string]interface{}{},
 			"output_schema":   taskprovider.ClosedObjectSchema(),
 		})
+	}
+}
+
+func taskProviderResolverWithProvider(provider *commonModels.TaskProvider, inputSchema string) *TaskProviderResolver {
+	return &TaskProviderResolver{
+		loadProvider: func(context.Context, string) (*commonModels.TaskProvider, error) {
+			return provider, nil
+		},
+		loadExecutionContract: executionContractLoaderForTest(inputSchema),
 	}
 }
 

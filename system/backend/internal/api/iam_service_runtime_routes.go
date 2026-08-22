@@ -62,7 +62,6 @@ func RegisterIAMServiceRuntimeRoutes(
 	{
 		platformRoutes.POST("/modules", moduleHandler.RegisterService)
 		platformRoutes.POST("/modules/heartbeat", moduleHandler.HeartbeatService)
-		platformRoutes.POST("/task-providers", taskProviderHandler.RegisterOrUpdateService)
 		platformRoutes.POST("/engines", engineHandler.RegisterRuntimeEngine)
 	}
 	platformReadRoutes := runtimeRoutes.Group("")

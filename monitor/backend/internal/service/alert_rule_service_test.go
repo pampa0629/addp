@@ -41,7 +41,8 @@ func TestAlertRuleTargetsOnlyIncludeActiveTaskProviderTypes(t *testing.T) {
 		monitorTaskCapabilityForTest(commonExecution.TaskTypeSync, false),
 	))
 	service := NewAlertRuleService(db, nil, fakeTaskProviderLister{providers: []*commonModels.TaskProvider{{
-		ModuleName: commonExecution.ModuleTransfer, Capabilities: &capabilities, IsEnabled: true,
+		ModuleName: commonExecution.ModuleTransfer, Enabled: true,
+		TaskProviderDeclaration: commonModels.TaskProviderDeclaration{Capabilities: &capabilities},
 	}}})
 
 	targets, err := service.ListTargets(context.Background(), 7)
@@ -68,8 +69,14 @@ func TestActiveTaskTypesExcludeDisabledAndDeprecatedCapabilities(t *testing.T) {
 		monitorTaskCapabilityForTest(commonExecution.TaskTypeScan, false),
 	))
 	service := NewAlertRuleService(nil, nil, fakeTaskProviderLister{providers: []*commonModels.TaskProvider{
-		{ModuleName: commonExecution.ModuleDevelop, Capabilities: &activeCapabilities, IsEnabled: true},
-		{ModuleName: commonExecution.ModuleMeta, Capabilities: &disabledCapabilities, IsEnabled: false},
+		{
+			ModuleName: commonExecution.ModuleDevelop, Enabled: true,
+			TaskProviderDeclaration: commonModels.TaskProviderDeclaration{Capabilities: &activeCapabilities},
+		},
+		{
+			ModuleName: commonExecution.ModuleMeta, Enabled: false,
+			TaskProviderDeclaration: commonModels.TaskProviderDeclaration{Capabilities: &disabledCapabilities},
+		},
 	}})
 
 	taskTypes, err := service.activeTaskTypes()

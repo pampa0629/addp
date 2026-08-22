@@ -483,7 +483,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "从 System 任务提供者注册表获取可编排任务提供者 | List task providers from System task provider registry",
+                "description": "从 System 模块定义读取 TaskProvider 声明，并附带当前 Backend 租约投影的动态可用性 | Read TaskProvider declarations from System module definitions with dynamic availability projected from current Backend leases",
                 "produces": [
                     "application/json"
                 ],
@@ -564,8 +564,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
                         }
                     },
-                    "502": {
-                        "description": "任务提供者不可用 | Task provider unavailable",
+                    "503": {
+                        "description": "任务提供者当前不可用 | Task provider currently unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
                         }
@@ -660,6 +660,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "任务提供者当前不可用 | Task provider currently unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
                         }
                     }
                 },

@@ -51,7 +51,7 @@
 - 审计日志记录（操作、登录、API 调用）
 - 系统配置和全局参数管理
 - 模块注册表（各模块向 System 声明自身 API 地址和能力）
-- 任务提供者注册（各模块向 System 注册 TaskProvider capabilities，供 Orchestrator 和 Monitor 发现）
+- TaskProvider 角色声明（各模块在模块注册时向 System 发布 capabilities，供 Orchestrator 和 Monitor 发现）
 - API 文档（统一维护平台 OpenAPI 接口文档）
 
 **端口**：

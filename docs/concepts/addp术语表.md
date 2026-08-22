@@ -145,7 +145,7 @@
 | owner task schedule | 任务自身调度 | owner 模块任务定义上保存并由 owner scheduler 触发的独立定时计划。 | 只决定该任务作为独立任务何时自动执行。 |
 | orchestration schedule | 编排调度 | Orchestrator 编排定义上保存的定时计划。 | 只决定编排 run 何时启动；不继承、不覆盖其中 Step 引用任务的自身调度。 |
 | task type | 任务类型 | owner 模块内稳定的业务执行类型标识。 | 例如 `scan`、`vector_tile_cache_generation`、`embedding`；只有存在持久任务定义并允许编排时才由 TaskProvider capabilities 声明，ad-hoc-only execution type 不因此自动成为 TaskProvider 类型。 |
-| TaskProvider | 任务提供者 | 模块对外声明可编排任务能力的角色。 | 按模块注册，不按任务类型注册；一个 provider 在 `task_capabilities[]` 中声明多个任务类型能力。 |
+| TaskProvider | 任务提供者 | 模块定义中声明的可编排任务能力角色，不是独立注册实体。 | 按模块声明，不按任务类型注册；一个 provider 在 `task_capabilities[]` 中声明多个任务类型能力。Provider ID 复用模块定义 ID，能力声明随模块定义版本变化；运行地址只从当前有效 Backend 模块实例解析。 |
 | execution worker | 执行工作器 | 执行 owner 消费已创建 execution、推进真实运行体并写入 execution 终态的独立后台进程角色。 | Quality `check`、Meta `scan` 和 Transfer bounded `sync` 统一从 PostgreSQL claim `common.task_executions`；Backend 不执行这些 bounded execution。 |
 | owner scheduler | Owner 调度器 | 按任务定义中的 schedule 发现到期任务并创建 execution 的 owner Backend 组件。 | 调度器负责“何时创建 execution”，不等待 Worker、也不执行业务逻辑；Worker 不可用时仍可留下 durable `pending` execution。 |
 | runtime queue | 运行时队列 | execution 从创建到被执行 worker 领取之间的持久领取机制。 | bounded execution 的唯一主路线是 PostgreSQL execution claim；continuous runtime 使用专用 runtime lease。Redis/Asynq 和进程内 channel 不作为 bounded execution 路线。 |
@@ -332,6 +332,15 @@
 | effective configuration | 有效配置 | owner 按配置定义和范围规则解析后，供当前请求、任务创建或 execution 快照消费的唯一配置值。 | Tenant 可覆盖场景固定按 Tenant 显式值、平台显式默认值、定义默认值解析；不得追加环境变量 fallback。 |
 | configuration management entry | 配置管理入口 | owner 模块通过 `addp.configuration-management/v1` 向 System 模块目录发布的模块级配置管理 UI 能力。 | 每个模块一个一级入口；模块内部的多个配置域由 Tab 或分组组织。只包含 entry id、owner、scope、owner 页面或 `/configuration/{owner}/...` Console 组合路由和 Permission；不包含配置键、当前值、Secret 或私有表结构。 |
 | configuration snapshot | 配置快照 | 任务或 execution 在确定行为时固化的完整有效配置及版本。 | 平台或 Tenant 默认值后续变化不能改写历史快照；运行中的 execution 不热切换配置。 |
+
+## 模块注册与运行
+
+| 英文术语 | 中文术语 | 定义 | 备注 |
+|---|---|---|---|
+| module definition | 模块定义 | System 按稳定 `module_name` 保存的持久模块身份、路由声明和管理员启用意图。 | 进程离线不删除；管理员写操作使用聚合根 `version` 做并发控制。 |
+| module runtime instance | 模块运行实例 | Backend、Worker 或 Scheduler 一次具体进程登记及其短期租约。 | 健康由心跳和租约计算；不能由管理员手工改成在线，也不拥有独立并发版本。 |
+| module enabled state | 模块启用状态 | 平台系统管理员是否允许该模块参与路由和动态入口聚合的持久意图。 | 与实例 `status` 独立；注册和心跳不得覆盖。 |
+| routable backend | 可路由 Backend | 同时满足模块已启用、角色为 `backend`、状态为 `up`、租约未过期且 URL 有效的运行实例。 | Worker 和 Scheduler 只可观测，不参与 Gateway 路由。 |
 
 ## Cleanup 与生命周期
 

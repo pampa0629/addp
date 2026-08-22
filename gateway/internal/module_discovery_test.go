@@ -50,7 +50,7 @@ func TestModuleDiscoveryRetriesAfterInitialRefreshFailure(t *testing.T) {
 	t.Fatal("module discovery did not recover after the initial refresh failure")
 }
 
-func TestSelectRoutableBackendIgnoresWorkerAndExpiredInstances(t *testing.T) {
+func TestSelectRoutableBackendsIgnoresWorkerAndExpiredInstances(t *testing.T) {
 	now := time.Now()
 	module := &client.ModuleInfo{
 		ModuleName: "manager", Enabled: true,
@@ -61,8 +61,61 @@ func TestSelectRoutableBackendIgnoresWorkerAndExpiredInstances(t *testing.T) {
 			{InstanceID: "backend-a", Role: "backend", ModuleURL: "http://a", Status: "up", LeaseExpiresAt: now.Add(time.Minute)},
 		},
 	}
-	selected, ok := selectRoutableBackend(module, now)
-	if !ok || selected.InstanceID != "backend-a" {
-		t.Fatalf("selected backend = %#v, ok=%v", selected, ok)
+	selected := selectRoutableBackends(module, now)
+	if len(selected) != 2 || selected[0].InstanceID != "backend-a" || selected[1].InstanceID != "backend-b" {
+		t.Fatalf("selected backends = %#v", selected)
 	}
+}
+
+func TestModuleDiscoveryRoundRobinsValidBackendsAndStopsAtLeaseExpiry(t *testing.T) {
+	now := time.Now()
+	lister := &staticModuleLister{modules: []*client.ModuleInfo{{
+		ModuleName: "manager", Enabled: true,
+		Instances: []client.ModuleRuntimeInstanceInfo{
+			{InstanceID: "backend-b", Role: "backend", ModuleURL: "http://b", Status: "up", LeaseExpiresAt: now.Add(time.Minute)},
+			{InstanceID: "backend-a", Role: "backend", ModuleURL: "http://a", Status: "up", LeaseExpiresAt: now.Add(time.Minute)},
+		},
+	}}}
+	discovery := NewModuleDiscovery(lister)
+	discovery.now = func() time.Time { return now }
+	defer discovery.Stop()
+	if err := discovery.refreshModules(); err != nil {
+		t.Fatal(err)
+	}
+
+	for index, want := range []string{"http://a", "http://b", "http://a"} {
+		selected, err := discovery.GetProxy("manager")
+		if err != nil {
+			t.Fatalf("selection %d: %v", index, err)
+		}
+		if got := selected.GetTargetURL(); got != want {
+			t.Fatalf("selection %d = %q, want %q", index, got, want)
+		}
+	}
+
+	now = now.Add(2 * time.Minute)
+	if _, err := discovery.GetProxy("manager"); err == nil {
+		t.Fatal("expected expired Backend pool to be unavailable")
+	}
+	if modules := discovery.GetModules(); len(modules) != 0 {
+		t.Fatalf("expired module snapshot = %#v, want empty", modules)
+	}
+
+	for index := range lister.modules[0].Instances {
+		lister.modules[0].Instances[index].LeaseExpiresAt = now.Add(time.Minute)
+	}
+	if err := discovery.refreshModules(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := discovery.GetProxy("manager"); err != nil {
+		t.Fatalf("refreshed Backend leases did not recover routing: %v", err)
+	}
+}
+
+type staticModuleLister struct {
+	modules []*client.ModuleInfo
+}
+
+func (l *staticModuleLister) GetModules() ([]*client.ModuleInfo, error) {
+	return l.modules, nil
 }

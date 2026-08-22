@@ -73,5 +73,8 @@ test('task panel loads providers concurrently through one request limiter', asyn
   assert.match(source, /Promise\.all\(providerStates\.map/)
   assert.match(source, /scheduleTaskRequest\(\(\) => \(/)
   assert.match(source, /updateTaskTypeNode\(identifier, taskType, tasks, false\)/)
+  assert.match(source, /if \(!providerState\.available\) return 0/)
+  assert.match(source, /provider\.available === true/)
+  assert.match(source, /:disabled="!data\.metadata\?\.available"/)
   assert.doesNotMatch(source, /for \(const provider of providers\)/)
 })

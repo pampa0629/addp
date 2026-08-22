@@ -104,36 +104,23 @@ func main() {
 
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
-	systemServiceClient.RegisterAndHeartbeatWithMetadata(context.Background(), "quality", serviceURL, "/quality", map[string]interface{}{
-		"module": "quality",
-		"capabilities": map[string]interface{}{
-			"cleanup_executor": map[string]interface{}{
-				"enabled": true,
-				"causes":  []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted},
+	provider, err := service.QualityTaskProviderDeclaration()
+	if err != nil {
+		log.Fatalf("构建 Quality TaskProvider 声明失败: %v", err)
+	}
+	systemServiceClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
+		ModuleName: "quality", ModuleURL: serviceURL, RoutePrefix: "/quality", HealthCheckURL: serviceURL + "/health",
+		TaskProvider: provider,
+		Metadata: map[string]interface{}{
+			"module": "quality",
+			"capabilities": map[string]interface{}{
+				"cleanup_executor": map[string]interface{}{
+					"enabled": true,
+					"causes":  []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted},
+				},
 			},
 		},
 	})
-
-	if cfg.SystemURL != "" {
-		taskProviderRegistry := service.NewTaskProviderRegistryService(
-			systemServiceClient,
-			serviceURL,
-		)
-
-		go func() {
-			time.Sleep(2 * time.Second)
-			maxRetries := 5
-			for attempt := 1; attempt <= maxRetries; attempt++ {
-				if err := taskProviderRegistry.Register(context.Background()); err != nil {
-					log.Printf("⚠️  Quality 任务提供者注册失败 (%d/%d): %v", attempt, maxRetries, err)
-					time.Sleep(time.Duration(attempt*2) * time.Second)
-					continue
-				}
-				log.Printf("✅ Quality 模块已注册到 task_providers")
-				return
-			}
-		}()
-	}
 
 	select {}
 }

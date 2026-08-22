@@ -7,7 +7,7 @@
 Gateway 是 ADDP 平台的**统一 API 入口**，负责：
 
 1. **API Key 认证** - 基于三层缓存的验证机制（本地 5分钟 → Redis 1小时 → System API）
-2. **请求路由** - System 使用 `SYSTEM_URL` bootstrap，其他模块按注册表动态发现
+2. **请求路由** - System 使用 `SYSTEM_URL` bootstrap，其他模块按注册表动态发现，并在有效 Backend 租约池中按请求轮询
 3. **限流控制** - 基于 Redis 令牌桶算法，按应用 ID 独立限流
 4. **访问日志** - 异步记录已验证的外部 API Key 访问到 PostgreSQL，不采集请求体
 5. **透明代理** - 按 `/api/v1/:module/*path` 保持模块路径原样转发
@@ -154,6 +154,8 @@ gateway/
 1. Analytics 后端暴露 `/api/v1/analytics/**`。
 2. 模块使用自身 Platform Service Access Token 调用 System `/api/v1/system/runtime/modules`，并通过 `/runtime/modules/heartbeat` 持续发送心跳。
 3. Gateway 下一次刷新注册表后自动获得该模块代理；无需增加 URL 配置或修改路由代码。
+   - 同一模块存在多个有效 Backend 时均参与请求级轮询；Worker/Scheduler 不参与路由。
+   - 代理选择时会再次校验缓存租约，但不会对失败请求做隐式重试。
 4. **更新文档**：
    - [docs/gateway架构说明.md](docs/gateway架构说明.md) - 路由规则表
    - [README.md](README.md) - 路由规则表

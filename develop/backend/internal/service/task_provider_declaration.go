@@ -1,35 +1,13 @@
 package service
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 
-	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 )
 
-// TaskProviderRegistryService 任务提供者注册服务
-// 将 Develop 模块注册到 System 的 task_providers 表
-type TaskProviderRegistryService struct {
-	systemClient *commonClient.SystemServiceClient
-	developURL   string
-}
-
-// NewTaskProviderRegistryService 创建任务提供者注册服务
-func NewTaskProviderRegistryService(systemClient *commonClient.SystemServiceClient, developURL string) *TaskProviderRegistryService {
-	return &TaskProviderRegistryService{
-		systemClient: systemClient,
-		developURL:   developURL,
-	}
-}
-
-// Register 注册 Develop 模块为任务提供者
-func (s *TaskProviderRegistryService) Register(ctx context.Context) error {
-	if s == nil || s.systemClient == nil {
-		return fmt.Errorf("System Service Client is required")
-	}
+func DevelopTaskProviderDeclaration() (*commonModels.TaskProviderDeclaration, error) {
 	// 能力描述（供 Orchestrator 查询）
 	capabilities := map[string]interface{}{
 		"schema_version": "task.capabilities/v2",
@@ -74,33 +52,23 @@ func (s *TaskProviderRegistryService) Register(ctx context.Context) error {
 	}
 	capabilitiesJSON, err := json.Marshal(capabilities)
 	if err != nil {
-		return fmt.Errorf("failed to marshal capabilities: %w", err)
+		return nil, fmt.Errorf("failed to marshal capabilities: %w", err)
 	}
 	capabilitiesStr := commonModels.JSONString(capabilitiesJSON)
 
-	// 构造注册请求（注册到 task_providers 表）
-	registration := commonModels.TaskProvider{
-		ModuleName:  "develop",
+	// 构造随模块定义一并发布的 TaskProvider 声明。
+	return &commonModels.TaskProviderDeclaration{
 		DisplayName: "数据开发",
 		Description: "SQL 查询、工作流和脚本开发任务",
 
 		// API 端点配置
-		BaseURL:             s.developURL,
 		TaskListEndpoint:    "/api/v1/develop/task-provider/tasks",
 		TaskDetailEndpoint:  "/api/v1/develop/task-provider/tasks/{task_type}/{id}",
 		TaskExecuteEndpoint: "/api/v1/develop/task-provider/tasks/{task_type}/{id}/execute",
 		TaskStatusEndpoint:  "/api/v1/develop/task-provider/executions/{execution_id}",
 
 		Capabilities: &capabilitiesStr,
-
-		IsEnabled: true,
-	}
-
-	if err := s.systemClient.RegisterTaskProvider(ctx, &registration); err != nil {
-		return err
-	}
-	log.Printf("✅ Develop 模块已成功注册到 task_providers (module_name: develop)")
-	return nil
+	}, nil
 }
 
 func baseDevelopDefinitionSchema(taskType string, contentProperties map[string]interface{}, contentRequired []interface{}) map[string]interface{} {

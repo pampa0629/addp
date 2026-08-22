@@ -103,6 +103,9 @@ other = "Audit log created"
 [system.module.not_found]
 other = "Module not found"
 
+[system.task_provider.not_found]
+other = "The module does not declare the TaskProvider role"
+
 [system.module.registered]
 other = "Module registered successfully"
 
@@ -117,6 +120,9 @@ other = "The module runtime instance registration is invalid"
 
 [system.module.runtime_instance_missing]
 other = "The module runtime instance does not exist; register it first"
+
+[system.module.version_conflict]
+other = "The module definition was changed by another operation; refresh and try again"
 
 [system.engine.identity_immutable]
 other = "The physical endpoint of an engine cannot be changed in place; create a new engine instance"

@@ -66,9 +66,9 @@ Executor 解析 DAG → 拓扑排序
 
 ## 🔗 动态任务提供者支持
 
-Orchestrator 通过 System 模块的 TaskProvider 注册表实现：
+Orchestrator 通过 System 模块控制面中的 TaskProvider 声明和 Backend 租约实现：
 
-- **无代码扩展**: 新增任务类型由 owner 模块注册 TaskProvider capabilities，无需修改 Orchestrator
+- **无代码扩展**: 新增任务类型由 owner 模块随模块注册发布 TaskProvider capabilities，无需修改 Orchestrator
 - **统一接口**: 所有任务提供者通过统一 TaskProvider endpoint 调用
 - **清晰边界**: Orchestrator 引用任务定义，不拥有业务任务定义
 
@@ -83,13 +83,9 @@ Orchestrator 通过 System 模块的 TaskProvider 注册表实现：
 ✅ 正确: {"id": "A", "depends_on": []}, {"id": "B", "depends_on": ["A"]}
 ```
 
-### 任务提供者配置缓存？
+### 任务提供者何时恢复？
 
-TaskProviderRegistry 缓存任务提供者配置 5 分钟。修改模块 TaskProvider 注册信息后，可重启 Orchestrator 立即生效：
-
-```bash
-bash scripts/dev/restart.sh -orchestrator
-```
+Orchestrator 不缓存 TaskProvider 运行可用性，每次使用都从 System 重新解析当前 Backend 租约。离线模块的声明仍会展示但不可选；对应 Backend 恢复并重新心跳后，刷新任务库即可使用，无需重启 Orchestrator。
 
 ### 更多问题？
 

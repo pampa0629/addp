@@ -4,6 +4,7 @@ import (
 	"time"
 
 	commonconfiguration "github.com/addp/common/configuration"
+	commonmodels "github.com/addp/common/models"
 	"gorm.io/datatypes"
 )
 
@@ -22,7 +23,9 @@ type ModuleDefinition struct {
 	ModuleName              string                  `gorm:"uniqueIndex;not null;size:50" json:"module_name"`
 	RoutePrefix             string                  `gorm:"not null;size:50" json:"route_prefix"`
 	Enabled                 bool                    `gorm:"not null;default:true;index" json:"enabled"`
+	Version                 int64                   `gorm:"not null;default:1" json:"version"`
 	ConfigurationManagement datatypes.JSON          `gorm:"type:jsonb" json:"configuration_management"`
+	TaskProvider            datatypes.JSON          `gorm:"type:jsonb" json:"task_provider"`
 	RuntimeInstances        []ModuleRuntimeInstance `gorm:"foreignKey:ModuleDefinitionID" json:"-"`
 	CreatedAt               time.Time               `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt               time.Time               `gorm:"autoUpdateTime" json:"updated_at"`
@@ -58,11 +61,17 @@ type ModuleRegistrationRequest struct {
 	HealthCheckURL          string                                     `json:"health_check_url"`
 	Metadata                map[string]interface{}                     `json:"metadata"`
 	ConfigurationManagement *commonconfiguration.ManagementDeclaration `json:"configuration_management"`
+	TaskProvider            *commonmodels.TaskProviderDeclaration      `json:"task_provider"`
 }
 
 type HeartbeatRequest struct {
 	ModuleName string `json:"module_name" binding:"required"`
 	InstanceID string `json:"instance_id" binding:"required"`
+}
+
+type ModuleDefinitionUpdateRequest struct {
+	Enabled *bool `json:"enabled" binding:"required"`
+	Version int64 `json:"version" binding:"required,gt=0"`
 }
 
 type ModuleRuntimeInstanceInfo struct {
@@ -84,8 +93,10 @@ type ModuleInfo struct {
 	ModuleName              string                                     `json:"module_name"`
 	RoutePrefix             string                                     `json:"route_prefix"`
 	Enabled                 bool                                       `json:"enabled"`
+	Version                 int64                                      `json:"version"`
 	Instances               []ModuleRuntimeInstanceInfo                `json:"instances"`
 	ConfigurationManagement *commonconfiguration.ManagementDeclaration `json:"configuration_management,omitempty"`
+	TaskProvider            *commonmodels.TaskProviderDeclaration      `json:"task_provider,omitempty"`
 	CreatedAt               time.Time                                  `json:"created_at"`
 	UpdatedAt               time.Time                                  `json:"updated_at"`
 }

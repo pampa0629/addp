@@ -164,7 +164,7 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 - Meta Backend 只提供 API、创建 execution 和运行 owner scheduler；独立 `meta-worker` 是 `meta/scan` 的唯一执行路线。Redis 只用于事件和扫描范围锁，不承担 execution 队列职责。
 - `meta-worker` 必须通过 `common.task_executions` 的 PostgreSQL claim 取得 `lease_token`，续租并以 attempt + token 条件写进度和终态；不得恢复 Asynq 或 Backend 本地 channel fallback。
 - 扫描、refresh、cleanup 和 CAD runtime 按 execution/request 的 `tenant_id` 即时取得 Tenant Service Access Token，通过公开 `GET /api/v1/system/engines` 与 `GET /api/v1/system/engines/:id` 读取同 Tenant 引擎事实；业务请求只发送 Bearer。
-- Module 注册、心跳和 TaskProvider 发布使用 `context_type=platform` 的 Platform Service Access Token；Tenant 审计使用 Tenant Service Access Token。两种 Context 不得混用。
+- Module 注册、心跳以及随模块注册发布 TaskProvider 声明使用 `context_type=platform` 的 Platform Service Access Token；Tenant 审计使用 Tenant Service Access Token。两种 Context 不得混用。
 - `common.task_executions.execution_config` 只保存可重放的扫描参数，不保存 Token、Client Secret 或其他凭据。Worker 执行时根据记录中的 `tenant_id` 重新换取短期 Service Access Token。
 - 引擎明文连接缓存必须以 `tenant_id + engine_id` 为键。引擎变更事件不包含授权 Tenant，因此事件处理只清除该 engine 的全部 Tenant 缓存，不主动回源；System 失败不得回退到过期缓存或其他 Tenant 缓存。
 

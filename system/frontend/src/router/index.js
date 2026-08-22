@@ -39,6 +39,12 @@ const routes = [
         }
       },
       {
+        path: 'modules',
+        name: 'Modules',
+        component: () => import('../views/Modules.vue'),
+        meta: { requiresAuth: true, title: '模块管理-addp', requiredPermissions: ['platform.module.read'] }
+      },
+      {
         path: 'engines',
         name: 'Engines',
         component: () => import('../views/Engines.vue'),

@@ -70,7 +70,7 @@ func TestCreateLocalizesExecutionSchemaValidationError(t *testing.T) {
 	defer system.Close()
 
 	handler := &OrchestrationHandler{
-		taskProviderRegistry: newTaskProviderRegistryForAPITest(system),
+		taskProviderResolver: newTaskProviderResolverForAPITest(system),
 	}
 	tests := []struct {
 		name     string
@@ -589,7 +589,7 @@ func TestListModuleTasksRejectsUndeclaredTaskTypeBeforeOwnerCall(t *testing.T) {
 	defer system.Close()
 
 	handler := &OrchestrationHandler{
-		taskProviderRegistry: newTaskProviderRegistryForAPITest(system),
+		taskProviderResolver: newTaskProviderResolverForAPITest(system),
 		httpClient:           owner.Client(),
 	}
 	router := gin.New()
@@ -611,6 +611,33 @@ func TestListModuleTasksRejectsUndeclaredTaskTypeBeforeOwnerCall(t *testing.T) {
 	}
 }
 
+func TestListModuleTasksReturnsServiceUnavailableForOfflineProvider(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	provider := taskProviderForAPITest("meta", "")
+	provider.Available = false
+	system := newTaskProviderSystemServerWithProvider(t, provider)
+	defer system.Close()
+
+	handler := &OrchestrationHandler{
+		taskProviderResolver: newTaskProviderResolverForAPITest(system),
+	}
+	router := gin.New()
+	router.Use(testTenantAuthorizationContext(7, 9))
+	router.GET("/tasks", handler.ListModuleTasks)
+
+	req := httptest.NewRequest(http.MethodGet, "/tasks?module_name=meta&task_type=scan", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"error_code":"task_provider_unavailable"`) ||
+		!strings.Contains(rec.Body.String(), `"error_type":"transient"`) {
+		t.Fatalf("body = %s, want stable transient error", rec.Body.String())
+	}
+}
+
 func TestListModuleTasksReturnsBadGatewayForOwnerError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -628,7 +655,7 @@ func TestListModuleTasksReturnsBadGatewayForOwnerError(t *testing.T) {
 	defer system.Close()
 
 	handler := &OrchestrationHandler{
-		taskProviderRegistry: newTaskProviderRegistryForAPITest(system),
+		taskProviderResolver: newTaskProviderResolverForAPITest(system),
 		httpClient:           owner.Client(),
 		serviceTokens:        apiServiceTokens("addp_at_orchestrator"),
 	}
@@ -659,7 +686,7 @@ func TestListModuleTasksReturnsBadGatewayForNonStandardOwnerResponse(t *testing.
 	defer system.Close()
 
 	handler := &OrchestrationHandler{
-		taskProviderRegistry: newTaskProviderRegistryForAPITest(system),
+		taskProviderResolver: newTaskProviderResolverForAPITest(system),
 		httpClient:           owner.Client(),
 		serviceTokens:        apiServiceTokens("addp_at_orchestrator"),
 	}
@@ -725,19 +752,20 @@ func newTaskProviderSystemServerWithProvider(t *testing.T, provider *commonModel
 			"display_name":"Meta",
 			"description":"Meta provider",
 			"base_url":%q,
+			"available":%t,
+			"enabled":%t,
 			"task_list_endpoint":%q,
 			"task_detail_endpoint":"/api/v1/meta/tasks/{task_type}/{id}",
 			"task_execute_endpoint":"/api/v1/meta/tasks/{task_type}/{id}/execute",
 			"task_status_endpoint":"/api/v1/meta/executions/{execution_id}",
-			"capabilities":%s,
-			"is_enabled":true
-		}`, provider.ModuleName, provider.BaseURL, provider.TaskListEndpoint, string(*provider.Capabilities))
+			"capabilities":%s
+		}`, provider.ModuleName, provider.BaseURL, provider.Available, provider.Enabled, provider.TaskListEndpoint, string(*provider.Capabilities))
 	}))
 }
 
-func newTaskProviderRegistryForAPITest(system *httptest.Server) *service.TaskProviderRegistry {
+func newTaskProviderResolverForAPITest(system *httptest.Server) *service.TaskProviderResolver {
 	systemClient := commonClient.NewSystemServiceClient(system.URL, apiServiceTokens("addp_at_orchestrator"), system.Client())
-	return service.NewTaskProviderRegistry(systemClient, time.Hour)
+	return service.NewTaskProviderResolver(systemClient)
 }
 
 func taskProviderForAPITest(moduleName, baseURL string) *commonModels.TaskProvider {
@@ -757,10 +785,9 @@ func taskProviderForAPITest(moduleName, baseURL string) *commonModels.TaskProvid
 		}]
 	}`)
 	return &commonModels.TaskProvider{
-		ModuleName:       moduleName,
-		BaseURL:          baseURL,
-		TaskListEndpoint: "/api/v1/meta/tasks",
-		Capabilities:     &capabilities,
-		IsEnabled:        true,
+		ModuleName: moduleName, BaseURL: baseURL, Enabled: true, Available: true,
+		TaskProviderDeclaration: commonModels.TaskProviderDeclaration{
+			TaskListEndpoint: "/api/v1/meta/tasks", Capabilities: &capabilities,
+		},
 	}
 }

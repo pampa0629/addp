@@ -56,6 +56,7 @@ type ProviderHealthStatus struct {
 	Module        string                        `json:"module"`
 	DisplayName   string                        `json:"display_name"`
 	BaseURL       string                        `json:"base_url"`
+	Available     bool                          `json:"available"`
 	Status        string                        `json:"status"`
 	Message       string                        `json:"message,omitempty"`
 	ModuleHealth  *HealthStatus                 `json:"module_health"`
@@ -85,7 +86,7 @@ type ProviderTaskDiscoveryCheck struct {
 	Message    string `json:"message,omitempty"`
 }
 
-// GetModules 获取所有模块（从 System 的 task_providers 表）
+// GetModules 获取所有声明 TaskProvider 角色的模块。
 func (s *HealthCheckService) GetModules(ctx context.Context) ([]*ModuleInfo, error) {
 	// 从 System 获取任务提供者列表
 	providers, err := s.systemClient.ListTaskProviders()
@@ -148,11 +149,18 @@ func (s *HealthCheckService) checkProviderHealth(ctx context.Context, provider *
 		Module:      provider.ModuleName,
 		DisplayName: provider.DisplayName,
 		BaseURL:     provider.BaseURL,
+		Available:   provider.Available,
 		Status:      "unknown",
 		CheckedAt:   time.Now(),
 	}
 
 	result.Capabilities = parseProviderCapabilities(provider.Capabilities)
+	if !provider.Available || strings.TrimSpace(provider.BaseURL) == "" {
+		result.ModuleHealth = &HealthStatus{Module: provider.ModuleName, Status: "down", Message: "module has no valid Backend lease"}
+		result.Status = "down"
+		result.Message = "TaskProvider is currently unavailable"
+		return result
+	}
 	result.ModuleHealth, _ = s.CheckModuleHealth(ctx, provider.ModuleName, provider.BaseURL)
 	if result.Capabilities.Status == "up" {
 		for _, taskType := range result.Capabilities.TaskCapabilities {

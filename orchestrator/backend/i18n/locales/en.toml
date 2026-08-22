@@ -16,6 +16,9 @@ other = "Missing module_name parameter"
 [orchestrator.error.provider_not_found]
 other = "Task provider not found"
 
+[orchestrator.error.provider_unavailable]
+other = "The task provider is currently unavailable; retry after the owning module Backend recovers"
+
 [orchestrator.error.provider_not_configured]
 other = "Task provider API configuration is incomplete"
 

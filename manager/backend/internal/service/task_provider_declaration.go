@@ -1,34 +1,13 @@
 package service
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 
-	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 )
 
-// TaskProviderRegistryService 任务提供者注册服务
-// 将 Manager 模块注册到 System 的 task_providers 表
-type TaskProviderRegistryService struct {
-	systemClient *commonClient.SystemServiceClient
-	managerURL   string
-}
-
-// NewTaskProviderRegistryService 创建任务提供者注册服务
-func NewTaskProviderRegistryService(systemClient *commonClient.SystemServiceClient, managerURL string) *TaskProviderRegistryService {
-	return &TaskProviderRegistryService{
-		systemClient: systemClient,
-		managerURL:   managerURL,
-	}
-}
-
-// TaskProviderRegistration 任务提供者注册请求
-type TaskProviderRegistration = commonModels.TaskProvider
-
-// Register 注册 Manager 模块为任务提供者
-func (s *TaskProviderRegistryService) Register(ctx context.Context) error {
+func ManagerTaskProviderDeclaration() (*commonModels.TaskProviderDeclaration, error) {
 	// 构造能力描述
 	capabilities := map[string]interface{}{
 		"schema_version": "task.capabilities/v2",
@@ -171,18 +150,15 @@ func (s *TaskProviderRegistryService) Register(ctx context.Context) error {
 	// 序列化为 JSON 字符串
 	capabilitiesJSON, err := json.Marshal(capabilities)
 	if err != nil {
-		return fmt.Errorf("failed to marshal capabilities: %w", err)
+		return nil, fmt.Errorf("failed to marshal capabilities: %w", err)
 	}
 	capabilitiesStr := commonModels.JSONString(capabilitiesJSON)
 
-	// 构造注册请求（注册到 task_providers 表）
-	registration := TaskProviderRegistration{
-		ModuleName:  "manager",
+	return &commonModels.TaskProviderDeclaration{
 		DisplayName: "数据管理",
 		Description: "矢量物化视图、矢量瓦片缓存、栅格快显 COG、栅格 mosaic、CAD 栅格预览、三维模型 3D Tiles、三维模型 GLB 快显、3DGS - KSplat 快显和对象存储向量化任务",
 
 		// API 端点配置（相对于 base_url，支持 {task_type}/{id} 占位符）
-		BaseURL:             s.managerURL,
 		TaskListEndpoint:    "/api/v1/manager/tasks",
 		TaskDetailEndpoint:  "/api/v1/manager/tasks/{task_type}/{id}",
 		TaskExecuteEndpoint: "/api/v1/manager/tasks/{task_type}/{id}/execute",
@@ -190,12 +166,5 @@ func (s *TaskProviderRegistryService) Register(ctx context.Context) error {
 
 		// 能力描述（JSON 字符串）
 		Capabilities: &capabilitiesStr,
-
-		IsEnabled: true,
-	}
-
-	if s.systemClient == nil {
-		return fmt.Errorf("System service client is required")
-	}
-	return s.systemClient.RegisterTaskProvider(ctx, &registration)
+	}, nil
 }

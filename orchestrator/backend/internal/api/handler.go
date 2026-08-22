@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,7 +30,7 @@ type OrchestrationHandler struct {
 	orchRepo                *repository.OrchestrationRepository
 	executionService        *service.ExecutionService
 	executor                *service.Executor
-	taskProviderRegistry    *service.TaskProviderRegistry
+	taskProviderResolver    *service.TaskProviderResolver
 	httpClient              *http.Client
 	taskAuthorizationClient *commonClient.SystemExecutionAuthorizationClient
 	serviceTokens           commonClient.ServiceTokenProvider
@@ -52,7 +53,7 @@ func NewOrchestrationHandler(
 	orchRepo *repository.OrchestrationRepository,
 	executionService *service.ExecutionService,
 	executor *service.Executor,
-	taskProviderRegistry *service.TaskProviderRegistry,
+	taskProviderResolver *service.TaskProviderResolver,
 	httpClient *http.Client,
 	taskAuthorizationClient *commonClient.SystemExecutionAuthorizationClient,
 	serviceTokens commonClient.ServiceTokenProvider,
@@ -65,7 +66,7 @@ func NewOrchestrationHandler(
 		orchRepo:                orchRepo,
 		executionService:        executionService,
 		executor:                executor,
-		taskProviderRegistry:    taskProviderRegistry,
+		taskProviderResolver:    taskProviderResolver,
 		httpClient:              httpClient,
 		taskAuthorizationClient: taskAuthorizationClient,
 		serviceTokens:           serviceTokens,
@@ -508,9 +509,9 @@ func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
 	c.JSON(http.StatusOK, exec)
 }
 
-// ListTaskProviders 列出所有任务提供者（从 System 的 task_providers 表获取）
+// ListTaskProviders 列出所有已声明 TaskProvider 角色的模块及其当前可用性。
 // @Summary 列出任务提供者 | List task providers
-// @Description 从 System 任务提供者注册表获取可编排任务提供者 | List task providers from System task provider registry
+// @Description 从 System 模块定义读取 TaskProvider 声明，并附带当前 Backend 租约投影的动态可用性 | Read TaskProvider declarations from System module definitions with dynamic availability projected from current Backend leases
 // @Tags Orchestrator
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -522,8 +523,8 @@ func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
 func (h *OrchestrationHandler) ListTaskProviders(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	// 使用 TaskProviderRegistry 获取所有任务提供者
-	providers, err := h.taskProviderRegistry.ListAllProviders(ctx)
+	// 使用 TaskProviderResolver 获取所有声明了 TaskProvider 角色的模块。
+	providers, err := h.taskProviderResolver.ListAllProviders(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, "orchestrator.error.list_providers_failed", err.Error())})
 		return
@@ -541,7 +542,7 @@ func (h *OrchestrationHandler) ListTaskProviders(c *gin.Context) {
 // @Param id path int true "任务 ID | Task ID"
 // @Success 200 {object} map[string]interface{} "任务详情及 execution_contract | Task detail and execution_contract"
 // @Failure 400 {object} models.ErrorResponse "参数无效 | Invalid parameters"
-// @Failure 502 {object} models.ErrorResponse "任务提供者不可用 | Task provider unavailable"
+// @Failure 503 {object} models.ErrorResponse "任务提供者当前不可用 | Task provider currently unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["orchestrator.workflow.read"]
 // @Router /task-providers/{module_name}/tasks/{task_type}/{id} [get]
@@ -549,17 +550,21 @@ func (h *OrchestrationHandler) ListTaskProviders(c *gin.Context) {
 func (h *OrchestrationHandler) GetTaskProviderTaskDetail(c *gin.Context) {
 	taskID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil || taskID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, commoni18n.MsgInvalidID)})
 		return
 	}
 	tenantID, ok := requireTenantID(c)
 	if !ok {
 		return
 	}
-	detail, err := h.taskProviderRegistry.GetTaskDetail(
+	detail, err := h.taskProviderResolver.GetTaskDetail(
 		c.Request.Context(), c.Param("module_name"), c.Param("task_type"), uint(taskID), tenantID,
 	)
 	if err != nil {
+		if errors.Is(err, service.ErrTaskProviderUnavailable) {
+			respondTaskProviderUnavailable(c)
+			return
+		}
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
@@ -581,6 +586,7 @@ func (h *OrchestrationHandler) GetTaskProviderTaskDetail(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Failure 502 {object} map[string]interface{}
+// @Failure 503 {object} models.ErrorResponse "任务提供者当前不可用 | Task provider currently unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["orchestrator.workflow.read"]
 // @Router /tasks [get]
@@ -598,9 +604,13 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// 1. 从 TaskProviderRegistry 获取任务提供者配置
-	provider, err := h.taskProviderRegistry.GetProvider(ctx, moduleName)
+	// 1. 从 TaskProviderResolver 动态解析任务提供者和当前 Backend。
+	provider, err := h.taskProviderResolver.GetProvider(ctx, moduleName)
 	if err != nil {
+		if errors.Is(err, service.ErrTaskProviderUnavailable) {
+			respondTaskProviderUnavailable(c)
+			return
+		}
 		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.TWithDetail(c, "orchestrator.error.provider_not_found", fmt.Sprintf("%s: %v", moduleName, err))})
 		return
 	}
@@ -703,6 +713,14 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+func respondTaskProviderUnavailable(c *gin.Context) {
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"error":      commoni18n.T(c, "orchestrator.error.provider_unavailable"),
+		"error_code": "task_provider_unavailable",
+		"error_type": "transient",
+	})
 }
 
 // ListProviderOrchestrationTasks 列出 Orchestrator 自身可编排任务。

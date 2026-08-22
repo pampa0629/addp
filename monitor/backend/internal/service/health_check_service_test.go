@@ -34,13 +34,9 @@ func TestCheckAllProviderHealthChecksModuleAndTaskDiscovery(t *testing.T) {
 		monitorTaskCapabilityForTest("scan", false),
 		monitorTaskCapabilityForTest("legacy_scan", true),
 	))
-	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{{
-		ModuleName:       "meta",
-		DisplayName:      "Meta",
-		BaseURL:          server.URL,
-		TaskListEndpoint: "/api/v1/meta/tasks",
-		Capabilities:     &caps,
-	}}}, staticServiceTokenProvider("service-token"))
+	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{
+		newHealthTaskProviderForTest("meta", "Meta", server.URL, true, true, "/api/v1/meta/tasks", &caps),
+	}}, staticServiceTokenProvider("service-token"))
 
 	statuses, err := service.CheckAllProviderHealth(context.Background(), 7)
 	if err != nil {
@@ -67,6 +63,27 @@ func TestCheckAllProviderHealthChecksModuleAndTaskDiscovery(t *testing.T) {
 	}
 }
 
+func TestCheckAllProviderHealthKeepsOfflineDeclarationWithoutProbing(t *testing.T) {
+	caps := models.JSONString(monitorTaskCapabilitiesForTest(monitorTaskCapabilityForTest("scan", false)))
+	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{
+		newHealthTaskProviderForTest("meta", "Meta", "", true, false, "/api/v1/meta/tasks", &caps),
+	}}, nil)
+
+	statuses, err := service.CheckAllProviderHealth(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("CheckAllProviderHealth() error = %v", err)
+	}
+	if len(statuses) != 1 || statuses[0].Available || statuses[0].Status != "down" {
+		t.Fatalf("offline status = %#v", statuses)
+	}
+	if statuses[0].ModuleHealth == nil || !strings.Contains(statuses[0].ModuleHealth.Message, "Backend lease") {
+		t.Fatalf("module health = %#v, want missing Backend lease", statuses[0].ModuleHealth)
+	}
+	if len(statuses[0].TaskDiscovery) != 0 {
+		t.Fatalf("task discovery = %#v, want no probes", statuses[0].TaskDiscovery)
+	}
+}
+
 func TestCheckAllProviderHealthReportsLegacyTaskDiscoveryShape(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -82,13 +99,9 @@ func TestCheckAllProviderHealthReportsLegacyTaskDiscoveryShape(t *testing.T) {
 	defer server.Close()
 
 	caps := models.JSONString(monitorTaskCapabilitiesForTest(monitorTaskCapabilityForTest("scan", false)))
-	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{{
-		ModuleName:       "meta",
-		DisplayName:      "Meta",
-		BaseURL:          server.URL,
-		TaskListEndpoint: "/api/v1/meta/tasks",
-		Capabilities:     &caps,
-	}}}, staticServiceTokenProvider("service-token"))
+	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{
+		newHealthTaskProviderForTest("meta", "Meta", server.URL, true, true, "/api/v1/meta/tasks", &caps),
+	}}, staticServiceTokenProvider("service-token"))
 
 	statuses, err := service.CheckAllProviderHealth(context.Background(), 0)
 	if err != nil {
@@ -123,13 +136,9 @@ func TestCheckAllProviderHealthReportsTaskDiscoveryExtraFields(t *testing.T) {
 	defer server.Close()
 
 	caps := models.JSONString(monitorTaskCapabilitiesForTest(monitorTaskCapabilityForTest("scan", false)))
-	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{{
-		ModuleName:       "meta",
-		DisplayName:      "Meta",
-		BaseURL:          server.URL,
-		TaskListEndpoint: "/api/v1/meta/tasks",
-		Capabilities:     &caps,
-	}}}, staticServiceTokenProvider("service-token"))
+	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{
+		newHealthTaskProviderForTest("meta", "Meta", server.URL, true, true, "/api/v1/meta/tasks", &caps),
+	}}, staticServiceTokenProvider("service-token"))
 
 	statuses, err := service.CheckAllProviderHealth(context.Background(), 0)
 	if err != nil {
@@ -156,13 +165,9 @@ func TestCheckAllProviderHealthReportsInvalidCapabilities(t *testing.T) {
 	defer server.Close()
 
 	caps := models.JSONString(`{"schema_version":"legacy","task_capabilities":[{"type":"scan"}]}`)
-	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{{
-		ModuleName:       "meta",
-		DisplayName:      "Meta",
-		BaseURL:          server.URL,
-		TaskListEndpoint: "/api/v1/meta/tasks",
-		Capabilities:     &caps,
-	}}}, staticServiceTokenProvider("service-token"))
+	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{
+		newHealthTaskProviderForTest("meta", "Meta", server.URL, true, true, "/api/v1/meta/tasks", &caps),
+	}}, staticServiceTokenProvider("service-token"))
 
 	statuses, err := service.CheckAllProviderHealth(context.Background(), 0)
 	if err != nil {
@@ -204,13 +209,9 @@ func TestCheckAllProviderHealthReportsUnknownCapabilityFields(t *testing.T) {
 			"owner_runtime":"legacy"
 		}]
 	}`)
-	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{{
-		ModuleName:       "meta",
-		DisplayName:      "Meta",
-		BaseURL:          server.URL,
-		TaskListEndpoint: "/api/v1/meta/tasks",
-		Capabilities:     &caps,
-	}}}, staticServiceTokenProvider("service-token"))
+	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{
+		newHealthTaskProviderForTest("meta", "Meta", server.URL, true, true, "/api/v1/meta/tasks", &caps),
+	}}, staticServiceTokenProvider("service-token"))
 
 	statuses, err := service.CheckAllProviderHealth(context.Background(), 0)
 	if err != nil {
@@ -251,13 +252,9 @@ func TestCheckAllProviderHealthReportsNonBooleanDeprecated(t *testing.T) {
 			"deprecated":"false"
 		}]
 	}`)
-	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{{
-		ModuleName:       "meta",
-		DisplayName:      "Meta",
-		BaseURL:          server.URL,
-		TaskListEndpoint: "/api/v1/meta/tasks",
-		Capabilities:     &caps,
-	}}}, staticServiceTokenProvider("service-token"))
+	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{
+		newHealthTaskProviderForTest("meta", "Meta", server.URL, true, true, "/api/v1/meta/tasks", &caps),
+	}}, staticServiceTokenProvider("service-token"))
 
 	statuses, err := service.CheckAllProviderHealth(context.Background(), 0)
 	if err != nil {
@@ -274,6 +271,23 @@ func TestCheckAllProviderHealthReportsNonBooleanDeprecated(t *testing.T) {
 type fakeTaskProviderLister struct {
 	providers []*models.TaskProvider
 	err       error
+}
+
+func newHealthTaskProviderForTest(
+	moduleName string,
+	displayName string,
+	baseURL string,
+	enabled bool,
+	available bool,
+	taskListEndpoint string,
+	capabilities *models.JSONString,
+) *models.TaskProvider {
+	return &models.TaskProvider{
+		ModuleName: moduleName, BaseURL: baseURL, Enabled: enabled, Available: available,
+		TaskProviderDeclaration: models.TaskProviderDeclaration{
+			DisplayName: displayName, TaskListEndpoint: taskListEndpoint, Capabilities: capabilities,
+		},
+	}
 }
 
 type staticServiceTokenProvider string

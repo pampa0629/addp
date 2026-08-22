@@ -24,7 +24,7 @@ type ExecutionService struct {
 
 type ExecutionActor struct {
 	PrincipalID          int64
-	TenantMembershipID  int64
+	TenantMembershipID   int64
 	AuthorizationVersion int64
 }
 
@@ -74,24 +74,24 @@ func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, orche
 	authorizationVersion := actor.AuthorizationVersion
 
 	execution := &commonExecution.TaskExecution{
-		TenantID:          int(tenantID),
-		ExecutionID:       uuid.New().String(),
-		Module:            commonExecution.ModuleOrchestrator,
-		TaskType:          commonExecution.TaskTypeOrchestration,
-		Source:            source,
-		SourceTaskID:      commonExecution.NewSourceTaskIDFromUint(orchestrationID),
-		SourceTaskName:    &orchName,
-		ParentExecutionID: parentExecutionID,
-		Status:            commonExecution.ExecutionStatusPending,
-		Progress:          0,
-		TriggerType:       normalizedTriggerType,
-		TriggeredBy:       triggeredByPtr,
-		ActorPrincipalID: &principalID,
-		ActorTenantMembershipID: &membershipID,
+		TenantID:                   int(tenantID),
+		ExecutionID:                uuid.New().String(),
+		Module:                     commonExecution.ModuleOrchestrator,
+		TaskType:                   commonExecution.TaskTypeOrchestration,
+		Source:                     source,
+		SourceTaskID:               commonExecution.NewSourceTaskIDFromUint(orchestrationID),
+		SourceTaskName:             &orchName,
+		ParentExecutionID:          parentExecutionID,
+		Status:                     commonExecution.ExecutionStatusPending,
+		Progress:                   0,
+		TriggerType:                normalizedTriggerType,
+		TriggeredBy:                triggeredByPtr,
+		ActorPrincipalID:           &principalID,
+		ActorTenantMembershipID:    &membershipID,
 		IssuedAuthorizationVersion: &authorizationVersion,
-		Metadata:          make(commonModels.JSONMap),
-		CreatedAt:         now,
-		UpdatedAt:         now,
+		Metadata:                   make(commonModels.JSONMap),
+		CreatedAt:                  now,
+		UpdatedAt:                  now,
 	}
 
 	if err := s.taskExecutionRepo.Create(ctx, execution); err != nil {

@@ -235,6 +235,8 @@ System 使用两张表表达两类生命周期不同的事实：
 
 该机制借鉴 Nacos 对 Service、Instance、enabled 和 healthy 的分离，但 ADDP 不依赖 Nacos 产品；System/PostgreSQL 是注册事实的唯一来源。`enabled` 表达管理员意图，`status + lease_expires_at` 表达实例运行状态，两者不得互相覆盖。
 
+模块定义使用 `version` 做管理员更新并发控制。`/api/v1/system/platform/modules` 是 User 管理面，最多修改 `enabled`；`/api/v1/system/runtime/modules` 是 Service Principal 注册面，发布 owner 声明和实例租约。两条 API 访问同一组事实，但职责互斥，不形成双轨状态源。
+
 ### 模块注册流程
 
 ```
@@ -271,25 +273,27 @@ System 使用两张表表达两类生命周期不同的事实：
    - 只获取 enabled=true 且至少存在一个有效 Backend 租约的模块
    ↓
 3. 构建动态路由映射
-   - 只从 role=backend、status=up、租约未到期的实例中选择代理目标
-   - 为每个模块创建 ServiceProxy：map[module_name]*ServiceProxy
+   - 只从 role=backend、status=up、租约未到期的实例中构建 Backend 池
+   - Backend 池按 instance_id 稳定排序，并为每个实例维护独立 ServiceProxy
    - 存储模块信息：map[module_name]*ModuleInfo
    ↓
 4. 启动定时刷新任务
    - 定期刷新模块列表（MODULE_REFRESH_INTERVAL，默认 30 秒）
    - 检测模块变更：
      - 新增模块 → 创建新代理
-     - 可路由 Backend 实例变化 → 重建代理
-     - 模块被禁用或无可路由 Backend → 删除代理
+     - 可路由 Backend 实例变化 → 原子替换 Backend 池并复用端点未变化的代理
+     - 模块被禁用或无可路由 Backend → 删除 Backend 池
    ↓
 5. 请求路由
    - `/api/v1/system/**` 始终使用 System bootstrap 代理
    - 其他请求示例：GET /api/v1/manager/engines
    - Gateway 提取 module_name = "manager"
-   - 从 ModuleDiscovery 获取对应的 ServiceProxy
+   - ModuleDiscovery 在当前有效 Backend 池中按请求轮询选择 ServiceProxy
+   - 每次选择时再次检查缓存租约；租约已经到期的实例不会等待下一轮刷新才失效
    - 如果模块存在且有有效 Backend 租约 → 转发请求
    - 如果模块不存在、被禁用或无有效 Backend 租约 → 返回 503 Service Unavailable
    - 不绕过注册表使用硬编码地址
+   - Gateway 不自动重放已选实例的失败请求，避免 POST、PUT 等有副作用请求被重复执行
 ```
 
 ### 动态路由的核心价值
@@ -299,7 +303,7 @@ System 使用两张表表达两类生命周期不同的事实：
 | **动态扩展** | 新增模块无需修改 Gateway 代码，只需注册到 System 即可自动路由 |
 | **故障隔离** | 实例宕机或心跳超时后租约失效，Gateway 不再向该实例转发请求 |
 | **健康监控** | 通过心跳机制实时监控模块状态，及时发现服务故障 |
-| **多实例基础** | 同一模块可登记多个 Backend/Worker/Scheduler 实例；Gateway 当前确定性选择一个有效 Backend |
+| **多实例路由** | 同一模块可登记多个 Backend/Worker/Scheduler 实例；所有有效 Backend 按请求轮询参与流量，Worker/Scheduler 仅观测 |
 | **灰度发布基础** | 未来可支持同一模块的多个版本（v1/v2），通过 metadata 控制流量分配 |
 | **配置热更新** | 模块 URL 变更无需重启 Gateway，定时刷新自动生效 |
 

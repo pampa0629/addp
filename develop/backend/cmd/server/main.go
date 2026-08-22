@@ -149,40 +149,21 @@ func main() {
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerAddr)
 
-	// ========== 模块注册（注册到 System service_registry）==========
+	// ========== 模块定义、运行实例与 TaskProvider 声明发布 ==========
 	if cfg.SystemServiceURL != "" {
+		taskProvider, err := service.DevelopTaskProviderDeclaration()
+		if err != nil {
+			log.Fatalf("构建 Develop TaskProvider 声明失败: %v", err)
+		}
 		systemServiceClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
 			ModuleName: "develop", ModuleURL: serviceURL, RoutePrefix: "/develop", HealthCheckURL: serviceURL + "/health",
-			Metadata: map[string]interface{}{"capabilities": map[string]interface{}{"cleanup_executor": map[string]interface{}{"enabled": true, "causes": []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted}}}},
+			TaskProvider: taskProvider,
+			Metadata:     map[string]interface{}{"capabilities": map[string]interface{}{"cleanup_executor": map[string]interface{}{"enabled": true, "causes": []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted}}}},
 			ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{
 				ID: "develop.configuration", OwnerModule: "develop", ScopeTypes: []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride}, FrontendRoute: "/configuration/develop",
 				ReadPermission: developauthorization.PermissionDevelopConfigurationRead, UpdatePermission: developauthorization.PermissionDevelopConfigurationUpdate,
 			}}},
 		})
-	}
-
-	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
-	if cfg.SystemServiceURL != "" {
-		taskProviderRegistry := service.NewTaskProviderRegistryService(
-			systemServiceClient,
-			serviceURL,
-		)
-
-		// 后台异步注册（不阻塞启动，支持重试）
-		go func() {
-			time.Sleep(2 * time.Second) // 等待服务完全启动
-			maxRetries := 5
-			for attempt := 1; attempt <= maxRetries; attempt++ {
-				if err := taskProviderRegistry.Register(context.Background()); err != nil {
-					log.Printf("⚠️  Registration attempt %d/%d failed: %v", attempt, maxRetries, err)
-					time.Sleep(time.Duration(attempt*2) * time.Second) // 指数退避
-					continue
-				}
-				log.Printf("✅ Develop task provider registered successfully")
-				return
-			}
-			log.Printf("❌ Develop task provider registration failed after %d attempts", maxRetries)
-		}()
 	}
 
 	// 设置优雅关闭

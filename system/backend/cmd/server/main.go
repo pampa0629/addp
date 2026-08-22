@@ -89,12 +89,6 @@ func main() {
 	}
 	cancelCredentials()
 
-	// 迁移 task_providers 表（删除旧 create_task_url/edit_task_url 列）
-	if err := repository.MigrateTaskProviders(db); err != nil {
-		logger.L().Error("task_providers 迁移失败", "error", err)
-		os.Exit(1)
-	}
-
 	// 注释：MigrateExistingEnginesDisplayName 已删除（display_name 字段已移除）
 
 	// 设置 Gin 模式

@@ -7,13 +7,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime) error {
+func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime, moduleHandler *ModuleRegistryHandler) error {
 	if api == nil || runtime == nil || runtime.Authentication == nil || runtime.FirstPartyCredential == nil ||
 		runtime.PlatformTenantHandler == nil || runtime.PlatformUserHandler == nil ||
 		runtime.TenantMembershipHandler == nil || runtime.AuditHandler == nil ||
 		runtime.TenantInvitationHandler == nil ||
 		runtime.TenantRoleHandler == nil ||
-		runtime.PrivilegedIdentityChangeHandler == nil || runtime.SecurityPolicyHandler == nil {
+		runtime.PrivilegedIdentityChangeHandler == nil || runtime.SecurityPolicyHandler == nil || moduleHandler == nil {
 		return errors.New("IAM 管理路由依赖不完整")
 	}
 	platformContext, err := middleware.NewIAMContextGuard("platform")
@@ -65,12 +65,26 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime) erro
 	if err != nil {
 		return err
 	}
+	platformModuleRead, err := permission("platform.module.read")
+	if err != nil {
+		return err
+	}
+	platformModuleUpdate, err := permission("platform.module.update")
+	if err != nil {
+		return err
+	}
 
 	platform := api.Group("/platform")
 	platform.Use(runtime.Authentication, runtime.FirstPartyCredential, platformContext)
 	{
 		platform.GET("/security_policy", securityPolicyRead, runtime.SecurityPolicyHandler.Get)
 		platform.PUT("/security_policy", securityPolicyUpdate, runtime.SecurityPolicyHandler.Update)
+		modules := platform.Group("/modules")
+		{
+			modules.GET("", platformModuleRead, moduleHandler.ListModulesPlatform)
+			modules.GET("/:module_name", platformModuleRead, moduleHandler.GetModulePlatform)
+			modules.PUT("/:module_name", platformModuleUpdate, moduleHandler.UpdateModulePlatform)
+		}
 		platform.GET("/tenant_administrator_candidates", platformTenantPermissions["platform.tenant.create"], runtime.PlatformTenantHandler.ListAdministratorCandidates)
 		tenants := platform.Group("/tenants")
 		{

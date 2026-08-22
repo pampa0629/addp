@@ -46,6 +46,8 @@ const (
 	MsgModuleDeleted                = "system.module.deleted"
 	MsgModuleRegistrationInvalid    = "system.module.registration_invalid"
 	MsgModuleRuntimeInstanceMissing = "system.module.runtime_instance_missing"
+	MsgModuleVersionConflict        = "system.module.version_conflict"
+	MsgTaskProviderNotFound         = "system.task_provider.not_found"
 
 	MsgEngineIdentityImmutable           = "system.engine.identity_immutable"
 	MsgEngineDeleting                    = "system.engine.deleting"

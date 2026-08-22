@@ -22,7 +22,7 @@ import (
 type Executor struct {
 	executionService     *ExecutionService
 	orchRepo             *repository.OrchestrationRepository
-	taskProviderRegistry *TaskProviderRegistry
+	taskProviderResolver *TaskProviderResolver
 	serviceTokens        commonClient.ServiceTokenProvider
 }
 
@@ -30,13 +30,13 @@ type Executor struct {
 func NewExecutor(
 	executionService *ExecutionService,
 	orchRepo *repository.OrchestrationRepository,
-	taskProviderRegistry *TaskProviderRegistry,
+	taskProviderResolver *TaskProviderResolver,
 	serviceTokens commonClient.ServiceTokenProvider,
 ) *Executor {
 	return &Executor{
 		executionService:     executionService,
 		orchRepo:             orchRepo,
-		taskProviderRegistry: taskProviderRegistry,
+		taskProviderResolver: taskProviderResolver,
 		serviceTokens:        serviceTokens,
 	}
 }
@@ -66,7 +66,7 @@ func (e *Executor) executeSync(ctx context.Context, executionID uint) error {
 	if err != nil {
 		return err
 	}
-	if err := e.taskProviderRegistry.ValidateStepTaskReferences(ctx, uint(execution.TenantID), orch.Steps); err != nil {
+	if err := e.taskProviderResolver.ValidateStepTaskReferences(ctx, uint(execution.TenantID), orch.Steps); err != nil {
 		return e.markFailed(ctx, executionID, fmt.Errorf("编排执行契约校验失败: %w", err))
 	}
 
@@ -143,8 +143,8 @@ func (e *Executor) executeStep(ctx context.Context, step *models.Step, stepResul
 func (e *Executor) executeWithTaskProvider(ctx context.Context, step *models.Step, resolvedParams map[string]interface{}, start time.Time, parentExecutionID string, triggerType string, tenantID int) (models.StepResult, error) {
 	result := models.StepResult{StartedAt: start, Status: "running"}
 
-	// 1. 从注册表获取 TaskProvider 配置
-	provider, err := e.taskProviderRegistry.GetProvider(ctx, step.Provider)
+	// 1. 从 System 模块控制面动态解析 TaskProvider 声明和当前 Backend
+	provider, err := e.taskProviderResolver.GetProvider(ctx, step.Provider)
 	if err != nil {
 		result.Status = "failed"
 		result.Error = fmt.Sprintf("获取任务提供者 %s 失败: %v", step.Provider, err)
@@ -159,7 +159,7 @@ func (e *Executor) executeWithTaskProvider(ctx context.Context, step *models.Ste
 		result.Duration = time.Since(start).Milliseconds()
 		return result, fmt.Errorf("%s", result.Error)
 	}
-	contract, err := e.taskProviderRegistry.GetTaskExecutionContract(ctx, provider, step.TaskType, step.TaskID, uint(tenantID))
+	contract, err := e.taskProviderResolver.GetTaskExecutionContract(ctx, provider, step.TaskType, step.TaskID, uint(tenantID))
 	if err != nil {
 		result.Status = "failed"
 		result.Error = fmt.Sprintf("获取任务执行契约失败: %v", err)

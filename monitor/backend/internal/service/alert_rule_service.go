@@ -403,7 +403,7 @@ func (s *AlertRuleService) activeTaskTypes() (activeTaskTypeSet, error) {
 	}
 	result := make(activeTaskTypeSet)
 	for _, provider := range providers {
-		if provider == nil || !provider.IsEnabled {
+		if provider == nil || !provider.Enabled {
 			continue
 		}
 		capabilities, err := parseActiveTaskProviderCapabilities(provider)

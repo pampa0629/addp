@@ -34,7 +34,7 @@
 7. 产物状态归产物 owner 模块。
 8. Orchestrator 只编排任务能力，不拥有业务任务定义。
 9. Monitor 只聚合观察，不成为任务 owner。
-10. ad-hoc-only execution type 可以写入统一执行记录，但在没有持久任务定义前不得注册为 TaskProvider 能力或进入 Orchestrator 任务选择。
+10. ad-hoc-only execution type 可以写入统一执行记录，但在没有持久任务定义前不得声明为 TaskProvider 能力或进入 Orchestrator 任务选择。
 11. 真实读写 owner 必须在 execution 结果中写入版本化 `lineage_facts`；Meta 负责消费并维护血缘关系，Orchestrator 不重复生成资源血缘。
 12. Quality `check`、Meta `scan` 和 Transfer bounded `sync` 的 execution worker 必须是 owner 模块附属的独立进程，并统一使用 PostgreSQL execution claim + lease；owner Backend 不执行这些 bounded execution。
 13. owner scheduler 运行在 owner Backend，只负责按任务定义发现到期任务并创建 durable `pending` execution；Worker 不可用不得阻止 scheduler 创建 execution。dispatcher 只负责 outbox/delivery 投递，二者都不得替代 execution worker 成为业务执行事实源。
@@ -369,7 +369,7 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 34. 邮件测试投递是目标配置运维动作，使用独立测试主题和正文，同步验证目标当前收件人及平台 SMTP Relay，不得伪造告警 lifecycle event 或写入正式 delivery outbox。SMTP 未配置或发送失败统一视为下游调用失败。
 35. 邮件人工重投只允许当前租户的 `dead` delivery，必须复用原 `delivery_id`、主题和正文，使用目标当前收件人，并按 `retry_base_attempt_count` 开启新的最大尝试周期；累计 `attempt_count` 和 `manual_retry_count` 必须保留。删除邮件 destination 必须取消该目标尚未领取的 `pending` delivery 并保留历史；删除时已领取的发送可以完成，删除后不得生成新 delivery 或人工重投。
 36. 邮件 destination 创建、更新、测试、删除及 delivery 人工重投必须复用平台统一 Audit Middleware 写入 System 审计日志。Monitor 不建立第二套操作审计，不在普通 API、Swagger、投递记录、日志或审计中暴露 SMTP password。
-37. 通用执行告警只允许消费 `common.task_executions` 公共事实。各 owner 模块负责写入真实 execution 状态、开始/结束时间和安全错误摘要；Monitor 不得读取 owner 任务表、结果表、worker 私有租约或运行时内部状态补判失败。System 只负责 TaskProvider 注册、认证和操作审计，不成为告警事实或规则 owner。
+37. 通用执行告警只允许消费 `common.task_executions` 公共事实。各 owner 模块负责写入真实 execution 状态、开始/结束时间和安全错误摘要；Monitor 不得读取 owner 任务表、结果表、worker 私有租约或运行时内部状态补判失败。System 只负责保存模块注册时发布的 TaskProvider 角色声明、解析当前 Backend 租约、认证和操作审计，不成为告警事实或规则 owner。
 38. 第一版租户告警规则精确绑定 `tenant + module + task_type + source_task_id`，只允许有稳定任务定义身份且 `parent_execution_id IS NULL` 的根 execution。可配置目标以该任务最新根 execution 的模式为准；最新根 execution 属于 continuous session 时，不得因历史 bounded execution 将该任务继续暴露为通用规则目标。无 `source_task_id` 的 ad-hoc execution、Orchestrator 子 execution 和 System cleanup 子 execution不进入通用规则；父编排失败由 Orchestrator 根 execution 表达。
 39. 通用规则类型固定为 `last_terminal_failed|last_terminal_timeout|consecutive_failures`。最近终态查询只考虑 `success|failed|timeout`，忽略 `cancelled`；`failed` 或 `timeout` 告警只能由后续 `success` 恢复，新的 `pending|running` 不证明任务已经恢复。`consecutive_failures` 的阈值只允许 2 到 20，最近 N 个有效终态全部为 `failed|timeout` 时激活，任一 `success` 中断连续失败序列。
 40. Transfer continuous session 不消费通用 execution 失败规则。Monitor 继续以 `metadata.continuous`、retention、checkpoint 和 recovery circuit owner 事实运行专用 evaluator；不得把自动恢复产生的失败 session 再解释成通用任务失败。Transfer bounded execution 可以使用通用规则；同一任务从 bounded 切换为 continuous 后，通用 evaluator 必须依据最新根 execution 暂停该任务规则，不能继续沿用旧 bounded 终态打开告警。
@@ -587,9 +587,11 @@ Develop 的 `create_url` / `edit_url` 必须指向具体开发方式的专属页
 
 ## TaskProvider 规范
 
-TaskProvider 是模块的一种角色，不是独立业务 owner。System 保存 provider 注册信息，供 Orchestrator 和 Monitor 发现模块任务能力。
+TaskProvider 是模块的一种角色，不是独立业务 owner，也不是独立注册实体。System 把 Provider 能力声明保存为模块定义的一部分，供 Orchestrator 和 Monitor 发现模块任务能力；模块运行地址只来自同一模块定义下当前租约有效的 Backend 实例。
 
-TaskProvider 按模块注册，不按任务类型注册。一个模块只有一个 provider，并通过 `task_capabilities[]` 声明多个任务类型能力。
+TaskProvider 按模块声明，不按任务类型注册。一个模块只有一个 provider，并通过 `task_capabilities[]` 声明多个任务类型能力。Provider 的稳定 ID 就是模块定义 ID；重复发布相同声明必须幂等，不递增模块定义版本，声明实际变化时才递增模块定义版本，且不得覆盖管理员 `enabled`。
+
+模块 Backend 必须通过唯一的模块注册请求同时发布模块实例和可选 TaskProvider 声明，不得再调用独立 TaskProvider 注册入口。只有 Backend 可以发布、更新或撤销该角色：Backend 注册不携带声明表示模块不再提供 TaskProvider 角色；Worker、Scheduler 不携带 Provider 声明，也不得清空 Backend 已发布的声明。模块进程离线时声明继续保留，但 Provider 变为不可用；后续任一 Backend 重新注册并取得有效租约后立即恢复可用。
 
 `task_capabilities[]` 只声明已经存在持久任务定义并能通过标准任务 endpoint 被 Orchestrator 引用的类型。仅提供即时 API、没有任务定义的 ad-hoc execution type 不得为了统一监控而注册空任务列表或伪任务详情；它只需写入 `common.task_executions` 并由 owner 提供自身即时执行入口。
 
@@ -598,16 +600,21 @@ TaskProvider 按模块注册，不按任务类型注册。一个模块只有一�
 | 字段 | 说明 |
 | --- | --- |
 | `module_name` | 模块名，例如 `manager` |
+| `module_version` | 当前模块定义乐观并发版本 |
+| `enabled` | 模块定义的管理员启用意图；不随进程上下线改变 |
 | `display_name` | 展示名称 |
 | `description` | 描述 |
-| `base_url` | 模块 API 基础地址 |
+| `available` | 是否存在 `enabled + backend + up + lease valid` 的可调用实例 |
+| `base_url` | System 在读取时从当前有效 Backend 实例解析的临时调用地址；声明和数据库均不保存 |
+| `backend_instance_id` | 本次解析到的 Backend 运行实例 ID；不可用时为空 |
 | `task_list_endpoint` | 任务列表 endpoint |
 | `task_detail_endpoint` | 任务详情 endpoint |
 | `task_execute_endpoint` | 任务执行 endpoint |
 | `task_status_endpoint` | execution 状态 endpoint |
 | `task_cancel_endpoint` | execution 取消 endpoint |
 | `capabilities` | provider 能力声明 |
-| `is_enabled` | provider 是否启用 |
+
+Provider 不维护独立 `is_enabled`。管理员意图只来自模块定义 `enabled`；实例存活只来自模块运行租约，两者不得被 Provider 声明覆盖。
 
 ### 标准 endpoint
 
@@ -623,7 +630,7 @@ TaskProvider 按模块注册，不按任务类型注册。一个模块只有一�
 
 后续实现应收敛到以上 endpoint 语义。取消接口不是必选能力；未声明支持取消的任务类型不得注册或展示取消入口。确需处理现有路径时，只能作为入口层迁移工作，不得形成长期双轨命名。
 
-System 注册 TaskProvider 时必须校验标准 endpoint：任务详情和执行 endpoint 必须包含 `{task_type}` 与 `{id}`，执行状态 endpoint 必须包含 `{execution_id}`，并且必须分别使用 `/tasks`、`/tasks/{task_type}/{id}`、`/tasks/{task_type}/{id}/execute`、`/executions/{execution_id}` 和 `/executions/{execution_id}/cancel` 标准后缀，不得使用 `/provider/tasks`、`/scan/runs/{execution_id}`、`/tasks/{id}/run` 等私有或旧路径。Orchestrator 调用 provider 时只替换 `{task_type}`、`{id}`、`{execution_id}` 三类标准占位符；模块私有 UI 或 CRUD 路径可以继续使用 `:id`、`:task_id` 等前端或 Gin 写法，但不得进入 TaskProvider endpoint 契约。
+System 的模块注册入口接收 TaskProvider 声明时必须校验标准 endpoint：任务详情和执行 endpoint 必须包含 `{task_type}` 与 `{id}`，执行状态 endpoint 必须包含 `{execution_id}`，并且必须分别使用 `/tasks`、`/tasks/{task_type}/{id}`、`/tasks/{task_type}/{id}/execute`、`/executions/{execution_id}` 和 `/executions/{execution_id}/cancel` 标准后缀，不得使用 `/provider/tasks`、`/scan/runs/{execution_id}`、`/tasks/{id}/run` 等私有或旧路径。Orchestrator 调用 provider 时只替换 `{task_type}`、`{id}`、`{execution_id}` 三类标准占位符；模块私有 UI 或 CRUD 路径可以继续使用 `:id`、`:task_id` 等前端或 Gin 写法，但不得进入 TaskProvider endpoint 契约。
 
 ### 标准响应体
 
@@ -743,7 +750,7 @@ HTTP 状态码表达错误类型，响应体不得重复携带 `status=error`。
 
 ### capabilities.task_capabilities
 
-TaskProvider 注册时必须使用 `task.capabilities/v2` schema，并声明稳定的 `task_capabilities[]` 任务类型能力数组：
+模块注册发布 TaskProvider 角色声明时必须使用 `task.capabilities/v2` schema，并声明稳定的 `task_capabilities[]` 任务类型能力数组：
 
 ```json
 {
@@ -783,7 +790,7 @@ TaskProvider 注册时必须使用 `task.capabilities/v2` schema，并声明稳�
 
 1. `schema_version` 必须为 `task.capabilities/v2`。
 2. `create_url` 和 `edit_url` 属于具体 `task_type`，不得放在 provider 顶层。
-3. System 注册入口必须校验 capabilities schema，不符合规范的 provider 不得注册成功。
+3. System 模块注册入口必须校验 capabilities schema，不符合规范的 TaskProvider 声明不得发布成功。
 4. `task_type` 是 provider 对外契约，不能随 UI 文案变化；不得使用大写、短横线、空格或本地化文本。
 5. provider 顶层私有扩展字段必须使用 `x_` 前缀，例如 `x_owner_features`；未加 `x_` 前缀的未知顶层字段必须被 System 注册入口拒绝，避免与未来标准字段冲突。`task_capabilities[]` 内部只允许本文列出的标准字段，不允许私有扩展字段；任务类型级扩展需要先修订 capabilities 规范。
 6. `definition_schema` 必须声明为 JSON 对象 schema，最小值为 `{ "type": "object" }`。System 注册入口以及任务详情契约校验必须复用平台可理解的 JSON Schema 子集：允许 `type`、`title`、`description`、`properties`、`required`、`enum`、`default`、`additionalProperties`、`items`、`minimum`、`maximum`、`minLength`、`maxLength`、`minItems`、`maxItems`、`format`；不得使用 `$ref`、`oneOf`、`anyOf`、`allOf`、`not` 等复杂组合或远程引用。
@@ -791,14 +798,14 @@ TaskProvider 注册时必须使用 `task.capabilities/v2` schema，并声明稳�
 8. Orchestrator Step 参数编辑必须以具体任务详情的 `execution_contract` 为唯一能力来源。闭合对象中声明的标量字段渲染为结构化控件，资源引用按 `input_ui_schema` 渲染资源选择器；每个输入可选择使用“工作流配置”、在当前 Step 中“执行时指定”或引用显式依赖的“上游输出”。“工作流配置”表示不提交覆盖字段，执行时读取 owner 任务定义中已保存的当前值；“执行时指定”表示 Step 保存显式覆盖值，但不改写 owner 任务定义。编排画布必须按 `input_schema + input_ui_schema` 生成逻辑输入端口，按 `output_schema` 生成稳定输出端口；资源对象只生成一个逻辑端口，不得把 locator 或自动派生的 geometry 字段拆成用户端口。连接输出端口与输入端口时必须校验类型和环路，原子地写入上游输出绑定并补充 `depends_on`；参数表单和画布连线必须双向同步。资源参数摘要必须展示引擎实例名称、按引擎原生风格格式化的资源路径和本地化资源类型，不得展示 Engine ID 或 `addp://` locator；展示事实不得写回执行参数。资源选择结果已经声明 geometry 字段时，单字段必须自动选中，多字段只能从识别结果中选择，不得要求用户自由输入字段名。闭合空对象不显示参数编辑；不得按 provider 或 task type 硬编码表单能力，也不得保留整份任意 JSON 作为旁路。
 9. `supports_inline_execution` 在 `task.capabilities/v2` 中必须为 `false`。内联执行需要新的 endpoint、执行配置 schema 和 Orchestrator Step 模型，必须作为后续专题设计，不得只通过 capabilities 布尔值打开。
 10. `supports_cancel` 与 `task_cancel_endpoint` 必须双向一致：任一任务类型声明 `supports_cancel=true` 时 provider 必须注册标准取消 endpoint；没有任务类型支持取消时 provider 不得注册 `task_cancel_endpoint`。模块内部已有取消 API 不等于 TaskProvider 标准取消能力。
-11. Orchestrator 可以缓存 TaskProvider capabilities，但必须能从 System 刷新。
+11. Orchestrator 可以按 `module_version` 缓存纯 capabilities 解析结果，但每次任务发现、详情读取、执行提交和状态回查前都必须向 System 解析当前 Provider 可用性和 Backend 地址；不得缓存 `available`、`base_url` 或 `backend_instance_id`，也不得在模块离线后继续调用旧地址。
 12. `create_url` / `edit_url` 应使用 Console 路由形式，可包含模块内深层路径和 query，例如 `/transfer/tasks/:id/edit`、`/develop/workflow?action=edit&id=:id`、`/graph/graphs/:graph_id/build/tasks/:id`；前端负责替换 `:id` / `{id}` / `:task_id` / `{task_id}` / `:graph_id` / `{graph_id}`。地址栏同步、canonical 参数和浏览器历史必须同时遵守 `docs/spec/addp前端路由与可恢复状态规范.md`。
 13. 模块新增或删除任务类型时，必须更新自身 capabilities、文档和 Swagger；修改任务级输入/输出契约时必须同步任务详情和执行入口测试。
 14. `deprecated=true` 的 task type 不再作为可用任务类型处理。Orchestrator 保存和执行编排时都必须拒绝引用 deprecated task type；ADDP 当前不为废弃任务类型保留兼容迁移路径。历史 execution 查询只按既有 execution 记录展示，不要求 owner 继续提供可编辑任务定义入口。
 15. `edit_url` 是 `task.capabilities/v2` 的任务定义入口字段，不承诺任务定义一定可修改。来源驱动且定义不可变的任务必须在该 URL 展示带稳定任务 ID 的只读定义；不得把结果筛选页、无任务身份的模块首页或 Data Explorer 通用入口冒充任务定义入口。
 16. 来源驱动任务的 `create_url` 可以指向 owner 的来源选择页，由用户选择源对象后通过 owner 领域动作派生任务定义。此类任务不得同时保留允许调用方直接提交私有任务配置的第二套创建或更新 API。
 
-`common/taskprovider` 是 TaskProvider 契约的公共解析和校验边界，负责校验 `task.capabilities/v2`、标准任务列表响应 `{items,total,page,page_size}`、任务级 `execution_contract` 和输入参数实例。System 注册入口、Monitor provider health、Orchestrator 编排保存和执行前校验必须复用该公共能力，不得在各模块重复维护一套 capabilities、任务发现响应或 schema 实例校验逻辑。owner 模块负责生成自身 capabilities、为每个任务生成精确契约并实现标准 endpoint；`common/taskprovider` 不访问 System 注册表，不调用 owner 模块，也不处理执行调度。
+`common/taskprovider` 是 TaskProvider 契约的公共解析和校验边界，负责校验 `task.capabilities/v2`、标准任务列表响应 `{items,total,page,page_size}`、任务级 `execution_contract` 和输入参数实例。System 模块注册入口、Monitor provider health、Orchestrator 编排保存和执行前校验必须复用该公共能力，不得在各模块重复维护一套 capabilities、任务发现响应或 schema 实例校验逻辑。owner 模块负责生成自身 capabilities、为每个任务生成精确契约并实现标准 endpoint；`common/taskprovider` 不访问 System 模块控制面，不调用 owner 模块，也不处理执行调度。
 
 当前不应默认打开任何模块的 `supports_cancel=true`。标准取消能力必须先在专题中确认 worker 中断、资源清理、状态一致落库、重复取消幂等和可观测诊断等前置条件，再单独更新对应模块能力声明。
 
@@ -914,7 +921,7 @@ Monitor 不拥有任务定义。Monitor 聚合观察：
 | schedule | owner 任务状态 API | 是否启用、下一次运行、最近运行摘要 |
 | runtime queue | owner 模块队列状态 API | pending、active、retry、dead、延迟 |
 | artifact state | owner 模块状态 API | 产物是否 ready、缓存位置、版本、失败原因 |
-| provider health | System TaskProvider / module health / 标准任务列表 endpoint | provider 是否注册、模块是否可调用、无副作用任务发现 endpoint 是否可访问 |
+| provider health | System TaskProvider / module health / 标准任务列表 endpoint | 模块是否声明 TaskProvider 角色、当前是否可调用、无副作用任务发现 endpoint 是否可访问 |
 
 Monitor 可以查询 owner 模块公开的只读状态 API，但不得直接依赖 owner 私有表结构。provider health 不新增 TaskProvider 专用 health endpoint，应复用模块 `/health` 与标准 `GET /tasks?task_type=` 这类无副作用 endpoint 做探活。
 
@@ -922,12 +929,12 @@ provider health 至少检查以下内容：
 
 | 检查项 | 来源 | 说明 |
 | --- | --- | --- |
-| registration | System `task_providers` | provider 是否启用并具备基础 endpoint。 |
-| capabilities | System `task_providers.capabilities` | JSON 是否可解析、`schema_version` 是否为 `task.capabilities/v2`、`task_capabilities[]` 是否非空。 |
+| registration | System `module_definitions.task_provider` | 模块是否声明 provider 并具备基础 endpoint。 |
+| capabilities | System `module_definitions.task_provider.capabilities` | JSON 是否可解析、`schema_version` 是否为 `task.capabilities/v2`、`task_capabilities[]` 是否非空。 |
 | module_health | `provider.base_url + /health` | 模块进程是否可访问。 |
 | task_discovery | `provider.base_url + task_list_endpoint + ?task_type=` | 每个未 deprecated task type 的标准任务发现 endpoint 是否可访问，且响应体必须是标准任务列表对象，包含 `items`、`total`、`page`、`page_size`。 |
 
-provider health 状态只使用：
+System 返回 `available=false` 时，Monitor 直接判定 Provider `down`，不对空地址发起探测；`available=true` 时才继续以下健康检查。provider health 状态只使用：
 
 | 状态 | 说明 |
 | --- | --- |

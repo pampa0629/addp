@@ -60,6 +60,10 @@
               <el-icon><Lock /></el-icon>
               <span>{{ t('system.layout.securityPolicy') }}</span>
             </el-menu-item>
+            <el-menu-item v-if="authStore.hasPermission('platform.module.read')" index="/modules">
+              <el-icon><Operation /></el-icon>
+              <span>{{ t('system.layout.moduleMgmt') }}</span>
+            </el-menu-item>
             <el-menu-item v-if="authStore.hasPermission('system.engine.read')" index="/engines">
               <el-icon><Connection /></el-icon>
               <span>{{ t('system.layout.engineMgmt') }}</span>
@@ -97,7 +101,8 @@ import {
   Connection,
   HomeFilled,
   Key,
-  Refresh
+  Refresh,
+  Operation
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'

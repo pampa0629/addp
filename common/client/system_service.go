@@ -235,10 +235,6 @@ func (c *SystemServiceClient) SendModuleHeartbeat(ctx context.Context, moduleNam
 	}, nil)
 }
 
-func (c *SystemServiceClient) RegisterTaskProvider(ctx context.Context, provider *models.TaskProvider) error {
-	return c.doPlatformJSON(ctx, http.MethodPost, "/api/v1/system/runtime/task-providers", provider, nil)
-}
-
 func (c *SystemServiceClient) ListTaskProviders(ctx context.Context) ([]*models.TaskProvider, error) {
 	var providers []*models.TaskProvider
 	if err := c.doPlatformJSON(ctx, http.MethodGet, "/api/v1/system/runtime/task-providers", nil, &providers); err != nil {

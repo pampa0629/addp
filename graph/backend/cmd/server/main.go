@@ -16,7 +16,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"time"
 
 	commonExecution "github.com/addp/common/execution"
 
@@ -132,38 +131,24 @@ func main() {
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
 	if cfg.SystemServiceURL != "" {
-		systemServiceClient.RegisterAndHeartbeatWithMetadata(context.Background(), "graph", serviceURL, "/graph", map[string]interface{}{
-			"module": "graph",
-			"capabilities": map[string]interface{}{
-				"cleanup_executor": map[string]interface{}{
-					"enabled": true,
-					"causes":  []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted},
+		provider, err := service.GraphTaskProviderDeclaration()
+		if err != nil {
+			logger.Error("构建 Graph TaskProvider 声明失败", "error", err)
+			os.Exit(1)
+		}
+		systemServiceClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
+			ModuleName: "graph", ModuleURL: serviceURL, RoutePrefix: "/graph", HealthCheckURL: serviceURL + "/health",
+			TaskProvider: provider,
+			Metadata: map[string]interface{}{
+				"module": "graph",
+				"capabilities": map[string]interface{}{
+					"cleanup_executor": map[string]interface{}{
+						"enabled": true,
+						"causes":  []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted},
+					},
 				},
 			},
 		})
-	}
-
-	if cfg.SystemServiceURL != "" {
-		taskProviderRegistry := service.NewTaskProviderRegistryService(
-			systemServiceClient,
-			serviceURL,
-		)
-
-		go func() {
-			time.Sleep(2 * time.Second)
-			maxRetries := 5
-			for attempt := 1; attempt <= maxRetries; attempt++ {
-				if err := taskProviderRegistry.Register(context.Background()); err != nil {
-					logger.Warn("任务提供者注册失败",
-						"attempt", fmt.Sprintf("%d/%d", attempt, maxRetries),
-						"error", err)
-					time.Sleep(time.Duration(attempt*2) * time.Second)
-					continue
-				}
-				logger.Info("✅ Graph 模块已注册到 task_providers")
-				return
-			}
-		}()
 	}
 
 	addr := ":" + cfg.Port

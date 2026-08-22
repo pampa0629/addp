@@ -9,11 +9,65 @@
       "systemMgmt": "系统管理",
       "iam": "身份与访问管理",
       "securityPolicy": "IAM 安全策略",
+      "moduleMgmt": "模块管理",
       "engineMgmt": "引擎管理",
       "appMgmt": "应用管理",
       "cleanup": "资源回收",
       "logout": "退出登录",
       "logoutSuccess": "退出成功"
+    },
+    "module": {
+      "title": "模块管理",
+      "description": "管理持久模块启用意图，并观测 Backend、Worker 与 Scheduler 的实时租约状态。",
+      "refresh": "刷新",
+      "reload": "重新加载",
+      "refreshed": "模块状态已刷新",
+      "loadFailed": "加载模块失败",
+      "updateFailed": "更新模块失败",
+      "conflict": "模块定义已被其他操作修改",
+      "conflictHint": "自动刷新已暂停。请重新加载最新状态后再操作。",
+      "enabledSuccess": "模块已启用",
+      "disabledSuccess": "模块已禁用",
+      "enabledAria": "切换模块 {name} 的启用状态",
+      "columns": {
+        "name": "模块名",
+        "routePrefix": "路由前缀",
+        "availability": "路由可用性",
+        "instances": "运行实例",
+        "enabled": "管理员启用",
+        "version": "版本",
+        "updatedAt": "更新时间"
+      },
+      "summary": {
+        "definitions": "模块定义",
+        "routable": "可路由模块",
+        "onlineInstances": "在线实例",
+        "workers": "Worker 实例"
+      },
+      "availability": {
+        "routable": "可路由",
+        "unavailable": "不可路由"
+      },
+      "status": {
+        "up": "在线",
+        "down": "离线"
+      },
+      "roles": {
+        "backend": "Backend",
+        "worker": "Worker",
+        "scheduler": "Scheduler"
+      },
+      "instanceSummary": "{online}/{total} 在线",
+      "instances": {
+        "title": "运行实例（{count}）",
+        "empty": "尚无运行实例登记",
+        "id": "实例 ID",
+        "role": "角色",
+        "status": "状态",
+        "url": "服务地址",
+        "lastHeartbeat": "最近心跳",
+        "leaseExpiresAt": "租约到期"
+      }
     },
     "iam": {
       "title": "身份与访问管理",

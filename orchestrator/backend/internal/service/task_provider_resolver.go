@@ -3,12 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	commonClient "github.com/addp/common/client"
@@ -17,106 +17,58 @@ import (
 	"github.com/addp/orchestrator/internal/models"
 )
 
-// TaskProviderRegistry 任务提供者注册表(从 System 动态加载)
-type TaskProviderRegistry struct {
+var ErrTaskProviderUnavailable = errors.New("task provider is currently unavailable")
+
+// TaskProviderResolver 在每次使用边界从 System 动态解析模块声明和当前 Backend。
+type TaskProviderResolver struct {
 	systemClient          *commonClient.SystemServiceClient
-	providers             map[string]*commonModels.TaskProvider // key: module_name
-	mu                    sync.RWMutex
-	cacheTTL              time.Duration
-	lastRefresh           time.Time
 	httpClient            *http.Client
+	loadProvider          func(context.Context, string) (*commonModels.TaskProvider, error)
+	listProviders         func(context.Context) ([]*commonModels.TaskProvider, error)
 	loadExecutionContract func(context.Context, *commonModels.TaskProvider, string, uint, uint) (*taskprovider.ExecutionContract, error)
 }
 
-// NewTaskProviderRegistry 创建任务提供者注册表
-func NewTaskProviderRegistry(systemClient *commonClient.SystemServiceClient, cacheTTL time.Duration) *TaskProviderRegistry {
-	if cacheTTL == 0 {
-		cacheTTL = 5 * time.Minute // 默认缓存 5 分钟
-	}
-
-	return &TaskProviderRegistry{
+// NewTaskProviderResolver 创建任务提供者动态解析器。
+func NewTaskProviderResolver(systemClient *commonClient.SystemServiceClient) *TaskProviderResolver {
+	return &TaskProviderResolver{
 		systemClient: systemClient,
-		providers:    make(map[string]*commonModels.TaskProvider),
-		cacheTTL:     cacheTTL,
 		httpClient:   &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
-// GetProvider 根据 module_name 获取任务提供者配置
-func (r *TaskProviderRegistry) GetProvider(ctx context.Context, moduleName string) (*commonModels.TaskProvider, error) {
-	// 先检查缓存
-	r.mu.RLock()
-	if provider, ok := r.providers[moduleName]; ok && time.Since(r.lastRefresh) < r.cacheTTL {
-		r.mu.RUnlock()
-		return provider, nil
+// GetProvider always resolves the current module Backend through System.
+func (r *TaskProviderResolver) GetProvider(ctx context.Context, moduleName string) (*commonModels.TaskProvider, error) {
+	moduleName = strings.TrimSpace(moduleName)
+	var provider *commonModels.TaskProvider
+	var err error
+	if r.loadProvider != nil {
+		provider, err = r.loadProvider(ctx, moduleName)
+	} else {
+		provider, err = r.systemClient.GetTaskProvider(ctx, moduleName)
 	}
-	r.mu.RUnlock()
-
-	// 缓存未命中或过期,从 System 查询
-	provider, err := r.systemClient.GetTaskProvider(ctx, moduleName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get task provider %s: %w", moduleName, err)
 	}
-
-	// 更新缓存
-	r.mu.Lock()
-	r.providers[moduleName] = provider
-	r.mu.Unlock()
-
+	if provider == nil || !provider.Available || strings.TrimSpace(provider.BaseURL) == "" {
+		return nil, fmt.Errorf("%w: %s", ErrTaskProviderUnavailable, moduleName)
+	}
 	return provider, nil
 }
 
-// RefreshCache 刷新所有任务提供者缓存
-func (r *TaskProviderRegistry) RefreshCache(ctx context.Context) error {
-	// 从 System 查询所有任务提供者
+// ListAllProviders 列出所有声明了 TaskProvider 角色的模块，包括当前不可用模块。
+func (r *TaskProviderResolver) ListAllProviders(ctx context.Context) ([]*commonModels.TaskProvider, error) {
+	if r.listProviders != nil {
+		return r.listProviders(ctx)
+	}
 	providers, err := r.systemClient.ListTaskProviders(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to list task providers: %w", err)
+		return nil, fmt.Errorf("failed to list task providers: %w", err)
 	}
-
-	// 更新缓存
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	// 清空现有缓存
-	r.providers = make(map[string]*commonModels.TaskProvider)
-
-	// 重新填充
-	for _, provider := range providers {
-		r.providers[provider.ModuleName] = provider
-	}
-
-	r.lastRefresh = time.Now()
-	return nil
-}
-
-// ListAllProviders 列出所有已注册的任务提供者
-func (r *TaskProviderRegistry) ListAllProviders(ctx context.Context) ([]*commonModels.TaskProvider, error) {
-	// 检查缓存是否有效
-	r.mu.RLock()
-	cacheValid := time.Since(r.lastRefresh) < r.cacheTTL
-	r.mu.RUnlock()
-
-	if !cacheValid {
-		// 刷新缓存
-		if err := r.RefreshCache(ctx); err != nil {
-			return nil, fmt.Errorf("failed to refresh task provider cache: %w", err)
-		}
-	}
-
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	providers := make([]*commonModels.TaskProvider, 0, len(r.providers))
-	for _, provider := range r.providers {
-		providers = append(providers, provider)
-	}
-
 	return providers, nil
 }
 
 // ValidateStepTaskReferences 校验编排步骤引用的 provider/task_type 已由 TaskProvider capabilities 声明。
-func (r *TaskProviderRegistry) ValidateStepTaskReferences(ctx context.Context, tenantID uint, steps models.Steps) error {
+func (r *TaskProviderResolver) ValidateStepTaskReferences(ctx context.Context, tenantID uint, steps models.Steps) error {
 	capabilityCache := map[string]*taskprovider.TaskCapability{}
 	contractCache := map[string]*taskprovider.ExecutionContract{}
 	contractsByStepID := map[string]*taskprovider.ExecutionContract{}
@@ -312,7 +264,7 @@ func executionSchemaAtPath(schema map[string]interface{}, path []string) (map[st
 	return current, true
 }
 
-func (r *TaskProviderRegistry) GetTaskExecutionContract(
+func (r *TaskProviderResolver) GetTaskExecutionContract(
 	ctx context.Context,
 	provider *commonModels.TaskProvider,
 	taskType string,
@@ -333,7 +285,7 @@ func (r *TaskProviderRegistry) GetTaskExecutionContract(
 	return contract, nil
 }
 
-func (r *TaskProviderRegistry) GetTaskDetail(ctx context.Context, moduleName, taskType string, taskID, tenantID uint) (map[string]interface{}, error) {
+func (r *TaskProviderResolver) GetTaskDetail(ctx context.Context, moduleName, taskType string, taskID, tenantID uint) (map[string]interface{}, error) {
 	provider, err := r.GetProvider(ctx, strings.TrimSpace(moduleName))
 	if err != nil {
 		return nil, err
@@ -355,7 +307,7 @@ func (r *TaskProviderRegistry) GetTaskDetail(ctx context.Context, moduleName, ta
 	return payload, nil
 }
 
-func (r *TaskProviderRegistry) getTaskDetailPayload(
+func (r *TaskProviderResolver) getTaskDetailPayload(
 	ctx context.Context,
 	provider *commonModels.TaskProvider,
 	taskType string,

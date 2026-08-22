@@ -218,10 +218,15 @@ func main() {
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
 
-	// ========== 模块注册（注册到 System service_registry）==========
+	// ========== 模块定义、运行实例与 TaskProvider 声明发布 ==========
 	if systemRuntimeClient != nil {
+		taskProvider, err := service.TransferTaskProviderDeclaration()
+		if err != nil {
+			log.Fatalf("构建 Transfer TaskProvider 声明失败: %v", err)
+		}
 		systemRuntimeClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
 			ModuleName: "transfer", ModuleURL: serviceURL, RoutePrefix: "/transfer", HealthCheckURL: serviceURL + "/health",
+			TaskProvider: taskProvider,
 			Metadata: map[string]interface{}{
 				"module": "transfer",
 				"capabilities": map[string]interface{}{
@@ -236,27 +241,6 @@ func main() {
 				ReadPermission: transferauthorization.PermissionTransferConfigurationRead, UpdatePermission: transferauthorization.PermissionTransferConfigurationUpdate,
 			}}},
 		})
-	}
-
-	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
-	if systemRuntimeClient != nil {
-		taskProviderRegistry := service.NewTaskProviderRegistryService(systemRuntimeClient, serviceURL)
-
-		// 后台异步注册（不阻塞启动，支持重试）
-		go func() {
-			time.Sleep(2 * time.Second) // 等待服务完全启动
-			maxRetries := 5
-			for attempt := 1; attempt <= maxRetries; attempt++ {
-				if err := taskProviderRegistry.Register(context.Background()); err != nil {
-					log.Printf("⚠️  任务提供者注册失败 (尝试 %d/%d): %v", attempt, maxRetries, err)
-					time.Sleep(time.Duration(attempt*2) * time.Second) // 指数退避
-					continue
-				}
-				log.Printf("✅ Transfer 模块已注册到 task_providers")
-				return
-			}
-			log.Printf("❌ 任务提供者注册失败（已达最大重试次数：%d）", maxRetries)
-		}()
 	}
 
 	// 启动服务器

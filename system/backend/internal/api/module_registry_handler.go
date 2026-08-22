@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	commonapi "github.com/addp/common/api"
 	commonauthmiddleware "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/system/i18n"
@@ -85,7 +86,7 @@ func (h *ModuleRegistryHandler) HeartbeatService(c *gin.Context) {
 		return
 	}
 	if err := h.service.SendHeartbeat(req.ModuleName, req.InstanceID); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgModuleRuntimeInstanceMissing)})
 			return
 		}
@@ -123,6 +124,96 @@ func (h *ModuleRegistryHandler) ListModulesService(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"modules": modules, "count": len(modules)})
+}
+
+// ListModulesPlatform godoc
+// @Summary      查询平台模块定义与运行实例 | List platform module definitions and runtime instances
+// @Description  平台系统管理员读取持久模块定义及 Backend、Worker、Scheduler 当前租约投影 | A platform system administrator reads persistent module definitions and current Backend, Worker, and Scheduler lease projections
+// @Tags         平台模块管理 | Platform Module Management
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200 {object} object{modules=[]models.ModuleInfo,count=int}
+// @Failure      401 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["platform.module.read"]
+// @Router       /platform/modules [get]
+func (h *ModuleRegistryHandler) ListModulesPlatform(c *gin.Context) {
+	modules, err := h.service.ListModules()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"modules": modules, "count": len(modules)})
+}
+
+// GetModulePlatform godoc
+// @Summary      查询平台模块详情 | Get platform module details
+// @Tags         平台模块管理 | Platform Module Management
+// @Produce      json
+// @Security     BearerAuth
+// @Param        module_name path string true "模块名 | Module name"
+// @Success      200 {object} models.ModuleInfo
+// @Failure      401 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["platform.module.read"]
+// @Router       /platform/modules/{module_name} [get]
+func (h *ModuleRegistryHandler) GetModulePlatform(c *gin.Context) {
+	module, err := h.service.GetModule(c.Param("module_name"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgModuleNotFound)})
+		return
+	}
+	c.JSON(http.StatusOK, module)
+}
+
+// UpdateModulePlatform godoc
+// @Summary      更新平台模块启用状态 | Update platform module enabled state
+// @Description  只更新管理员 enabled 意图；运行实例健康仍由注册、心跳和租约决定 | Updates only the administrator enabled intent; runtime instance health remains determined by registration, heartbeat, and lease
+// @Tags         平台模块管理 | Platform Module Management
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        module_name path string true "模块名 | Module name"
+// @Param        request body models.ModuleDefinitionUpdateRequest true "模块定义更新 | Module definition update"
+// @Success      200 {object} models.ModuleInfo
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      401 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["platform.module.update"]
+// @Router       /platform/modules/{module_name} [put]
+func (h *ModuleRegistryHandler) UpdateModulePlatform(c *gin.Context) {
+	var req models.ModuleDefinitionUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	module, err := h.service.UpdateModuleDefinition(c.Param("module_name"), &req)
+	switch {
+	case errors.Is(err, service.ErrModuleDefinitionVersionConflict):
+		c.JSON(http.StatusConflict, gin.H{
+			"error": commoni18n.T(c, sysi18n.MsgModuleVersionConflict), "error_code": "resource_version_conflict",
+		})
+		return
+	case errors.Is(err, service.ErrInvalidModuleRegistration):
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgModuleRegistrationInvalid)})
+		return
+	case err != nil:
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgModuleNotFound)})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, module)
 }
 
 // ListConfigurationManagementEntries godoc

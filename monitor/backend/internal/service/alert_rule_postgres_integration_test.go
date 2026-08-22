@@ -67,7 +67,8 @@ func TestIntegrationPostgresAlertRuleLifecycleAndRoutedOutbox(t *testing.T) {
 		monitorTaskCapabilityForTest(commonExecution.TaskTypeWorkflow, false),
 	))
 	ruleService := NewAlertRuleService(db, alertService, fakeTaskProviderLister{providers: []*commonModels.TaskProvider{{
-		ModuleName: commonExecution.ModuleDevelop, Capabilities: &capabilities, IsEnabled: true,
+		ModuleName: commonExecution.ModuleDevelop, Enabled: true,
+		TaskProviderDeclaration: commonModels.TaskProviderDeclaration{Capabilities: &capabilities},
 	}}})
 	rule, err := ruleService.Create(context.Background(), CreateAlertRuleInput{
 		TenantID: tenantID, Name: "latest failure", Module: commonExecution.ModuleDevelop,

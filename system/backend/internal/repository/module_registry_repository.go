@@ -1,9 +1,12 @@
 package repository
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/system/internal/models"
 	"gorm.io/datatypes"
@@ -12,6 +15,8 @@ import (
 )
 
 type ModuleRegistryRepository struct{ db *gorm.DB }
+
+var ErrModuleDefinitionVersionConflict = errors.New("module definition version conflict")
 
 func NewModuleRegistryRepository(db *gorm.DB) *ModuleRegistryRepository {
 	return &ModuleRegistryRepository{db: db}
@@ -35,28 +40,48 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 	if err != nil {
 		return err
 	}
+	taskProvider, err := marshalRegistryJSON(req.TaskProvider)
+	if err != nil {
+		return err
+	}
 	now := time.Now()
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		definition := models.ModuleDefinition{
 			ModuleName: req.ModuleName, RoutePrefix: req.RoutePrefix, Enabled: true,
-			ConfigurationManagement: configuration,
-		}
-		definitionUpdates := map[string]interface{}{
-			"route_prefix": req.RoutePrefix,
-			"updated_at":   now,
-		}
-		// Worker/Scheduler 通常不携带模块级声明，不能因此清空 Backend 已发布的定义。
-		if req.ConfigurationManagement != nil {
-			definitionUpdates["configuration_management"] = configuration
+			Version: 1, ConfigurationManagement: configuration, TaskProvider: taskProvider,
 		}
 		if err := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "module_name"}},
-			DoUpdates: clause.Assignments(definitionUpdates),
+			DoNothing: true,
 		}).Create(&definition).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("module_name = ?", req.ModuleName).First(&definition).Error; err != nil {
 			return err
+		}
+		definitionUpdates := map[string]interface{}{}
+		if definition.RoutePrefix != req.RoutePrefix {
+			definitionUpdates["route_prefix"] = req.RoutePrefix
+		}
+		// Worker/Scheduler 不携带模块级声明，不能因此清空 Backend 已发布的定义。
+		if req.ConfigurationManagement != nil && !bytes.Equal(definition.ConfigurationManagement, configuration) {
+			definitionUpdates["configuration_management"] = configuration
+		}
+		// Backend 是 TaskProvider 角色声明的唯一发布者。Backend 显式不携带声明
+		// 表示撤销该角色；Worker/Scheduler 的 nil 只表示不参与声明维护。
+		if req.Role == models.ModuleRuntimeRoleBackend && !bytes.Equal(definition.TaskProvider, taskProvider) {
+			if req.TaskProvider == nil {
+				definitionUpdates["task_provider"] = nil
+			} else {
+				definitionUpdates["task_provider"] = taskProvider
+			}
+		}
+		if len(definitionUpdates) > 0 {
+			definitionUpdates["version"] = gorm.Expr("version + 1")
+			definitionUpdates["updated_at"] = now
+			if err := tx.Model(&models.ModuleDefinition{}).Where("id = ?", definition.ID).Updates(definitionUpdates).Error; err != nil {
+				return err
+			}
 		}
 		instance := models.ModuleRuntimeInstance{
 			ModuleDefinitionID: definition.ID, InstanceID: req.InstanceID, Role: req.Role,
@@ -73,6 +98,29 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 			}),
 		}).Create(&instance).Error
 	})
+}
+
+func (r *ModuleRegistryRepository) UpdateEnabled(moduleName string, enabled bool, version int64) (*models.ModuleDefinition, error) {
+	now := time.Now()
+	result := r.db.Model(&models.ModuleDefinition{}).
+		Where("module_name = ? AND version = ?", moduleName, version).
+		Updates(map[string]interface{}{
+			"enabled": enabled, "version": gorm.Expr("version + 1"), "updated_at": now,
+		})
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected != 1 {
+		var count int64
+		if err := r.db.Model(&models.ModuleDefinition{}).Where("module_name = ?", moduleName).Count(&count).Error; err != nil {
+			return nil, err
+		}
+		if count == 0 {
+			return nil, commonapi.ErrNotFound
+		}
+		return nil, ErrModuleDefinitionVersionConflict
+	}
+	return r.GetModule(moduleName)
 }
 
 func (r *ModuleRegistryRepository) UpdateHeartbeat(moduleName, instanceID string, leaseDuration time.Duration) error {

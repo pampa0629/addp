@@ -16,6 +16,9 @@ other = "缺少 module_name 参数"
 [orchestrator.error.provider_not_found]
 other = "未找到任务提供者"
 
+[orchestrator.error.provider_unavailable]
+other = "任务提供者当前不可用，请在对应模块 Backend 恢复后重试"
+
 [orchestrator.error.provider_not_configured]
 other = "任务提供者未配置完整的 API 信息"
 

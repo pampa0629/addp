@@ -151,9 +151,9 @@ func (s *Scheduler) triggerOrchestration(ctx context.Context, orchID uint) error
 		ctx,
 		fmt.Sprintf("%d", *orch.AuthorizationSubjectID),
 		commonClient.TaskAuthorizationSubjectRequest{
-			OwnerModule: commonExecution.ModuleOrchestrator,
-			TaskType: commonExecution.TaskTypeOrchestration,
-			TaskRef: orch.AuthorizationRef.String(),
+			OwnerModule:    commonExecution.ModuleOrchestrator,
+			TaskType:       commonExecution.TaskTypeOrchestration,
+			TaskRef:        orch.AuthorizationRef.String(),
 			DefinitionHash: *orch.AuthorizationDefinitionHash,
 		},
 	)

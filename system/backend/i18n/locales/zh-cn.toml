@@ -103,6 +103,9 @@ other = "审计日志已创建"
 [system.module.not_found]
 other = "模块不存在"
 
+[system.task_provider.not_found]
+other = "模块未声明 TaskProvider 角色"
+
 [system.module.registered]
 other = "模块注册成功"
 
@@ -117,6 +120,9 @@ other = "模块运行实例注册信息无效"
 
 [system.module.runtime_instance_missing]
 other = "模块运行实例不存在，请先重新注册"
+
+[system.module.version_conflict]
+other = "模块定义已被其他操作修改，请刷新后重试"
 
 [system.engine.identity_immutable]
 other = "引擎物理端点不可原地修改，请创建新的引擎实例"

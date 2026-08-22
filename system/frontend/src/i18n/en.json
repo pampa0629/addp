@@ -9,11 +9,65 @@
       "systemMgmt": "System",
       "iam": "Identity & Access",
       "securityPolicy": "IAM Security Policy",
+      "moduleMgmt": "Modules",
       "engineMgmt": "Engines",
       "appMgmt": "Applications",
       "cleanup": "Resource Reclaim",
       "logout": "Logout",
       "logoutSuccess": "Logged out successfully"
+    },
+    "module": {
+      "title": "Module Management",
+      "description": "Manage persistent module enablement and observe live Backend, Worker, and Scheduler leases.",
+      "refresh": "Refresh",
+      "reload": "Reload",
+      "refreshed": "Module state refreshed",
+      "loadFailed": "Failed to load modules",
+      "updateFailed": "Failed to update module",
+      "conflict": "The module definition was changed by another operation",
+      "conflictHint": "Automatic refresh is paused. Reload the latest state before trying again.",
+      "enabledSuccess": "Module enabled",
+      "disabledSuccess": "Module disabled",
+      "enabledAria": "Toggle enabled state for module {name}",
+      "columns": {
+        "name": "Module",
+        "routePrefix": "Route Prefix",
+        "availability": "Routability",
+        "instances": "Runtime Instances",
+        "enabled": "Admin Enabled",
+        "version": "Version",
+        "updatedAt": "Updated At"
+      },
+      "summary": {
+        "definitions": "Module Definitions",
+        "routable": "Routable Modules",
+        "onlineInstances": "Online Instances",
+        "workers": "Worker Instances"
+      },
+      "availability": {
+        "routable": "Routable",
+        "unavailable": "Unavailable"
+      },
+      "status": {
+        "up": "Online",
+        "down": "Offline"
+      },
+      "roles": {
+        "backend": "Backend",
+        "worker": "Worker",
+        "scheduler": "Scheduler"
+      },
+      "instanceSummary": "{online}/{total} online",
+      "instances": {
+        "title": "Runtime Instances ({count})",
+        "empty": "No runtime instance has registered yet",
+        "id": "Instance ID",
+        "role": "Role",
+        "status": "Status",
+        "url": "Service URL",
+        "lastHeartbeat": "Last Heartbeat",
+        "leaseExpiresAt": "Lease Expires"
+      }
     },
     "iam": {
       "title": "Identity & Access Management",

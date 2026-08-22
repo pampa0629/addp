@@ -48,6 +48,14 @@
             <el-icon v-if="data.metadata?.loading" class="task-loading module-loading is-loading">
               <Loading />
             </el-icon>
+            <el-tag
+              v-else-if="!data.metadata?.available"
+              size="small"
+              type="warning"
+              effect="plain"
+            >
+              {{ data.metadata?.enabled ? t('orchestrator.taskPanel.offline') : t('orchestrator.taskPanel.disabled') }}
+            </el-tag>
             <el-badge
               v-else-if="data.metadata?.taskCount"
               :value="data.metadata.taskCount"
@@ -76,7 +84,9 @@
             />
             <el-tooltip
               v-if="data.metadata?.createUrl"
-              :content="t('orchestrator.taskPanel.createTaskTooltip')"
+              :content="data.metadata?.available
+                ? t('orchestrator.taskPanel.createTaskTooltip')
+                : t('orchestrator.taskPanel.providerUnavailable')"
               placement="right"
             >
               <el-button
@@ -84,6 +94,7 @@
                 size="small"
                 link
                 type="primary"
+                :disabled="!data.metadata?.available"
                 @click.stop="openCreateTask(data)"
               >
                 <el-icon><Plus /></el-icon>
@@ -176,6 +187,8 @@ async function loadAllTasks() {
     const providerStates = providers.map(provider => ({
       provider,
       identifier: provider.module_name,
+      available: provider.available === true,
+      enabled: provider.enabled === true,
       taskCapabilities: parseTaskCapabilities(provider.capabilities)
     }))
     treeData.value = providerStates.map(buildProviderNode)
@@ -186,6 +199,7 @@ async function loadAllTasks() {
     // 所有 Provider 共用一个请求队列，每个任务类型完成后原位更新对应节点。
     const scheduleTaskRequest = createConcurrencyLimiter(TASK_REQUEST_CONCURRENCY)
     const failureCounts = await Promise.all(providerStates.map(async providerState => {
+      if (!providerState.available) return 0
       try {
         return await loadProviderTasks(providerState, scheduleTaskRequest)
       } catch (error) {
@@ -256,7 +270,7 @@ function parseCapabilities(capabilities) {
   }
 }
 
-function buildProviderNode({ provider, identifier, taskCapabilities }) {
+function buildProviderNode({ provider, identifier, available, enabled, taskCapabilities }) {
   return {
     id: identifier,
     label: provider.display_name || provider.name || identifier,
@@ -264,13 +278,22 @@ function buildProviderNode({ provider, identifier, taskCapabilities }) {
     metadata: {
       uniqueIdentifier: identifier,
       taskCount: 0,
-      loading: taskCapabilities.length > 0
+      loading: available && taskCapabilities.length > 0,
+      available,
+      enabled
     },
-    children: taskCapabilities.map(taskType => buildTaskTypeNode(identifier, taskType, [], { loading: true }))
+    children: taskCapabilities.map(taskType => buildTaskTypeNode(identifier, taskType, [], {
+      loading: available,
+      available
+    }))
   }
 }
 
-function buildTaskTypeNode(identifier, taskType, tasks, { loading = false, loadFailed = false } = {}) {
+function buildTaskTypeNode(identifier, taskType, tasks, {
+  loading = false,
+  loadFailed = false,
+  available = true
+} = {}) {
   const children = tasks
     .filter(task => task.task_type === taskType.type)
     .map(task => buildTaskNode(identifier, task, taskType))
@@ -287,7 +310,8 @@ function buildTaskTypeNode(identifier, taskType, tasks, { loading = false, loadF
       editUrl: taskType.editUrl,
       taskCount: children.length,
       loading,
-      loadFailed
+      loadFailed,
+      available
     },
     children
   }
@@ -353,6 +377,10 @@ function buildTaskNode(identifier, task, taskTypeDef) {
 }
 
 function openCreateTask(data) {
+  if (!data.metadata?.available) {
+    ElMessage.warning(t('orchestrator.taskPanel.providerUnavailable'))
+    return
+  }
   openOwnerUrl(data.metadata?.createUrl)
 }
 

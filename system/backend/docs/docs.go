@@ -3322,6 +3322,203 @@ const docTemplate = `{
                 ]
             }
         },
+        "/platform/modules": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "平台系统管理员读取持久模块定义及 Backend、Worker、Scheduler 当前租约投影 | A platform system administrator reads persistent module definitions and current Backend, Worker, and Scheduler lease projections",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台模块管理 | Platform Module Management"
+                ],
+                "summary": "查询平台模块定义与运行实例 | List platform module definitions and runtime instances",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "count": {
+                                    "type": "integer"
+                                },
+                                "modules": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_addp_system_internal_models.ModuleInfo"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.module.read"
+                ]
+            }
+        },
+        "/platform/modules/{module_name}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台模块管理 | Platform Module Management"
+                ],
+                "summary": "查询平台模块详情 | Get platform module details",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "模块名 | Module name",
+                        "name": "module_name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ModuleInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.module.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "只更新管理员 enabled 意图；运行实例健康仍由注册、心跳和租约决定 | Updates only the administrator enabled intent; runtime instance health remains determined by registration, heartbeat, and lease",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台模块管理 | Platform Module Management"
+                ],
+                "summary": "更新平台模块启用状态 | Update platform module enabled state",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "模块名 | Module name",
+                        "name": "module_name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "模块定义更新 | Module definition update",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ModuleDefinitionUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ModuleInfo"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.module.update"
+                ]
+            }
+        },
         "/platform/security_policy": {
             "get": {
                 "security": [
@@ -5128,81 +5325,34 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅 Platform Runtime Service Principal 可读取已启用 TaskProvider | Only platform runtime service principals may read enabled TaskProviders",
+                "description": "返回全部 Provider 声明，并按当前模块 Backend 租约动态解析可用性和调用地址 | Returns all Provider declarations and dynamically resolves availability and call address from current module Backend leases",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "运行时注册 | Runtime Registry"
                 ],
-                "summary": "读取 TaskProvider 注册表 | Read TaskProvider registry",
+                "summary": "读取 TaskProvider 模块角色 | Read TaskProvider module roles",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/github_com_addp_system_internal_models.TaskProvider"
+                                "$ref": "#/definitions/models.TaskProvider"
                             }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     }
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "system.runtime_registry.read"
-                ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "平台 Service Principal 只能发布与自身 OAuth Client 对应的 TaskProvider | A platform service principal can only publish the TaskProvider matching its OAuth client",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "运行时注册 | Runtime Registry"
-                ],
-                "summary": "注册当前模块 TaskProvider | Register current module TaskProvider",
-                "parameters": [
-                    {
-                        "description": "TaskProvider 契约 | TaskProvider contract",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.TaskProvider"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.TaskProvider"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.runtime_registry.update"
                 ]
             }
         },
@@ -5213,6 +5363,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "每次读取都重新解析当前有效 Backend；模块离线时仍返回声明但 available=false | Resolves the current valid Backend on every read; an offline module keeps its declaration with available=false",
                 "produces": [
                     "application/json"
                 ],
@@ -5233,11 +5384,17 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.TaskProvider"
+                            "$ref": "#/definitions/models.TaskProvider"
                         }
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
@@ -8370,6 +8527,21 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_system_internal_models.ModuleDefinitionUpdateRequest": {
+            "type": "object",
+            "required": [
+                "enabled",
+                "version"
+            ],
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_system_internal_models.ModuleInfo": {
             "type": "object",
             "properties": {
@@ -8397,8 +8569,14 @@ const docTemplate = `{
                 "route_prefix": {
                     "type": "string"
                 },
+                "task_provider": {
+                    "$ref": "#/definitions/models.TaskProviderDeclaration"
+                },
                 "updated_at": {
                     "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -8435,6 +8613,9 @@ const docTemplate = `{
                 },
                 "route_prefix": {
                     "type": "string"
+                },
+                "task_provider": {
+                    "$ref": "#/definitions/models.TaskProviderDeclaration"
                 }
             }
         },
@@ -8503,57 +8684,6 @@ const docTemplate = `{
                 "total": {
                     "description": "期望模块数",
                     "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.TaskProvider": {
-            "type": "object",
-            "properties": {
-                "base_url": {
-                    "description": "API 配置",
-                    "type": "string"
-                },
-                "capabilities": {
-                    "description": "能力描述（JSON 格式，含 task.capabilities/v2、task_capabilities 等）",
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "display_name": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "is_enabled": {
-                    "description": "状态",
-                    "type": "boolean"
-                },
-                "module_name": {
-                    "description": "'transfer', 'meta', 'develop'",
-                    "type": "string"
-                },
-                "task_cancel_endpoint": {
-                    "type": "string"
-                },
-                "task_detail_endpoint": {
-                    "type": "string"
-                },
-                "task_execute_endpoint": {
-                    "type": "string"
-                },
-                "task_list_endpoint": {
-                    "type": "string"
-                },
-                "task_status_endpoint": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
                 }
             }
         },
@@ -10391,6 +10521,107 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "user_agent": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.TaskProvider": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean"
+                },
+                "backend_instance_id": {
+                    "type": "string"
+                },
+                "base_url": {
+                    "type": "string"
+                },
+                "capabilities": {
+                    "description": "能力描述（JSON 格式，含 task.capabilities/v2、task_capabilities 等）",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "description": "描述",
+                    "type": "string"
+                },
+                "display_name": {
+                    "description": "显示名称",
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "module_name": {
+                    "type": "string"
+                },
+                "module_version": {
+                    "type": "integer"
+                },
+                "task_cancel_endpoint": {
+                    "description": "任务取消端点",
+                    "type": "string"
+                },
+                "task_detail_endpoint": {
+                    "description": "任务详情端点",
+                    "type": "string"
+                },
+                "task_execute_endpoint": {
+                    "description": "任务执行端点",
+                    "type": "string"
+                },
+                "task_list_endpoint": {
+                    "description": "任务列表端点",
+                    "type": "string"
+                },
+                "task_status_endpoint": {
+                    "description": "任务状态端点",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.TaskProviderDeclaration": {
+            "type": "object",
+            "properties": {
+                "capabilities": {
+                    "description": "能力描述（JSON 格式，含 task.capabilities/v2、task_capabilities 等）",
+                    "type": "string"
+                },
+                "description": {
+                    "description": "描述",
+                    "type": "string"
+                },
+                "display_name": {
+                    "description": "显示名称",
+                    "type": "string"
+                },
+                "task_cancel_endpoint": {
+                    "description": "任务取消端点",
+                    "type": "string"
+                },
+                "task_detail_endpoint": {
+                    "description": "任务详情端点",
+                    "type": "string"
+                },
+                "task_execute_endpoint": {
+                    "description": "任务执行端点",
+                    "type": "string"
+                },
+                "task_list_endpoint": {
+                    "description": "任务列表端点",
+                    "type": "string"
+                },
+                "task_status_endpoint": {
+                    "description": "任务状态端点",
                     "type": "string"
                 }
             }

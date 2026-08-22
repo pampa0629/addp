@@ -44,30 +44,27 @@ graph TB
         OrchestratorProvider[Orchestrator 模块]
     end
 
-    subgraph "TaskProvider 注册中心 (System 模块)"
-        Registry[task_providers 表]
+    subgraph "模块控制面 (System 模块)"
+        Definitions[module_definitions<br/>TaskProvider 声明]
+        Instances[module_runtime_instances<br/>Backend 租约]
+        Projection[动态 TaskProvider 投影<br/>available + base_url]
 
-        Meta --> |注册 capabilities| MetaCap[Meta task_capabilities<br/>scan]
-        Transfer --> |注册 capabilities| TransferCap[Transfer task_capabilities<br/>sync]
-        Develop --> |注册 capabilities| DevelopCap[Develop task_capabilities<br/>query<br/>workflow<br/>script]
-        Manager --> |注册 capabilities| ManagerCap[Manager task_capabilities<br/>vector_tile_cache_generation<br/>vector_materialized_view_generation<br/>embedding]
-        Quality --> |注册 capabilities| QualityCap[Quality task_capabilities<br/>check]
-        Graph --> |注册 capabilities| GraphCap[Graph task_capabilities<br/>kg_build]
-        OrchestratorProvider --> |注册 capabilities| OrchestratorCap[Orchestrator task_capabilities<br/>orchestration]
-
-        MetaCap --> Registry
-        TransferCap --> Registry
-        DevelopCap --> Registry
-        ManagerCap --> Registry
-        QualityCap --> Registry
-        GraphCap --> Registry
-        OrchestratorCap --> Registry
+        Definitions --> Projection
+        Instances --> Projection
     end
+
+    Meta --> |模块注册 + capabilities| Definitions
+    Transfer --> |模块注册 + capabilities| Definitions
+    Develop --> |模块注册 + capabilities| Definitions
+    Manager --> |模块注册 + capabilities| Definitions
+    Quality --> |模块注册 + capabilities| Definitions
+    Graph --> |模块注册 + capabilities| Definitions
+    OrchestratorProvider --> |模块注册 + capabilities| Definitions
 
     subgraph "任务编排 (Orchestrator 模块)"
         Orchestrator[Orchestrator 模块]
 
-        Orchestrator --> |发现| Registry
+        Orchestrator --> |每次使用时发现| Projection
         Orchestrator --> |选择任务| Tasks[任务列表]
         Orchestrator --> |配置参数| Params[参数配置]
         Orchestrator --> |设置依赖| DAG[DAG 依赖关系]
@@ -87,19 +84,21 @@ graph TB
     classDef orchestrator fill:#e8f5e9,stroke:#1b5e20
 
     class Meta,Transfer,Develop,Manager,Quality,Graph,OrchestratorProvider provider
-    class Registry,MetaCap,TransferCap,DevelopCap,ManagerCap,QualityCap,GraphCap,OrchestratorCap registry
+    class Definitions,Instances,Projection registry
     class Orchestrator,Tasks,Params,DAG,Call orchestrator
 ```
 
 ### 任务库工作原理
 
-**步骤 1: 模块注册任务能力**
-- 各模块在启动时向 System 模块注册自己的 TaskProvider 能力
-- 注册信息包括:模块名、标准 API endpoint，以及 `task_capabilities[]` 中声明的任务类型、定义 schema、执行 schema 和调度/取消能力
+**步骤 1: 模块注册时一并发布任务能力**
+- Backend 通过唯一的模块注册调用同时发布运行实例和可选 TaskProvider 声明，不存在独立 TaskProvider 注册路径
+- 声明保存在 `module_definitions.task_provider`，包括标准 API endpoint，以及 `task_capabilities[]` 中的任务类型、定义 schema、执行 schema 和调度/取消能力
+- Provider ID 复用稳定的模块定义 ID；重复相同声明是幂等的，只有声明变化才递增模块版本
 
-**步骤 2: Orchestrator 发现任务**
-- Orchestrator 通过 System 中的 TaskProvider 注册中心发现可用任务能力
-- 前端展示任务列表供用户选择
+**步骤 2: Orchestrator 动态发现任务**
+- System 每次读取都用当前有效 Backend 租约投影 `available` 和 `base_url`；运行地址不写入模块定义
+- Orchestrator 不缓存运行可用性，在查询、详情和执行前重新解析
+- 前端保留离线模块的声明，但禁止选择和调用；模块 Backend 恢复后，刷新即可继续使用
 
 **步骤 3: 配置编排**
 - 用户选择任务、配置参数、设置依赖关系

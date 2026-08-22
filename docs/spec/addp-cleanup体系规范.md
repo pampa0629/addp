@@ -490,7 +490,7 @@ cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。
 
 - cleanup 不能声明为可编排任务类型。
 - cleanup 不能出现在 Orchestrator 任务选择列表。
-- 资源回收执行方不应通过 TaskProvider 注册 cleanup 能力。
+- 资源回收执行方不应在 TaskProvider capabilities 中声明 cleanup 能力。
 - cleanup 必须写入 `common.task_executions`，但只能作为系统运维执行记录，用于 Monitor 展示、审计和排障。
 - 资源回收 scan / execute 分别产生 execution；execute 通过 `based_on_scan` 和 execution metadata 关联 scan。
 

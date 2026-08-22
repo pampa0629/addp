@@ -10,11 +10,14 @@ import (
 
 	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/common/logger"
+	commonmodels "github.com/addp/common/models"
+	"github.com/addp/common/taskprovider"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 )
 
 var ErrInvalidModuleRegistration = errors.New("invalid module registration")
+var ErrModuleDefinitionVersionConflict = errors.New("module definition version conflict")
 
 type ModuleRegistryService struct {
 	repo          *repository.ModuleRegistryRepository
@@ -49,6 +52,12 @@ func (s *ModuleRegistryService) Register(req *models.ModuleRegistrationRequest) 
 	if err := commonconfiguration.ValidateManagementDeclaration(req.ModuleName, req.ConfigurationManagement); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidModuleRegistration, err)
 	}
+	if req.Role != models.ModuleRuntimeRoleBackend && req.TaskProvider != nil {
+		return fmt.Errorf("%w: only backend instances may publish task_provider", ErrInvalidModuleRegistration)
+	}
+	if err := taskprovider.ValidateDeclaration(req.TaskProvider); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidModuleRegistration, err)
+	}
 	if err := s.repo.Register(req, s.leaseDuration); err != nil {
 		logger.L().Error("模块运行实例注册失败", "module", req.ModuleName, "instance_id", req.InstanceID, "error", err)
 		return err
@@ -78,6 +87,21 @@ func (s *ModuleRegistryService) GetModule(moduleName string) (*models.ModuleInfo
 
 func (s *ModuleRegistryService) ListModules() ([]*models.ModuleInfo, error) {
 	return s.listModules(false)
+}
+
+func (s *ModuleRegistryService) UpdateModuleDefinition(moduleName string, req *models.ModuleDefinitionUpdateRequest) (*models.ModuleInfo, error) {
+	moduleName = strings.TrimSpace(moduleName)
+	if moduleName == "" || req == nil || req.Enabled == nil || req.Version < 1 {
+		return nil, fmt.Errorf("%w: enabled and positive version are required", ErrInvalidModuleRegistration)
+	}
+	definition, err := s.repo.UpdateEnabled(moduleName, *req.Enabled, req.Version)
+	if errors.Is(err, repository.ErrModuleDefinitionVersionConflict) {
+		return nil, ErrModuleDefinitionVersionConflict
+	}
+	if err != nil {
+		return nil, err
+	}
+	return s.convertToModuleInfo(definition, false), nil
 }
 
 // ListActiveModules 只返回已启用且至少有一个租约有效 Backend 实例的模块。
@@ -165,9 +189,16 @@ func (s *ModuleRegistryService) StartCleanupTask(ctx context.Context) {
 func (s *ModuleRegistryService) convertToModuleInfo(definition *models.ModuleDefinition, activeInstancesOnly bool) *models.ModuleInfo {
 	var configuration *commonconfiguration.ManagementDeclaration
 	if len(definition.ConfigurationManagement) > 0 {
-		var declaration commonconfiguration.ManagementDeclaration
+		var declaration *commonconfiguration.ManagementDeclaration
 		if json.Unmarshal(definition.ConfigurationManagement, &declaration) == nil {
-			configuration = &declaration
+			configuration = declaration
+		}
+	}
+	var provider *commonmodels.TaskProviderDeclaration
+	if len(definition.TaskProvider) > 0 {
+		var declaration *commonmodels.TaskProviderDeclaration
+		if json.Unmarshal(definition.TaskProvider, &declaration) == nil {
+			provider = declaration
 		}
 	}
 	now := time.Now()
@@ -193,7 +224,9 @@ func (s *ModuleRegistryService) convertToModuleInfo(definition *models.ModuleDef
 	}
 	return &models.ModuleInfo{
 		ID: definition.ID, ModuleName: definition.ModuleName, RoutePrefix: definition.RoutePrefix,
-		Enabled: definition.Enabled, Instances: instances, ConfigurationManagement: configuration,
-		CreatedAt: definition.CreatedAt, UpdatedAt: definition.UpdatedAt,
+		Enabled: definition.Enabled, Version: definition.Version,
+		Instances: instances, ConfigurationManagement: configuration,
+		TaskProvider: provider,
+		CreatedAt:    definition.CreatedAt, UpdatedAt: definition.UpdatedAt,
 	}
 }

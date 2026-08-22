@@ -327,6 +327,7 @@ export const SIDEBAR_MENUS = {
       {
         index: '/system/iam', icon: Lock, label: 'console.menus.system.iam',
       },
+      { index: '/system/modules',      icon: Operation,  label: 'console.menus.system.modules', recentLabel: 'console.menus.system.recentModules', permissions: ['platform.module.read'] },
       { index: '/system/engines',      icon: Connection, label: 'console.menus.system.engines', recentLabel: 'console.menus.system.recentEngines', permissions: ['system.engine.read'] },
       { index: '/configuration',       icon: SetUp,      label: 'console.configuration.title', recentLabel: 'console.menus.system.recentConfiguration' },
       { index: '/system/applications', icon: Key,        label: 'console.menus.system.applications', recentLabel: 'console.menus.system.recentApplications', permissions: ['system.application.read'] },

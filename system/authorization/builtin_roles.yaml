@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 46
+manifest_version: 47
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -231,6 +231,8 @@ roles:
       - manager.configuration.update
       - monitor.configuration.read
       - monitor.configuration.update
+      - platform.module.read
+      - platform.module.update
       - platform.tenant.close
       - platform.tenant.create
       - platform.tenant.initialize

@@ -748,6 +748,85 @@ func migrationFilesBeforeAndThrough(t *testing.T, boundary string) (fstest.MapFS
 	return before, through
 }
 
+func TestTaskProviderModuleDeclarationForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset TaskProvider migration schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	through71, through72 := migrationFilesBeforeAndThrough(t, "000072_task_provider_module_declaration.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through71, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 71: %v", err)
+	}
+	if _, err := db.Exec(`
+		CREATE TABLE system.task_providers (
+			module_name varchar(50) PRIMARY KEY,
+			display_name varchar(100) NOT NULL,
+			description text NOT NULL,
+			task_list_endpoint varchar(255) NOT NULL,
+			task_detail_endpoint varchar(255) NOT NULL,
+			task_execute_endpoint varchar(255) NOT NULL,
+			task_status_endpoint varchar(255) NOT NULL,
+			task_cancel_endpoint varchar(255) NOT NULL DEFAULT '',
+			capabilities jsonb NOT NULL
+		);
+		INSERT INTO system.module_definitions (module_name, route_prefix)
+		VALUES ('meta', '/meta');
+		INSERT INTO system.task_providers (
+			module_name, display_name, description,
+			task_list_endpoint, task_detail_endpoint, task_execute_endpoint, task_status_endpoint,
+			capabilities
+		) VALUES (
+			'meta', 'Meta', 'Metadata tasks',
+			'/api/v1/meta/tasks', '/api/v1/meta/tasks/{task_type}/{id}',
+			'/api/v1/meta/tasks/{task_type}/{id}/execute', '/api/v1/meta/executions/{execution_id}',
+			'{"schema_version":"task.capabilities/v2","task_capabilities":[]}'::jsonb
+		)
+	`); err != nil {
+		t.Fatalf("seed legacy TaskProvider: %v", err)
+	}
+
+	var moduleID int64
+	if err := db.QueryRow(`SELECT id FROM system.module_definitions WHERE module_name = 'meta'`).Scan(&moduleID); err != nil {
+		t.Fatalf("read module ID before migration: %v", err)
+	}
+	if err := (&Runner{DSN: dsn, FS: through72, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migration 72: %v", err)
+	}
+
+	var migratedID, version int64
+	var displayName, taskListEndpoint string
+	if err := db.QueryRow(`
+		SELECT id, version, task_provider->>'display_name', task_provider->>'task_list_endpoint'
+		FROM system.module_definitions WHERE module_name = 'meta'
+	`).Scan(&migratedID, &version, &displayName, &taskListEndpoint); err != nil {
+		t.Fatalf("read migrated TaskProvider declaration: %v", err)
+	}
+	var legacyTableExists bool
+	if err := db.QueryRow(`SELECT to_regclass('system.task_providers') IS NOT NULL`).Scan(&legacyTableExists); err != nil {
+		t.Fatalf("inspect retired TaskProvider table: %v", err)
+	}
+	if migratedID != moduleID || version != 2 || displayName != "Meta" ||
+		taskListEndpoint != "/api/v1/meta/tasks" || legacyTableExists {
+		t.Fatalf(
+			"migrated TaskProvider id=%d version=%d display=%q list=%q legacy_table=%t",
+			migratedID, version, displayName, taskListEndpoint, legacyTableExists,
+		)
+	}
+}
+
 func seedInitializedMigrationTenant(t *testing.T, db *sql.DB, code, name string) (int64, int64) {
 	t.Helper()
 	var administratorID, tenantID int64
@@ -1091,6 +1170,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	assertExecutionAuthorizationConstraints(t, db)
 	assertEngineRuntimeDescriptorConstraints(t, db)
 	assertTaskExecutionRuntimeConstraints(t, db)
+	assertModuleManagementControlPlane(t, db)
 	assertDuckDBRuntimeConstraints(t, db)
 	assertAssetServiceRuntimeConstraints(t, db)
 	assertAssetPortalBoundaryConstraints(t, db)
@@ -1126,6 +1206,50 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	}
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "legacy system IAM schema") {
 		t.Fatalf("Run() error = %v, want legacy-schema rejection", err)
+	}
+}
+
+func assertModuleManagementControlPlane(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var versionColumnCount, versionConstraintCount, permissionCount, rolePermissionCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM information_schema.columns
+		WHERE table_schema = 'system' AND table_name = 'module_definitions'
+		  AND column_name = 'version' AND data_type = 'bigint' AND is_nullable = 'NO'
+	`).Scan(&versionColumnCount); err != nil {
+		t.Fatalf("count module definition version column: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*) FROM pg_constraint
+		WHERE conrelid = 'system.module_definitions'::regclass
+		  AND conname = 'module_definitions_version_positive'
+	`).Scan(&versionConstraintCount); err != nil {
+		t.Fatalf("count module definition version constraint: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*) FROM system.permissions
+		WHERE permission_key IN ('platform.module.read', 'platform.module.update')
+		  AND status = 'active'
+	`).Scan(&permissionCount); err != nil {
+		t.Fatalf("count module management permissions: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions AS role_permission
+		JOIN system.roles AS role ON role.id = role_permission.role_id
+		JOIN system.permissions AS permission ON permission.id = role_permission.permission_id
+		WHERE role.tenant_id IS NULL
+		  AND role.role_key = 'platform.system_administrator'
+		  AND permission.permission_key IN ('platform.module.read', 'platform.module.update')
+	`).Scan(&rolePermissionCount); err != nil {
+		t.Fatalf("count platform system administrator module management permissions: %v", err)
+	}
+	if versionColumnCount != 1 || versionConstraintCount != 1 || permissionCount != 2 || rolePermissionCount != 2 {
+		t.Fatalf(
+			"module management version_column=%d version_constraint=%d permissions=%d role_permissions=%d",
+			versionColumnCount, versionConstraintCount, permissionCount, rolePermissionCount,
+		)
 	}
 }
 
@@ -1939,8 +2063,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount < 269 || disabledPermissionCount != 67 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 269 and exactly 67", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount < 271 || disabledPermissionCount != 65 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 271 and exactly 65", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string

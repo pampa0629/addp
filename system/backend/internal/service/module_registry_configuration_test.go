@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
@@ -194,6 +195,74 @@ func TestModuleRegistrySeparatesDefinitionFromRuntimeInstanceLease(t *testing.T)
 	}
 	if err := registry.SendHeartbeat("manager", "missing-instance"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("missing instance heartbeat error = %v", err)
+	}
+}
+
+func TestModuleDefinitionAdminUpdateUsesVersionAndKeepsRegistrationIdempotent(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}); err != nil {
+		t.Fatal(err)
+	}
+	registry := NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
+	registration := configurationRegistration("manager", commonconfiguration.ScopePlatformOnly)
+	if err := registry.Register(&registration); err != nil {
+		t.Fatal(err)
+	}
+	module, err := registry.GetModule("manager")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if module.Version != 1 || !module.Enabled {
+		t.Fatalf("initial module = %#v", module)
+	}
+
+	disabled := false
+	updated, err := registry.UpdateModuleDefinition("manager", &models.ModuleDefinitionUpdateRequest{
+		Enabled: &disabled, Version: module.Version,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Enabled || updated.Version != 2 {
+		t.Fatalf("updated module = %#v", updated)
+	}
+	if _, err := registry.UpdateModuleDefinition("manager", &models.ModuleDefinitionUpdateRequest{
+		Enabled: &disabled, Version: 1,
+	}); !errors.Is(err, ErrModuleDefinitionVersionConflict) {
+		t.Fatalf("stale update error = %v, want version conflict", err)
+	}
+
+	if err := registry.Register(&registration); err != nil {
+		t.Fatal(err)
+	}
+	afterIdempotentRegistration, err := registry.GetModule("manager")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterIdempotentRegistration.Version != 2 || afterIdempotentRegistration.Enabled {
+		t.Fatalf("idempotent registration changed administrator state: %#v", afterIdempotentRegistration)
+	}
+
+	registration.RoutePrefix = "/manager-v2"
+	if err := registry.Register(&registration); err != nil {
+		t.Fatal(err)
+	}
+	afterDeclarationChange, err := registry.GetModule("manager")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterDeclarationChange.Version != 3 || afterDeclarationChange.RoutePrefix != "/manager-v2" || afterDeclarationChange.Enabled {
+		t.Fatalf("owner declaration update = %#v", afterDeclarationChange)
+	}
+
+	enabled := true
+	if _, err := registry.UpdateModuleDefinition("missing", &models.ModuleDefinitionUpdateRequest{
+		Enabled: &enabled, Version: 1,
+	}); !errors.Is(err, commonapi.ErrNotFound) {
+		t.Fatalf("missing module update error = %v, want not found", err)
 	}
 }
 

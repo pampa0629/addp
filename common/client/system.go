@@ -240,6 +240,7 @@ type ModuleRegistrationRequest struct {
 	HealthCheckURL          string                                     `json:"health_check_url,omitempty"`
 	Metadata                map[string]interface{}                     `json:"metadata,omitempty"`
 	ConfigurationManagement *commonconfiguration.ManagementDeclaration `json:"configuration_management,omitempty"`
+	TaskProvider            *models.TaskProviderDeclaration            `json:"task_provider,omitempty"`
 }
 
 const (
@@ -253,8 +254,10 @@ type ModuleInfo struct {
 	ModuleName              string                                     `json:"module_name"`
 	RoutePrefix             string                                     `json:"route_prefix"`
 	Enabled                 bool                                       `json:"enabled"`
+	Version                 int64                                      `json:"version"`
 	Instances               []ModuleRuntimeInstanceInfo                `json:"instances"`
 	ConfigurationManagement *commonconfiguration.ManagementDeclaration `json:"configuration_management,omitempty"`
+	TaskProvider            *models.TaskProviderDeclaration            `json:"task_provider,omitempty"`
 	CreatedAt               time.Time                                  `json:"created_at"`
 	UpdatedAt               time.Time                                  `json:"updated_at"`
 }

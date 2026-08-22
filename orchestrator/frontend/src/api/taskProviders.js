@@ -13,8 +13,11 @@ export default {
    *   {
    *     id: 1,
    *     module_name: "meta",
+   *     module_version: 3,
    *     display_name: "元数据",
    *     base_url: "http://localhost:8082",
+   *     enabled: true,
+   *     available: true,
    *     capabilities: {"schema_version":"task.capabilities/v2","task_capabilities":[]}
    *   }
    * ]

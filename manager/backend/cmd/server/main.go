@@ -469,11 +469,17 @@ func main() {
 		vectorTileSetTaskSvc.SetMetaScanSubmitter(metaClient)
 	}
 
-	// ========== 服务注册（注册到 System service_registry）==========
+	// ========== 模块定义、运行实例与 TaskProvider 声明发布 ==========
 	if systemServiceClient != nil {
+		taskProvider, err := service.ManagerTaskProviderDeclaration()
+		if err != nil {
+			logger.L().Error("构建 Manager TaskProvider 声明失败", "error", err)
+			os.Exit(1)
+		}
 		systemServiceClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
 			ModuleName: "manager", ModuleURL: serviceURL, RoutePrefix: "/manager",
 			HealthCheckURL: serviceURL + "/health",
+			TaskProvider:   taskProvider,
 			Metadata: map[string]interface{}{
 				"capabilities": map[string]interface{}{
 					"cleanup_executor": map[string]interface{}{
@@ -491,32 +497,6 @@ func main() {
 				}},
 			},
 		})
-	}
-
-	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
-	if systemServiceClient != nil {
-		taskProviderRegistry := service.NewTaskProviderRegistryService(
-			systemServiceClient,
-			serviceURL,
-		)
-
-		// 后台异步注册（不阻塞启动，支持重试）
-		go func() {
-			time.Sleep(2 * time.Second) // 等待服务完全启动
-			maxRetries := 5
-			for attempt := 1; attempt <= maxRetries; attempt++ {
-				if err := taskProviderRegistry.Register(context.Background()); err != nil {
-					logger.L().Warn("任务提供者注册失败",
-						"attempt", fmt.Sprintf("%d/%d", attempt, maxRetries),
-						"error", err)
-					time.Sleep(time.Duration(attempt*2) * time.Second) // 指数退避
-					continue
-				}
-				logger.L().Info("✅ Manager 模块已注册到 task_providers")
-				return
-			}
-			logger.L().Error("任务提供者注册失败（已达最大重试次数）", "max_retries", maxRetries)
-		}()
 	}
 
 	// ✅ 注册优雅关闭处理器（关闭所有数据库连接池）

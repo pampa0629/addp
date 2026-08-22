@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
@@ -16,7 +15,7 @@ import (
 )
 
 func TestValidateStepTaskReferencesUsesConcreteTaskExecutionContract(t *testing.T) {
-	registry := taskProviderRegistryForTest(t, map[uint]string{
+	registry := taskProviderResolverForTest(t, map[uint]string{
 		1: executionContractJSON(`{"type":"object","properties":{"limit":{"type":"integer"}},"additionalProperties":false}`),
 	})
 	err := registry.ValidateStepTaskReferences(context.Background(), 7, models.Steps{{
@@ -28,8 +27,21 @@ func TestValidateStepTaskReferencesUsesConcreteTaskExecutionContract(t *testing.
 	}
 }
 
+func TestGetProviderRejectsOfflineDeclarationWithStableError(t *testing.T) {
+	registry := &TaskProviderResolver{
+		loadProvider: func(context.Context, string) (*commonModels.TaskProvider, error) {
+			return &commonModels.TaskProvider{ModuleName: "develop", Enabled: true, Available: false}, nil
+		},
+	}
+
+	_, err := registry.GetProvider(context.Background(), "develop")
+	if !errors.Is(err, ErrTaskProviderUnavailable) {
+		t.Fatalf("GetProvider() error = %v, want ErrTaskProviderUnavailable", err)
+	}
+}
+
 func TestValidateStepTaskReferencesRejectsParameterOutsideConcreteContract(t *testing.T) {
-	registry := taskProviderRegistryForTest(t, map[uint]string{
+	registry := taskProviderResolverForTest(t, map[uint]string{
 		1: executionContractJSON(`{"type":"object","additionalProperties":false}`),
 	})
 	err := registry.ValidateStepTaskReferences(context.Background(), 7, models.Steps{{
@@ -46,7 +58,7 @@ func TestValidateStepTaskReferencesRejectsParameterOutsideConcreteContract(t *te
 }
 
 func TestValidateStepTaskReferencesSeparatesContractsForSameTaskType(t *testing.T) {
-	registry := taskProviderRegistryForTest(t, map[uint]string{
+	registry := taskProviderResolverForTest(t, map[uint]string{
 		1: executionContractJSON(`{"type":"object","properties":{"limit":{"type":"integer"}},"additionalProperties":false}`),
 		2: executionContractJSON(`{"type":"object","properties":{"distance":{"type":"number"}},"additionalProperties":false}`),
 	})
@@ -60,7 +72,7 @@ func TestValidateStepTaskReferencesSeparatesContractsForSameTaskType(t *testing.
 }
 
 func TestValidateStepTaskReferencesAcceptsOnlyDeclaredTypeCompatibleOutputs(t *testing.T) {
-	registry := taskProviderRegistryForTest(t, map[uint]string{
+	registry := taskProviderResolverForTest(t, map[uint]string{
 		1: `{
 			"input_schema":{"type":"object","additionalProperties":false},
 			"input_defaults":{},"input_ui_schema":{},
@@ -88,7 +100,7 @@ func TestValidateStepTaskReferencesAcceptsOnlyDeclaredTypeCompatibleOutputs(t *t
 }
 
 func TestGetTaskExecutionContractRequiresValidTaskDetailContract(t *testing.T) {
-	registry := taskProviderRegistryForTest(t, map[uint]string{
+	registry := taskProviderResolverForTest(t, map[uint]string{
 		1: `{"input_schema":{"type":"object"}}`,
 	})
 	provider, err := registry.GetProvider(context.Background(), "develop")
@@ -102,10 +114,13 @@ func TestGetTaskExecutionContractRequiresValidTaskDetailContract(t *testing.T) {
 }
 
 func TestValidateStepTaskReferencesRejectsUndeclaredAndDeprecatedTaskTypesBeforeDetailCall(t *testing.T) {
-	registry := taskProviderRegistryForTest(t, map[uint]string{})
-	provider := registry.providers["develop"]
+	registry := taskProviderResolverForTest(t, map[uint]string{})
+	provider, err := registry.GetProvider(context.Background(), "develop")
+	if err != nil {
+		t.Fatal(err)
+	}
 	provider.Capabilities = capabilityJSONForTest("query", false)
-	err := registry.ValidateStepTaskReferences(context.Background(), 7, models.Steps{{
+	err = registry.ValidateStepTaskReferences(context.Background(), 7, models.Steps{{
 		ID: "workflow", Name: "Workflow", Provider: "develop", TaskType: "workflow", TaskID: 1,
 	}})
 	if err == nil || !strings.Contains(err.Error(), "not declared") {
@@ -121,7 +136,7 @@ func TestValidateStepTaskReferencesRejectsUndeclaredAndDeprecatedTaskTypesBefore
 	}
 }
 
-func taskProviderRegistryForTest(t *testing.T, contracts map[uint]string) *TaskProviderRegistry {
+func taskProviderResolverForTest(t *testing.T, contracts map[uint]string) *TaskProviderResolver {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.Header.Get("Authorization") != "Bearer tenant-token" {
@@ -145,15 +160,14 @@ func taskProviderRegistryForTest(t *testing.T, contracts map[uint]string) *TaskP
 	tokenSource := registrationServiceTokens("tenant-token")
 	systemClient := commonClient.NewSystemServiceClient(server.URL, tokenSource, server.Client())
 	provider := &commonModels.TaskProvider{
-		ModuleName: "develop", BaseURL: server.URL, TaskDetailEndpoint: "/tasks/{task_type}/{id}",
-		Capabilities: capabilityJSONForTest("workflow", false), IsEnabled: true,
-	}
-	return &TaskProviderRegistry{
-		systemClient: systemClient,
-		providers: map[string]*commonModels.TaskProvider{
-			"develop": provider,
+		ModuleName: "develop", BaseURL: server.URL, Available: true, Enabled: true,
+		TaskProviderDeclaration: commonModels.TaskProviderDeclaration{
+			TaskDetailEndpoint: "/tasks/{task_type}/{id}", Capabilities: capabilityJSONForTest("workflow", false),
 		},
-		cacheTTL: time.Hour, lastRefresh: time.Now(), httpClient: server.Client(),
+	}
+	return &TaskProviderResolver{
+		systemClient: systemClient, httpClient: server.Client(),
+		loadProvider: func(context.Context, string) (*commonModels.TaskProvider, error) { return provider, nil },
 	}
 }
 

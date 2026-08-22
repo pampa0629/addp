@@ -413,10 +413,12 @@
       "system": {
         "label": "System",
         "iam": "Identity & Access",
+        "modules": "Modules",
         "engines": "Engines",
         "applications": "Applications",
         "cleanup": "Resource Reclaim",
         "recentEngines": "Data Engine Management",
+        "recentModules": "Platform Module Management",
         "recentApplications": "System Application Management",
         "recentCleanup": "System Resource Reclaim",
         "recentConfiguration": "Platform Configuration"

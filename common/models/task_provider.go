@@ -2,16 +2,12 @@ package models
 
 import "time"
 
-// TaskProvider 任务提供者(ADDP 内置模块)
-// 供 Orchestrator 查询和调用
-type TaskProvider struct {
-	ID          uint   `json:"id"`
-	ModuleName  string `json:"module_name"`  // 'transfer', 'meta', 'develop', 'manager'
+// TaskProviderDeclaration 是模块定义附带的 TaskProvider 能力声明。
+// 运行地址和管理员启用状态不属于声明。
+type TaskProviderDeclaration struct {
 	DisplayName string `json:"display_name"` // 显示名称
 	Description string `json:"description"`  // 描述
 
-	// API 配置
-	BaseURL             string `json:"base_url"`                       // 服务基础 URL
 	TaskListEndpoint    string `json:"task_list_endpoint"`             // 任务列表端点
 	TaskDetailEndpoint  string `json:"task_detail_endpoint"`           // 任务详情端点
 	TaskExecuteEndpoint string `json:"task_execute_endpoint"`          // 任务执行端点
@@ -20,9 +16,19 @@ type TaskProvider struct {
 
 	// 能力描述（JSON 格式，含 task.capabilities/v2、task_capabilities 等）
 	Capabilities *JSONString `json:"capabilities,omitempty"`
+}
 
-	// 状态
-	IsEnabled bool `json:"is_enabled"` // 是否启用
+// TaskProvider 是 System 根据模块定义和当前 Backend 租约生成的读取投影。
+type TaskProvider struct {
+	ID            uint   `json:"id"`
+	ModuleName    string `json:"module_name"`
+	ModuleVersion int64  `json:"module_version"`
+	Enabled       bool   `json:"enabled"`
+	TaskProviderDeclaration
+
+	Available         bool   `json:"available"`
+	BaseURL           string `json:"base_url"`
+	BackendInstanceID string `json:"backend_instance_id"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

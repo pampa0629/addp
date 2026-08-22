@@ -86,8 +86,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	}
 	runtime.TaskAuthorizationSubjectHandler = taskAuthorizationSubjectHandler
 	appService := service.NewApplicationService(appRepo)
-	taskProviderService := service.NewTaskProviderService(db)
 	moduleRegistryService := service.NewModuleRegistryService(moduleRegistryRepo)
+	taskProviderService := service.NewTaskProviderService(moduleRegistryService)
+	moduleRegistryHandler := NewModuleRegistryHandler(moduleRegistryService)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 	cleanupService := service.NewCleanupOrchestratorService(
 		redisClient, taskExecutionRepo, auditWriter, moduleRegistryService,
@@ -115,7 +116,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	if err := RegisterIAMRoutes(api, runtime, redisClient); err != nil {
 		panic(fmt.Errorf("注册 IAM 路由失败: %w", err))
 	}
-	if err := RegisterIAMManagementRoutes(api, runtime); err != nil {
+	if err := RegisterIAMManagementRoutes(api, runtime, moduleRegistryHandler); err != nil {
 		panic(fmt.Errorf("注册 IAM 管理路由失败: %w", err))
 	}
 	if err := RegisterIAMMigratedBusinessRoutes(
@@ -130,7 +131,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	if err := RegisterIAMServiceRuntimeRoutes(
 		api,
 		runtime,
-		NewModuleRegistryHandler(moduleRegistryService),
+		moduleRegistryHandler,
 		NewTaskProviderHandler(taskProviderService),
 		engineHandler,
 	); err != nil {
@@ -148,7 +149,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	api.GET("/runtime/api-keys/validate", runtime.Authentication, runtime.ServiceCredential, platformContext, apiKeyValidate, serviceInternalHandler.ValidateAPIKeyService)
 	configurationManagement := api.Group("/configuration-management")
 	configurationManagement.Use(runtime.Authentication, runtime.UserAccessCredential)
-	configurationManagement.GET("/entries", NewModuleRegistryHandler(moduleRegistryService).ListConfigurationManagementEntries)
+	configurationManagement.GET("/entries", moduleRegistryHandler.ListConfigurationManagementEntries)
 
 	return router
 }

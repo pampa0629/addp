@@ -44,7 +44,7 @@ Gateway 根据 URL 路径前缀自动路由请求：
 | 请求路径 | 目标服务 | 服务地址 | 认证要求 | 转发方式 | 用途 |
 |---------|---------|---------|---------|---------|-----|
 | `/api/v1/system/*` | System | `SYSTEM_URL` | 由 System 端点决定 | 透明转发 | 登录、会话、OAuth、AuthContext 和系统管理 |
-| `/api/v1/{module}/*` | 注册模块 | System 模块注册表 | Bearer Token 或 API Key | 动态透明转发 | 自动支持所有状态为 `up` 的模块 |
+| `/api/v1/{module}/*` | 注册模块 | System 模块注册表 | Bearer Token 或 API Key | 动态透明转发 | 在所有有效 Backend 租约间按请求轮询；不自动重试失败请求 |
 | `/api/query/*`、`/ogc/*`、`/wmts/*`、`/tiles/*` | Service | System 模块注册表 | 由 Service 端点决定 | 动态透明转发 | 数据服务公开协议入口 |
 
 ### 转发说明

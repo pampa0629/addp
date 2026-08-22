@@ -14,12 +14,21 @@ import (
 // ModuleDiscovery 模块发现管理器
 type ModuleDiscovery struct {
 	systemClient  moduleLister
-	modules       map[string]*client.ModuleInfo  // moduleName -> ModuleInfo
-	proxies       map[string]*proxy.ServiceProxy // moduleName -> proxy
+	modules       map[string]*client.ModuleInfo // moduleName -> ModuleInfo
+	backendPools  map[string][]moduleBackend
+	nextBackend   map[string]uint64
 	mu            sync.RWMutex
 	refreshTicker *time.Ticker
 	ctx           context.Context
 	cancel        context.CancelFunc
+	now           func() time.Time
+}
+
+type moduleBackend struct {
+	instanceID     string
+	moduleURL      string
+	leaseExpiresAt time.Time
+	proxy          *proxy.ServiceProxy
 }
 
 type moduleLister interface {
@@ -33,9 +42,11 @@ func NewModuleDiscovery(systemClient moduleLister) *ModuleDiscovery {
 	return &ModuleDiscovery{
 		systemClient: systemClient,
 		modules:      make(map[string]*client.ModuleInfo),
-		proxies:      make(map[string]*proxy.ServiceProxy),
+		backendPools: make(map[string][]moduleBackend),
+		nextBackend:  make(map[string]uint64),
 		ctx:          ctx,
 		cancel:       cancel,
+		now:          time.Now,
 	}
 }
 
@@ -84,34 +95,49 @@ func (md *ModuleDiscovery) refreshModules() error {
 
 	// 更新模块列表
 	newModules := make(map[string]*client.ModuleInfo)
+	newBackendPools := make(map[string][]moduleBackend)
 	for _, mod := range modules {
-		backend, ok := selectRoutableBackend(mod, time.Now())
-		if !ok {
+		instances := selectRoutableBackends(mod, md.now())
+		if len(instances) == 0 {
 			continue
 		}
 		newModules[mod.ModuleName] = mod
-
-		if existingProxy, exists := md.proxies[mod.ModuleName]; !exists || existingProxy.GetTargetURL() != backend.ModuleURL {
-			md.proxies[mod.ModuleName] = proxy.NewServiceProxy(backend.ModuleURL)
+		existing := indexModuleBackends(md.backendPools[mod.ModuleName])
+		pool := make([]moduleBackend, 0, len(instances))
+		for _, instance := range instances {
+			backend := moduleBackend{
+				instanceID: instance.InstanceID, moduleURL: instance.ModuleURL,
+				leaseExpiresAt: instance.LeaseExpiresAt,
+			}
+			if previous, ok := existing[instance.InstanceID]; ok && previous.moduleURL == instance.ModuleURL {
+				backend.proxy = previous.proxy
+			} else {
+				backend.proxy = proxy.NewServiceProxy(instance.ModuleURL)
+			}
+			pool = append(pool, backend)
+		}
+		newBackendPools[mod.ModuleName] = pool
+		if _, exists := md.nextBackend[mod.ModuleName]; !exists {
+			md.nextBackend[mod.ModuleName] = 0
 		}
 	}
 
-	// 移除已下线的模块代理
-	for moduleName := range md.proxies {
+	for moduleName := range md.nextBackend {
 		if _, exists := newModules[moduleName]; !exists {
-			delete(md.proxies, moduleName)
+			delete(md.nextBackend, moduleName)
 		}
 	}
 
 	md.modules = newModules
+	md.backendPools = newBackendPools
 
 	fmt.Printf("模块列表已刷新: %d 个活跃模块\n", len(md.modules))
 	return nil
 }
 
-func selectRoutableBackend(module *client.ModuleInfo, now time.Time) (*client.ModuleRuntimeInstanceInfo, bool) {
+func selectRoutableBackends(module *client.ModuleInfo, now time.Time) []client.ModuleRuntimeInstanceInfo {
 	if module == nil || !module.Enabled {
-		return nil, false
+		return nil
 	}
 	candidates := make([]client.ModuleRuntimeInstanceInfo, 0)
 	for _, instance := range module.Instances {
@@ -120,23 +146,40 @@ func selectRoutableBackend(module *client.ModuleInfo, now time.Time) (*client.Mo
 		}
 	}
 	if len(candidates) == 0 {
-		return nil, false
+		return nil
 	}
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].InstanceID < candidates[j].InstanceID })
-	return &candidates[0], true
+	return candidates
 }
 
-// GetProxy 获取模块代理（用于路由转发）
-func (md *ModuleDiscovery) GetProxy(moduleName string) (*proxy.ServiceProxy, error) {
-	md.mu.RLock()
-	defer md.mu.RUnlock()
+func indexModuleBackends(backends []moduleBackend) map[string]moduleBackend {
+	result := make(map[string]moduleBackend, len(backends))
+	for _, backend := range backends {
+		result[backend.instanceID] = backend
+	}
+	return result
+}
 
-	p, exists := md.proxies[moduleName]
-	if !exists {
+// GetProxy 从当前有效 Backend 池轮询选择代理；不在 Gateway 内重放失败请求。
+func (md *ModuleDiscovery) GetProxy(moduleName string) (*proxy.ServiceProxy, error) {
+	md.mu.Lock()
+	defer md.mu.Unlock()
+
+	pool := md.backendPools[moduleName]
+	if len(pool) == 0 {
 		return nil, fmt.Errorf("模块 %s 不可用或未注册", moduleName)
 	}
-
-	return p, nil
+	start := md.nextBackend[moduleName] % uint64(len(pool))
+	for offset := uint64(0); offset < uint64(len(pool)); offset++ {
+		index := (start + offset) % uint64(len(pool))
+		backend := pool[index]
+		if backend.proxy == nil || !backend.leaseExpiresAt.After(md.now()) {
+			continue
+		}
+		md.nextBackend[moduleName] = index + 1
+		return backend.proxy, nil
+	}
+	return nil, fmt.Errorf("模块 %s 没有有效 Backend 租约", moduleName)
 }
 
 // GetModules 获取所有活跃模块信息（用于展示）
@@ -144,10 +187,15 @@ func (md *ModuleDiscovery) GetModules() map[string]*client.ModuleInfo {
 	md.mu.RLock()
 	defer md.mu.RUnlock()
 
-	// 返回模块列表的副本
+	// 返回当前仍有有效 Backend 租约的模块列表副本。
 	result := make(map[string]*client.ModuleInfo, len(md.modules))
 	for k, v := range md.modules {
-		result[k] = v
+		for _, backend := range md.backendPools[k] {
+			if backend.leaseExpiresAt.After(md.now()) {
+				result[k] = v
+				break
+			}
+		}
 	}
 
 	return result

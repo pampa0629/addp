@@ -36,7 +36,7 @@ func (h *OrchestrationHandler) validateOrchestrationDefinition(c *gin.Context, r
 		respondOrchestrationValidationError(c, err)
 		return false
 	}
-	if err := h.taskProviderRegistry.ValidateStepTaskReferences(c.Request.Context(), req.TenantID, req.Steps); err != nil {
+	if err := h.taskProviderResolver.ValidateStepTaskReferences(c.Request.Context(), req.TenantID, req.Steps); err != nil {
 		respondOrchestrationValidationError(c, err)
 		return false
 	}

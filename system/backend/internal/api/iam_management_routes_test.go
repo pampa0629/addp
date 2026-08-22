@@ -21,7 +21,7 @@ func TestRegisterIAMManagementRoutes(t *testing.T) {
 	}
 	router := gin.New()
 	api := router.Group("/api/v1/system")
-	if err := RegisterIAMManagementRoutes(api, runtime); err != nil {
+	if err := RegisterIAMManagementRoutes(api, runtime, NewModuleRegistryHandler(nil)); err != nil {
 		t.Fatalf("RegisterIAMManagementRoutes() error = %v", err)
 	}
 
@@ -38,6 +38,8 @@ func TestRegisterIAMManagementRoutes(t *testing.T) {
 		"GET /api/v1/system/platform/audit/events/trends",
 		"GET /api/v1/system/platform/identity_changes",
 		"GET /api/v1/system/platform/identity_changes/:id",
+		"GET /api/v1/system/platform/modules",
+		"GET /api/v1/system/platform/modules/:module_name",
 		"GET /api/v1/system/platform/security_policy",
 		"GET /api/v1/system/platform/tenant_administrator_candidates",
 		"GET /api/v1/system/platform/tenants",
@@ -80,6 +82,7 @@ func TestRegisterIAMManagementRoutes(t *testing.T) {
 		"DELETE /api/v1/system/tenant/roles/:id",
 		"PUT /api/v1/system/platform/tenants/:id",
 		"PUT /api/v1/system/platform/security_policy",
+		"PUT /api/v1/system/platform/modules/:module_name",
 		"PUT /api/v1/system/platform/users/:id",
 		"PUT /api/v1/system/tenant/memberships/:id",
 		"PUT /api/v1/system/tenant/roles/:id",

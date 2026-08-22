@@ -131,4 +131,4 @@
 
 bounded 的 `/task-definitions/:id/resume` 是调度控制 API；PostgreSQL/MySQL watermark execution 的 resume 由新 execution 自动读取 `transfer.sync_states` 完成。普通 continuous resume 总是创建新 execution，不复用已取消 execution；数据库 CDC blocked generation 必须先完成专用 additive 审批，其他 schema drift 不支持 resume 或 retry。
 
-TaskProvider 注册的任务发现地址是唯一标准 `/tasks`。服务端在请求带 `task_type=sync` 时强制过滤为 bounded，避免 Orchestrator v1 选择 continuous task；Console 不带 `task_type` 时仍通过同一路由查询全部任务。不保留 `/provider-tasks` 私有路由。
+TaskProvider 声明的任务发现地址是唯一标准 `/tasks`。服务端在请求带 `task_type=sync` 时强制过滤为 bounded，避免 Orchestrator v1 选择 continuous task；Console 不带 `task_type` 时仍通过同一路由查询全部任务。不保留 `/provider-tasks` 私有路由。

@@ -14,8 +14,45 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 70 {
-		t.Fatalf("LatestVersion = %d, want 70", catalog.LatestVersion)
+	if catalog.LatestVersion != 72 {
+		t.Fatalf("LatestVersion = %d, want 72", catalog.LatestVersion)
+	}
+}
+
+func TestTaskProviderBecomesModuleDeclaration(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000072_task_provider_module_declaration.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 72: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"ADD COLUMN task_provider jsonb",
+		"every TaskProvider must belong to an existing module definition",
+		"version = module.version + 1",
+		"DROP TABLE system.task_providers",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 72 missing %q", fragment)
+		}
+	}
+}
+
+func TestModuleManagementControlPlaneMigrationPublishesVersionAndAuthorization(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000071_module_management_control_plane.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 71: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"ADD COLUMN version bigint NOT NULL DEFAULT 1",
+		"'platform.module.read'",
+		"'platform.module.update'",
+		"'platform.system_administrator'",
+		"authorization_version = principal.authorization_version + 1",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 71 missing %q", fragment)
+		}
 	}
 }
 
