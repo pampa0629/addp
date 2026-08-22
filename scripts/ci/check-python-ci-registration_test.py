@@ -33,7 +33,7 @@ class PythonCIRegistrationTest(unittest.TestCase):
             "jobs:\n"
             "  sample-tests:\n"
             "    steps:\n"
-            "      - run: select 'sample/backend/*' 'common-python/*'\n"
+            "      - run: select 'sample/backend/*' 'common-python/*' '.github/actions/prepare-python-gate/*'\n"
             "      - uses: ./.github/actions/prepare-python-gate\n"
             "      - run: make test-sample\n",
             encoding="utf-8",
@@ -94,6 +94,19 @@ class PythonCIRegistrationTest(unittest.TestCase):
         )
         self.assertIn(
             "sample/backend/requirements.txt: shared path common-python/* is missing",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_missing_setup_action_change_path(self) -> None:
+        workflow = self.repository / ".github/workflows/platform-ci.yml"
+        workflow.write_text(
+            workflow.read_text(encoding="utf-8").replace(
+                " '.github/actions/prepare-python-gate/*'", ""
+            ),
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "sample/backend/requirements.txt: Python gate setup change path is missing from test-sample job",
             MODULE.validate_registration(self.repository),
         )
 

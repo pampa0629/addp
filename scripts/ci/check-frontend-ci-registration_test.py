@@ -24,7 +24,8 @@ class FrontendCIRegistrationTest(unittest.TestCase):
         frontend = self.repository / "sample/frontend"
         frontend.mkdir(parents=True)
         (frontend / "package.json").write_text(
-            '{"scripts":{"build":"vite build","test":"vitest run"}}\n',
+            '{"scripts":{"build":"vite build","test":"vitest run"},'
+            '"dependencies":{"@addp/common-frontend":"file:../../common-frontend"}}\n',
             encoding="utf-8",
         )
         (self.repository / ".github/workflows").mkdir(parents=True)
@@ -42,6 +43,7 @@ class FrontendCIRegistrationTest(unittest.TestCase):
             "        - module: sample\n"
             "          target: test-sample-frontend\n"
             "    steps:\n"
+            "      - run: select 'common-frontend/*' '.github/actions/prepare-frontend-gate/*'\n"
             "      - uses: ./.github/actions/prepare-frontend-gate\n",
             encoding="utf-8",
         )
@@ -82,6 +84,24 @@ class FrontendCIRegistrationTest(unittest.TestCase):
         self.assertIn(
             "sample: standard frontend gate setup is missing from test-sample-frontend job",
             MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_missing_shared_and_setup_change_paths(self) -> None:
+        self.workflow.write_text(
+            self.workflow.read_text(encoding="utf-8").replace(
+                "      - run: select 'common-frontend/*' '.github/actions/prepare-frontend-gate/*'\n",
+                "      - run: select\n",
+            ),
+            encoding="utf-8",
+        )
+        errors = MODULE.validate_registration(self.repository)
+        self.assertIn(
+            "sample: frontend gate setup change path is missing from test-sample-frontend job",
+            errors,
+        )
+        self.assertIn(
+            "sample: shared path common-frontend/* is missing from test-sample-frontend job",
+            errors,
         )
 
     def test_requires_agent_frontend_directly_in_root_aggregate(self) -> None:

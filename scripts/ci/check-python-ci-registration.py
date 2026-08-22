@@ -15,6 +15,7 @@ class RegistrationError(RuntimeError):
 
 
 PYTHON_GATE_ACTION = "uses: ./.github/actions/prepare-python-gate"
+PYTHON_GATE_ACTION_PATH = "'.github/actions/prepare-python-gate/*'"
 
 
 def git_files(repository: Path, *patterns: str) -> list[str]:
@@ -85,6 +86,8 @@ def validate_registration(repository: Path) -> list[str]:
             continue
         if PYTHON_GATE_ACTION not in target_job:
             errors.append(f"{manifest}: Python gate setup action is missing from {target} job")
+        if PYTHON_GATE_ACTION_PATH not in target_job:
+            errors.append(f"{manifest}: Python gate setup change path is missing from {target} job")
         if f"'{owner_path}'" not in target_job:
             errors.append(f"{manifest}: workflow path {owner_path} is missing")
         content = (repository / manifest).read_text(encoding="utf-8")
