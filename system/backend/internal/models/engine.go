@@ -15,6 +15,7 @@ const (
 	EngineLifecycleActive    = commonModels.EngineLifecycleActive
 	EngineLifecycleDisabled  = commonModels.EngineLifecycleDisabled
 	EngineLifecycleDeleting  = commonModels.EngineLifecycleDeleting
+	EngineLifecycleDeleted   = commonModels.EngineLifecycleDeleted
 	EngineConnectionOnline   = commonModels.EngineConnectionOnline
 	EngineConnectionOffline  = commonModels.EngineConnectionOffline
 	EngineConnectionUnknown  = commonModels.EngineConnectionUnknown
@@ -34,6 +35,7 @@ type EngineCreateRequest struct {
 }
 
 type EngineUpdateRequest struct {
+	Version        int64           `json:"version" binding:"required,gt=0"`
 	Name           *string         `json:"name"` // 显示名称
 	ConnectionInfo *ConnectionInfo `json:"connection_info"`
 	Description    *string         `json:"description"`
@@ -42,9 +44,18 @@ type EngineUpdateRequest struct {
 }
 
 type EngineDeleteRequest struct {
+	Version                int64  `json:"version" binding:"required,gt=0"`
 	AssessmentID           string `json:"assessment_id" binding:"required"`
 	ConfirmationToken      string `json:"confirmation_token" binding:"required"`
 	ExternalArtifactPolicy string `json:"external_artifact_policy"`
+}
+
+type EngineRestoreRequest struct {
+	Version        int64          `json:"version" binding:"required,gt=0"`
+	Name           string         `json:"name" binding:"required"`
+	ConnectionInfo ConnectionInfo `json:"connection_info" binding:"required"`
+	Description    string         `json:"description"`
+	Capabilities   *JSONString    `json:"capabilities"`
 }
 
 type EngineDeletionAssessmentRequest struct {

@@ -1,9 +1,11 @@
 import asyncio
 
+import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
 from addp_common.auth import AuthorizationContext
+from addp_common.client.inference import InferenceError
 from api import query_agent_api
 from api.query_agent_api import QueryGenerationRequest
 from addp_common.resources import ResourceFact
@@ -226,3 +228,38 @@ def test_query_local_invalid_arguments_return_400(monkeypatch):
         assert error.status_code == 400
     else:
         raise AssertionError("local invalid arguments must return HTTP 400")
+
+
+def test_query_inference_upstream_failure_returns_502(monkeypatch):
+    monkeypatch.setattr(query_agent_api, "ToolExecutor", FakeExecutor)
+    monkeypatch.setattr(
+        query_agent_api.CopilotInferenceService,
+        "chat_model",
+        lambda *_args, **_kwargs: object(),
+    )
+
+    class FailingResolver:
+        async def discover(self, *_args, **_kwargs):
+            raise InferenceError("inference_upstream_failed", "upstream unavailable")
+
+    monkeypatch.setattr(query_agent_api, "ResourceResolutionService", lambda **_kwargs: FailingResolver())
+
+    with pytest.raises(HTTPException) as captured:
+        asyncio.run(query_agent_api.generate_query(
+            QueryGenerationRequest(
+                query="查询人员",
+                engine_id=11,
+                query_language="mql",
+                engine_context={
+                    "id": 11,
+                    "engine_type": "mongodb",
+                    "capabilities": {"compute": {"query": {"supported": True, "languages": ["mql"]}}},
+                },
+            ),
+            user=AuthorizationContext(principal_id=1, tenant_id=1),
+            credentials=HTTPAuthorizationCredentials(scheme="Bearer", credentials="user-token"),
+            db=None,
+        ))
+
+    assert captured.value.status_code == 502
+    assert captured.value.detail == "上游推理服务调用失败"

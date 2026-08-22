@@ -71,7 +71,9 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		moduleMap := map[string]string{"system": cfg.SystemServiceURL}
 		for name, info := range modules {
 			if name != "system" {
-				moduleMap[name] = info.ModuleURL
+				if backend, ok := selectModuleBackend(info); ok {
+					moduleMap[name] = backend
+				}
 			}
 		}
 		response["modules"] = moduleMap
@@ -131,6 +133,18 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	}
 
 	return router
+}
+
+func selectModuleBackend(module *commonClient.ModuleInfo) (string, bool) {
+	if module == nil {
+		return "", false
+	}
+	for _, instance := range module.Instances {
+		if instance.Role == "backend" && instance.Status == "up" && instance.ModuleURL != "" {
+			return instance.ModuleURL, true
+		}
+	}
+	return "", false
 }
 
 func registerQueryServiceRoute(router gin.IRoutes, handler gin.HandlerFunc) {

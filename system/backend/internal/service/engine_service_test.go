@@ -1025,7 +1025,7 @@ func TestUpdateRejectsInvalidLifecycleAndDeletingEngine(t *testing.T) {
 	service := NewEngineService(repo, nil, nil)
 
 	invalid := "deleting"
-	if _, err := service.Update(engine.ID, tenantID, &models.EngineUpdateRequest{LifecycleState: &invalid}); !errors.Is(err, ErrInvalidEngineLifecycle) {
+	if _, err := service.Update(engine.ID, tenantID, &models.EngineUpdateRequest{Version: engine.Version, LifecycleState: &invalid}); !errors.Is(err, ErrInvalidEngineLifecycle) {
 		t.Fatalf("Update() error = %v, want ErrInvalidEngineLifecycle", err)
 	}
 
@@ -1034,8 +1034,119 @@ func TestUpdateRejectsInvalidLifecycleAndDeletingEngine(t *testing.T) {
 		t.Fatalf("mark deleting: %v", err)
 	}
 	description := "updated"
-	if _, err := service.Update(engine.ID, tenantID, &models.EngineUpdateRequest{Description: &description}); !errors.Is(err, ErrEngineDeleting) {
+	if _, err := service.Update(engine.ID, tenantID, &models.EngineUpdateRequest{Version: engine.Version, Description: &description}); !errors.Is(err, ErrEngineDeleting) {
 		t.Fatalf("Update() error = %v, want ErrEngineDeleting", err)
+	}
+}
+
+func TestCreateIsIdempotentByPermanentIdentityAndPreservesDisabledState(t *testing.T) {
+	repo := newEngineServiceTestRepository(t)
+	service := NewEngineService(repo, nil, nil)
+	tenantID := uint(7)
+	actorID := uint(42)
+	request := &models.EngineCreateRequest{
+		Name:         "Runtime A",
+		EngineType:   "custom_runtime",
+		EngineOrigin: "extension",
+		ConnectionInfo: models.ConnectionInfo{
+			"protocol": "http", "host": "runtime.internal", "port": 8080,
+		},
+		Capabilities: customRuntimeCapabilities(),
+	}
+	createdEngine, created, err := service.Create(request, actorID, tenantID)
+	if err != nil || !created {
+		t.Fatalf("first Create() engine=%#v created=%v err=%v", createdEngine, created, err)
+	}
+	stored, err := repo.GetByID(createdEngine.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored.LifecycleState = models.EngineLifecycleDisabled
+	if err := repo.Update(stored); err != nil {
+		t.Fatal(err)
+	}
+
+	request.Name = "Ignored Rename"
+	repeated, created, err := service.Create(request, actorID, tenantID)
+	if err != nil || created {
+		t.Fatalf("repeated Create() engine=%#v created=%v err=%v", repeated, created, err)
+	}
+	if repeated.ID != createdEngine.ID || repeated.Name != "Runtime A" || repeated.LifecycleState != models.EngineLifecycleDisabled {
+		t.Fatalf("idempotent result = %#v", repeated)
+	}
+}
+
+func TestDeletedIdentityRequiresExplicitRestoreAndKeepsID(t *testing.T) {
+	repo := newEngineServiceTestRepository(t)
+	service := NewEngineService(repo, nil, nil)
+	tenantID := uint(7)
+	actorID := uint(42)
+	request := &models.EngineCreateRequest{
+		Name:         "Runtime A",
+		EngineType:   "custom_runtime",
+		EngineOrigin: "extension",
+		ConnectionInfo: models.ConnectionInfo{
+			"protocol": "http", "host": "runtime.internal", "port": 8080,
+		},
+		Capabilities: customRuntimeCapabilities(),
+	}
+	createdEngine, _, err := service.Create(request, actorID, tenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := repo.GetByID(createdEngine.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored.LifecycleState = models.EngineLifecycleDeleted
+	if err := repo.Update(stored); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.Create(request, actorID, tenantID); !errors.Is(err, ErrEngineRestoreRequired) {
+		t.Fatalf("Create() error = %v, want ErrEngineRestoreRequired", err)
+	}
+
+	restored, err := service.Restore(stored.ID, tenantID, actorID, &models.EngineRestoreRequest{
+		Version: stored.Version, Name: "Runtime Restored", ConnectionInfo: request.ConnectionInfo,
+		Capabilities: customRuntimeCapabilities(),
+	})
+	if err != nil {
+		t.Fatalf("Restore() error = %v", err)
+	}
+	if restored.ID != createdEngine.ID || restored.LifecycleState != models.EngineLifecycleActive || restored.Version <= stored.Version {
+		t.Fatalf("restored engine = %#v", restored)
+	}
+}
+
+func TestUpdateRejectsStaleEngineVersion(t *testing.T) {
+	repo := newEngineServiceTestRepository(t)
+	tenantID := uint(7)
+	engine := createDeletionTestEngine(t, repo, tenantID)
+	description := "changed"
+	if _, err := NewEngineService(repo, nil, nil).Update(engine.ID, tenantID, &models.EngineUpdateRequest{
+		Version: engine.Version + 1, Description: &description,
+	}); !errors.Is(err, ErrEngineVersionConflict) {
+		t.Fatalf("Update() error = %v, want ErrEngineVersionConflict", err)
+	}
+	stored, err := repo.GetByID(engine.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Description != "" || stored.Version != engine.Version {
+		t.Fatalf("stale update changed engine: %#v", stored)
+	}
+}
+
+func TestScrubSensitiveConnectionInfoKeepsIdentityFields(t *testing.T) {
+	service := NewEngineService(nil, nil, nil)
+	result := service.scrubSensitiveConnectionInfo("postgresql", models.ConnectionInfo{
+		"host": "db.internal", "port": 5432, "database": "business", "user": "reader", "password": "encrypted",
+	})
+	if _, ok := result["password"]; ok {
+		t.Fatalf("password was not scrubbed: %#v", result)
+	}
+	if result["host"] != "db.internal" || result["database"] != "business" {
+		t.Fatalf("identity fields were removed: %#v", result)
 	}
 }
 
@@ -1062,7 +1173,7 @@ func TestUpdateMetadataAndLifecycleDoesNotProbeOfflineEngine(t *testing.T) {
 	description := "仍可维护的离线引擎"
 	disabled := models.EngineLifecycleDisabled
 	updated, err := NewEngineService(repo, nil, nil).Update(engine.ID, tenantID, &models.EngineUpdateRequest{
-		Description: &description, LifecycleState: &disabled,
+		Version: engine.Version, Description: &description, LifecycleState: &disabled,
 	})
 	if err != nil {
 		t.Fatalf("Update() probed an offline engine: %v", err)
@@ -1097,6 +1208,7 @@ func TestBeginDeletionWaitsForCleanupBeforeDeletingEngine(t *testing.T) {
 		t.Fatalf("CreateDeletionAssessment() error = %v", err)
 	}
 	started, err := service.BeginDeletion(engine.ID, tenantID, actorID, &models.EngineDeleteRequest{
+		Version:                engine.Version,
 		AssessmentID:           assessmentID,
 		ConfirmationToken:      engine.Name,
 		ExternalArtifactPolicy: models.ExternalArtifactPolicyAbandon,
@@ -1143,6 +1255,7 @@ func TestBeginDeletionKeepsEngineWhenCleanupFails(t *testing.T) {
 		t.Fatalf("CreateDeletionAssessment() error = %v", err)
 	}
 	if _, err := service.BeginDeletion(engine.ID, tenantID, 42, &models.EngineDeleteRequest{
+		Version:                engine.Version,
 		AssessmentID:           assessmentID,
 		ConfirmationToken:      engine.Name,
 		ExternalArtifactPolicy: models.ExternalArtifactPolicyDelete,
@@ -1279,10 +1392,11 @@ func waitForEngineDeleted(t *testing.T, repo *repository.EngineRepository, engin
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if _, err := repo.GetByID(engineID); err != nil {
+		engine, err := repo.GetByID(engineID)
+		if err == nil && engine.LifecycleState == models.EngineLifecycleDeleted {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("engine %d was not deleted after cleanup completed", engineID)
+	t.Fatalf("engine %d did not become a deleted tombstone after cleanup completed", engineID)
 }

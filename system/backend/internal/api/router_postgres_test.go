@@ -49,7 +49,7 @@ func TestTargetSystemCompositionAgainstPostgres(t *testing.T) {
 	if before != after {
 		t.Fatalf("non-IAM AutoMigrate changed principals columns: before=%q after=%q", before, after)
 	}
-	for _, table := range []string{"principals", "tenant_invitations", "oauth_clients", "engines", "applications", "module_registry"} {
+	for _, table := range []string{"principals", "tenant_invitations", "oauth_clients", "engines", "applications", "module_definitions", "module_runtime_instances"} {
 		var exists bool
 		if err := db.Raw(`SELECT to_regclass('system.' || ?) IS NOT NULL`, table).Scan(&exists).Error; err != nil || !exists {
 			t.Fatalf("target table %s exists=%t err=%v", table, exists, err)

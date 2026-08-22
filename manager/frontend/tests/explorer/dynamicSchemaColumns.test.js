@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildDynamicSchemaColumnDescriptors,
+  buildTablePreviewColumnDescriptors,
   dynamicSchemaCellValue
 } from '../../../../common-frontend/map/src/utils/dynamicSchemaColumns.js'
 
@@ -40,5 +41,15 @@ describe('dynamic schema table columns', () => {
     )
 
     expect(descriptors.map(column => column.key)).toEqual(['items', 'payload'])
+  })
+
+  it('provides selectable columns for regular tables and hides raw geometry', () => {
+    const descriptors = buildTablePreviewColumnDescriptors({
+      columns: ['id', 'name', 'geom'],
+      columnMetadata: [],
+      geometryColumns: ['geom']
+    })
+
+    expect(descriptors.map(column => column.key)).toEqual(['id', 'name'])
   })
 })

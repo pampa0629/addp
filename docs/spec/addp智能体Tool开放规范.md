@@ -155,7 +155,9 @@ Tool 不同步等待长任务完成。标准路径为 owner 创建 execution，T
 
 调用方可以传入可选 `current_query` 表示编辑器已有候选文本。它不是资源事实，也不产生第二条执行路径。生成成功时返回一份完整查询草稿：`query` 候选文本与 `query_parameters[]` 参数定义。参数定义必须与 SQL `:name`、Cypher `$name` 或 MQL `{"$param":"name"}` 引用完全一致，并提供符合当前 Engine capability 的 `type` 和可执行 `default`；无参数引用时必须返回空数组。Develop 只将草稿原子回填到编辑器和参数面板，最终任务事实、预检与执行仍归 Develop 持有。对于 MQL，Develop 必须从单个 JSON command object 中解析 `find`、`aggregate`、`count`、`distinct` 主 collection，以及 `$lookup.from`、`$graphLookup.from`、`$unionWith` 引用的其他 collection；在当前选中 database 的 Owner Catalog 中逐一解析为具体 data item locator，并通过 `resources[]` 提交。用户只需选择 database，不需要额外点选每个 collection；引用不存在、跨出当前 database 或引用不唯一时必须要求澄清。
 
-当 MongoDB 工作台只选中 database 且编辑器为空时，Develop 以 `resources=[] + resource_scope_locator=<database locator>` 调用同一共享资源确认流程。Copilot 必须通过 `resource.children.list → resource.facts.get` 枚举并验证当前 database 的直接 collection，再按自然语言输入角色排序并返回候选；用户确认后的具体 collection 才能进入 `resources[]`。该流程不依赖全局搜索是否能从业务词命中 collection 名，也不把 database 当作资源事实或执行参数。已有 MQL 时仍优先执行确定性的 collection 引用解析，解析失败不得退回范围枚举或模糊搜索。
+当 MongoDB 工作台只选中 database 且编辑器为空时，Develop 以 `resources=[] + resource_scope_locator=<database locator>` 调用同一共享资源确认流程。Copilot 必须通过 `resource.children.list → resource.facts.get` 确定性枚举并验证当前 database 的直接 collection，原样返回这些真实候选供用户确认；该有界流程不得先调用模型生成资源角色、搜索词或虚构候选。用户确认后的具体 collection 才能进入 `resources[]`。该流程不依赖全局搜索是否能从业务词命中 collection 名，也不把 database 当作资源事实或执行参数。已有 MQL 时仍优先执行确定性的 collection 引用解析，解析失败不得退回范围枚举或模糊搜索。
+
+MQL 集合比较必须走强类型语义计划和确定性编译器。计划只能引用 owner 已验证的实体字段、数组元素身份字段与两个实体值，比较口径只允许共同元素数量、Jaccard 相似度或以较少一方为分母的重叠系数；编译器统一按身份字段去重后计算交集和并集。用户只表达“重叠度”等未定义口径时必须返回澄清，禁止模型默认选择算法或自由生成 MQL。
 
 Copilot 默认保留 `current_query` 已声明的主 collection，除非用户明确要求修改。合法 MQL 已声明 collection 时不得以 `resources=[]` 跳过字段事实确认；`current_query` 不能替代 metadata。MongoDB database locator 仍不得写入 `resources[]`、`current_query` 或生成的 MQL，只有解析后的具体 collection locator 可以进入 `resources[]`。Copilot 生成前先形成结构化 Query Plan；Plan 的 collection 必须使用已验证资源事实提供的规范查询名，operation 必须使用平台枚举，五类 Plan 字段统一为字符串数组。Plan 解析或校验失败时最多进行一次受限修复；Plan 通过后再生成候选，并校验只读命令、collection、可查询字段路径、参数引用/定义一致性和计划覆盖。MQL 只能通过已验证的字面字段路径取值，不得通过 `$objectToArray` 等记录键枚举绕过字段事实。候选失败时最多进行一次受限重生成，不保留未校验 Plan 或候选旁路。
 

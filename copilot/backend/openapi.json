@@ -2497,7 +2497,7 @@
             "description": "查询生成失败 | Query generation failed"
           },
           "502": {
-            "description": "Owner Tool 调用失败 | Owner Tool call failed"
+            "description": "Owner Tool 或推理服务调用失败 | Owner Tool or inference service call failed"
           }
         },
         "security": [

@@ -118,6 +118,15 @@ other = "引擎物理端点不可原地修改，请创建新的引擎实例"
 [system.engine.deleting]
 other = "引擎正在执行删除前资源回收，当前操作不可用"
 
+[system.engine.deleted]
+other = "引擎已删除，当前操作不可用"
+
+[system.engine.restore_required]
+other = "相同物理身份的引擎已删除，请显式恢复原引擎"
+
+[system.engine.version_conflict]
+other = "引擎已被其他操作修改，请刷新后重试"
+
 [system.engine.lifecycle_invalid]
 other = "引擎生命周期状态无效"
 

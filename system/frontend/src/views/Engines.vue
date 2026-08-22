@@ -20,6 +20,7 @@
           <el-checkbox value="general">{{ t('system.engine.filterGeneral') }}</el-checkbox>
           <el-checkbox value="extension">{{ t('system.engine.filterExtension') }}</el-checkbox>
           <el-checkbox value="builtin">{{ t('system.engine.filterBuiltin') }}</el-checkbox>
+          <el-checkbox value="deleted">{{ t('system.engine.filterDeleted') }}</el-checkbox>
         </el-checkbox-group>
       </div>
 
@@ -115,9 +116,18 @@
         <!-- 操作列 -->
         <el-table-column :label="t('system.engine.columns.actions')" width="340" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" type="primary" :disabled="row.lifecycle_state === 'deleting'" @click="testConnection(row)">{{ t('system.engine.actions.test') }}</el-button>
+            <el-button size="small" type="primary" :disabled="['deleting', 'deleted'].includes(row.lifecycle_state)" @click="testConnection(row)">{{ t('system.engine.actions.test') }}</el-button>
             <el-button size="small" @click="viewEngineDetails(row)">{{ t('system.engine.actions.detail') }}</el-button>
             <el-button
+				v-if="row.lifecycle_state === 'deleted'"
+				size="small"
+				type="success"
+				@click="restoreEngine(row)"
+			>
+				{{ t('system.engine.actions.restore') }}
+			</el-button>
+			<el-button
+				v-else
               size="small"
               type="warning"
               :icon="Edit"
@@ -721,6 +731,7 @@ const storageFormRef = ref(null)
 const testing = ref(false)
 const submitting = ref(false)
 const isEdit = ref(false)
+const isRestore = ref(false)
 const editId = ref(null)
 const editingEngine = ref(null)
 const spatialWorkspaceCollapse = ref([])
@@ -787,6 +798,7 @@ const form = ref({
   name: '',
   description: '',
 	lifecycle_state: 'active',
+	version: 1,
   connection_info: {}
 })
 
@@ -878,6 +890,7 @@ const syncEngineScanPolicyAfterSave = async (engine, scanConfig) => {
 }
 
 const dialogTitle = computed(() => {
+  if (isRestore.value) return t('system.engine.dialog.restore')
   if (isEdit.value) return t('system.engine.dialog.edit')
   return t('system.engine.dialog.addStorage')
 })
@@ -1110,13 +1123,14 @@ const getEngineTypeColor = (type) => {
 }
 
 const canEditEngine = (row) => {
-	return !row.is_builtin && row.engine_origin === 'general' && row.lifecycle_state !== 'deleting'
+	return !row.is_builtin && row.engine_origin === 'general' && !['deleting', 'deleted'].includes(row.lifecycle_state)
 }
 
 const getLifecycleTagType = (state) => ({
 	active: 'success',
 	disabled: 'info',
-	deleting: 'warning'
+	deleting: 'warning',
+	deleted: 'danger'
 }[state] || 'info')
 
 const getLifecycleLabel = (state) => t(`system.engine.status.${state || 'disabled'}`)
@@ -1270,7 +1284,9 @@ const loadEngines = async () => {
     const response = await enginesAPI.list({
       capabilityGroups,
       engineOrigins,
-      lifecycleStates: ['active', 'disabled', 'deleting'],
+      lifecycleStates: selectedCategories.value.includes('deleted')
+		? ['active', 'disabled', 'deleting', 'deleted']
+		: ['active', 'disabled', 'deleting'],
       includeBuiltin: selectedCategories.value.includes('builtin')
     })
     if (!Array.isArray(response)) {
@@ -1296,6 +1312,7 @@ const selectStorageEngineType = (engineType) => {
 
 const showAddStorageDialog = () => {
   isEdit.value = false
+  isRestore.value = false
   editId.value = null
   selectedEngineCapabilityGroup.value = 'storage'
   resetForm()
@@ -1492,6 +1509,7 @@ const editEngine = async (row) => {
   }
 
   isEdit.value = true
+  isRestore.value = false
   editId.value = row.id
   editingEngine.value = row
   spatialWorkspaceCollapse.value = []
@@ -1504,11 +1522,29 @@ const editEngine = async (row) => {
     name: row.name,
     description: row.description,
 		lifecycle_state: row.lifecycle_state,
+		version: row.version,
     connection_info: { ...row.connection_info },
     ...(scanConfig ? { scan_config: scanConfig } : {})
   }
 
   dialogVisible.value = true
+}
+
+const restoreEngine = (row) => {
+	isEdit.value = true
+	isRestore.value = true
+	editId.value = row.id
+	editingEngine.value = row
+	selectedEngineCapabilityGroup.value = 'storage'
+	form.value = {
+		engine_type: row.engine_type,
+		name: row.name,
+		description: row.description,
+		lifecycle_state: row.lifecycle_state,
+		version: row.version,
+		connection_info: { ...row.connection_info }
+	}
+	dialogVisible.value = true
 }
 
 const enableSuperMapSpatialWorkspace = async (workspace) => {
@@ -1557,7 +1593,7 @@ const testBeforeCreate = async () => {
 
   testing.value = true
   try {
-    const response = isEdit.value
+    const response = isEdit.value && !isRestore.value
       ? await enginesAPI.testExistingConnection(editId.value, splitEngineAndScanPayload(form.value).enginePayload)
       : await enginesAPI.testConnection(splitEngineAndScanPayload(form.value).enginePayload)
 
@@ -1570,7 +1606,10 @@ const testBeforeCreate = async () => {
     ElMessage.error(t('system.engine.msg.testFailed', { error: error.response?.data?.error || error.message }))
   } finally {
     testing.value = false
-    if (isEdit.value) {
+	if (isRestore.value) {
+		await enginesAPI.restore(editId.value, submitData)
+		ElMessage.success(t('system.engine.msg.restoreSuccess'))
+    } else if (isEdit.value) {
       await loadEngines()
     }
   }
@@ -1755,6 +1794,7 @@ const confirmEngineDeletion = async () => {
 	deletionSubmitting.value = true
 	try {
 		await enginesAPI.delete(deletionEngine.value.id, {
+			version: deletionEngine.value.version,
 			assessment_id: deletionAssessmentID.value,
 			confirmation_token: deletionConfirmation.value,
 			external_artifact_policy: deletionExternalPolicy.value
@@ -1871,11 +1911,13 @@ const tableRowClassName = ({ row }) => {
 }
 
 const resetForm = () => {
+	isRestore.value = false
 	form.value = {
     engine_type: '',
     name: '',
     description: '',
 		lifecycle_state: 'active',
+		version: 1,
     connection_info: {}
   }
   editingEngine.value = null

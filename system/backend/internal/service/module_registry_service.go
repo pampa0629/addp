@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	commonconfiguration "github.com/addp/common/configuration"
@@ -12,106 +13,117 @@ import (
 	"github.com/addp/system/internal/repository"
 )
 
-// ModuleRegistryService 模块注册业务逻辑层
 type ModuleRegistryService struct {
-	repo *repository.ModuleRegistryRepository
+	repo          *repository.ModuleRegistryRepository
+	leaseDuration time.Duration
 }
 
-// NewModuleRegistryService 创建模块注册Service
 func NewModuleRegistryService(repo *repository.ModuleRegistryRepository) *ModuleRegistryService {
-	return &ModuleRegistryService{repo: repo}
+	return &ModuleRegistryService{repo: repo, leaseDuration: models.ModuleRuntimeLeaseDuration}
 }
 
-// Register 注册模块
 func (s *ModuleRegistryService) Register(req *models.ModuleRegistrationRequest) error {
-	// 验证请求参数
-	if req.ModuleName == "" || req.ModuleURL == "" || req.RoutePrefix == "" {
-		return fmt.Errorf("module_name, module_url and route_prefix are required")
+	if req == nil {
+		return fmt.Errorf("module registration is required")
+	}
+	req.ModuleName = strings.TrimSpace(req.ModuleName)
+	req.InstanceID = strings.TrimSpace(req.InstanceID)
+	req.Role = strings.ToLower(strings.TrimSpace(req.Role))
+	req.ModuleURL = strings.TrimRight(strings.TrimSpace(req.ModuleURL), "/")
+	req.RoutePrefix = strings.TrimSpace(req.RoutePrefix)
+	if req.ModuleName == "" || req.InstanceID == "" || req.Role == "" || req.RoutePrefix == "" {
+		return fmt.Errorf("module_name, instance_id, role and route_prefix are required")
+	}
+	if req.Role == models.ModuleRuntimeRoleBackend && req.ModuleURL == "" {
+		return fmt.Errorf("backend module_url is required")
 	}
 	if err := commonconfiguration.ValidateManagementDeclaration(req.ModuleName, req.ConfigurationManagement); err != nil {
 		return err
 	}
-
-	// 调用repository注册模块
-	if err := s.repo.Register(req); err != nil {
-		logger.L().Error("模块注册失败", "module", req.ModuleName, "error", err)
+	if err := s.repo.Register(req, s.leaseDuration); err != nil {
+		logger.L().Error("模块运行实例注册失败", "module", req.ModuleName, "instance_id", req.InstanceID, "error", err)
 		return err
 	}
-
-	logger.L().Info("模块注册成功", "module", req.ModuleName, "url", req.ModuleURL)
+	logger.L().Info("模块运行实例注册成功", "module", req.ModuleName, "instance_id", req.InstanceID, "role", req.Role)
 	return nil
 }
 
-// SendHeartbeat 发送心跳
-func (s *ModuleRegistryService) SendHeartbeat(moduleName string) error {
-	if err := s.repo.UpdateHeartbeat(moduleName); err != nil {
-		logger.L().Error("心跳更新失败", "module", moduleName, "error", err)
+func (s *ModuleRegistryService) SendHeartbeat(moduleName, instanceID string) error {
+	if strings.TrimSpace(moduleName) == "" || strings.TrimSpace(instanceID) == "" {
+		return fmt.Errorf("module_name and instance_id are required")
+	}
+	if err := s.repo.UpdateHeartbeat(moduleName, instanceID, s.leaseDuration); err != nil {
+		logger.L().Error("模块运行实例心跳更新失败", "module", moduleName, "instance_id", instanceID, "error", err)
 		return err
 	}
-
-	logger.L().Debug("心跳更新成功", "module", moduleName)
 	return nil
 }
 
-// GetModule 获取单个模块信息
 func (s *ModuleRegistryService) GetModule(moduleName string) (*models.ModuleInfo, error) {
-	module, err := s.repo.GetModule(moduleName)
+	definition, err := s.repo.GetModule(moduleName)
 	if err != nil {
 		return nil, err
 	}
-
-	return s.convertToModuleInfo(module), nil
+	return s.convertToModuleInfo(definition, false), nil
 }
 
-// ListModules 获取所有模块列表
 func (s *ModuleRegistryService) ListModules() ([]*models.ModuleInfo, error) {
-	modules, err := s.repo.ListModules()
+	return s.listModules(false)
+}
+
+// ListActiveModules 只返回已启用且至少有一个租约有效 Backend 实例的模块。
+func (s *ModuleRegistryService) ListActiveModules() ([]*models.ModuleInfo, error) {
+	return s.listModules(true)
+}
+
+func (s *ModuleRegistryService) listModules(activeOnly bool) ([]*models.ModuleInfo, error) {
+	definitions, err := s.repo.ListModules()
 	if err != nil {
 		return nil, err
 	}
-
-	result := make([]*models.ModuleInfo, len(modules))
-	for i, module := range modules {
-		result[i] = s.convertToModuleInfo(&module)
+	now := time.Now()
+	result := make([]*models.ModuleInfo, 0, len(definitions))
+	for index := range definitions {
+		info := s.convertToModuleInfo(&definitions[index], activeOnly)
+		if activeOnly && (!info.Enabled || !hasRoutableBackend(info, now)) {
+			continue
+		}
+		result = append(result, info)
 	}
-
 	return result, nil
 }
 
-// ListActiveModules 获取所有活跃模块
-func (s *ModuleRegistryService) ListActiveModules() ([]*models.ModuleInfo, error) {
-	modules, err := s.repo.ListActiveModules()
-	if err != nil {
-		return nil, err
+func hasRoutableBackend(module *models.ModuleInfo, now time.Time) bool {
+	if module == nil || !module.Enabled {
+		return false
 	}
-
-	result := make([]*models.ModuleInfo, len(modules))
-	for i, module := range modules {
-		result[i] = s.convertToModuleInfo(&module)
+	for _, instance := range module.Instances {
+		if instance.Role == models.ModuleRuntimeRoleBackend && instance.Status == models.ModuleRuntimeStatusUp && instance.LeaseExpiresAt.After(now) && instance.ModuleURL != "" {
+			return true
+		}
 	}
-
-	return result, nil
+	return false
 }
 
 func (s *ModuleRegistryService) ListConfigurationManagementEntries(contextType string, permissions map[string]struct{}) ([]models.ConfigurationManagementEntryView, error) {
-	modules, err := s.repo.ListModules()
+	modules, err := s.ListModules()
 	if err != nil {
 		return nil, err
 	}
 	entries := make([]models.ConfigurationManagementEntryView, 0)
-	for index := range modules {
-		module := &modules[index]
-		if len(module.ConfigurationManagement) == 0 {
+	for _, module := range modules {
+		if module.ConfigurationManagement == nil {
 			continue
 		}
-		var declaration commonconfiguration.ManagementDeclaration
-		if err := json.Unmarshal(module.ConfigurationManagement, &declaration); err != nil {
-			return nil, fmt.Errorf("decode configuration management declaration for %s: %w", module.ModuleName, err)
-		}
-		if err := commonconfiguration.ValidateManagementDeclaration(module.ModuleName, &declaration); err != nil {
+		if err := commonconfiguration.ValidateManagementDeclaration(module.ModuleName, module.ConfigurationManagement); err != nil {
 			return nil, err
 		}
-		for _, entry := range declaration.Entries {
+		available := hasRoutableBackend(module, time.Now())
+		status := models.ModuleRuntimeStatusDown
+		if available {
+			status = models.ModuleRuntimeStatusUp
+		}
+		for _, entry := range module.ConfigurationManagement.Entries {
 			if !commonconfiguration.EntryVisibleInContext(entry, contextType) {
 				continue
 			}
@@ -119,71 +131,60 @@ func (s *ModuleRegistryService) ListConfigurationManagementEntries(contextType s
 				continue
 			}
 			entries = append(entries, models.ConfigurationManagementEntryView{
-				ManagementEntry: entry,
-				ModuleStatus:    module.Status,
-				Available:       module.Status == "up",
+				ManagementEntry: entry, ModuleStatus: status, Available: available,
 			})
 		}
 	}
 	return entries, nil
 }
 
-// DeleteModule 删除模块注册
-func (s *ModuleRegistryService) DeleteModule(moduleName string) error {
-	if err := s.repo.DeleteModule(moduleName); err != nil {
-		logger.L().Error("模块注销失败", "module", moduleName, "error", err)
-		return err
-	}
-
-	logger.L().Info("模块注销成功", "module", moduleName)
-	return nil
-}
-
-// StartCleanupTask 启动模块清理定时任务
-func (s *ModuleRegistryService) StartCleanupTask(ctx context.Context, timeout time.Duration) {
-	ticker := time.NewTicker(30 * time.Second)
+func (s *ModuleRegistryService) StartCleanupTask(ctx context.Context) {
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
-
-	logger.L().Info("模块清理任务已启动", "timeout", timeout)
-
 	for {
 		select {
 		case <-ctx.Done():
-			logger.L().Info("模块清理任务已停止")
 			return
-		case <-ticker.C:
-			if err := s.repo.MarkStaleModules(timeout); err != nil {
-				logger.L().Error("标记超时模块失败", "error", err)
+		case now := <-ticker.C:
+			if err := s.repo.MarkStaleModules(now); err != nil {
+				logger.L().Error("标记超时模块运行实例失败", "error", err)
 			}
 		}
 	}
 }
 
-// convertToModuleInfo 转换为ModuleInfo响应
-func (s *ModuleRegistryService) convertToModuleInfo(module *models.ModuleRegistry) *models.ModuleInfo {
-	var metadata map[string]interface{}
-	if module.Metadata != nil {
-		_ = json.Unmarshal(module.Metadata, &metadata)
-	}
-	var configurationManagement *commonconfiguration.ManagementDeclaration
-	if len(module.ConfigurationManagement) > 0 {
+func (s *ModuleRegistryService) convertToModuleInfo(definition *models.ModuleDefinition, activeInstancesOnly bool) *models.ModuleInfo {
+	var configuration *commonconfiguration.ManagementDeclaration
+	if len(definition.ConfigurationManagement) > 0 {
 		var declaration commonconfiguration.ManagementDeclaration
-		if json.Unmarshal(module.ConfigurationManagement, &declaration) == nil {
-			configurationManagement = &declaration
+		if json.Unmarshal(definition.ConfigurationManagement, &declaration) == nil {
+			configuration = &declaration
 		}
 	}
-
+	now := time.Now()
+	instances := make([]models.ModuleRuntimeInstanceInfo, 0, len(definition.RuntimeInstances))
+	for _, instance := range definition.RuntimeInstances {
+		status := instance.Status
+		if !instance.LeaseExpiresAt.After(now) {
+			status = models.ModuleRuntimeStatusDown
+		}
+		if activeInstancesOnly && status != models.ModuleRuntimeStatusUp {
+			continue
+		}
+		var metadata map[string]interface{}
+		if len(instance.Metadata) > 0 {
+			_ = json.Unmarshal(instance.Metadata, &metadata)
+		}
+		instances = append(instances, models.ModuleRuntimeInstanceInfo{
+			ID: instance.ID, InstanceID: instance.InstanceID, Role: instance.Role,
+			ModuleURL: instance.ModuleURL, HealthCheckURL: instance.HealthCheckURL,
+			Status: status, LastHeartbeat: instance.LastHeartbeat, LeaseExpiresAt: instance.LeaseExpiresAt,
+			Metadata: metadata, RegisteredAt: instance.RegisteredAt, UpdatedAt: instance.UpdatedAt,
+		})
+	}
 	return &models.ModuleInfo{
-		ID:                      module.ID,
-		ModuleName:              module.ModuleName,
-		ModuleURL:               module.ModuleURL,
-		RoutePrefix:             module.RoutePrefix,
-		HealthCheckURL:          module.HealthCheckURL,
-		Status:                  module.Status,
-		LastHeartbeat:           module.LastHeartbeat,
-		Metadata:                metadata,
-		ConfigurationManagement: configurationManagement,
-		CreatedAt:               module.CreatedAt,
-		UpdatedAt:               module.UpdatedAt,
+		ID: definition.ID, ModuleName: definition.ModuleName, RoutePrefix: definition.RoutePrefix,
+		Enabled: definition.Enabled, Instances: instances, ConfigurationManagement: configuration,
+		CreatedAt: definition.CreatedAt, UpdatedAt: definition.UpdatedAt,
 	}
 }

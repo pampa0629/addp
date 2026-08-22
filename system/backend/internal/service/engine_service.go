@@ -30,6 +30,9 @@ var (
 	ErrSpatialWorkspaceNotFound  = errors.New("未找到可启用的空间工作区")
 	ErrEngineIdentityImmutable   = errors.New("引擎物理端点身份不可修改")
 	ErrEngineDeleting            = errors.New("引擎正在删除，不能执行该操作")
+	ErrEngineDeleted             = errors.New("引擎已删除，不能执行该操作")
+	ErrEngineRestoreRequired     = errors.New("相同身份的引擎已删除，必须显式恢复")
+	ErrEngineVersionConflict     = errors.New("引擎已被其他操作修改，请刷新后重试")
 	ErrInvalidEngineLifecycle    = errors.New("无效的引擎生命周期状态")
 	ErrInvalidArtifactPolicy     = errors.New("无效的外部产物处理策略")
 	ErrEngineCleanupUnavailable  = errors.New("引擎删除所需的资源回收服务不可用")
@@ -40,6 +43,16 @@ var (
 	ErrDeletionRunningExecutions = errors.New("仍有运行任务正在使用该引擎")
 	ErrDeletionConfirmation      = errors.New("删除确认文本与引擎名称不一致")
 )
+
+type EngineRestoreRequiredError struct {
+	EngineID uint
+}
+
+func (e *EngineRestoreRequiredError) Error() string {
+	return fmt.Sprintf("%s（engine_id=%d）", ErrEngineRestoreRequired.Error(), e.EngineID)
+}
+
+func (e *EngineRestoreRequiredError) Unwrap() error { return ErrEngineRestoreRequired }
 
 var disallowedSystemEngineTypes = map[string]struct{}{
 	"sqlite":     {},
@@ -80,22 +93,48 @@ func (s *EngineService) WithCleanupOrchestrator(cleanup *CleanupOrchestratorServ
 	return s
 }
 
-func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy, tenantID uint) (*models.Engine, error) {
-	// 检查重复资源
-	if err := s.checkDuplicateResource(req, tenantID); err != nil {
-		return nil, err
+func (s *EngineService) persistEngine(engine *models.Engine) error {
+	if err := s.repo.Update(engine); err != nil {
+		if errors.Is(err, repository.ErrEngineVersionConflict) {
+			return ErrEngineVersionConflict
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy, tenantID uint) (*models.Engine, bool, error) {
+	if req == nil {
+		return nil, false, errors.New("无效的请求数据")
+	}
+	identityKey, err := buildConnectionIdentityKey(req.EngineType, req.ConnectionInfo)
+	if err != nil {
+		return nil, false, err
+	}
+	tenantPtr := &tenantID
+	if existing, err := s.repo.FindByIdentityKey(req.EngineType, tenantPtr, identityKey); err == nil {
+		return s.resolveIdempotentRegistration(existing)
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, err
+	}
+	if existing, err := s.repo.FindByNameAndTenant(req.Name, tenantID); err == nil && existing != nil {
+		return nil, false, fmt.Errorf("资源名称 '%s' 已存在，请使用其他名称", req.Name)
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, err
 	}
 
 	// 加密敏感字段
 	encryptedConnInfo, err := s.encryptConnectionInfoForStorage(req.EngineType, req.ConnectionInfo)
 	if err != nil {
-		return nil, fmt.Errorf("加密连接信息失败: %w", err)
+		return nil, false, fmt.Errorf("加密连接信息失败: %w", err)
 	}
 
 	engine := &models.Engine{
 		Name:                   req.Name, // 显示名称
 		EngineType:             req.EngineType,
 		ConnectionInfo:         encryptedConnInfo,
+		IdentityKey:            identityKey,
+		Version:                1,
 		Description:            req.Description,
 		CreatedBy:              &createdBy,
 		TenantID:               &tenantID,
@@ -114,11 +153,15 @@ func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy, tenan
 	}
 
 	if err := s.prepareEngineCapabilities(engine); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	if err := s.repo.Create(engine); err != nil {
-		return nil, err
+		// 唯一索引解决并发注册竞争；输掉竞争的一方读取并返回永久实例。
+		if existing, findErr := s.repo.FindByIdentityKey(req.EngineType, tenantPtr, identityKey); findErr == nil {
+			return s.resolveIdempotentRegistration(existing)
+		}
+		return nil, false, err
 	}
 
 	// 发布资源创建事件
@@ -126,7 +169,23 @@ func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy, tenan
 		_ = s.eventPublisher.PublishEngineChange(context.Background(), engine.ID, events.ActionCreate)
 	}
 
-	return s.sanitizeResource(engine), nil
+	return s.sanitizeResource(engine), true, nil
+}
+
+func (s *EngineService) resolveIdempotentRegistration(existing *models.Engine) (*models.Engine, bool, error) {
+	if existing == nil {
+		return nil, false, ErrResourceNotFound
+	}
+	switch existing.LifecycleState {
+	case models.EngineLifecycleActive, models.EngineLifecycleDisabled:
+		return s.sanitizeResource(existing), false, nil
+	case models.EngineLifecycleDeleting:
+		return nil, false, ErrEngineDeleting
+	case models.EngineLifecycleDeleted:
+		return nil, false, &EngineRestoreRequiredError{EngineID: existing.ID}
+	default:
+		return nil, false, fmt.Errorf("%w: %s", ErrInvalidEngineLifecycle, existing.LifecycleState)
+	}
 }
 
 // CreateInternal 供内部服务调用创建资源
@@ -135,20 +194,32 @@ func (s *EngineService) CreateInternal(req *models.EngineCreateRequest, tenantID
 		return nil, errors.New("无效的请求数据")
 	}
 
-	encryptedConnInfo, err := s.encryptConnectionInfoForStorage(req.EngineType, req.ConnectionInfo)
+	identityKey, err := buildConnectionIdentityKey(req.EngineType, req.ConnectionInfo)
 	if err != nil {
-		return nil, fmt.Errorf("加密连接信息失败: %w", err)
+		return nil, err
 	}
-
 	var tenantPtr *uint
 	if tenantID > 0 {
 		tenantPtr = &tenantID
+	}
+	if existing, findErr := s.repo.FindByIdentityKey(req.EngineType, tenantPtr, identityKey); findErr == nil {
+		engine, _, resolveErr := s.resolveIdempotentRegistration(existing)
+		return engine, resolveErr
+	} else if !errors.Is(findErr, gorm.ErrRecordNotFound) {
+		return nil, findErr
+	}
+
+	encryptedConnInfo, err := s.encryptConnectionInfoForStorage(req.EngineType, req.ConnectionInfo)
+	if err != nil {
+		return nil, fmt.Errorf("加密连接信息失败: %w", err)
 	}
 
 	engine := &models.Engine{
 		Name:                   req.Name, // 显示名称
 		EngineType:             req.EngineType,
 		ConnectionInfo:         encryptedConnInfo,
+		IdentityKey:            identityKey,
+		Version:                1,
 		Description:            req.Description,
 		TenantID:               tenantPtr,
 		LifecycleState:         models.EngineLifecycleActive,
@@ -165,6 +236,10 @@ func (s *EngineService) CreateInternal(req *models.EngineCreateRequest, tenantID
 	}
 
 	if err := s.repo.Create(engine); err != nil {
+		if existing, findErr := s.repo.FindByIdentityKey(req.EngineType, tenantPtr, identityKey); findErr == nil {
+			resolved, _, resolveErr := s.resolveIdempotentRegistration(existing)
+			return resolved, resolveErr
+		}
 		return nil, err
 	}
 
@@ -363,7 +438,7 @@ func normalizeLifecycleStateFilter(values []string) ([]string, error) {
 	for _, value := range values {
 		state := strings.TrimSpace(value)
 		switch state {
-		case models.EngineLifecycleActive, models.EngineLifecycleDisabled, models.EngineLifecycleDeleting:
+		case models.EngineLifecycleActive, models.EngineLifecycleDisabled, models.EngineLifecycleDeleting, models.EngineLifecycleDeleted:
 		default:
 			return nil, fmt.Errorf("%w: %s", ErrInvalidEngineLifecycle, state)
 		}
@@ -377,6 +452,9 @@ func normalizeLifecycleStateFilter(values []string) ([]string, error) {
 }
 
 func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateRequest) (*models.Engine, error) {
+	if req == nil || req.Version < 1 {
+		return nil, ErrEngineVersionConflict
+	}
 	engine, err := s.repo.GetByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -390,6 +468,12 @@ func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateReques
 	}
 	if engine.LifecycleState == models.EngineLifecycleDeleting {
 		return nil, ErrEngineDeleting
+	}
+	if engine.LifecycleState == models.EngineLifecycleDeleted {
+		return nil, ErrEngineDeleted
+	}
+	if engine.Version != req.Version {
+		return nil, ErrEngineVersionConflict
 	}
 
 	// 检查是否为内置资源（内置资源不允许修改核心配置）
@@ -440,7 +524,7 @@ func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateReques
 		}
 	}
 
-	if err := s.repo.Update(engine); err != nil {
+	if err := s.persistEngine(engine); err != nil {
 		return nil, err
 	}
 
@@ -466,6 +550,12 @@ func (s *EngineService) CreateDeletionAssessment(id, tenantID, actorID uint, ext
 	}
 	if engine.IsBuiltin {
 		return "", ErrBuiltinResourceImmutable
+	}
+	if engine.LifecycleState == models.EngineLifecycleDeleting {
+		return "", ErrEngineDeleting
+	}
+	if engine.LifecycleState == models.EngineLifecycleDeleted {
+		return "", ErrEngineDeleted
 	}
 	if s.cleanup == nil {
 		return "", ErrEngineCleanupUnavailable
@@ -513,7 +603,7 @@ func (s *EngineService) GetDeletionAssessment(id, tenantID uint, assessmentID st
 }
 
 func (s *EngineService) BeginDeletion(id, tenantID, actorID uint, req *models.EngineDeleteRequest) (*models.Engine, error) {
-	if req == nil || strings.TrimSpace(req.AssessmentID) == "" {
+	if req == nil || req.Version < 1 || strings.TrimSpace(req.AssessmentID) == "" {
 		return nil, ErrDeletionAssessmentInvalid
 	}
 	engine, err := s.repo.GetByID(id)
@@ -528,6 +618,15 @@ func (s *EngineService) BeginDeletion(id, tenantID, actorID uint, req *models.En
 	}
 	if engine.IsBuiltin {
 		return nil, ErrBuiltinResourceImmutable
+	}
+	if engine.LifecycleState == models.EngineLifecycleDeleting {
+		return nil, ErrEngineDeleting
+	}
+	if engine.LifecycleState == models.EngineLifecycleDeleted {
+		return nil, ErrEngineDeleted
+	}
+	if engine.Version != req.Version {
+		return nil, ErrEngineVersionConflict
 	}
 	if s.cleanup == nil {
 		return nil, ErrEngineCleanupUnavailable
@@ -559,7 +658,7 @@ func (s *EngineService) BeginDeletion(id, tenantID, actorID uint, req *models.En
 	engine.DeletionScanTaskID = nil
 	engine.DeletionExecuteTaskID = nil
 	engine.DeletionError = ""
-	if err := s.repo.Update(engine); err != nil {
+	if err := s.persistEngine(engine); err != nil {
 		return nil, err
 	}
 
@@ -572,11 +671,11 @@ func (s *EngineService) BeginDeletion(id, tenantID, actorID uint, req *models.En
 	)
 	if err != nil {
 		engine.DeletionError = err.Error()
-		_ = s.repo.Update(engine)
+		_ = s.persistEngine(engine)
 		return nil, err
 	}
 	engine.DeletionScanTaskID = &scanTaskID
-	if err := s.repo.Update(engine); err != nil {
+	if err := s.persistEngine(engine); err != nil {
 		return nil, err
 	}
 	go s.continueDeletion(engine.ID, scanTaskID)
@@ -759,13 +858,97 @@ func (s *EngineService) continueDeletion(engineID uint, scanTaskID string) {
 	if err != nil || current.LifecycleState != models.EngineLifecycleDeleting || current.DeletionScanTaskID == nil || *current.DeletionScanTaskID != scanTaskID {
 		return
 	}
-	if err := s.repo.Delete(engineID); err != nil {
+	now := time.Now()
+	current.LifecycleState = models.EngineLifecycleDeleted
+	current.ConnectionStatus = models.EngineConnectionUnknown
+	current.LastCheckAt = nil
+	current.CheckMessage = ""
+	current.ConnectionInfo = s.scrubSensitiveConnectionInfo(current.EngineType, current.ConnectionInfo)
+	current.DeletedAt = &now
+	current.DeletedBy = current.DeletionRequestedBy
+	current.DeletionError = ""
+	if err := s.persistEngine(current); err != nil {
 		s.setDeletionError(engineID, scanTaskID, fmt.Sprintf("finalize engine deletion: %v", err))
 		return
 	}
 	if s.eventPublisher != nil {
 		_ = s.eventPublisher.PublishEngineChange(context.Background(), engineID, events.ActionDelete)
 	}
+}
+
+func (s *EngineService) Restore(id, tenantID, actorID uint, req *models.EngineRestoreRequest) (*models.Engine, error) {
+	if req == nil || req.Version < 1 {
+		return nil, ErrEngineVersionConflict
+	}
+	engine, err := s.repo.GetByID(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrResourceNotFound
+		}
+		return nil, err
+	}
+	if err := s.authorizeResourceAccess(engine, tenantID); err != nil {
+		return nil, err
+	}
+	if engine.IsBuiltin {
+		return nil, ErrBuiltinResourceImmutable
+	}
+	if engine.LifecycleState != models.EngineLifecycleDeleted {
+		return nil, fmt.Errorf("%w: 只有 deleted 引擎可以恢复", ErrInvalidEngineLifecycle)
+	}
+	if engine.Version != req.Version {
+		return nil, ErrEngineVersionConflict
+	}
+	identityKey, err := buildConnectionIdentityKey(engine.EngineType, req.ConnectionInfo)
+	if err != nil {
+		return nil, err
+	}
+	if string(identityKey) != string(engine.IdentityKey) {
+		return nil, ErrEngineIdentityImmutable
+	}
+	encryptedConnInfo, err := s.encryptConnectionInfoForStorage(engine.EngineType, req.ConnectionInfo)
+	if err != nil {
+		return nil, fmt.Errorf("加密连接信息失败: %w", err)
+	}
+	engine.Name = strings.TrimSpace(req.Name)
+	engine.Description = req.Description
+	engine.ConnectionInfo = encryptedConnInfo
+	engine.Capabilities = req.Capabilities
+	if err := s.prepareEngineCapabilities(engine); err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	engine.LifecycleState = models.EngineLifecycleActive
+	engine.ConnectionStatus = models.EngineConnectionUnknown
+	engine.LastCheckAt = nil
+	engine.CheckMessage = ""
+	engine.DeletionScanTaskID = nil
+	engine.DeletionExecuteTaskID = nil
+	engine.DeletionError = ""
+	engine.RestoredAt = &now
+	engine.RestoredBy = &actorID
+	if err := s.persistEngine(engine); err != nil {
+		return nil, err
+	}
+	if s.eventPublisher != nil {
+		_ = s.eventPublisher.PublishEngineChange(context.Background(), engine.ID, events.ActionUpdate)
+	}
+	go s.CheckAndUpdateConnectionStatus(engine.ID)
+	return s.sanitizeResource(engine), nil
+}
+
+func (s *EngineService) scrubSensitiveConnectionInfo(engineType string, connInfo models.ConnectionInfo) models.ConnectionInfo {
+	if connInfo == nil {
+		return models.ConnectionInfo{}
+	}
+	scrubbed := make(models.ConnectionInfo, len(connInfo))
+	for field, value := range connInfo {
+		if s.isSensitiveField(engineType, field) {
+			continue
+		}
+		scrubbed[field] = value
+	}
+	return scrubbed
 }
 
 func (s *EngineService) waitForCleanupTask(ctx context.Context, taskID string, timeout time.Duration) (*models.TaskStatusResponse, error) {
@@ -798,7 +981,7 @@ func (s *EngineService) setDeletionExecuteTask(engineID uint, scanTaskID, execut
 	}
 	engine.DeletionExecuteTaskID = &executeTaskID
 	engine.DeletionError = ""
-	return s.repo.Update(engine) == nil
+	return s.persistEngine(engine) == nil
 }
 
 func (s *EngineService) setDeletionError(engineID uint, scanTaskID, message string) {
@@ -807,7 +990,7 @@ func (s *EngineService) setDeletionError(engineID uint, scanTaskID, message stri
 		return
 	}
 	engine.DeletionError = strings.TrimSpace(message)
-	_ = s.repo.Update(engine)
+	_ = s.persistEngine(engine)
 }
 
 func valueOrZero(value *uint) uint {
@@ -911,6 +1094,12 @@ func (s *EngineService) GetForConnection(id, tenantID uint) (*models.Engine, err
 	if err := s.authorizeResourceAccess(engine, tenantID); err != nil {
 		return nil, err
 	}
+	if engine.LifecycleState == models.EngineLifecycleDeleting {
+		return nil, ErrEngineDeleting
+	}
+	if engine.LifecycleState == models.EngineLifecycleDeleted {
+		return nil, ErrEngineDeleted
+	}
 
 	decryptedConnInfo, err := s.decryptStoredConnectionInfo(engine.EngineType, engine.ConnectionInfo)
 	if err != nil {
@@ -1012,58 +1201,20 @@ func (s *EngineService) validateConnectionIdentityUnchanged(engineType string, o
 	return nil
 }
 
-func connectionIdentityDefinition(engineType string) ([]string, engineplugin.EnginePlugin, error) {
-	plugin, err := engineplugin.Get(strings.TrimSpace(engineType))
-	if err == nil {
-		identityProvider, ok := plugin.(engineplugin.ConnectionIdentityProvider)
-		if !ok {
-			return nil, nil, fmt.Errorf("engine plugin %s did not implement ConnectionIdentityProvider", engineType)
-		}
-		fields := identityProvider.ConnectionIdentityFields()
-		if len(fields) == 0 {
-			return nil, nil, fmt.Errorf("engine plugin %s did not declare connection identity fields", engineType)
-		}
-		return fields, plugin, nil
+func buildConnectionIdentityKey(engineType string, connInfo models.ConnectionInfo) (models.JSONString, error) {
+	identityKey, err := engineplugin.BuildConnectionIdentityKey(engineType, engineplugin.ConnectionInfo(connInfo))
+	if err != nil {
+		return "", err
 	}
-	// 未编译进当前进程的 extension engine 使用 addp.workflow/v1 标准 HTTP 端点身份。
-	return []string{"protocol", "host", "port"}, nil, nil
+	return models.JSONString(identityKey), nil
+}
+
+func connectionIdentityDefinition(engineType string) ([]string, engineplugin.EnginePlugin, error) {
+	return engineplugin.ConnectionIdentityDefinition(engineType)
 }
 
 func normalizedConnectionIdentityValue(field string, connInfo models.ConnectionInfo, plugin engineplugin.EnginePlugin) string {
-	field = strings.TrimSpace(field)
-	switch field {
-	case "port":
-		port := engineplugin.GetInt(engineplugin.ConnectionInfo(connInfo), field)
-		if port == 0 && plugin != nil {
-			port = plugin.DefaultPort()
-		}
-		return fmt.Sprintf("%d", port)
-	case "protocol":
-		value := strings.ToLower(strings.TrimSpace(engineplugin.GetString(engineplugin.ConnectionInfo(connInfo), field)))
-		if value == "" {
-			value = "http"
-		}
-		return value
-	case "host", "server":
-		value := engineplugin.NormalizeHost(strings.TrimSpace(engineplugin.GetString(engineplugin.ConnectionInfo(connInfo), field)))
-		return strings.ToLower(value)
-	case "endpoint":
-		return strings.ToLower(strings.TrimRight(strings.TrimSpace(engineplugin.GetString(engineplugin.ConnectionInfo(connInfo), field)), "/"))
-	case "export_path":
-		value := strings.TrimSpace(engineplugin.GetString(engineplugin.ConnectionInfo(connInfo), field))
-		if value == "/" {
-			return value
-		}
-		return strings.TrimRight(value, "/")
-	case "auth_source":
-		value := strings.TrimSpace(engineplugin.GetString(engineplugin.ConnectionInfo(connInfo), field))
-		if value == "" && plugin != nil && plugin.Type() == "mongodb" {
-			return "admin"
-		}
-		return value
-	default:
-		return strings.TrimSpace(engineplugin.GetString(engineplugin.ConnectionInfo(connInfo), field))
-	}
+	return engineplugin.NormalizeConnectionIdentityValue(field, engineplugin.ConnectionInfo(connInfo), plugin)
 }
 
 func (s *EngineService) stripConnectionInfoMetaFields(connInfo models.ConnectionInfo) models.ConnectionInfo {
@@ -1322,51 +1473,6 @@ func (s *EngineService) shouldRefreshCapabilities(capabilities *models.JSONStrin
 	return s.validateCapabilities(capabilities) != nil
 }
 
-// checkDuplicateResource 检查是否存在重复资源
-func (s *EngineService) checkDuplicateResource(req *models.EngineCreateRequest, tenantID uint) error {
-	// 检查 1: 同名资源
-	existing, err := s.repo.FindByNameAndTenant(req.Name, tenantID)
-	if err == nil && existing != nil {
-		return fmt.Errorf("资源名称 '%s' 已存在，请使用其他名称", req.Name)
-	}
-
-	// 检查 2: 针对 PostgreSQL，检查连接信息（host+port+database）
-	if strings.ToLower(req.EngineType) == "postgresql" || strings.ToLower(req.EngineType) == "postgres" {
-		host, _ := req.ConnectionInfo["host"].(string)
-		portFloat, _ := req.ConnectionInfo["port"].(float64)
-		database, _ := req.ConnectionInfo["database"].(string)
-
-		port := int(portFloat)
-
-		existing, err := s.repo.FindByConnection(tenantID, host, port, database)
-		if err == nil && existing != nil {
-			return fmt.Errorf("数据库连接 %s:%d/%s 已注册（资源名称: %s），不能重复注册",
-				host, port, database, existing.Name)
-		}
-	}
-
-	// 检查 3: 针对 S3/MinIO，检查连接信息（endpoint）
-	if strings.ToLower(req.EngineType) == "s3" || strings.ToLower(req.EngineType) == "minio" {
-		endpoint, _ := req.ConnectionInfo["endpoint"].(string)
-		if endpoint != "" {
-			// 查找同一租户下是否已有相同endpoint的S3引擎
-			engines, _, err := s.repo.ListByTenant(tenantID, 0, 1000, "s3")
-			if err == nil {
-				for _, engine := range engines {
-					if existingEndpoint, ok := engine.ConnectionInfo["endpoint"].(string); ok {
-						if existingEndpoint == endpoint {
-							return fmt.Errorf("对象存储连接 %s 已注册（资源名称: %s），不能重复注册",
-								endpoint, engine.Name)
-						}
-					}
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
 // CheckAndUpdateConnectionStatus 检测并更新资源连接状态（同步）
 // 返回true表示在线，false表示离线
 // 用于启动时的健康检查和用户手动测试连接
@@ -1456,9 +1562,8 @@ func (s *EngineService) refreshEngineCapabilities(engineID uint) error {
 	if engine.Capabilities != nil && string(*engine.Capabilities) == capabilities {
 		return nil
 	}
-	return s.repo.UpdateByID(context.Background(), engine.ID, map[string]interface{}{
-		"capabilities": capabilitiesJSON,
-	})
+	engine.Capabilities = capabilitiesJSON
+	return s.persistEngine(engine)
 }
 
 // AsyncCheckConnection 异步检测资源连接状态（用于被动触发）
@@ -1493,7 +1598,7 @@ func (s *EngineService) updateConnectionStatus(engineID uint, status, message st
 	engine.CheckMessage = message
 
 	// 保存更新
-	if err := s.repo.Update(engine); err != nil {
+	if err := s.persistEngine(engine); err != nil {
 		return err
 	}
 
@@ -1537,7 +1642,7 @@ func (s *EngineService) reconcileSpatialWorkspaceRuntimeBindings(ctx context.Con
 			return fmt.Errorf("协调引擎 %d 能力声明失败: %w", engine.ID, err)
 		}
 		engine.Capabilities = capabilitiesJSON
-		if err := s.repo.Update(engine); err != nil {
+		if err := s.persistEngine(engine); err != nil {
 			return fmt.Errorf("保存引擎 %d 空间工作区绑定失败: %w", engine.ID, err)
 		}
 		if s.eventPublisher != nil {
@@ -1566,24 +1671,44 @@ func (s *EngineService) RecordConnectionStatus(engineID uint, status string, mes
 	return s.updateConnectionStatus(engineID, status, message)
 }
 
-// GetByEngineTypeAndTenant 根据 engine_type 和 tenant_id 查询引擎
-// 用于工作流引擎自注册时查找是否已存在记录
-func (s *EngineService) GetByEngineTypeAndTenant(engineType string, tenantID *uint) (*models.Engine, error) {
-	return s.repo.GetByEngineTypeAndTenant(engineType, tenantID)
-}
-
 // CreateEngine 创建引擎
-func (s *EngineService) CreateEngine(engine *models.Engine) error {
+
+func (s *EngineService) CreateEngine(engine *models.Engine) (*models.Engine, bool, error) {
+	if engine == nil {
+		return nil, false, errors.New("无效的引擎数据")
+	}
 	if strings.TrimSpace(engine.LifecycleState) == "" {
 		engine.LifecycleState = models.EngineLifecycleActive
 	}
 	if strings.TrimSpace(engine.ExternalArtifactPolicy) == "" {
 		engine.ExternalArtifactPolicy = models.ExternalArtifactPolicyDelete
 	}
-	if err := s.prepareEngineCapabilities(engine); err != nil {
-		return err
+	identityKey, err := buildConnectionIdentityKey(engine.EngineType, engine.ConnectionInfo)
+	if err != nil {
+		return nil, false, err
 	}
-	return s.repo.Create(engine)
+	if existing, findErr := s.repo.FindByIdentityKey(engine.EngineType, engine.TenantID, identityKey); findErr == nil {
+		return s.resolveIdempotentRegistration(existing)
+	} else if !errors.Is(findErr, gorm.ErrRecordNotFound) {
+		return nil, false, findErr
+	}
+	encryptedConnInfo, err := s.encryptConnectionInfoForStorage(engine.EngineType, engine.ConnectionInfo)
+	if err != nil {
+		return nil, false, err
+	}
+	engine.ConnectionInfo = encryptedConnInfo
+	engine.IdentityKey = identityKey
+	engine.Version = 1
+	if err := s.prepareEngineCapabilities(engine); err != nil {
+		return nil, false, err
+	}
+	if err := s.repo.Create(engine); err != nil {
+		if existing, findErr := s.repo.FindByIdentityKey(engine.EngineType, engine.TenantID, identityKey); findErr == nil {
+			return s.resolveIdempotentRegistration(existing)
+		}
+		return nil, false, err
+	}
+	return engine, true, nil
 }
 
 // UpdateEngine 更新引擎
@@ -1597,6 +1722,9 @@ func (s *EngineService) UpdateEngine(engine *models.Engine) error {
 	}
 	if stored.LifecycleState == models.EngineLifecycleDeleting {
 		return ErrEngineDeleting
+	}
+	if stored.LifecycleState == models.EngineLifecycleDeleted {
+		return ErrEngineDeleted
 	}
 	original, err := s.decryptStoredConnectionInfo(stored.EngineType, stored.ConnectionInfo)
 	if err != nil {
@@ -1614,7 +1742,7 @@ func (s *EngineService) UpdateEngine(engine *models.Engine) error {
 	if err := s.prepareEngineCapabilities(engine); err != nil {
 		return err
 	}
-	return s.repo.Update(engine)
+	return s.persistEngine(engine)
 }
 
 func (s *EngineService) prepareEngineCapabilities(engine *models.Engine) error {
@@ -1827,7 +1955,7 @@ func (s *EngineService) EnableSpatialWorkspace(ctx context.Context, id uint, eco
 	if err := s.prepareEngineCapabilities(engine); err != nil {
 		return nil, err
 	}
-	if err := s.repo.Update(engine); err != nil {
+	if err := s.persistEngine(engine); err != nil {
 		return nil, err
 	}
 

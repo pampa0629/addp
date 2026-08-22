@@ -2,12 +2,15 @@ package repository
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"time"
 
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/system/internal/models"
 	"gorm.io/gorm"
 )
+
+var ErrEngineVersionConflict = errors.New("engine version conflict")
 
 type EngineRepository struct {
 	db *gorm.DB
@@ -52,7 +55,7 @@ func (r *EngineRepository) List(offset, limit int, engineType string) ([]models.
 
 func (r *EngineRepository) ListAll() ([]models.Engine, error) {
 	var engines []models.Engine
-	err := r.db.Find(&engines).Error
+	err := r.db.Where("lifecycle_state <> ?", models.EngineLifecycleDeleted).Find(&engines).Error
 	return engines, err
 }
 
@@ -108,39 +111,40 @@ func (r *EngineRepository) ListDeleting() ([]models.Engine, error) {
 }
 
 func (r *EngineRepository) Update(engine *models.Engine) error {
-	return r.db.Save(engine).Error
-}
-
-func (r *EngineRepository) Delete(id uint) error {
-	return r.db.Delete(&models.Engine{}, id).Error
-}
-
-// FindByEngineTypeAndBuiltin 根据 engine_type 和 is_builtin 查找引擎
-func (r *EngineRepository) FindByEngineTypeAndBuiltin(ctx context.Context, engineType string) (*models.Engine, error) {
-	var engine models.Engine
-	err := r.db.WithContext(ctx).Where("engine_type = ? AND is_builtin = ?", engineType, true).First(&engine).Error
-	if err != nil {
-		return nil, commonrepo.WrapDBError(err)
+	if engine == nil || engine.ID == 0 || engine.Version < 1 {
+		return ErrEngineVersionConflict
 	}
-	return &engine, nil
+	expectedVersion := engine.Version
+	engine.Version = expectedVersion + 1
+	engine.UpdatedAt = time.Now()
+	result := r.db.Model(&models.Engine{}).
+		Where("id = ? AND version = ?", engine.ID, expectedVersion).
+		Select("*").
+		Omit("id", "created_at").
+		Updates(engine)
+	if result.Error != nil {
+		engine.Version = expectedVersion
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		engine.Version = expectedVersion
+		return ErrEngineVersionConflict
+	}
+	return nil
 }
 
-// GetByEngineTypeAndTenant 根据 engine_type 和 tenant_id 查询引擎
-// 用于工作流引擎自注册时查找是否已存在记录
-func (r *EngineRepository) GetByEngineTypeAndTenant(engineType string, tenantID *uint) (*models.Engine, error) {
+// FindByIdentityKey 返回同一永久身份的 Engine Instance，包含 deleted 墓碑。
+func (r *EngineRepository) FindByIdentityKey(engineType string, tenantID *uint, identityKey models.JSONString) (*models.Engine, error) {
 	var engine models.Engine
-	query := r.db.Where("engine_type = ?", engineType)
-
+	query := r.db.Where("lower(engine_type) = lower(?) AND identity_key = ?", engineType, identityKey)
 	if tenantID == nil {
 		query = query.Where("tenant_id IS NULL")
 	} else {
 		query = query.Where("tenant_id = ?", *tenantID)
 	}
-
 	if err := query.First(&engine).Error; err != nil {
-		return nil, commonrepo.WrapDBError(err)
+		return nil, err
 	}
-
 	return &engine, nil
 }
 
@@ -161,11 +165,6 @@ func (r *EngineRepository) FindByFilters(ctx context.Context, filters map[string
 	return engines, nil
 }
 
-// UpdateByID 根据 ID 更新资源（支持部分更新）
-func (r *EngineRepository) UpdateByID(ctx context.Context, id uint, updates map[string]interface{}) error {
-	return r.db.WithContext(ctx).Model(&models.Engine{}).Where("id = ?", id).Updates(updates).Error
-}
-
 // CreateWithContext 创建资源（带 context）
 func (r *EngineRepository) CreateWithContext(ctx context.Context, engine *models.Engine) error {
 	return r.db.WithContext(ctx).Create(engine).Error
@@ -174,26 +173,9 @@ func (r *EngineRepository) CreateWithContext(ctx context.Context, engine *models
 // FindByNameAndTenant 根据名称和租户查找资源
 func (r *EngineRepository) FindByNameAndTenant(name string, tenantID uint) (*models.Engine, error) {
 	var engine models.Engine
-	err := r.db.Where("name = ? AND tenant_id = ?", name, tenantID).First(&engine).Error
+	err := r.db.Where("name = ? AND tenant_id = ? AND lifecycle_state <> ?", name, tenantID, models.EngineLifecycleDeleted).First(&engine).Error
 	if err != nil {
-		return nil, commonrepo.WrapDBError(err)
-	}
-	return &engine, nil
-}
-
-// FindByConnection 根据连接信息查找 PostgreSQL 资源
-func (r *EngineRepository) FindByConnection(tenantID uint, host string, port int, database string) (*models.Engine, error) {
-	var engine models.Engine
-
-	// 使用 JSONB 查询
-	err := r.db.Where("tenant_id = ? AND engine_type IN (?, ?)", tenantID, "postgresql", "postgres").
-		Where("connection_info->>'host' = ?", host).
-		Where("connection_info->>'port' = ?", fmt.Sprintf("%d", port)).
-		Where("connection_info->>'database' = ?", database).
-		First(&engine).Error
-
-	if err != nil {
-		return nil, commonrepo.WrapDBError(err)
+		return nil, err
 	}
 	return &engine, nil
 }

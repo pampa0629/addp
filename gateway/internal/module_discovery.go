@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -84,16 +85,14 @@ func (md *ModuleDiscovery) refreshModules() error {
 	// 更新模块列表
 	newModules := make(map[string]*client.ModuleInfo)
 	for _, mod := range modules {
-		if mod.Status == "up" {
-			newModules[mod.ModuleName] = mod
+		backend, ok := selectRoutableBackend(mod, time.Now())
+		if !ok {
+			continue
+		}
+		newModules[mod.ModuleName] = mod
 
-			// 如果代理不存在或 URL 变更，创建/更新代理
-			if existingProxy, exists := md.proxies[mod.ModuleName]; !exists {
-				md.proxies[mod.ModuleName] = proxy.NewServiceProxy(mod.ModuleURL)
-			} else if existingProxy.GetTargetURL() != mod.ModuleURL {
-				// URL 变更，重新创建代理
-				md.proxies[mod.ModuleName] = proxy.NewServiceProxy(mod.ModuleURL)
-			}
+		if existingProxy, exists := md.proxies[mod.ModuleName]; !exists || existingProxy.GetTargetURL() != backend.ModuleURL {
+			md.proxies[mod.ModuleName] = proxy.NewServiceProxy(backend.ModuleURL)
 		}
 	}
 
@@ -108,6 +107,23 @@ func (md *ModuleDiscovery) refreshModules() error {
 
 	fmt.Printf("模块列表已刷新: %d 个活跃模块\n", len(md.modules))
 	return nil
+}
+
+func selectRoutableBackend(module *client.ModuleInfo, now time.Time) (*client.ModuleRuntimeInstanceInfo, bool) {
+	if module == nil || !module.Enabled {
+		return nil, false
+	}
+	candidates := make([]client.ModuleRuntimeInstanceInfo, 0)
+	for _, instance := range module.Instances {
+		if instance.Role == "backend" && instance.Status == "up" && instance.LeaseExpiresAt.After(now) && instance.ModuleURL != "" {
+			candidates = append(candidates, instance)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, false
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].InstanceID < candidates[j].InstanceID })
+	return &candidates[0], true
 }
 
 // GetProxy 获取模块代理（用于路由转发）

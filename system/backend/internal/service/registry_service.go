@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"strings"
 
-	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/models"
 	localModels "github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
+	"gorm.io/gorm"
 )
 
 var ErrInvalidCapabilityRegistration = errors.New("invalid capability registration")
@@ -38,24 +38,32 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 		return 0, err
 	}
 
-	// 1. 根据 engine_type + is_builtin 查询是否已存在（幂等检查）
-	var existing *localModels.Engine
-	if req.IsBuiltin {
-		// 内置引擎：通过 engine_type + is_builtin 查找
-		existing, err = s.resourceRepo.FindByEngineTypeAndBuiltin(ctx, req.EngineType)
-		if err != nil && !errors.Is(err, commonapi.ErrNotFound) {
-			return 0, fmt.Errorf("failed to query existing resource: %w", err)
-		}
-	}
-
-	// 2. 准备 ConnectionInfo（对于计算引擎，可以为空）
+	// 1. 准备 ConnectionInfo（对于计算引擎，可以为空）
 	connectionInfo := localModels.ConnectionInfo{}
 	if req.ConnectionInfo != nil {
 		connectionInfo = req.ConnectionInfo
 	}
 
-	// 3. 幂等更新或创建
+	identityKey, err := buildConnectionIdentityKey(req.EngineType, connectionInfo)
+	if err != nil {
+		return 0, err
+	}
+	existing, err := s.resourceRepo.FindByIdentityKey(req.EngineType, nil, identityKey)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, fmt.Errorf("failed to query existing resource: %w", err)
+	}
+
+	// 2. 幂等更新或创建
 	if existing != nil {
+		switch existing.LifecycleState {
+		case models.EngineLifecycleDeleting:
+			return 0, ErrEngineDeleting
+		case models.EngineLifecycleDeleted:
+			return 0, &EngineRestoreRequiredError{EngineID: existing.ID}
+		case models.EngineLifecycleActive, models.EngineLifecycleDisabled:
+		default:
+			return 0, fmt.Errorf("%w: %s", ErrInvalidEngineLifecycle, existing.LifecycleState)
+		}
 		// 已存在，更新配置
 		// 内置引擎使用插件的 DisplayName()，非内置引擎使用请求中的 Name
 		engineName := req.Name
@@ -65,17 +73,12 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 			}
 		}
 
-		updates := map[string]interface{}{
-			"name":            engineName,
-			"engine_type":     req.EngineType,
-			"description":     req.Description,
-			"is_builtin":      req.IsBuiltin,
-			"capabilities":    capabilitiesJSON,
-			"lifecycle_state": models.EngineLifecycleActive,
-			"connection_info": connectionInfo,
-		}
-
-		if err := s.resourceRepo.UpdateByID(ctx, existing.ID, updates); err != nil {
+		existing.Name = engineName
+		existing.Description = req.Description
+		existing.IsBuiltin = req.IsBuiltin
+		existing.Capabilities = toJSONStringPtrFromString(capabilitiesJSON)
+		existing.ConnectionInfo = connectionInfo
+		if err := s.resourceRepo.Update(existing); err != nil {
 			return 0, fmt.Errorf("failed to update existing resource: %w", err)
 		}
 
@@ -102,6 +105,8 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 		EngineOrigin:           engineOrigin,
 		Description:            req.Description,
 		ConnectionInfo:         connectionInfo,
+		IdentityKey:            identityKey,
+		Version:                1,
 		IsBuiltin:              req.IsBuiltin,
 		Capabilities:           toJSONStringPtrFromString(capabilitiesJSON),
 		LifecycleState:         models.EngineLifecycleActive,

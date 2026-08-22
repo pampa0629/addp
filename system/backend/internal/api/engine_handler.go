@@ -63,13 +63,17 @@ func (h *EngineHandler) Create(c *gin.Context) {
 		respondIAMError(c, err)
 		return
 	}
-	engine, err := h.engineService.Create(&req, actorID, tenantID)
+	engine, created, err := h.engineService.Create(&req, actorID, tenantID)
 	if err != nil {
 		h.respondWithResourceError(c, err)
 		return
 	}
 
-	commonapi.RespondCreated(c, toEngineResponse(engine))
+	if created {
+		commonapi.RespondCreated(c, toEngineResponse(engine))
+		return
+	}
+	commonapi.RespondSuccess(c, toEngineResponse(engine))
 }
 
 // List godoc
@@ -438,6 +442,45 @@ func (h *EngineHandler) Delete(c *gin.Context) {
 	})
 }
 
+// Restore godoc
+// @Summary      恢复已删除引擎 | Restore deleted engine
+// @Description  使用与墓碑身份键一致的完整连接配置和新凭据显式恢复 Engine Instance，沿用原永久 ID | Explicitly restore an Engine Instance with complete connection details and fresh credentials matching the tombstone identity key while retaining its permanent ID
+// @Tags         引擎管理 | Engine Management
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "引擎ID | Engine ID"
+// @Param        request body models.EngineRestoreRequest true "恢复信息 | Restore info"
+// @Success      200 {object} models.EngineResponse
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine.update"]
+// @Router       /engines/{id}/restore [post]
+func (h *EngineHandler) Restore(c *gin.Context) {
+	id, err := commonapi.BindIDParam(c, "id")
+	if err != nil {
+		return
+	}
+	var req models.EngineRestoreRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	actorID, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	engine, err := h.engineService.Restore(id, tenantID, actorID, &req)
+	if err != nil {
+		h.respondWithResourceError(c, err)
+		return
+	}
+	commonapi.RespondSuccess(c, toEngineResponse(engine))
+}
+
 func (h *EngineHandler) respondWithResourceError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrResourceNotFound):
@@ -454,6 +497,23 @@ func (h *EngineHandler) respondWithResourceError(c *gin.Context, err error) {
 		commonapi.RespondError(c, http.StatusConflict, commoni18n.T(c, sysi18n.MsgEngineIdentityImmutable))
 	case errors.Is(err, service.ErrEngineDeleting):
 		commonapi.RespondError(c, http.StatusConflict, commoni18n.T(c, sysi18n.MsgEngineDeleting))
+	case errors.Is(err, service.ErrEngineDeleted):
+		commonapi.RespondError(c, http.StatusConflict, commoni18n.T(c, sysi18n.MsgEngineDeleted))
+	case errors.Is(err, service.ErrEngineRestoreRequired):
+		response := gin.H{
+			"error":      commoni18n.T(c, sysi18n.MsgEngineRestoreRequired),
+			"error_code": "engine_restore_required",
+		}
+		var restoreErr *service.EngineRestoreRequiredError
+		if errors.As(err, &restoreErr) {
+			response["engine_id"] = restoreErr.EngineID
+		}
+		c.JSON(http.StatusConflict, response)
+	case errors.Is(err, service.ErrEngineVersionConflict):
+		c.JSON(http.StatusConflict, gin.H{
+			"error":      commoni18n.T(c, sysi18n.MsgEngineVersionConflict),
+			"error_code": "resource_version_conflict",
+		})
 	case errors.Is(err, service.ErrInvalidEngineLifecycle):
 		commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgEngineLifecycleInvalid))
 	case errors.Is(err, service.ErrInvalidArtifactPolicy):
@@ -793,55 +853,33 @@ func (h *EngineHandler) RegisterRuntimeEngine(c *gin.Context) {
 	req.ConnectionInfo["host"] = requestedHost
 	fmt.Printf("[RegisterEngine] 🌐 Runtime advertised host: %s\n", requestedHost)
 
-	// 2. 查找是否已存在（engine_type + tenant_id IS NULL 表示平台级引擎）
-	existingEngine, err := h.engineService.GetByEngineTypeAndTenant(req.EngineType, nil)
-
-	var engine *models.Engine
-	if err != nil {
-		// 不存在 - 创建新记录
-		fmt.Printf("[RegisterEngine] ➕ 引擎不存在，创建新记录 (is_builtin=%v)\n", req.IsBuiltin)
-		newEngine := models.Engine{
-			Name:                   req.Name,
-			EngineType:             req.EngineType,
-			EngineOrigin:           "extension",
-			Description:            req.Description,
-			ConnectionInfo:         req.ConnectionInfo,
-			Capabilities:           req.Capabilities,
-			LifecycleState:         models.EngineLifecycleActive,
-			ExternalArtifactPolicy: models.ExternalArtifactPolicyDelete,
-			IsBuiltin:              req.IsBuiltin, // 使用请求中的 is_builtin 值
-			TenantID:               nil,           // 平台级引擎
-			ConnectionStatus:       "unknown",
-		}
-
-		if err := h.engineService.CreateEngine(&newEngine); err != nil {
-			fmt.Printf("[RegisterEngine] ❌ 创建引擎失败: %v\n", err)
-			commonapi.RespondError(c, http.StatusInternalServerError, fmt.Sprintf("创建引擎失败: %v", err))
-			return
-		}
-		fmt.Printf("[RegisterEngine] ✅ 引擎创建成功，ID=%d\n", newEngine.ID)
-		engine = &newEngine
-	} else {
-		// 已存在 - 更新记录
-		fmt.Printf("[RegisterEngine] 🔄 引擎已存在 (ID=%d)，更新记录 (is_builtin=%v)\n", existingEngine.ID, req.IsBuiltin)
-		existingEngine.Name = req.Name
-		existingEngine.Description = req.Description
-		existingEngine.ConnectionInfo = req.ConnectionInfo
-		existingEngine.Capabilities = req.Capabilities
-		existingEngine.IsBuiltin = req.IsBuiltin // 更新 is_builtin 字段
-
-		if err := h.engineService.UpdateEngine(existingEngine); err != nil {
-			fmt.Printf("[RegisterEngine] ❌ 更新引擎失败: %v\n", err)
-			h.respondWithResourceError(c, err)
-			return
-		}
-		fmt.Printf("[RegisterEngine] ✅ 引擎更新成功\n")
-		engine = existingEngine
+	// 2. 按永久身份键幂等注册；重复注册沿用原 ID，不覆盖 disabled 管理状态。
+	newEngine := models.Engine{
+		Name:                   req.Name,
+		EngineType:             req.EngineType,
+		EngineOrigin:           "extension",
+		Description:            req.Description,
+		ConnectionInfo:         req.ConnectionInfo,
+		Capabilities:           req.Capabilities,
+		LifecycleState:         models.EngineLifecycleActive,
+		ExternalArtifactPolicy: models.ExternalArtifactPolicyDelete,
+		IsBuiltin:              req.IsBuiltin,
+		TenantID:               nil,
+		ConnectionStatus:       models.EngineConnectionUnknown,
 	}
+	engine, created, err := h.engineService.CreateEngine(&newEngine)
+	if err != nil {
+		fmt.Printf("[RegisterEngine] ❌ 注册引擎失败: %v\n", err)
+		h.respondWithResourceError(c, err)
+		return
+	}
+	fmt.Printf("[RegisterEngine] ✅ 引擎注册成功，ID=%d, created=%v\n", engine.ID, created)
 
 	// 3. 异步触发连接检查
 	fmt.Printf("[RegisterEngine] 🔍 触发异步连接测试...\n")
-	if err := h.engineService.AsyncCheckConnection(engine.ID); err != nil {
+	if engine.LifecycleState != models.EngineLifecycleActive {
+		fmt.Printf("[RegisterEngine] ⏭️  引擎当前为 %s，不触发连接检查\n", engine.LifecycleState)
+	} else if err := h.engineService.AsyncCheckConnection(engine.ID); err != nil {
 		// 连接检查失败不影响注册成功，只记录日志
 		fmt.Printf("[RegisterEngine] ⚠️  触发连接检查失败: %v\n", err)
 	} else {

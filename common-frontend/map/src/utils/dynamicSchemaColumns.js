@@ -38,3 +38,21 @@ export const dynamicSchemaCellValue = (row, descriptor) => {
   const path = Array.isArray(descriptor?.path) ? descriptor.path : []
   return path.reduce((value, segment) => value?.[segment], row)
 }
+
+export const buildTablePreviewColumnDescriptors = ({
+  columns,
+  columnMetadata,
+  geometryColumns,
+  dynamicSchema = false
+}) => {
+  const descriptors = dynamicSchema
+    ? buildDynamicSchemaColumnDescriptors(columns, columnMetadata)
+    : (Array.isArray(columns) ? columns : []).map(column => ({
+        key: column,
+        label: column,
+        path: [column]
+      }))
+  const geometrySet = new Set(Array.isArray(geometryColumns) ? geometryColumns : [])
+  const filtered = descriptors.filter(column => !geometrySet.has(column.key))
+  return filtered.length > 0 ? filtered : descriptors
+}

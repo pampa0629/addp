@@ -514,11 +514,12 @@ func (s *CleanupOrchestratorService) resolveExpectedModulesForCause(scope []stri
 	expected := make([]string, 0, len(modules))
 	unavailable := make([]string, 0)
 	for _, module := range modules {
-		if module == nil || !cleanupExecutorSupportsCause(module.Metadata, causeEvent) {
+		declared, available := moduleCleanupExecutorState(module, causeEvent)
+		if !declared {
 			continue
 		}
 		expected = append(expected, module.ModuleName)
-		if module.Status != "up" {
+		if !available {
 			unavailable = append(unavailable, module.ModuleName)
 		}
 	}
@@ -547,12 +548,41 @@ func (s *CleanupOrchestratorService) enabledCleanupExecutorModules() ([]string, 
 		if module == nil {
 			continue
 		}
-		if cleanupExecutorEnabled(module.Metadata) {
+		if moduleHasEnabledCleanupExecutor(module) {
 			result = append(result, module.ModuleName)
 		}
 	}
 	sort.Strings(result)
 	return result, nil
+}
+
+func moduleCleanupExecutorState(module *models.ModuleInfo, causeEvent string) (bool, bool) {
+	if module == nil {
+		return false, false
+	}
+	declared := false
+	for _, instance := range module.Instances {
+		if !cleanupExecutorSupportsCause(instance.Metadata, causeEvent) {
+			continue
+		}
+		declared = true
+		if module.Enabled && instance.Role == models.ModuleRuntimeRoleBackend && instance.Status == models.ModuleRuntimeStatusUp && instance.LeaseExpiresAt.After(time.Now()) {
+			return true, true
+		}
+	}
+	return declared, false
+}
+
+func moduleHasEnabledCleanupExecutor(module *models.ModuleInfo) bool {
+	if module == nil || !module.Enabled {
+		return false
+	}
+	for _, instance := range module.Instances {
+		if instance.Role == models.ModuleRuntimeRoleBackend && instance.Status == models.ModuleRuntimeStatusUp && cleanupExecutorEnabled(instance.Metadata) {
+			return true
+		}
+	}
+	return false
 }
 
 func cleanupExecutorEnabled(metadata map[string]interface{}) bool {

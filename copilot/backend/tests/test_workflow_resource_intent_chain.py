@@ -6,7 +6,8 @@ from chains.resource_intent_chain import ResourceIntent, ResourceIntentChain, Re
 
 
 class FakeLLM:
-    async def ainvoke(self, messages):
+    async def ainvoke(self, messages, *, response_schema):
+        assert response_schema.strict is True
         assert "距离、单位、算子" in messages[0].content
         assert "查询条件中的实体值或属性值也不是独立数据项" in messages[0].content
         assert "最常见的英文单词形式" in messages[0].content
@@ -32,7 +33,8 @@ def test_resource_intent_chain_extracts_each_input_and_merges_duplicate_roles():
 
 
 class ExpansionLLM:
-    async def ainvoke(self, messages):
+    async def ainvoke(self, messages, *, response_schema):
+        assert response_schema.strict is True
         assert "此前检索词均未召回候选" in messages[0].content
         assert '"role": "耕地"' in messages[1].content
         assert '"agricultural land"' in messages[1].content
@@ -60,7 +62,8 @@ def test_resource_intent_chain_expands_missing_role_with_only_new_queries():
 
 
 class TransferSourceOnlyLLM:
-    async def ainvoke(self, messages):
+    async def ainvoke(self, messages, *, response_schema):
+        assert response_schema.strict is True
         assert "这是 Transfer 任务描述，只提取‘从/源’一侧" in messages[0].content
         return AIMessage(content='''{
             "resources": [{"role": "farmland", "search_queries": ["farmland"]}]

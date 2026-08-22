@@ -10,6 +10,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 
+from addp_common.client.inference import ResponseSchema
+
 
 class ResourceIntent(BaseModel):
     """一个需要独立检索并由用户确认的输入数据项。"""
@@ -65,7 +67,7 @@ class ResourceIntentChain:
                 + self.output_parser.get_format_instructions()
             )),
             HumanMessage(content=query),
-        ])
+        ], response_schema=self._response_schema())
         content = getattr(response, "content", response)
         parsed = self.output_parser.parse(str(content))
         return _normalize_intents(parsed.resources)
@@ -101,10 +103,43 @@ class ResourceIntentChain:
                     for intent in missing_intents
                 ],
             }, ensure_ascii=False)),
-        ])
+        ], response_schema=self._response_schema())
         content = getattr(response, "content", response)
         parsed = self.output_parser.parse(str(content))
         return _new_queries_only(parsed.resources, attempted)
+
+    @staticmethod
+    def _response_schema() -> ResponseSchema:
+        return ResponseSchema(
+            name="addp_resource_intents",
+            description="ADDP 输入资源意图。",
+            schema={
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "resources": {
+                        "type": "array",
+                        "maxItems": 8,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "role": {"type": "string", "minLength": 1},
+                                "search_queries": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "maxItems": 8,
+                                    "items": {"type": "string", "minLength": 1},
+                                },
+                            },
+                            "required": ["role", "search_queries"],
+                        },
+                    },
+                },
+                "required": ["resources"],
+            },
+            strict=True,
+        )
 
 
 def _normalize_intents(intents: list[ResourceIntent]) -> list[ResourceIntent]:

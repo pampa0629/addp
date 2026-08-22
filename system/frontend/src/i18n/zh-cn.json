@@ -300,6 +300,7 @@
       "filterGeneral": "通用引擎",
       "filterExtension": "扩展引擎",
       "filterBuiltin": "内置",
+      "filterDeleted": "已删除",
       "columns": {
         "id": "ID",
         "name": "名称",
@@ -316,6 +317,7 @@
         "active": "已启用",
         "disabled": "已停用",
         "deleting": "清理中"
+		,"deleted": "已删除"
       },
       "category": {
         "general": "通用",
@@ -353,6 +355,7 @@
         "edit": "编辑",
         "delete": "删除",
         "retryDelete": "重试清理",
+        "restore": "恢复",
         "cleanupAndDelete": "清理并删除",
         "testConnection": "测试连接",
         "save": "保存",
@@ -363,6 +366,7 @@
         "addStorage": "新建通用存储引擎",
         "addExtension": "新建扩展引擎",
         "edit": "编辑引擎",
+        "restore": "恢复引擎",
         "details": "引擎详情 - {name}",
         "close": "关闭",
         "detailTabs": {
@@ -503,6 +507,7 @@
         "extensionProbeSuccess": "协议探测通过",
         "extensionProbeSuccessWithOperators": "协议探测通过，发现 {count} 个算子",
         "updateSuccess": "更新成功",
+        "restoreSuccess": "引擎已恢复，正在重新检测连接",
         "opFailed": "操作失败",
         "scanPolicySyncFailed": "引擎已保存，但元数据扫描编排失败：{error}",
         "deleteStarted": "已开始清理，完成后将自动删除引擎",

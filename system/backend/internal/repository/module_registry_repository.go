@@ -2,123 +2,111 @@ package repository
 
 import (
 	"encoding/json"
-	"errors"
 	"time"
 
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/system/internal/models"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// ModuleRegistryRepository 模块注册表数据访问层
-type ModuleRegistryRepository struct {
-	db *gorm.DB
-}
+type ModuleRegistryRepository struct{ db *gorm.DB }
 
-// NewModuleRegistryRepository 创建模块注册表Repository
 func NewModuleRegistryRepository(db *gorm.DB) *ModuleRegistryRepository {
 	return &ModuleRegistryRepository{db: db}
 }
 
-// Register 注册或更新模块(幂等操作)
-func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationRequest) error {
-	// 序列化metadata为JSON
-	var metadata datatypes.JSON
-	if req.Metadata != nil {
-		data, err := json.Marshal(req.Metadata)
-		if err != nil {
-			return err
-		}
-		metadata = data
+func marshalRegistryJSON(value interface{}) (datatypes.JSON, error) {
+	if value == nil {
+		return nil, nil
 	}
-	var configurationManagement datatypes.JSON
-	if req.ConfigurationManagement != nil {
-		data, err := json.Marshal(req.ConfigurationManagement)
-		if err != nil {
-			return err
-		}
-		configurationManagement = data
-	}
+	data, err := json.Marshal(value)
+	return datatypes.JSON(data), err
+}
 
-	// 使用 UPSERT 逻辑：如果存在则更新，否则创建
-	module := models.ModuleRegistry{
-		ModuleName:              req.ModuleName,
-		ModuleURL:               req.ModuleURL,
-		RoutePrefix:             req.RoutePrefix,
-		HealthCheckURL:          req.HealthCheckURL,
-		Status:                  "up",
-		LastHeartbeat:           time.Now(),
-		Metadata:                metadata,
-		ConfigurationManagement: configurationManagement,
-	}
-
-	// 按 module_name 查找现有记录
-	var existing models.ModuleRegistry
-	err := r.db.Where("module_name = ?", req.ModuleName).First(&existing).Error
-
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// 创建新记录
-		return r.db.Create(&module).Error
-	} else if err != nil {
+// Register 原子维护持久定义和当前进程实例；不覆盖管理员 enabled 状态。
+func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationRequest, leaseDuration time.Duration) error {
+	metadata, err := marshalRegistryJSON(req.Metadata)
+	if err != nil {
 		return err
 	}
-
-	// 更新现有记录
-	return r.db.Model(&existing).Updates(map[string]interface{}{
-		"module_url":               req.ModuleURL,
-		"route_prefix":             req.RoutePrefix,
-		"health_check_url":         req.HealthCheckURL,
-		"status":                   "up",
-		"last_heartbeat":           time.Now(),
-		"metadata":                 metadata,
-		"configuration_management": configurationManagement,
-	}).Error
+	configuration, err := marshalRegistryJSON(req.ConfigurationManagement)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		definition := models.ModuleDefinition{
+			ModuleName: req.ModuleName, RoutePrefix: req.RoutePrefix, Enabled: true,
+			ConfigurationManagement: configuration,
+		}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "module_name"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"route_prefix": req.RoutePrefix, "configuration_management": configuration, "updated_at": now,
+			}),
+		}).Create(&definition).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("module_name = ?", req.ModuleName).First(&definition).Error; err != nil {
+			return err
+		}
+		instance := models.ModuleRuntimeInstance{
+			ModuleDefinitionID: definition.ID, InstanceID: req.InstanceID, Role: req.Role,
+			ModuleURL: req.ModuleURL, HealthCheckURL: req.HealthCheckURL,
+			Status: models.ModuleRuntimeStatusUp, LastHeartbeat: now, LeaseExpiresAt: now.Add(leaseDuration),
+			Metadata: metadata, RegisteredAt: now,
+		}
+		return tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "module_definition_id"}, {Name: "instance_id"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"role": req.Role, "module_url": req.ModuleURL, "health_check_url": req.HealthCheckURL,
+				"status": models.ModuleRuntimeStatusUp, "last_heartbeat": now,
+				"lease_expires_at": now.Add(leaseDuration), "metadata": metadata, "registered_at": now, "updated_at": now,
+			}),
+		}).Create(&instance).Error
+	})
 }
 
-// UpdateHeartbeat 更新模块心跳时间
-func (r *ModuleRegistryRepository) UpdateHeartbeat(moduleName string) error {
-	return r.db.Model(&models.ModuleRegistry{}).
-		Where("module_name = ?", moduleName).
+func (r *ModuleRegistryRepository) UpdateHeartbeat(moduleName, instanceID string, leaseDuration time.Duration) error {
+	now := time.Now()
+	result := r.db.Model(&models.ModuleRuntimeInstance{}).
+		Where("instance_id = ? AND module_definition_id = (?)", instanceID,
+			r.db.Model(&models.ModuleDefinition{}).Select("id").Where("module_name = ?", moduleName)).
 		Updates(map[string]interface{}{
-			"last_heartbeat": time.Now(),
-			"status":         "up",
-		}).Error
+			"last_heartbeat": now, "lease_expires_at": now.Add(leaseDuration), "status": models.ModuleRuntimeStatusUp,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
-// GetModule 获取单个模块信息
-func (r *ModuleRegistryRepository) GetModule(moduleName string) (*models.ModuleRegistry, error) {
-	var module models.ModuleRegistry
-	err := r.db.Where("module_name = ?", moduleName).First(&module).Error
+func (r *ModuleRegistryRepository) GetModule(moduleName string) (*models.ModuleDefinition, error) {
+	var definition models.ModuleDefinition
+	err := r.db.Preload("RuntimeInstances", func(db *gorm.DB) *gorm.DB {
+		return db.Order("role ASC, instance_id ASC")
+	}).Where("module_name = ?", moduleName).First(&definition).Error
 	if err != nil {
 		return nil, commonrepo.WrapDBError(err)
 	}
-	return &module, nil
+	return &definition, nil
 }
 
-// ListModules 获取所有模块列表
-func (r *ModuleRegistryRepository) ListModules() ([]models.ModuleRegistry, error) {
-	var modules []models.ModuleRegistry
-	err := r.db.Order("module_name ASC").Find(&modules).Error
-	return modules, err
+func (r *ModuleRegistryRepository) ListModules() ([]models.ModuleDefinition, error) {
+	var definitions []models.ModuleDefinition
+	err := r.db.Preload("RuntimeInstances", func(db *gorm.DB) *gorm.DB {
+		return db.Order("role ASC, instance_id ASC")
+	}).Order("module_name ASC").Find(&definitions).Error
+	return definitions, err
 }
 
-// ListActiveModules 获取所有状态为up的模块
-func (r *ModuleRegistryRepository) ListActiveModules() ([]models.ModuleRegistry, error) {
-	var modules []models.ModuleRegistry
-	err := r.db.Where("status = ?", "up").Order("module_name ASC").Find(&modules).Error
-	return modules, err
-}
-
-// DeleteModule 删除模块注册
-func (r *ModuleRegistryRepository) DeleteModule(moduleName string) error {
-	return r.db.Where("module_name = ?", moduleName).Delete(&models.ModuleRegistry{}).Error
-}
-
-// MarkStaleModules 标记超时未心跳的模块为down
-func (r *ModuleRegistryRepository) MarkStaleModules(timeout time.Duration) error {
-	cutoffTime := time.Now().Add(-timeout)
-	return r.db.Model(&models.ModuleRegistry{}).
-		Where("last_heartbeat < ? AND status = ?", cutoffTime, "up").
-		Update("status", "down").Error
+func (r *ModuleRegistryRepository) MarkStaleModules(now time.Time) error {
+	return r.db.Model(&models.ModuleRuntimeInstance{}).
+		Where("lease_expires_at <= ? AND status = ?", now, models.ModuleRuntimeStatusUp).
+		Update("status", models.ModuleRuntimeStatusDown).Error
 }

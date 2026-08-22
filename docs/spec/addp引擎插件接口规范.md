@@ -44,6 +44,8 @@ type EnginePlugin interface {
 - `RequiredFields()`、`SensitiveFields()`、`ValidateConnectionInfo()` 和 `TestConnection()` 共同构成 System 引擎管理层的统一连接信息能力。
 - System 管理的内置插件必须额外实现 `ConnectionIdentityProvider.ConnectionIdentityFields()`，返回决定 Engine Instance 身份的非敏感字段。MongoDB 的身份是服务端点 `host`、`port` 与认证主体 `user`、`auth_source`；`database` 只是可选的工作台初始数据库，不是身份或权限边界。其他数据库插件按自身协议声明端点字段；对象存储声明 `endpoint`；NFS 声明 `server`、`export_path`。
 - System 创建 Engine Instance 后会冻结身份字段。更新请求改变任一身份字段时返回 HTTP 409，用户必须创建新的 Engine Instance；密码等敏感凭据允许原地轮换。默认端口按插件语义归一化后比较，不能把省略默认值和显式默认值误判为不同端点。
+- System 使用插件声明的身份字段生成持久身份键，并在 Tenant 与 `engine_type` 范围内强制唯一。相同身份重复注册返回原 Engine Instance；`deleted` 墓碑只能通过显式恢复操作重新启用，恢复请求必须提交与原身份键一致的完整连接配置。名称、描述、密码、capabilities 和连接状态不参与身份键。
+- `engine_id` 只由数据库 identity sequence 分配且永久不复用。删除完成后 System 保留 `deleted` 墓碑和非敏感身份字段，清除插件 `SensitiveFields()` 声明的凭据；插件和上层调用方不得通过物理删除、重置 sequence 或按名称新建来改变这一语义。
 - 自研且未编译进当前进程的 extension engine 使用标准 HTTP 运行时身份字段 `protocol + host + port`，不得通过任意非敏感字段猜测身份。
 - `TestConnection()` 必须执行需要认证的最小只读真实操作，不能只做网络连通检查，也不得创建、更新、删除外部资源。
 - `Capabilities()` 必须返回结构化 `engine.capabilities/v1` 能力模板。该方法不得连接具体实例，不做运行时探测，只表达插件和 Provider 实现的能力上限。

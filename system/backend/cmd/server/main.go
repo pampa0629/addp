@@ -21,6 +21,7 @@ import (
 	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -94,15 +95,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 清理误注册到 System 的本地文件型连接器。SQLite/SpatiaLite 作为文件格式或容器处理，不作为 System engine 注册。
-	if err := repository.RemoveLocalFileEnginesFromSystem(db); err != nil {
-		logger.L().Error("清理本地文件型引擎失败", "error", err)
-		os.Exit(1)
-	}
-
-	// 创建模块注册表索引
-	if err := repository.CreateModuleRegistryIndexes(db); err != nil {
-		logger.L().Error("模块注册表索引创建失败", "error", err)
+	// 创建模块运行实例租约索引
+	if err := repository.CreateModuleRuntimeIndexes(db); err != nil {
+		logger.L().Error("模块运行实例租约索引创建失败", "error", err)
 		os.Exit(1)
 	}
 
@@ -145,8 +140,11 @@ func main() {
 		moduleRegistryService := service.NewModuleRegistryService(moduleRegistryRepo)
 
 		// System 模块注册自己
+		instanceID := uuid.NewString()
 		registrationReq := &models.ModuleRegistrationRequest{
 			ModuleName:     "system",
+			InstanceID:     instanceID,
+			Role:           models.ModuleRuntimeRoleBackend,
 			ModuleURL:      serviceURL,
 			RoutePrefix:    "/system",
 			HealthCheckURL: serviceURL + "/health",
@@ -177,7 +175,7 @@ func main() {
 			defer ticker.Stop()
 
 			for range ticker.C {
-				if err := moduleRegistryService.SendHeartbeat("system"); err != nil {
+				if err := moduleRegistryService.SendHeartbeat("system", instanceID); err != nil {
 					logger.L().Error("System 心跳失败", "error", err)
 				} else {
 					logger.L().Debug("System 心跳成功")
@@ -185,9 +183,9 @@ func main() {
 			}
 		}()
 
-		// 启动服务清理定时任务（标记超时模块为down）
+		// 启动租约回收任务（只标记超时运行实例，不删除模块定义）
 		ctx := context.Background()
-		go moduleRegistryService.StartCleanupTask(ctx, 60*time.Second)
+		go moduleRegistryService.StartCleanupTask(ctx)
 	}()
 
 	// 启动健康检查（在后台 goroutine 中持续更新最近连接状态）

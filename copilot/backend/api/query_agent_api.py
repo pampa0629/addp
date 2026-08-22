@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from addp_common.auth import AuthorizationContext
+from addp_common.client.inference import InferenceError
 from addp_common.tools import ToolExecutionError, ToolExecutor
 from authorization_permissions_generated import COPILOT_SQL_EXECUTE
 from chains.resource_intent_chain import ResourceIntentChain
@@ -101,7 +102,7 @@ class QueryGenerationResponse(BaseModel):
     summary="生成查询语言 | Generate Query Language",
     responses={
         400: {"description": "请求不符合查询生成约束 | Invalid query generation request"},
-        502: {"description": "Owner Tool 调用失败 | Owner Tool call failed"},
+        502: {"description": "Owner Tool 或推理服务调用失败 | Owner Tool or inference service call failed"},
         500: {"description": "查询生成失败 | Query generation failed"},
     },
     openapi_extra={
@@ -207,6 +208,9 @@ async def generate_query(
     except ValueError as error:
         logger.warning("query generation validation rejected candidate: %s", error)
         raise HTTPException(status_code=400, detail=str(error)) from error
+    except InferenceError as error:
+        logger.warning("query generation inference failed: code=%s", error.error_code)
+        raise HTTPException(status_code=502, detail="上游推理服务调用失败") from error
     except Exception as error:
         logger.exception("query generation failed")
         raise HTTPException(status_code=500, detail="查询生成失败") from error

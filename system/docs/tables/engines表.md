@@ -14,14 +14,16 @@
 
 | 字段名 | 类型 | 约束 | 说明 |
 |--------|------|------|------|
-| `id` | SERIAL | PRIMARY KEY | 主键，自增ID |
+| `id` | BIGINT IDENTITY | PRIMARY KEY | 永久 Engine Instance ID；单调分配，不回收、不复用、不允许调用方指定 |
 | `tenant_id` | INTEGER | NULLABLE, INDEX | 租户 ID；NULL 仅用于明确发布的内置共享引擎 |
 | `name` | VARCHAR(255) | NOT NULL, INDEX | 显示名称（中文或英文） |
 | `engine_type` | VARCHAR(255) | NOT NULL, INDEX | 引擎类型（postgresql/mysql/acme_geo_workflow等） |
 | `engine_origin` | VARCHAR(50) | NOT NULL, DEFAULT 'general' | 引擎来源：general（通用）/extension（扩展） |
 | `connection_info` | JSON | NOT NULL | 连接信息（敏感字段加密） |
 | `description` | TEXT | | 描述信息 |
-| `lifecycle_state` | VARCHAR(20) | NOT NULL, DEFAULT 'active', INDEX | 启用状态/生命周期：`active` / `disabled` / `deleting`。它表示平台是否允许正常消费，不表示外部端点当前可达。 |
+| `identity_key` | JSONB | NOT NULL | 由插件 `ConnectionIdentityFields()` 规范化生成的非敏感身份键；在 Tenant 与 `engine_type` 范围内永久唯一，不对调用方开放修改。 |
+| `version` | BIGINT | NOT NULL, DEFAULT 1 | 并发更新版本，每次状态或配置写入后原子递增。 |
+| `lifecycle_state` | VARCHAR(20) | NOT NULL, DEFAULT 'active', INDEX | 生命周期：`active` / `disabled` / `deleting` / `deleted`。它表示平台管理意图，不表示外部端点当前可达。 |
 | `created_by` | INTEGER | | 创建者ID |
 | `deletion_scan_task_id` | VARCHAR(64) | NULLABLE | 删除工作流最近一次 cleanup scan task ID |
 | `deletion_execute_task_id` | VARCHAR(64) | NULLABLE | 删除工作流最近一次 cleanup execute task ID |
@@ -29,6 +31,10 @@
 | `deletion_requested_at` | TIMESTAMP | NULLABLE | 最近一次删除请求时间 |
 | `deletion_requested_by` | INTEGER | NULLABLE | 最近一次删除请求操作者 |
 | `external_artifact_policy` | VARCHAR(20) | DEFAULT 'delete' | 外部产物策略：`delete` / `abandon` |
+| `deleted_at` | TIMESTAMP | NULLABLE | 最近一次完成 cleanup 并进入 `deleted` 墓碑的时间 |
+| `deleted_by` | BIGINT | NULLABLE | 最近一次完成删除的操作者 |
+| `restored_at` | TIMESTAMP | NULLABLE | 最近一次显式恢复时间 |
+| `restored_by` | BIGINT | NULLABLE | 最近一次显式恢复操作者 |
 | `created_at` | TIMESTAMP | DEFAULT NOW() | 创建时间 |
 | `updated_at` | TIMESTAMP | DEFAULT NOW() | 更新时间 |
 
@@ -57,6 +63,8 @@
 | `check_message` | TEXT | | 检测结果消息 |
 
 `connection_status` 不改变 Engine Instance 生命周期，但参与业务选择项的可选性判定。System 引擎管理清单展示全部可见实例；业务选择器展示 `lifecycle_state=active` 且 capability 匹配的注册实例，其中仅 `connection_status=online` 的实例可选，其他状态必须保留展示并说明不可用原因。已有绑定继续保留原 `engine_id` 和不可用状态，不因离线而删除或自动替换。
+
+删除完成后记录转为 `deleted`，普通清单默认不返回；管理员显式选择已删除状态时可以查看墓碑并发起恢复。墓碑保留非敏感连接字段用于确认原身份，但删除插件声明的全部敏感字段。恢复必须提交完整连接配置并携带当前 `version`；身份键不一致返回 409，成功后沿用原 ID、递增版本、置为 `active + unknown` 并重新检测连接。
 
 ### 2.4 数据库索引
 

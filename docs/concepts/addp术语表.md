@@ -11,13 +11,13 @@
 | File Geodatabase | 文件地理数据库 | ArcGIS `.gdb` 目录承载的多图层矢量容器格式；ADDP 使用 `format=filegdb + layout=whole + data_type=container` 表达，feature class / table 是容器 child。 | 内置开源数据面使用 GDAL OpenFileGDB；普通图层读写不等同 Enterprise Geodatabase、SDE 注册、拓扑或版本化支持。 |
 | Microsoft Access Database | Microsoft Access 数据库 | Microsoft Jet / Access `.mdb` 承载的通用数据库容器格式；ADDP 使用 `format=access + layout=single + data_type=container` 表达。 | `.mdb` 后缀和 `application/x-msaccess` MIME 只证明 Access 容器候选，不能证明它是 ArcGIS Personal Geodatabase。 |
 | Personal Geodatabase | 个人地理数据库 | Microsoft Access `.mdb` 承载、且经 ArcGIS PGeo 驱动确定性识别的旧 ArcGIS 地理数据库容器格式；ADDP 使用 `format=pgeo + layout=single + data_type=container` 表达。 | Meta 深度扫描从 `access` 候选精化为 `pgeo`；内置开源数据面只允许作为只读 source，通过 GDAL PGeo + unixODBC / MDB Tools 抽取，不提供 `.mdb` 写回。 |
-| Engine Instance | 引擎实例 | System 中一条绑定到确定物理端点的引擎登记事实。 | `engine_id` 只标识该实例；物理端点身份不可原地改变，端点变化必须创建新的 Engine Instance。 |
+| Engine Instance | 引擎实例 | System 中一条绑定到确定物理端点、具有永久平台 ID 的引擎登记事实。 | `engine_id` 单调分配、永久保留且不得复用；物理端点身份不可原地改变，端点变化必须创建新的 Engine Instance。相同身份重复注册或显式恢复墓碑时沿用原 ID。 |
 | Engine Runtime Descriptor | 引擎运行时描述 | System 面向受信 Runtime Service Principal 提供的脱敏 Engine Instance 控制面投影。 | 只包含实例身份、生命周期、能力声明和工作流/脚本运行时的 `protocol/host/port`；不包含数据引擎凭据、数据库连接参数或可直接读取业务数据的明文连接。 |
-| engine lifecycle state | 引擎生命周期状态 | Engine Instance 当前能否被正常消费或正在退出平台的状态。 | 统一使用 `active`、`disabled`、`deleting`；`deleting` 保留连接只用于删除前 cleanup，不进入正常业务选择。 |
+| engine lifecycle state | 引擎生命周期状态 | Engine Instance 当前能否被正常消费、正在退出平台或已成为墓碑的状态。 | 统一使用 `active`、`disabled`、`deleting`、`deleted`；`deleting` 保留连接只用于 cleanup，`deleted` 仅保留永久身份和审计并移除敏感凭据，二者都不进入正常业务选择。 |
 | engine connectivity observation | 引擎连通性观测 | System 对 Engine Instance 最近一次连接检测得到的运行时观测结果。 | 统一使用 `online`、`offline`、`unknown`、`checking`；它是带检测时间和消息的缓存，不改变生命周期，也不等同于持续保持的物理连接。 |
 | engine selection option | 引擎选择项 | 业务选择器中展示的、已在 System 注册且 capability 与当前功能匹配的 Engine Instance。 | 选择项保留最近连接状态；离线、未知或检测中的实例仍展示，但必须禁选并说明原因。 |
 | available engine candidate | 可用引擎候选 | 引擎选择项中当前允许建立新绑定或发起使用的 Engine Instance。 | 必须同时满足 `lifecycle_state=active`、`connection_status=online` 和目标 capability；System 引擎管理清单及业务选择项不按此规则隐藏实例，已有绑定也保留原 ID 并显示不可用状态。 |
-| storage engine binding | 存储引擎绑定 | owner 任务或配置通过标准 ResourceLocator 对某个存储 Engine Instance 的显式引用集合。 | Engine 删除后绑定保持原 ID 并变为不可执行；重绑定由 owner 在用户确认后原子改写 Locator，不按名称或连接信息自动匹配。 |
+| storage engine binding | 存储引擎绑定 | owner 任务或配置通过标准 ResourceLocator 对某个存储 Engine Instance 的显式引用集合。 | Engine 进入 `deleted` 后绑定保持原 ID 并变为不可执行；原实例经用户显式恢复且重新在线后可恢复执行。绑定不同物理端点仍由 owner 在用户确认后原子改写 Locator，不按名称自动匹配。 |
 | external artifact abandonment | 外部产物放弃 | 当外部引擎不可达时，管理员明确接受平台不再删除某个 owner 已登记外部产物，并把后续处置交给外部系统管理员。 | 必须保留对象身份、最后错误、放弃时间和审计；不得伪装成物理删除成功。 |
 | node | 资源节点 | 引擎内用于组织资源树的节点。 | 例如目录、bucket、prefix、schema。node 不等同于 data item。 |
 | resource tree | 资源树 | 以树形方式展示 engine 内 node 和 data item 的视图。 | 用于浏览、展开、刷新和定位；不是新的身份层。 |
@@ -152,6 +152,9 @@
 | execution attempt | 执行尝试 | 同一未终态 execution 在一次合法 claim 下的实际运行尝试。 | 每次 claim 原子递增 `attempt` 并生成新的 `lease_token`；用户 retry 不是新 attempt，而是创建新的 execution。 |
 | execution lease | 执行租约 | bounded execution worker 对当前 execution attempt 的限时运行所有权。 | 由不可复用 `lease_token`、观测用 `lease_owner` 和 `lease_expires_at` 构成；heartbeat、进度和终态写入必须匹配当前 attempt 与 token。 |
 | background runtime heartbeat | 后台运行实例心跳 | ADDP 应用层后台进程周期写入的公共活性观测事实。 | 统一记录模块、运行时角色、运行时名称、实例、容量、当前占用和过期时间；只用于 Monitor 判断 execution worker、continuous worker 与 dispatcher 的进程健康，不授予 execution/runtime/delivery 所有权，也不替代对应 lease。 |
+| module definition | 模块定义 | System 中按稳定 `module_name` 保存的持久模块身份、路由前缀、管理员启用状态和模块级能力入口声明。 | 模块进程离线不删除定义；`enabled` 表示管理员意图，不由心跳覆盖。 |
+| module runtime instance | 模块运行实例 | 某模块 Backend、Worker 或 Scheduler 进程的一次具体运行登记。 | 使用进程级唯一 `instance_id`，保存 role、端点、元数据和租约状态；只有 `enabled + backend + up + lease valid` 的实例可进入 Gateway 路由。 |
+| module runtime lease | 模块运行租约 | System 根据运行实例注册和周期心跳维护的短期存活事实。 | 心跳只续租，不修改模块定义或管理员启用状态；超时标记实例 `down`，不删除模块定义和实例历史。 |
 | dispatcher | 投递器 | 从 owner outbox 或 delivery 队列领取待发送事项并调用外部接收方的后台角色。 | Monitor Webhook/邮件 dispatcher 不执行业务任务，不创建业务 execution；投递记录和重试状态归 Monitor outbox。 |
 | maintenance loop | 维护循环 | 处理固定系统维护、清理、注册同步或观测采集的后台循环。 | 不等于 execution worker；只有演进为可持久执行、可审计的任务定义后，才进入 owner scheduler + execution worker 体系。 |
 | source task id | 来源任务 ID | execution 关联的 owner 模块任务定义 ID。 | 在 `common.task_executions.source_task_id` 中保存；查询时必须结合 `module + task_type`。 |

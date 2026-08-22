@@ -13,13 +13,13 @@ class FakeLLM:
     def __init__(self, content):
         self.content = content
 
-    async def ainvoke(self, _messages):
+    async def ainvoke(self, _messages, **_kwargs):
         return type("Response", (), {"content": self.content})()
 
 
 def test_notebook_missing_intents_phase_expands_only_untried_queries(monkeypatch):
     class ExpansionLLM:
-        async def ainvoke(self, messages):
+        async def ainvoke(self, messages, **_kwargs):
             prompt = str(messages[-1].content)
             assert "耕地" in prompt
             assert "耕地" in prompt and "cultivated land" in prompt

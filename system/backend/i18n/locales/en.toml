@@ -118,6 +118,15 @@ other = "The physical endpoint of an engine cannot be changed in place; create a
 [system.engine.deleting]
 other = "The engine is reclaiming resources before deletion and cannot perform this operation"
 
+[system.engine.deleted]
+other = "The engine has been deleted and cannot perform this operation"
+
+[system.engine.restore_required]
+other = "An engine with the same physical identity was deleted; explicitly restore the original engine"
+
+[system.engine.version_conflict]
+other = "The engine was modified by another operation; refresh and try again"
+
 [system.engine.lifecycle_invalid]
 other = "Invalid engine lifecycle state"
 

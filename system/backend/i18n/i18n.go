@@ -47,6 +47,9 @@ const (
 
 	MsgEngineIdentityImmutable           = "system.engine.identity_immutable"
 	MsgEngineDeleting                    = "system.engine.deleting"
+	MsgEngineDeleted                     = "system.engine.deleted"
+	MsgEngineRestoreRequired             = "system.engine.restore_required"
+	MsgEngineVersionConflict             = "system.engine.version_conflict"
 	MsgEngineLifecycleInvalid            = "system.engine.lifecycle_invalid"
 	MsgEngineArtifactPolicyInvalid       = "system.engine.artifact_policy_invalid"
 	MsgEngineCleanupUnavailable          = "system.engine.cleanup_unavailable"

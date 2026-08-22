@@ -15,6 +15,7 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
+	"github.com/google/uuid"
 )
 
 // SystemServiceClient is the Bearer-only client used by ADDP service
@@ -228,8 +229,10 @@ func (c *SystemServiceClient) RegisterRuntimeEngineWithRetry(
 	}()
 }
 
-func (c *SystemServiceClient) SendModuleHeartbeat(ctx context.Context, moduleName string) error {
-	return c.doPlatformJSON(ctx, http.MethodPost, "/api/v1/system/runtime/modules/heartbeat", map[string]string{"module_name": moduleName}, nil)
+func (c *SystemServiceClient) SendModuleHeartbeat(ctx context.Context, moduleName, instanceID string) error {
+	return c.doPlatformJSON(ctx, http.MethodPost, "/api/v1/system/runtime/modules/heartbeat", map[string]string{
+		"module_name": moduleName, "instance_id": instanceID,
+	}, nil)
 }
 
 func (c *SystemServiceClient) RegisterTaskProvider(ctx context.Context, provider *models.TaskProvider) error {
@@ -305,6 +308,12 @@ func (c *SystemServiceClient) RegisterAndHeartbeat(ctx context.Context, request 
 			return
 		}
 		registration := *request
+		if strings.TrimSpace(registration.InstanceID) == "" {
+			registration.InstanceID = uuid.NewString()
+		}
+		if strings.TrimSpace(registration.Role) == "" {
+			registration.Role = "backend"
+		}
 		registration.Metadata = map[string]interface{}{"module": registration.ModuleName}
 		for key, value := range request.Metadata {
 			registration.Metadata[key] = value
@@ -337,7 +346,7 @@ func (c *SystemServiceClient) RegisterAndHeartbeat(ctx context.Context, request 
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := c.SendModuleHeartbeat(ctx, registration.ModuleName); err != nil {
+				if err := c.SendModuleHeartbeat(ctx, registration.ModuleName, registration.InstanceID); err != nil {
 					consecutiveFailures++
 					log.Printf("%s module heartbeat failed: %v", registration.ModuleName, err)
 				} else {

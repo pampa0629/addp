@@ -23,6 +23,10 @@ export const enginesAPI = {
     return client.put(`/system/engines/${id}`, data)
   },
 
+  restore: (id, data) => {
+    return client.post(`/system/engines/${id}/restore`, data)
+  },
+
   createDeletionAssessment: (id, data) => {
     return client.post(`/system/engines/${id}/deletion-assessments`, data)
   },

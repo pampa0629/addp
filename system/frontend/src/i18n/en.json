@@ -300,6 +300,7 @@
       "filterGeneral": "General",
       "filterExtension": "Extension",
       "filterBuiltin": "Built-in",
+      "filterDeleted": "Deleted",
       "columns": {
         "id": "ID",
         "name": "Name",
@@ -316,6 +317,7 @@
         "active": "Enabled",
         "disabled": "Disabled",
         "deleting": "Cleaning up"
+		,"deleted": "Deleted"
       },
       "category": {
         "general": "General",
@@ -353,6 +355,7 @@
         "edit": "Edit",
         "delete": "Delete",
         "retryDelete": "Retry cleanup",
+        "restore": "Restore",
         "cleanupAndDelete": "Clean up and delete",
         "testConnection": "Test Connection",
         "save": "Save",
@@ -363,6 +366,7 @@
         "addStorage": "New General Storage Engine",
         "addExtension": "New Extension Engine",
         "edit": "Edit Engine",
+        "restore": "Restore Engine",
         "details": "Engine Details - {name}",
         "close": "Close",
         "detailTabs": {
@@ -503,6 +507,7 @@
         "extensionProbeSuccess": "Protocol probe passed.",
         "extensionProbeSuccessWithOperators": "Protocol probe passed; {count} operators discovered.",
         "updateSuccess": "Updated successfully",
+        "restoreSuccess": "Engine restored; connection check is running",
         "opFailed": "Operation failed",
         "scanPolicySyncFailed": "Engine saved, but metadata scan orchestration failed: {error}",
         "deleteStarted": "Cleanup started; the engine will be removed automatically when it completes",

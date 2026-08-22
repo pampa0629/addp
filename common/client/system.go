@@ -229,10 +229,12 @@ func (c *SystemClient) doTenantJSONWithPayload(ctx context.Context, method, path
 	return json.NewDecoder(response.Body).Decode(result)
 }
 
-// ModuleRegistrationRequest is retained as the shared request model for the
+// ModuleRegistrationRequest is the shared request model for the
 // Bearer-only SystemServiceClient platform registration API.
 type ModuleRegistrationRequest struct {
 	ModuleName              string                                     `json:"module_name"`
+	InstanceID              string                                     `json:"instance_id"`
+	Role                    string                                     `json:"role"`
 	ModuleURL               string                                     `json:"module_url"`
 	RoutePrefix             string                                     `json:"route_prefix"`
 	HealthCheckURL          string                                     `json:"health_check_url,omitempty"`
@@ -243,15 +245,26 @@ type ModuleRegistrationRequest struct {
 type ModuleInfo struct {
 	ID                      uint                                       `json:"id"`
 	ModuleName              string                                     `json:"module_name"`
-	ModuleURL               string                                     `json:"module_url"`
 	RoutePrefix             string                                     `json:"route_prefix"`
-	HealthCheckURL          string                                     `json:"health_check_url"`
-	Status                  string                                     `json:"status"`
-	LastHeartbeat           time.Time                                  `json:"last_heartbeat"`
-	Metadata                map[string]interface{}                     `json:"metadata"`
+	Enabled                 bool                                       `json:"enabled"`
+	Instances               []ModuleRuntimeInstanceInfo                `json:"instances"`
 	ConfigurationManagement *commonconfiguration.ManagementDeclaration `json:"configuration_management,omitempty"`
 	CreatedAt               time.Time                                  `json:"created_at"`
 	UpdatedAt               time.Time                                  `json:"updated_at"`
+}
+
+type ModuleRuntimeInstanceInfo struct {
+	ID             uint                   `json:"id"`
+	InstanceID     string                 `json:"instance_id"`
+	Role           string                 `json:"role"`
+	ModuleURL      string                 `json:"module_url"`
+	HealthCheckURL string                 `json:"health_check_url"`
+	Status         string                 `json:"status"`
+	LastHeartbeat  time.Time              `json:"last_heartbeat"`
+	LeaseExpiresAt time.Time              `json:"lease_expires_at"`
+	Metadata       map[string]interface{} `json:"metadata"`
+	RegisteredAt   time.Time              `json:"registered_at"`
+	UpdatedAt      time.Time              `json:"updated_at"`
 }
 
 func (c *SystemClient) String() string {

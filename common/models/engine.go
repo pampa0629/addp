@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	engineplugin "github.com/addp/common/engine/plugin"
+	"gorm.io/gorm"
 )
 
 // ConnectionInfo 定义连接信息类型，支持 GORM JSONB 序列化
@@ -14,6 +17,7 @@ const (
 	EngineLifecycleActive   = "active"
 	EngineLifecycleDisabled = "disabled"
 	EngineLifecycleDeleting = "deleting"
+	EngineLifecycleDeleted  = "deleted"
 
 	EngineConnectionOnline   = "online"
 	EngineConnectionOffline  = "offline"
@@ -120,6 +124,8 @@ type Engine struct {
 	EngineOrigin   string         `gorm:"column:engine_origin;not null;default:'general'" json:"engine_origin"` // 引擎来源：general 或 extension
 	ConnectionInfo ConnectionInfo `gorm:"column:connection_info;type:json;not null" json:"connection_info"`
 	Description    string         `gorm:"column:description;type:text" json:"description"`
+	IdentityKey    JSONString     `gorm:"column:identity_key;type:jsonb;not null" json:"-"`
+	Version        int64          `gorm:"column:version;not null;default:1" json:"version"`
 	LifecycleState string         `gorm:"column:lifecycle_state;size:20;not null;default:'active';index" json:"lifecycle_state"`
 	CreatedBy      *uint          `gorm:"column:created_by" json:"created_by,omitempty"`
 
@@ -129,6 +135,10 @@ type Engine struct {
 	DeletionRequestedAt    *time.Time `gorm:"column:deletion_requested_at" json:"deletion_requested_at,omitempty"`
 	DeletionRequestedBy    *uint      `gorm:"column:deletion_requested_by" json:"deletion_requested_by,omitempty"`
 	ExternalArtifactPolicy string     `gorm:"column:external_artifact_policy;size:20;not null;default:'delete'" json:"external_artifact_policy"`
+	DeletedAt              *time.Time `gorm:"column:deleted_at" json:"deleted_at,omitempty"`
+	DeletedBy              *uint      `gorm:"column:deleted_by" json:"deleted_by,omitempty"`
+	RestoredAt             *time.Time `gorm:"column:restored_at" json:"restored_at,omitempty"`
+	RestoredBy             *uint      `gorm:"column:restored_by" json:"restored_by,omitempty"`
 
 	// 扩展引擎字段
 	IsBuiltin        bool              `gorm:"column:is_builtin;default:false;index" json:"is_builtin"`      // 是否为内置引擎（内置引擎不可删除）
@@ -143,6 +153,21 @@ type Engine struct {
 	// 时间戳字段
 	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+}
+
+func (e *Engine) BeforeCreate(_ *gorm.DB) error {
+	if e.Version < 1 {
+		e.Version = 1
+	}
+	if e.IdentityKey != "" {
+		return nil
+	}
+	identityKey, err := engineplugin.BuildConnectionIdentityKey(e.EngineType, engineplugin.ConnectionInfo(e.ConnectionInfo))
+	if err != nil {
+		return err
+	}
+	e.IdentityKey = JSONString(identityKey)
+	return nil
 }
 
 // EngineRuntimeEndpoint is the non-secret control-plane endpoint of a

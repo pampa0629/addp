@@ -23,7 +23,7 @@ func NewModuleRegistryHandler(service *service.ModuleRegistryService) *ModuleReg
 
 // RegisterService godoc
 // @Summary      注册当前运行模块 | Register current runtime module
-// @Description  平台 Service Principal 只能注册与自身 OAuth Client 对应的模块 | A platform service principal can only register the module matching its OAuth client
+// @Description  平台 Service Principal 只能注册与自身 OAuth Client 对应的模块定义和当前进程实例；注册不覆盖管理员 enabled 状态 | A platform service principal can only register its matching module definition and current process instance; registration never overrides administrator enabled state
 // @Tags         运行时注册 | Runtime Registry
 // @Accept       json
 // @Produce      json
@@ -75,7 +75,7 @@ func (h *ModuleRegistryHandler) HeartbeatService(c *gin.Context) {
 		respondIAMError(c, err)
 		return
 	}
-	if err := h.service.SendHeartbeat(req.ModuleName); err != nil {
+	if err := h.service.SendHeartbeat(req.ModuleName, req.InstanceID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -84,7 +84,7 @@ func (h *ModuleRegistryHandler) HeartbeatService(c *gin.Context) {
 
 // ListModulesService godoc
 // @Summary      查询平台注册模块 | List registered platform modules
-// @Description  平台 Service Principal 查询运行模块注册表，可按 status=up 过滤存活模块 | A platform service principal lists runtime modules and may filter active modules with status=up
+// @Description  平台 Service Principal 查询持久模块定义及运行实例；status=up 仅返回已启用且存在有效 Backend 租约的模块 | A platform service principal lists persistent module definitions and runtime instances; status=up returns only enabled modules with a valid Backend lease
 // @Tags         运行时注册 | Runtime Registry
 // @Produce      json
 // @Security     BearerAuth

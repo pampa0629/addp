@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestRegisterRuntimeEngineRejectsPhysicalEndpointChange(t *testing.T) {
+func TestRegisterRuntimeEngineCreatesNewIDForDifferentPhysicalEndpoint(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -52,8 +52,8 @@ func TestRegisterRuntimeEngineRejectsPhysicalEndpointChange(t *testing.T) {
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 
-	if response.Code != http.StatusConflict {
-		t.Fatalf("register status = %d body=%s, want 409", response.Code, response.Body.String())
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("register status = %d body=%s, want 202", response.Code, response.Body.String())
 	}
 	stored, err := repo.GetByID(engine.ID)
 	if err != nil {
@@ -61,6 +61,13 @@ func TestRegisterRuntimeEngineRejectsPhysicalEndpointChange(t *testing.T) {
 	}
 	if stored.ConnectionInfo["host"] != "runtime.internal" {
 		t.Fatalf("stored host = %#v, want unchanged runtime.internal", stored.ConnectionInfo["host"])
+	}
+	var count int64
+	if err := db.Model(&models.Engine{}).Count(&count).Error; err != nil {
+		t.Fatalf("count engines: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("engine count = %d, want 2 permanent instances", count)
 	}
 }
 
@@ -100,7 +107,8 @@ func TestRegisterRuntimeEngineKeepsSubmittedCapabilitiesForBuiltinCustomRuntime(
 		t.Fatalf("register status = %d body=%s, want 202", response.Code, response.Body.String())
 	}
 
-	stored, err := repo.GetByEngineTypeAndTenant("tenant_workflow_runtime", nil)
+	var stored models.Engine
+	err = db.Where("engine_type = ?", "tenant_workflow_runtime").First(&stored).Error
 	if err != nil {
 		t.Fatalf("get registered runtime: %v", err)
 	}
@@ -135,7 +143,8 @@ func TestRegisterRuntimeEnginePreservesStableAdvertisedHost(t *testing.T) {
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("register status = %d body=%s, want 202", response.Code, response.Body.String())
 	}
-	stored, err := repo.GetByEngineTypeAndTenant("custom_runtime", nil)
+	var stored models.Engine
+	err = db.Where("engine_type = ?", "custom_runtime").First(&stored).Error
 	if err != nil {
 		t.Fatal(err)
 	}

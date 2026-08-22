@@ -54,48 +54,14 @@ func AutoMigrateNonIAM(db *gorm.DB) error {
 	if err := commonExecution.EnsureStore(db); err != nil {
 		return err
 	}
-	if err := removeBuiltinMathWorkflowExample(db); err != nil {
-		return err
-	}
 	return db.AutoMigrate(
 		&models.Application{},
 		&models.APIKey{},
 		&models.TaskProvider{},
-		&models.ModuleRegistry{},
+		&models.ModuleDefinition{},
+		&models.ModuleRuntimeInstance{},
 	)
 }
-
-func removeBuiltinMathWorkflowExample(db *gorm.DB) error {
-	return db.Exec(removeBuiltinMathWorkflowExampleSQL).Error
-}
-
-const removeBuiltinMathWorkflowExampleSQL = `
-		DO $$
-		BEGIN
-			IF to_regclass('system.engines') IS NOT NULL THEN
-				DELETE FROM system.engines
-				WHERE lower(engine_type) = 'math_workflow'
-				  AND is_builtin = true;
-			END IF;
-		END $$;
-	`
-
-// RemoveLocalFileEnginesFromSystem 删除误注册到 System 的本地文件型连接器。
-// SQLite/SpatiaLite 作为文件格式或容器处理，System 后端不把本地文件路径注册为 engine。
-func RemoveLocalFileEnginesFromSystem(db *gorm.DB) error {
-	result := db.Exec(`
-		DELETE FROM system.engines
-		WHERE lower(engine_type) IN ('sqlite', 'spatialite')
-	`)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected > 0 {
-		log.Printf("✅ 已清理 %d 个误注册到 System 的 SQLite/SpatiaLite 引擎\n", result.RowsAffected)
-	}
-	return nil
-}
-
 // MigrateTaskProviders 迁移 task_providers 表：删除旧 task_providers 顶层入口字段，并规范化历史 endpoint。
 func MigrateTaskProviders(db *gorm.DB) error {
 	// 1. 检查 create_task_url 列是否存在（幂等）
@@ -131,24 +97,14 @@ func MigrateTaskProviders(db *gorm.DB) error {
 	return nil
 }
 
-// CreateModuleRegistryIndexes 创建模块注册表的索引
-func CreateModuleRegistryIndexes(db *gorm.DB) error {
-	// 为 status 字段创建索引(加速模块状态查询)
+// CreateModuleRuntimeIndexes 创建模块运行实例租约的补充索引。
+func CreateModuleRuntimeIndexes(db *gorm.DB) error {
 	if err := db.Exec(`
-		CREATE INDEX IF NOT EXISTS idx_module_registry_status
-		ON system.module_registry(status)
+		CREATE INDEX IF NOT EXISTS idx_module_runtime_instances_status_lease
+		ON system.module_runtime_instances(status, lease_expires_at)
 	`).Error; err != nil {
 		return err
 	}
-
-	// 为 last_heartbeat 字段创建索引(加速心跳超时查询)
-	if err := db.Exec(`
-		CREATE INDEX IF NOT EXISTS idx_module_registry_heartbeat
-		ON system.module_registry(last_heartbeat)
-	`).Error; err != nil {
-		return err
-	}
-
-	log.Println("✅ 模块注册表索引已创建")
+	log.Println("✅ 模块运行实例租约索引已创建")
 	return nil
 }

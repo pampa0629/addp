@@ -226,47 +226,37 @@ Response
 
 Gateway 只保留一条模块路由主路径：System 使用配置中的 `SYSTEM_URL` 作为模块注册表的 bootstrap 目标，所有 `/api/v1/system/**` 请求透明转发到该目标；Portal 等其他后端模块统一通过 System 模块注册表动态发现，不保留硬编码模块 fallback。Portal 的独立顶层前端定位不改变其 BFF 后端必须注册后才能经 Gateway 访问的约束。
 
-### 模块注册表（system.module_registry）
+### 模块定义与运行实例
 
-**表名**：`system.module_registry`
+System 使用两张表表达两类生命周期不同的事实：
 
-**用途**：System 模块维护的模块注册中心，记录所有已注册模块的信息，供 Gateway 动态发现和路由。
+- `system.module_definitions`：持久模块定义。`module_name`、路由前缀、管理员 `enabled` 状态和配置入口声明不会因进程离线而消失。
+- `system.module_runtime_instances`：临时运行实例。以 `(module_definition_id, instance_id)` 唯一标识一次进程实例，保存 `role`、端点、心跳与租约到期时间。
 
-**核心字段**：
-
-| 字段名 | 类型 | 说明 | 示例 |
-|-------|------|------|------|
-| module_name | VARCHAR(50) | 模块名称（唯一索引） | `manager` |
-| module_url | VARCHAR(255) | 模块 URL | `http://localhost:8081` |
-| route_prefix | VARCHAR(50) | 路由前缀 | `/manager` |
-| health_check_url | VARCHAR(255) | 健康检查端点 | `http://localhost:8081/health` |
-| status | VARCHAR(20) | 状态（up/down） | `up` |
-| last_heartbeat | TIMESTAMP | 最后心跳时间 | `2025-01-24 10:30:15` |
-| metadata | JSONB | 扩展信息（版本、权重） | `{"version": "0.0.24"}` |
-
-**索引**：
-- `idx_module_registry_status` - 状态索引（加速查询活跃模块）
-- `idx_module_registry_heartbeat` - 心跳索引（加速超时检测）
+该机制借鉴 Nacos 对 Service、Instance、enabled 和 healthy 的分离，但 ADDP 不依赖 Nacos 产品；System/PostgreSQL 是注册事实的唯一来源。`enabled` 表达管理员意图，`status + lease_expires_at` 表达实例运行状态，两者不得互相覆盖。
 
 ### 模块注册流程
 
 ```
 1. 模块启动
    - 使用模块自身 Platform Service Access Token 调用 System API: POST /api/v1/system/runtime/modules
-   - 传入：module_name, module_url, route_prefix, health_check_url
+   - 生成本进程唯一 instance_id
+   - 传入：module_name, instance_id, role, module_url, route_prefix, health_check_url
    ↓
-2. System 模块写入 module_registry 表（幂等操作）
-   - 如果模块已存在，更新 URL 和 metadata
-   - 如果模块不存在，创建新记录
-   - 初始状态设为 'up'
+2. System 原子维护定义和实例
+   - module_name 幂等维护持久定义，但不覆盖管理员 enabled 状态
+   - (module_definition_id, instance_id) 幂等维护当前运行实例
+   - Backend 必须声明 module_url；Worker/Scheduler 可只登记可观测信息
+   - 同一模块的多个运行实例可以同时存在
    ↓
 3. 模块定期发送心跳
    - 调用 System API: POST /api/v1/system/runtime/modules/heartbeat
-   - System 更新 last_heartbeat 字段
+   - 传入 module_name 与 instance_id
+   - System 只续租该实例，不修改模块定义和管理员 enabled 状态
    ↓
-4. System 定时任务（每 30 秒）检查超时模块
-   - 如果 last_heartbeat 超时（默认 2 分钟）
-   - 将 status 从 'up' 改为 'down'
+4. System 定时检查到期租约
+   - 租约默认 30 秒，实例每 10 秒续租
+   - 到期实例标记为 down，模块定义仍然保留
 ```
 
 ### Gateway 动态路由流程
@@ -277,10 +267,11 @@ Gateway 只保留一条模块路由主路径：System 使用配置中的 `SYSTEM
    - 创建其他模块使用的 ModuleDiscovery 实例
    ↓
 2. 初始化模块列表
-   - 使用 Gateway Platform Service Access Token 调用 System API: GET /api/v1/system/runtime/modules?status=up
-   - 获取所有活跃模块（status='up'）
+   - 使用 Gateway Platform Service Access Token调用 System API: GET /api/v1/system/runtime/modules?status=up
+   - 只获取 enabled=true 且至少存在一个有效 Backend 租约的模块
    ↓
 3. 构建动态路由映射
+   - 只从 role=backend、status=up、租约未到期的实例中选择代理目标
    - 为每个模块创建 ServiceProxy：map[module_name]*ServiceProxy
    - 存储模块信息：map[module_name]*ModuleInfo
    ↓
@@ -288,17 +279,17 @@ Gateway 只保留一条模块路由主路径：System 使用配置中的 `SYSTEM
    - 定期刷新模块列表（MODULE_REFRESH_INTERVAL，默认 30 秒）
    - 检测模块变更：
      - 新增模块 → 创建新代理
-     - 模块 URL 变更 → 重建代理
-     - 模块下线（status='down'） → 删除代理
+     - 可路由 Backend 实例变化 → 重建代理
+     - 模块被禁用或无可路由 Backend → 删除代理
    ↓
 5. 请求路由
    - `/api/v1/system/**` 始终使用 System bootstrap 代理
    - 其他请求示例：GET /api/v1/manager/engines
    - Gateway 提取 module_name = "manager"
    - 从 ModuleDiscovery 获取对应的 ServiceProxy
-   - 如果模块存在且 status='up' → 转发请求
-   - 如果模块不存在或 status='down' → 返回 503 Service Unavailable
-   - 模块不存在、状态为 down 或模块发现暂时不可用时返回 503，不绕过注册表使用硬编码地址
+   - 如果模块存在且有有效 Backend 租约 → 转发请求
+   - 如果模块不存在、被禁用或无有效 Backend 租约 → 返回 503 Service Unavailable
+   - 不绕过注册表使用硬编码地址
 ```
 
 ### 动态路由的核心价值
@@ -306,9 +297,9 @@ Gateway 只保留一条模块路由主路径：System 使用配置中的 `SYSTEM
 | 价值点 | 说明 |
 |--------|------|
 | **动态扩展** | 新增模块无需修改 Gateway 代码，只需注册到 System 即可自动路由 |
-| **自动故障切换** | 模块宕机或心跳超时自动标记为 'down'，Gateway 不再转发请求 |
+| **故障隔离** | 实例宕机或心跳超时后租约失效，Gateway 不再向该实例转发请求 |
 | **健康监控** | 通过心跳机制实时监控模块状态，及时发现服务故障 |
-| **负载均衡基础** | 未来可支持同一模块的多实例（通过 metadata 存储权重信息） |
+| **多实例基础** | 同一模块可登记多个 Backend/Worker/Scheduler 实例；Gateway 当前确定性选择一个有效 Backend |
 | **灰度发布基础** | 未来可支持同一模块的多个版本（v1/v2），通过 metadata 控制流量分配 |
 | **配置热更新** | 模块 URL 变更无需重启 Gateway，定时刷新自动生效 |
 
@@ -388,7 +379,7 @@ Gateway 使用 **前缀匹配**，支持通配符和查询参数透传：
 
 **两者关系**：互补而非替代。System AuditLog 关注"谁做了什么"，Gateway AccessLog 关注"API Key 访问性能和限流"。
 
-### PostgreSQL Schema: system.module_registry
+### PostgreSQL Schema: system.module_definitions / system.module_runtime_instances
 
 详见上文 [模块注册与动态路由](#模块注册与动态路由) 章节。
 

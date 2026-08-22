@@ -55,6 +55,7 @@ func TestRegisterIAMMigratedBusinessRoutes(t *testing.T) {
 		"POST /api/v1/system/engines/:id/catalog/children",
 		"POST /api/v1/system/engines/:id/catalog/facts",
 		"POST /api/v1/system/engines/:id/deletion-assessments",
+		"POST /api/v1/system/engines/:id/restore",
 		"POST /api/v1/system/engines/:id/spatial-workspaces/:ecosystem/:kind/enable",
 		"POST /api/v1/system/engines/:id/test",
 		"POST /api/v1/system/engines/test-connection",

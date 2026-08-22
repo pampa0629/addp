@@ -46,12 +46,12 @@
 
     <!-- 表格区域 -->
     <div class="table-wrapper">
-      <div v-if="isDynamicSchemaRecordSet" class="record-preview-toolbar">
+      <div v-if="showColumnSelector" class="record-preview-toolbar">
         <span class="record-preview-toolbar__summary">
           {{ t('map.recordVisibleColumns', { visible: displayColumns.length, total: availableDisplayColumns.length }) }}
         </span>
         <el-select
-          v-model="selectedRecordColumns"
+          v-model="selectedColumns"
           multiple
           collapse-tags
           collapse-tags-tooltip
@@ -165,7 +165,7 @@ import {
   getPreviewCRSTransform,
   transformGeoJSONGeometryToWGS84
 } from '../utils/crsRegistry'
-import { buildDynamicSchemaColumnDescriptors, dynamicSchemaCellValue } from '../utils/dynamicSchemaColumns'
+import { buildTablePreviewColumnDescriptors, dynamicSchemaCellValue } from '../utils/dynamicSchemaColumns'
 
 const { t } = useI18n()
 
@@ -335,7 +335,7 @@ const hasManualMapResize = ref(false)
 const structuredDialogVisible = ref(false)
 const structuredDialogTitle = ref('')
 const structuredDialogJSON = ref('')
-const selectedRecordColumns = ref([])
+const selectedColumns = ref([])
 
 let resizeObserver = null
 let mapResizeFrame = null
@@ -578,28 +578,27 @@ const buildPopupContent = (row) => {
 
 // 过滤掉几何列后的显示列
 const availableDisplayColumns = computed(() => {
-  if (!isDynamicSchemaRecordSet.value) {
-    return columns.value.map(column => ({ key: column, label: column, path: [column] }))
-  }
-  return buildDynamicSchemaColumnDescriptors(columns.value, columnMetadata.value)
+  return buildTablePreviewColumnDescriptors({
+    columns: columns.value,
+    columnMetadata: columnMetadata.value,
+    geometryColumns: geometryColumns.value,
+    dynamicSchema: isDynamicSchemaRecordSet.value
+  })
 })
+
+const showColumnSelector = computed(() => availableDisplayColumns.value.length > 1)
 
 const displayColumns = computed(() => {
-  if (!columns.value || columns.value.length === 0) return []
-  if (isDynamicSchemaRecordSet.value) {
-    const selected = selectedRecordColumns.value
-      .map(key => availableDisplayColumns.value.find(column => column.key === key))
-      .filter(Boolean)
-    return selected.length > 0 ? selected : availableDisplayColumns.value
-  }
-  const geometrySet = new Set(geometryColumns.value || [])
-  const filtered = columns.value.filter((col) => !geometrySet.has(col))
-  return (filtered.length > 0 ? filtered : columns.value)
-    .map(column => ({ key: column, label: column, path: [column] }))
+  const selected = selectedColumns.value
+    .map(key => availableDisplayColumns.value.find(column => column.key === key))
+    .filter(Boolean)
+  return selected.length > 0 ? selected : availableDisplayColumns.value
 })
 
-const defaultRecordColumns = computed(() => {
-  if (!isDynamicSchemaRecordSet.value || columns.value.length === 0) return []
+const defaultColumns = computed(() => {
+  if (!isDynamicSchemaRecordSet.value) {
+    return availableDisplayColumns.value.map(column => column.key)
+  }
   const identityColumns = availableDisplayColumns.value.filter((column) => column.key === '_id' || column.key.toLowerCase() === 'id')
   const scalarColumns = availableDisplayColumns.value.filter((column) => !identityColumns.includes(column) && hasScalarColumnValues(column))
   const preferred = [...identityColumns, ...scalarColumns]
@@ -741,29 +740,26 @@ watch(
   () => [
     props.data?.preview_kind,
     availableDisplayColumns.value.map(column => column.key).join('\u0000'),
-    rows.value.length,
     Array.isArray(props.tableState?.visible_columns)
       ? props.tableState.visible_columns.join('\u0000')
       : ''
   ],
   () => {
-    if (!isDynamicSchemaRecordSet.value) {
-      selectedRecordColumns.value = []
-      return
-    }
     const savedColumns = Array.isArray(props.tableState?.visible_columns)
       ? props.tableState.visible_columns.filter((key) => availableDisplayColumns.value.some(column => column.key === key))
       : []
-    const validSelected = selectedRecordColumns.value.filter((key) => availableDisplayColumns.value.some(column => column.key === key))
-    selectedRecordColumns.value = savedColumns.length > 0
+    const validSelected = selectedColumns.value.filter((key) => availableDisplayColumns.value.some(column => column.key === key))
+    selectedColumns.value = savedColumns.length > 0
       ? savedColumns
-      : (validSelected.length > 0 ? validSelected : defaultRecordColumns.value)
+      : (validSelected.length > 0 ? validSelected : defaultColumns.value)
   },
   { immediate: true }
 )
 
 const handleRecordColumnsChange = (visibleColumns) => {
-  emit('table-state-change', { visible_columns: [...visibleColumns] })
+  const nextColumns = visibleColumns.length > 0 ? visibleColumns : defaultColumns.value
+  selectedColumns.value = [...nextColumns]
+  emit('table-state-change', { visible_columns: [...nextColumns] })
 }
 
 // 当 baseMapOptions 变化时，自动设置默认底图

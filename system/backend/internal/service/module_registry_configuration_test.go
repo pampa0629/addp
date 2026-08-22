@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/system/internal/models"
@@ -17,7 +18,7 @@ func TestListConfigurationManagementEntriesFiltersContextPermissionAndModuleStat
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.ModuleRegistry{}); err != nil {
+	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}); err != nil {
 		t.Fatal(err)
 	}
 	registryService := NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
@@ -33,7 +34,11 @@ func TestListConfigurationManagementEntriesFiltersContextPermissionAndModuleStat
 			t.Fatalf("register %s: %v", registrations[index].ModuleName, err)
 		}
 	}
-	if err := db.Model(&models.ModuleRegistry{}).Where("module_name = ?", "quality").Update("status", "down").Error; err != nil {
+	var quality models.ModuleDefinition
+	if err := db.Where("module_name = ?", "quality").First(&quality).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.ModuleRuntimeInstance{}).Where("module_definition_id = ?", quality.ID).Update("status", models.ModuleRuntimeStatusDown).Error; err != nil {
 		t.Fatal(err)
 	}
 
@@ -92,9 +97,77 @@ func TestListConfigurationManagementEntriesFiltersContextPermissionAndModuleStat
 	}
 }
 
+func TestModuleRegistrySeparatesDefinitionFromRuntimeInstanceLease(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}); err != nil {
+		t.Fatal(err)
+	}
+	repo := repository.NewModuleRegistryRepository(db)
+	registry := NewModuleRegistryService(repo)
+	backend := &models.ModuleRegistrationRequest{
+		ModuleName: "manager", InstanceID: "backend-a", Role: models.ModuleRuntimeRoleBackend,
+		ModuleURL: "http://manager-a:8080", RoutePrefix: "/manager",
+	}
+	worker := &models.ModuleRegistrationRequest{
+		ModuleName: "manager", InstanceID: "worker-a", Role: "worker", RoutePrefix: "/manager",
+	}
+	if err := registry.Register(backend); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Register(worker); err != nil {
+		t.Fatal(err)
+	}
+	module, err := registry.GetModule("manager")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(module.Instances) != 2 || module.ID == 0 {
+		t.Fatalf("module = %#v", module)
+	}
+
+	if err := db.Model(&models.ModuleDefinition{}).Where("id = ?", module.ID).Update("enabled", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.SendHeartbeat("manager", "backend-a"); err != nil {
+		t.Fatal(err)
+	}
+	module, err = registry.GetModule("manager")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if module.Enabled {
+		t.Fatal("heartbeat overwrote administrator enabled=false")
+	}
+	active, err := registry.ListActiveModules()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(active) != 0 {
+		t.Fatalf("disabled module appeared active: %#v", active)
+	}
+
+	if err := repo.MarkStaleModules(time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	module, err = registry.GetModule("manager")
+	if err != nil {
+		t.Fatalf("stale instances removed persistent definition: %v", err)
+	}
+	for _, instance := range module.Instances {
+		if instance.Status != models.ModuleRuntimeStatusDown {
+			t.Fatalf("instance remained up: %#v", instance)
+		}
+	}
+}
+
 func configurationRegistration(owner, scopeType string) models.ModuleRegistrationRequest {
 	return models.ModuleRegistrationRequest{
 		ModuleName:  owner,
+		InstanceID:  owner + "-backend-test",
+		Role:        models.ModuleRuntimeRoleBackend,
 		ModuleURL:   "http://" + owner + ":8080",
 		RoutePrefix: "/" + owner,
 		ConfigurationManagement: &commonconfiguration.ManagementDeclaration{

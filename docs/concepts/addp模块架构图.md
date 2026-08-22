@@ -521,7 +521,7 @@ Runtime Instance 默认是平台级共享计算能力，但不因此获得任意
 
 ## Gateway 路由机制
 
-Gateway 作为 ADDP 的统一入口，负责请求路由和转发。ADDP 采用 **动态模块注册 + 动态路由发现** 机制，支持模块的自动上线/下线和故障转移。
+Gateway 作为 ADDP 的统一入口，负责请求路由和转发。ADDP 采用 **持久模块定义 + 临时运行实例租约 + 动态路由发现** 的单一机制。该模型借鉴服务注册中心对 Service、Instance、enabled 和 healthy 的分离，但注册事实仍由 System/PostgreSQL 管理，不引入 Nacos 产品依赖。
 
 ### 模块注册与路由发现流程
 
@@ -535,8 +535,10 @@ graph TB
     end
 
     subgraph "2. System 模块注册中心"
-        SystemReg --> RegTable[(module_registry 表<br/>存储模块URL和状态)]
-        RegTable --> RegAPI[注册 API<br/>/api/v1/system/runtime/modules/*]
+        SystemReg --> DefinitionTable[(module_definitions<br/>持久模块身份/路由/声明)]
+        SystemReg --> InstanceTable[(module_runtime_instances<br/>实例端点/角色/租约)]
+        DefinitionTable --> RegAPI[注册 API<br/>/api/v1/system/runtime/modules/*]
+        InstanceTable --> RegAPI
     end
 
     subgraph "3. Gateway 动态发现"
@@ -549,7 +551,7 @@ graph TB
         Client[客户端请求<br/>/api/v1/:module/*] --> Gateway
         Gateway --> DynamicRoute{动态路由查找}
         DynamicRoute -->|找到| Forward[转发到模块代理]
-        DynamicRoute -->|未找到| Fallback[Fallback 硬编码路由]
+        DynamicRoute -->|未找到或无可用 Backend| Unavailable[503 模块不可用]
     end
 
     classDef backend fill:#e1f5ff,stroke:#01579b
@@ -559,31 +561,39 @@ graph TB
     classDef infra fill:#fce4ec,stroke:#880e4f
 
     class Manager,Meta,Transfer,Other backend
-    class SystemReg,RegTable,RegAPI system
-    class Gateway,Discovery,Proxies,DynamicRoute,Forward,Fallback gateway
+    class SystemReg,DefinitionTable,InstanceTable,RegAPI system
+    class Gateway,Discovery,Proxies,DynamicRoute,Forward,Unavailable gateway
     class Client client
 ```
 
 ### 核心机制说明
 
-**1. 模块自动注册**:
-- 各模块启动后 **3 秒**自动向 System 模块注册表（`module_registry` 表）注册
-- 注册信息包括：模块名、服务 URL、路由前缀、健康检查 URL、状态等
-- 注册操作是 **幂等的**（多次注册自动更新，不会产生重复记录）
+**1. 持久模块定义**:
+- `module_definitions` 保存稳定 `module_name`、路由前缀、管理员启用状态和配置管理入口声明；模块进程离线不会删除该定义。
+- `enabled` 是管理员意图，与实例心跳健康独立。禁用模块时所有实例即使仍有心跳也不得进入 Gateway 路由或 Console 动态入口。
+- 模块首次注册创建定义；后续注册按 `module_name` 幂等更新允许由 owner 发布的声明，不改变定义 ID。
 
-**2. 周期心跳机制**:
+**2. 临时运行实例租约**:
+- 每个 Backend 或 Worker 进程启动时生成本次进程唯一的 `instance_id`，并以 `module_name + instance_id` 注册到 `module_runtime_instances`。
+- 运行实例声明 `role`；只有 `backend` 实例具有 Gateway 路由端点，`worker`、`scheduler` 等角色只用于运行状态和容量观测。
+- 同一模块允许多个运行实例并存，注册不会互相覆盖 URL、版本或元数据。
+- 注册提交完整实例声明；后续心跳只续租并更新 `last_heartbeat`，不得借心跳覆盖模块定义、管理员启用状态或实例元数据。
+
+**3. 周期心跳机制**:
 - 模块每 **10 秒**发送一次心跳到 System
-- System 每 **60 秒**清理超过 **30 秒**未心跳的模块（标记为 `status='down'`）
+- System 将超过租约超时时间未心跳的运行实例标记为 `down`，但不删除运行实例历史，也不删除持久模块定义。
+- 同一 `instance_id` 重新注册可恢复为 `up`；新进程必须使用新的 `instance_id`。
 
-**3. Gateway 动态发现**:
-- Gateway 启动时从 System 获取模块列表
+**4. Gateway 动态发现**:
+- Gateway 启动时从 System 获取已启用模块及其 `up` 的 Backend 实例
 - 每 **30 秒**定期刷新模块列表（可配置 `MODULE_REFRESH_INTERVAL`）
-- 根据模块状态（`status='up'`）自动创建/更新/删除 HTTP 代理
+- 只根据 `enabled + role=backend + status=up + lease valid` 的实例创建、更新和移除 HTTP 代理
+- 多个 Backend 实例的选择必须来自同一发现结果，不能回退到环境变量中的第二套路由事实源
 
-**4. 双层路由机制**:
-- **优先**：动态路由（从模块发现获取代理）
-- **备选**：硬编码路由（环境变量 `*_SERVICE_URL` 配置）
-- 当模块发现失败或模块下线时，自动 Fallback 到硬编码路由
+**5. 单一路由机制**:
+- 模块动态注册表是 Gateway 业务模块路由的唯一事实源。
+- System 注册中心暂时不可达时，Gateway 可以继续使用最近一次成功且尚未超过本地失效窗口的发现快照；不得读取 `*_SERVICE_URL` 建立平行 fallback 路由。
+- 没有可用 Backend 实例或快照已失效时返回 503，不能把请求静默发往未受租约管理的地址。
 
 ### 路由请求流程
 
@@ -635,10 +645,7 @@ MODULE_REFRESH_INTERVAL=30s                  # 模块列表刷新间隔
 SYSTEM_URL=http://system-backend:8180
 GATEWAY_SERVICE_CLIENT_SECRET=your_gateway_service_client_secret
 
-# Fallback 硬编码路由（模块发现失败时使用）
-MANAGER_URL=http://manager-backend:8081
-META_URL=http://meta-backend:8082
-# ... 其他模块
+# System 自身地址是 Gateway 获取注册事实所需的部署 Bootstrap，不是业务模块路由 fallback
 ```
 
 #### 各模块配置
@@ -654,7 +661,7 @@ MODULE_SERVICE_CLIENT_SECRET=your_module_service_client_secret
 
 | 组件 | 文件路径 | 说明 |
 |------|---------|------|
-| **System 注册表** | [system/backend/internal/models/module_registry.go](../system/backend/internal/models/module_registry.go) | 模块注册表数据模型 |
+| **System 注册表** | [system/backend/internal/models/module_registry.go](../system/backend/internal/models/module_registry.go) | 持久模块定义与运行实例租约模型 |
 | **System API** | [system/backend/internal/api/module_registry_handler.go](../system/backend/internal/api/module_registry_handler.go) | 注册/心跳/查询 API |
 | **Gateway 发现** | [gateway/internal/module_discovery.go](../gateway/internal/module_discovery.go) | 模块发现管理器（定期刷新） |
 | **Gateway 路由** | [gateway/internal/router/router.go](../gateway/internal/router/router.go) | 动态路由配置 |
@@ -665,7 +672,7 @@ MODULE_SERVICE_CLIENT_SECRET=your_module_service_client_secret
 - ✅ **动态上线/下线**：模块启动/停止无需重启 Gateway
 - ✅ **故障自动恢复**：模块重启后自动重新注册为 `up` 状态
 - ✅ **健康监控**：通过心跳机制实时监控模块状态
-- ✅ **双层防护**：动态路由失败时自动 Fallback 到硬编码路由
+- ✅ **单一事实源**：Gateway 只消费 System 注册事实，不维护业务模块硬编码 fallback
 - ✅ **可观测性**：Gateway 使用 Platform Service Access Token 查询模块状态（`GET /api/v1/system/runtime/modules`）
 
 ---
