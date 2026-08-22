@@ -1,4 +1,4 @@
-.PHONY: help init build build-images test test-platform test-engine-startup-isolation test-online test-online-runner test-go test-agent-frontend test-asset-frontend test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats \
+.PHONY: help build build-images test test-platform test-engine-startup-isolation test-online test-online-runner test-go test-agent-frontend test-asset-frontend test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats \
         build-iam-bootstrap build-iam-recovery clean-dist \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
@@ -49,13 +49,6 @@ define build_one_service
     true; \
   fi
 endef
-
-init: ## 初始化项目（创建必要的目录和配置文件）
-	@echo "$(GREEN)初始化项目...$(NC)"
-	@mkdir -p system/data
-	@mkdir -p scripts
-	@if [ ! -f .env ]; then cp .env.example .env && echo "$(GREEN)已创建 .env 文件$(NC)"; fi
-	@echo "$(GREEN)初始化完成！$(NC)"
 
 build-iam-bootstrap: ## 构建一次性离线 IAM Bootstrap CLI
 	$(call build_one_service,system/backend,addp-iam-bootstrap,cmd/iam-bootstrap/main.go)
@@ -266,32 +259,11 @@ test: test-execution-fixtures test-model-frontend test-agent-eval test-authoriza
 test-system: ## 运行 System 模块测试
 	@cd system/backend && go test ./...
 
-db-shell: ## 连接到 PostgreSQL 数据库
-	@docker compose -f docker-compose.infra.yml exec postgres psql -U addp -d addp
-
-redis-cli: ## 连接到 Redis
-	@docker compose -f docker-compose.infra.yml exec redis redis-cli -a addp_redis
-
 init-minio: ## 初始化 MinIO buckets（包括 PMTiles 快显缓存等）
 	@./scripts/infra/init-minio.sh
 
 init-redis: ## 检查 Redis 缓存、事件和分布式锁
 	@./scripts/infra/init-redis.sh
-
-backup: ## 备份数据库
-	@echo "$(GREEN)备份数据库...$(NC)"
-	@mkdir -p backups
-	@docker compose -f docker-compose.infra.yml exec -T postgres pg_dump -U addp addp > backups/addp_$(shell date +%Y%m%d_%H%M%S).sql
-	@echo "$(GREEN)数据库备份完成$(NC)"
-
-restore: ## 恢复数据库（需要指定备份文件 FILE=xxx.sql）
-	@if [ -z "$(FILE)" ]; then \
-		echo "$(RED)错误: 请指定备份文件 FILE=xxx.sql$(NC)"; \
-		exit 1; \
-	fi
-	@echo "$(YELLOW)恢复数据库: $(FILE)$(NC)"
-	@docker compose -f docker-compose.infra.yml exec -T postgres psql -U addp -d addp < $(FILE)
-	@echo "$(GREEN)数据库恢复完成$(NC)"
 
 registry-start: ## 启动本地 Docker Registry（镜像构建必需）
 	@echo "$(GREEN)启动本地 Docker Registry...$(NC)"

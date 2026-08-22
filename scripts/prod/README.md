@@ -475,17 +475,7 @@ docker exec <container-id> env | grep SYSTEM_URL
 
 ### 问题 4: 数据丢失
 
-**预防措施**:
-```bash
-# ✅ 定期备份数据库
-docker exec addp-postgres pg_dump -U addp addp > backup-$(date +%Y%m%d).sql
-
-# ✅ 备份 MinIO 数据
-docker exec addp-minio mc mirror /data /backup
-
-# ✅ 备份 .env 配置
-cp .env .env.backup-$(date +%Y%m%d)
-```
+当前仓库尚未提供经过恢复演练的平台级备份入口。生产部署前必须单独建立同时覆盖 PostgreSQL、MinIO、部署配置与密钥材料的备份方案，并记录版本、校验和、保留策略和恢复演练证据；不能把单次 `pg_dump` 或文件复制当作完整平台备份。
 
 ---
 
@@ -550,7 +540,7 @@ docker system prune -a --volumes
 ## 最佳实践
 
 1. **使用统一入口**: 推荐通过 http://localhost (Nginx) 访问，获得最佳体验
-2. **定期备份**: 每天备份 PostgreSQL 数据库和 MinIO 存储
+2. **备份恢复**: 上线前建立覆盖 PostgreSQL、MinIO、部署配置和密钥材料的备份策略，并定期完成恢复演练
 3. **监控日志**: 使用 `health-check.sh` 定期检查服务健康
 4. **渐进式更新**: 先在测试环境验证，再部署到生产环境
 5. **使用 Swarm**: 生产环境推荐使用 Docker Swarm 提高可用性

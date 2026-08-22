@@ -17,6 +17,7 @@ class RegistrationError(RuntimeError):
 
 
 RETIRED_MAKE_TARGETS = {
+    "backup",
     "build-backend",
     "build-workers",
     "build-backend-multiarch",
@@ -43,12 +44,14 @@ RETIRED_MAKE_TARGETS = {
     "dev-system",
     "dev-transfer",
     "db-migrate",
+    "db-shell",
     "docs",
     "down",
     "fix-frontend",
     "fmt",
     "health",
     "init-minio-mvt",
+    "init",
     "install-deps",
     "lint",
     "logs",
@@ -76,6 +79,8 @@ RETIRED_MAKE_TARGETS = {
     "ps",
     "restart",
     "restart-full",
+    "redis-cli",
+    "restore",
     "status",
     "up",
     "up-full",
