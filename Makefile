@@ -278,28 +278,6 @@ init-minio: ## 初始化 MinIO buckets（包括 PMTiles 快显缓存等）
 init-redis: ## 检查 Redis 缓存、事件和分布式锁
 	@./scripts/infra/init-redis.sh
 
-install-deps: ## 安装所有依赖
-	@echo "$(GREEN)安装依赖...$(NC)"
-	@cd system/backend && go mod download
-	@cd system/frontend && npm install
-	@echo "$(GREEN)依赖安装完成$(NC)"
-
-update-deps: ## 更新所有依赖
-	@echo "$(GREEN)更新依赖...$(NC)"
-	@cd system/backend && go get -u ./...
-	@cd system/frontend && npm update
-	@echo "$(GREEN)依赖更新完成$(NC)"
-
-lint: ## 运行代码检查
-	@echo "$(GREEN)运行代码检查...$(NC)"
-	@cd system/backend && golangci-lint run || echo "$(YELLOW)请安装 golangci-lint$(NC)"
-	@cd system/frontend && npm run lint || echo "$(YELLOW)前端 lint 未配置$(NC)"
-
-fmt: ## 格式化代码
-	@echo "$(GREEN)格式化代码...$(NC)"
-	@find . -name "*.go" -not -path "*/vendor/*" -not -path "*/node_modules/*" -exec gofmt -w {} \;
-	@echo "$(GREEN)代码格式化完成$(NC)"
-
 backup: ## 备份数据库
 	@echo "$(GREEN)备份数据库...$(NC)"
 	@mkdir -p backups
@@ -314,19 +292,6 @@ restore: ## 恢复数据库（需要指定备份文件 FILE=xxx.sql）
 	@echo "$(YELLOW)恢复数据库: $(FILE)$(NC)"
 	@docker compose -f docker-compose.infra.yml exec -T postgres psql -U addp -d addp < $(FILE)
 	@echo "$(GREEN)数据库恢复完成$(NC)"
-
-.PHONY: docs
-docs: ## 生成 API 文档
-	@echo "$(GREEN)生成 API 文档...$(NC)"
-	@echo "$(YELLOW)TODO: 实现 API 文档生成$(NC)"
-
-check-frontend: ## 检查所有 frontend 的 Docker 配置是否符合规范
-	@echo "$(GREEN)检查 frontend Docker 配置...$(NC)"
-	@./scripts/utils/standardize-frontend-docker.sh
-
-fix-frontend: ## 自动修复 frontend Docker 配置问题（创建缺失的 .dockerignore）
-	@echo "$(GREEN)修复 frontend Docker 配置...$(NC)"
-	@./scripts/utils/standardize-frontend-docker.sh --fix
 
 registry-start: ## 启动本地 Docker Registry（镜像构建必需）
 	@echo "$(GREEN)启动本地 Docker Registry...$(NC)"

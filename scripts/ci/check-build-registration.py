@@ -32,6 +32,7 @@ RETIRED_MAKE_TARGETS = {
     "docker-build-all",
     "clean",
     "clean-all",
+    "check-frontend",
     "dev-all",
     "dev-gateway",
     "dev-geopython-workflow",
@@ -42,9 +43,14 @@ RETIRED_MAKE_TARGETS = {
     "dev-system",
     "dev-transfer",
     "db-migrate",
+    "docs",
     "down",
+    "fix-frontend",
+    "fmt",
     "health",
     "init-minio-mvt",
+    "install-deps",
+    "lint",
     "logs",
     "logs-gateway",
     "logs-manager",
@@ -74,6 +80,7 @@ RETIRED_MAKE_TARGETS = {
     "up",
     "up-full",
     "up-infra",
+    "update-deps",
 }
 
 AUXILIARY_DOCKERFILES = {

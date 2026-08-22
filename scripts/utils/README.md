@@ -117,60 +117,6 @@ Policy OK. No changes required.
 
 ---
 
-### standardize-frontend-docker.sh
-**用途**: 统一所有前端模块的 Dockerfile 和 nginx.conf
-
-**功能**:
-- 检查所有前端 Dockerfile 的一致性
-- 验证 nginx.conf 配置规范
-- 自动修复不符合标准的配置（使用 --fix 参数）
-- 确保所有前端使用相同的构建模式
-
-**检查项**:
-- ✅ Dockerfile 存在
-- ✅ .dockerignore 存在
-- ✅ nginx.conf 存在
-- ✅ 配置文件格式正确
-
-**命令**:
-```bash
-# CHECK 模式（只检查，不修改）
-./scripts/utils/standardize-frontend-docker.sh
-
-# FIX 模式（自动创建缺失的文件）
-./scripts/utils/standardize-frontend-docker.sh --fix
-
-# 通过 Makefile 使用
-make check-frontend      # 检查模式
-make fix-frontend        # 修复模式
-```
-
-**预期输出**:
-```
-========================================
-Frontend Docker Standardization Check
-========================================
-
-Checking: console/frontend
-  ✓ Dockerfile exists
-  ✓ .dockerignore exists
-  ✓ nginx.conf exists
-
-Checking: system/frontend
-  ✓ Dockerfile exists
-  ✗ .dockerignore missing  [run with --fix to create]
-  ✓ nginx.conf exists
-
-Summary: 2/7 frontends compliant
-```
-
-**使用场景**:
-- 前端 Docker 配置审查
-- CI/CD 构建前验证
-- 新增前端模块时确保规范
-
----
-
 ## 🔄 典型使用场景
 
 ### 场景 1: 部署前验证
@@ -182,8 +128,8 @@ Summary: 2/7 frontends compliant
 # 2. 清理 Go 依赖
 ./scripts/utils/go-mod-tidy-all.sh
 
-# 3. 检查前端配置
-make check-frontend
+# 3. 检查平台构建登记和前端 CI 登记
+make test-platform
 ```
 
 ### 场景 2: 开发调试
@@ -199,11 +145,8 @@ make check-frontend
 ### 场景 3: CI/CD 集成
 
 ```bash
-# 构建前准备
-./scripts/utils/go-mod-tidy-all.sh
-./scripts/utils/standardize-frontend-docker.sh --fix
-
-# 验证配置
+# 验证平台登记与配置
+make test-platform
 ./scripts/utils/ports-validate.sh
 ```
 
@@ -225,13 +168,6 @@ make check-frontend
    - 需要 Manager backend 和基础设施正在运行
    - 需要有效的 JWT token
    - 测试表名需要在数据库中存在
-
-4. **standardize-frontend-docker.sh**
-   - `--fix` 模式会创建文件，请谨慎使用
-   - 检查所有 frontend 目录: console, system, manager, meta, transfer, orchestrator, develop
-   - 不会覆盖已存在的配置文件
-
----
 
 ## 🔗 相关文档
 

@@ -425,8 +425,7 @@ scripts/registry/
 scripts/utils/
 ├── go-mod-tidy-all.sh               # 批量清理 Go 依赖
 ├── ports-validate.sh                # 端口规范验证
-├── test-tile-api.sh                 # MVT 瓦片 API 测试
-└── standardize-frontend-docker.sh   # 前端 Docker 配置标准化
+└── test-tile-api.sh                 # MVT 瓦片 API 测试
 ```
 
 **用途**: 通用工具函数、批量操作、验证检查
