@@ -95,6 +95,16 @@ class BuildRegistrationTest(unittest.TestCase):
             MODULE.validate_registration(self.repository),
         )
 
+    def test_rejects_module_makefile(self) -> None:
+        self._write("sample/Makefile", "build:\n\t@echo duplicate\n")
+        subprocess.run(
+            ["git", "add", "sample/Makefile"], cwd=self.repository, check=True
+        )
+        self.assertIn(
+            "sample/Makefile: module Makefile duplicates the root build entry point",
+            MODULE.validate_registration(self.repository),
+        )
+
     def test_rejects_missing_image_build_definition(self) -> None:
         (self.repository / "sample/frontend/Dockerfile").unlink()
         self.assertIn(

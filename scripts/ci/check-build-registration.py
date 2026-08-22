@@ -375,6 +375,9 @@ def validate_registration(repository: Path) -> list[str]:
     for target in sorted(RETIRED_MAKE_TARGETS):
         if make_recipe(makefile, target) is not None:
             errors.append(f"Makefile retired build target still exists: {target}")
+    for path in git_files(repository, "*Makefile"):
+        if path != "Makefile":
+            errors.append(f"{path}: module Makefile duplicates the root build entry point")
     return errors
 
 

@@ -149,7 +149,7 @@ bash scripts/dev/stop.sh
 
 **用途**: 编译二进制文件、构建 Docker 镜像、打包部署
 
-根 `Makefile` 只提供两个标准入口：`make build` 调用 `scripts/build/compile.sh`，`make build-images` 调用 `scripts/build/build-images.sh`。构建事实只维护在这两个脚本中，不得在 Makefile、Workflow 或其他脚本中复制服务清单和构建命令。需要传递参数时分别使用 `BUILD_ARGS="..."` 和 `IMAGE_BUILD_ARGS="..."`。
+仓库只维护根 `Makefile`，不允许模块级 Makefile。正式构建只提供两个标准入口：`make build` 调用 `scripts/build/compile.sh`，`make build-images` 调用 `scripts/build/build-images.sh`。构建事实只维护在这两个脚本中，不得在 Makefile、Workflow 或其他脚本中复制服务清单和构建命令。需要传递参数时分别使用 `BUILD_ARGS="..."` 和 `IMAGE_BUILD_ARGS="..."`。
 
 ### 核心脚本
 
@@ -460,7 +460,7 @@ Online 唯一入口为 `make test-online ONLINE_SUITE=<suite>`，并要求环境
 
 `scripts/ci/check-frontend-ci-registration.py` 是前端 CI 登记完整性检查。它从 Git 跟踪的 `*/frontend/package.json` 自动发现前端，要求每个前端同时具有 `scripts.build`、根 `Makefile` 的 `test-<module>-frontend` 标准入口，并登记到 `platform-ci.yml` 的目标和变更路径中。检查及其反例回归已纳入 `make test-platform`；新增前端时遗漏任一环节会使当次 Platform CI 失败。
 
-`scripts/ci/check-build-registration.py` 是构建登记完整性检查。它自动发现正式 Go Server/Worker、Git 跟踪的前端和 `docker-compose.yml` 中的 ADDP 镜像，校验它们已登记到 `compile.sh`、`build-images.sh`，要求每个 Git 跟踪的 Dockerfile 归属于正式镜像或明确的辅助构建，逐项验证镜像具有明确的 Dockerfile 或专用构建脚本，核对 Docker build context 内的 `COPY` 源路径未缺失且未被对应 `.dockerignore` 排除、本地 Registry 基础镜像已登记到 `seed_base_images` 且源与目标均未使用浮动 `latest` 标签，并检查预编译 Dockerfile 引用的二进制名称与 `compile.sh` 输出一致；同时禁止恢复已经删除的重复 Make 构建目标。检查及其反例回归已纳入 `make test-platform`；新增模块、Worker、前端、Compose 镜像或 Dockerfile 却遗漏构建登记、辅助分类、构建定义、context 输入、基础镜像预热登记或恢复 `latest` 时，当次 Platform CI 会直接失败。
+`scripts/ci/check-build-registration.py` 是构建登记完整性检查。它自动发现正式 Go Server/Worker、Git 跟踪的前端和 `docker-compose.yml` 中的 ADDP 镜像，校验它们已登记到 `compile.sh`、`build-images.sh`，要求每个 Git 跟踪的 Dockerfile 归属于正式镜像或明确的辅助构建，并禁止模块 Makefile 复制根构建入口。检查逐项验证镜像具有明确的 Dockerfile 或专用构建脚本，核对 Docker build context 内的 `COPY` 源路径未缺失且未被对应 `.dockerignore` 排除、本地 Registry 基础镜像已登记到 `seed_base_images` 且源与目标均未使用浮动 `latest` 标签，并检查预编译 Dockerfile 引用的二进制名称与 `compile.sh` 输出一致；同时禁止恢复已经删除的重复 Make 构建目标。检查及其反例回归已纳入 `make test-platform`；新增模块、Worker、前端、Compose 镜像、Dockerfile 或 Makefile 却遗漏统一登记和分类时，当次 Platform CI 会直接失败。
 
 `scripts/ci/check-t2-ci-registration.py` 是 GitHub Hosted Runner 上 disposable PostgreSQL T2 门禁的登记完整性检查。它从 Git 跟踪的 `scripts/test/*-postgres-gate.sh` 自动发现门禁，要求每条门禁同时具有根 `Makefile` 标准入口、`release-and-t2-gates.yml` 调用、脚本路径触发和 owner `backend` 路径触发，并要求 PostgreSQL 15 Service 镜像按 digest 固定。ArcGIS 开放格式等需要专用样本或 Oracle 的 T2/T5 不属于该 Hosted Runner 契约，不会被伪装成普通 PostgreSQL 门禁。
 
