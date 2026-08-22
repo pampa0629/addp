@@ -181,9 +181,14 @@ def dockerignore_excludes(context_root: Path, relative_path: str) -> bool:
 
 
 def dockerfile_context_errors(
-    repository: Path, service: str, dockerfile: str, context: str
+    repository: Path,
+    service: str,
+    dockerfile: str,
+    context: str,
+    tracked_files: set[str],
 ) -> list[str]:
     errors: list[str] = []
+    repository_root = repository.resolve()
     context_root = (repository / context).resolve()
     text = (repository / dockerfile).read_text(encoding="utf-8")
     for line_number, line in enumerate(text.splitlines(), start=1):
@@ -214,9 +219,28 @@ def dockerfile_context_errors(
                     f"{service}: {dockerfile}:{line_number} COPY source is missing from build context {context}: {source}"
                 )
                 continue
+            tracked_matches = []
+            for match in existing_matches:
+                relative_match = match.resolve().relative_to(repository_root).as_posix()
+                if match.is_file() and relative_match in tracked_files:
+                    tracked_matches.append(match)
+                elif match.is_dir() and (
+                    relative_match == "."
+                    or any(
+                        tracked == relative_match
+                        or tracked.startswith(relative_match + "/")
+                        for tracked in tracked_files
+                    )
+                ):
+                    tracked_matches.append(match)
+            if not tracked_matches:
+                errors.append(
+                    f"{service}: {dockerfile}:{line_number} COPY source is not tracked by Git: {source}"
+                )
+                continue
             visible_matches = [
                 match
-                for match in existing_matches
+                for match in tracked_matches
                 if not dockerignore_excludes(
                     context_root, match.relative_to(context_root).as_posix()
                 )
@@ -350,6 +374,7 @@ def validate_registration(repository: Path) -> list[str]:
     seed_entries = base_image_seed_entries(image_script)
     seeded_images = seeded_base_images(image_script)
     expected_compiled = expected_compile_entries(repository)
+    tracked_files = set(git_files(repository))
     errors: list[str] = []
     registered_dockerfiles: set[str] = set()
 
@@ -387,6 +412,9 @@ def validate_registration(repository: Path) -> list[str]:
         if not definition_path.is_file():
             errors.append(f"{name}: image build definition does not exist: {definition}")
             continue
+        if definition not in tracked_files:
+            errors.append(f"{name}: image build definition is not tracked by Git: {definition}")
+            continue
         if definition_path.name.startswith("Dockerfile"):
             registered_dockerfiles.add(definition)
         if binary is not None and not dockerfile_copies_binary(
@@ -397,7 +425,11 @@ def validate_registration(repository: Path) -> list[str]:
                 "from dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}"
             )
         if context is not None:
-            errors.extend(dockerfile_context_errors(repository, name, definition, context))
+            errors.extend(
+                dockerfile_context_errors(
+                    repository, name, definition, context, tracked_files
+                )
+            )
             for base_image in sorted(
                 local_registry_base_images(definition_path.read_text(encoding="utf-8"))
             ):
@@ -426,6 +458,8 @@ def validate_registration(repository: Path) -> list[str]:
     for path, purpose in sorted(AUXILIARY_DOCKERFILES.items()):
         if not (repository / path).is_file():
             errors.append(f"{path}: auxiliary Dockerfile is missing ({purpose})")
+        elif path not in tracked_files:
+            errors.append(f"{path}: auxiliary Dockerfile is not tracked by Git ({purpose})")
 
     for name in sorted(expected_compiled):
         if name not in images:

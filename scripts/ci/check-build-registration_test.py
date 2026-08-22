@@ -137,6 +137,19 @@ class BuildRegistrationTest(unittest.TestCase):
             MODULE.validate_registration(self.repository),
         )
 
+    def test_rejects_untracked_image_build_definition(self) -> None:
+        subprocess.run(
+            ["git", "rm", "--cached", "sample/frontend/Dockerfile"],
+            cwd=self.repository,
+            check=True,
+            capture_output=True,
+        )
+        self.assertIn(
+            "sample-frontend: image build definition is not tracked by Git: "
+            "sample/frontend/Dockerfile",
+            MODULE.validate_registration(self.repository),
+        )
+
     def test_rejects_mismatched_compiled_binary(self) -> None:
         self._write(
             "sample/backend/Dockerfile.prebuilt",
@@ -181,6 +194,33 @@ class BuildRegistrationTest(unittest.TestCase):
             "sample-frontend: sample/frontend/Dockerfile:2 COPY source is "
             "missing from build context .: missing-package.json",
             MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_untracked_copy_source(self) -> None:
+        self._write("sample/frontend/runtime-config.json", "{}\n")
+        self._write(
+            "sample/frontend/Dockerfile",
+            "FROM scratch\nCOPY sample/frontend/runtime-config.json ./runtime-config.json\n",
+        )
+        self.assertIn(
+            "sample-frontend: sample/frontend/Dockerfile:2 COPY source is not "
+            "tracked by Git: sample/frontend/runtime-config.json",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_untracked_auxiliary_dockerfile(self) -> None:
+        path = next(iter(MODULE.AUXILIARY_DOCKERFILES))
+        subprocess.run(
+            ["git", "rm", "--cached", path],
+            cwd=self.repository,
+            check=True,
+            capture_output=True,
+        )
+        self.assertTrue(
+            any(
+                error.startswith(f"{path}: auxiliary Dockerfile is not tracked by Git")
+                for error in MODULE.validate_registration(self.repository)
+            )
         )
 
     def test_rejects_copy_source_excluded_by_dockerignore(self) -> None:
