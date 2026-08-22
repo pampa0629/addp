@@ -9,7 +9,6 @@ ARG GOOS=linux
 WORKDIR /app
 
 COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/transfer-continuous-worker ./worker
-COPY transfer/backend/config ./transfer/backend/config
 RUN chmod +x ./worker
 
 CMD ["./worker"]

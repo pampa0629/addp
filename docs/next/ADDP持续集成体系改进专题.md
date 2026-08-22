@@ -77,6 +77,7 @@ Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权�
 | `make test-transfer-frontend` | Transfer 前端确定性测试和构建 | T1 |
 | `make test-agent-eval` | Agent 离线评测门禁 | T1 |
 | `make test-common-python` | common-python 全量测试 | T1 |
+| `make test-module MODULE=<模块>` | 自动发现并串行运行指定模块的平台、语言、前端及已登记基础设施门禁 | T0-T3，开发交付入口 |
 | `make test-integration` | 严格串行运行全部已登记的 disposable 基础设施门禁 | T2，本地或专用集成环境聚合入口 |
 | `make test-standard-postgres` | Standard migration、删除约束与引用删除协调的 disposable PostgreSQL 15 门禁 | T2 |
 | `make test-arcgis-open-formats` | Access / PGeo / Oracle Spatial 真实样本集成门禁 | T2 / T5，依赖专用环境 |
@@ -112,6 +113,8 @@ Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job �
 `make test-platform` 已接入 T2 CI 登记完整性检查，自动发现 `scripts/test/*-postgres-gate.sh`，并校验 Make 入口、`test-integration` 串行聚合、workflow 调用、脚本路径、owner 后端路径与固定 PostgreSQL 15 镜像。新增 Hosted PostgreSQL T2 门禁时，遗漏任一登记环节都会使 Platform CI 失败。聚合入口面向具备全部安全连接条件的本地或专用集成环境；GitHub Actions 继续用独占 PostgreSQL Service 分 Job 执行模块级目标，以保留隔离、路径选择和并行反馈。
 
 根 `make test` 已收敛为 T0-T1 全部无外部服务确定性门禁，聚合平台一致性、全部 Go 模块、Agent 离线评测及所有已登记前端的测试与生产构建；需要 disposable PostgreSQL、真实运行服务、在线证据或发布环境的 T2-T5 门禁保持显式独立入口。前端登记检查会自动要求每个新前端同时进入 CI 矩阵和根 `make test`，避免本地总门禁与 CI 覆盖漂移。重复的 System 单模块 Go 测试入口已删除，由动态发现全部 `go.mod` 的 `make test-go` 唯一覆盖。
+
+开发交付使用 `make test-module MODULE=<模块>` 运行指定模块的 T0-T3。该入口根据 Git 跟踪文件自动发现 Go、Python、前端和 PostgreSQL 门禁，先执行平台一致性，再串行调用 owner 事实入口；不维护模块清单，也不复制 CI 路径映射。模块存在 PostgreSQL T2 时必须显式提供 owner 要求的安全连接变量，缺失即失败，不能用跳过伪装通过。
 
 平台构建入口也已收敛为单一路线：仓库只维护根 `Makefile`，`make build` 唯一调用 `scripts/build/compile.sh`，`make build-images` 唯一调用 `scripts/build/build-images.sh`，旧的模块 Makefile、分模块、debug/release、生产镜像和 Compose build Make 目标已删除。开发、基础设施和生产生命周期目标分别只封装 `scripts/dev/`、`scripts/infra/` 和 `scripts/prod/` 的标准脚本，直接 `go run`、直接 Compose 生命周期目标及兼容别名已删除。只覆盖 System 却宣称全平台的依赖、lint、格式化目标，会吞掉错误的伪检查，只登记部分旧前端的 Docker 修复脚本，未校验删除范围的清理目标，以及硬编码凭据或缺少完整恢复契约的初始化、数据库终端和备份恢复目标也已删除。Registry 固定使用构建链路的 `localhost:5001` 临时仓库，不再保留端口、容器名和持久化语义冲突的第二套初始化路线。`make test-platform` 自动发现正式 Go Server/Worker、前端与 Compose ADDP 镜像，要求所有 Git 跟踪 Dockerfile 归属于正式镜像或明确的辅助构建，并核对构建登记、Dockerfile/专用构建脚本、Docker build context 的 `COPY` 输入、`.dockerignore` 排除规则、本地 Registry 基础镜像预热登记、浮动 `latest` 标签、预编译二进制名称以及根 `Makefile` 引用脚本是否真实且被 Git 跟踪；以后 AI 新增或调整部署单元时，恢复退休 Make 目标、重复模块 Makefile、引用失效脚本或遗漏构建登记会在同次 CI 中直接暴露。
 

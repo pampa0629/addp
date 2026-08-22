@@ -144,6 +144,8 @@ make test-release RELEASE_SUITE=system-iam
 
 现有模块级目标是各 owner 门禁的唯一事实入口；`test-integration` 只按登记顺序串行调用这些目标，不复制测试逻辑。CI 为保留路径选择、故障隔离和并行反馈，仍分别编排模块级目标。
 
+`test-module` 从 Git 跟踪的 Go module、前端 package、Python package 和 PostgreSQL gate 自动发现模块及其标准入口，不维护第二份模块清单。它先运行平台 T0，再运行所选模块的 Go/Python T1、前端 T1/T3 和已登记 PostgreSQL T2；T2 所需安全连接条件必须由调用方显式提供，缺失时失败，不能自动跳过或降级。
+
 ## 五、Online 验收协议
 
 ### 5.1 命名
@@ -292,10 +294,10 @@ T5 按产品或运行时独立编排，例如 System IAM、CLI、Infra Kafka HA�
 ### 阶段 2：统一模块和集成入口
 
 - [x] 盘点所有 Go、Python、前端和 PostgreSQL 测试入口。
-- [ ] 建立 `test-module` 的单一路线。
+- [x] 建立自动发现的 `test-module MODULE=<模块>` 单一路线，并纳入平台一致性自测。
 - [x] 建立 `test-integration` 严格串行聚合入口，并由平台检查自动要求以后新增的 Hosted PostgreSQL 门禁同步登记。
 - [x] 将 System IAM、Quality PostgreSQL、Model 前端等现有门禁登记到统一分类。
-- 更新 `scripts/README.md` 和各 owner 模块验证说明，删除重复命令。
+- [x] 更新平台测试说明；模块级目标继续作为 owner 唯一事实入口，不增加重复命令。
 
 ### 阶段 3：CI 矩阵
 
