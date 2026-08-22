@@ -463,7 +463,7 @@ Online 唯一入口为 `make test-online ONLINE_SUITE=<suite>`，并要求环境
 
 `scripts/ci/check-build-registration.py` 是构建登记完整性检查。它自动发现正式 Go Server/Worker、Git 跟踪的前端和 `docker-compose.yml` 中的 ADDP 镜像，校验它们已登记到 `compile.sh`、`build-images.sh`，要求每个 Git 跟踪的 Dockerfile 归属于正式镜像或明确的辅助构建，并禁止模块 Makefile 复制根构建入口。检查逐项验证镜像具有明确的 Dockerfile 或专用构建脚本，核对 Docker build context 内的 `COPY` 源路径未缺失且未被对应 `.dockerignore` 排除、本地 Registry 基础镜像已登记到 `seed_base_images` 且源与目标均未使用浮动 `latest` 标签，并检查预编译 Dockerfile 引用的二进制名称与 `compile.sh` 输出一致；同时禁止恢复已经删除的重复 Make 构建目标。检查及其反例回归已纳入 `make test-platform`；新增模块、Worker、前端、Compose 镜像、Dockerfile 或 Makefile 却遗漏统一登记和分类时，当次 Platform CI 会直接失败。
 
-`scripts/ci/check-t2-ci-registration.py` 是 GitHub Hosted Runner 上 disposable PostgreSQL T2 门禁的登记完整性检查。它从 Git 跟踪的 `scripts/test/*-postgres-gate.sh` 自动发现门禁，要求每条门禁同时具有根 `Makefile` 标准入口、`release-and-t2-gates.yml` 调用、脚本路径触发和 owner `backend` 路径触发，并要求 PostgreSQL 15 Service 镜像按 digest 固定。ArcGIS 开放格式等需要专用样本或 Oracle 的 T2/T5 不属于该 Hosted Runner 契约，不会被伪装成普通 PostgreSQL 门禁。
+`scripts/ci/check-t2-ci-registration.py` 是 GitHub Hosted Runner 上 disposable PostgreSQL T2 门禁的登记完整性检查。它从 Git 跟踪的 `scripts/test/*-postgres-gate.sh` 自动发现门禁，要求每条门禁同时具有根 `Makefile` 标准入口、`make test-integration` 串行聚合登记、`release-and-t2-gates.yml` 调用、脚本路径触发和 owner `backend` 路径触发，并要求 PostgreSQL 15 Service 镜像按 digest 固定。ArcGIS 开放格式等需要专用样本或 Oracle 的 T2/T5 不属于该 Hosted Runner 契约，不会被伪装成普通 PostgreSQL 门禁。
 
 `scripts/ci/check-engine-startup-isolation.py` 是 Engine 启动隔离一致性检查。它校验模块选择启动不会隐式拉起 DuckDB、Inference、Workflow 或 Jupyter Runtime，模块 Backend/Worker 的 Compose `depends_on` 不指向可选 Runtime，并禁止 System 恢复启动期内置 Runtime 代注册、全量能力刷新和对应 URL 配置。检查、反例回归及相关 Go 回归统一由 `make test-engine-startup-isolation` 执行，并纳入 `make test-platform`。
 
@@ -484,6 +484,8 @@ GitHub Actions 的 IAM/CLI 发布工作流并行运行 macOS CLI 产品门禁和
 System IAM 和 Fosite 正式发布使用 `make test-system-iam-postgres`，必须显式提供唯一变量 `ADDP_SYSTEM_POSTGRES_TEST_DSN`，且数据库名包含独立的 `test` 或 `disposable` 段。门禁先清理一次性数据库中的 `system` 和 `common` Schema，再串行运行 IAM Domain、Fosite Storage、IAM API 和 Migration 的全部 PostgreSQL `AgainstPostgres` 测试；缺少 DSN、指向非一次性数据库或测试被阻断时立即失败。该入口只能指向专用临时数据库。
 
 Standard 的正式 PostgreSQL 集成门禁使用 `make test-standard-postgres`，必须显式提供唯一变量 `STANDARD_POSTGRES_TEST_DSN`，且数据库名包含 `test` 或 `disposable`。门禁验证 Standard migration、删除约束、引用删除协调的并发锁和失败恢复，并拒绝任何测试 Skip。该入口只操作 Standard owner Schema；Standard ↔ Model 的生产调用通过 `common/client`，不允许使用跨 Schema SQL 模拟 Online 验收。
+
+具备全部安全连接条件时，使用 `make test-integration` 严格串行运行 System IAM、Quality 和 Standard 的已登记 PostgreSQL 门禁；即使调用方使用 `make -j`，聚合入口也不会让共享测试库并发执行。各 owner 脚本继续负责校验 DSN 或 database 名称并执行清理，聚合入口不提供默认业务库连接，也不复制模块测试逻辑。GitHub Actions 仍分别运行模块级目标，每个 Job 使用独占 PostgreSQL Service。
 
 ---
 

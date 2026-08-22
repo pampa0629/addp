@@ -130,7 +130,7 @@ make test
 # 指定模块的 T0-T3 门禁
 make test-module MODULE=standard
 
-# 所有已登记的 disposable 基础设施集成门禁
+# 严格串行运行所有已登记的 disposable 基础设施集成门禁
 make test-integration
 
 # 指定跨模块 Online 场景；必须显式选择，不默认跑全平台
@@ -142,7 +142,7 @@ make test-release RELEASE_SUITE=system-iam
 
 不建议提供无条件执行所有层级的 `test-all`：T4-T5 需要不同凭据、运行时、数据库和安全边界，“全部测试”没有一个可靠的统一前置条件。需要完整认证时，应由 CI workflow 显式编排多个标准入口并分别展示结果。
 
-现有 `test-go`、`test-model-frontend`、`test-system-iam-postgres`、`test-quality-postgres` 等目标在迁移期继续作为事实入口；实施新体系时应一次性调整到目标结构并删除被替代路径，不能长期保留两套分类。
+现有模块级目标是各 owner 门禁的唯一事实入口；`test-integration` 只按登记顺序串行调用这些目标，不复制测试逻辑。CI 为保留路径选择、故障隔离和并行反馈，仍分别编排模块级目标。
 
 ## 五、Online 验收协议
 
@@ -291,9 +291,10 @@ T5 按产品或运行时独立编排，例如 System IAM、CLI、Infra Kafka HA�
 
 ### 阶段 2：统一模块和集成入口
 
-- 盘点所有 Go、Python、前端和 PostgreSQL 测试入口。
-- 建立 `test-module` 与 `test-integration` 的单一路线。
-- 将 System IAM、Quality PostgreSQL、Model 前端等现有门禁登记到统一分类。
+- [x] 盘点所有 Go、Python、前端和 PostgreSQL 测试入口。
+- [ ] 建立 `test-module` 的单一路线。
+- [x] 建立 `test-integration` 严格串行聚合入口，并由平台检查自动要求以后新增的 Hosted PostgreSQL 门禁同步登记。
+- [x] 将 System IAM、Quality PostgreSQL、Model 前端等现有门禁登记到统一分类。
 - 更新 `scripts/README.md` 和各 owner 模块验证说明，删除重复命令。
 
 ### 阶段 3：CI 矩阵

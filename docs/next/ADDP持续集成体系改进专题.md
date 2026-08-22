@@ -77,6 +77,7 @@ Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权�
 | `make test-transfer-frontend` | Transfer 前端确定性测试和构建 | T1 |
 | `make test-agent-eval` | Agent 离线评测门禁 | T1 |
 | `make test-common-python` | common-python 全量测试 | T1 |
+| `make test-integration` | 严格串行运行全部已登记的 disposable 基础设施门禁 | T2，本地或专用集成环境聚合入口 |
 | `make test-standard-postgres` | Standard migration、删除约束与引用删除协调的 disposable PostgreSQL 15 门禁 | T2 |
 | `make test-arcgis-open-formats` | Access / PGeo / Oracle Spatial 真实样本集成门禁 | T2 / T5，依赖专用环境 |
 | `make test-agent-eval-release` | Agent 在线证据发布门禁 | T5 |
@@ -108,7 +109,7 @@ Common Python、Quality、Agent 和 Model 已通过统一脚本按各自模块�
 
 Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job 内路径选择。`release-and-t2-gates.yml` 通过单一选择 Job 声明 CLI、System IAM、Quality 与 Standard PostgreSQL 的 path mapping；三个 PostgreSQL Job 统一使用固定 PostgreSQL 15、30 分钟超时、关闭 Go 缓存和相同 Summary 格式，未命中时不会启动数据库 Service。`v*` Tag 只强制执行 CLI 与 System IAM 门禁。Ruleset 要求的 CLI 和 System IAM 检查由汇总 Job 提供：命中路径时等待重测试成功，未命中时明确报告跳过并稳定成功。
 
-`make test-platform` 已接入 T2 CI 登记完整性检查，自动发现 `scripts/test/*-postgres-gate.sh`，并校验 Make 入口、workflow 调用、脚本路径、owner 后端路径与固定 PostgreSQL 15 镜像。新增 Hosted PostgreSQL T2 门禁时，遗漏任一登记环节都会使 Platform CI 失败。
+`make test-platform` 已接入 T2 CI 登记完整性检查，自动发现 `scripts/test/*-postgres-gate.sh`，并校验 Make 入口、`test-integration` 串行聚合、workflow 调用、脚本路径、owner 后端路径与固定 PostgreSQL 15 镜像。新增 Hosted PostgreSQL T2 门禁时，遗漏任一登记环节都会使 Platform CI 失败。聚合入口面向具备全部安全连接条件的本地或专用集成环境；GitHub Actions 继续用独占 PostgreSQL Service 分 Job 执行模块级目标，以保留隔离、路径选择和并行反馈。
 
 根 `make test` 已收敛为 T0-T1 全部无外部服务确定性门禁，聚合平台一致性、全部 Go 模块、Agent 离线评测及所有已登记前端的测试与生产构建；需要 disposable PostgreSQL、真实运行服务、在线证据或发布环境的 T2-T5 门禁保持显式独立入口。前端登记检查会自动要求每个新前端同时进入 CI 矩阵和根 `make test`，避免本地总门禁与 CI 覆盖漂移。重复的 System 单模块 Go 测试入口已删除，由动态发现全部 `go.mod` 的 `make test-go` 唯一覆盖。
 

@@ -51,6 +51,10 @@ def validate_registration(repository: Path) -> list[str]:
         raise RegistrationError(".github/workflows/release-and-t2-gates.yml is missing")
     workflow = workflow_path.read_text(encoding="utf-8")
     errors: list[str] = []
+    integration_recipe = make_recipe(makefile, "test-integration")
+
+    if integration_recipe is None:
+        errors.append("Makefile target test-integration is missing")
 
     if not re.search(r"(?m)^\s*image:\s*postgres:15@sha256:[0-9a-f]{64}\s*$", workflow):
         errors.append("Release/T2 workflow must pin the PostgreSQL 15 service image by digest")
@@ -61,6 +65,13 @@ def validate_registration(repository: Path) -> list[str]:
             errors.append(f"{script}: Makefile target {target} is missing")
         elif script not in recipe:
             errors.append(f"{script}: Makefile target {target} does not invoke its owner script")
+        if integration_recipe is not None and not re.search(
+            rf"(?m)^\t@?\$\(MAKE\)\s+{re.escape(target)}\s*$",
+            integration_recipe,
+        ):
+            errors.append(
+                f"{script}: root test-integration does not invoke {target} sequentially"
+            )
         if not re.search(
             rf"(?m)^\s*(?:-\s*)?run:\s*make\s+{re.escape(target)}\s*$",
             workflow,

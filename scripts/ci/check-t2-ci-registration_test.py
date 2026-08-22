@@ -25,6 +25,8 @@ class T2CIRegistrationTest(unittest.TestCase):
         script.parent.mkdir(parents=True)
         script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
         (self.repository / "Makefile").write_text(
+            "test-integration:\n"
+            "\t@$(MAKE) test-sample-postgres\n\n"
             "test-sample-postgres:\n"
             "\t@bash scripts/test/sample-postgres-gate.sh\n",
             encoding="utf-8",
@@ -70,6 +72,19 @@ class T2CIRegistrationTest(unittest.TestCase):
         self.assertIn(
             "scripts/test/sample-postgres-gate.sh: owner path sample/backend/* is missing",
             errors,
+        )
+
+    def test_rejects_gate_missing_from_integration_aggregate(self) -> None:
+        (self.repository / "Makefile").write_text(
+            "test-integration:\n\n"
+            "test-sample-postgres:\n"
+            "\t@bash scripts/test/sample-postgres-gate.sh\n",
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "scripts/test/sample-postgres-gate.sh: root test-integration does not invoke "
+            "test-sample-postgres sequentially",
+            MODULE.validate_registration(self.repository),
         )
 
 
