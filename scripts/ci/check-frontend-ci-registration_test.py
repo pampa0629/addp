@@ -66,6 +66,34 @@ class FrontendCIRegistrationTest(unittest.TestCase):
             MODULE.validate_registration(self.repository),
         )
 
+    def test_rejects_agent_eval_without_frontend_dependency(self) -> None:
+        frontend = self.repository / "agent/frontend"
+        frontend.mkdir(parents=True)
+        (frontend / "package.json").write_text(
+            '{"scripts":{"build":"vite build","test":"vitest run"}}\n',
+            encoding="utf-8",
+        )
+        makefile = self.repository / "Makefile"
+        makefile.write_text(
+            makefile.read_text(encoding="utf-8").replace(
+                "test: test-sample-frontend",
+                "test: test-sample-frontend test-agent-eval",
+            )
+            + "\ntest-agent-eval:\n\t@echo agent\n"
+            + "\ntest-agent-frontend:\n\t@cd agent/frontend && npm test\n",
+            encoding="utf-8",
+        )
+        self.workflow.write_text(
+            self.workflow.read_text(encoding="utf-8")
+            + "    - module: agent\n      target: test-agent-frontend\n",
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        self.assertIn(
+            "agent: test-agent-eval dependency test-agent-frontend is missing",
+            MODULE.validate_registration(self.repository),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

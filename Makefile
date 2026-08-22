@@ -88,10 +88,10 @@ infra-status: ## 查看系统库基础设施状态与健康
 ports-validate: ## 校验 System/Business 端口分配是否符合策略
 	@bash scripts/utils/ports-validate.sh
 
-test-agent-eval: ## 运行 Agent 统一离线评测门禁
+test-agent-eval: test-agent-frontend ## 运行 Agent 统一离线评测门禁（含 Agent 前端）
 	@bash scripts/test/agent-evaluation-gate.sh offline
 
-test-agent-eval-release: ## 使用三份新鲜在线证据运行 Agent 发布门禁
+test-agent-eval-release: test-agent-frontend ## 使用三份新鲜在线证据运行 Agent 发布门禁（含 Agent 前端）
 	@bash scripts/test/agent-evaluation-gate.sh release
 
 test-common-python: ## 运行 common-python 全量测试

@@ -70,6 +70,17 @@ def validate_registration(repository: Path) -> list[str]:
             errors.append(
                 f"{module}: root test target dependency {aggregate_dependency} is missing"
             )
+    if "agent" in modules:
+        agent_eval = re.search(
+            r"(?m)^test-agent-eval\s*:(?P<dependencies>[^\n]*)", logical_makefile
+        )
+        if (
+            agent_eval is None
+            or "test-agent-frontend" not in agent_eval.group("dependencies").split()
+        ):
+            errors.append(
+                "agent: test-agent-eval dependency test-agent-frontend is missing"
+            )
     return errors
 
 
