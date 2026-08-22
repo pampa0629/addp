@@ -1,0 +1,22 @@
+name: Prepare frontend gate
+description: Install one ADDP frontend's locked dependencies with the standard Node.js runtime.
+
+inputs:
+  frontend-directory:
+    description: Repository-relative frontend directory containing package-lock.json.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      with:
+        node-version: 22
+        cache: npm
+        cache-dependency-path: ${{ inputs.frontend-directory }}/package-lock.json
+
+    - name: Install locked frontend dependencies
+      shell: bash
+      working-directory: ${{ inputs.frontend-directory }}
+      run: npm ci

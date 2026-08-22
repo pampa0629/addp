@@ -15,6 +15,9 @@ class RegistrationError(RuntimeError):
     pass
 
 
+FRONTEND_GATE_ACTION = "uses: ./.github/actions/prepare-frontend-gate"
+
+
 def git_files(repository: Path, pattern: str) -> list[str]:
     result = subprocess.run(
         ["git", "ls-files", pattern],
@@ -40,25 +43,53 @@ def discover_frontends(repository: Path) -> list[str]:
     return sorted(modules)
 
 
-def validate_registration(repository: Path) -> list[str]:
-    makefile = (repository / "Makefile").read_text(encoding="utf-8")
-    logical_makefile = re.sub(r"\\\n\s*", " ", makefile)
+def workflow_jobs(repository: Path) -> list[str]:
+    jobs: list[str] = []
     workflow_paths = sorted((repository / ".github/workflows").glob("*.yml"))
     workflow_paths.extend(sorted((repository / ".github/workflows").glob("*.yaml")))
     if not workflow_paths:
         raise RegistrationError("no GitHub Actions workflows found")
-    workflows = "\n".join(path.read_text(encoding="utf-8") for path in workflow_paths)
+    for path in workflow_paths:
+        content = path.read_text(encoding="utf-8")
+        matches = list(re.finditer(r"(?m)^  [a-zA-Z0-9_-]+:\s*$", content))
+        jobs.extend(
+            content[
+                match.start() : (
+                    matches[index + 1].start() if index + 1 < len(matches) else len(content)
+                )
+            ]
+            for index, match in enumerate(matches)
+        )
+    return jobs
+
+
+def validate_registration(repository: Path) -> list[str]:
+    makefile = (repository / "Makefile").read_text(encoding="utf-8")
+    logical_makefile = re.sub(r"\\\n\s*", " ", makefile)
+    jobs = workflow_jobs(repository)
     errors: list[str] = []
     modules = discover_frontends(repository)
     for module in modules:
         target = f"test-{module}-frontend"
         if not re.search(rf"(?m)^{re.escape(target)}\s*:", makefile):
             errors.append(f"{module}: Makefile target {target} is missing")
-        if not re.search(rf"(?m)(?:target:\s*|make\s+){re.escape(target)}\s*$", workflows):
+        target_job = next(
+            (
+                job
+                for job in jobs
+                if re.search(rf"(?m)(?:target:\s*|make\s+){re.escape(target)}\s*$", job)
+            ),
+            None,
+        )
+        if target_job is None:
             errors.append(f"{module}: GitHub Actions target {target} is missing")
+            errors.append(f"{module}: GitHub Actions path registration is missing")
+            continue
+        if FRONTEND_GATE_ACTION not in target_job:
+            errors.append(f"{module}: standard frontend gate setup is missing from {target} job")
         path_pattern = f"'{module}/frontend/*'"
-        if path_pattern not in workflows and module not in re.findall(
-            r"(?m)^\s*- module:\s*([a-z][a-z0-9-]*)\s*$", workflows
+        if path_pattern not in target_job and module not in re.findall(
+            r"(?m)^\s*- module:\s*([a-z][a-z0-9-]*)\s*$", target_job
         ):
             errors.append(f"{module}: GitHub Actions path registration is missing")
         test_target = re.search(r"(?m)^test\s*:(?P<dependencies>[^\n]*)", logical_makefile)

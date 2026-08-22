@@ -35,8 +35,14 @@ class FrontendCIRegistrationTest(unittest.TestCase):
         )
         self.workflow = self.repository / ".github/workflows/platform-ci.yml"
         self.workflow.write_text(
-            "matrix:\n  include:\n    - module: sample\n"
-            "      target: test-sample-frontend\n",
+            "jobs:\n"
+            "  frontend-tests:\n"
+            "    matrix:\n"
+            "      include:\n"
+            "        - module: sample\n"
+            "          target: test-sample-frontend\n"
+            "    steps:\n"
+            "      - uses: ./.github/actions/prepare-frontend-gate\n",
             encoding="utf-8",
         )
         subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
@@ -66,6 +72,18 @@ class FrontendCIRegistrationTest(unittest.TestCase):
             MODULE.validate_registration(self.repository),
         )
 
+    def test_rejects_gate_without_standard_environment_setup(self) -> None:
+        self.workflow.write_text(
+            self.workflow.read_text(encoding="utf-8").replace(
+                "      - uses: ./.github/actions/prepare-frontend-gate\n", ""
+            ),
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "sample: standard frontend gate setup is missing from test-sample-frontend job",
+            MODULE.validate_registration(self.repository),
+        )
+
     def test_requires_agent_frontend_directly_in_root_aggregate(self) -> None:
         frontend = self.repository / "agent/frontend"
         frontend.mkdir(parents=True)
@@ -85,7 +103,12 @@ class FrontendCIRegistrationTest(unittest.TestCase):
         )
         self.workflow.write_text(
             self.workflow.read_text(encoding="utf-8")
-            + "    - module: agent\n      target: test-agent-frontend\n",
+            .replace(
+                "        - module: sample\n",
+                "        - module: agent\n"
+                "          target: test-agent-frontend\n"
+                "        - module: sample\n",
+            ),
             encoding="utf-8",
         )
         subprocess.run(["git", "add", "."], cwd=self.repository, check=True)

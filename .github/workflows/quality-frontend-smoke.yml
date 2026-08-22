@@ -38,22 +38,16 @@ jobs:
             'quality/frontend/*' \
             'common-frontend/*' \
             'scripts/ci/select-gate-by-paths.sh' \
+            '.github/actions/prepare-frontend-gate/*' \
             '.github/actions/ci-gate-summary/*' \
             'Makefile' \
             '.github/workflows/quality-frontend-smoke.yml'
 
-      - name: Set up Node.js
+      - name: Prepare Quality frontend environment
         if: steps.selection.outputs.run == 'true'
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: ./.github/actions/prepare-frontend-gate
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: quality/frontend/package-lock.json
-
-      - name: Install frontend dependencies
-        if: steps.selection.outputs.run == 'true'
-        working-directory: quality/frontend
-        run: npm ci
+          frontend-directory: quality/frontend
 
       - name: Install Chromium for Playwright
         if: steps.selection.outputs.run == 'true'
