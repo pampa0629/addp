@@ -267,7 +267,7 @@ System 使用两张表表达两类生命周期不同的事实：
    - 创建其他模块使用的 ModuleDiscovery 实例
    ↓
 2. 初始化模块列表
-   - 使用 Gateway Platform Service Access Token调用 System API: GET /api/v1/system/runtime/modules?status=up
+   - 使用 Gateway Platform Service Access Token 调用 System API: GET /api/v1/system/runtime/modules?status=up
    - 只获取 enabled=true 且至少存在一个有效 Backend 租约的模块
    ↓
 3. 构建动态路由映射

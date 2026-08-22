@@ -91,46 +91,46 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 	if err != nil || selection.Session == nil {
 		t.Fatalf("issue execution source session: result=%#v error=%v", selection, err)
 	}
-	if err := db.Exec(`
-		INSERT INTO system.engines (id, tenant_id, name, engine_type, connection_info, lifecycle_state, is_builtin)
-		VALUES
-			(12, ?, 'Tenant Engine', 'postgresql', '{}'::json, 'active', false),
-			(13, NULL, 'Builtin Engine', 'duckdb', '{}'::json, 'active', true),
-			(14, ?, 'Foreign Engine', 'postgresql', '{}'::json, 'active', false)
-	`, tenant.ID, tenant.ID+100).Error; err != nil {
-		t.Fatalf("insert engine fixtures: %v", err)
-	}
+	tenantEngineID := insertEngineFixture(t, db, tenant.ID, "Tenant Engine", "postgresql", map[string]interface{}{
+		"host": "tenant-engine", "port": 5432, "database": "tenant",
+	}, false)
+	builtinEngineID := insertEngineFixture(t, db, nil, "Builtin Engine", "duckdb", map[string]interface{}{
+		"protocol": "http", "host": "builtin-engine", "port": 18100,
+	}, true)
+	foreignEngineID := insertEngineFixture(t, db, tenant.ID+100, "Foreign Engine", "postgresql", map[string]interface{}{
+		"host": "foreign-engine", "port": 5432, "database": "foreign",
+	}, false)
 
 	executionID := uuid.New()
 	issued, err := service.Issue(ctx, IssueExecutionAuthorizationInput{
 		SourceAccessToken: selection.Session.AccessToken,
-		Audience:          "develop", ExecutionID: executionID, EngineIDs: []int64{13, 12},
+		Audience:          "develop", ExecutionID: executionID, EngineIDs: []int64{builtinEngineID, tenantEngineID},
 		Effects: []string{"read"}, ExpiresIn: 10 * time.Minute, Audit: audit,
 	})
 	if err != nil {
 		t.Fatalf("issue execution authorization: %v", err)
 	}
 	if issued.ID <= 0 || issued.TenantID != tenant.ID || issued.TenantMembershipID != membership.Membership.ID ||
-		len(issued.EngineIDs) != 2 || issued.EngineIDs[0] != 12 || issued.EngineIDs[1] != 13 {
+		len(issued.EngineIDs) != 2 || issued.EngineIDs[0] != tenantEngineID || issued.EngineIDs[1] != builtinEngineID {
 		t.Fatalf("issued execution authorization = %#v", issued)
 	}
 	if _, err := service.Issue(ctx, IssueExecutionAuthorizationInput{
 		SourceAccessToken: selection.Session.AccessToken,
-		Audience:          "develop", ExecutionID: executionID, EngineIDs: []int64{12},
+		Audience:          "develop", ExecutionID: executionID, EngineIDs: []int64{tenantEngineID},
 		Effects: []string{"read"}, Audit: audit,
 	}); !errors.Is(err, ErrExecutionAuthorizationConflict) {
 		t.Fatalf("duplicate execution authorization error = %v", err)
 	}
 	if _, err := service.Issue(ctx, IssueExecutionAuthorizationInput{
 		SourceAccessToken: selection.Session.AccessToken,
-		Audience:          "develop", ExecutionID: uuid.New(), EngineIDs: []int64{14},
+		Audience:          "develop", ExecutionID: uuid.New(), EngineIDs: []int64{foreignEngineID},
 		Effects: []string{"read"}, Audit: audit,
 	}); !errors.Is(err, commonapi.ErrBadRequest) {
 		t.Fatalf("cross-tenant engine issue error = %v", err)
 	}
 	if _, err := service.Issue(ctx, IssueExecutionAuthorizationInput{
 		SourceAccessToken: selection.Session.AccessToken,
-		Audience:          "develop", ExecutionID: uuid.New(), EngineIDs: []int64{12},
+		Audience:          "develop", ExecutionID: uuid.New(), EngineIDs: []int64{tenantEngineID},
 		Effects: []string{"ddl"}, Audit: audit,
 	}); !errors.Is(err, ErrExecutionAuthorizationPermissionDenied) {
 		t.Fatalf("DDL permission issue error = %v", err)
@@ -152,11 +152,11 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		RequestID: stringPointer("execution-authorization-consume"),
 	}
 	authorized, err := service.AuthorizeEngineAccess(ctx, AuthorizeExecutionEngineAccessInput{
-		AuthorizationID: issued.ID, ExecutionID: executionID, EngineID: 12,
+		AuthorizationID: issued.ID, ExecutionID: executionID, EngineID: tenantEngineID,
 		RequiredEffects: []string{"read"}, ServicePrincipalID: developPrincipalID,
 		ServiceClientID: "addp-develop", TenantID: tenant.ID, Audit: consumeAudit,
 	})
-	if err != nil || authorized.EngineID != 12 {
+	if err != nil || authorized.EngineID != tenantEngineID {
 		t.Fatalf("authorize execution engine access: result=%#v error=%v", authorized, err)
 	}
 
@@ -182,7 +182,7 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 	}
 	issuedFromExecution, err := service.IssueFromExecution(ctx, IssueExecutionAuthorizationFromExecutionInput{
 		ParentExecutionID: parentExecutionID, Audience: "develop", ExecutionID: childExecutionID,
-		EngineIDs: []int64{12}, Effects: []string{"read"}, ExpiresIn: 10 * time.Minute,
+		EngineIDs: []int64{tenantEngineID}, Effects: []string{"read"}, ExpiresIn: 10 * time.Minute,
 		ServicePrincipalID: developPrincipalID, ServiceClientID: "addp-develop",
 		TenantID: tenant.ID, Audit: consumeAudit,
 	})
@@ -193,12 +193,12 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 	}
 	for name, input := range map[string]AuthorizeExecutionEngineAccessInput{
 		"wrong client": {
-			AuthorizationID: issued.ID, ExecutionID: executionID, EngineID: 12,
+			AuthorizationID: issued.ID, ExecutionID: executionID, EngineID: tenantEngineID,
 			RequiredEffects: []string{"read"}, ServicePrincipalID: developPrincipalID,
 			ServiceClientID: "addp-meta", TenantID: tenant.ID, Audit: consumeAudit,
 		},
 		"effect expansion": {
-			AuthorizationID: issued.ID, ExecutionID: executionID, EngineID: 12,
+			AuthorizationID: issued.ID, ExecutionID: executionID, EngineID: tenantEngineID,
 			RequiredEffects: []string{"write"}, ServicePrincipalID: developPrincipalID,
 			ServiceClientID: "addp-develop", TenantID: tenant.ID, Audit: consumeAudit,
 		},
@@ -219,7 +219,7 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 			defer wait.Done()
 			_, issueErr := service.Issue(ctx, IssueExecutionAuthorizationInput{
 				SourceAccessToken: selection.Session.AccessToken,
-				Audience:          "develop", ExecutionID: concurrentExecutionID, EngineIDs: []int64{12},
+				Audience:          "develop", ExecutionID: concurrentExecutionID, EngineIDs: []int64{tenantEngineID},
 				Effects: []string{"read"}, Audit: audit,
 			})
 			results <- issueErr
@@ -255,7 +255,7 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		t.Fatalf("execution authorization changed with source token revocation: authorization=%#v error=%v", authorizationAfterSourceRevocation, err)
 	}
 	if _, err := service.AuthorizeEngineAccess(ctx, AuthorizeExecutionEngineAccessInput{
-		AuthorizationID: issued.ID, ExecutionID: executionID, EngineID: 12,
+		AuthorizationID: issued.ID, ExecutionID: executionID, EngineID: tenantEngineID,
 		RequiredEffects: []string{"read"}, ServicePrincipalID: developPrincipalID,
 		ServiceClientID: "addp-develop", TenantID: tenant.ID, Audit: consumeAudit,
 	}); err != nil {

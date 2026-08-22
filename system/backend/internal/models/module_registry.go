@@ -9,6 +9,8 @@ import (
 
 const (
 	ModuleRuntimeRoleBackend   = "backend"
+	ModuleRuntimeRoleWorker    = "worker"
+	ModuleRuntimeRoleScheduler = "scheduler"
 	ModuleRuntimeStatusUp      = "up"
 	ModuleRuntimeStatusDown    = "down"
 	ModuleRuntimeLeaseDuration = 30 * time.Second

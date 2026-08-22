@@ -40,10 +40,12 @@ const (
 	MsgAuditLogCreateFailed = "system.log.audit_create_failed"
 	MsgAuditLogCreated      = "system.log.audit_created"
 
-	MsgModuleNotFound   = "system.module.not_found"
-	MsgModuleRegistered = "system.module.registered"
-	MsgModuleHeartbeat  = "system.module.heartbeat"
-	MsgModuleDeleted    = "system.module.deleted"
+	MsgModuleNotFound               = "system.module.not_found"
+	MsgModuleRegistered             = "system.module.registered"
+	MsgModuleHeartbeat              = "system.module.heartbeat"
+	MsgModuleDeleted                = "system.module.deleted"
+	MsgModuleRegistrationInvalid    = "system.module.registration_invalid"
+	MsgModuleRuntimeInstanceMissing = "system.module.runtime_instance_missing"
 
 	MsgEngineIdentityImmutable           = "system.engine.identity_immutable"
 	MsgEngineDeleting                    = "system.engine.deleting"

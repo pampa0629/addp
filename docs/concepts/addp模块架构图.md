@@ -661,11 +661,11 @@ MODULE_SERVICE_CLIENT_SECRET=your_module_service_client_secret
 
 | 组件 | 文件路径 | 说明 |
 |------|---------|------|
-| **System 注册表** | [system/backend/internal/models/module_registry.go](../system/backend/internal/models/module_registry.go) | 持久模块定义与运行实例租约模型 |
-| **System API** | [system/backend/internal/api/module_registry_handler.go](../system/backend/internal/api/module_registry_handler.go) | 注册/心跳/查询 API |
-| **Gateway 发现** | [gateway/internal/module_discovery.go](../gateway/internal/module_discovery.go) | 模块发现管理器（定期刷新） |
-| **Gateway 路由** | [gateway/internal/router/router.go](../gateway/internal/router/router.go) | 动态路由配置 |
-| **Common 客户端** | [common/client/system.go](../common/client/system.go) | 模块注册客户端（RegisterModule、SendHeartbeat） |
+| **System 注册表** | [system/backend/internal/models/module_registry.go](../../system/backend/internal/models/module_registry.go) | 持久模块定义与运行实例租约模型 |
+| **System API** | [system/backend/internal/api/module_registry_handler.go](../../system/backend/internal/api/module_registry_handler.go) | 注册/心跳/查询 API |
+| **Gateway 发现** | [gateway/internal/module_discovery.go](../../gateway/internal/module_discovery.go) | 模块发现管理器（定期刷新） |
+| **Gateway 路由** | [gateway/internal/router/router.go](../../gateway/internal/router/router.go) | 动态路由配置 |
+| **Common 客户端** | [common/client/system.go](../../common/client/system.go) | 模块注册客户端（RegisterModule、SendHeartbeat） |
 
 ### 优势与特性
 

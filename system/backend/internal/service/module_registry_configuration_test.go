@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -107,12 +108,35 @@ func TestModuleRegistrySeparatesDefinitionFromRuntimeInstanceLease(t *testing.T)
 	}
 	repo := repository.NewModuleRegistryRepository(db)
 	registry := NewModuleRegistryService(repo)
+	for name, request := range map[string]*models.ModuleRegistrationRequest{
+		"unknown role": {
+			ModuleName: "manager", InstanceID: "invalid-role", Role: "api", RoutePrefix: "/manager",
+		},
+		"backend without URL": {
+			ModuleName: "manager", InstanceID: "invalid-backend", Role: models.ModuleRuntimeRoleBackend, RoutePrefix: "/manager",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := registry.Register(request); !errors.Is(err, ErrInvalidModuleRegistration) {
+				t.Fatalf("Register() error = %v, want invalid registration", err)
+			}
+		})
+	}
 	backend := &models.ModuleRegistrationRequest{
 		ModuleName: "manager", InstanceID: "backend-a", Role: models.ModuleRuntimeRoleBackend,
 		ModuleURL: "http://manager-a:8080", RoutePrefix: "/manager",
+		ConfigurationManagement: &commonconfiguration.ManagementDeclaration{
+			SchemaVersion: commonconfiguration.ManagementSchemaVersion,
+			Entries: []commonconfiguration.ManagementEntry{{
+				ID: "manager.configuration", OwnerModule: "manager",
+				ScopeTypes:    []string{commonconfiguration.ScopePlatformOnly},
+				FrontendRoute: "/manager/settings", ReadPermission: "manager.configuration.read",
+				UpdatePermission: "manager.configuration.update",
+			}},
+		},
 	}
 	worker := &models.ModuleRegistrationRequest{
-		ModuleName: "manager", InstanceID: "worker-a", Role: "worker", RoutePrefix: "/manager",
+		ModuleName: "manager", InstanceID: "worker-a", Role: models.ModuleRuntimeRoleWorker, RoutePrefix: "/manager",
 	}
 	if err := registry.Register(backend); err != nil {
 		t.Fatal(err)
@@ -127,8 +151,15 @@ func TestModuleRegistrySeparatesDefinitionFromRuntimeInstanceLease(t *testing.T)
 	if len(module.Instances) != 2 || module.ID == 0 {
 		t.Fatalf("module = %#v", module)
 	}
+	if module.ConfigurationManagement == nil || len(module.ConfigurationManagement.Entries) != 1 {
+		t.Fatalf("worker registration cleared module definition: %#v", module.ConfigurationManagement)
+	}
 
 	if err := db.Model(&models.ModuleDefinition{}).Where("id = ?", module.ID).Update("enabled", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	backend.ModuleURL = "http://manager-b:8080"
+	if err := registry.Register(backend); err != nil {
 		t.Fatal(err)
 	}
 	if err := registry.SendHeartbeat("manager", "backend-a"); err != nil {
@@ -160,6 +191,9 @@ func TestModuleRegistrySeparatesDefinitionFromRuntimeInstanceLease(t *testing.T)
 		if instance.Status != models.ModuleRuntimeStatusDown {
 			t.Fatalf("instance remained up: %#v", instance)
 		}
+	}
+	if err := registry.SendHeartbeat("manager", "missing-instance"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("missing instance heartbeat error = %v", err)
 	}
 }
 

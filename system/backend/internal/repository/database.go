@@ -58,10 +58,9 @@ func AutoMigrateNonIAM(db *gorm.DB) error {
 		&models.Application{},
 		&models.APIKey{},
 		&models.TaskProvider{},
-		&models.ModuleDefinition{},
-		&models.ModuleRuntimeInstance{},
 	)
 }
+
 // MigrateTaskProviders 迁移 task_providers 表：删除旧 task_providers 顶层入口字段，并规范化历史 endpoint。
 func MigrateTaskProviders(db *gorm.DB) error {
 	// 1. 检查 create_task_url 列是否存在（幂等）
@@ -94,17 +93,5 @@ func MigrateTaskProviders(db *gorm.DB) error {
 		return fmt.Errorf("task_providers 标准执行详情 endpoint 迁移失败: %w", err)
 	}
 
-	return nil
-}
-
-// CreateModuleRuntimeIndexes 创建模块运行实例租约的补充索引。
-func CreateModuleRuntimeIndexes(db *gorm.DB) error {
-	if err := db.Exec(`
-		CREATE INDEX IF NOT EXISTS idx_module_runtime_instances_status_lease
-		ON system.module_runtime_instances(status, lease_expires_at)
-	`).Error; err != nil {
-		return err
-	}
-	log.Println("✅ 模块运行实例租约索引已创建")
 	return nil
 }

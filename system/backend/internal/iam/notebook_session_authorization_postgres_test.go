@@ -64,12 +64,9 @@ func TestNotebookSessionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		time.Now().UTC().Add(-time.Minute), nil, "manual")
 	insertRoleAssignment(t, db, user.PrincipalID, "tenant.data_engineer", "tenant", &tenant.ID, nil, nil,
 		time.Now().UTC().Add(-time.Minute), nil, "manual")
-	if err := db.Exec(`
-		INSERT INTO system.engines (id, tenant_id, name, engine_type, connection_info, lifecycle_state, is_builtin)
-		VALUES (12, ?, 'Notebook Engine', 'postgresql', '{}'::json, 'active', false)
-	`, tenant.ID).Error; err != nil {
-		t.Fatalf("insert Notebook execution engine fixture: %v", err)
-	}
+	notebookEngineID := insertEngineFixture(t, db, tenant.ID, "Notebook Engine", "postgresql", map[string]interface{}{
+		"host": "notebook-engine", "port": 5432, "database": "notebook",
+	}, false)
 
 	newSession := func() string {
 		selection, selectionErr := selectionService.BeginContextSelection(ctx, BeginContextSelectionInput{
@@ -120,7 +117,7 @@ func TestNotebookSessionAuthorizationServiceAgainstPostgres(t *testing.T) {
 	}
 	executionID := uuid.New()
 	derived, err := service.DeriveExecutionEngineAccess(ctx, DeriveNotebookExecutionEngineAccessInput{
-		AuthorizationID: issued.ID, SessionID: sessionID, ExecutionID: executionID, EngineID: 12,
+		AuthorizationID: issued.ID, SessionID: sessionID, ExecutionID: executionID, EngineID: notebookEngineID,
 		ExpiresIn: 5 * time.Minute, ServicePrincipalID: developPrincipalID,
 		ServiceClientID: "addp-develop", TenantID: tenant.ID, Audit: consumeAudit,
 	})
@@ -134,7 +131,7 @@ func TestNotebookSessionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		t.Fatalf("Notebook execution authorization provenance=%#v error=%v", executionAuthorization, err)
 	}
 	if _, err := executionService.AuthorizeEngineAccess(ctx, AuthorizeExecutionEngineAccessInput{
-		AuthorizationID: derived.AuthorizationID, ExecutionID: executionID, EngineID: 12,
+		AuthorizationID: derived.AuthorizationID, ExecutionID: executionID, EngineID: notebookEngineID,
 		RequiredEffects: []string{"read"}, ServicePrincipalID: developPrincipalID,
 		ServiceClientID: "addp-develop", TenantID: tenant.ID, Audit: consumeAudit,
 	}); err != nil {
@@ -171,7 +168,7 @@ func TestNotebookSessionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		t.Fatalf("Family revocation execution derivative=%#v error=%v", executionAuthorization, err)
 	}
 	if _, err := executionService.AuthorizeEngineAccess(ctx, AuthorizeExecutionEngineAccessInput{
-		AuthorizationID: derived.AuthorizationID, ExecutionID: executionID, EngineID: 12,
+		AuthorizationID: derived.AuthorizationID, ExecutionID: executionID, EngineID: notebookEngineID,
 		RequiredEffects: []string{"read"}, ServicePrincipalID: developPrincipalID,
 		ServiceClientID: "addp-develop", TenantID: tenant.ID, Audit: consumeAudit,
 	}); !errors.Is(err, ErrExecutionAuthorizationUnavailable) {
@@ -188,7 +185,7 @@ func TestNotebookSessionAuthorizationServiceAgainstPostgres(t *testing.T) {
 	}
 	secondExecutionID := uuid.New()
 	secondDerived, err := service.DeriveExecutionEngineAccess(ctx, DeriveNotebookExecutionEngineAccessInput{
-		AuthorizationID: second.ID, SessionID: secondSessionID, ExecutionID: secondExecutionID, EngineID: 12,
+		AuthorizationID: second.ID, SessionID: secondSessionID, ExecutionID: secondExecutionID, EngineID: notebookEngineID,
 		ExpiresIn: 5 * time.Minute, ServicePrincipalID: developPrincipalID,
 		ServiceClientID: "addp-develop", TenantID: tenant.ID, Audit: consumeAudit,
 	})

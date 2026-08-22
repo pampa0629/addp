@@ -112,6 +112,12 @@ other = "Heartbeat updated successfully"
 [system.module.deleted]
 other = "Module unregistered successfully"
 
+[system.module.registration_invalid]
+other = "The module runtime instance registration is invalid"
+
+[system.module.runtime_instance_missing]
+other = "The module runtime instance does not exist; register it first"
+
 [system.engine.identity_immutable]
 other = "The physical endpoint of an engine cannot be changed in place; create a new engine instance"
 

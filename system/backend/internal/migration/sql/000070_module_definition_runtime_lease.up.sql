@@ -27,13 +27,15 @@ CREATE TABLE system.module_runtime_instances (
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     UNIQUE (module_definition_id, instance_id),
-    CHECK (role <> ''),
+    CHECK (role IN ('backend', 'worker', 'scheduler')),
     CHECK (role <> 'backend' OR nullif(btrim(module_url), '') IS NOT NULL)
 );
 
 CREATE INDEX idx_module_runtime_instances_role ON system.module_runtime_instances (role);
 CREATE INDEX idx_module_runtime_instances_status ON system.module_runtime_instances (status);
 CREATE INDEX idx_module_runtime_instances_lease ON system.module_runtime_instances (lease_expires_at);
+CREATE INDEX idx_module_runtime_instances_status_lease
+    ON system.module_runtime_instances (status, lease_expires_at);
 
 -- 旧表中只有定义与单实例混合快照。升级时只迁移持久定义；运行实例必须由
 -- 当前进程使用新的 instance_id 重新注册，不能把旧快照伪装成有效租约。

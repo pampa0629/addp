@@ -106,6 +106,7 @@ func main() {
 	}
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
 	systemClient := commonClient.NewSystemClient(cfg.SystemServiceURL, tokenSource)
+	systemRuntimeClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
 	metadataScanner := &continuous.TargetMetadataScanner{
 		Store: leaseRepo, Client: metaClient, ClaimTTL: cfg.MetaScanClaimTTL,
 		Logger: logger.With("component", "continuous_target_metadata_scan"),
@@ -139,6 +140,14 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	systemRuntimeClient.RegisterAndHeartbeat(ctx, &commonClient.ModuleRegistrationRequest{
+		ModuleName: commonExecution.ModuleTransfer, InstanceID: owner,
+		Role: commonClient.ModuleRuntimeRoleWorker, RoutePrefix: "/transfer",
+		Metadata: map[string]interface{}{
+			"runtime_name": "continuous_sync",
+			"capacity":     cfg.ContinuousWorkerCapacity,
+		},
+	})
 	reporter, err := commonRuntimeHealth.NewReporter(commonRuntimeHealth.NewRepository(db), commonRuntimeHealth.ReporterConfig{
 		InstanceID: owner, Module: commonExecution.ModuleTransfer, Role: commonRuntimeHealth.RoleContinuousWorker,
 		RuntimeName: "continuous_sync", Capacity: cfg.ContinuousWorkerCapacity,

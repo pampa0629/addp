@@ -86,6 +86,67 @@ func TestRegisterRuntimeEngineWithRetryDoesNotBlockAndRecovers(t *testing.T) {
 	}
 }
 
+func TestRegisterAndHeartbeatGeneratesBackendInstanceDeclaration(t *testing.T) {
+	t.Parallel()
+
+	registered := make(chan ModuleRegistrationRequest, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/system/runtime/modules" {
+			http.NotFound(w, r)
+			return
+		}
+		var request ModuleRegistrationRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		registered <- request
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
+	client.RegisterAndHeartbeat(ctx, &ModuleRegistrationRequest{
+		ModuleName: "manager", ModuleURL: "http://manager:8080", RoutePrefix: "/manager",
+		Metadata: map[string]interface{}{"version": "test"},
+	})
+	select {
+	case request := <-registered:
+		cancel()
+		if request.InstanceID == "" || request.Role != ModuleRuntimeRoleBackend {
+			t.Fatalf("runtime identity = %#v", request)
+		}
+		if request.Metadata["module"] != "manager" || request.Metadata["version"] != "test" {
+			t.Fatalf("runtime metadata = %#v", request.Metadata)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("module registration was not sent")
+	}
+}
+
+func TestListActiveModulesRequestsRoutableRegistryProjection(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/system/runtime/modules" || r.URL.Query().Get("status") != "up" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"modules": []ModuleInfo{{ModuleName: "manager", Enabled: true}},
+			"count":   1,
+		})
+	}))
+	defer server.Close()
+
+	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
+	modules, err := client.ListActiveModules(context.Background())
+	if err != nil || len(modules) != 1 || modules[0].ModuleName != "manager" {
+		t.Fatalf("ListActiveModules() modules=%#v error=%v", modules, err)
+	}
+}
+
 func TestSystemServiceClientRefreshesRejectedContextTokenOnce(t *testing.T) {
 	t.Parallel()
 

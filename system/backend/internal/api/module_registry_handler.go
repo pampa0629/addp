@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 
 	commonauthmiddleware "github.com/addp/common/middleware/auth"
@@ -9,6 +10,7 @@ import (
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // ModuleRegistryHandler 模块注册API处理器
@@ -32,6 +34,7 @@ func NewModuleRegistryHandler(service *service.ModuleRegistryService) *ModuleReg
 // @Success      200 {object} object{message=string,module=string}
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      403 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.runtime_registry.update"]
 // @Router       /runtime/modules [post]
@@ -46,6 +49,10 @@ func (h *ModuleRegistryHandler) RegisterService(c *gin.Context) {
 		return
 	}
 	if err := h.service.Register(&req); err != nil {
+		if errors.Is(err, service.ErrInvalidModuleRegistration) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgModuleRegistrationInvalid)})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -62,6 +69,8 @@ func (h *ModuleRegistryHandler) RegisterService(c *gin.Context) {
 // @Success      200 {object} object{message=string,module=string}
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      403 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.runtime_registry.update"]
 // @Router       /runtime/modules/heartbeat [post]
@@ -76,6 +85,10 @@ func (h *ModuleRegistryHandler) HeartbeatService(c *gin.Context) {
 		return
 	}
 	if err := h.service.SendHeartbeat(req.ModuleName, req.InstanceID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgModuleRuntimeInstanceMissing)})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

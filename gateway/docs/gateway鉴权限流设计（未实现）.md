@@ -290,7 +290,7 @@ Gateway 订阅消息，刷新本地缓存
 
 ## 服务注册与发现改造计划
 
-> 本节是历史方案记录，服务注册与发现已经按 `system.module_registry` 落地。当前有效实现与约束以 `gateway/docs/gateway架构说明.md` 为准：System 使用 `SYSTEM_URL` bootstrap，其他模块只通过注册表发现，不允许静态 URL 或硬编码路由回退。
+> 本节是历史方案记录，服务注册与发现已经按 `system.module_definitions + system.module_runtime_instances` 落地。当前有效实现与约束以 `gateway/docs/gateway架构说明.md` 为准：System 使用 `SYSTEM_URL` bootstrap，其他模块只通过注册表发现，不允许静态 URL 或硬编码路由回退。
 
 ### 当前架构的局限性
 

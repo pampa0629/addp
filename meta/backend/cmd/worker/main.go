@@ -71,6 +71,14 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	systemClient.RegisterAndHeartbeat(ctx, &commonClient.ModuleRegistrationRequest{
+		ModuleName: commonExecution.ModuleMeta, InstanceID: workerInstanceID,
+		Role: commonClient.ModuleRuntimeRoleWorker, RoutePrefix: "/meta",
+		Metadata: map[string]interface{}{
+			"runtime_name": commonExecution.TaskTypeScan,
+			"capacity":     cfg.ConcurrentTasks,
+		},
+	})
 	reporter, err := commonRuntimeHealth.NewReporter(commonRuntimeHealth.NewRepository(db), commonRuntimeHealth.ReporterConfig{
 		InstanceID: workerInstanceID, Module: commonExecution.ModuleMeta, Role: commonRuntimeHealth.RoleExecutionWorker,
 		RuntimeName: commonExecution.TaskTypeScan, Capacity: cfg.ConcurrentTasks,

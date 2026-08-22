@@ -1287,7 +1287,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "default": "active",
-                        "description": "生命周期，逗号分隔：active,disabled,deleting | Comma-separated lifecycle states: active,disabled,deleting",
+                        "description": "生命周期，逗号分隔：active,disabled,deleting,deleted | Comma-separated lifecycle states: active,disabled,deleting,deleted",
                         "name": "lifecycle_states",
                         "in": "query"
                     }
@@ -1349,14 +1349,26 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
+                    "200": {
+                        "description": "相同永久身份的幂等注册 | Idempotent registration of the same permanent identity",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineResponse"
+                        }
+                    },
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.Engine"
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
@@ -1523,6 +1535,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -1585,6 +1603,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
@@ -1798,6 +1822,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
@@ -1864,6 +1894,74 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "system.engine.delete"
+                ]
+            }
+        },
+        "/engines/{id}/restore": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "使用与墓碑身份键一致的完整连接配置和新凭据显式恢复 Engine Instance，沿用原永久 ID | Explicitly restore an Engine Instance with complete connection details and fresh credentials matching the tombstone identity key while retaining its permanent ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "引擎管理 | Engine Management"
+                ],
+                "summary": "恢复已删除引擎 | Restore deleted engine",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "恢复信息 | Restore info",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineRestoreRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine.update"
                 ]
             }
         },
@@ -4699,7 +4797,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "平台 Service Principal 查询运行模块注册表，可按 status=up 过滤存活模块 | A platform service principal lists runtime modules and may filter active modules with status=up",
+                "description": "平台 Service Principal 查询持久模块定义及运行实例；status=up 仅返回已启用且存在有效 Backend 租约的模块 | A platform service principal lists persistent module definitions and runtime instances; status=up returns only enabled modules with a valid Backend lease",
                 "produces": [
                     "application/json"
                 ],
@@ -4763,7 +4861,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "平台 Service Principal 只能注册与自身 OAuth Client 对应的模块 | A platform service principal can only register the module matching its OAuth client",
+                "description": "平台 Service Principal 只能注册与自身 OAuth Client 对应的模块定义和当前进程实例；注册不覆盖管理员 enabled 状态 | A platform service principal can only register its matching module definition and current process instance; registration never overrides administrator enabled state",
                 "consumes": [
                     "application/json"
                 ],
@@ -4808,6 +4906,12 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
@@ -4870,6 +4974,18 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
@@ -7870,6 +7986,12 @@ const docTemplate = `{
                 "created_by": {
                     "type": "integer"
                 },
+                "deleted_at": {
+                    "type": "string"
+                },
+                "deleted_by": {
+                    "type": "integer"
+                },
                 "deletion_error": {
                     "type": "string"
                 },
@@ -7917,12 +8039,21 @@ const docTemplate = `{
                     "description": "显示名称（原 display_name）",
                     "type": "string"
                 },
+                "restored_at": {
+                    "type": "string"
+                },
+                "restored_by": {
+                    "type": "integer"
+                },
                 "tenant_id": {
                     "description": "租户ID，平台共享引擎为 null",
                     "type": "integer"
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -7994,7 +8125,8 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "assessment_id",
-                "confirmation_token"
+                "confirmation_token",
+                "version"
             ],
             "properties": {
                 "assessment_id": {
@@ -8005,6 +8137,9 @@ const docTemplate = `{
                 },
                 "external_artifact_policy": {
                     "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -8050,6 +8185,12 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "created_by": {
+                    "type": "integer"
+                },
+                "deleted_at": {
+                    "type": "string"
+                },
+                "deleted_by": {
                     "type": "integer"
                 },
                 "deletion_error": {
@@ -8099,12 +8240,46 @@ const docTemplate = `{
                     "description": "显示名称（原 display_name）",
                     "type": "string"
                 },
+                "restored_at": {
+                    "type": "string"
+                },
+                "restored_by": {
+                    "type": "integer"
+                },
                 "tenant_id": {
                     "description": "租户ID，平台共享引擎为 null",
                     "type": "integer"
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineRestoreRequest": {
+            "type": "object",
+            "required": [
+                "connection_info",
+                "name",
+                "version"
+            ],
+            "properties": {
+                "capabilities": {
+                    "type": "string"
+                },
+                "connection_info": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.ConnectionInfo"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -8145,6 +8320,9 @@ const docTemplate = `{
         },
         "github_com_addp_system_internal_models.EngineUpdateRequest": {
             "type": "object",
+            "required": [
+                "version"
+            ],
             "properties": {
                 "capabilities": {
                     "description": "能力声明JSON",
@@ -8162,6 +8340,9 @@ const docTemplate = `{
                 "name": {
                     "description": "显示名称",
                     "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -8177,9 +8358,13 @@ const docTemplate = `{
         "github_com_addp_system_internal_models.HeartbeatRequest": {
             "type": "object",
             "required": [
+                "instance_id",
                 "module_name"
             ],
             "properties": {
+                "instance_id": {
+                    "type": "string"
+                },
                 "module_name": {
                     "type": "string"
                 }
@@ -8194,29 +8379,22 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
-                "health_check_url": {
-                    "type": "string"
+                "enabled": {
+                    "type": "boolean"
                 },
                 "id": {
                     "type": "integer"
                 },
-                "last_heartbeat": {
-                    "type": "string"
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": true
+                "instances": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.ModuleRuntimeInstanceInfo"
+                    }
                 },
                 "module_name": {
                     "type": "string"
                 },
-                "module_url": {
-                    "type": "string"
-                },
                 "route_prefix": {
-                    "type": "string"
-                },
-                "status": {
                     "type": "string"
                 },
                 "updated_at": {
@@ -8227,8 +8405,9 @@ const docTemplate = `{
         "github_com_addp_system_internal_models.ModuleRegistrationRequest": {
             "type": "object",
             "required": [
+                "instance_id",
                 "module_name",
-                "module_url",
+                "role",
                 "route_prefix"
             ],
             "properties": {
@@ -8236,6 +8415,9 @@ const docTemplate = `{
                     "$ref": "#/definitions/configuration.ManagementDeclaration"
                 },
                 "health_check_url": {
+                    "type": "string"
+                },
+                "instance_id": {
                     "type": "string"
                 },
                 "metadata": {
@@ -8248,7 +8430,49 @@ const docTemplate = `{
                 "module_url": {
                     "type": "string"
                 },
+                "role": {
+                    "type": "string"
+                },
                 "route_prefix": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.ModuleRuntimeInstanceInfo": {
+            "type": "object",
+            "properties": {
+                "health_check_url": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "instance_id": {
+                    "type": "string"
+                },
+                "last_heartbeat": {
+                    "type": "string"
+                },
+                "lease_expires_at": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "module_url": {
+                    "type": "string"
+                },
+                "registered_at": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
                     "type": "string"
                 }
             }

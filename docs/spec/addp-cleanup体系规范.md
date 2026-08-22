@@ -265,11 +265,11 @@ cleanup request（资源回收请求）必须保持中性。
 `expected_modules` 默认行为必须明确：
 
 - 用户或 coordinator 显式指定模块时，只等待指定模块。
-- 未指定模块时，System 按 `module_registry.metadata.capabilities.cleanup_executor.enabled=true` 且状态为 `up` 的模块集合生成列表。
+- 未指定模块时，System 按 `module_runtime_instances.metadata.capabilities.cleanup_executor.enabled=true`、实例租约有效且状态为 `up` 的模块集合生成列表。
 - executor 收到请求后，如自身不在 `expected_modules` 中，必须忽略并不得写入结果。
 - `expected_modules` 不得硬编码在 System 或 UI；显式指定的模块也必须是已注册且启用资源回收执行方的模块。
 - Engine 删除影响评估是严格模式：System 必须从全部已安装模块注册记录中选择声明支持 `engine.deleting` 的 cleanup executor，不得只选择状态为 `up` 的模块。任一参与模块为 `down`、响应超时或检查失败时，评估不完整并硬阻断删除。
-- cleanup executor 必须在 `module_registry.metadata.capabilities.cleanup_executor.causes[]` 声明自己支持的 lifecycle cause；未声明 `engine.deleting` 的模块不参与 Engine 删除评估。
+- cleanup executor 必须在 `module_runtime_instances.metadata.capabilities.cleanup_executor.causes[]` 声明自己支持的 lifecycle cause；未声明 `engine.deleting` 的模块不参与 Engine 删除评估。模块是否安装、是否启用来自 `module_definitions`，不得由实例心跳改写。
 
 ### Engine 删除影响模型
 

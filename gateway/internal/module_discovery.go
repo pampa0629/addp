@@ -115,7 +115,7 @@ func selectRoutableBackend(module *client.ModuleInfo, now time.Time) (*client.Mo
 	}
 	candidates := make([]client.ModuleRuntimeInstanceInfo, 0)
 	for _, instance := range module.Instances {
-		if instance.Role == "backend" && instance.Status == "up" && instance.LeaseExpiresAt.After(now) && instance.ModuleURL != "" {
+		if instance.Role == client.ModuleRuntimeRoleBackend && instance.Status == "up" && instance.LeaseExpiresAt.After(now) && instance.ModuleURL != "" {
 			candidates = append(candidates, instance)
 		}
 	}

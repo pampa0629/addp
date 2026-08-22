@@ -41,11 +41,17 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 			ModuleName: req.ModuleName, RoutePrefix: req.RoutePrefix, Enabled: true,
 			ConfigurationManagement: configuration,
 		}
+		definitionUpdates := map[string]interface{}{
+			"route_prefix": req.RoutePrefix,
+			"updated_at":   now,
+		}
+		// Worker/Scheduler 通常不携带模块级声明，不能因此清空 Backend 已发布的定义。
+		if req.ConfigurationManagement != nil {
+			definitionUpdates["configuration_management"] = configuration
+		}
 		if err := tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "module_name"}},
-			DoUpdates: clause.Assignments(map[string]interface{}{
-				"route_prefix": req.RoutePrefix, "configuration_management": configuration, "updated_at": now,
-			}),
+			Columns:   []clause.Column{{Name: "module_name"}},
+			DoUpdates: clause.Assignments(definitionUpdates),
 		}).Create(&definition).Error; err != nil {
 			return err
 		}
@@ -63,7 +69,7 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 			DoUpdates: clause.Assignments(map[string]interface{}{
 				"role": req.Role, "module_url": req.ModuleURL, "health_check_url": req.HealthCheckURL,
 				"status": models.ModuleRuntimeStatusUp, "last_heartbeat": now,
-				"lease_expires_at": now.Add(leaseDuration), "metadata": metadata, "registered_at": now, "updated_at": now,
+				"lease_expires_at": now.Add(leaseDuration), "metadata": metadata, "updated_at": now,
 			}),
 		}).Create(&instance).Error
 	})

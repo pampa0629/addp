@@ -41,8 +41,10 @@ func NewEngineHandler(engineService *service.EngineService) *EngineHandler {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        request body models.EngineCreateRequest true "引擎信息 | Engine info"
-// @Success      201 {object} models.Engine
+// @Success      200 {object} models.EngineResponse "相同永久身份的幂等注册 | Idempotent registration of the same permanent identity"
+// @Success      201 {object} models.EngineResponse
 // @Failure      400 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.engine.create"]
 // @Router       /engines [post]
@@ -87,7 +89,7 @@ func (h *EngineHandler) Create(c *gin.Context) {
 // @Param        capability_groups query string false "能力分组，逗号分隔：storage,compute | Comma-separated capability groups: storage,compute"
 // @Param        engine_origins query string false "引擎来源，逗号分隔：general,extension | Comma-separated engine origins: general,extension"
 // @Param        include_builtin query bool false "是否包含内置引擎 | Whether to include builtin engines" default(true)
-// @Param        lifecycle_states query string false "生命周期，逗号分隔：active,disabled,deleting | Comma-separated lifecycle states: active,disabled,deleting" default(active)
+// @Param        lifecycle_states query string false "生命周期，逗号分隔：active,disabled,deleting,deleted | Comma-separated lifecycle states: active,disabled,deleting,deleted" default(active)
 // @Success      200 {array} models.EngineResponse "完整引擎数组 | Complete engine array"
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
@@ -255,6 +257,7 @@ func (h *EngineHandler) GetByID(c *gin.Context) {
 // @Success      200 {object} models.EngineResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.engine.update"]
 // @Router       /engines/{id} [put]
@@ -340,6 +343,7 @@ func (h *EngineHandler) EnableSpatialWorkspace(c *gin.Context) {
 // @Success      202 {object} models.EngineDeletionAssessmentResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
 // @Failure      503 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.engine.delete"]
@@ -411,6 +415,7 @@ func (h *EngineHandler) GetDeletionAssessment(c *gin.Context) {
 // @Success      202 {object} object{message=string,engine=models.EngineResponse}
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.engine.delete"]
 // @Router       /engines/{id} [delete]

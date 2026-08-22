@@ -261,10 +261,18 @@ func (c *SystemServiceClient) GetTaskProvider(ctx context.Context, moduleName st
 }
 
 func (c *SystemServiceClient) ListModules(ctx context.Context) ([]*ModuleInfo, error) {
+	return c.listModules(ctx, "/api/v1/system/runtime/modules")
+}
+
+func (c *SystemServiceClient) ListActiveModules(ctx context.Context) ([]*ModuleInfo, error) {
+	return c.listModules(ctx, "/api/v1/system/runtime/modules?status=up")
+}
+
+func (c *SystemServiceClient) listModules(ctx context.Context, path string) ([]*ModuleInfo, error) {
 	var response struct {
 		Modules []*ModuleInfo `json:"modules"`
 	}
-	if err := c.doPlatformJSON(ctx, http.MethodGet, "/api/v1/system/runtime/modules", nil, &response); err != nil {
+	if err := c.doPlatformJSON(ctx, http.MethodGet, path, nil, &response); err != nil {
 		return nil, err
 	}
 	return response.Modules, nil
@@ -312,7 +320,7 @@ func (c *SystemServiceClient) RegisterAndHeartbeat(ctx context.Context, request 
 			registration.InstanceID = uuid.NewString()
 		}
 		if strings.TrimSpace(registration.Role) == "" {
-			registration.Role = "backend"
+			registration.Role = ModuleRuntimeRoleBackend
 		}
 		registration.Metadata = map[string]interface{}{"module": registration.ModuleName}
 		for key, value := range request.Metadata {

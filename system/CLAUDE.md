@@ -184,8 +184,9 @@ frontend/src/
 | notebook_session_authorizations | system | Notebook Session 绑定的用户派生短期只读 Catalog 授权事实 |
 | resource_access_tickets | system | Owner Path 浏览器资源票据 Hash |
 | iam_security_policy | system | System IAM 平台安全策略及已应用版本 |
-| module_registry | (public) | 模块注册表，供 Gateway 动态路由 |
-| task_providers | (public) | 任务提供者表，供 Orchestrator 调用 |
+| module_definitions | system | 持久模块身份、路由、管理员启用状态和配置入口声明 |
+| module_runtime_instances | system | Backend、Worker、Scheduler 进程实例及短期租约 |
+| task_providers | system | 任务提供者表，供 Orchestrator 调用 |
 
 ### 单表文档
 
@@ -248,9 +249,10 @@ frontend/src/
 - 字段: `id`, `application_id`, `key_prefix`, `key_hash`, `name`, `last_used_at`, `expires_at`, `status`
 - Key 格式：`addp_live_` 前缀 + 随机字符串
 
-**module_registry 表**（public schema）:
-- 模块注册表，供 Gateway 动态路由查询
-- 字段: `id`, `module_name`, `module_url`, `route_prefix`, `health_check_url`, `status`, `last_heartbeat`, `metadata`, `configuration_management`
+**system.module_definitions / system.module_runtime_instances 表**:
+- `module_definitions` 按稳定 `module_name` 保存持久定义和管理员 `enabled` 状态，进程离线不删除定义
+- `module_runtime_instances` 按 `(module_definition_id, instance_id)` 保存进程角色、端点、元数据、心跳和租约
+- 心跳只续租实例；只有 `enabled + backend + up + lease valid` 的实例可供 Gateway 路由
 - `configuration_management` 只保存版本化配置管理入口声明（owner、scope、前端路由和读写 Permission），不保存模块配置键、配置值或 Secret
 
 **task_providers 表**（public schema）:

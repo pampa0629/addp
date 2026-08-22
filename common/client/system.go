@@ -242,6 +242,12 @@ type ModuleRegistrationRequest struct {
 	ConfigurationManagement *commonconfiguration.ManagementDeclaration `json:"configuration_management,omitempty"`
 }
 
+const (
+	ModuleRuntimeRoleBackend   = "backend"
+	ModuleRuntimeRoleWorker    = "worker"
+	ModuleRuntimeRoleScheduler = "scheduler"
+)
+
 type ModuleInfo struct {
 	ID                      uint                                       `json:"id"`
 	ModuleName              string                                     `json:"module_name"`

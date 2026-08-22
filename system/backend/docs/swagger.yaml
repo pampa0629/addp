@@ -956,6 +956,10 @@ definitions:
         type: string
       created_by:
         type: integer
+      deleted_at:
+        type: string
+      deleted_by:
+        type: integer
       deletion_error:
         type: string
       deletion_execute_task_id:
@@ -989,11 +993,17 @@ definitions:
       name:
         description: 显示名称（原 display_name）
         type: string
+      restored_at:
+        type: string
+      restored_by:
+        type: integer
       tenant_id:
         description: 租户ID，平台共享引擎为 null
         type: integer
       updated_at:
         type: string
+      version:
+        type: integer
     type: object
   github_com_addp_system_internal_models.EngineConnectionProbe:
     properties:
@@ -1048,9 +1058,12 @@ definitions:
         type: string
       external_artifact_policy:
         type: string
+      version:
+        type: integer
     required:
     - assessment_id
     - confirmation_token
+    - version
     type: object
   github_com_addp_system_internal_models.EngineDeletionAssessmentRequest:
     properties:
@@ -1081,6 +1094,10 @@ definitions:
         description: 时间戳字段
         type: string
       created_by:
+        type: integer
+      deleted_at:
+        type: string
+      deleted_by:
         type: integer
       deletion_error:
         type: string
@@ -1115,11 +1132,34 @@ definitions:
       name:
         description: 显示名称（原 display_name）
         type: string
+      restored_at:
+        type: string
+      restored_by:
+        type: integer
       tenant_id:
         description: 租户ID，平台共享引擎为 null
         type: integer
       updated_at:
         type: string
+      version:
+        type: integer
+    type: object
+  github_com_addp_system_internal_models.EngineRestoreRequest:
+    properties:
+      capabilities:
+        type: string
+      connection_info:
+        $ref: '#/definitions/github_com_addp_system_internal_models.ConnectionInfo'
+      description:
+        type: string
+      name:
+        type: string
+      version:
+        type: integer
+    required:
+    - connection_info
+    - name
+    - version
     type: object
   github_com_addp_system_internal_models.EngineRuntimeDescriptor:
     properties:
@@ -1158,6 +1198,10 @@ definitions:
       name:
         description: 显示名称
         type: string
+      version:
+        type: integer
+    required:
+    - version
     type: object
   github_com_addp_system_internal_models.ErrorResponse:
     properties:
@@ -1167,9 +1211,12 @@ definitions:
     type: object
   github_com_addp_system_internal_models.HeartbeatRequest:
     properties:
+      instance_id:
+        type: string
       module_name:
         type: string
     required:
+    - instance_id
     - module_name
     type: object
   github_com_addp_system_internal_models.ModuleInfo:
@@ -1178,22 +1225,17 @@ definitions:
         $ref: '#/definitions/configuration.ManagementDeclaration'
       created_at:
         type: string
-      health_check_url:
-        type: string
+      enabled:
+        type: boolean
       id:
         type: integer
-      last_heartbeat:
-        type: string
-      metadata:
-        additionalProperties: true
-        type: object
+      instances:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.ModuleRuntimeInstanceInfo'
+        type: array
       module_name:
         type: string
-      module_url:
-        type: string
       route_prefix:
-        type: string
-      status:
         type: string
       updated_at:
         type: string
@@ -1204,6 +1246,8 @@ definitions:
         $ref: '#/definitions/configuration.ManagementDeclaration'
       health_check_url:
         type: string
+      instance_id:
+        type: string
       metadata:
         additionalProperties: true
         type: object
@@ -1211,12 +1255,41 @@ definitions:
         type: string
       module_url:
         type: string
+      role:
+        type: string
       route_prefix:
         type: string
     required:
+    - instance_id
     - module_name
-    - module_url
+    - role
     - route_prefix
+    type: object
+  github_com_addp_system_internal_models.ModuleRuntimeInstanceInfo:
+    properties:
+      health_check_url:
+        type: string
+      id:
+        type: integer
+      instance_id:
+        type: string
+      last_heartbeat:
+        type: string
+      lease_expires_at:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      module_url:
+        type: string
+      registered_at:
+        type: string
+      role:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
     type: object
   github_com_addp_system_internal_models.SuccessResponse:
     properties:
@@ -3442,8 +3515,8 @@ paths:
         name: include_builtin
         type: boolean
       - default: active
-        description: '生命周期，逗号分隔：active,disabled,deleting | Comma-separated lifecycle
-          states: active,disabled,deleting'
+        description: '生命周期，逗号分隔：active,disabled,deleting,deleted | Comma-separated
+          lifecycle states: active,disabled,deleting,deleted'
         in: query
         name: lifecycle_states
         type: string
@@ -3488,12 +3561,21 @@ paths:
       produces:
       - application/json
       responses:
+        "200":
+          description: 相同永久身份的幂等注册 | Idempotent registration of the same permanent
+            identity
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.EngineResponse'
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.Engine'
+            $ref: '#/definitions/github_com_addp_system_internal_models.EngineResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
@@ -3540,6 +3622,10 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
@@ -3615,6 +3701,10 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
@@ -3759,6 +3849,10 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
@@ -3807,6 +3901,52 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine.delete
+  /engines/{id}/restore:
+    post:
+      consumes:
+      - application/json
+      description: 使用与墓碑身份键一致的完整连接配置和新凭据显式恢复 Engine Instance，沿用原永久 ID | Explicitly
+        restore an Engine Instance with complete connection details and fresh credentials
+        matching the tombstone identity key while retaining its permanent ID
+      parameters:
+      - description: 引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 恢复信息 | Restore info
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineRestoreRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.EngineResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 恢复已删除引擎 | Restore deleted engine
+      tags:
+      - 引擎管理 | Engine Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine.update
   /engines/{id}/spatial-workspaces/{ecosystem}/{kind}/enable:
     post:
       consumes:
@@ -5700,9 +5840,10 @@ paths:
       - system.execution_authorization.execute
   /runtime/modules:
     get:
-      description: 平台 Service Principal 查询运行模块注册表，可按 status=up 过滤存活模块 | A platform
-        service principal lists runtime modules and may filter active modules with
-        status=up
+      description: 平台 Service Principal 查询持久模块定义及运行实例；status=up 仅返回已启用且存在有效 Backend
+        租约的模块 | A platform service principal lists persistent module definitions and
+        runtime instances; status=up returns only enabled modules with a valid Backend
+        lease
       parameters:
       - description: 模块状态过滤 | Module status filter
         in: query
@@ -5745,8 +5886,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: 平台 Service Principal 只能注册与自身 OAuth Client 对应的模块 | A platform service
-        principal can only register the module matching its OAuth client
+      description: 平台 Service Principal 只能注册与自身 OAuth Client 对应的模块定义和当前进程实例；注册不覆盖管理员
+        enabled 状态 | A platform service principal can only register its matching module
+        definition and current process instance; registration never overrides administrator
+        enabled state
       parameters:
       - description: 模块注册信息 | Module registration
         in: body
@@ -5772,6 +5915,10 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
         "403":
           description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
@@ -5848,6 +5995,14 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
         "403":
           description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:

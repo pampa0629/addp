@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -12,6 +13,8 @@ import (
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 )
+
+var ErrInvalidModuleRegistration = errors.New("invalid module registration")
 
 type ModuleRegistryService struct {
 	repo          *repository.ModuleRegistryRepository
@@ -24,21 +27,27 @@ func NewModuleRegistryService(repo *repository.ModuleRegistryRepository) *Module
 
 func (s *ModuleRegistryService) Register(req *models.ModuleRegistrationRequest) error {
 	if req == nil {
-		return fmt.Errorf("module registration is required")
+		return fmt.Errorf("%w: request is required", ErrInvalidModuleRegistration)
 	}
 	req.ModuleName = strings.TrimSpace(req.ModuleName)
 	req.InstanceID = strings.TrimSpace(req.InstanceID)
 	req.Role = strings.ToLower(strings.TrimSpace(req.Role))
 	req.ModuleURL = strings.TrimRight(strings.TrimSpace(req.ModuleURL), "/")
 	req.RoutePrefix = strings.TrimSpace(req.RoutePrefix)
+	req.HealthCheckURL = strings.TrimRight(strings.TrimSpace(req.HealthCheckURL), "/")
 	if req.ModuleName == "" || req.InstanceID == "" || req.Role == "" || req.RoutePrefix == "" {
-		return fmt.Errorf("module_name, instance_id, role and route_prefix are required")
+		return fmt.Errorf("%w: module_name, instance_id, role and route_prefix are required", ErrInvalidModuleRegistration)
+	}
+	switch req.Role {
+	case models.ModuleRuntimeRoleBackend, models.ModuleRuntimeRoleWorker, models.ModuleRuntimeRoleScheduler:
+	default:
+		return fmt.Errorf("%w: role must be backend, worker or scheduler", ErrInvalidModuleRegistration)
 	}
 	if req.Role == models.ModuleRuntimeRoleBackend && req.ModuleURL == "" {
-		return fmt.Errorf("backend module_url is required")
+		return fmt.Errorf("%w: backend module_url is required", ErrInvalidModuleRegistration)
 	}
 	if err := commonconfiguration.ValidateManagementDeclaration(req.ModuleName, req.ConfigurationManagement); err != nil {
-		return err
+		return fmt.Errorf("%w: %v", ErrInvalidModuleRegistration, err)
 	}
 	if err := s.repo.Register(req, s.leaseDuration); err != nil {
 		logger.L().Error("模块运行实例注册失败", "module", req.ModuleName, "instance_id", req.InstanceID, "error", err)

@@ -112,6 +112,12 @@ other = "心跳更新成功"
 [system.module.deleted]
 other = "模块注销成功"
 
+[system.module.registration_invalid]
+other = "模块运行实例注册信息无效"
+
+[system.module.runtime_instance_missing]
+other = "模块运行实例不存在，请先重新注册"
+
 [system.engine.identity_immutable]
 other = "引擎物理端点不可原地修改，请创建新的引擎实例"
 

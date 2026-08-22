@@ -95,12 +95,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 创建模块运行实例租约索引
-	if err := repository.CreateModuleRuntimeIndexes(db); err != nil {
-		logger.L().Error("模块运行实例租约索引创建失败", "error", err)
-		os.Exit(1)
-	}
-
 	// 注释：MigrateExistingEnginesDisplayName 已删除（display_name 字段已移除）
 
 	// 设置 Gin 模式

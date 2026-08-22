@@ -32,5 +32,5 @@ func (c *SystemClient) BulkGetAPIKeys() ([]APIKeyValidationResponse, error) {
 }
 
 func (c *SystemClient) GetModules() ([]*commonClient.ModuleInfo, error) {
-	return c.serviceClient.ListModules(context.Background())
+	return c.serviceClient.ListActiveModules(context.Background())
 }

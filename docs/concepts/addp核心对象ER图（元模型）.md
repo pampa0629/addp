@@ -42,7 +42,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 
 **关于 Module 与 TaskProvider**：
 - `TaskProvider` 不是独立对象，而是 `Module` 的一种可选角色，通过注册时声明任务 API 来体现
-- 考虑将 `task_providers` 表合并到 `module_registry` 表中（待讨论后决定是否修改）
+- `module_definitions`、`module_runtime_instances` 与 `task_providers` 分别保存模块定义、进程租约和任务调用契约；三类事实生命周期不同，不合并存储
 - 不是所有模块都是任务提供者：Console / Gateway / Monitor 不暴露任务接口
 
 **关于 Engine**：
