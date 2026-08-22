@@ -73,7 +73,7 @@ func (s *SchemaInferenceService) ListNeo4jEngines(tenantID uint) ([]commonModels
 	}
 	filtered := make([]commonModels.Engine, 0, len(engines))
 	for _, engine := range engines {
-		if engine.EngineType == "neo4j" && engineselection.IsAvailableForComputeEntrypoint(&engine, "query") {
+		if engine.EngineType == "neo4j" && engineselection.IsSelectionOptionForComputeEntrypoint(&engine, "query") {
 			filtered = append(filtered, engine)
 		}
 	}
@@ -94,6 +94,9 @@ func (s *SchemaInferenceService) InferSchemaFromEngine(ctx context.Context, engi
 	engine, err := s.systemClient.WithTenantID(tenantID).GetEngine(context.Background(), engineID)
 	if err != nil {
 		return nil, fmt.Errorf("get engine %d: %w", engineID, err)
+	}
+	if !engineselection.IsAvailableForComputeEntrypoint(engine, "query") {
+		return nil, fmt.Errorf("engine %d is not currently available", engineID)
 	}
 	return s.inferWithEngine(ctx, engine, tenantID, ontologyID)
 }

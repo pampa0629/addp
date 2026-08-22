@@ -1,6 +1,10 @@
 import request from './client'
 
 export const quickViewAPI = {
+  getPreviewStateByLocator(locator) {
+    return request.get('/manager/preview-state', { params: { locator } })
+  },
+
   getQuickViewCapabilityByLocator(locator) {
     return request.get('/manager/quick-view/capability', {
       params: { locator }

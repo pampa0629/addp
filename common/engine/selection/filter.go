@@ -98,12 +98,30 @@ func SupportsComputeEntrypoint(resource *models.Engine, entrypoint string) bool 
 	return supportsComputeEntrypoint(cap, entrypoint)
 }
 
-// IsAvailable reports whether an Engine Instance may enter a new business
-// selection. Management views and existing bindings must not use this helper
-// to hide registered instances.
+// IsSelectionOption reports whether an Engine Instance may be shown in a
+// business selector. Connection state intentionally does not participate:
+// unavailable registered options remain visible and are disabled by clients.
+func IsSelectionOption(resource *models.Engine) bool {
+	return resource != nil && resource.LifecycleState == models.EngineLifecycleActive
+}
+
+// IsSelectionOptionForComputeEntrypoint matches a visible business option by
+// its declared compute capability without hiding its connection state.
+func IsSelectionOptionForComputeEntrypoint(resource *models.Engine, entrypoint string) bool {
+	return IsSelectionOption(resource) && SupportsComputeEntrypoint(resource, entrypoint)
+}
+
+// IsStorageSelectionOption matches a visible storage option by capability
+// without hiding its connection state.
+func IsStorageSelectionOption(resource *models.Engine) bool {
+	return IsSelectionOption(resource) && HasStorageCapability(resource)
+}
+
+// IsAvailable reports whether an Engine Instance may be selected for a new
+// binding or used now. Management views, selection-option discovery, and
+// existing bindings must not use this helper to hide registered instances.
 func IsAvailable(resource *models.Engine) bool {
-	return resource != nil &&
-		resource.LifecycleState == models.EngineLifecycleActive &&
+	return IsSelectionOption(resource) &&
 		resource.ConnectionStatus == models.EngineConnectionOnline
 }
 

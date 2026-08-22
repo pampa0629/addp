@@ -207,10 +207,10 @@ func queryCSV(c *gin.Context, key string) []string {
 	return values
 }
 
-// ListEngines 获取可用引擎列表
+// ListEngines 获取存储引擎选择项
 // GET /api/explorer/engines
 // @Summary 获取引擎列表 | List engines
-// @Description 获取当前租户 active、online 且具备存储能力的引擎列表 | Get active, online storage-capable engines for the current tenant
+// @Description 获取当前租户 active 且具备存储能力的注册引擎及其连接状态；非 online 项由前端展示并禁选 | Get active registered storage-capable engines with connection status for the current tenant; clients must show but disable non-online options
 // @Tags Manager
 // @Produce json
 // @Success 200 {object} map[string]interface{} "引擎列表 | Engine list"

@@ -544,7 +544,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回当前租户可见且启用的 System 引擎，用于 Transfer 任务选择 | Returns active System engines visible to the current tenant for Transfer task configuration",
+                "description": "返回当前租户可见、active 且具备存储能力的 System 注册引擎及其连接状态；非 online 项由前端展示并禁选 | Returns visible, active, storage-capable registered System engines with connection status; clients must show but disable non-online options",
                 "produces": [
                     "application/json"
                 ],

@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from addp_common.client.inference import ResponseSchema
 from services.inference_service import CopilotInferenceService
+from services.mql_compiler import MQLCompiler, MQLPlanError
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,9 @@ class QueryService:
         context = json.dumps(context_payload, ensure_ascii=False, default=str)
         allowed_parameter_types = self._engine_query_parameter_types(engine, language)
 
+        if language == "mql":
+            return await self._generate_compiled_mql(llm, context, query, resources)
+
         plan_response = await llm.ainvoke([
             SystemMessage(content=self._plan_prompt),
             HumanMessage(content=f"当前查询上下文:\n{context}\n\n用户需求:\n{query}"),
@@ -195,6 +199,110 @@ class QueryService:
             raise ValueError("generated query validation failed")
         candidate["plan"] = plan
         return candidate
+
+    async def _generate_compiled_mql(
+        self,
+        llm,
+        context: str,
+        query: str,
+        resources: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        prompt = self._mql_semantic_plan_prompt()
+        response = await llm.ainvoke([
+            SystemMessage(content=prompt),
+            HumanMessage(content=f"当前查询上下文:\n{context}\n\n用户需求:\n{query}"),
+        ], response_schema=self._mql_semantic_plan_response_schema())
+        output = str(getattr(response, "content", response))
+        try:
+            plan = MQLCompiler.parse_plan(output, self._decode_object)
+            return MQLCompiler.compile(plan, resources)
+        except MQLPlanError as error:
+            logger.warning("MQL semantic plan rejected: error=%s output=%s", error, output)
+            repair = await llm.ainvoke([
+                SystemMessage(content=prompt),
+                HumanMessage(content=(
+                    "上一个 MQL 语义计划未通过确定性校验。只能依据校验错误和资源事实修正；"
+                    "不能改写用户值、扩展同义词或直接生成 MQL。若无法无假设修正，填写 clarification。\n"
+                    f"校验错误:\n{error}\n\n当前查询上下文:\n{context}\n\n"
+                    f"上一个语义计划:\n{output}\n\n用户需求:\n{query}"
+                )),
+            ], response_schema=self._mql_semantic_plan_response_schema())
+            repaired_output = str(getattr(repair, "content", repair))
+            plan = MQLCompiler.parse_plan(repaired_output, self._decode_object)
+            return MQLCompiler.compile(plan, resources)
+
+    @staticmethod
+    def _mql_semantic_plan_prompt() -> str:
+        return (
+            "你是 ADDP MongoDB 查询语义规划器。你只负责把用户需求映射为强类型语义计划，绝不生成 MQL。"
+            "collection 只能逐字复制 resources[].query_name；field 只能逐字复制 resources[].fields[].name。"
+            "必须依据字段 path、type、element_type、comment 和用户句法识别实体、条件与统计对象。"
+            "人名或昵称条件应优先映射到明确的人名/昵称字段，不能把人名改成活动关键词。"
+            "用户值必须原样保留，禁止翻译、增加英文、同义词、正则备选或其他扩展。"
+            "用户未明确要求包含、模糊或正则匹配时使用 eq；contains/regex 只能用于 string 字段。"
+            "统计某个记录的数组成员数量时使用 count_array_elements，统计匹配文档数时使用 count_documents。"
+            "无法从资源事实唯一确定含义时必须填写 clarification；不得把猜测写成可执行计划。"
+            "assumptions 必须为空，否则系统会要求用户澄清。参数名和结果列名由编译器生成，不要输出。"
+            "metric.operation 只能是 none、count_documents、count_array_elements、distinct_count、sum、avg、min、max。"
+            "filter.operator 只能是 eq、ne、gt、gte、lt、lte、in、contains、regex、exists。"
+            "统计某记录拥有的数组元素数量时，filters 必须标识拥有该数组的记录，禁止选择该数组的子字段。"
+            "只返回 JSON：collection、filters、metric、assumptions、clarification；"
+            "filters 每项只有 field/operator/value，metric 只有 operation/field。"
+        )
+
+    @staticmethod
+    def _mql_semantic_plan_response_schema() -> ResponseSchema:
+        scalar = {
+            "anyOf": [
+                {"type": "string"}, {"type": "integer"}, {"type": "number"},
+                {"type": "boolean"},
+                {"type": "array", "items": {"anyOf": [
+                    {"type": "string"}, {"type": "integer"}, {"type": "number"}, {"type": "boolean"},
+                ]}},
+            ],
+        }
+        filter_item = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "field": {"type": "string"},
+                "operator": {"type": "string", "enum": sorted(MQLCompiler.FILTER_OPERATORS)},
+                "value": scalar,
+            },
+            "required": ["field", "operator", "value"],
+        }
+        sort_item = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"field": {"type": "string"}, "direction": {"type": "integer", "enum": [-1, 1]},},
+            "required": ["field", "direction"],
+        }
+        metric = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "operation": {"type": "string", "enum": sorted(MQLCompiler.METRIC_OPERATIONS)},
+                "field": {"type": "string"},
+            },
+            "required": ["operation", "field"],
+        }
+        return ResponseSchema(
+            name="addp_mql_semantic_plan",
+            description="ADDP 强类型 MongoDB 查询语义计划。",
+            schema={
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "collection": {"type": "string"},
+                    "filters": {"type": "array", "items": filter_item},
+                    "metric": metric,
+                    "assumptions": {"type": "array", "items": {"type": "string"}},
+                    "clarification": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                },
+                "required": ["collection", "filters", "metric", "assumptions", "clarification"],
+            },
+            strict=True,
+        )
 
     async def _generate_candidate(self, llm, context: str, query: str, language: str, plan: dict[str, Any]):
         response = await llm.ainvoke([

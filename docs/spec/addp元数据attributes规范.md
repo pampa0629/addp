@@ -250,7 +250,7 @@ S3M 同样使用 `data_type=model_3d`。SCP 的 XML / JSON 编码、S3M 版本�
 
 表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。`type_info.table` 是 `common/datatype.TableInfo` 的直接 JSON payload，`type_info.table.fields[]` 是 `common/datatype.FieldInfo` 的直接 JSON payload。字段不是 data item，字段类型只能使用 `type` 表达 ADDP 标准字段类型，不得在字段对象内写入 `data_type`。Engine / Format Provider 必须在返回 `FieldInfo` 前完成原生类型到 ADDP 标准字段类型的映射；跨过 Provider 边界后，Meta、Manager、Transfer、Quality、Model 等模块只能依据 `type` 做语义判断，不得重新解析 `native_type`。原生字段类型如需展示，只能作为只读诊断信息写入 `native_type`；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`，不得塞回 `type_info.table`。
 
-`FieldInfo.path` 是可选的结构化可查询字段路径，取值为从记录根开始的非空名称段数组。普通关系表字段使用单段路径或省略；MongoDB collection 等动态 schema 记录集合必须为嵌套字段返回完整路径，并同时保留各中间 object / array 字段事实。例如 `members`、`members.userInfo`、`members.userInfo.nickName` 分别返回对应 `path`，其中 `name` 是当前查询语言可直接使用的规范字段表达。Provider 不得只返回 `members=array` 后丢弃数组元素结构，也不得把原始样本记录或样本值写入字段事实。路径递归必须设置深度、字段数和数组采样上限，超过上限时停止扩展而不是截断名称或编造类型。
+`FieldInfo.path` 是可选的结构化可查询字段路径，取值为从记录根开始的非空名称段数组。普通关系表字段使用单段路径或省略；MongoDB collection 等动态 schema 记录集合必须为嵌套字段返回完整路径，并同时保留各中间 object / array 字段事实。例如 `members`、`members.userInfo`、`members.userInfo.nickName` 分别返回对应 `path`，其中 `name` 是当前查询语言可直接使用的规范字段表达。数组字段在样本中存在非空元素时还必须通过 `element_type` 返回采样确认的 ADDP 标准元素类型；元素类型不一致时为 `mixed`，无非空元素可供推断时省略，不得从 `native_type` 重新推断。Provider 不得只返回 `members=array` 后丢弃数组元素结构，也不得把原始样本记录或样本值写入字段事实。路径递归必须设置深度、字段数和数组采样上限，超过上限时停止扩展而不是截断名称或编造类型。
 
 字段属性只有能影响扫描、展示、查询建议、质量检测、传输写入、建模标准化或智能生成中的至少一个决策，才进入 ADDP metadata 链路；仅因引擎能查到而没有明确消费方的原生细节，不进入公共模型。
 

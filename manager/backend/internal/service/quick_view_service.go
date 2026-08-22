@@ -1477,7 +1477,7 @@ func normalizePreviewViewStatePayload(viewState commonModels.JSONMap) commonMode
 			continue
 		}
 		normalizedMode := commonModels.JSONMap{}
-		for _, renderer := range []string{"map", "scene_3d"} {
+		for _, renderer := range []string{"map", "scene_3d", "table"} {
 			rendererState := jsonObjectMap(modeState[renderer])
 			if len(rendererState) > 0 {
 				normalizedMode[renderer] = rendererState

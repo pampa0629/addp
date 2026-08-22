@@ -3187,6 +3187,9 @@ const docTemplate = `{
                 "default_expression": {
                     "type": "string"
                 },
+                "element_type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                },
                 "generated": {
                     "type": "boolean"
                 },

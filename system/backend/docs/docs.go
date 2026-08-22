@@ -2265,7 +2265,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅返回 active 且声明实时 CatalogModel 的数据引擎；授权复核与引擎发现在同一请求完成 | Only active data engines declaring a live CatalogModel are returned; authorization review and engine discovery complete in one request",
+                "description": "仅返回 active、online 且声明实时 CatalogModel 的数据引擎；授权复核与引擎发现在同一请求完成 | Only active, online data engines declaring a live CatalogModel are returned; authorization review and engine discovery complete in one request",
                 "produces": [
                     "application/json"
                 ],
@@ -6779,6 +6779,9 @@ const docTemplate = `{
                 },
                 "default_expression": {
                     "type": "string"
+                },
+                "element_type": {
+                    "$ref": "#/definitions/datatype.FieldType"
                 },
                 "generated": {
                     "type": "boolean"

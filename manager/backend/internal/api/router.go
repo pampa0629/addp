@@ -342,7 +342,7 @@ func SetupRouter(
 		metadataHandler := NewMetadataHandler(metadataService)
 		downloadHandler := NewDownloadHandler(metadataService)
 
-		api.GET("/engines", permission(managerauthorization.PermissionManagerDataItemRead), explorerHandler.ListEngines) // 获取可用引擎列表（只读）
+		api.GET("/engines", permission(managerauthorization.PermissionManagerDataItemRead), explorerHandler.ListEngines) // 获取存储引擎选择项（只读）
 		api.POST("/engines/:id/items/refresh", permission(managerauthorization.PermissionManagerDataItemUpdate), metadataHandler.RefreshItem)
 		api.GET("/preview", permission(managerauthorization.PermissionManagerDataItemRead), explorerHandler.Preview)
 		api.GET("/resource-facts", permission(managerauthorization.PermissionManagerDataItemRead), explorerHandler.ResourceFacts)
@@ -383,6 +383,7 @@ func SetupRouter(
 		api.GET("/quick-view/flatgeobuf", permission(managerauthorization.PermissionManagerContentRead), quickViewHandler.GetQuickViewFlatGeobufByLocator)
 		api.GET("/quick-view/geojson", permission(managerauthorization.PermissionManagerContentRead), quickViewHandler.GetQuickViewGeoJSONByLocator)
 		api.GET("/quick-view/tiles/:z/:x/:y.mvt", permission(managerauthorization.PermissionManagerDerivedArtifactRead), quickViewHandler.GetQuickViewTileByLocator)
+		api.GET("/preview-state", permission(managerauthorization.PermissionManagerDataItemRead), quickViewHandler.GetPreviewStateByLocator)
 		api.PATCH("/preview-state/preferred-mode", quickViewHandler.UpdatePreferredModeByLocator)
 		api.PATCH("/preview-state/view-state", quickViewHandler.UpdateViewStateByLocator)
 	}

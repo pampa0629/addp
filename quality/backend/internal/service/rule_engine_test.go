@@ -92,7 +92,7 @@ func TestUpdateRuleApplicationRequiresActiveEngineWhenEnabling(t *testing.T) {
 					http.NotFound(w, r)
 					return
 				}
-				_ = json.NewEncoder(w).Encode(commonModels.Engine{ID: 12, EngineType: "postgresql", LifecycleState: test.lifecycle})
+				_ = json.NewEncoder(w).Encode(commonModels.Engine{ID: 12, EngineType: "postgresql", LifecycleState: test.lifecycle, ConnectionStatus: commonModels.EngineConnectionOnline})
 			}))
 			defer server.Close()
 

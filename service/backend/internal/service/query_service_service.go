@@ -10,6 +10,7 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	engineselection "github.com/addp/common/engine/selection"
 	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/service/internal/models"
@@ -223,8 +224,8 @@ func (s *QueryServiceService) validateDirectSQLQueryEngine(engineID uint) error 
 	if err != nil {
 		return fmt.Errorf("get SQL query engine %d failed: %w", engineID, err)
 	}
-	if engine.LifecycleState != "active" {
-		return fmt.Errorf("SQL query engine %d is not active", engineID)
+	if !engineselection.IsAvailableForComputeEntrypoint(engine, "query") {
+		return fmt.Errorf("SQL query engine %d is not currently available", engineID)
 	}
 	enginePlugin, err := plugin.Get(engine.EngineType)
 	if err != nil {
@@ -252,8 +253,8 @@ func (s *QueryServiceService) validateFederatedRuntime(engineID uint, objectForm
 	if _, ok := enginePlugin.(plugin.FederatedQueryRuntimeProvider); !ok {
 		return fmt.Errorf("engine %d does not support federated query runtime", engineID)
 	}
-	if engine.LifecycleState != "active" {
-		return fmt.Errorf("federated query runtime %d is not active", engineID)
+	if !engineselection.IsAvailableForComputeEntrypoint(engine, "query") {
+		return fmt.Errorf("federated query runtime %d is not currently available", engineID)
 	}
 	if objectFormat != "" && !supportsFederatedObjectFormat(enginePlugin.Capabilities(), objectFormat) {
 		return fmt.Errorf("federated query runtime %d does not support object format %s", engineID, objectFormat)

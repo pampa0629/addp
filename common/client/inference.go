@@ -133,10 +133,9 @@ func (c *InferenceClient) resolveRuntime(
 		engine := descriptor.AsEngine()
 		capabilities, capabilityErr := engineselection.ParseCapabilities(engine.Capabilities)
 		if descriptor.EngineType != "inference_runtime" || !descriptor.IsBuiltin ||
-			descriptor.LifecycleState != commonmodels.EngineLifecycleActive || capabilityErr != nil ||
+			!engineselection.IsAvailableForComputeEntrypoint(engine, "inference") || capabilityErr != nil ||
 			capabilities == nil || capabilities.EngineType != "inference_runtime" ||
 			capabilities.EngineFamily != "inference" ||
-			!engineselection.SupportsComputeEntrypoint(engine, "inference") ||
 			capabilities.Compute == nil || capabilities.Compute.Inference == nil ||
 			capabilities.Compute.Inference.RuntimeAPI != commoninference.SchemaVersion {
 			continue

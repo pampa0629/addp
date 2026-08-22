@@ -23,7 +23,7 @@ func NewSystemEngineHandler(systemClient *commonClient.SystemClient) *SystemEngi
 
 // List returns system engines visible to the current tenant.
 // @Summary 列出系统引擎 | List system engines
-// @Description 返回当前租户可见、active、online 且具备存储能力的 System 引擎，用于 Transfer 任务选择 | Returns visible, active, online, storage-capable System engines for Transfer task configuration
+// @Description 返回当前租户可见、active 且具备存储能力的 System 注册引擎及其连接状态；非 online 项由前端展示并禁选 | Returns visible, active, storage-capable registered System engines with connection status; clients must show but disable non-online options
 // @Tags 系统引擎 | System Engines
 // @Produce json
 // @Param engine_type query string false "引擎类型 | Engine type"
@@ -54,7 +54,7 @@ func (h *SystemEngineHandler) List(c *gin.Context) {
 		if engine.TenantID != nil && *engine.TenantID != 0 && *engine.TenantID != tenantID {
 			continue
 		}
-		if !engineselection.IsAvailableStorageEngine(&engine) {
+		if !engineselection.IsStorageSelectionOption(&engine) {
 			continue
 		}
 		sanitizeEngineConnectionInfo(&engine)

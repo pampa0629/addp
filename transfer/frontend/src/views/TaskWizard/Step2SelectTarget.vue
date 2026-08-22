@@ -34,11 +34,12 @@
           :loading="loadingEngines"
           :disabled="!sourceTransferSupported"
           @change="handleTargetEngineChange"
+          @visible-change="handleTargetEngineDropdownVisible"
         >
           <el-option
             v-for="engine in engines"
             :key="engine.id"
-            :label="engineOptionLabel(engine)"
+            :label="targetEngineOptionLabel(engine)"
             :value="engine.id"
             :disabled="!isAllowedTargetEngine(engine)"
           />
@@ -191,7 +192,12 @@
 import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { ResourceTreePicker, buildLocator as buildResourceLocator } from '@addp/common-frontend'
+import {
+  ResourceTreePicker,
+  buildLocator as buildResourceLocator,
+  engineSelectionState,
+  isEngineSelectable
+} from '@addp/common-frontend'
 import { capabilitiesAPI } from '@/api/capabilities'
 import { getItemFieldsByID, getNodeByCatalogPath } from '@/api/meta'
 import { systemEnginesAPI } from '@/api/systemEngines'
@@ -818,8 +824,16 @@ async function loadEngines() {
   }
 }
 
+function handleTargetEngineDropdownVisible(visible) {
+  if (visible) loadEngines()
+}
+
+function targetEngineOptionLabel(engine) {
+  return `${engineOptionLabel(engine)} · ${t(`common.engineStatus.${engineSelectionState(engine)}`)}`
+}
+
 function isAllowedTargetEngine(engine) {
-  if (!sourceTransferSupported.value) return false
+  if (!sourceTransferSupported.value || !isEngineSelectable(engine)) return false
   if (isContinuousSource.value) return isNativeTableEngine(engine) && hasAtomicPartitionedTableChangeApply(engine)
   if (props.wizardState.isWatermarkIncremental?.value) {
     return isNativeTableEngine(engine) && hasIdempotentTableUpsert(engine)

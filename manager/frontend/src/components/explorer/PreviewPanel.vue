@@ -469,11 +469,13 @@
         :data="previewComponentData"
         v-bind="previewComponentProps"
         :view-state="activeBasicPreviewState"
+        :table-state="activeBasicTableState"
         :loading="loading"
         @page-change="handlePageChange"
         @navigate="handleNavigate"
         @child-change="handleChildChange"
         @view-state-change="handleBasicPreviewStateChange"
+        @table-state-change="handleBasicTableStateChange"
       />
     </div>
 
@@ -590,6 +592,7 @@ const activeGraphSampleTotal = ref(null)
 const graphOverviewPage = ref(1)
 const graphOverviewPageSize = ref(20)
 const quickViewStatus = ref(null)
+const previewState = ref(null)
 const quickViewLoadError = ref('')
 const quickViewActionLoading = ref(false)
 const quickViewTileAdvisory = ref(null)
@@ -1654,7 +1657,7 @@ const quickViewSourceContext = computed(() => ({
 }))
 
 const quickViewState = computed(() => {
-  const state = quickViewStatus.value?.view_state
+  const state = quickViewStatus.value?.view_state || previewState.value?.view_state
   return state && typeof state === 'object' && !Array.isArray(state) ? state : {}
 })
 
@@ -1721,6 +1724,8 @@ const activeBasicPreviewState = computed(() => {
   return rendererState('basic_preview', basicPreviewRendererStateKey.value)
 })
 
+const activeBasicTableState = computed(() => rendererState('basic_preview', 'table'))
+
 function mergeRendererState(mode, renderer, state) {
   const currentModeState = objectState(quickViewState.value[mode])
   return {
@@ -1733,8 +1738,8 @@ function mergeRendererState(mode, renderer, state) {
 }
 
 function scheduleQuickViewStateSave(nextState) {
-  const target = spatialPreviewTarget.value
-  if (!target) return
+  const locator = String(props.selectedNode?.locator || '').trim()
+  if (!locator) return
   if (quickViewStateSaveTimer) {
     window.clearTimeout(quickViewStateSaveTimer)
   }
@@ -1744,14 +1749,22 @@ function scheduleQuickViewStateSave(nextState) {
       view_state: nextState
     }
   }
+  previewState.value = {
+    ...(previewState.value || {}),
+    view_state: nextState
+  }
   quickViewStateSaveTimer = window.setTimeout(async () => {
     quickViewStateSaveTimer = 0
     try {
-      await quickViewAPI.updateViewStateByLocator(target.locator, nextState)
+      await quickViewAPI.updateViewStateByLocator(locator, nextState)
     } catch (error) {
       console.error('保存预览视角状态失败:', error)
     }
   }, 800)
+}
+
+function handleBasicTableStateChange(state) {
+  handleRendererStateChange('basic_preview', 'table', state)
 }
 
 function handleRendererStateChange(mode, renderer, state) {
@@ -1964,6 +1977,16 @@ const loadQuickViewStatus = async () => {
       quickViewLoadError.value = t('manager.spatialPreview.quickViewLoadFailed')
     }
     console.error('加载快显状态失败:', error)
+  }
+}
+
+const loadPreviewState = async (locator) => {
+  previewState.value = null
+  if (!locator) return
+  try {
+    previewState.value = await quickViewAPI.getPreviewStateByLocator(locator)
+  } catch (error) {
+    console.error('加载预览设置失败:', error)
   }
 }
 
@@ -2288,6 +2311,12 @@ watch(
     ? `${spatialPreviewTarget.value.locator}:${spatialPreviewTarget.value.recordCount}`
     : '',
   loadQuickViewStatus,
+  { immediate: true }
+)
+
+watch(
+  () => String(props.selectedNode?.locator || '').trim(),
+  loadPreviewState,
   { immediate: true }
 )
 

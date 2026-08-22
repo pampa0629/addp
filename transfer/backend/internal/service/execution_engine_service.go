@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/engine/instanceprovider"
 	engineplugin "github.com/addp/common/engine/plugin"
 	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
+	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/engine/workflowaccess"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
@@ -528,7 +529,7 @@ func (s *ExecutionEngineService) resolveDirectWorkflowRuntime(
 	failures := make([]string, 0)
 	for index := range descriptors {
 		engine := descriptors[index].AsEngine()
-		if engine == nil || engine.LifecycleState != commonModels.EngineLifecycleActive {
+		if !engineselection.IsAvailableForComputeEntrypoint(engine, "workflow") {
 			continue
 		}
 		if err := dbbridge.RequireDirectWorkflowOperators(ctx, engine, operators...); err != nil {

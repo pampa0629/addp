@@ -169,7 +169,7 @@ func TestJupyterServiceListQueryEnginesReturnsOnlyAvailableQueryDescriptors(t *t
 	if err != nil {
 		t.Fatalf("ListQueryEngines() error = %v", err)
 	}
-	if len(engines) != 1 || engines[0].ID != 21 {
+	if len(engines) != 2 || engines[0].ID != 21 || engines[1].ID != 24 || engines[1].ConnectionStatus != commonModels.EngineConnectionOffline {
 		t.Fatalf("query engines = %#v", engines)
 	}
 	encoded, err := json.Marshal(engines)

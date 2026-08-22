@@ -44,7 +44,7 @@ func TestInferenceClientRefreshesRejectedServiceTokenOnce(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"data": []commonmodels.EngineRuntimeDescriptor{{
 					ID: 9, EngineType: "inference_runtime", IsBuiltin: true,
-					LifecycleState: commonmodels.EngineLifecycleActive, Capabilities: &capabilities,
+					LifecycleState: commonmodels.EngineLifecycleActive, ConnectionStatus: commonmodels.EngineConnectionOnline, Capabilities: &capabilities,
 					RuntimeEndpoint: &commonmodels.EngineRuntimeEndpoint{Protocol: "http", Host: host, Port: port},
 				}},
 				"total": 1, "page": 1, "page_size": 100,
@@ -101,11 +101,11 @@ func TestInferenceClientRequiresExactlyOneRuntimeDescriptor(t *testing.T) {
 	}{
 		{name: "missing", wantError: ErrInferenceRuntimeNotFound},
 		{name: "ambiguous", descriptors: []commonmodels.EngineRuntimeDescriptor{
-			{ID: 1, EngineType: "inference_runtime", IsBuiltin: true, LifecycleState: commonmodels.EngineLifecycleActive, Capabilities: &capabilities, RuntimeEndpoint: &commonmodels.EngineRuntimeEndpoint{Protocol: "http", Host: "runtime-1", Port: 8191}},
-			{ID: 2, EngineType: "inference_runtime", IsBuiltin: true, LifecycleState: commonmodels.EngineLifecycleActive, Capabilities: &capabilities, RuntimeEndpoint: &commonmodels.EngineRuntimeEndpoint{Protocol: "http", Host: "runtime-2", Port: 8191}},
+			{ID: 1, EngineType: "inference_runtime", IsBuiltin: true, LifecycleState: commonmodels.EngineLifecycleActive, ConnectionStatus: commonmodels.EngineConnectionOnline, Capabilities: &capabilities, RuntimeEndpoint: &commonmodels.EngineRuntimeEndpoint{Protocol: "http", Host: "runtime-1", Port: 8191}},
+			{ID: 2, EngineType: "inference_runtime", IsBuiltin: true, LifecycleState: commonmodels.EngineLifecycleActive, ConnectionStatus: commonmodels.EngineConnectionOnline, Capabilities: &capabilities, RuntimeEndpoint: &commonmodels.EngineRuntimeEndpoint{Protocol: "http", Host: "runtime-2", Port: 8191}},
 		}, wantError: ErrInferenceRuntimeAmbiguous},
 		{name: "wrong runtime api", descriptors: []commonmodels.EngineRuntimeDescriptor{{
-			ID: 3, EngineType: "inference_runtime", IsBuiltin: true, LifecycleState: commonmodels.EngineLifecycleActive,
+			ID: 3, EngineType: "inference_runtime", IsBuiltin: true, LifecycleState: commonmodels.EngineLifecycleActive, ConnectionStatus: commonmodels.EngineConnectionOnline,
 			Capabilities: func() *commonmodels.JSONString {
 				value := commonmodels.JSONString(`{"schema_version":"engine.capabilities/v1","engine_type":"inference_runtime","engine_family":"inference","compute":{"inference":{"supported":true,"runtime_api":"wrong/v1","operations":["embedding"]}}}`)
 				return &value

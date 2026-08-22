@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	startupCheckRetryWindow   = 60 * time.Second
-	startupCheckRetryInterval = 2 * time.Second
+	startupCheckRetryWindow    = 60 * time.Second
+	startupCheckRetryInterval  = 2 * time.Second
 	DefaultHealthCheckInterval = 30 * time.Second
 )
 
@@ -105,7 +105,7 @@ func (h *HealthChecker) checkAllResources(ctx context.Context, retryOffline bool
 					return false
 				}
 				defer func() { <-semaphore }()
-				return h.resourceService.CheckAndUpdateConnectionStatus(resource.ID)
+				return h.resourceService.checkAndUpdateConnectionStatus(resource.ID, retryOffline)
 			}
 
 			if check() {

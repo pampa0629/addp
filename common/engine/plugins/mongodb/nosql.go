@@ -201,12 +201,13 @@ func (p *MongoDBPlugin) SampleDynamicSchema(ctx context.Context, connInfo plugin
 	fields := make([]datatype.FieldInfo, 0, len(fieldStats))
 	for name, stat := range fieldStats {
 		fields = append(fields, datatype.FieldInfo{
-			Name:       name,
-			Path:       append([]string(nil), stat.Path...),
-			Type:       mapMongoBSONType(stat.Type),
-			NativeType: stat.Type,
-			Nullable:   true,
-			PrimaryKey: len(stat.Path) == 1 && name == "_id",
+			Name:        name,
+			Path:        append([]string(nil), stat.Path...),
+			Type:        mapMongoBSONType(stat.Type),
+			ElementType: mapMongoBSONType(stat.ElementType),
+			NativeType:  stat.Type,
+			Nullable:    true,
+			PrimaryKey:  len(stat.Path) == 1 && name == "_id",
 		})
 	}
 	sort.Slice(fields, func(i, j int) bool {
@@ -297,9 +298,10 @@ func (p *MongoDBPlugin) getIndexes(ctx context.Context, coll *mongo.Collection) 
 }
 
 type mongoFieldStat struct {
-	Count int
-	Type  string
-	Path  []string
+	Count       int
+	Type        string
+	ElementType string
+	Path        []string
 }
 
 const (
@@ -332,10 +334,49 @@ func collectMongoFieldStats(stats map[string]*mongoFieldStat, path []string, val
 			stat.Type = "mixed"
 		}
 	}
+	if typeStr == "array" {
+		elementType := detectMongoArrayElementType(value)
+		if elementType != "" {
+			if stat.ElementType == "" || stat.ElementType == "null" {
+				stat.ElementType = elementType
+			} else if stat.ElementType != elementType {
+				stat.ElementType = "mixed"
+			}
+		}
+	}
 	if depth == mongoSchemaMaxDepth {
 		return
 	}
 	collectMongoNestedFields(stats, path, value, depth)
+}
+
+func detectMongoArrayElementType(value interface{}) string {
+	var values []interface{}
+	switch typed := value.(type) {
+	case primitive.A:
+		values = []interface{}(typed)
+	case []interface{}:
+		values = typed
+	default:
+		return ""
+	}
+	limit := len(values)
+	if limit > mongoSchemaMaxArrayElements {
+		limit = mongoSchemaMaxArrayElements
+	}
+	elementType := ""
+	for _, item := range values[:limit] {
+		itemType := detectMongoBSONType(item)
+		if itemType == "null" {
+			continue
+		}
+		if elementType == "" {
+			elementType = itemType
+		} else if elementType != itemType {
+			return "mixed"
+		}
+	}
+	return elementType
 }
 
 func collectMongoNestedFields(stats map[string]*mongoFieldStat, path []string, value interface{}, depth int) {

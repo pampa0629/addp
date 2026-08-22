@@ -2891,6 +2891,11 @@ func TestQuickViewServiceUpdatesPreviewState(t *testing.T) {
 				"camera": "legacy-nested",
 			},
 		},
+		"basic_preview": map[string]interface{}{
+			"table": map[string]interface{}{
+				"visible_columns": []interface{}{"_id", "name", "status"},
+			},
+		},
 	}
 
 	if err := svc.UpdateViewStateByIdentity(context.Background(), identity, viewState); err != nil {
@@ -2931,6 +2936,18 @@ func TestQuickViewServiceUpdatesPreviewState(t *testing.T) {
 	}
 	if _, ok := quickViewState["gaussian_splat"]; ok {
 		t.Fatalf("view_state.quick_view.gaussian_splat should not be persisted: %#v", quickViewState)
+	}
+	basicPreviewState, ok := stored.ViewState["basic_preview"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("view_state.basic_preview = %#v, want object", stored.ViewState["basic_preview"])
+	}
+	tableState, ok := basicPreviewState["table"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("view_state.basic_preview.table = %#v, want object", basicPreviewState["table"])
+	}
+	visibleColumns, ok := tableState["visible_columns"].([]interface{})
+	if !ok || len(visibleColumns) != 3 || visibleColumns[0] != "_id" || visibleColumns[2] != "status" {
+		t.Fatalf("view_state.basic_preview.table.visible_columns = %#v", tableState["visible_columns"])
 	}
 }
 
@@ -3187,7 +3204,7 @@ func workflowEngineForTest(t *testing.T, rawURL string) commonModels.Engine {
 	}
 	capabilities := commonModels.JSONString(`{"schema_version":"engine.capabilities/v1","engine_type":"quick_view_test_workflow","engine_family":"workflow","compute":{"workflow":{"supported":true,"runtime_api":"addp.workflow/v1","dynamic_operators":true}}}`)
 	return commonModels.Engine{
-		ID: 1, Name: "Quick View Test Workflow", EngineType: "quick_view_test_workflow", EngineOrigin: "extension", LifecycleState: "active",
+		ID: 1, Name: "Quick View Test Workflow", EngineType: "quick_view_test_workflow", EngineOrigin: "extension", LifecycleState: "active", ConnectionStatus: commonModels.EngineConnectionOnline,
 		ConnectionInfo: commonModels.ConnectionInfo{"host": parsed.Hostname(), "port": parsed.Port(), "protocol": parsed.Scheme},
 		Capabilities:   &capabilities,
 	}

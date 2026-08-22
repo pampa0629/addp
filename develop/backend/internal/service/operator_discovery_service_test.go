@@ -16,11 +16,12 @@ func TestOperatorDiscoveryReturnsWorkflowCapableOperatorsOnly(t *testing.T) {
 	}
 	capabilitiesJSON := commonModels.JSONString(capabilities)
 	descriptor := &commonModels.EngineRuntimeDescriptor{
-		ID:             12,
-		Name:           "acme geo workflow",
-		EngineType:     "geopython_workflow",
-		LifecycleState: "active",
-		Capabilities:   &capabilitiesJSON,
+		ID:               12,
+		Name:             "acme geo workflow",
+		EngineType:       "geopython_workflow",
+		LifecycleState:   "active",
+		ConnectionStatus: commonModels.EngineConnectionOnline,
+		Capabilities:     &capabilitiesJSON,
 		RuntimeEndpoint: &commonModels.EngineRuntimeEndpoint{
 			Protocol: "http", Host: "workflow", Port: 8099,
 		},
@@ -414,11 +415,12 @@ func newWorkflowValidationTestService(t *testing.T) *OperatorDiscoveryService {
 	}
 	capabilitiesJSON := commonModels.JSONString(capabilities)
 	descriptor := &commonModels.EngineRuntimeDescriptor{
-		ID:             12,
-		Name:           "acme workflow",
-		EngineType:     "acme_workflow",
-		LifecycleState: "active",
-		Capabilities:   &capabilitiesJSON,
+		ID:               12,
+		Name:             "acme workflow",
+		EngineType:       "acme_workflow",
+		LifecycleState:   "active",
+		ConnectionStatus: commonModels.EngineConnectionOnline,
+		Capabilities:     &capabilitiesJSON,
 		RuntimeEndpoint: &commonModels.EngineRuntimeEndpoint{
 			Protocol: "http", Host: "workflow", Port: 8099,
 		},

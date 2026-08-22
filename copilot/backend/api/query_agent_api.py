@@ -23,6 +23,7 @@ from dependencies.auth import bearer_auth, require_tool_user
 from addp_common.resources import ResourceFact
 from services.inference_service import CopilotInferenceService
 from services.query_service import query_service
+from services.mql_compiler import MQLClarificationRequired
 from services.resource_discovery import ResourceDiscovery
 from services.resource_resolution import ResourceResolutionPolicy, ResourceResolutionService
 
@@ -171,15 +172,25 @@ async def generate_query(
         if not request.resources:
             return await _discover_query_resources(request, resolver, policy, language)
         resources = await resolver.verify(request.resources, policy)
-        generated = await query_service.generate(
-            query=request.query,
-            engine=engine,
-            query_language=language,
-            resources=[item.model_dump(exclude_none=True) for item in resources],
-            current_query=request.current_query,
-            tenant_id=user.tenant_id,
-            db=db,
-        )
+        try:
+            generated = await query_service.generate(
+                query=request.query,
+                engine=engine,
+                query_language=language,
+                resources=[item.model_dump(exclude_none=True) for item in resources],
+                current_query=request.current_query,
+                tenant_id=user.tenant_id,
+                db=db,
+            )
+        except MQLClarificationRequired as error:
+            return QueryGenerationResponse(
+                status="need_clarification",
+                query_language=language,
+                query_parameters=[],
+                resources=resources,
+                clarification_reason=error.clarification.reason,
+                message=error.clarification.message,
+            )
         return QueryGenerationResponse(
             status="success",
             query=generated["query"],

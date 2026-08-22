@@ -76,7 +76,7 @@ func (s *JupyterService) ListNotebookEngines(ctx context.Context, tenantID uint)
 	}
 	result := make([]commonModels.EngineRuntimeDescriptor, 0, len(descriptors))
 	for index := range descriptors {
-		if validateNotebookEngineDescriptor(&descriptors[index]) == nil {
+		if supportsNotebookEngineDescriptor(&descriptors[index]) {
 			result = append(result, descriptors[index])
 		}
 	}
@@ -94,12 +94,13 @@ func (s *JupyterService) ListQueryEngines(ctx context.Context, tenantID uint) ([
 	return FilterQueryEngineDescriptors(descriptors), nil
 }
 
-// FilterQueryEngineDescriptors is the single Develop rule for query Engine discovery.
+// FilterQueryEngineDescriptors returns registered query-capable options. Their
+// connection status remains visible so clients can disable unavailable items.
 func FilterQueryEngineDescriptors(descriptors []commonModels.EngineRuntimeDescriptor) []commonModels.EngineRuntimeDescriptor {
 	filtered := make([]commonModels.EngineRuntimeDescriptor, 0, len(descriptors))
 	for index := range descriptors {
 		descriptor := &descriptors[index]
-		if engineselection.IsAvailableForComputeEntrypoint(descriptor.AsEngine(), "query") {
+		if engineselection.IsSelectionOptionForComputeEntrypoint(descriptor.AsEngine(), "query") {
 			filtered = append(filtered, *descriptor)
 		}
 	}
@@ -335,23 +336,33 @@ func validateNotebookEngineDescriptor(descriptor *commonModels.EngineRuntimeDesc
 	if !engineselection.IsAvailable(descriptor.AsEngine()) {
 		return fmt.Errorf("notebook engine %d is unavailable", descriptor.ID)
 	}
-	capabilities, err := engineselection.ParseCapabilities(descriptor.Capabilities)
-	if err != nil {
-		return fmt.Errorf("notebook engine %d capabilities are invalid: %w", descriptor.ID, err)
-	}
-	if capabilities == nil || capabilities.Compute == nil || capabilities.Compute.Script == nil || !capabilities.Compute.Script.Supported {
-		return fmt.Errorf("engine %d does not support script execution", descriptor.ID)
-	}
-	if capabilities.EngineType != descriptor.EngineType {
-		return fmt.Errorf("notebook engine %d capabilities engine_type does not match", descriptor.ID)
+	if !supportsNotebookEngineDescriptor(descriptor) {
+		return fmt.Errorf("engine %d does not support notebook mode", descriptor.ID)
 	}
 	if descriptor.RuntimeEndpoint == nil || strings.TrimSpace(descriptor.RuntimeEndpoint.Host) == "" || descriptor.RuntimeEndpoint.Port <= 0 {
 		return fmt.Errorf("notebook engine %d has no runtime endpoint", descriptor.ID)
 	}
+	return nil
+}
+
+func supportsNotebookEngineDescriptor(descriptor *commonModels.EngineRuntimeDescriptor) bool {
+	if descriptor == nil {
+		return false
+	}
+	capabilities, err := engineselection.ParseCapabilities(descriptor.Capabilities)
+	if err != nil {
+		return false
+	}
+	if capabilities == nil || capabilities.Compute == nil || capabilities.Compute.Script == nil || !capabilities.Compute.Script.Supported {
+		return false
+	}
+	if capabilities.EngineType != descriptor.EngineType {
+		return false
+	}
 	for _, mode := range capabilities.Compute.Script.Modes {
 		if mode == "notebook" {
-			return nil
+			return true
 		}
 	}
-	return fmt.Errorf("engine %d does not support notebook mode", descriptor.ID)
+	return false
 }

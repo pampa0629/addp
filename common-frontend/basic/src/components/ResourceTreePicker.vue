@@ -12,12 +12,14 @@
         collapse-tags-tooltip
         style="width: 100%"
         @change="handleEngineChange"
+        @visible-change="handleEngineDropdownVisible"
       >
         <el-option
           v-for="engine in engines"
           :key="engine.id"
-          :label="`${engine.name} (${engine.engine_type})`"
+          :label="engineOptionLabel(engine)"
           :value="engine.id"
+          :disabled="!isEngineSelectable(engine)"
         />
       </el-select>
     </el-form-item>
@@ -105,9 +107,11 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { Search } from '@element-plus/icons-vue'
 import { formatLocatorDisplayPath, parseLocatorSafe } from '../types/resourceLocator.js'
 import { getEngineFamily } from '../utils/engineDisplay.js'
+import { engineSelectionState, isEngineSelectable } from '../utils/engineAvailability.js'
 import {
   addExpandedKey,
   defaultExpandedKeys,
@@ -124,6 +128,8 @@ import {
 import { selectionFromResourceTreeNode } from '../utils/resourceSelection.js'
 import { isResourceTreeSearchReady } from '../utils/resourceTreeSearch.mjs'
 import ResourceTree from './ResourceTree.vue'
+
+const { t } = useI18n()
 
 const props = defineProps({
   apiBaseUrl: {
@@ -323,6 +329,14 @@ const loadEngines = async () => {
   }
 }
 
+const handleEngineDropdownVisible = visible => {
+  if (visible) loadEngines()
+}
+
+const engineOptionLabel = engine => (
+  `${engine.name} (${engine.engine_type}) · ${t(`common.engineStatus.${engineSelectionState(engine)}`)}`
+)
+
 const loadTree = async (engineId) => {
   const requestSeq = ++treeLoadRequestSeq
   if (!engineId) {
@@ -354,7 +368,8 @@ const loadTree = async (engineId) => {
 
 const loadSelectedTrees = async () => {
   const requestSeq = ++treeLoadRequestSeq
-  const engineIds = selectedEngineIds.value
+  const selectableIDs = new Set(engines.value.filter(isEngineSelectable).map(engine => normalizeEngineId(engine.id)))
+  const engineIds = selectedEngineIds.value.filter(engineID => selectableIDs.has(engineID))
   if (engineIds.length === 0) {
     treeData.value = []
     expandedKeys.value = []
@@ -830,7 +845,7 @@ const applyDefaultEngineSelection = () => {
   }
   if (props.engineMultiple) {
     if (selectedEngineIds.value.length === 0 && props.selectAllEnginesByDefault) {
-      selectedEngineValue.value = engines.value.map(engine => normalizeEngineId(engine.id)).filter(Boolean)
+      selectedEngineValue.value = engines.value.filter(isEngineSelectable).map(engine => normalizeEngineId(engine.id)).filter(Boolean)
       loadSelectedTrees()
     }
     return

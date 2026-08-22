@@ -175,9 +175,10 @@ func TestEngineServiceResolvesBoundSuperMapSDXPostgreSQLScanProvider(t *testing.
 			}
 			_ = json.NewEncoder(w).Encode(commonModels.EngineRuntimeDescriptor{
 				ID: runtimeID, Name: "Tenant SuperMap Runtime", EngineType: runtimeEngineType,
-				LifecycleState:  commonModels.EngineLifecycleActive,
-				Capabilities:    &encodedRuntimeCapabilities,
-				RuntimeEndpoint: runtimeEndpoint,
+				LifecycleState:   commonModels.EngineLifecycleActive,
+				ConnectionStatus: commonModels.EngineConnectionOnline,
+				Capabilities:     &encodedRuntimeCapabilities,
+				RuntimeEndpoint:  runtimeEndpoint,
 			})
 		default:
 			http.NotFound(w, r)
@@ -218,7 +219,7 @@ func testEngineServiceWorkflowOperator(engineType, name string) map[string]inter
 		"category": "table", "category_path": []string{"table"}, "description": name,
 		"execution_modes": []string{"direct"}, "parameters": []interface{}{},
 		"output_ports": []map[string]interface{}{{"name": "result", "data_type": "object", "default": true}},
-		"effects": []string{"read"},
+		"effects":      []string{"read"},
 	}
 }
 

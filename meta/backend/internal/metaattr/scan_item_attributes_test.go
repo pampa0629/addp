@@ -258,6 +258,50 @@ func TestApplyDynamicSchemaStatisticsWritesStandardSections(t *testing.T) {
 	}
 }
 
+func TestBuildDynamicSchemaAttributesKeepsNestedFieldFacts(t *testing.T) {
+	t.Parallel()
+
+	attrs := BuildDynamicSchemaAttributes(DynamicSchemaAttributesInput{
+		Fields: []datatype.FieldInfo{
+			{
+				Name:        "entriedOutdoors",
+				Path:        []string{"entriedOutdoors"},
+				Type:        datatype.FieldTypeArray,
+				ElementType: datatype.FieldTypeJSON,
+				NativeType:  "array",
+				Nullable:    true,
+			},
+			{
+				Name:       "entriedOutdoors.title",
+				Path:       []string{"entriedOutdoors", "title"},
+				Type:       datatype.FieldTypeString,
+				NativeType: "string",
+				Nullable:   true,
+			},
+		},
+		Attributes: map[string]interface{}{
+			"is_sampled":  true,
+			"schema_type": "dynamic",
+		},
+	})
+
+	table := datatype.TableInfoFromPayload(
+		attrs["type_info"].(map[string]interface{})["table"].(map[string]interface{}),
+		"Persons",
+	)
+	if table == nil || len(table.Fields) != 2 {
+		t.Fatalf("table info = %#v, want two fields", table)
+	}
+	arrayField := table.GetField("entriedOutdoors")
+	if arrayField == nil || arrayField.ElementType != datatype.FieldTypeJSON {
+		t.Fatalf("array field = %#v, want json element type", arrayField)
+	}
+	nestedField := table.GetField("entriedOutdoors.title")
+	if nestedField == nil || len(nestedField.Path) != 2 || nestedField.Path[1] != "title" {
+		t.Fatalf("nested field = %#v, want persisted nested path", nestedField)
+	}
+}
+
 func TestApplyTableItemAttributesDoesNotDuplicateRowCountIntoCapabilities(t *testing.T) {
 	t.Parallel()
 

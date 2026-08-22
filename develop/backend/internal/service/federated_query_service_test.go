@@ -9,10 +9,25 @@ import (
 	"testing"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dbbridge"
 	commonModels "github.com/addp/common/models"
 )
 
 func TestFederatedQueryServiceResolvesOnlyReferencedSupportedSources(t *testing.T) {
+	capabilitiesFor := func(engineType string) *commonModels.JSONString {
+		t.Helper()
+		value, err := dbbridge.GenerateCapabilities(engineType)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded := commonModels.JSONString(value)
+		return &encoded
+	}
+	duckDBCapabilities := capabilitiesFor("duckdb")
+	postgresCapabilities := capabilitiesFor("postgresql")
+	mysqlCapabilities := capabilitiesFor("mysql")
+	minioCapabilities := capabilitiesFor("minio")
+	neo4jCapabilities := capabilitiesFor("neo4j")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if request.Header.Get("Authorization") != "Bearer addp_at_service" {
 			t.Fatalf("unexpected authorization: %s", request.Header.Get("Authorization"))
@@ -21,15 +36,16 @@ func TestFederatedQueryServiceResolvesOnlyReferencedSupportedSources(t *testing.
 		case "/api/v1/system/runtime/engine-descriptors/90":
 			_ = json.NewEncoder(w).Encode(commonModels.EngineRuntimeDescriptor{
 				ID: 90, Name: "DuckDB", EngineType: "duckdb", LifecycleState: commonModels.EngineLifecycleActive,
+				ConnectionStatus: commonModels.EngineConnectionOnline, Capabilities: duckDBCapabilities,
 				RuntimeEndpoint: &commonModels.EngineRuntimeEndpoint{Protocol: "http", Host: "duckdb", Port: 8096},
 			})
 		case "/api/v1/system/runtime/engine-descriptors":
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"data": []commonModels.EngineRuntimeDescriptor{
-					{ID: 12, Name: "Business PostgreSQL", EngineType: "postgresql", LifecycleState: commonModels.EngineLifecycleActive},
-					{ID: 13, Name: "Business MySQL", EngineType: "mysql", LifecycleState: commonModels.EngineLifecycleActive},
-					{ID: 14, Name: "Business MinIO", EngineType: "minio", LifecycleState: "disabled"},
-					{ID: 15, Name: "Business Neo4j", EngineType: "neo4j", LifecycleState: commonModels.EngineLifecycleActive},
+					{ID: 12, Name: "Business PostgreSQL", EngineType: "postgresql", LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline, Capabilities: postgresCapabilities},
+					{ID: 13, Name: "Business MySQL", EngineType: "mysql", LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline, Capabilities: mysqlCapabilities},
+					{ID: 14, Name: "Business MinIO", EngineType: "minio", LifecycleState: "disabled", ConnectionStatus: commonModels.EngineConnectionOnline, Capabilities: minioCapabilities},
+					{ID: 15, Name: "Business Neo4j", EngineType: "neo4j", LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline, Capabilities: neo4jCapabilities},
 				},
 				"total": 4, "page": 1, "page_size": 100,
 			})

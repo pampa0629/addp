@@ -76,11 +76,11 @@ func TestListEnginesReturnsOnlySystemQueryEngines(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &engines); err != nil {
 		t.Fatalf("decode engines: %v; body=%s", err, resp.Body.String())
 	}
-	if len(engines) != 1 {
-		t.Fatalf("engines len = %d, want 1; body=%s", len(engines), resp.Body.String())
+	if len(engines) != 2 {
+		t.Fatalf("engines len = %d, want 2; body=%s", len(engines), resp.Body.String())
 	}
-	if engines[0].ID != 12 || engines[0].EngineType == "duckdb" {
-		t.Fatalf("ListEngines must not append DuckDB pseudo engine: %#v", engines[0])
+	if engines[0].ID != 12 || engines[1].ID != 21 || engines[1].ConnectionStatus != commonModels.EngineConnectionOffline {
+		t.Fatalf("ListEngines must retain the registered offline option without appending pseudo engines: %#v", engines)
 	}
 	var raw []map[string]json.RawMessage
 	if err := json.Unmarshal(resp.Body.Bytes(), &raw); err != nil {

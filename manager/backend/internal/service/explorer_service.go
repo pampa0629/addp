@@ -43,7 +43,7 @@ func (s *ExplorerService) GetEngineList(tenantID *uint) ([]*commonModels.Engine,
 
 	var storageEngines []*commonModels.Engine
 	for i := range engines {
-		if engineselection.IsAvailableStorageEngine(&engines[i]) {
+		if engineselection.IsStorageSelectionOption(&engines[i]) {
 			storageEngines = append(storageEngines, &engines[i])
 		}
 	}

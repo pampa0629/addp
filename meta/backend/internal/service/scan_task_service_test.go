@@ -31,13 +31,13 @@ func TestCreateUnscannedRunsSubmitsUnscannedEngines(t *testing.T) {
 	capJSON := commonModels.JSONString(capabilities)
 	tenantID := uint(1)
 	engine := commonModels.Engine{
-		ID:             9,
-		TenantID:       &tenantID,
-		Name:           "Business MinIO",
-		EngineType:     "s3",
-		LifecycleState: "active",
+		ID:               9,
+		TenantID:         &tenantID,
+		Name:             "Business MinIO",
+		EngineType:       "s3",
+		LifecycleState:   "active",
 		ConnectionStatus: commonModels.EngineConnectionOnline,
-		Capabilities:   &capJSON,
+		Capabilities:     &capJSON,
 	}
 	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/system/oauth/token" {

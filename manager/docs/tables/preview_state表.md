@@ -8,7 +8,7 @@
 
 它回答：
 
-> 当前 item 的用户偏好预览模式是什么，以及基础预览 / 快显各自最近一次地图视口或三维相机状态是什么。
+> 当前 item 的用户偏好预览模式是什么，以及基础预览 / 快显各自最近一次地图视口、三维相机或表格显示状态是什么。
 
 它不回答：
 
@@ -40,7 +40,7 @@
 | `item_fingerprint` | varchar(64) | 标准 data item 指纹，和 `tenant_id` 组成唯一偏好身份 |
 | `locator` | text | 资源树或数据项回跳定位，不作为去重主键 |
 | `preferred_mode` | varchar | `basic_preview` / `map_quick_view` |
-| `view_state` | jsonb | 快显 / 预览交互状态。顶层按 `basic_preview` / `quick_view` 区分显示模式，模式内按 `map` / `scene_3d` 区分渲染域 |
+| `view_state` | jsonb | 快显 / 预览交互状态。顶层按 `basic_preview` / `quick_view` 区分显示模式，模式内按 `map` / `scene_3d` / `table` 区分渲染域 |
 | `created_at` / `updated_at` | timestamp | 生命周期字段 |
 
 `can_use_quick_view`、`can_generate_vector_tile_cache`、`status`、`render_source`、`default_vector_tile_cache_id`、`unavailable_reason` 是快显能力 API 的动态响应字段，不是 `manager.preview_state` 表字段。
@@ -116,7 +116,10 @@
 {
   "basic_preview": {
     "map": {},
-    "scene_3d": {}
+    "scene_3d": {},
+    "table": {
+      "visible_columns": ["_id", "name", "status"]
+    }
   },
   "quick_view": {
     "map": {},
@@ -125,7 +128,7 @@
 }
 ```
 
-顶层按显示模式区分，避免基础预览和快显互相覆盖视角；模式内按渲染域区分，避免把数据类型耦合进 UI 状态。`map` 保存地图视口状态，`scene_3d` 保存三维相机状态。`scene_3d.render_source` 标识产生该相机的实际渲染源；Manager 受管 artifact 还应写 `scene_3d.artifact_version`，优先使用结果的 `last_execution_id`。读取时只有渲染源和 artifact 版本均匹配才可恢复相机，否则按当前数据重新定位。具体渲染器可以在对应对象内保存自身需要的字段，但不得新增 `model_3d`、`tiles_3d`、`gaussian_splat` 等按数据类型拆分的顶层或模式内 key。
+顶层按显示模式区分，避免基础预览和快显互相覆盖状态；模式内按渲染域区分，避免把数据类型耦合进 UI 状态。`map` 保存地图视口状态，`scene_3d` 保存三维相机状态，`table.visible_columns` 按用户选择顺序保存表格可见字段名。字段结构变化后，前端只恢复仍然存在的字段；已不存在的字段直接忽略，不保留兼容映射。`scene_3d.render_source` 标识产生该相机的实际渲染源；Manager 受管 artifact 还应写 `scene_3d.artifact_version`，优先使用结果的 `last_execution_id`。读取时只有渲染源和 artifact 版本均匹配才可恢复相机，否则按当前数据重新定位。具体渲染器可以在对应对象内保存自身需要的字段，但不得新增 `model_3d`、`tiles_3d`、`gaussian_splat` 等按数据类型拆分的顶层或模式内 key。
 
 ## 九、已完成职责收敛
 

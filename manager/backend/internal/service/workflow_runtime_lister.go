@@ -40,7 +40,7 @@ func (l *WorkflowRuntimeEngineLister) ListWorkflowEngines(tenantID uint) ([]comm
 }
 
 func isADDPWorkflowRuntime(engine *commonModels.Engine) bool {
-	if !engineselection.IsAvailableForComputeEntrypoint(engine, "workflow") || engine.Capabilities == nil {
+	if !engineselection.IsSelectionOptionForComputeEntrypoint(engine, "workflow") || engine.Capabilities == nil {
 		return false
 	}
 	capabilities, err := engineplugin.ParseEngineCapabilities(string(*engine.Capabilities))

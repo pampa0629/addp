@@ -48,12 +48,12 @@
           </el-select>
         </el-form-item>
         <el-form-item :label="t('graph.knowledgeGraph.engine')" prop="engine_id">
-          <el-select v-model="form.engine_id" style="width:100%" :placeholder="t('graph.knowledgeGraph.selectEngine')" :loading="enginesLoading" @change="onEngineChange">
-            <el-option v-for="e in neo4jEngines" :key="e.id" :label="e.name" :value="e.id" />
+          <el-select v-model="form.engine_id" style="width:100%" :placeholder="t('graph.knowledgeGraph.selectEngine')" :loading="enginesLoading" @change="onEngineChange" @visible-change="handleEngineDropdownVisible">
+            <el-option v-for="e in neo4jEngines" :key="e.id" :label="engineOptionLabel(e)" :value="e.id" :disabled="!isEngineSelectable(e)" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('graph.knowledgeGraph.databaseName')" prop="database">
-          <el-select v-model="form.database" style="width:100%" :placeholder="t('graph.knowledgeGraph.selectDatabase')" :loading="dbLoading" :disabled="!form.engine_id">
+          <el-select v-model="form.database" style="width:100%" :placeholder="t('graph.knowledgeGraph.selectDatabase')" :loading="dbLoading" :disabled="!formEngineSelectable">
             <el-option v-for="db in databases" :key="db" :label="db" :value="db" />
           </el-select>
         </el-form-item>
@@ -63,7 +63,7 @@
       </el-form>
       <template #footer>
         <el-button @click="showCreateDialog = false">{{ t('graph.common.cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="handleCreate">{{ t('graph.common.create') }}</el-button>
+        <el-button type="primary" :loading="saving" :disabled="!formEngineSelectable" @click="handleCreate">{{ t('graph.common.create') }}</el-button>
       </template>
     </el-dialog>
 
@@ -103,6 +103,7 @@ import { buildAPI } from '../api/graphBuild'
 import SchemaInferenceDialog from '../components/SchemaInferenceDialog.vue'
 import { useI18n } from 'vue-i18n'
 import { navigateGraphRoute } from '@/utils/moduleNavigation'
+import { engineSelectionState, isEngineSelectable } from '@common-ui'
 
 const { t } = useI18n()
 const loading = ref(false)
@@ -118,6 +119,9 @@ const showEditDialog = ref(false)
 const formRef = ref(null)
 const editFormRef = ref(null)
 const form = ref({ name: '', ontology_id: null, engine_id: null, database: '', description: '' })
+const formEngineSelectable = computed(() => isEngineSelectable(
+  neo4jEngines.value.find(engine => engine.id === form.value.engine_id)
+))
 const editForm = ref({ id: null, name: '', description: '' })
 const pendingCounts = ref({})
 const editRules = computed(() => ({
@@ -142,10 +146,19 @@ const loadEngines = async () => {
   }
 }
 
+const handleEngineDropdownVisible = visible => {
+  if (visible) loadEngines()
+}
+
+const engineOptionLabel = engine => (
+  `${engine.name} · ${t(`common.engineStatus.${engineSelectionState(engine)}`)}`
+)
+
 const onEngineChange = async (engineId) => {
   form.value.database = ''
   databases.value = []
-  if (!engineId) return
+  const engine = neo4jEngines.value.find(item => item.id === engineId)
+  if (!isEngineSelectable(engine)) return
   dbLoading.value = true
   try {
     databases.value = await engineAPI.getDatabases(engineId)

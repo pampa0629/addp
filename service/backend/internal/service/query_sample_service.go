@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
+	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/federatedquery"
 	commonModels "github.com/addp/common/models"
 	serviceModels "github.com/addp/service/internal/models"
@@ -222,8 +223,8 @@ func (s *QuerySampleService) Generate(
 	if err != nil {
 		return "", "", fmt.Errorf("获取查询引擎描述失败: %w", err)
 	}
-	if descriptor.LifecycleState != commonModels.EngineLifecycleActive {
-		return "", "", fmt.Errorf("%w: 查询引擎未启用", ErrQuerySampleUnavailable)
+	if !engineselection.IsAvailableForComputeEntrypoint(descriptor.AsEngine(), "query") {
+		return "", "", fmt.Errorf("%w: 查询引擎当前不可用", ErrQuerySampleUnavailable)
 	}
 	enginePlugin, err := plugin.Get(descriptor.EngineType)
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
+	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/federatedquery"
 	commonModels "github.com/addp/common/models"
 	"github.com/google/uuid"
@@ -45,7 +46,7 @@ func (s *FederatedQueryService) runtime(
 	if err != nil {
 		return nil, nil, fmt.Errorf("获取联邦查询 Runtime 失败: %w", err)
 	}
-	if descriptor.LifecycleState != commonModels.EngineLifecycleActive || descriptor.RuntimeEndpoint == nil {
+	if !engineselection.IsAvailableForComputeEntrypoint(descriptor.AsEngine(), "query") || descriptor.RuntimeEndpoint == nil {
 		return nil, nil, fmt.Errorf("联邦查询 Runtime 不可用")
 	}
 	enginePlugin, err := plugin.Get(descriptor.EngineType)
@@ -77,7 +78,7 @@ func (s *FederatedQueryService) ReferencedEngineIDs(
 	}
 	candidates := make([]plugin.FederatedQuerySource, 0, len(descriptors))
 	for _, descriptor := range descriptors {
-		if descriptor.ID == runtimeEngineID {
+		if descriptor.ID == runtimeEngineID || !engineselection.IsAvailableStorageEngine(descriptor.AsEngine()) {
 			continue
 		}
 		candidates = append(candidates, plugin.FederatedQuerySource{

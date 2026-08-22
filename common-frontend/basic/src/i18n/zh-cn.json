@@ -64,6 +64,15 @@
     "yes": "是",
     "no": "否",
     "unknown": "未知",
+    "engineStatus": {
+      "available": "在线",
+      "offline": "离线",
+      "unknown": "状态未知",
+      "checking": "检测中",
+      "disabled": "已停用",
+      "deleting": "删除中",
+      "missing": "不可用"
+    },
     "refresh": "刷新",
     "copy": "复制",
     "download": "下载",

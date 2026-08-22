@@ -32,6 +32,16 @@ type querySampleFederatedPlugin struct {
 	executedRequest *plugin.FederatedQueryRequest
 }
 
+func querySampleCapabilities(t *testing.T, capabilities plugin.EngineCapabilities) *models.JSONString {
+	t.Helper()
+	encoded, err := plugin.MarshalEngineCapabilities(capabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := models.JSONString(encoded)
+	return &value
+}
+
 func (*querySampleSQLPlugin) Type() string                                                { return "service_sample_sql" }
 func (*querySampleSQLPlugin) DisplayName() string                                         { return "Service Sample SQL" }
 func (*querySampleSQLPlugin) EngineOrigin() string                                        { return "general" }
@@ -99,6 +109,7 @@ func (p *querySampleFederatedPlugin) ExecuteFederatedQuery(_ context.Context, _ 
 
 func TestQuerySampleServiceExecutesDirectSampleThroughAuthorization(t *testing.T) {
 	enginePlugin := &querySampleSQLPlugin{}
+	capabilities := querySampleCapabilities(t, enginePlugin.Capabilities())
 	plugin.Register(enginePlugin)
 	t.Cleanup(func() { plugin.Unregister(enginePlugin.Type()) })
 
@@ -109,6 +120,7 @@ func TestQuerySampleServiceExecutesDirectSampleThroughAuthorization(t *testing.T
 		case "/api/v1/system/runtime/engine-descriptors/21":
 			_ = json.NewEncoder(w).Encode(models.EngineRuntimeDescriptor{
 				ID: 21, Name: "Business SQL", EngineType: enginePlugin.Type(), LifecycleState: models.EngineLifecycleActive,
+				ConnectionStatus: models.EngineConnectionOnline, Capabilities: capabilities,
 			})
 		case "/api/v1/system/auth/execution-authorizations":
 			issued = true
@@ -154,6 +166,8 @@ func TestQuerySampleServiceExecutesDirectSampleThroughAuthorization(t *testing.T
 
 func TestQuerySampleServiceReturnsUnboundedFederatedSampleAndBoundsValidation(t *testing.T) {
 	enginePlugin := &querySampleFederatedPlugin{}
+	runtimeCapabilities := querySampleCapabilities(t, enginePlugin.Capabilities())
+	sourceCapabilities := querySampleCapabilities(t, plugin.NewTabularCapabilities("postgresql", "tabular", plugin.TabularCapabilityOptions{DefaultLanguage: "sql"}))
 	plugin.Register(enginePlugin)
 	t.Cleanup(func() { plugin.Unregister(enginePlugin.Type()) })
 
@@ -163,12 +177,14 @@ func TestQuerySampleServiceReturnsUnboundedFederatedSampleAndBoundsValidation(t 
 		case "/api/v1/system/runtime/engine-descriptors/90":
 			_ = json.NewEncoder(w).Encode(models.EngineRuntimeDescriptor{
 				ID: 90, Name: "DuckDB", EngineType: enginePlugin.Type(), LifecycleState: models.EngineLifecycleActive,
+				ConnectionStatus: models.EngineConnectionOnline, Capabilities: runtimeCapabilities,
 				RuntimeEndpoint: &models.EngineRuntimeEndpoint{Protocol: "http", Host: "127.0.0.1", Port: 8104},
 			})
 		case "/api/v1/system/runtime/engine-descriptors":
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"data": []models.EngineRuntimeDescriptor{{
 					ID: 21, Name: "Business PostgreSQL", EngineType: "postgresql", LifecycleState: models.EngineLifecycleActive,
+					ConnectionStatus: models.EngineConnectionOnline, Capabilities: sourceCapabilities,
 				}},
 				"total": 1, "page": 1, "page_size": 100,
 			})

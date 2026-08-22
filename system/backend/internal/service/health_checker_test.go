@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -160,4 +161,78 @@ func TestHealthCheckerIsolatesOfflineEngineFromOtherInstances(t *testing.T) {
 	if offline.ConnectionStatus != "offline" || online.ConnectionStatus != "online" {
 		t.Fatalf("statuses = offline:%q online:%q", offline.ConnectionStatus, online.ConnectionStatus)
 	}
+}
+
+func TestHealthCheckerRunRecoversEngineStartedAfterSystem(t *testing.T) {
+	var ready atomic.Bool
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if !ready.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer runtime.Close()
+
+	parsed, err := url.Parse(runtime.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.Engine{}); err != nil {
+		t.Fatal(err)
+	}
+	repo := repository.NewEngineRepository(db)
+	engine := &models.Engine{
+		Name: "late runtime", EngineType: "jupyter", EngineOrigin: "extension",
+		ConnectionInfo: models.ConnectionInfo{"protocol": parsed.Scheme, "host": parsed.Hostname(), "port": port},
+		LifecycleState: models.EngineLifecycleActive, ConnectionStatus: models.EngineConnectionUnknown,
+	}
+	if err := repo.Create(engine); err != nil {
+		t.Fatal(err)
+	}
+
+	checker := NewHealthChecker(NewEngineService(repo, nil, nil))
+	checker.retryWindow = time.Millisecond
+	checker.retryInterval = time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		checker.Run(ctx, 5*time.Millisecond)
+	}()
+
+	waitForEngineConnectionStatus(t, repo, engine.ID, models.EngineConnectionOffline)
+	ready.Store(true)
+	waitForEngineConnectionStatus(t, repo, engine.ID, models.EngineConnectionOnline)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("HealthChecker.Run did not stop after cancellation")
+	}
+}
+
+func waitForEngineConnectionStatus(t *testing.T, repo *repository.EngineRepository, engineID uint, want string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		engine, err := repo.GetByID(engineID)
+		if err == nil && engine.ConnectionStatus == want {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	engine, err := repo.GetByID(engineID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Fatalf("connection_status = %q, want %q", engine.ConnectionStatus, want)
 }

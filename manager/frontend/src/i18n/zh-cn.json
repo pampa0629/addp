@@ -1473,6 +1473,7 @@
           "name": "名称",
           "fieldName": "字段名",
           "fieldType": "字段类型",
+          "elementType": "元素类型",
           "childName": "子项",
           "childKind": "子项类型",
           "childDataType": "数据类型",

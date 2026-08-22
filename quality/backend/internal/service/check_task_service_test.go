@@ -67,7 +67,7 @@ func newCheckTaskCatalogServer(t *testing.T) *httptest.Server {
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}
 		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/system/engines/12" {
-			_ = json.NewEncoder(w).Encode(commonModels.Engine{ID: 12, EngineType: "postgresql", LifecycleState: commonModels.EngineLifecycleActive})
+			_ = json.NewEncoder(w).Encode(commonModels.Engine{ID: 12, EngineType: "postgresql", LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline})
 			return
 		}
 		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/system/engines/12/catalog/children" {

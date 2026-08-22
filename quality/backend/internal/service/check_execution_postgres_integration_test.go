@@ -327,7 +327,7 @@ func newQualityConcurrencyServer(t *testing.T, engineID, tenantID int64, delay t
 	t.Helper()
 	var authorizationSequence atomic.Int64
 	engine := commonModels.Engine{
-		ID: uint(engineID), TenantID: uintPtr(uint(tenantID)), Name: "quality concurrency PostgreSQL", EngineType: "postgresql", LifecycleState: commonModels.EngineLifecycleActive,
+		ID: uint(engineID), TenantID: uintPtr(uint(tenantID)), Name: "quality concurrency PostgreSQL", EngineType: "postgresql", LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline,
 		ConnectionInfo: commonModels.ConnectionInfo{
 			"host":     qualityServiceIntegrationEnv("ADDP_TEST_POSTGRES_HOST", "localhost"),
 			"port":     qualityServiceIntegrationEnv("ADDP_TEST_POSTGRES_PORT", "15432"),
@@ -400,7 +400,7 @@ func newQualityExecutionContractServer(t *testing.T, engineID, elementID, tenant
 	rule := dataquality.Rule{RuleKey: ruleKey, Type: dataquality.RuleTypeNotNull, Enabled: true, Severity: dataquality.SeverityError, Params: dataquality.Parameters{}}
 	document := dataquality.Document{SchemaVersion: dataquality.RulesSchemaVersion, Rules: []dataquality.Rule{rule}}
 	engine := commonModels.Engine{
-		ID: uint(engineID), TenantID: uintPtr(uint(tenantID)), Name: "quality e2e PostgreSQL", EngineType: "postgresql", LifecycleState: commonModels.EngineLifecycleActive,
+		ID: uint(engineID), TenantID: uintPtr(uint(tenantID)), Name: "quality e2e PostgreSQL", EngineType: "postgresql", LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline,
 		ConnectionInfo: commonModels.ConnectionInfo{
 			"host":     qualityServiceIntegrationEnv("ADDP_TEST_POSTGRES_HOST", "localhost"),
 			"port":     qualityServiceIntegrationEnv("ADDP_TEST_POSTGRES_PORT", "15432"),

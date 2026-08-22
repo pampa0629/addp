@@ -18,6 +18,7 @@
           :placeholder="t('develop.query.selectDataSource')"
           :disabled="executing || loadingSampleQuery || switchingQueryTarget || savingForEngineSwitch"
           @change="requestQueryTargetChange"
+          @visible-change="handleQueryEngineDropdownVisible"
         >
           <el-option
             v-if="selectedEngineUnavailable"
@@ -30,9 +31,10 @@
             :key="target.value"
             :label="target.label"
             :value="target.value"
+            :disabled="!target.available"
           >
             <span>{{ target.name }}</span>
-            <span class="engine-type">{{ target.typeLabel }}</span>
+            <span class="engine-type">{{ target.typeLabel }} · {{ target.statusLabel }}</span>
           </el-option>
         </el-select>
         <el-tag v-if="currentQueryLanguage" size="small" effect="plain">
@@ -618,6 +620,8 @@ import {
   getResourceTreeNode,
   getResourceTreeAncestors,
   formatLocatorDisplayPath,
+  engineSelectionState,
+  isEngineSelectable,
   listResourceTreeEngines,
   parseLocator,
   useResizable,
@@ -745,19 +749,30 @@ const {
   handleResizeKeydown: handleEditorResizeKeydown
 } = useResizable(390, 220, 720, 'vertical')
 
-const queryTargets = computed(() => engines.value.map(engine => ({
-  value: `engine:${engine.id}`,
-  name: engine.name,
-  label: `${engine.name} (${engine.engine_type})`,
-  typeLabel: engine.engine_type,
-  engine
-})))
+const queryTargets = computed(() => engines.value.map(engine => {
+  const available = isEngineSelectable(engine)
+  const statusLabel = t(`common.engineStatus.${engineSelectionState(engine)}`)
+  return {
+    value: `engine:${engine.id}`,
+    name: engine.name,
+    label: `${engine.name} (${engine.engine_type}) · ${statusLabel}`,
+    typeLabel: engine.engine_type,
+    statusLabel,
+    available,
+    engine
+  }
+}))
 
 const completionSuggestions = computed(() => [
   ...fieldCompletions.value,
   ...catalogCompletions.value.filter(item => !fieldCompletions.value.some(field => field.insertText === item.insertText))
 ])
-const selectedTarget = computed(() => queryTargets.value.find(target => target.value === selectedQueryTarget.value) || null)
+const selectedRegisteredTarget = computed(() => (
+  queryTargets.value.find(target => target.value === selectedQueryTarget.value) || null
+))
+const selectedTarget = computed(() => (
+  selectedRegisteredTarget.value?.available ? selectedRegisteredTarget.value : null
+))
 const pendingQueryTargetInfo = computed(() => (
   queryTargets.value.find(target => target.value === pendingQueryTarget.value) || null
 ))
@@ -766,7 +781,7 @@ const selectedEngineId = computed(() => {
   const match = String(selectedQueryTarget.value).match(/^engine:(\d+)$/)
   return match ? Number(match[1]) : null
 })
-const selectedEngineUnavailable = computed(() => Boolean(selectedQueryTarget.value && !selectedTarget.value))
+const selectedEngineUnavailable = computed(() => Boolean(selectedQueryTarget.value && !selectedRegisteredTarget.value))
 const queryCopilotBusy = computed(() => (
   generatingQuery.value
   || executing.value
@@ -871,13 +886,17 @@ const loadEngines = async () => {
   try {
     const response = await listEngines()
     engines.value = Array.isArray(response) ? response : []
-    if (!selectedQueryTarget.value && queryTargets.value.length) {
-      selectedQueryTarget.value = queryTargets.value[0].value
+    if (!selectedQueryTarget.value) {
+      selectedQueryTarget.value = queryTargets.value.find(target => target.available)?.value || ''
     }
   } catch (error) {
     engines.value = []
     ElMessage.error(t('develop.query.loadEnginesFailed') + (error.response?.data?.error || error.message))
   }
+}
+
+const handleQueryEngineDropdownVisible = visible => {
+  if (visible) loadEngines()
 }
 
 const refreshCatalogEngines = async () => {
@@ -2007,8 +2026,8 @@ const resetQueryEditorForCreate = async () => {
   queryResourceConfirmationVisible.value = false
   queryResourceCandidates.value = []
   selectedQueryResourceCandidatesByRole.value = {}
-  if (!selectedTarget.value && queryTargets.value.length) {
-    selectedQueryTarget.value = queryTargets.value[0].value
+  if (!selectedTarget.value) {
+    selectedQueryTarget.value = queryTargets.value.find(target => target.available)?.value || ''
   }
   currentQueryLanguage.value = selectedCapability.value.defaultLanguage
 }

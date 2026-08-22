@@ -411,13 +411,14 @@ func TestResolveDirectWorkflowOperatorFindsCustomRuntimeByOperatorCapability(t *
 			Capabilities:   testWorkflowCapabilities(t, "inactive_workflow"),
 		},
 		{
-			ID:             9,
-			Name:           "Tenant Raster Workflow",
-			EngineType:     engineType,
-			EngineOrigin:   "extension",
-			LifecycleState: models.EngineLifecycleActive,
-			ConnectionInfo: testWorkflowConnectionInfo(t, server.URL),
-			Capabilities:   testWorkflowCapabilities(t, engineType),
+			ID:               9,
+			Name:             "Tenant Raster Workflow",
+			EngineType:       engineType,
+			EngineOrigin:     "extension",
+			LifecycleState:   models.EngineLifecycleActive,
+			ConnectionStatus: models.EngineConnectionOnline,
+			ConnectionInfo:   testWorkflowConnectionInfo(t, server.URL),
+			Capabilities:     testWorkflowCapabilities(t, engineType),
 		},
 	}
 

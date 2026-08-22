@@ -82,6 +82,9 @@ func TestAvailableEngineCandidateRequiresActiveOnlineAndCapability(t *testing.T)
 	if !IsAvailableForComputeEntrypoint(&base, "query") || !IsAvailableStorageEngine(&base) {
 		t.Fatal("active online engine with matching capabilities must be available")
 	}
+	if !IsSelectionOptionForComputeEntrypoint(&base, "query") || !IsStorageSelectionOption(&base) {
+		t.Fatal("active engine with matching capabilities must be a selection option")
+	}
 
 	for _, test := range []struct {
 		name       string
@@ -100,6 +103,10 @@ func TestAvailableEngineCandidateRequiresActiveOnlineAndCapability(t *testing.T)
 			candidate.ConnectionStatus = test.connection
 			if IsAvailable(&candidate) || IsAvailableForComputeEntrypoint(&candidate, "query") || IsAvailableStorageEngine(&candidate) {
 				t.Fatalf("candidate lifecycle=%q connection=%q must not be available", test.lifecycle, test.connection)
+			}
+			wantSelectionOption := test.lifecycle == models.EngineLifecycleActive
+			if got := IsSelectionOptionForComputeEntrypoint(&candidate, "query"); got != wantSelectionOption {
+				t.Fatalf("selection option = %v, want %v for lifecycle=%q connection=%q", got, wantSelectionOption, test.lifecycle, test.connection)
 			}
 		})
 	}

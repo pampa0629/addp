@@ -102,6 +102,44 @@ func TestListReturnsCompleteFilteredResult(t *testing.T) {
 	}
 }
 
+func TestGetForExecutionRejectsOfflineEngine(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Engine{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	repo := repository.NewEngineRepository(db)
+	tenantID := uint(7)
+	engine := &models.Engine{
+		Name:             "offline database",
+		EngineType:       "postgresql",
+		EngineOrigin:     "general",
+		ConnectionInfo:   models.ConnectionInfo{"host": "database.internal", "port": 5432},
+		LifecycleState:   models.EngineLifecycleActive,
+		ConnectionStatus: models.EngineConnectionOffline,
+		TenantID:         &tenantID,
+	}
+	if err := repo.Create(engine); err != nil {
+		t.Fatalf("create engine: %v", err)
+	}
+
+	engineService := NewEngineService(repo, nil, nil)
+	if _, err := engineService.GetForExecution(engine.ID, tenantID); !errors.Is(err, ErrResourceForbidden) {
+		t.Fatalf("GetForExecution() error = %v, want ErrResourceForbidden", err)
+	}
+
+	engine.ConnectionStatus = models.EngineConnectionOnline
+	if err := repo.Update(engine); err != nil {
+		t.Fatalf("mark engine online: %v", err)
+	}
+	if _, err := engineService.GetForExecution(engine.ID, tenantID); err != nil {
+		t.Fatalf("GetForExecution() with online engine error = %v", err)
+	}
+}
+
 func TestRuntimeDescriptorsExposeComputeRuntimeEndpointsAndNoDataConnection(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {

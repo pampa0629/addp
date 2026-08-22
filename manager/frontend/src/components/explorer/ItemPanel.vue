@@ -188,6 +188,9 @@
                         <div class="attribute-table-title">{{ table.title }}</div>
                         <el-table
                           :data="table.rows"
+                          :row-key="table.rowKey"
+                          :tree-props="table.treeProps"
+                          :default-expand-all="table.tree === true"
                           size="small"
                           border
                           class="attribute-table"
@@ -214,6 +217,9 @@
                     <div class="attribute-table-title">{{ table.title }}</div>
                     <el-table
                       :data="table.rows"
+                      :row-key="table.rowKey"
+                      :tree-props="table.treeProps"
+                      :default-expand-all="table.tree === true"
                       size="small"
                       border
                       class="attribute-table"
@@ -658,6 +664,7 @@ const boxedNestedGroupKeys = new Set(['native', 'source'])
 const tableColumnLabelKeys = {
   name: 'manager.explorer.attributes.tableColumns.name',
   type: 'manager.explorer.attributes.tableColumns.type',
+  element_type: 'manager.explorer.attributes.tableColumns.elementType',
   native_type: 'manager.explorer.attributes.tableColumns.nativeType',
   child_kind: 'manager.explorer.attributes.tableColumns.childKind',
   data_type: 'manager.explorer.attributes.tableColumns.dataType',
@@ -1002,8 +1009,57 @@ const buildEntry = (pathParts, value, groupRoot = []) => {
 }
 
 const buildFieldTable = (pathParts, rows) => {
-  const preferredColumns = ['name', 'type', 'native_type', 'nullable', 'primary_key', 'comment']
-  return buildObjectArrayTable(pathParts, rows, preferredColumns, 'fields')
+  const preferredColumns = ['name', 'path', 'type', 'element_type', 'native_type', 'nullable', 'primary_key', 'comment']
+  const table = buildObjectArrayTable(pathParts, rows, preferredColumns, 'fields')
+  return {
+    ...table,
+    rows: buildFieldTreeRows(rows, table.columns.map(column => column.key), pathParts),
+    rowKey: '_field_tree_key',
+    treeProps: { children: 'children' },
+    tree: true
+  }
+}
+
+const buildFieldTreeRows = (rows, columns, pathParts) => {
+  const nodes = new Map()
+  const roots = []
+
+  rows.filter(isPlainObject).forEach((field, index) => {
+    const fieldPath = Array.isArray(field.path)
+      ? field.path.map(segment => String(segment || '').trim()).filter(Boolean)
+      : []
+    const normalizedPath = fieldPath.length ? fieldPath : [String(field.name || '').trim()].filter(Boolean)
+    if (!normalizedPath.length) return
+    const key = normalizedPath.join('.')
+    const formatted = {}
+    columns.forEach(column => {
+      if (column === 'name') {
+        formatted[column] = normalizedPath[normalizedPath.length - 1]
+      } else if (column === 'path') {
+        formatted[column] = normalizedPath.join('.')
+      } else {
+        formatted[column] = formatTableCell(field[column], pathParts, column)
+      }
+    })
+    nodes.set(key, {
+      ...formatted,
+      _field_tree_key: `${key}:${index}`,
+      _field_path_key: key,
+      children: []
+    })
+  })
+
+  nodes.forEach(node => {
+    const segments = node._field_path_key.split('.')
+    const parent = segments.length > 1 ? nodes.get(segments.slice(0, -1).join('.')) : null
+    if (parent) parent.children.push(node)
+    else roots.push(node)
+  })
+  nodes.forEach(node => {
+    if (!node.children.length) delete node.children
+    delete node._field_path_key
+  })
+  return roots
 }
 
 const preferredColumnsForObjectTable = (pathParts) => {

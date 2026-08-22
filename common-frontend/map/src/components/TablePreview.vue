@@ -58,6 +58,7 @@
           size="small"
           class="record-column-select"
           :placeholder="t('map.selectColumns')"
+          @change="handleRecordColumnsChange"
         >
           <el-option
             v-for="col in columns"
@@ -265,10 +266,14 @@ const props = defineProps({
   viewState: {
     type: Object,
     default: () => ({})
+  },
+  tableState: {
+    type: Object,
+    default: () => ({})
   }
 })
 
-const emit = defineEmits(['page-change', 'view-state-change'])
+const emit = defineEmits(['page-change', 'view-state-change', 'table-state-change'])
 
 const { baseMapOptions, defaultBaseMapType, getBaseMapProfile, loadMapConfig } = useMapConfig()
 
@@ -719,17 +724,33 @@ watch(
 )
 
 watch(
-  () => [props.data?.preview_kind, columns.value.join('\u0000'), rows.value.length],
+  () => [
+    props.data?.preview_kind,
+    columns.value.join('\u0000'),
+    rows.value.length,
+    Array.isArray(props.tableState?.visible_columns)
+      ? props.tableState.visible_columns.join('\u0000')
+      : ''
+  ],
   () => {
     if (!isDynamicSchemaRecordSet.value) {
       selectedRecordColumns.value = []
       return
     }
+    const savedColumns = Array.isArray(props.tableState?.visible_columns)
+      ? props.tableState.visible_columns.filter((col) => columns.value.includes(col))
+      : []
     const validSelected = selectedRecordColumns.value.filter((col) => columns.value.includes(col))
-    selectedRecordColumns.value = validSelected.length > 0 ? validSelected : defaultRecordColumns.value
+    selectedRecordColumns.value = savedColumns.length > 0
+      ? savedColumns
+      : (validSelected.length > 0 ? validSelected : defaultRecordColumns.value)
   },
   { immediate: true }
 )
+
+const handleRecordColumnsChange = (visibleColumns) => {
+  emit('table-state-change', { visible_columns: [...visibleColumns] })
+}
 
 // 当 baseMapOptions 变化时，自动设置默认底图
 watch(

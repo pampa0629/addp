@@ -159,13 +159,14 @@ func TestSuperMapSDXPostgreSQLTableProviderUsesExactBoundRuntime(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(commonModels.EngineRuntimeDescriptor{
-			ID:              22,
-			Name:            "Tenant SuperMap Runtime",
-			EngineType:      runtimeEngineType,
-			EngineOrigin:    "extension",
-			LifecycleState:  commonModels.EngineLifecycleActive,
-			Capabilities:    runtimeCapabilities,
-			RuntimeEndpoint: runtimeEndpoint,
+			ID:               22,
+			Name:             "Tenant SuperMap Runtime",
+			EngineType:       runtimeEngineType,
+			EngineOrigin:     "extension",
+			LifecycleState:   commonModels.EngineLifecycleActive,
+			ConnectionStatus: commonModels.EngineConnectionOnline,
+			Capabilities:     runtimeCapabilities,
+			RuntimeEndpoint:  runtimeEndpoint,
 		})
 	}))
 	defer systemServer.Close()

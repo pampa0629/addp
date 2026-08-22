@@ -2110,6 +2110,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "返回 active 且支持查询的 Neo4j 注册引擎及其连接状态；非 online 项由前端展示并禁选 | Return active registered Neo4j engines supporting queries with connection status; clients must show but disable non-online options",
                 "produces": [
                     "application/json"
                 ],

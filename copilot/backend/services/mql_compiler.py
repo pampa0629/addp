@@ -1,0 +1,354 @@
+"""把已验证的强类型 MongoDB 查询计划确定性编译为 MQL。"""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass
+from typing import Any
+
+
+class MQLPlanError(ValueError):
+    """计划不符合资源事实或当前编译器能力。"""
+
+
+@dataclass(frozen=True)
+class MQLClarification:
+    reason: str
+    message: str
+
+
+class MQLClarificationRequired(ValueError):
+    def __init__(self, clarification: MQLClarification):
+        super().__init__(clarification.message)
+        self.clarification = clarification
+
+
+class MQLCompiler:
+    FILTER_OPERATORS = {"eq", "ne", "gt", "gte", "lt", "lte", "in", "contains", "regex", "exists"}
+    METRIC_OPERATIONS = {
+        "none",
+        "count_documents",
+        "count_array_elements",
+        "distinct_count",
+        "sum",
+        "avg",
+        "min",
+        "max",
+    }
+    NUMERIC_TYPES = {"int", "bigint", "float", "double", "decimal", "integer", "number"}
+
+    @classmethod
+    def parse_plan(cls, output: str, decode_object) -> dict[str, Any]:
+        parsed = decode_object(output)
+        allowed = {
+            "collection", "filters", "select_fields", "sort", "limit", "metric",
+            "assumptions", "clarification",
+        }
+        required = {"collection", "filters", "metric", "assumptions", "clarification"}
+        unknown = set(parsed) - allowed
+        missing = required - set(parsed)
+        if unknown:
+            raise MQLPlanError("MQL semantic plan contains unknown fields: " + ", ".join(sorted(unknown)))
+        if missing:
+            raise MQLPlanError("MQL semantic plan is missing fields: " + ", ".join(sorted(missing)))
+        if not isinstance(parsed["collection"], str) or not parsed["collection"].strip():
+            raise MQLPlanError("MQL semantic plan collection must be a non-empty string")
+        parsed.setdefault("select_fields", [])
+        parsed.setdefault("sort", [])
+        parsed.setdefault("limit", None)
+        for key in ("filters", "select_fields", "sort", "assumptions"):
+            if not isinstance(parsed[key], list):
+                raise MQLPlanError(f"MQL semantic plan {key} must be an array")
+        if not isinstance(parsed["metric"], dict):
+            raise MQLPlanError("MQL semantic plan metric must be an object")
+        if parsed["limit"] is not None and (
+            not isinstance(parsed["limit"], int) or isinstance(parsed["limit"], bool) or parsed["limit"] <= 0
+        ):
+            raise MQLPlanError("MQL semantic plan limit must be null or a positive integer")
+        if parsed["clarification"] is not None and not isinstance(parsed["clarification"], str):
+            raise MQLPlanError("MQL semantic plan clarification must be null or a string")
+        return parsed
+
+    @classmethod
+    def compile(cls, plan: dict[str, Any], resources: list[dict[str, Any]]) -> dict[str, Any]:
+        clarification = str(plan.get("clarification") or "").strip()
+        assumptions = [str(item).strip() for item in plan.get("assumptions", []) if str(item).strip()]
+        if clarification:
+            raise MQLClarificationRequired(MQLClarification("query_semantics_ambiguous", clarification))
+        if assumptions:
+            raise MQLClarificationRequired(MQLClarification(
+                "query_semantics_ambiguous",
+                "查询含义存在未经确认的假设：" + "；".join(assumptions),
+            ))
+
+        collection = plan["collection"].strip()
+        resource = cls._resource_for_collection(collection, resources)
+        fields = cls._field_map(resource)
+        filters, parameters = cls._compile_filters(plan["filters"], fields)
+        select_fields = cls._validate_field_list(plan["select_fields"], fields, "select_fields")
+        sort = cls._compile_sort(plan["sort"], fields)
+        metric = cls._validate_metric(plan["metric"], fields)
+        cls._validate_filter_metric_roles(plan["filters"], metric)
+        limit = plan["limit"]
+
+        command = cls._compile_command(collection, filters, select_fields, sort, limit, metric)
+        return {
+            "query": json.dumps(command, ensure_ascii=False, separators=(",", ":")),
+            "query_parameters": parameters,
+            "explanation": "查询由已验证的 MongoDB 字段事实确定性编译生成",
+            "warnings": [],
+            "plan": plan,
+        }
+
+    @staticmethod
+    def _resource_for_collection(collection: str, resources: list[dict[str, Any]]) -> dict[str, Any]:
+        matches = [
+            resource for resource in resources
+            if isinstance(resource.get("query_names"), dict)
+            and resource["query_names"].get("mql") == collection
+        ]
+        if len(matches) != 1:
+            raise MQLPlanError(f"MQL collection is not uniquely verified: {collection}")
+        if matches[0].get("schema_coverage") not in {"complete", "sampled"}:
+            raise MQLClarificationRequired(MQLClarification(
+                "resource_schema_unknown",
+                f"集合 {collection} 缺少可验证的字段结构，请先扫描元数据后再生成查询",
+            ))
+        return matches[0]
+
+    @staticmethod
+    def _field_map(resource: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        result: dict[str, dict[str, Any]] = {}
+        for field in resource.get("fields") or []:
+            if not isinstance(field, dict):
+                continue
+            name = str(field.get("name") or "").strip()
+            if name:
+                result[name] = field
+        return result
+
+    @classmethod
+    def _compile_filters(
+        cls,
+        filters: list[Any],
+        fields: dict[str, dict[str, Any]],
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        clauses: list[dict[str, Any]] = []
+        parameters: list[dict[str, Any]] = []
+        parameter_names: set[str] = set()
+        for index, item in enumerate(filters):
+            if not isinstance(item, dict):
+                raise MQLPlanError(f"MQL filter[{index}] must be an object")
+            required = {"field", "operator", "value"}
+            if set(item) != required:
+                raise MQLPlanError(f"MQL filter[{index}] fields must be {', '.join(sorted(required))}")
+            field_name = str(item["field"] or "").strip()
+            field = cls._verified_field(field_name, fields)
+            operator = str(item["operator"] or "").strip()
+            if operator not in cls.FILTER_OPERATORS:
+                raise MQLPlanError(f"MQL filter operator is unsupported: {operator}")
+            cls._validate_filter_type(field_name, field, operator)
+            value = item["value"]
+            cls._validate_filter_value(operator, value)
+            parameter_name = cls._parameter_name(field_name, parameter_names)
+            parameter_type = cls._parameter_type(value)
+            if parameter_type is None:
+                raise MQLPlanError(f"MQL filter parameter value type is unsupported: {parameter_name}")
+            operand: Any = {"$param": parameter_name}
+            parameters.append({"name": parameter_name, "type": parameter_type, "default": value})
+            parameter_names.add(parameter_name)
+            clauses.append({field_name: cls._compile_filter_expression(operator, operand)})
+        if not clauses:
+            return {}, parameters
+        if len(clauses) == 1:
+            return clauses[0], parameters
+        return {"$and": clauses}, parameters
+
+    @classmethod
+    def _validate_filter_type(cls, name: str, field: dict[str, Any], operator: str) -> None:
+        field_type = str(field.get("type") or "unknown").lower()
+        if operator in {"contains", "regex"} and field_type != "string":
+            raise MQLPlanError(f"MQL operator {operator} requires a string field: {name}")
+        if operator in {"gt", "gte", "lt", "lte"} and field_type not in cls.NUMERIC_TYPES | {"date", "time", "timestamp"}:
+            raise MQLPlanError(f"MQL operator {operator} requires a numeric or temporal field: {name}")
+
+    @staticmethod
+    def _validate_filter_value(operator: str, value: Any) -> None:
+        if operator == "exists":
+            if not isinstance(value, bool):
+                raise MQLPlanError("MQL exists filter value must be boolean")
+            return
+        if operator == "in":
+            if not isinstance(value, list) or not value:
+                raise MQLPlanError("MQL in filter value must be a non-empty array")
+            return
+        if value is None or isinstance(value, (dict, list)):
+            raise MQLPlanError(f"MQL {operator} filter value must be a scalar")
+
+    @staticmethod
+    def _compile_filter_expression(operator: str, operand: Any) -> Any:
+        if operator == "eq":
+            return operand
+        mapping = {
+            "ne": "$ne", "gt": "$gt", "gte": "$gte", "lt": "$lt", "lte": "$lte",
+            "in": "$in", "exists": "$exists", "regex": "$regex", "contains": "$regex",
+        }
+        expression: dict[str, Any] = {mapping[operator]: operand}
+        if operator == "contains":
+            expression["$options"] = "i"
+        return expression
+
+    @staticmethod
+    def _parameter_type(value: Any) -> str | None:
+        if isinstance(value, bool):
+            return "boolean"
+        if isinstance(value, int):
+            return "integer"
+        if isinstance(value, float):
+            return "number"
+        if isinstance(value, str) and value:
+            return "string"
+        return None
+
+    @staticmethod
+    def _parameter_name(field_name: str, existing: set[str]) -> str:
+        base = re.sub(r"[^A-Za-z0-9_]+", "_", field_name.split(".")[-1]).strip("_").lower() or "value"
+        if base[0].isdigit():
+            base = "value_" + base
+        name = base
+        suffix = 2
+        while name in existing:
+            name = f"{base}_{suffix}"
+            suffix += 1
+        return name
+
+    @classmethod
+    def _validate_field_list(
+        cls,
+        values: list[Any],
+        fields: dict[str, dict[str, Any]],
+        label: str,
+    ) -> list[str]:
+        result: list[str] = []
+        for value in values:
+            name = str(value or "").strip()
+            cls._verified_field(name, fields)
+            if name not in result:
+                result.append(name)
+        return result
+
+    @classmethod
+    def _compile_sort(cls, values: list[Any], fields: dict[str, dict[str, Any]]) -> dict[str, int]:
+        result: dict[str, int] = {}
+        for index, item in enumerate(values):
+            if not isinstance(item, dict) or set(item) != {"field", "direction"}:
+                raise MQLPlanError(f"MQL sort[{index}] must contain field and direction")
+            name = str(item["field"] or "").strip()
+            cls._verified_field(name, fields)
+            direction = item["direction"]
+            if direction not in {-1, 1}:
+                raise MQLPlanError(f"MQL sort direction must be 1 or -1: {name}")
+            result[name] = direction
+        return result
+
+    @classmethod
+    def _validate_metric(cls, metric: dict[str, Any], fields: dict[str, dict[str, Any]]) -> dict[str, Any]:
+        required = {"operation", "field"}
+        if set(metric) != required:
+            raise MQLPlanError("MQL metric fields must be field, operation and result_key")
+        operation = str(metric["operation"] or "").strip()
+        field_name = str(metric["field"] or "").strip()
+        result_key = cls._metric_result_key(operation, field_name)
+        if operation not in cls.METRIC_OPERATIONS:
+            raise MQLPlanError(f"MQL metric operation is unsupported: {operation}")
+        if operation == "none":
+            if field_name or result_key:
+                raise MQLPlanError("MQL metric none must not declare field or result_key")
+            return {"operation": operation, "field": "", "result_key": ""}
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", result_key):
+            raise MQLPlanError("MQL metric result_key is invalid")
+        if operation != "count_documents":
+            field = cls._verified_field(field_name, fields)
+            field_type = str(field.get("type") or "unknown").lower()
+            if operation == "count_array_elements" and field_type != "array":
+                raise MQLPlanError(f"MQL count_array_elements requires an array field: {field_name}")
+            if operation in {"sum", "avg", "min", "max"} and field_type not in cls.NUMERIC_TYPES:
+                raise MQLPlanError(f"MQL metric {operation} requires a numeric field: {field_name}")
+        elif field_name:
+            raise MQLPlanError("MQL count_documents must not declare a field")
+        return {"operation": operation, "field": field_name, "result_key": result_key}
+
+    @staticmethod
+    def _metric_result_key(operation: str, field_name: str) -> str:
+        if operation == "none":
+            return ""
+        if operation == "count_documents":
+            return "document_count"
+        leaf = re.sub(r"[^A-Za-z0-9_]+", "_", field_name.split(".")[-1]).strip("_").lower() or "value"
+        return f"{leaf}_{operation}"
+
+    @staticmethod
+    def _validate_filter_metric_roles(filters: list[Any], metric: dict[str, Any]) -> None:
+        if metric["operation"] != "count_array_elements":
+            return
+        array_field = metric["field"]
+        for item in filters:
+            filter_field = str(item.get("field") or "")
+            if filter_field.startswith(array_field + "."):
+                raise MQLPlanError(
+                    "count_array_elements filters must identify the owning record, "
+                    f"not an element field under {array_field}: {filter_field}"
+                )
+
+    @staticmethod
+    def _verified_field(name: str, fields: dict[str, dict[str, Any]]) -> dict[str, Any]:
+        if not name or name not in fields:
+            raise MQLPlanError(f"MQL field is not verified: {name}")
+        return fields[name]
+
+    @classmethod
+    def _compile_command(
+        cls,
+        collection: str,
+        filters: dict[str, Any],
+        select_fields: list[str],
+        sort: dict[str, int],
+        limit: int | None,
+        metric: dict[str, Any],
+    ) -> dict[str, Any]:
+        operation = metric["operation"]
+        if operation == "none":
+            command: dict[str, Any] = {"find": collection, "filter": filters}
+            if select_fields:
+                command["projection"] = {field: 1 for field in select_fields}
+            if sort:
+                command["sort"] = sort
+            if limit is not None:
+                command["limit"] = limit
+            return command
+        if operation == "count_documents":
+            return {"count": collection, "query": filters}
+
+        pipeline: list[dict[str, Any]] = []
+        if filters:
+            pipeline.append({"$match": filters})
+        field_name = metric["field"]
+        result_key = metric["result_key"]
+        if operation == "count_array_elements":
+            pipeline.extend([
+                {"$project": {"_element_count": {"$size": {"$ifNull": [f"${field_name}", []]}}}},
+                {"$group": {"_id": None, result_key: {"$sum": "$_element_count"}}},
+                {"$project": {"_id": 0, result_key: 1}},
+            ])
+        elif operation == "distinct_count":
+            pipeline.extend([
+                {"$group": {"_id": f"${field_name}"}},
+                {"$count": result_key},
+            ])
+        else:
+            pipeline.extend([
+                {"$group": {"_id": None, result_key: {f"${operation}": f"${field_name}"}}},
+                {"$project": {"_id": 0, result_key: 1}},
+            ])
+        return {"aggregate": collection, "pipeline": pipeline}

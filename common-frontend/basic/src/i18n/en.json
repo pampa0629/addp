@@ -64,6 +64,15 @@
     "yes": "Yes",
     "no": "No",
     "unknown": "Unknown",
+    "engineStatus": {
+      "available": "Online",
+      "offline": "Offline",
+      "unknown": "Status unknown",
+      "checking": "Checking",
+      "disabled": "Disabled",
+      "deleting": "Deleting",
+      "missing": "Unavailable"
+    },
     "refresh": "Refresh",
     "copy": "Copy",
     "download": "Download",

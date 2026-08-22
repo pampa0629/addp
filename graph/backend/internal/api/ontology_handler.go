@@ -620,7 +620,7 @@ func (h *OntologyHandler) ImportFromModel(c *gin.Context) {
 
 // ListNeo4jEngines godoc
 // @Summary      列出 Neo4j 引擎 | List Neo4j engines
-// @Description  仅返回 active、online 且支持查询的 Neo4j 引擎 | Return only active, online Neo4j engines supporting queries
+// @Description  返回 active 且支持查询的 Neo4j 注册引擎及其连接状态；非 online 项由前端展示并禁选 | Return active registered Neo4j engines supporting queries with connection status; clients must show but disable non-online options
 // @Tags         本体管理 | Ontology Management
 // @Produce      json
 // @Security     BearerAuth

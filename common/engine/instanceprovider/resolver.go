@@ -9,6 +9,7 @@ import (
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
+	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/models"
 )
 
@@ -48,8 +49,8 @@ func Resolve(ctx context.Context, runtimeClient RuntimeDescriptorClient, engine 
 	if err != nil {
 		return nil, fmt.Errorf("get bound SuperMap workflow runtime %d: %w", boundID, err)
 	}
-	if descriptor == nil || descriptor.ID != boundID || descriptor.LifecycleState != models.EngineLifecycleActive {
-		return nil, fmt.Errorf("bound SuperMap workflow runtime %d is not active or visible", boundID)
+	if descriptor == nil || descriptor.ID != boundID || !engineselection.IsAvailableForComputeEntrypoint(descriptor.AsEngine(), "workflow") {
+		return nil, fmt.Errorf("bound SuperMap workflow runtime %d is not currently available", boundID)
 	}
 	runtimeEngine := descriptor.AsEngine()
 	workflowRuntime, err := dbbridge.WorkflowRuntimeProviderForEngine(runtimeEngine)

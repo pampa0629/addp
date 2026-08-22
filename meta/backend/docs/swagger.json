@@ -55,7 +55,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取当前租户的存储引擎列表及统计信息 | Get storage engine list with statistics for the current tenant",
+                "description": "获取当前租户 active 存储引擎选择项、连接状态及统计信息；非 online 项由前端展示并禁选 | Get active storage engine options with connection status and statistics for the current tenant; clients must show but disable non-online options",
                 "produces": [
                     "application/json"
                 ],
@@ -2455,6 +2455,9 @@
                 },
                 "default_expression": {
                     "type": "string"
+                },
+                "element_type": {
+                    "$ref": "#/definitions/datatype.FieldType"
                 },
                 "generated": {
                     "type": "boolean"

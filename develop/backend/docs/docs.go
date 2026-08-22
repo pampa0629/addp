@@ -177,13 +177,14 @@ const docTemplate = `{
         },
         "/engines": {
             "get": {
+                "description": "返回 active 且声明 compute.query 能力的注册引擎；非 online 项由前端展示并禁选 | Return active registered engines declaring compute.query capability; clients must show but disable non-online options",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Engines"
                 ],
-                "summary": "获取查询工作台引擎列表 | List engines available to the query workbench",
+                "summary": "获取查询工作台引擎选择项 | List engine options for the query workbench",
                 "responses": {
                     "200": {
                         "description": "引擎运行时描述列表 | Engine runtime descriptor list",
@@ -672,13 +673,14 @@ const docTemplate = `{
         },
         "/notebook-engines": {
             "get": {
+                "description": "返回 active 且支持 notebook 模式的注册 Script Engine；非 online 项由前端展示并禁选 | Return active registered Script Engines supporting notebook mode; clients must show but disable non-online options",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Notebook"
                 ],
-                "summary": "列出 Notebook 引擎 | List Notebook engines",
+                "summary": "列出 Notebook 引擎选择项 | List Notebook engine options",
                 "responses": {
                     "200": {
                         "description": "Notebook引擎列表 | Notebook engine list",
@@ -2110,6 +2112,7 @@ const docTemplate = `{
         },
         "/spark-runtimes": {
             "get": {
+                "description": "返回 active 的 Spark 注册引擎及其连接状态；非 online 项由前端展示并禁选 | Return active registered Spark engines with connection status; clients must show but disable non-online options",
                 "produces": [
                     "application/json"
                 ],
@@ -2890,6 +2893,7 @@ const docTemplate = `{
         },
         "/workflow-engines": {
             "get": {
+                "description": "返回 active 且声明 compute.workflow 能力的注册引擎；非 online 项由前端展示并禁选 | Return active registered engines declaring compute.workflow capability; clients must show but disable non-online options",
                 "produces": [
                     "application/json"
                 ],
@@ -3106,6 +3110,9 @@ const docTemplate = `{
                 },
                 "default_expression": {
                     "type": "string"
+                },
+                "element_type": {
+                    "$ref": "#/definitions/datatype.FieldType"
                 },
                 "generated": {
                     "type": "boolean"

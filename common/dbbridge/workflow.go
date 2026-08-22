@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
+	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/models"
 )
 
@@ -105,7 +106,7 @@ func ResolveDirectWorkflowOperator(ctx context.Context, engines []models.Engine,
 	failures := make([]string, 0)
 	workflowOnlyMatches := make([]string, 0)
 	for _, candidate := range candidates {
-		if candidate.LifecycleState != models.EngineLifecycleActive {
+		if !engineselection.IsAvailableForComputeEntrypoint(&candidate, "workflow") {
 			continue
 		}
 		if engineName != "" && candidate.Name != engineName {

@@ -558,7 +558,9 @@ func normalizePreviewStateViewState(db *gorm.DB) error {
 					COALESCE(normalized.basic_state->'tiles_3d', '{}'::jsonb) ||
 					COALESCE(normalized.basic_state->'gaussian_splat', '{}'::jsonb) ||
 					COALESCE(normalized.basic_state->'scene_3d', '{}'::jsonb)
-				), '{}'::jsonb)
+				), '{}'::jsonb),
+				'table',
+				NULLIF(normalized.basic_state->'table', '{}'::jsonb)
 			)),
 			'quick_view',
 			jsonb_strip_nulls(jsonb_build_object(
@@ -574,7 +576,9 @@ func normalizePreviewStateViewState(db *gorm.DB) error {
 					COALESCE(normalized.quick_state->'tiles_3d', '{}'::jsonb) ||
 					COALESCE(normalized.quick_state->'gaussian_splat', '{}'::jsonb) ||
 					COALESCE(normalized.quick_state->'scene_3d', '{}'::jsonb)
-				), '{}'::jsonb)
+				), '{}'::jsonb),
+				'table',
+				NULLIF(normalized.quick_state->'table', '{}'::jsonb)
 			))
 		)
 		FROM normalized
@@ -596,7 +600,7 @@ func normalizePreviewStateViewState(db *gorm.DB) error {
 	}
 	return db.Exec(`
 		COMMENT ON COLUMN manager.preview_state.view_state IS
-		'预览交互状态。顶层按显示模式分为 basic_preview 和 quick_view，模式内按渲染域保存 map 地图视口和 scene_3d 三维相机状态'
+		'预览交互状态。顶层按显示模式分为 basic_preview 和 quick_view，模式内按渲染域保存 map 地图视口、scene_3d 三维相机和 table 表格显示状态'
 	`).Error
 }
 

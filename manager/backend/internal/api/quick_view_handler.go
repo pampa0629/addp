@@ -93,6 +93,38 @@ type UpdatePreviewStateRequest struct {
 	ViewState commonModels.JSONMap `json:"view_state" binding:"required"`
 }
 
+// GetPreviewStateByLocator 获取 locator 的用户预览状态
+// @Summary 获取 locator 预览状态 | Get locator preview state
+// @Description 以 Resource Locator 为数据项身份返回用户预览模式与交互设置，包括地图视口、三维相机和表格可见字段。 | Return user preview mode and interaction settings by Resource Locator, including map viewport, 3D camera and visible table columns.
+// @Tags Manager
+// @Produce json
+// @Param locator query string true "资源定位符URI | Resource locator URI"
+// @Success 200 {object} models.PreviewState "预览状态 | Preview state"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.data_item.read"]
+// @Router /preview-state [get]
+// @Security BearerAuth
+func (h *QuickViewHandler) GetPreviewStateByLocator(c *gin.Context) {
+	locator := strings.TrimSpace(c.Query("locator"))
+	if locator == "" {
+		missingLocator(c)
+		return
+	}
+	source, err := h.quickViewSourceForLocator(c.Request.Context(), tenantIDFromContext(c), locator)
+	if err != nil {
+		quickViewLocatorError(c, err)
+		return
+	}
+	state, err := h.service.GetPreference(c.Request.Context(), source.Identity)
+	if err != nil {
+		quickViewLocatorError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, state)
+}
+
 type ExecuteQuickViewActionRequest struct {
 	Locator              string `json:"locator" binding:"required"`
 	Action               string `json:"action" binding:"required"`
@@ -298,7 +330,7 @@ func (h *QuickViewHandler) UpdatePreferredModeByLocator(c *gin.Context) {
 
 // UpdateViewStateByLocator 更新 locator 预览交互状态
 // @Summary 更新 locator 预览交互状态 | Update locator preview state
-// @Description 以 Resource Locator 为数据项身份更新预览交互状态。view_state 是统一 JSON 字段，顶层按 basic_preview / quick_view 区分显示模式，模式内按 map / scene_3d 区分渲染域。 | Update preview interaction state by Resource Locator. view_state is a unified JSON field grouped by display mode basic_preview / quick_view, then by render domain map / scene_3d.
+// @Description 以 Resource Locator 为数据项身份更新预览交互状态。view_state 是统一 JSON 字段，顶层按 basic_preview / quick_view 区分显示模式，模式内按 map / scene_3d / table 区分渲染域。 | Update preview interaction state by Resource Locator. view_state is a unified JSON field grouped by display mode basic_preview / quick_view, then by render domain map / scene_3d / table.
 // @Tags Manager
 // @Accept json
 // @Produce json
@@ -321,17 +353,12 @@ func (h *QuickViewHandler) UpdateViewStateByLocator(c *gin.Context) {
 		return
 	}
 	tenantID := tenantIDFromContext(c)
-	capability, err := h.quickViewCapabilityForLocator(c.Request.Context(), tenantID, locator)
+	source, err := h.quickViewSourceForLocator(c.Request.Context(), tenantID, locator)
 	if err != nil {
 		quickViewLocatorError(c, err)
 		return
 	}
-	identity := service.QuickViewIdentity{
-		TenantID:        capability.TenantID,
-		Locator:         capability.Locator,
-		ItemFingerprint: capability.ItemFingerprint,
-	}
-	if err := h.service.UpdateViewStateByIdentity(c.Request.Context(), identity, req.ViewState); err != nil {
+	if err := h.service.UpdateViewStateByIdentity(c.Request.Context(), source.Identity, req.ViewState); err != nil {
 		quickViewLocatorError(c, err)
 		return
 	}

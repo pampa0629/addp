@@ -30,6 +30,7 @@
               :disabled="switchingEngine || editorBusy"
               class="engine-select"
               @change="requestEngineChange"
+              @visible-change="handleWorkflowEngineDropdownVisible"
             >
               <el-option
                 v-if="workflowEngineUnavailable"
@@ -40,12 +41,16 @@
               <el-option
                 v-for="engine in workflowEngines"
                 :key="engine.id"
-                :label="engine.name"
+                :label="formatEngineOptionLabel(engine)"
                 :value="engine.id"
+                :disabled="!isEngineSelectable(engine)"
               >
                 <div class="engine-option">
                   <span>{{ engine.name }}</span>
                   <el-tag size="small" type="info">{{ getEngineTag(engine) }}</el-tag>
+                  <el-tag size="small" :type="isEngineSelectable(engine) ? 'success' : 'danger'">
+                    {{ engineStatusLabel(engine) }}
+                  </el-tag>
                 </div>
               </el-option>
             </el-select>
@@ -98,14 +103,16 @@
               <el-select
                 v-model="sparkRuntimeId"
                 :placeholder="t('develop.workflow.selectSparkCluster')"
-                :disabled="editorBusy || sparkRuntimes.length === 0"
+                :disabled="editorBusy || !sparkRuntimes.some(isEngineSelectable)"
                 class="engine-select"
+                @visible-change="handleSparkRuntimeDropdownVisible"
               >
                 <el-option
                   v-for="runtime in sparkRuntimes"
                   :key="runtime.id"
                   :label="formatRuntimeLabel(runtime)"
                   :value="runtime.id"
+                  :disabled="!isEngineSelectable(runtime)"
                 />
               </el-select>
             </template>
@@ -404,19 +411,20 @@
               v-model="rebindTargetEngineId"
               class="storage-engine-select"
               :placeholder="t('develop.workflow.selectTargetStorageEngine')"
-              :disabled="compatibleStorageEngines.length === 0"
+              :disabled="selectableCompatibleStorageEngines.length === 0"
             >
               <el-option
                 v-for="engine in compatibleStorageEngines"
                 :key="engine.id"
                 :label="formatStorageEngineLabel(engine)"
                 :value="engine.id"
+                :disabled="!isEngineSelectable(engine)"
               />
             </el-select>
           </el-form-item>
         </el-form>
         <el-alert
-          v-if="selectedStorageBinding && compatibleStorageEngines.length === 0"
+          v-if="selectedStorageBinding && selectableCompatibleStorageEngines.length === 0"
           :title="t('develop.workflow.noCompatibleStorageEngine')"
           type="error"
           :closable="false"
@@ -430,7 +438,7 @@
         <el-button
           type="primary"
           :loading="rebindingStorageEngine"
-          :disabled="!rebindTargetEngineId || compatibleStorageEngines.length === 0"
+          :disabled="!rebindTargetEngineId || selectableCompatibleStorageEngines.length === 0"
           @click="confirmStorageEngineRebind"
         >
           {{ t('develop.workflow.confirmRebindStorageEngine') }}
@@ -693,6 +701,8 @@ import {
   defaultResourceCandidatesByRole,
   groupResourceCandidates,
   hasSelectedResourceForEveryRole,
+  engineSelectionState,
+  isEngineSelectable,
   resourceCandidateKey
 } from '@addp/common-frontend'
 import { getResourceBinding } from '@/utils/workflowResourceBindings'
@@ -807,10 +817,10 @@ const resourceSelectionComplete = computed(() => hasSelectedResourceForEveryRole
 const hasValidWorkflow = computed(() => isStandardWorkflowDefinition(workflowData.value))
 const isDirty = computed(() => editorStateSignature() !== savedStateSignature.value)
 const workflowEngineUnavailable = computed(() => Boolean(
-  workflowEngineId.value && !selectedEngine.value
+  workflowEngineId.value && !isEngineSelectable(selectedEngine.value)
 ))
 const pendingWorkflowEngine = computed(() => (
-  workflowEngines.value.find(engine => engine.id === pendingWorkflowEngineId.value) || null
+  workflowEngines.value.find(engine => engine.id === pendingWorkflowEngineId.value && isEngineSelectable(engine)) || null
 ))
 const unavailableStorageBindings = computed(() => (
   storageBindings.value.filter(binding => !binding.available)
@@ -822,6 +832,9 @@ const compatibleStorageEngines = computed(() => {
   const compatibleIds = new Set(selectedStorageBinding.value?.compatible_engine_ids || [])
   return storageCandidateEngines.value.filter(engine => compatibleIds.has(engine.id))
 })
+const selectableCompatibleStorageEngines = computed(() => (
+  compatibleStorageEngines.value.filter(isEngineSelectable)
+))
 const storageBindingsExecutable = computed(() => Boolean(
   !currentTaskId.value || (
     !storageBindingsLoading.value &&
@@ -1004,11 +1017,12 @@ function resetStorageBindingState() {
   rebindTargetEngineId.value = null
 }
 
-function openStorageBindingDialog(sourceEngineId = null) {
+async function openStorageBindingDialog(sourceEngineId = null) {
   if (isDirty.value) {
     ElMessage.warning(t('develop.workflow.saveBeforeStorageRebind'))
     return
   }
+  if (currentTaskId.value) await loadStorageEngineBindings(currentTaskId.value)
   const binding = unavailableStorageBindings.value.find(item => item.engine_id === sourceEngineId) ||
     unavailableStorageBindings.value[0]
   if (!binding) return
@@ -1064,17 +1078,24 @@ function formatStorageBindingLabel(binding) {
 }
 
 function formatStorageEngineLabel(engine) {
-  return `${engine.name} (${engine.engine_type || '-'})`
+  return `${engine.name} (${engine.engine_type || '-'}) · ${engineStatusLabel(engine)}`
 }
 
 async function loadWorkflowEngines() {
   try {
     const response = await getWorkflowEngines()
     workflowEngines.value = response.data || response
-    if (workflowEngines.value.length === 0) ElMessage.warning(t('develop.workflow.noEngineAvailable'))
+    if (workflowEngineId.value) {
+      selectedEngine.value = workflowEngines.value.find(engine => engine.id === workflowEngineId.value) || null
+    }
+    if (!workflowEngines.value.some(isEngineSelectable)) ElMessage.warning(t('develop.workflow.noEngineAvailable'))
   } catch (error) {
     ElMessage.error(t('develop.workflow.loadEngineFailed'))
   }
+}
+
+async function handleWorkflowEngineDropdownVisible(visible) {
+  if (visible) await loadWorkflowEngines()
 }
 
 async function loadResourceEngines() {
@@ -1089,7 +1110,7 @@ async function loadOperators(engineId) {
   operatorsLoading.value = true
   operatorLoadError.value = ''
   operators.value = []
-  if (!workflowEngines.value.some(engine => engine.id === engineId)) {
+  if (!workflowEngines.value.some(engine => engine.id === engineId && isEngineSelectable(engine))) {
     operatorsLoading.value = false
     operatorLoadError.value = t('develop.workflow.engineUnavailableHint')
     return false
@@ -1119,10 +1140,15 @@ async function loadSparkRuntimes() {
   }
 }
 
+async function handleSparkRuntimeDropdownVisible(visible) {
+  if (visible) await loadSparkRuntimes()
+}
+
 async function selectDefaultEngine() {
-  if (!workflowEngines.value.length) return
-  workflowEngineId.value = workflowEngines.value[0].id
-  selectedEngine.value = workflowEngines.value[0]
+  const engine = workflowEngines.value.find(isEngineSelectable)
+  if (!engine) return
+  workflowEngineId.value = engine.id
+  selectedEngine.value = engine
   await loadOperators(workflowEngineId.value)
   if (needsSparkRuntime()) await ensureSparkRuntime()
 }
@@ -1223,7 +1249,7 @@ async function setTaskRouteQuery(taskId) {
 
 async function ensureSparkRuntime() {
   await loadSparkRuntimes()
-  if (!sparkRuntimeId.value && sparkRuntimes.value.length) sparkRuntimeId.value = sparkRuntimes.value[0].id
+  if (!sparkRuntimeId.value) sparkRuntimeId.value = sparkRuntimes.value.find(isEngineSelectable)?.id || null
 }
 
 function needsSparkRuntime() {
@@ -1234,10 +1260,19 @@ function getEngineTag(engine) {
   return engine?.engine_type || '-'
 }
 
+function engineStatusLabel(engine) {
+  return t(`common.engineStatus.${engineSelectionState(engine)}`)
+}
+
+function formatEngineOptionLabel(engine) {
+  return `${engine.name} · ${engineStatusLabel(engine)}`
+}
+
 function formatRuntimeLabel(runtime) {
   const connection = runtime.connection_info || {}
   const location = connection.spark_master || [connection.host, connection.port].filter(Boolean).join(':')
-  return location ? `${runtime.name} (${location})` : runtime.name
+  const label = location ? `${runtime.name} (${location})` : runtime.name
+  return `${label} · ${engineStatusLabel(runtime)}`
 }
 
 async function handleSave() {

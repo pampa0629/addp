@@ -1473,6 +1473,7 @@
           "name": "Name",
           "fieldName": "Field",
           "fieldType": "Field Type",
+          "elementType": "Element Type",
           "childName": "Child",
           "childKind": "Child Kind",
           "childDataType": "Data Type",

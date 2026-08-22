@@ -2,11 +2,53 @@ package mongodb
 
 import (
 	"fmt"
+	"os"
 	"testing"
 
+	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
+
+func TestIntegrationSampleDynamicSchemaPersistsPersonsNestedFacts(t *testing.T) {
+	if os.Getenv("ADDP_MONGODB_SCHEMA_E2E") != "1" {
+		t.Skip("set ADDP_MONGODB_SCHEMA_E2E=1 to run against Business MongoDB")
+	}
+
+	provider := &MongoDBPlugin{}
+	facts, err := provider.SampleDynamicSchema(t.Context(), plugin.ConnectionInfo{
+		"host": "localhost", "port": 27017, "user": "admin", "password": "admin_password", "auth_source": "admin",
+	}, plugin.CatalogPath{
+		Version:  "v1",
+		EngineID: 11,
+		Segments: []plugin.CatalogSegment{
+			{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: "Outdoor"},
+			{Term: plugin.CatalogTermCollection, Kind: plugin.CatalogKindCollection, Name: "Persons"},
+		},
+	}, plugin.CatalogFactsOptions{IncludeStatistics: true, IncludeIndexes: true, SampleSize: 100})
+	if err != nil {
+		t.Fatalf("SampleDynamicSchema() error = %v", err)
+	}
+	table := plugin.CatalogFactsTableInfo(facts)
+	if table == nil {
+		t.Fatal("SampleDynamicSchema() returned no table facts")
+	}
+	assertSampledField := func(name string, fieldType datatype.FieldType) *datatype.FieldInfo {
+		t.Helper()
+		field := table.GetField(name)
+		if field == nil || field.Type != fieldType {
+			t.Fatalf("field %q = %#v, want type %q", name, field, fieldType)
+		}
+		return field
+	}
+	assertSampledField("userInfo.nickName", datatype.FieldTypeString)
+	arrayField := assertSampledField("entriedOutdoors", datatype.FieldTypeArray)
+	if arrayField.ElementType != datatype.FieldTypeJSON {
+		t.Fatalf("entriedOutdoors element type = %q, want json", arrayField.ElementType)
+	}
+	assertSampledField("entriedOutdoors.title", datatype.FieldTypeString)
+}
 
 func TestCollectMongoFieldStatsIncludesNestedObjectAndArrayPaths(t *testing.T) {
 	stats := make(map[string]*mongoFieldStat)
@@ -24,6 +66,9 @@ func TestCollectMongoFieldStatsIncludesNestedObjectAndArrayPaths(t *testing.T) {
 	assertMongoFieldPath(t, stats, "title", "object", []string{"title"})
 	assertMongoFieldPath(t, stats, "title.whole", "string", []string{"title", "whole"})
 	assertMongoFieldPath(t, stats, "members", "array", []string{"members"})
+	if stats["members"].ElementType != "object" {
+		t.Fatalf("members element type = %q, want object", stats["members"].ElementType)
+	}
 	assertMongoFieldPath(t, stats, "members.userInfo.nickName", "string", []string{"members", "userInfo", "nickName"})
 	assertMongoFieldPath(t, stats, "members.entryInfo.status", "string", []string{"members", "entryInfo", "status"})
 }

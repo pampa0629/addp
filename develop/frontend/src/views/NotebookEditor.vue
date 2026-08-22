@@ -181,12 +181,12 @@
           <el-input v-model="createForm.name" :placeholder="t('develop.notebook.namePlaceholder')" autofocus />
         </el-form-item>
         <el-form-item :label="t('develop.notebook.engine')" required>
-          <el-select v-model="createForm.engine_id" :placeholder="t('develop.notebook.selectEngine')" :loading="enginesLoading" class="full-width" @change="handleCreateEngineChange">
-            <el-option v-for="engine in notebookEngines" :key="engine.id" :label="engine.name" :value="engine.id" />
+          <el-select v-model="createForm.engine_id" :placeholder="t('develop.notebook.selectEngine')" :loading="enginesLoading" class="full-width" @change="handleCreateEngineChange" @visible-change="handleNotebookEngineDropdownVisible">
+            <el-option v-for="engine in notebookEngines" :key="engine.id" :label="formatNotebookEngineLabel(engine)" :value="engine.id" :disabled="!isEngineSelectable(engine)" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('develop.notebook.kernel')" required>
-          <el-select v-model="createForm.kernel" :placeholder="t('develop.notebook.selectKernel')" :loading="createKernelsLoading" :disabled="!createForm.engine_id" class="full-width">
+          <el-select v-model="createForm.kernel" :placeholder="t('develop.notebook.selectKernel')" :loading="createKernelsLoading" :disabled="!createEngineSelectable" class="full-width">
             <el-option v-for="kernel in createKernels" :key="kernel.name" :label="kernel.display_name || kernel.name" :value="kernel.name" />
           </el-select>
         </el-form-item>
@@ -196,7 +196,7 @@
       </el-form>
       <template #footer>
         <el-button @click="createDialogVisible = false">{{ t('develop.notebook.cancel') }}</el-button>
-        <el-button type="primary" :loading="creating" :disabled="notebookEngines.length === 0" @click="confirmCreate">{{ t('develop.notebook.confirmCreate') }}</el-button>
+        <el-button type="primary" :loading="creating" :disabled="!createEngineSelectable" @click="confirmCreate">{{ t('develop.notebook.confirmCreate') }}</el-button>
       </template>
     </el-dialog>
 
@@ -216,15 +216,17 @@
             :loading="enginesLoading"
             style="width: 100%"
             @change="handleUploadEngineChange"
+            @visible-change="handleNotebookEngineDropdownVisible"
           >
             <el-option
               v-for="engine in notebookEngines"
               :key="engine.id"
-              :label="engine.name"
+              :label="formatNotebookEngineLabel(engine)"
               :value="engine.id"
+              :disabled="!isEngineSelectable(engine)"
             />
           </el-select>
-          <div v-if="!enginesLoading && notebookEngines.length === 0" class="form-status error">
+          <div v-if="!enginesLoading && selectableNotebookEngines.length === 0" class="form-status error">
             {{ t('develop.notebook.noEngineAvailable') }}
           </div>
         </el-form-item>
@@ -234,7 +236,7 @@
             v-model="uploadForm.kernel"
             :placeholder="t('develop.notebook.selectKernel')"
             :loading="kernelsLoading"
-            :disabled="!uploadForm.engine_id"
+            :disabled="!uploadEngineSelectable"
             style="width: 100%"
           >
             <el-option
@@ -285,7 +287,7 @@
         <el-button @click="uploadDialogVisible = false">{{ t('develop.notebook.cancel') }}</el-button>
         <el-button
           type="primary"
-          :disabled="notebookEngines.length === 0"
+          :disabled="!uploadEngineSelectable"
           :loading="uploading"
           @click="confirmUpload"
         >{{ t('develop.notebook.confirmUpload') }}</el-button>
@@ -316,15 +318,17 @@
             :disabled="rebinding"
             style="width: 100%"
             @change="handleBindingEngineChange"
+            @visible-change="handleNotebookEngineDropdownVisible"
           >
             <el-option
               v-for="engine in notebookEngines"
               :key="engine.id"
-              :label="engine.name"
+              :label="formatNotebookEngineLabel(engine)"
               :value="engine.id"
+              :disabled="!isEngineSelectable(engine)"
             />
           </el-select>
-          <div v-if="!enginesLoading && notebookEngines.length === 0" class="form-status error">
+          <div v-if="!enginesLoading && selectableNotebookEngines.length === 0" class="form-status error">
             {{ t('develop.notebook.noEngineAvailable') }}
           </div>
         </el-form-item>
@@ -334,7 +338,7 @@
             v-model="bindingForm.kernel"
             :placeholder="t('develop.notebook.selectKernel')"
             :loading="bindingKernelsLoading"
-            :disabled="!bindingForm.engine_id || rebinding"
+            :disabled="!bindingEngineSelectable || rebinding"
             style="width: 100%"
           >
             <el-option
@@ -367,7 +371,7 @@
         <el-button
           type="primary"
           :loading="rebinding"
-          :disabled="!bindingForm.engine_id || !bindingForm.kernel || bindingKernelsLoading"
+          :disabled="!bindingEngineSelectable || !bindingForm.kernel || bindingKernelsLoading"
           @click="confirmRuntimeBinding"
         >
           {{ t('develop.notebook.confirmChangeEngine') }}
@@ -530,7 +534,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Close, Upload, Refresh, Search, EditPen, VideoPlay, Clock, More, Download, Delete, Switch, Plus, MagicStick, InfoFilled } from '@element-plus/icons-vue'
 import { notebookAPI } from '@/api/notebook'
 import { deleteDevTask, executeDevTask, getDevTask } from '@/api/devTask'
-import { openMonitorExecution } from '@addp/common-frontend'
+import { engineSelectionState, isEngineSelectable, openMonitorExecution } from '@addp/common-frontend'
 import { useRoute, useRouter } from 'vue-router'
 import {
   buildDevelopTaskEditorLocation,
@@ -556,6 +560,7 @@ const pageSize = ref(20)
 const total = ref(0)
 const searchKeyword = ref('')
 const notebookEngines = ref([])
+const selectableNotebookEngines = computed(() => notebookEngines.value.filter(isEngineSelectable))
 const enginesLoading = ref(false)
 const kernels = ref([])
 const kernelsLoading = ref(false)
@@ -602,6 +607,15 @@ const bindingForm = ref({
   engine_id: null,
   kernel: ''
 })
+const createEngineSelectable = computed(() => isEngineSelectable(
+  notebookEngines.value.find(engine => engine.id === createForm.value.engine_id)
+))
+const uploadEngineSelectable = computed(() => isEngineSelectable(
+  notebookEngines.value.find(engine => engine.id === uploadForm.value.engine_id)
+))
+const bindingEngineSelectable = computed(() => isEngineSelectable(
+  notebookEngines.value.find(engine => engine.id === bindingForm.value.engine_id)
+))
 let bindingKernelRequestSequence = 0
 
 // 执行对话框
@@ -625,6 +639,14 @@ const loadNotebookEngines = async () => {
     enginesLoading.value = false
   }
 }
+
+const handleNotebookEngineDropdownVisible = visible => {
+  if (visible) loadNotebookEngines()
+}
+
+const formatNotebookEngineLabel = engine => (
+  `${engine.name} · ${t(`common.engineStatus.${engineSelectionState(engine)}`)}`
+)
 
 const loadKernels = async (engineId) => {
   kernels.value = []
@@ -670,7 +692,8 @@ const showCreateDialog = async (options = {}) => {
     await navigateDevelopTaskEditor(router, 'script')
     return
   }
-  createForm.value = { name: '', description: '', engine_id: notebookEngines.value[0]?.id || null, kernel: '' }
+  await loadNotebookEngines()
+  createForm.value = { name: '', description: '', engine_id: selectableNotebookEngines.value[0]?.id || null, kernel: '' }
   createDialogVisible.value = true
   if (createForm.value.engine_id) await loadCreateKernels(createForm.value.engine_id)
 }
@@ -683,7 +706,7 @@ const handleCreateDialogClosed = async () => {
 
 const confirmCreate = async () => {
   if (!createForm.value.name.trim()) return ElMessage.warning(t('develop.notebook.nameRequired'))
-  if (!createForm.value.engine_id) return ElMessage.warning(t('develop.notebook.engineRequired'))
+  if (!createEngineSelectable.value) return ElMessage.warning(t('develop.notebook.engineRequired'))
   if (!createForm.value.kernel) return ElMessage.warning(t('develop.notebook.kernelRequired'))
   creating.value = true
   try {
@@ -793,11 +816,12 @@ const selectNotebookByID = async (id) => {
 
 // 显示上传对话框
 const showUploadDialog = async (options = {}) => {
+  await loadNotebookEngines()
   uploadForm.value = {
     file: null,
     name: '',
     description: '',
-    engine_id: notebookEngines.value[0]?.id || null,
+    engine_id: selectableNotebookEngines.value[0]?.id || null,
     kernel: ''
   }
   kernels.value = []
@@ -841,6 +865,11 @@ const confirmUpload = async () => {
     return
   }
 
+  if (!uploadEngineSelectable.value) {
+    ElMessage.warning(t('develop.notebook.engineRequired'))
+    return
+  }
+
   uploading.value = true
   try {
     const response = await notebookAPI.uploadNotebook(uploadForm.value.file, {
@@ -874,10 +903,8 @@ const showBindingDialog = async (notebook) => {
     kernel: ''
   }
   bindingKernels.value = []
+  await loadNotebookEngines()
   bindingDialogVisible.value = true
-  if (notebookEngines.value.length === 0 && !enginesLoading.value) {
-    await loadNotebookEngines()
-  }
 }
 
 const resetBindingDialog = () => {
@@ -902,7 +929,7 @@ const replaceNotebookState = (updated) => {
 }
 
 const confirmRuntimeBinding = async () => {
-  if (!bindingNotebook.value || !bindingForm.value.engine_id) {
+  if (!bindingNotebook.value || !bindingEngineSelectable.value) {
     ElMessage.warning(t('develop.notebook.engineRequired'))
     return
   }

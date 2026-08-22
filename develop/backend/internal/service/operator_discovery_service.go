@@ -70,11 +70,8 @@ func (s *OperatorDiscoveryService) getOperatorsByWorkflowEngineID(
 	if engine == nil {
 		return nil, fmt.Errorf("工作流引擎不存在: %d", workflowEngineID)
 	}
-	if !engine.IsUsable() {
-		return nil, fmt.Errorf("工作流引擎未启用: %d", workflowEngineID)
-	}
-	if !engineselection.SupportsComputeEntrypoint(engine, "workflow") {
-		return nil, fmt.Errorf("引擎 %d 不具备 compute.workflow 能力", workflowEngineID)
+	if !engineselection.IsAvailableForComputeEntrypoint(engine, "workflow") {
+		return nil, fmt.Errorf("工作流引擎当前不可用或不具备 compute.workflow 能力: %d", workflowEngineID)
 	}
 
 	operators, err := s.listWorkflowOperators(ctx, engine)

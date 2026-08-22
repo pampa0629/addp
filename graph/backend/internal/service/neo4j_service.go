@@ -10,6 +10,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
+	engineselection "github.com/addp/common/engine/selection"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/repository"
@@ -56,6 +57,9 @@ func (s *Neo4jService) getGraphAndEngine(graphID, tenantID uint) (*models.Knowle
 	engine, err := s.systemClient.WithTenantID(tenantID).GetEngine(context.Background(), kg.EngineID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get engine (id=%d): %w", kg.EngineID, err)
+	}
+	if !engineselection.IsAvailableForComputeEntrypoint(engine, "query") {
+		return nil, nil, fmt.Errorf("engine (id=%d) is not currently available", kg.EngineID)
 	}
 	// 构建以图谱指定 database 为目标的 engine 副本
 	engineCopy := *engine

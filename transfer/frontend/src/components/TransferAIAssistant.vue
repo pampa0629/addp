@@ -59,8 +59,8 @@
           <el-alert :title="t('transfer.taskAssistant.targetConfirmTitle')" :description="t('transfer.taskAssistant.targetConfirmDescription')" type="info" :closable="false" show-icon />
           <el-form label-position="top" class="transfer-ai-target-form">
             <el-form-item :label="t('transfer.taskAssistant.targetEngineLabel')" required>
-              <el-select v-model="targetEngineId" filterable class="full-width" :disabled="busy" @change="handleTargetEngineChange">
-                <el-option v-for="engine in targetEngines" :key="engine.id" :label="engineLabel(engine)" :value="Number(engine.id)" />
+              <el-select v-model="targetEngineId" filterable class="full-width" :disabled="busy" @change="handleTargetEngineChange" @visible-change="handleTargetEngineDropdownVisible">
+                <el-option v-for="engine in targetEngines" :key="engine.id" :label="engineLabel(engine)" :value="Number(engine.id)" :disabled="!isEngineSelectable(engine)" />
               </el-select>
             </el-form-item>
             <el-form-item :label="t('transfer.taskAssistant.targetParentLabel')" required>
@@ -235,7 +235,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Close, MagicStick } from '@element-plus/icons-vue'
-import { defaultResourceCandidatesByRole, normalizeFieldType, ResourceTreePicker } from '@addp/common-frontend'
+import { defaultResourceCandidatesByRole, engineSelectionState, isEngineSelectable, normalizeFieldType, ResourceTreePicker } from '@addp/common-frontend'
 import { transferCopilotAPI } from '@/api/copilot'
 import { taskAPI, fieldDefinitionRecommendationAPI } from '@/api/tasks'
 import { systemEnginesAPI } from '@/api/systemEngines'
@@ -325,7 +325,7 @@ const selectedModeConfigValid = computed(() => {
 const canAdvance = computed(() => {
   if (stage.value === 'request') return !!prompt.value.trim()
   if (stage.value === 'source') return !!selectedSource.value
-  if (stage.value === 'target') return !!targetEngineId.value && !!targetParentLocator.value && !!targetTable.value.trim() && syncModeAvailable.value && (syncMode.value !== 'incremental' || wizardState.watermarkIncrementalValid.value)
+  if (stage.value === 'target') return isEngineSelectable(selectedTargetEngine.value) && !!targetParentLocator.value && !!targetTable.value.trim() && syncModeAvailable.value && (syncMode.value !== 'incremental' || wizardState.watermarkIncrementalValid.value)
   if (stage.value === 'fields') return (wizardState.fieldMappings.value.length > 0 || wizardState.sourceFields.value.length === 0) && decimalIssues.value.length === 0 && selectedModeConfigValid.value
   return !!wizardState.taskName.value.trim() && decimalIssues.value.length === 0 && selectedModeConfigValid.value
 })
@@ -425,7 +425,8 @@ function handleTargetParentSelect(selection) {
   applyTargetDraft()
   applySyncMode()
 }
-function engineLabel(engine) { return `${engine.name || engine.display_name || engine.engine_type} (${engine.engine_type || '-'})` }
+function handleTargetEngineDropdownVisible(visible) { if (visible) loadEngines() }
+function engineLabel(engine) { return `${engine.name || engine.display_name || engine.engine_type} (${engine.engine_type || '-'}) · ${t(`common.engineStatus.${engineSelectionState(engine)}`)}` }
 function candidateDisplayPath(candidate) { return candidate?.full_name || (Array.isArray(candidate?.ancestors) ? [...candidate.ancestors.map(item => item?.label), candidate?.name].filter(Boolean).join(' / ') : candidate?.name || '') }
 function candidateFacts(candidate) { return [candidate?.data_type, candidate?.geometry_type, candidate?.crs].filter(Boolean).join(' · ') }
 function decimalScaleMax(row) { const p = Number(row?.precision); return Number.isInteger(p) && p > 0 ? Math.min(30, p) : 30 }

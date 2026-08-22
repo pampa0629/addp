@@ -43,7 +43,7 @@ func NewEngineService(db *gorm.DB, systemClient *commonClient.SystemServiceClien
 	return service
 }
 
-// GetEnginesByTenant returns active storage engines visible to the exact
+// GetEnginesByTenant returns active, storage-capable selection options visible to the exact
 // Tenant Context embedded in addp-meta's Service Access Token.
 func (s *EngineService) GetEnginesByTenant(tenantID uint) ([]*commonModels.Engine, error) {
 	if tenantID == 0 {
@@ -60,7 +60,7 @@ func (s *EngineService) GetEnginesByTenant(tenantID uint) ([]*commonModels.Engin
 	for i := range resources {
 		resource := resources[i]
 		if resource.TenantID == nil || *resource.TenantID != tenantID ||
-			!engineselection.IsAvailableStorageEngine(&resource) {
+			!engineselection.IsStorageSelectionOption(&resource) {
 			continue
 		}
 		resourceCopy := resource
@@ -70,7 +70,7 @@ func (s *EngineService) GetEnginesByTenant(tenantID uint) ([]*commonModels.Engin
 	return engines, nil
 }
 
-// GetWorkflowRuntimesByTenant returns active workflow runtimes visible to the
+// GetWorkflowRuntimesByTenant returns active workflow runtime selection options visible to the
 // tenant through System's non-secret Runtime Descriptor control plane.
 func (s *EngineService) GetWorkflowRuntimesByTenant(ctx context.Context, tenantID uint) ([]*commonModels.Engine, error) {
 	if tenantID == 0 {
@@ -86,7 +86,7 @@ func (s *EngineService) GetWorkflowRuntimesByTenant(ctx context.Context, tenantI
 	runtimes := make([]*commonModels.Engine, 0, len(descriptors))
 	for index := range descriptors {
 		runtime := descriptors[index].AsEngine()
-		if !engineselection.IsAvailableForComputeEntrypoint(runtime, "workflow") {
+		if !engineselection.IsSelectionOptionForComputeEntrypoint(runtime, "workflow") {
 			continue
 		}
 		runtimes = append(runtimes, runtime)

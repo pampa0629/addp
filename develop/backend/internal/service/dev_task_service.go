@@ -256,7 +256,8 @@ func (s *DevTaskService) ListWorkflowStorageEngineBindings(
 		}
 		if descriptor, ok := descriptorsByID[binding.engineID]; ok {
 			descriptorCopy := descriptor
-			entry.Available = true
+			entry.Available = descriptor.LifecycleState == commonModels.EngineLifecycleActive &&
+				descriptor.ConnectionStatus == commonModels.EngineConnectionOnline
 			entry.Engine = &descriptorCopy
 		}
 		for index := range candidates {
@@ -330,6 +331,9 @@ func (s *DevTaskService) RebindWorkflowStorageEngine(
 		}
 	}
 	if target == nil {
+		return nil, ErrStorageEngineUnavailable
+	}
+	if !engineselection.IsAvailableStorageEngine(target.AsEngine()) {
 		return nil, ErrStorageEngineUnavailable
 	}
 	if !storageEngineSupportsResourceTypes(target, sourceBinding.resourceTypes) {
@@ -434,7 +438,7 @@ func (s *DevTaskService) listStorageEngineDescriptors(ctx context.Context, tenan
 	candidates := make([]commonModels.EngineRuntimeDescriptor, 0, len(descriptors))
 	for index := range descriptors {
 		descriptor := &descriptors[index]
-		if !engineselection.IsAvailableStorageEngine(descriptor.AsEngine()) {
+		if !engineselection.IsStorageSelectionOption(descriptor.AsEngine()) {
 			continue
 		}
 		candidates = append(candidates, *descriptor)
@@ -449,7 +453,7 @@ func (s *DevTaskService) listStorageEngineDescriptors(ctx context.Context, tenan
 }
 
 func storageEngineSupportsResourceTypes(engine *commonModels.EngineRuntimeDescriptor, resourceTypes []string) bool {
-	if engine == nil || !engineselection.IsAvailableStorageEngine(engine.AsEngine()) {
+	if engine == nil || !engineselection.IsStorageSelectionOption(engine.AsEngine()) {
 		return false
 	}
 	capabilities, err := engineselection.ParseCapabilities(engine.Capabilities)

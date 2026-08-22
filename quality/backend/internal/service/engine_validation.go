@@ -7,7 +7,7 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
-	commonModels "github.com/addp/common/models"
+	engineselection "github.com/addp/common/engine/selection"
 )
 
 func requirePostgreSQLEngine(ctx context.Context, client *commonClient.SystemServiceClient, tenantID, engineID int64) error {
@@ -21,8 +21,8 @@ func requirePostgreSQLEngine(ctx context.Context, client *commonClient.SystemSer
 	if !strings.EqualFold(engine.EngineType, "postgresql") {
 		return fmt.Errorf("%w: quality v1 only supports PostgreSQL engines", commonAPI.ErrBadRequest)
 	}
-	if engine.LifecycleState != commonModels.EngineLifecycleActive {
-		return fmt.Errorf("%w: target PostgreSQL engine is not active", commonAPI.ErrBadRequest)
+	if !engineselection.IsAvailable(engine) {
+		return fmt.Errorf("%w: target PostgreSQL engine is not currently available", commonAPI.ErrBadRequest)
 	}
 	return nil
 }

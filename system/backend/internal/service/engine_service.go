@@ -1371,6 +1371,10 @@ func (s *EngineService) checkDuplicateResource(req *models.EngineCreateRequest, 
 // 返回true表示在线，false表示离线
 // 用于启动时的健康检查和用户手动测试连接
 func (s *EngineService) CheckAndUpdateConnectionStatus(engineID uint) bool {
+	return s.checkAndUpdateConnectionStatus(engineID, true)
+}
+
+func (s *EngineService) checkAndUpdateConnectionStatus(engineID uint, forceCapabilityRefresh bool) bool {
 	fmt.Printf("[ConnectionCheck] 🔍 开始检查引擎连接状态: ID=%d\n", engineID)
 
 	// 1. 获取资源
@@ -1418,10 +1422,10 @@ func (s *EngineService) CheckAndUpdateConnectionStatus(engineID uint) bool {
 	checkMessage := "连接正常"
 	// 周期探测只在离线/未知 -> 在线的边沿刷新能力，避免每轮健康检查
 	// 都对同一引擎重复执行较重的能力探测。
-	if engine.ConnectionStatus != models.EngineConnectionOnline {
+	if forceCapabilityRefresh || engine.ConnectionStatus != models.EngineConnectionOnline {
 		if err := s.refreshEngineCapabilities(engineID); err != nil {
-		checkMessage = fmt.Sprintf("连接正常；能力刷新失败: %v", err)
-		fmt.Printf("[ConnectionCheck] ⚠️  能力刷新失败，保留最后一次成功结果: %v\n", err)
+			checkMessage = fmt.Sprintf("连接正常；能力刷新失败: %v", err)
+			fmt.Printf("[ConnectionCheck] ⚠️  能力刷新失败，保留最后一次成功结果: %v\n", err)
 		}
 	}
 	s.updateConnectionStatus(engineID, models.EngineConnectionOnline, checkMessage)

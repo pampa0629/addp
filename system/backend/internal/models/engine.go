@@ -12,9 +12,13 @@ type EngineRuntimeEndpoint = commonModels.EngineRuntimeEndpoint
 type JSONString = commonModels.JSONString
 
 const (
-	EngineLifecycleActive   = commonModels.EngineLifecycleActive
-	EngineLifecycleDisabled = commonModels.EngineLifecycleDisabled
-	EngineLifecycleDeleting = commonModels.EngineLifecycleDeleting
+	EngineLifecycleActive    = commonModels.EngineLifecycleActive
+	EngineLifecycleDisabled  = commonModels.EngineLifecycleDisabled
+	EngineLifecycleDeleting  = commonModels.EngineLifecycleDeleting
+	EngineConnectionOnline   = commonModels.EngineConnectionOnline
+	EngineConnectionOffline  = commonModels.EngineConnectionOffline
+	EngineConnectionUnknown  = commonModels.EngineConnectionUnknown
+	EngineConnectionChecking = commonModels.EngineConnectionChecking
 
 	ExternalArtifactPolicyDelete  = commonModels.ExternalArtifactPolicyDelete
 	ExternalArtifactPolicyAbandon = commonModels.ExternalArtifactPolicyAbandon

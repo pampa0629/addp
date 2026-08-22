@@ -22,6 +22,7 @@ type FieldInfo struct {
 	Name                 string    `json:"name,omitempty"`
 	Path                 []string  `json:"path,omitempty"`
 	Type                 FieldType `json:"type,omitempty"`
+	ElementType          FieldType `json:"element_type,omitempty"`
 	NativeType           string    `json:"native_type,omitempty"`
 	Nullable             bool      `json:"nullable"`
 	PrimaryKey           bool      `json:"primary_key,omitempty"`

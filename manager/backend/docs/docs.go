@@ -1141,7 +1141,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取当前租户可用的存储引擎列表 | Get available storage engine list for the current tenant",
+                "description": "获取当前租户 active 且具备存储能力的注册引擎及其连接状态；非 online 项由前端展示并禁选 | Get active registered storage-capable engines with connection status for the current tenant; clients must show but disable non-online options",
                 "produces": [
                     "application/json"
                 ],
@@ -3755,6 +3755,58 @@ const docTemplate = `{
                 ]
             }
         },
+        "/preview-state": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "以 Resource Locator 为数据项身份返回用户预览模式与交互设置，包括地图视口、三维相机和表格可见字段。 | Return user preview mode and interaction settings by Resource Locator, including map viewport, 3D camera and visible table columns.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取 locator 预览状态 | Get locator preview state",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "资源定位符URI | Resource locator URI",
+                        "name": "locator",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "预览状态 | Preview state",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.PreviewState"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "资源不存在 | Resource not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.data_item.read"
+                ]
+            }
+        },
         "/preview-state/preferred-mode": {
             "patch": {
                 "security": [
@@ -3817,7 +3869,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "以 Resource Locator 为数据项身份更新预览交互状态。view_state 是统一 JSON 字段，顶层按 basic_preview / quick_view 区分显示模式，模式内按 map / scene_3d 区分渲染域。 | Update preview interaction state by Resource Locator. view_state is a unified JSON field grouped by display mode basic_preview / quick_view, then by render domain map / scene_3d.",
+                "description": "以 Resource Locator 为数据项身份更新预览交互状态。view_state 是统一 JSON 字段，顶层按 basic_preview / quick_view 区分显示模式，模式内按 map / scene_3d / table 区分渲染域。 | Update preview interaction state by Resource Locator. view_state is a unified JSON field grouped by display mode basic_preview / quick_view, then by render domain map / scene_3d / table.",
                 "consumes": [
                     "application/json"
                 ],
@@ -6996,6 +7048,9 @@ const docTemplate = `{
                 "default_expression": {
                     "type": "string"
                 },
+                "element_type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                },
                 "generated": {
                     "type": "boolean"
                 },
@@ -7883,6 +7938,35 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_models.PreviewState": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "preferred_mode": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "view_state": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
                 }
             }
         },

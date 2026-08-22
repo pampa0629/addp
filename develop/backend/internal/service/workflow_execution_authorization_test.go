@@ -56,7 +56,7 @@ func TestPrepareWorkflowExecutionAuthorizationAggregatesEffectsAndEngines(t *tes
 			}
 			return &commonModels.EngineRuntimeDescriptor{
 				ID: 50, Name: "workflow", EngineType: "geopython_workflow",
-				LifecycleState: commonModels.EngineLifecycleActive, Capabilities: &capabilitiesJSON,
+				LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline, Capabilities: &capabilitiesJSON,
 				RuntimeEndpoint: &commonModels.EngineRuntimeEndpoint{Protocol: "http", Host: "workflow", Port: 8099},
 			}, nil
 		},
