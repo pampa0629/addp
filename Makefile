@@ -1,5 +1,5 @@
 .PHONY: help build build-images test test-platform test-engine-startup-isolation test-online test-online-runner test-go test-agent-frontend test-asset-frontend test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats \
-        build-iam-bootstrap build-iam-recovery clean-dist \
+        build-iam-bootstrap build-iam-recovery \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
 # 默认目标
@@ -70,10 +70,6 @@ build: ## 编译全部正式 Go 服务与 Worker；附加参数使用 BUILD_ARGS
 
 build-images: ## 构建全部正式 ADDP 镜像；附加参数使用 IMAGE_BUILD_ARGS="..."
 	@bash scripts/build/build-images.sh $(IMAGE_BUILD_ARGS)
-
-clean-dist: ## 清理 dist 构建产物
-	@rm -rf $(OUT_DIR)
-	@echo "$(YELLOW)已清理 $(OUT_DIR)$(NC)"
 
 # ===== 基础设施脚本入口 =====
 infra-up: ## 启动系统库基础设施（带端口预检与健康检查）
@@ -267,16 +263,6 @@ init-redis: ## 检查 Redis 缓存、事件和分布式锁
 
 registry-start: ## 启动本地 Docker Registry（镜像构建必需）
 	@echo "$(GREEN)启动本地 Docker Registry...$(NC)"
-	@./scripts/registry/start.sh
-
-registry-stop: ## 停止本地 Docker Registry
-	@echo "$(YELLOW)停止本地 Docker Registry...$(NC)"
-	@docker stop registry || true
-	@echo "$(GREEN)Registry 已停止$(NC)"
-
-registry-restart: ## 重启本地 Docker Registry
-	@echo "$(YELLOW)重启本地 Docker Registry...$(NC)"
-	@docker rm -f registry 2>/dev/null || true
 	@./scripts/registry/start.sh
 
 registry-status: ## 检查本地 Docker Registry 状态

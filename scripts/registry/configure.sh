@@ -1,6 +1,6 @@
 #!/bin/bash
 # 配置 Docker 信任私有 Registry
-# 使用方法: ./scripts/configure-docker-registry.sh 192.168.31.238:5001
+# 使用方法: ./scripts/registry/configure.sh 192.168.31.238:5001
 
 set -e
 

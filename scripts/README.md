@@ -409,8 +409,7 @@ docker service scale addp_transfer-bounded-worker=3
 
 ```bash
 scripts/registry/
-├── init.sh         # 初始化本地 Docker Registry
-├── start.sh        # 启动已存在的 Registry
+├── start.sh        # 启动本地构建 Registry
 ├── check.sh        # 检查 Registry 状态和镜像列表
 └── configure.sh    # 配置 Docker daemon 信任 Registry
 ```

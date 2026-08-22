@@ -73,7 +73,7 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
         echo -e "  Image:     ${REGISTRY_IMAGE}"
         echo ""
         echo -e "${GREEN}You can now run:${NC}"
-        echo -e "  ./scripts/deploy/1-build-images.sh"
+        echo -e "  make build-images"
         echo ""
         exit 0
     fi
