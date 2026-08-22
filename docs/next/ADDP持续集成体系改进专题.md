@@ -56,7 +56,7 @@ Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权�
 
 | 入口 | 能力 | 测试层级 |
 | --- | --- | --- |
-| `make test-go` | 根据全部已跟踪 `go.mod` 生成临时 workspace，逐模块执行 `go test ./...`，不依赖本地被忽略的 `go.work` | T1 |
+| `make test-go` | 逐模块以 `GOWORK=off go mod tidy -diff` 拒绝依赖文件漂移，再根据全部已跟踪 `go.mod` 生成临时 workspace 并执行 `go test ./...`；不读写本地被忽略的 `go.work` | T1 |
 | `make test-authorization` | Permission Manifest、owner 常量、Tool Catalog、SQL seed 和 Swagger 路由覆盖报告 | T0 / T1 |
 | `make test-execution-fixtures` | 统一 execution 测试夹具约束 | T0 |
 | `make test-model-frontend` | Model 前端单元、E2E 和构建 | T1 / T3 |
@@ -102,7 +102,7 @@ Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权�
 
 ### 5.2 全仓 Go T1 门禁正在接入
 
-`make test-go` 已经具备动态模块发现和临时 workspace 生成，并已接入 CI。它不读取或修改本地被忽略的 `go.work`；其他语言和前端模块仍待后续接入。
+`make test-go` 已经具备动态模块发现和临时 workspace 生成，并已接入 CI。每个模块先在独立模式下执行 `go mod tidy -diff`，依赖文件未同步时立即失败且不修改工作树；随后才在临时 workspace 中测试。整个过程不读取或修改本地被忽略的 `go.work`。
 
 ### 5.3 前端覆盖仍不完整
 

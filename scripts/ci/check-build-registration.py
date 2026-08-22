@@ -480,6 +480,9 @@ def validate_registration(repository: Path) -> list[str]:
     images_recipe = make_recipe(makefile, "build-images")
     if images_recipe is None or "scripts/build/build-images.sh" not in images_recipe:
         errors.append("Makefile target build-images must invoke scripts/build/build-images.sh")
+    go_test_recipe = make_recipe(makefile, "test-go")
+    if go_test_recipe is None or "GOWORK=off go mod tidy -diff" not in go_test_recipe:
+        errors.append("Makefile target test-go must reject untidy Go module files")
     for target in sorted(RETIRED_MAKE_TARGETS):
         if make_recipe(makefile, target) is not None:
             errors.append(f"Makefile retired target still exists: {target}")

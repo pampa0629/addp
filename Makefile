@@ -232,7 +232,7 @@ test-transfer-frontend: ## 运行 Transfer 前端确定性测试与构建
 	@cd transfer/frontend && npm test
 	@cd transfer/frontend && npm run build
 
-test-go: ## 使用临时 workspace 运行全部已跟踪 Go 模块测试
+test-go: ## 校验依赖文件并使用临时 workspace 运行全部已跟踪 Go 模块测试
 	@set -e; \
 	workspace_dir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$workspace_dir"' EXIT; \
@@ -244,6 +244,8 @@ test-go: ## 使用临时 workspace 运行全部已跟踪 Go 模块测试
 	fi; \
 	GOWORK="$$workspace_file" go work init $$(printf '%s\n' "$$modules" | sed "s#^#$(CURDIR)/#"); \
 	for module in $$modules; do \
+		echo "$(GREEN)校验 $$module go.mod/go.sum...$(NC)"; \
+		(cd "$$module" && GOWORK=off go mod tidy -diff); \
 		echo "$(GREEN)运行 $$module 测试...$(NC)"; \
 		(cd "$$module" && GOWORK="$$workspace_file" go test ./...); \
 	done

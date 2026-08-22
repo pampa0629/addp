@@ -54,7 +54,8 @@ class BuildRegistrationTest(unittest.TestCase):
         self._write(
             "Makefile",
             "build:\n\t@bash scripts/build/compile.sh $(BUILD_ARGS)\n\n"
-            "build-images:\n\t@bash scripts/build/build-images.sh $(IMAGE_BUILD_ARGS)\n",
+            "build-images:\n\t@bash scripts/build/build-images.sh $(IMAGE_BUILD_ARGS)\n\n"
+            "test-go:\n\t@GOWORK=off go mod tidy -diff\n",
         )
         self._write(
             ".github/workflows/platform-ci.yml",
@@ -92,6 +93,19 @@ class BuildRegistrationTest(unittest.TestCase):
         self._write(".github/workflows/platform-ci.yml", "jobs: {}\n")
         self.assertIn(
             "Platform CI must run make build BUILD_ARGS=--force",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_go_test_without_module_tidy_gate(self) -> None:
+        makefile = self.repository / "Makefile"
+        makefile.write_text(
+            makefile.read_text(encoding="utf-8").replace(
+                "\ntest-go:\n\t@GOWORK=off go mod tidy -diff\n", ""
+            ),
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "Makefile target test-go must reject untidy Go module files",
             MODULE.validate_registration(self.repository),
         )
 
