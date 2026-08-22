@@ -744,7 +744,7 @@ dist/package-images-{timestamp}/
 ├── images/                        # 预构建 Docker 镜像（40 个 tar 文件，~5-10GB）
 ├── load-images.sh                 # 镜像加载脚本
 ├── scripts/
-│   ├── infra/                     # 基础设施初始化（含 init-db.sql）
+│   ├── infra/                     # 基础设施初始化
 │   └── prod/                      # 生产启动脚本
 ├── business/                      # 业务基础设施
 ├── nginx/                         # Nginx 配置

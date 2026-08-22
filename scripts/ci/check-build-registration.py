@@ -41,6 +41,7 @@ RETIRED_MAKE_TARGETS = {
     "dev-orchestrator",
     "dev-system",
     "dev-transfer",
+    "db-migrate",
     "down",
     "health",
     "init-minio-mvt",
@@ -318,6 +319,11 @@ def make_recipe(makefile: str, target: str) -> str | None:
     return match.group("recipe") if match else None
 
 
+def makefile_script_references(makefile: str) -> set[str]:
+    """返回根 Makefile 引用的仓库内 scripts/ 路径。"""
+    return set(re.findall(r"(?<![A-Za-z0-9_.-])(scripts/[A-Za-z0-9_./-]+)", makefile))
+
+
 def validate_registration(repository: Path) -> list[str]:
     compile_script = (repository / "scripts/build/compile.sh").read_text(encoding="utf-8")
     image_script = (repository / "scripts/build/build-images.sh").read_text(encoding="utf-8")
@@ -418,6 +424,9 @@ def validate_registration(repository: Path) -> list[str]:
     for target in sorted(RETIRED_MAKE_TARGETS):
         if make_recipe(makefile, target) is not None:
             errors.append(f"Makefile retired target still exists: {target}")
+    tracked_scripts = set(git_files(repository, "scripts/**"))
+    for path in sorted(makefile_script_references(makefile) - tracked_scripts):
+        errors.append(f"Makefile references missing or untracked script: {path}")
     for path in git_files(repository, "*Makefile"):
         if path != "Makefile":
             errors.append(f"{path}: module Makefile duplicates the root build entry point")

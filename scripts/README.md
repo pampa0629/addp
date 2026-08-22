@@ -56,9 +56,8 @@ make test-arcgis-open-formats
 | `up.sh` | 启动基础设施 + 自动初始化 | 首次启动、重启基础设施 |
 | `down.sh` | 停止基础设施 | 维护、完全停止 |
 | `status.sh` | 查看服务状态 | 健康检查、故障排查 |
-| `init-db.sh` | 初始化数据库 schema | 数据库重置、清理 |
 | `init-minio.sh` | 初始化 MinIO buckets | MinIO 重置 |
-| `init-postgresql.sh` | 安装 PostgreSQL 扩展 | PostGIS + pgvector 安装 |
+| `init-postgresql.sh` | 初始化 PostgreSQL 基础能力 | HBA、扩展与模块 schema |
 | `init-meilisearch.sh` | 初始化 Meilisearch 索引 | 搜索引擎初始化 |
 | `init-redis.sh` | 初始化 Redis 配置 | Redis 验证、清理 |
 

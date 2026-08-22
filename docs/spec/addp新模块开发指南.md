@@ -70,31 +70,8 @@
 2. **数据库约定**:
 
    - 使用 PostgreSQL schema 隔离 (所有模块使用 PostgreSQL 和专用 schemas)
-   - 使用 GORM 作为 ORM,带 AutoMigrate
-   - **在 cmd/server/main.go 中自动创建 schema**:
-     ```go
-     // 连接数据库
-     db, err := gorm.Open(postgres.Open(cfg.GetDatabaseDSN()), &gorm.Config{})
-     if err != nil {
-         log.Fatalf("Failed to connect to database: %v", err)
-     }
-
-     // 确保 schema 存在（关键！）
-     if err := db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", cfg.DBSchema)).Error; err != nil {
-         log.Fatalf("Failed to create schema: %v", err)
-     }
-
-     // 自动迁移表结构
-     if err := db.AutoMigrate(&models.YourModel{}); err != nil {
-         log.Fatalf("Failed to migrate database: %v", err)
-     }
-     ```
-   - 将 schema 注释添加到 `scripts/infra/init-postgresql.sql`:
-     ```sql
-     -- YourModule 模块 (功能描述)
-     CREATE SCHEMA IF NOT EXISTS your_module;
-     COMMENT ON SCHEMA your_module IS 'YourModule 模块：功能描述';
-     ```
+   - 使用 GORM 作为 ORM；数据库初始化只能由模块自身的启动迁移路径负责
+   - 在 `scripts/infra/init-postgresql.sql` 登记模块 schema 与注释，表、约束和索引由模块迁移创建
    - 使用 `updated_at` 触发器进行时间戳跟踪
 
 3. **配置管理**（必须遵循）:
@@ -383,33 +360,9 @@
 
 ### 数据库迁移
 
-GORM AutoMigrate 自动处理 schema 更改:
+数据库结构由 owner 模块自身的启动迁移路径管理，完成后才能开放 API。新增模块应沿用其模块确定的唯一迁移机制，并提供模块级 migration 测试及对应的根 `Makefile`/CI 标准入口；禁止另建根目录集中 SQL、手工集中迁移入口或第二套并行迁移路线。
 
-1. **在 `internal/models/` 中修改模型结构**:
-
-   ```go
-   type Resource struct {
-       ID             uint      `gorm:"primaryKey"`
-       Name           string    `gorm:"not null"`
-       NewField       string    `gorm:"default:''" json:"new_field"` // 添加新字段
-   }
-   ```
-2. **在 `internal/repository/database.go` 中添加到 AutoMigrate**:
-
-   ```go
-   db.AutoMigrate(
-       &models.Resource{},
-       &models.User{},
-       // 在此添加新模型
-   )
-   ```
-3. **重启应用** - 迁移在启动时运行
-
-**对于复杂迁移**:
-
-- 在 `scripts/migrations/` 中创建 SQL 脚本用于数据转换
-- 在部署新版本前通过 `make db-migrate` 手动运行
-- 在 PR 描述中记录破坏性更改
+采用版本化 migration 的模块必须新增向前 migration，不得修改已经发布的 migration；仍采用 `AutoMigrate` 的模块不得再叠加手工 SQL 迁移入口。迁移机制的全平台统一应作为独立架构专题推进，不能在单个模块变更中局部宣称完成。
 
 **Meta 模块特殊性**:
 统一的元数据模型 (resource/node/item) 需要协调更新:
@@ -781,13 +734,7 @@ Failed to migrate database: ERROR: schema "your_module" does not exist (SQLSTATE
 **原因**: 未在代码中创建 schema
 
 **解决方案**:
-在 `cmd/server/main.go` 的 AutoMigrate 之前添加：
-```go
-// 确保 schema 存在
-if err := db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", cfg.DBSchema)).Error; err != nil {
-    log.Fatalf("Failed to create schema: %v", err)
-}
-```
+先在 `scripts/infra/init-postgresql.sql` 登记 owner schema，再确认模块唯一的启动迁移路径会在 repository 和 API 初始化前完成。
 
 ### 错误 3: 重启脚本不识别新模块
 
@@ -963,8 +910,8 @@ app.mount('#app')
 - [ ] 复制并调整目录结构 (`backend/cmd/server/`, `backend/internal/`)
 - [ ] 配置使用 `commonConfig.LoadEnv()` 和 `BaseConfig`
 - [ ] DSN 包含 `search_path` 参数
-- [ ] 在代码中创建 schema (`CREATE SCHEMA IF NOT EXISTS`)
-- [ ] GORM AutoMigrate 配置正确
+- [ ] 在 `init-postgresql.sql` 中登记 owner schema
+- [ ] 模块唯一的启动迁移路径配置正确，并有 migration 测试和 CI 入口
 - [ ] 实现健康检查端点 (`/health`)
 - [ ] 添加模块注册和心跳逻辑
 
@@ -987,7 +934,7 @@ app.mount('#app')
 - [ ] 验证全量启动
 
 **文档和配置**:
-- [ ] 在 `init-postgresql.sql` 中添加 schema 注释
+- [ ] 在 `init-postgresql.sql` 中登记并注释 owner schema
 - [ ] 在 `.env` 中添加模块端口配置
 - [ ] 创建模块的 `CLAUDE.md` 文档
 - [ ] 更新根目录 `CLAUDE.md` 的模块列表

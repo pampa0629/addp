@@ -205,8 +205,6 @@ scripts/infra/
 ├── up.sh                             # 启动基础设施服务
 ├── down.sh                           # 停止基础设施服务
 ├── status.sh                         # 查看服务状态
-├── init-db.sh                        # 初始化数据库（执行所有 SQL 文件）
-├── init-db.sql                       # 主数据库 schema 初始化（所有模块）
 ├── init-minio.sh                     # 初始化 MinIO buckets（模块化）
 ├── init-redis.sh                     # 初始化 Redis 配置
 ├── init-postgresql.sh                # 初始化 PostgreSQL 扩展（PostGIS + pgvector）
@@ -249,9 +247,6 @@ make infra-status
 # 停止基础设施
 make infra-down
 
-# 初始化数据库
-make db-migrate
-
 # 初始化 MinIO
 make init-minio
 
@@ -264,11 +259,6 @@ make init-redis
 如果需要单独运行某个初始化脚本:
 
 ```bash
-# 初始化数据库（支持清理选项）
-./scripts/infra/init-db.sh                     # 正常初始化（幂等）
-./scripts/infra/init-db.sh --drop-schema meta  # 重建 meta schema
-./scripts/infra/init-db.sh --drop-all          # 清空所有 ADDP schema（慎用！）
-
 # 初始化 MinIO buckets（模块化 buckets）
 ./scripts/infra/init-minio.sh
 
@@ -409,28 +399,6 @@ POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4 ./scripts/infra/up.sh
 ./scripts/infra/status.sh
 ```
 
-### init-db.sh
-
-**功能**: 初始化数据库 schema
-
-**特性**:
-- ✅ 幂等性（使用 `CREATE ... IF NOT EXISTS`）
-- ✅ 支持选择性清理（`--drop-schema`, `--drop-all`）
-- ✅ 执行 `init-db.sql`（包含所有模块 schema）
-- ✅ 自动检查 PostgreSQL 容器是否运行
-
-**使用示例**:
-```bash
-# 正常初始化（幂等,不会删除数据）
-./scripts/infra/init-db.sh
-
-# 重建 meta schema（删除并重新创建）
-./scripts/infra/init-db.sh --drop-schema meta
-
-# 清空所有 ADDP schema（慎用！会删除所有数据）
-./scripts/infra/init-db.sh --drop-all
-```
-
 ### init-minio.sh
 
 **功能**: 初始化 MinIO buckets（模块化组织）
@@ -507,50 +475,6 @@ POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4 ./scripts/infra/up.sh
 # 清空所有 Redis 缓存和临时协调数据（慎用！）
 ./scripts/infra/init-redis.sh --clean
 ```
-
-## SQL 初始化文件
-
-### init-db.sql
-
-**包含所有模块的 schema**（单一职责原则）:
-
-1. **System Schema**
-   - users - 用户账户
-   - tenants - 租户信息
-   - audit_logs - 审计日志
-   - engines - 引擎配置（数据源连接信息）
-
-2. **Manager Schema**
-   - data_sources - 数据源连接
-   - directories - 目录组织
-   - permissions - 访问控制
-   - quick_view - 快显配置
-
-3. **Metadata Schema**
-   - meta_node - 元数据节点（层次结构）
-   - meta_item - 元数据项（叶子节点）
-   - meta_dictionary - 节点类型和规则定义
-   - meta_change_log - 变更追踪
-
-4. **Transfer Schema**
-   - tasks - 传输任务定义
-   - task_executions - 任务执行历史
-   - data_mappings - 字段映射配置
-   - checkpoints - 任务检查点
-
-5. **Orchestrator Schema**
-   - orchestrations - 编排定义
-   - orchestration_instances - 编排执行实例
-
-6. **Develop Schema**
-   - sql_scripts - SQL 脚本管理
-
-**设计原则**:
-- ✅ 所有模块 schema 统一管理（遵循单一职责原则）
-- ✅ 使用 `CREATE ... IF NOT EXISTS`（幂等性）
-- ✅ 外键约束确保数据完整性
-- ✅ 自动时间戳（created_at, updated_at）
-- ✅ 软删除支持（deleted_at）
 
 ## 跨平台支持
 
@@ -795,7 +719,7 @@ MINIO_CONSOLE_PORT=19011
 **优化基础设施脚本（遵循7个核心原则）**:
 
 1. ✅ **单一职责原则**:
-   - 删除 `init-orchestrator.sql`（内容已合并到 `init-db.sql`）
+   - 删除重复的旧版数据库初始化脚本
    - 删除 `restart.sh`（功能重复）
    - 删除 `pull-images.sh`（功能已集成到 `up.sh`）
    - 删除 `fix-collation.sh`（临时修复脚本）

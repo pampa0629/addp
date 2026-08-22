@@ -3,7 +3,7 @@
 # Start Local Docker Registry
 # =============================================================================
 # Description: Start a local Docker registry for ADDP image builds
-# Usage: ./start-registry.sh
+# Usage: ./scripts/registry/start.sh
 # =============================================================================
 
 set -e

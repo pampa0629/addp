@@ -113,10 +113,10 @@ copy_common_files() {
         echo -e "${YELLOW}ℹ .env not found; package will generate one on first start${NC}"
     fi
 
-    # 3. Copy scripts/infra/ (CORE: database initialization)
+    # 3. Copy scripts/infra/ (CORE: infrastructure initialization)
     if [ -d "scripts/infra" ]; then
         cp -r scripts/infra "$OUTPUT_DIR/scripts/"
-        echo -e "${GREEN}✓ scripts/infra/ copied (including init-db.sql)${NC}"
+        echo -e "${GREEN}✓ scripts/infra/ copied${NC}"
     else
         echo -e "${RED}Error: scripts/infra/ directory not found${NC}"
         exit 1

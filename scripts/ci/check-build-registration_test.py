@@ -107,6 +107,18 @@ class BuildRegistrationTest(unittest.TestCase):
             MODULE.validate_registration(self.repository),
         )
 
+    def test_rejects_missing_or_untracked_makefile_script(self) -> None:
+        makefile = self.repository / "Makefile"
+        makefile.write_text(
+            makefile.read_text(encoding="utf-8")
+            + "\nmissing-script:\n\t@bash scripts/missing.sh\n",
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "Makefile references missing or untracked script: scripts/missing.sh",
+            MODULE.validate_registration(self.repository),
+        )
+
     def test_rejects_module_makefile(self) -> None:
         self._write("sample/Makefile", "build:\n\t@echo duplicate\n")
         subprocess.run(

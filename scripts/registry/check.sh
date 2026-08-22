@@ -3,7 +3,7 @@
 # Check Local Docker Registry Status
 # =============================================================================
 # Description: Check the health and status of local Docker registry
-# Usage: ./check-registry.sh
+# Usage: ./scripts/registry/check.sh
 # =============================================================================
 
 set -e
@@ -28,7 +28,7 @@ if ! docker ps -a --format '{{.Names}}' | grep -q "^${REGISTRY_NAME}$"; then
     echo -e "${RED}✗ Registry container does not exist${NC}"
     echo ""
     echo -e "${YELLOW}Start registry with:${NC}"
-    echo "  ./scripts/setup/start-registry.sh"
+    echo "  ./scripts/registry/start.sh"
     echo "  OR"
     echo "  make registry-start"
     exit 1

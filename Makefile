@@ -266,11 +266,6 @@ test: test-execution-fixtures test-model-frontend test-agent-eval test-authoriza
 test-system: ## 运行 System 模块测试
 	@cd system/backend && go test ./...
 
-db-migrate: ## 运行数据库迁移（重新初始化数据库）
-	@echo "$(GREEN)运行数据库迁移...$(NC)"
-	@docker compose -f docker-compose.infra.yml exec -T postgres psql -U addp -d addp < scripts/infra/init-db.sql
-	@echo "$(GREEN)数据库迁移完成$(NC)"
-
 db-shell: ## 连接到 PostgreSQL 数据库
 	@docker compose -f docker-compose.infra.yml exec postgres psql -U addp -d addp
 
@@ -345,10 +340,10 @@ registry-stop: ## 停止本地 Docker Registry
 registry-restart: ## 重启本地 Docker Registry
 	@echo "$(YELLOW)重启本地 Docker Registry...$(NC)"
 	@docker rm -f registry 2>/dev/null || true
-	@./scripts/setup/start-registry.sh
+	@./scripts/registry/start.sh
 
 registry-status: ## 检查本地 Docker Registry 状态
-	@./scripts/setup/check-registry.sh
+	@./scripts/registry/check.sh
 
 # ==================== 生产环境脚本入口 ====================
 
