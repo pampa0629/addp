@@ -14,6 +14,9 @@ class RegistrationError(RuntimeError):
     pass
 
 
+PYTHON_GATE_ACTION = "uses: ./.github/actions/prepare-python-gate"
+
+
 def git_files(repository: Path, *patterns: str) -> list[str]:
     result = subprocess.run(
         ["git", "ls-files", "--", *patterns],
@@ -41,12 +44,25 @@ def make_dependencies(makefile: str, target: str) -> list[str] | None:
     return match.group("dependencies").split() if match else None
 
 
+def workflow_jobs(repository: Path) -> list[str]:
+    jobs = []
+    for path in sorted((repository / ".github/workflows").glob("*.y*ml")):
+        content = path.read_text(encoding="utf-8")
+        matches = list(re.finditer(r"(?m)^  [a-zA-Z0-9_-]+:\s*$", content))
+        jobs.extend(
+            content[
+                match.start() : (
+                    matches[index + 1].start() if index + 1 < len(matches) else len(content)
+                )
+            ]
+            for index, match in enumerate(matches)
+        )
+    return jobs
+
+
 def validate_registration(repository: Path) -> list[str]:
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
-    workflows = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in sorted((repository / ".github/workflows").glob("*.y*ml"))
-    )
+    jobs = workflow_jobs(repository)
     root_dependencies = make_dependencies(makefile, "test") or []
     errors = []
     for owner, manifest, owner_path in discover_python_modules(repository):
@@ -56,12 +72,23 @@ def validate_registration(repository: Path) -> list[str]:
             errors.append(f"{manifest}: Makefile target {target} is missing")
         if target not in root_dependencies:
             errors.append(f"{manifest}: root test dependency {target} is missing")
-        if not re.search(rf"(?m)^\s*(?:-\s*)?run:\s*make\s+{re.escape(target)}\s*$", workflows):
+        target_job = next(
+            (
+                job
+                for job in jobs
+                if re.search(rf"(?m)^\s*(?:-\s*)?run:\s*make\s+{re.escape(target)}\s*$", job)
+            ),
+            None,
+        )
+        if target_job is None:
             errors.append(f"{manifest}: GitHub Actions target {target} is missing")
-        if f"'{owner_path}'" not in workflows:
+            continue
+        if PYTHON_GATE_ACTION not in target_job:
+            errors.append(f"{manifest}: Python gate setup action is missing from {target} job")
+        if f"'{owner_path}'" not in target_job:
             errors.append(f"{manifest}: workflow path {owner_path} is missing")
         content = (repository / manifest).read_text(encoding="utf-8")
-        if "common-python" in content and "'common-python/*'" not in workflows:
+        if "common-python" in content and "'common-python/*'" not in target_job:
             errors.append(f"{manifest}: shared path common-python/* is missing")
     return errors
 

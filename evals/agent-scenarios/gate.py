@@ -246,7 +246,6 @@ def _run_check(name: str, command: list[str], cwd: Path, env: dict[str, str] | N
 
 def run_offline_checks() -> list[dict[str, Any]]:
     agent_python = REPO_ROOT / "agent" / "backend" / "venv" / "bin" / "python"
-    common_python = REPO_ROOT / "common-python" / ".venv" / "bin" / "python"
     python_path = os.pathsep.join(
         [
             str(REPO_ROOT / "agent" / "backend"),
@@ -279,7 +278,7 @@ def run_offline_checks() -> list[dict[str, Any]]:
         ),
         _run_check(
             "common_python",
-            [str(common_python), "-m", "pytest", "-p", "pytest_asyncio.plugin", "-q"],
+            [str(agent_python), "-m", "pytest", "-p", "pytest_asyncio.plugin", "-q"],
             REPO_ROOT / "common-python",
             common_env,
         ),

@@ -12,4 +12,4 @@ ag-ui-protocol==0.1.19
 PyYAML==6.0.3
 
 # ADDP Common 模块
--e ../../common-python[inference-langchain]
+-e ../../common-python[dev,inference-langchain]

@@ -30,8 +30,12 @@ class PythonCIRegistrationTest(unittest.TestCase):
         workflow = self.repository / ".github/workflows/platform-ci.yml"
         workflow.parent.mkdir(parents=True)
         workflow.write_text(
-            "steps:\n  - run: select 'sample/backend/*' 'common-python/*'\n"
-            "  - run: make test-sample\n",
+            "jobs:\n"
+            "  sample-tests:\n"
+            "    steps:\n"
+            "      - run: select 'sample/backend/*' 'common-python/*'\n"
+            "      - uses: ./.github/actions/prepare-python-gate\n"
+            "      - run: make test-sample\n",
             encoding="utf-8",
         )
         subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
@@ -57,6 +61,40 @@ class PythonCIRegistrationTest(unittest.TestCase):
         self.assertIn(
             "sample/backend/requirements.txt: GitHub Actions target test-sample is missing",
             errors,
+        )
+
+    def test_rejects_gate_without_standard_environment_setup(self) -> None:
+        workflow = self.repository / ".github/workflows/platform-ci.yml"
+        workflow.write_text(
+            "jobs:\n"
+            "  sample-tests:\n"
+            "    steps:\n"
+            "      - run: select 'sample/backend/*' 'common-python/*'\n"
+            "      - run: make test-sample\n",
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "sample/backend/requirements.txt: Python gate setup action is missing from test-sample job",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_shared_path_registered_in_another_job(self) -> None:
+        workflow = self.repository / ".github/workflows/platform-ci.yml"
+        workflow.write_text(
+            "jobs:\n"
+            "  sample-tests:\n"
+            "    steps:\n"
+            "      - run: select 'sample/backend/*'\n"
+            "      - uses: ./.github/actions/prepare-python-gate\n"
+            "      - run: make test-sample\n"
+            "  unrelated:\n"
+            "    steps:\n"
+            "      - run: select 'common-python/*'\n",
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "sample/backend/requirements.txt: shared path common-python/* is missing",
+            MODULE.validate_registration(self.repository),
         )
 
 

@@ -1,0 +1,48 @@
+name: Prepare Python gate
+description: Create one isolated Python runtime for an ADDP deterministic test gate.
+
+inputs:
+  venv-path:
+    description: Repository-relative virtual environment path.
+    required: true
+  cache-dependency-path:
+    description: Dependency manifests used by the setup-python pip cache.
+    required: true
+  requirements-file:
+    description: Optional repository-relative pip requirements file.
+    required: false
+    default: ""
+  editable-install:
+    description: Optional repository-relative editable package specification, including extras.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      with:
+        python-version: "3.11"
+        cache: pip
+        cache-dependency-path: ${{ inputs.cache-dependency-path }}
+
+    - name: Prepare isolated test runtime
+      shell: bash
+      env:
+        ADDP_PYTHON_VENV: ${{ inputs.venv-path }}
+        ADDP_PYTHON_REQUIREMENTS: ${{ inputs.requirements-file }}
+        ADDP_PYTHON_EDITABLE: ${{ inputs.editable-install }}
+      run: |
+        set -euo pipefail
+        python -m venv "${ADDP_PYTHON_VENV}"
+        venv_python="$(cd "${ADDP_PYTHON_VENV}" && pwd)/bin/python"
+        "${venv_python}" -m pip install --disable-pip-version-check --upgrade pip
+        if [ -n "${ADDP_PYTHON_REQUIREMENTS}" ]; then
+          requirements_directory=$(dirname "${ADDP_PYTHON_REQUIREMENTS}")
+          requirements_name=$(basename "${ADDP_PYTHON_REQUIREMENTS}")
+          (cd "${requirements_directory}" && "${venv_python}" -m pip install --requirement "${requirements_name}")
+        fi
+        if [ -n "${ADDP_PYTHON_EDITABLE}" ]; then
+          "${venv_python}" -m pip install --editable "${ADDP_PYTHON_EDITABLE}"
+        fi

@@ -113,24 +113,18 @@ jobs:
           bash scripts/ci/select-gate-by-paths.sh "Common Python" \
             'common-python/*' \
             'scripts/ci/select-gate-by-paths.sh' \
+            '.github/actions/prepare-python-gate/*' \
             '.github/actions/ci-gate-summary/*' \
             'Makefile' \
             '.github/workflows/platform-ci.yml'
 
-      - name: Set up Python
-        if: steps.selection.outputs.run == 'true'
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
-        with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: common-python/pyproject.toml
-
       - name: Prepare Common Python test environment
         if: steps.selection.outputs.run == 'true'
-        run: |
-          python -m venv common-python/.venv
-          common-python/.venv/bin/python -m pip install --disable-pip-version-check --upgrade pip
-          common-python/.venv/bin/python -m pip install --editable './common-python[dev]'
+        uses: ./.github/actions/prepare-python-gate
+        with:
+          venv-path: common-python/.venv
+          cache-dependency-path: common-python/pyproject.toml
+          editable-install: ./common-python[dev]
 
       - name: Run Common Python tests
         if: steps.selection.outputs.run == 'true'
@@ -173,30 +167,20 @@ jobs:
             'evals/agent-scenarios/*' \
             'scripts/test/agent-evaluation-gate.sh' \
             'scripts/ci/select-gate-by-paths.sh' \
+            '.github/actions/prepare-python-gate/*' \
             '.github/actions/ci-gate-summary/*' \
             'Makefile' \
             '.github/workflows/platform-ci.yml'
 
-      - name: Set up Python
+      - name: Prepare Agent evaluation environment
         if: steps.selection.outputs.run == 'true'
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        uses: ./.github/actions/prepare-python-gate
         with:
-          python-version: "3.11"
-          cache: pip
+          venv-path: agent/backend/venv
           cache-dependency-path: |
             agent/backend/requirements.txt
             common-python/pyproject.toml
-
-      - name: Prepare Agent evaluation environments
-        if: steps.selection.outputs.run == 'true'
-        run: |
-          python -m venv common-python/.venv
-          common-python/.venv/bin/python -m pip install --disable-pip-version-check --upgrade pip
-          common-python/.venv/bin/python -m pip install --editable './common-python[dev]'
-          python -m venv agent/backend/venv
-          agent/backend/venv/bin/python -m pip install --disable-pip-version-check --upgrade pip
-          (cd agent/backend && venv/bin/python -m pip install --requirement requirements.txt)
-          agent/backend/venv/bin/python -m pip install --editable './common-python[dev,inference-langchain]'
+          requirements-file: agent/backend/requirements.txt
 
       - name: Run Agent offline evaluation
         if: steps.selection.outputs.run == 'true'
@@ -239,27 +223,21 @@ jobs:
             'scripts/ci/check-python-ci-registration.py' \
             'scripts/ci/check-python-ci-registration_test.py' \
             'scripts/ci/select-gate-by-paths.sh' \
+            '.github/actions/prepare-python-gate/*' \
             '.github/actions/ci-gate-summary/*' \
             'Makefile' \
             '.github/workflows/platform-ci.yml'
 
-      - name: Set up Python
+      - name: Prepare Copilot test environment
         if: steps.selection.outputs.run == 'true'
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        uses: ./.github/actions/prepare-python-gate
         with:
-          python-version: "3.11"
-          cache: pip
+          venv-path: copilot/backend/venv
           cache-dependency-path: |
             copilot/backend/requirements.txt
             common-python/pyproject.toml
-
-      - name: Prepare Copilot test environment
-        if: steps.selection.outputs.run == 'true'
-        run: |
-          python -m venv copilot/backend/venv
-          copilot/backend/venv/bin/python -m pip install --disable-pip-version-check --upgrade pip
-          (cd copilot/backend && venv/bin/python -m pip install --requirement requirements.txt)
-          copilot/backend/venv/bin/python -m pip install --editable './common-python[dev,inference-langchain]'
+          requirements-file: copilot/backend/requirements.txt
+          editable-install: ./common-python[dev,inference-langchain]
 
       - name: Run Copilot backend tests
         if: steps.selection.outputs.run == 'true'
