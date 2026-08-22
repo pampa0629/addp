@@ -74,10 +74,10 @@ type ResourceWithStats struct {
 	ScannedCatalogNodes   int    `json:"scanned_catalog_nodes"`
 	UnscannedCatalogNodes int    `json:"unscanned_catalog_nodes"`
 	ScannedAt             string `json:"scanned_at,omitempty"`
-	// 连接状态相关字段
-	ConnectionStatus string `json:"connection_status,omitempty"` // online/offline/unknown/checking
-	LastCheckAt      string `json:"last_check_at,omitempty"`     // 最后检测时间
-	CheckMessage     string `json:"check_message,omitempty"`     // 状态详情
+	LifecycleState        string `json:"lifecycle_state"`             // 引擎生命周期：active/deleting/deleted/delete_failed
+	ConnectionStatus      string `json:"connection_status,omitempty"` // online/offline/unknown/checking
+	LastCheckAt           string `json:"last_check_at,omitempty"`     // 最后检测时间
+	CheckMessage          string `json:"check_message,omitempty"`     // 状态详情
 }
 
 // ScanTaskUpsertRequest 创建或更新扫描任务的请求

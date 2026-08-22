@@ -138,6 +138,74 @@ func TestRefreshKnownTabularItemUsesCatalogFactsWithoutContentReader(t *testing.
 	}
 }
 
+func TestRefreshKnownDynamicSchemaItemUsesSamplingProviderWithoutContentReader(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	tenantID := uint(1)
+	engineID := uint(92)
+	rowCount := int64(7)
+	sizeBytes := int64(2048)
+	enginePlugin := &knownRefreshDynamicSchemaPlugin{facts: &plugin.CatalogFacts{
+		Table: &datatype.TableInfo{
+			Name:      "Persons",
+			Kind:      plugin.CatalogKindCollection,
+			RowCount:  &rowCount,
+			SizeBytes: &sizeBytes,
+			Fields: []datatype.FieldInfo{
+				{Name: "userInfo", Path: []string{"userInfo"}, Type: datatype.FieldTypeJSON},
+				{Name: "userInfo.nickName", Path: []string{"userInfo", "nickName"}, Type: datatype.FieldTypeString},
+				{Name: "entriedOutdoors", Path: []string{"entriedOutdoors"}, Type: datatype.FieldTypeArray, ElementType: datatype.FieldTypeJSON},
+			},
+			Native: map[string]interface{}{"schema_type": "dynamic", "sample_size": 100},
+		},
+	}}
+
+	parentNode := models.MetaNode{TenantID: tenantID, EngineID: engineID, NodeType: plugin.CatalogTermDatabase, Name: "Outdoor", FullName: "Outdoor", Attributes: models.JSONMap{}}
+	if err := db.Create(&parentNode).Error; err != nil {
+		t.Fatalf("create parent node: %v", err)
+	}
+	item := models.MetaItem{
+		TenantID: tenantID, EngineID: engineID, NodeID: parentNode.ID,
+		ItemType: plugin.CatalogTermCollection, Name: "Persons", FullName: "Outdoor.Persons",
+		Fingerprint: "known-refresh-dynamic-schema", Attributes: models.JSONMap{"stale": true},
+	}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	runtime := NewItemRefreshRuntime(metaRepo.NewScanRepository(db), nil, nil)
+	result, err := runtime.RefreshKnownItemWithPlugin(context.Background(), enginePlugin, &commonModels.Engine{
+		ID: engineID, TenantID: &tenantID, EngineType: enginePlugin.Type(), LifecycleState: "active",
+	}, tenantID, item, parentNode)
+	if err != nil {
+		t.Fatalf("RefreshKnownItemWithPlugin() error = %v", err)
+	}
+	if result.Fields != 3 {
+		t.Fatalf("Fields = %d, want 3", result.Fields)
+	}
+	if got := enginePlugin.sampledPath.StringPath(); got != "Outdoor/Persons" {
+		t.Fatalf("sampled path = %q, want Outdoor/Persons", got)
+	}
+	if !enginePlugin.sampledOptions.IncludeSamples || !enginePlugin.sampledOptions.IncludeStatistics ||
+		!enginePlugin.sampledOptions.IncludeIndexes || enginePlugin.sampledOptions.SampleSize != 100 {
+		t.Fatalf("sample options = %#v", enginePlugin.sampledOptions)
+	}
+
+	var refreshed models.MetaItem
+	if err := db.First(&refreshed, item.ID).Error; err != nil {
+		t.Fatalf("load refreshed item: %v", err)
+	}
+	if _, exists := refreshed.Attributes["stale"]; exists {
+		t.Fatalf("stale attributes survived refresh: %#v", refreshed.Attributes)
+	}
+	tableInfo := datatype.TableInfoFromPayload(commonJSON.Section(refreshed.Attributes, "type_info.table"), "Persons")
+	if tableInfo == nil || len(tableInfo.Fields) != 3 || tableInfo.GetField("userInfo.nickName") == nil {
+		t.Fatalf("type_info.table = %#v", commonJSON.Section(refreshed.Attributes, "type_info.table"))
+	}
+	if got := commonJSON.String(refreshed.Attributes, "capabilities.statistics", "schema_type"); got != "dynamic" {
+		t.Fatalf("schema_type = %q, want dynamic", got)
+	}
+}
+
 func TestRefreshKnownDirectLeafItemUsesCatalogFactsWithoutContentReader(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	tenantID := uint(1)
@@ -449,6 +517,38 @@ func (p *catalogFactsOnlyTablePlugin) DescribeCatalogFacts(context.Context, plug
 
 type knownRefreshOSGBContentReader struct {
 	staticObjectContentReader
+}
+
+type knownRefreshDynamicSchemaPlugin struct {
+	facts          *plugin.CatalogFacts
+	sampledPath    plugin.CatalogPath
+	sampledOptions plugin.CatalogFactsOptions
+}
+
+func (p *knownRefreshDynamicSchemaPlugin) Type() string { return "known-refresh-dynamic-schema-test" }
+func (p *knownRefreshDynamicSchemaPlugin) DisplayName() string {
+	return "known refresh dynamic schema test"
+}
+func (p *knownRefreshDynamicSchemaPlugin) EngineOrigin() string { return "general" }
+func (p *knownRefreshDynamicSchemaPlugin) TestConnection(context.Context, plugin.ConnectionInfo) error {
+	return nil
+}
+func (p *knownRefreshDynamicSchemaPlugin) ValidateConnectionInfo(plugin.ConnectionInfo) error {
+	return nil
+}
+func (p *knownRefreshDynamicSchemaPlugin) DefaultPort() int          { return 0 }
+func (p *knownRefreshDynamicSchemaPlugin) RequiredFields() []string  { return nil }
+func (p *knownRefreshDynamicSchemaPlugin) SensitiveFields() []string { return nil }
+func (p *knownRefreshDynamicSchemaPlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.NewDynamicSchemaCapabilities(p.Type())
+}
+func (p *knownRefreshDynamicSchemaPlugin) CatalogModel() plugin.CatalogModelSpec {
+	return plugin.DynamicSchemaCatalogModel()
+}
+func (p *knownRefreshDynamicSchemaPlugin) SampleDynamicSchema(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+	p.sampledPath = path
+	p.sampledOptions = opts
+	return p.facts, nil
 }
 
 func (r knownRefreshOSGBContentReader) Type() string { return "known-refresh-osgb-test" }

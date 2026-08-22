@@ -241,12 +241,18 @@ class QueryService:
             "用户值必须原样保留，禁止翻译、增加英文、同义词、正则备选或其他扩展。"
             "用户未明确要求包含、模糊或正则匹配时使用 eq；contains/regex 只能用于 string 字段。"
             "统计某个记录的数组成员数量时使用 count_array_elements，统计匹配文档数时使用 count_documents。"
+            "比较两个实体各自拥有的去重元素集合时使用 set_comparison；entity_field 是实体标识字段，"
+            "entity_values 必须原样保留两个实体值，set_fields 是一个或多个数组元素身份字段。"
+            "set_comparison.metric 只能是 intersection_count、jaccard、overlap_coefficient 或 unspecified。"
+            "用户只说‘重叠度’、‘重合度’或同等含义但未明确计算口径时必须选择 unspecified，禁止自行默认 Jaccard；"
+            "只有用户明确要求共同元素数量、Jaccard 或以较少一方为基准的重叠系数时才能选择对应指标。"
             "无法从资源事实唯一确定含义时必须填写 clarification；不得把猜测写成可执行计划。"
             "assumptions 必须为空，否则系统会要求用户澄清。参数名和结果列名由编译器生成，不要输出。"
             "metric.operation 只能是 none、count_documents、count_array_elements、distinct_count、sum、avg、min、max。"
             "filter.operator 只能是 eq、ne、gt、gte、lt、lte、in、contains、regex、exists。"
             "统计某记录拥有的数组元素数量时，filters 必须标识拥有该数组的记录，禁止选择该数组的子字段。"
-            "只返回 JSON：collection、filters、metric、assumptions、clarification；"
+            "普通查询的 set_comparison 必须为 null；集合比较时 filters/select_fields/sort 必须为空、limit 必须为 null、"
+            "metric.operation 必须为 none。只返回 JSON：collection、filters、metric、set_comparison、assumptions、clarification；"
             "filters 每项只有 field/operator/value，metric 只有 operation/field。"
         )
 
@@ -286,6 +292,26 @@ class QueryService:
             },
             "required": ["operation", "field"],
         }
+        set_comparison = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "entity_field": {"type": "string"},
+                "entity_values": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {"type": "string"},
+                },
+                "set_fields": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {"type": "string"},
+                },
+                "metric": {"type": "string", "enum": sorted(MQLCompiler.SET_COMPARISON_METRICS)},
+            },
+            "required": ["entity_field", "entity_values", "set_fields", "metric"],
+        }
         return ResponseSchema(
             name="addp_mql_semantic_plan",
             description="ADDP 强类型 MongoDB 查询语义计划。",
@@ -296,10 +322,11 @@ class QueryService:
                     "collection": {"type": "string"},
                     "filters": {"type": "array", "items": filter_item},
                     "metric": metric,
+                    "set_comparison": {"anyOf": [set_comparison, {"type": "null"}]},
                     "assumptions": {"type": "array", "items": {"type": "string"}},
                     "clarification": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                 },
-                "required": ["collection", "filters", "metric", "assumptions", "clarification"],
+                "required": ["collection", "filters", "metric", "set_comparison", "assumptions", "clarification"],
             },
             strict=True,
         )

@@ -3106,7 +3106,7 @@
                     "type": "string"
                 },
                 "connection_status": {
-                    "description": "连接状态相关字段",
+                    "description": "online/offline/unknown/checking",
                     "type": "string"
                 },
                 "engine_family": {
@@ -3118,6 +3118,10 @@
                 },
                 "last_check_at": {
                     "description": "最后检测时间",
+                    "type": "string"
+                },
+                "lifecycle_state": {
+                    "description": "引擎生命周期：active/deleting/deleted/delete_failed",
                     "type": "string"
                 },
                 "name": {

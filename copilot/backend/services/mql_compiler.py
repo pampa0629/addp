@@ -36,6 +36,12 @@ class MQLCompiler:
         "min",
         "max",
     }
+    SET_COMPARISON_METRICS = {
+        "unspecified",
+        "intersection_count",
+        "jaccard",
+        "overlap_coefficient",
+    }
     NUMERIC_TYPES = {"int", "bigint", "float", "double", "decimal", "integer", "number"}
 
     @classmethod
@@ -43,9 +49,9 @@ class MQLCompiler:
         parsed = decode_object(output)
         allowed = {
             "collection", "filters", "select_fields", "sort", "limit", "metric",
-            "assumptions", "clarification",
+            "set_comparison", "assumptions", "clarification",
         }
-        required = {"collection", "filters", "metric", "assumptions", "clarification"}
+        required = {"collection", "filters", "metric", "set_comparison", "assumptions", "clarification"}
         unknown = set(parsed) - allowed
         missing = required - set(parsed)
         if unknown:
@@ -62,6 +68,8 @@ class MQLCompiler:
                 raise MQLPlanError(f"MQL semantic plan {key} must be an array")
         if not isinstance(parsed["metric"], dict):
             raise MQLPlanError("MQL semantic plan metric must be an object")
+        if parsed["set_comparison"] is not None and not isinstance(parsed["set_comparison"], dict):
+            raise MQLPlanError("MQL semantic plan set_comparison must be null or an object")
         if parsed["limit"] is not None and (
             not isinstance(parsed["limit"], int) or isinstance(parsed["limit"], bool) or parsed["limit"] <= 0
         ):
@@ -85,6 +93,16 @@ class MQLCompiler:
         collection = plan["collection"].strip()
         resource = cls._resource_for_collection(collection, resources)
         fields = cls._field_map(resource)
+        set_comparison = cls._validate_set_comparison(plan["set_comparison"], plan, fields)
+        if set_comparison is not None:
+            command, parameters = cls._compile_set_comparison(collection, set_comparison)
+            return {
+                "query": json.dumps(command, ensure_ascii=False, separators=(",", ":")),
+                "query_parameters": parameters,
+                "explanation": "查询由已验证字段事实按集合比较语义确定性编译生成",
+                "warnings": [],
+                "plan": plan,
+            }
         filters, parameters = cls._compile_filters(plan["filters"], fields)
         select_fields = cls._validate_field_list(plan["select_fields"], fields, "select_fields")
         sort = cls._compile_sort(plan["sort"], fields)
@@ -352,3 +370,149 @@ class MQLCompiler:
                 {"$project": {"_id": 0, result_key: 1}},
             ])
         return {"aggregate": collection, "pipeline": pipeline}
+
+    @classmethod
+    def _validate_set_comparison(
+        cls,
+        comparison: dict[str, Any] | None,
+        plan: dict[str, Any],
+        fields: dict[str, dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        if comparison is None:
+            return None
+        required = {"entity_field", "entity_values", "set_fields", "metric"}
+        if set(comparison) != required:
+            raise MQLPlanError("MQL set_comparison fields must be entity_field, entity_values, set_fields and metric")
+        if plan["filters"] or plan["select_fields"] or plan["sort"] or plan["limit"] is not None:
+            raise MQLPlanError("MQL set_comparison cannot be combined with filters, projection, sort or limit")
+        metric = str(comparison["metric"] or "").strip()
+        if metric not in cls.SET_COMPARISON_METRICS:
+            raise MQLPlanError(f"MQL set comparison metric is unsupported: {metric}")
+        if metric == "unspecified":
+            raise MQLClarificationRequired(MQLClarification(
+                "set_comparison_metric_ambiguous",
+                "“重叠度”需要明确计算口径：请选择共同活动数量、Jaccard 相似度，或以较少一方为基准的重叠系数。",
+            ))
+        entity_field = str(comparison["entity_field"] or "").strip()
+        entity = cls._verified_field(entity_field, fields)
+        if str(entity.get("type") or "").lower() != "string":
+            raise MQLPlanError("MQL set comparison entity_field must be a string field")
+        entity_values = comparison["entity_values"]
+        if (
+            not isinstance(entity_values, list)
+            or len(entity_values) != 2
+            or any(not isinstance(value, str) or not value.strip() for value in entity_values)
+            or entity_values[0] == entity_values[1]
+        ):
+            raise MQLPlanError("MQL set comparison requires two distinct non-empty entity_values")
+        set_fields = comparison["set_fields"]
+        if not isinstance(set_fields, list) or not set_fields:
+            raise MQLPlanError("MQL set comparison set_fields must be a non-empty array")
+        normalized_fields: list[str] = []
+        for value in set_fields:
+            field_name = str(value or "").strip()
+            field = cls._verified_field(field_name, fields)
+            if str(field.get("type") or "").lower() in {"array", "json", "object"}:
+                raise MQLPlanError(f"MQL set comparison identity field must be scalar: {field_name}")
+            if "." not in field_name:
+                raise MQLPlanError(f"MQL set comparison identity field must be an array element path: {field_name}")
+            array_name = field_name.rsplit(".", 1)[0]
+            array_field = cls._verified_field(array_name, fields)
+            if str(array_field.get("type") or "").lower() != "array":
+                raise MQLPlanError(f"MQL set comparison parent field must be an array: {array_name}")
+            if field_name not in normalized_fields:
+                normalized_fields.append(field_name)
+        metric_plan = cls._validate_metric(plan["metric"], fields)
+        if metric_plan["operation"] != "none":
+            raise MQLPlanError("MQL set_comparison requires metric.operation none")
+        return {
+            "entity_field": entity_field,
+            "entity_values": [value.strip() for value in entity_values],
+            "set_fields": normalized_fields,
+            "metric": metric,
+        }
+
+    @classmethod
+    def _compile_set_comparison(
+        cls,
+        collection: str,
+        comparison: dict[str, Any],
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        parameters = [
+            {"name": "entity_1", "type": "string", "default": comparison["entity_values"][0]},
+            {"name": "entity_2", "type": "string", "default": comparison["entity_values"][1]},
+        ]
+
+        def branch(parameter: str) -> list[dict[str, Any]]:
+            mapped_sets = []
+            for field_name in comparison["set_fields"]:
+                array_name, leaf_name = field_name.rsplit(".", 1)
+                mapped_sets.append({
+                    "$map": {
+                        "input": {"$ifNull": [f"${array_name}", []]},
+                        "as": "item",
+                        "in": f"$$item.{leaf_name}",
+                    },
+                })
+            return [
+                {"$match": {comparison["entity_field"]: {"$param": parameter}}},
+                {"$project": {"_values": {"$setUnion": mapped_sets}}},
+                {"$group": {"_id": None, "_value_sets": {"$push": "$_values"}}},
+                {"$project": {
+                    "_id": 0,
+                    "values": {
+                        "$reduce": {
+                            "input": "$_value_sets",
+                            "initialValue": [],
+                            "in": {"$setUnion": ["$$value", "$$this"]},
+                        },
+                    },
+                }},
+            ]
+
+        pipeline: list[dict[str, Any]] = [
+            {"$facet": {"left": branch("entity_1"), "right": branch("entity_2")}},
+            {"$project": {
+                "_id": 0,
+                "left": {"$ifNull": [{"$arrayElemAt": ["$left.values", 0]}, []]},
+                "right": {"$ifNull": [{"$arrayElemAt": ["$right.values", 0]}, []]},
+            }},
+            {"$project": {
+                "left_count": {"$size": "$left"},
+                "right_count": {"$size": "$right"},
+                "intersection_count": {"$size": {"$setIntersection": ["$left", "$right"]}},
+                "union_count": {"$size": {"$setUnion": ["$left", "$right"]}},
+            }},
+        ]
+        metric = comparison["metric"]
+        if metric == "intersection_count":
+            pipeline.append({"$project": {"_id": 0, "left_count": 1, "right_count": 1, "intersection_count": 1}})
+        elif metric == "jaccard":
+            pipeline.append({"$project": {
+                "_id": 0,
+                "left_count": 1,
+                "right_count": 1,
+                "intersection_count": 1,
+                "union_count": 1,
+                "jaccard": {"$cond": [
+                    {"$eq": ["$union_count", 0]},
+                    0,
+                    {"$divide": ["$intersection_count", "$union_count"]},
+                ]},
+            }})
+        else:
+            pipeline.extend([
+                {"$set": {"_overlap_denominator": {"$min": ["$left_count", "$right_count"]}}},
+                {"$project": {
+                    "_id": 0,
+                    "left_count": 1,
+                    "right_count": 1,
+                    "intersection_count": 1,
+                    "overlap_coefficient": {"$cond": [
+                        {"$eq": ["$_overlap_denominator", 0]},
+                        0,
+                        {"$divide": ["$intersection_count", "$_overlap_denominator"]},
+                    ]},
+                }},
+            ])
+        return {"aggregate": collection, "pipeline": pipeline}, parameters

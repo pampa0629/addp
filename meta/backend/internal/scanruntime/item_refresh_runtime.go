@@ -96,6 +96,9 @@ func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
 			return scanprocessor.Result{}, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 		}
 	}
+	if result, handled, err := r.refreshKnownDynamicSchemaItem(ctx, resource, tenantID, p, item, parentNode); handled || err != nil {
+		return result, err
+	}
 	if result, handled, err := r.refreshKnownCatalogFactsItem(ctx, resource, tenantID, p, item, parentNode); handled || err != nil {
 		return result, err
 	}
@@ -148,6 +151,88 @@ func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
 		indexPath,
 		scanflow.KnownItemSize(descriptor, &item),
 	))
+}
+
+func (r *ItemRefreshRuntime) refreshKnownDynamicSchemaItem(
+	ctx context.Context,
+	resource *commonModels.Engine,
+	tenantID uint,
+	p plugin.EnginePlugin,
+	item models.MetaItem,
+	parentNode models.MetaNode,
+) (scanprocessor.Result, bool, error) {
+	samplingProvider, ok := p.(plugin.DynamicSchemaSamplingProvider)
+	if !ok || item.ItemType != plugin.CatalogTermCollection {
+		return scanprocessor.Result{}, false, nil
+	}
+	model := scanflow.CatalogModelForPlugin(p)
+	if model == nil || len(model.Levels) != 2 {
+		return scanprocessor.Result{}, true, fmt.Errorf("dynamic schema item refresh requires a branch-leaf catalog model")
+	}
+	branchLevel, leafLevel := model.Levels[0], model.Levels[1]
+	if branchLevel.Role != plugin.CatalogRoleBranch || leafLevel.Role != plugin.CatalogRoleLeaf ||
+		leafLevel.Term != item.ItemType || len(leafLevel.Kinds) != 1 || strings.TrimSpace(leafLevel.Kinds[0]) == "" {
+		return scanprocessor.Result{}, true, fmt.Errorf("dynamic schema item refresh target does not match catalog model")
+	}
+	branchName := strings.TrimSpace(parentNode.Name)
+	if branchName == "" || strings.TrimSpace(item.Name) == "" {
+		return scanprocessor.Result{}, true, fmt.Errorf("dynamic schema item refresh target is incomplete; rescan the parent node")
+	}
+
+	itemPath := plugin.BranchLeafCatalogPath(*model, resource.ID, branchLevel.Term, branchName, leafLevel.Term, leafLevel.Kinds[0], item.Name)
+	facts, err := samplingProvider.SampleDynamicSchema(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), itemPath, plugin.CatalogFactsOptions{
+		IncludeSamples:    true,
+		IncludeStatistics: true,
+		IncludeIndexes:    true,
+		SampleSize:        100,
+	})
+	if err != nil {
+		return scanprocessor.Result{}, true, fmt.Errorf("dynamic schema sampling failed: %w", err)
+	}
+	if facts == nil {
+		return scanprocessor.Result{}, true, fmt.Errorf("dynamic schema sampling returned no facts")
+	}
+
+	attrs := metaattr.BuildDynamicSchemaAttributes(dynamicSchemaAttributesInput(facts))
+	var rowCount *int64
+	var estimatedRowCount *int64
+	var dataUpdatedAt = item.DataUpdatedAt
+	var sizeBytes int64
+	fieldCount := 0
+	if tableInfo := plugin.CatalogFactsTableInfo(facts); tableInfo != nil {
+		rowCount = tableInfo.RowCount
+		estimatedRowCount = tableInfo.EstimatedRowCount
+		dataUpdatedAt = tableInfo.UpdatedAt
+		fieldCount = len(tableInfo.Fields)
+		if tableInfo.SizeBytes != nil {
+			sizeBytes = *tableInfo.SizeBytes
+		}
+	}
+	metaattr.ApplyDynamicSchemaStatistics(attrs, rowCount, estimatedRowCount, sizeBytes)
+	metaattr.ApplyBranchLeafItemAttributes(attrs, item.ItemType)
+
+	fullName := strings.TrimSpace(item.FullName)
+	if fullName == "" {
+		fullName = metapath.ComposeNodeFullName(item.Name, &parentNode, ".")
+	}
+	refreshed, err := r.repo.UpdateItemByIDWithDepth(
+		tenantID,
+		item.ID,
+		resource.ID,
+		&parentNode,
+		item.ItemType,
+		item.Name,
+		fullName,
+		attrs,
+		rowCount,
+		&sizeBytes,
+		dataUpdatedAt,
+		scanflow.ScanDepthDeep,
+	)
+	if err != nil {
+		return scanprocessor.Result{}, true, err
+	}
+	return scanprocessor.Result{Item: refreshed, Fields: fieldCount}, true, nil
 }
 
 func (r *ItemRefreshRuntime) reDetectKnownWholeScopeItem(

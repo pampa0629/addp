@@ -249,12 +249,6 @@ class ResourceDiscovery:
             role_candidates = [dict(candidate, role=intent.role) for candidate in verified_children]
             if not role_candidates:
                 missing_roles.append(intent.role)
-            await self._rank_role_candidates(
-                intent.role,
-                role_candidates,
-                query=query,
-                search_queries=intent.search_queries,
-            )
             candidates.extend(role_candidates)
         return ResourceDiscoveryResult(candidates=candidates, missing_roles=missing_roles)
 

@@ -42,12 +42,26 @@ func TestIntegrationSampleDynamicSchemaPersistsPersonsNestedFacts(t *testing.T) 
 		}
 		return field
 	}
-	assertSampledField("userInfo.nickName", datatype.FieldTypeString)
+	if scalarField := assertSampledField("userInfo.nickName", datatype.FieldTypeString); scalarField.ElementType != "" {
+		t.Fatalf("userInfo.nickName element type = %q, want omitted", scalarField.ElementType)
+	}
 	arrayField := assertSampledField("entriedOutdoors", datatype.FieldTypeArray)
 	if arrayField.ElementType != datatype.FieldTypeJSON {
 		t.Fatalf("entriedOutdoors element type = %q, want json", arrayField.ElementType)
 	}
 	assertSampledField("entriedOutdoors.title", datatype.FieldTypeString)
+}
+
+func TestMapMongoArrayElementTypeOmitsUnknownSample(t *testing.T) {
+	if got := mapMongoArrayElementType(""); got != "" {
+		t.Fatalf("empty element type = %q, want omitted", got)
+	}
+	if got := mapMongoArrayElementType("null"); got != "" {
+		t.Fatalf("null element type = %q, want omitted", got)
+	}
+	if got := mapMongoArrayElementType("object"); got != datatype.FieldTypeJSON {
+		t.Fatalf("object element type = %q, want json", got)
+	}
 }
 
 func TestCollectMongoFieldStatsIncludesNestedObjectAndArrayPaths(t *testing.T) {

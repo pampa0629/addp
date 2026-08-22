@@ -15,10 +15,26 @@ def persons_resource():
         "fields": [
             {"name": "userInfo.nickName", "path": ["userInfo", "nickName"], "type": "string"},
             {
+                "name": "myOutdoors",
+                "path": ["myOutdoors"],
+                "type": "array",
+                "element_type": "json",
+            },
+            {
+                "name": "myOutdoors.id",
+                "path": ["myOutdoors", "id"],
+                "type": "string",
+            },
+            {
                 "name": "entriedOutdoors",
                 "path": ["entriedOutdoors"],
                 "type": "array",
                 "element_type": "json",
+            },
+            {
+                "name": "entriedOutdoors.id",
+                "path": ["entriedOutdoors", "id"],
+                "type": "string",
             },
             {
                 "name": "entriedOutdoors.title",
@@ -43,6 +59,26 @@ def participation_plan():
         "metric": {
             "operation": "count_array_elements",
             "field": "entriedOutdoors",
+        },
+        "set_comparison": None,
+        "assumptions": [],
+        "clarification": None,
+    }
+
+
+def overlap_plan(metric):
+    return {
+        "collection": "Persons",
+        "filters": [],
+        "select_fields": [],
+        "sort": [],
+        "limit": None,
+        "metric": {"operation": "none", "field": ""},
+        "set_comparison": {
+            "entity_field": "userInfo.nickName",
+            "entity_values": ["攀爬", "神采"],
+            "set_fields": ["myOutdoors.id", "entriedOutdoors.id"],
+            "metric": metric,
         },
         "assumptions": [],
         "clarification": None,
@@ -99,6 +135,39 @@ def test_compile_rejects_unknown_schema_coverage():
 
     with pytest.raises(MQLClarificationRequired, match="先扫描元数据"):
         MQLCompiler.compile(participation_plan(), [resource])
+
+
+def test_set_overlap_requires_metric_clarification():
+    with pytest.raises(MQLClarificationRequired, match="共同活动数量、Jaccard") as captured:
+        MQLCompiler.compile(overlap_plan("unspecified"), [persons_resource()])
+
+    assert captured.value.clarification.reason == "set_comparison_metric_ambiguous"
+
+
+def test_compile_jaccard_overlap_uses_verified_ids_and_deduplicates():
+    result = MQLCompiler.compile(overlap_plan("jaccard"), [persons_resource()])
+    command = json.loads(result["query"])
+
+    assert command["aggregate"] == "Persons"
+    pipeline_text = json.dumps(command["pipeline"], ensure_ascii=False)
+    assert "$myOutdoors" in pipeline_text
+    assert "$entriedOutdoors" in pipeline_text
+    assert "$$item.id" in pipeline_text
+    assert "$setUnion" in pipeline_text
+    assert "$setIntersection" in pipeline_text
+    assert "$divide" in pipeline_text
+    assert result["query_parameters"] == [
+        {"name": "entity_1", "type": "string", "default": "攀爬"},
+        {"name": "entity_2", "type": "string", "default": "神采"},
+    ]
+
+
+def test_compile_intersection_count_has_no_ratio():
+    result = MQLCompiler.compile(overlap_plan("intersection_count"), [persons_resource()])
+    pipeline_text = json.dumps(json.loads(result["query"])["pipeline"], ensure_ascii=False)
+
+    assert "$setIntersection" in pipeline_text
+    assert "$divide" not in pipeline_text
 
 
 def test_generate_mql_uses_single_semantic_plan_call(monkeypatch):

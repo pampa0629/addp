@@ -48,7 +48,7 @@
     <div class="table-wrapper">
       <div v-if="isDynamicSchemaRecordSet" class="record-preview-toolbar">
         <span class="record-preview-toolbar__summary">
-          {{ t('map.recordVisibleColumns', { visible: displayColumns.length, total: columns.length }) }}
+          {{ t('map.recordVisibleColumns', { visible: displayColumns.length, total: availableDisplayColumns.length }) }}
         </span>
         <el-select
           v-model="selectedRecordColumns"
@@ -61,10 +61,10 @@
           @change="handleRecordColumnsChange"
         >
           <el-option
-            v-for="col in columns"
-            :key="col"
-            :label="col"
-            :value="col"
+            v-for="column in availableDisplayColumns"
+            :key="column.key"
+            :label="column.label"
+            :value="column.key"
           />
         </el-select>
       </div>
@@ -79,22 +79,22 @@
         @row-click="handleRowClick"
       >
         <el-table-column
-          v-for="col in displayColumns"
-          :key="col"
-          :label="col"
-          :show-overflow-tooltip="!hasStructuredColumnValues(col)"
+          v-for="column in displayColumns"
+          :key="column.key"
+          :label="column.label"
+          :show-overflow-tooltip="!hasStructuredColumnValues(column)"
         >
           <template #default="{ row }">
             <button
-              v-if="isStructuredCellValue(row[col])"
+              v-if="isStructuredCellValue(cellValue(row, column))"
               class="structured-cell"
               type="button"
-              @click.stop="openStructuredCell(row, col)"
+              @click.stop="openStructuredCell(row, column)"
             >
-              <span class="structured-cell__kind">{{ structuredValueKind(row[col]) }}</span>
-              <span class="structured-cell__summary">{{ structuredValueSummary(row[col]) }}</span>
+              <span class="structured-cell__kind">{{ structuredValueKind(cellValue(row, column)) }}</span>
+              <span class="structured-cell__summary">{{ structuredValueSummary(cellValue(row, column)) }}</span>
             </button>
-            <span v-else class="scalar-cell">{{ formatCellValue(row[col]) }}</span>
+            <span v-else class="scalar-cell">{{ formatCellValue(cellValue(row, column)) }}</span>
           </template>
         </el-table-column>
       </el-table>
@@ -165,6 +165,7 @@ import {
   getPreviewCRSTransform,
   transformGeoJSONGeometryToWGS84
 } from '../utils/crsRegistry'
+import { buildDynamicSchemaColumnDescriptors, dynamicSchemaCellValue } from '../utils/dynamicSchemaColumns'
 
 const { t } = useI18n()
 
@@ -397,6 +398,7 @@ const startMapResize = (event) => {
 }
 
 const columns = computed(() => props.data?.columns || [])
+const columnMetadata = computed(() => props.data?.column_metadata || [])
 const rows = computed(() => props.data?.rows || [])
 const total = computed(() => props.data?.total || 0)
 const geometryColumns = computed(() => props.data?.geometry_columns || [])
@@ -498,13 +500,15 @@ const isStructuredCellValue = (value) => {
   return value !== null && typeof value === 'object'
 }
 
+const cellValue = (row, column) => dynamicSchemaCellValue(row, column)
+
 const hasStructuredColumnValues = (column) => {
-  return rows.value.some((row) => isStructuredCellValue(row?.[column]))
+  return rows.value.some((row) => isStructuredCellValue(cellValue(row, column)))
 }
 
 const hasScalarColumnValues = (column) => {
   return rows.value.some((row) => {
-    const value = row?.[column]
+    const value = cellValue(row, column)
     return value !== null && value !== undefined && typeof value !== 'object'
   })
 }
@@ -541,8 +545,8 @@ const safeStructuredJSON = (value) => {
 }
 
 const openStructuredCell = (row, column) => {
-  structuredDialogTitle.value = column
-  structuredDialogJSON.value = safeStructuredJSON(row?.[column])
+  structuredDialogTitle.value = column.label
+  structuredDialogJSON.value = safeStructuredJSON(cellValue(row, column))
   structuredDialogVisible.value = true
 }
 
@@ -563,9 +567,9 @@ const buildPopupContent = (row) => {
     return `<div class="map-popup-content">${t('map.noData')}</div>`
   }
   const rowsHtml = (displayColumns.value || [])
-    .map((col) => {
-      const label = escapeHtml(col)
-      const value = escapeHtml(formatCellValue(row[col]))
+    .map((column) => {
+      const label = escapeHtml(column.label)
+      const value = escapeHtml(formatCellValue(cellValue(row, column)))
       return `<div class="map-popup-row"><span class="map-popup-label">${label}</span><span class="map-popup-value">${value}</span></div>`
     })
     .join('')
@@ -573,24 +577,34 @@ const buildPopupContent = (row) => {
 }
 
 // 过滤掉几何列后的显示列
+const availableDisplayColumns = computed(() => {
+  if (!isDynamicSchemaRecordSet.value) {
+    return columns.value.map(column => ({ key: column, label: column, path: [column] }))
+  }
+  return buildDynamicSchemaColumnDescriptors(columns.value, columnMetadata.value)
+})
+
 const displayColumns = computed(() => {
   if (!columns.value || columns.value.length === 0) return []
   if (isDynamicSchemaRecordSet.value) {
-    const selected = selectedRecordColumns.value.filter((col) => columns.value.includes(col))
-    return selected.length > 0 ? selected : columns.value
+    const selected = selectedRecordColumns.value
+      .map(key => availableDisplayColumns.value.find(column => column.key === key))
+      .filter(Boolean)
+    return selected.length > 0 ? selected : availableDisplayColumns.value
   }
   const geometrySet = new Set(geometryColumns.value || [])
   const filtered = columns.value.filter((col) => !geometrySet.has(col))
-  return filtered.length > 0 ? filtered : columns.value
+  return (filtered.length > 0 ? filtered : columns.value)
+    .map(column => ({ key: column, label: column, path: [column] }))
 })
 
 const defaultRecordColumns = computed(() => {
   if (!isDynamicSchemaRecordSet.value || columns.value.length === 0) return []
-  const identityColumns = columns.value.filter((col) => col === '_id' || col.toLowerCase() === 'id')
-  const scalarColumns = columns.value.filter((col) => !identityColumns.includes(col) && hasScalarColumnValues(col))
+  const identityColumns = availableDisplayColumns.value.filter((column) => column.key === '_id' || column.key.toLowerCase() === 'id')
+  const scalarColumns = availableDisplayColumns.value.filter((column) => !identityColumns.includes(column) && hasScalarColumnValues(column))
   const preferred = [...identityColumns, ...scalarColumns]
-  const fallback = preferred.length > 0 ? preferred : columns.value.slice(0, 6)
-  return fallback.slice(0, 8)
+  const fallback = preferred.length > 0 ? preferred : availableDisplayColumns.value.slice(0, 6)
+  return fallback.slice(0, 8).map(column => column.key)
 })
 
 // 生成行键
@@ -726,7 +740,7 @@ watch(
 watch(
   () => [
     props.data?.preview_kind,
-    columns.value.join('\u0000'),
+    availableDisplayColumns.value.map(column => column.key).join('\u0000'),
     rows.value.length,
     Array.isArray(props.tableState?.visible_columns)
       ? props.tableState.visible_columns.join('\u0000')
@@ -738,9 +752,9 @@ watch(
       return
     }
     const savedColumns = Array.isArray(props.tableState?.visible_columns)
-      ? props.tableState.visible_columns.filter((col) => columns.value.includes(col))
+      ? props.tableState.visible_columns.filter((key) => availableDisplayColumns.value.some(column => column.key === key))
       : []
-    const validSelected = selectedRecordColumns.value.filter((col) => columns.value.includes(col))
+    const validSelected = selectedRecordColumns.value.filter((key) => availableDisplayColumns.value.some(column => column.key === key))
     selectedRecordColumns.value = savedColumns.length > 0
       ? savedColumns
       : (validSelected.length > 0 ? validSelected : defaultRecordColumns.value)

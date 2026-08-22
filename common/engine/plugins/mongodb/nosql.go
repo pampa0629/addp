@@ -204,7 +204,7 @@ func (p *MongoDBPlugin) SampleDynamicSchema(ctx context.Context, connInfo plugin
 			Name:        name,
 			Path:        append([]string(nil), stat.Path...),
 			Type:        mapMongoBSONType(stat.Type),
-			ElementType: mapMongoBSONType(stat.ElementType),
+			ElementType: mapMongoArrayElementType(stat.ElementType),
 			NativeType:  stat.Type,
 			Nullable:    true,
 			PrimaryKey:  len(stat.Path) == 1 && name == "_id",
@@ -522,6 +522,13 @@ func mapMongoBSONType(bsonType string) datatype.FieldType {
 	default:
 		return datatype.FieldTypeUnknown
 	}
+}
+
+func mapMongoArrayElementType(bsonType string) datatype.FieldType {
+	if bsonType == "" || bsonType == "null" {
+		return ""
+	}
+	return mapMongoBSONType(bsonType)
 }
 
 func maxFloat64(a, b float64) float64 {

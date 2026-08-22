@@ -21,6 +21,7 @@ func TestBuildResourceWithStatsProjectsScanStats(t *testing.T) {
 		TenantID:         &tenantID,
 		Name:             "Business MinIO",
 		EngineType:       "s3",
+		LifecycleState:   commonModels.EngineLifecycleActive,
 		ConnectionStatus: "healthy",
 		LastCheckAt:      &lastCheck,
 		CheckMessage:     "ok",
@@ -43,6 +44,9 @@ func TestBuildResourceWithStatsProjectsScanStats(t *testing.T) {
 	}
 	if view.LastCheckAt != "2026-06-06 09:00:00" || view.ConnectionStatus != "healthy" || view.CheckMessage != "ok" {
 		t.Fatalf("connection fields = %#v", view)
+	}
+	if view.LifecycleState != commonModels.EngineLifecycleActive {
+		t.Fatalf("LifecycleState = %q, want %q", view.LifecycleState, commonModels.EngineLifecycleActive)
 	}
 	if view.EngineFamily == "" || view.CatalogRootTerm == "" || view.CatalogLeafTerm == "" {
 		t.Fatalf("catalog terms not projected: %#v", view)

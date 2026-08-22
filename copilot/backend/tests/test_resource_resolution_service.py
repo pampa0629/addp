@@ -95,7 +95,12 @@ def test_query_policy_uses_catalog_scope_instead_of_global_search():
         scope_locator=scope,
     ))
 
+    assert service.intent_chain.extract_calls == []
     assert discovery.discover_calls == []
+    scoped_intents = discovery.discover_scoped_calls[0][0]
+    assert [(item.role, item.search_queries) for item in scoped_intents] == [
+        ("查询输入资源", ["查询用户参加的活动"]),
+    ]
     assert discovery.discover_scoped_calls[0][1] == {
         "query": "查询用户参加的活动",
         "engine_id": 11,

@@ -108,18 +108,15 @@ class ResourceResolutionService:
     ) -> ResourceResolutionResult:
         if self.discovery is None or policy.session_catalog:
             raise ValueError(f"{policy.name} 场景不支持 Tool 资源搜索")
-        intents = await self.extract(query, policy)
-        if not intents:
-            return ResourceResolutionResult(intents=[], candidates=[], missing_roles=[])
-        if policy.name == "transfer" and len(intents) != 1:
-            return ResourceResolutionResult(intents=intents, candidates=[], missing_roles=[])
-
         if scope_locator:
+            if policy.name != "query":
+                raise ValueError(f"{policy.name} 场景不支持 Catalog 范围发现")
             scope_engine_id = _locator_engine_id(scope_locator)
             if scope_engine_id is None:
                 raise ValueError(f"{policy.name} 范围 locator 缺少 Source Engine ID")
             if not policy.allowed_source_engine_types and policy.engine_id is not None and scope_engine_id != policy.engine_id:
                 raise ValueError(f"{policy.name} 范围 Source Engine 与 Runtime 不一致")
+            intents = [ResourceIntent(role="查询输入资源", search_queries=[query])]
             result = await self.discovery.discover_scoped(
                 intents,
                 query=query,
@@ -134,6 +131,12 @@ class ResourceResolutionService:
                 candidates=result.candidates,
                 missing_roles=result.missing_roles,
             )
+
+        intents = await self.extract(query, policy)
+        if not intents:
+            return ResourceResolutionResult(intents=[], candidates=[], missing_roles=[])
+        if policy.name == "transfer" and len(intents) != 1:
+            return ResourceResolutionResult(intents=intents, candidates=[], missing_roles=[])
 
         result = await self._discover_once(intents, policy, query=query)
         if result.missing_roles:

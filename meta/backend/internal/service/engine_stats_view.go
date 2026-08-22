@@ -176,6 +176,7 @@ func buildResourceWithStats(resource *commonModels.Engine, stats *engineScanStat
 		ScannedCatalogNodes:   scannedCatalogNodes,
 		UnscannedCatalogNodes: totalCatalogNodes - scannedCatalogNodes,
 		ScannedAt:             lastScanAt,
+		LifecycleState:        resource.LifecycleState,
 		ConnectionStatus:      resource.ConnectionStatus,
 		LastCheckAt:           lastCheckAt,
 		CheckMessage:          resource.CheckMessage,
