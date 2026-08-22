@@ -77,6 +77,7 @@ Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权�
 | `make test-transfer-frontend` | Transfer 前端确定性测试和构建 | T1 |
 | `make test-agent-eval` | Agent 离线评测门禁 | T1 |
 | `make test-common-python` | common-python 全量测试 | T1 |
+| `make test-copilot` | Copilot Python 后端全量确定性测试 | T1 |
 | `make test-changed [BASE_REF=<ref>]` | 根据 Git 改动和共享依赖关系自动运行受影响模块门禁 | T0-T3，AI 本地交付入口 |
 | `make test-module MODULE=<模块>` | 自动发现并串行运行指定模块的平台、语言、前端及已登记基础设施门禁 | T0-T3，开发交付入口 |
 | `make test-integration` | 严格串行运行全部已登记的 disposable 基础设施门禁 | T2，本地或专用集成环境聚合入口 |
@@ -106,6 +107,8 @@ Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权�
 ### 5.3 前端覆盖仍不完整
 
 Common Python、Quality、Agent 和 Model 已通过统一脚本按各自模块、共享依赖、根 Makefile 和 workflow 自身的变更路径选择正式门禁；Asset、Console、Develop、Graph、Inference、Manager、Meta、Monitor、Orchestrator、Portal、Service、Standard、System 和 Transfer 复用同一个确定性前端矩阵定义，手工触发及平台夜间任务始终执行。当前所有具备前端测试的模块均已登记，后续新增前端模块或测试入口时必须同步纳入矩阵。
+
+Copilot Python 后端已通过 `make test-copilot` 纳入根 `make test` 和 Platform CI 路径选择；`common-python` 变更会同时选择 Common Python、Agent 和 Copilot 消费者门禁。Python CI 登记检查自动发现 `*/pyproject.toml` 与 `*/backend/requirements.txt`，要求根 Make 目标、默认确定性聚合、workflow 调用和 owner 路径同时存在。
 
 ### 5.4 模块专项门禁结构仍待统一
 

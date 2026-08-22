@@ -1,4 +1,4 @@
-.PHONY: help build build-images test test-changed test-module test-platform test-engine-startup-isolation test-integration test-online test-online-runner test-go test-agent-frontend test-asset-frontend test-console-frontend test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats \
+.PHONY: help build build-images test test-changed test-module test-platform test-engine-startup-isolation test-integration test-online test-online-runner test-go test-agent-frontend test-asset-frontend test-console-frontend test-copilot test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats \
         build-iam-bootstrap build-iam-recovery \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
@@ -97,6 +97,9 @@ test-agent-eval-release: test-agent-frontend ## 使用三份新鲜在线证据�
 test-common-python: ## 运行 common-python 全量测试
 	@cd common-python && .venv/bin/pytest -q
 
+test-copilot: ## 运行 Copilot 后端全量确定性测试
+	@cd copilot/backend && venv/bin/python -m pytest -q tests
+
 test-common-python-cli-release: ## 构建 wheel 并运行全新 venv、pipx 生命周期和 macOS Keychain 发布门禁
 	@bash scripts/test/common-python-cli-release-gate.sh
 
@@ -139,6 +142,8 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@python3 scripts/ci/check-build-registration.py --repository "$(CURDIR)"
 	@python3 scripts/ci/check-frontend-ci-registration_test.py
 	@python3 scripts/ci/check-frontend-ci-registration.py --repository "$(CURDIR)"
+	@python3 scripts/ci/check-python-ci-registration_test.py
+	@python3 scripts/ci/check-python-ci-registration.py --repository "$(CURDIR)"
 	@python3 scripts/ci/check-t2-ci-registration_test.py
 	@python3 scripts/ci/check-t2-ci-registration.py --repository "$(CURDIR)"
 	@python3 scripts/test/module-gate_test.py
@@ -262,7 +267,7 @@ test-authorization: ## 校验 IAM Manifest、生成常量和授权覆盖报告
 	@cd common && go run ./authorization/cmd/manifest --coverage-report --repository-root .. > /tmp/addp-authorization-coverage.json
 	@SWAGGER_COVERAGE_WARN_ONLY=1 bash scripts/swagger/check-route-coverage.sh all
 
-test: test-platform test-go test-agent-eval \
+test: test-platform test-go test-common-python test-agent-eval test-copilot \
 	test-asset-frontend test-console-frontend test-develop-frontend \
 	test-graph-frontend test-inference-frontend test-manager-frontend test-meta-frontend \
 	test-model-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend \

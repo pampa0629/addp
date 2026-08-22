@@ -53,6 +53,7 @@ def discover_modules(repository: Path) -> set[str]:
             "*/*/go.mod",
             "*/frontend/package.json",
             "*/pyproject.toml",
+            "*/backend/requirements.txt",
             "scripts/test/*-postgres-gate.sh",
         )
         if not path.startswith("scripts/test/")
@@ -107,8 +108,9 @@ def plan_module(repository: Path, module: str, include_platform: bool = True) ->
                 Step(f"{module} frontend T1/T3", ("make", frontend_target), repository)
             )
 
-    python_path = f"{module}/pyproject.toml"
-    if python_path in git_files(repository, "*/pyproject.toml"):
+    python_paths = git_files(repository, "*/pyproject.toml", "*/backend/requirements.txt")
+    owns_python = any(path.split("/", 1)[0] == module for path in python_paths)
+    if owns_python and eval_match is None:
         python_target = f"test-{module}"
         if make_target(makefile, python_target) is None:
             raise ModuleGateError(f"Makefile target {python_target} is missing")

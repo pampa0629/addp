@@ -449,11 +449,13 @@ scripts/test/
 
 平台无外部服务的一致性门禁使用 `make test-platform`，依次校验技术栈规约与全部 `go.mod` 的依赖版本、统一 execution 测试夹具、IAM Manifest、owner 常量、Tool Catalog、SQL seed 和 Swagger 路由覆盖。该入口不启动或重启 ADDP 服务，不连接开发数据库；GitHub Actions 的 Platform CI 在 `main` 推送、每日定时和手工触发时直接调用该入口。
 
-根 `make test` 是 T0-T1 全部无外部服务确定性门禁的唯一聚合入口，包含 `make test-platform`、全部 Go 模块、Agent 离线评测，以及所有已登记前端的测试和生产构建。前端 CI 登记检查同时要求每个自动发现的前端进入该聚合入口，新增前端不能只登记 CI 矩阵而遗漏本地总门禁。需要专用 PostgreSQL、真实运行服务、在线证据或发布环境的 T2-T5 门禁不并入 `make test`，必须使用各自显式入口。
+根 `make test` 是 T0-T1 全部无外部服务确定性门禁的唯一聚合入口，包含 `make test-platform`、全部 Go 模块、Common Python、Agent 离线评测、Copilot 后端，以及所有已登记前端的测试和生产构建。前端与 Python CI 登记检查同时要求每个自动发现的组件进入该聚合入口，新增测试组件不能只登记 CI 而遗漏本地总门禁。需要专用 PostgreSQL、真实运行服务、在线证据或发布环境的 T2-T5 门禁不并入 `make test`，必须使用各自显式入口。
 
 单模块交付使用 `make test-module MODULE=<模块>`。`scripts/test/module-gate.py` 从 Git 跟踪的 Go module、`*/frontend/package.json`、`*/pyproject.toml` 和 `scripts/test/*-postgres-gate.sh` 自动生成该模块的 T0-T3 执行计划：先运行 `test-platform`，再串行执行语言测试、前端测试与生产构建、已登记 PostgreSQL T2。`--dry-run` 只用于检查计划；正式入口不跳过缺少连接条件的 T2。模块发现与执行计划的确定性测试已纳入 `make test-platform`。
 
 AI 完成一组改动后使用 `make test-changed`；默认读取相对 `HEAD` 的已跟踪改动及未跟踪文件，或通过 `BASE_REF=<ref>` 指定比较基线。`scripts/test/changed-gate.py` 始终保留平台 T0，把普通路径映射到已登记 owner，并从 `go.mod`、前端 `file:` 依赖和 Python requirements 推导共享模块消费者，再复用模块门禁计划且去重。若受影响模块含 PostgreSQL T2，仍须提供对应安全连接条件，不会自动跳过。
+
+Copilot 后端使用 `make test-copilot`，固定从 `copilot/backend` 运行全部 pytest。Platform CI 在 Copilot 或 `common-python` 改动时创建独立 Python 3.11 venv、安装 owner requirements 与 Common Python 测试依赖后调用同一入口。`scripts/ci/check-python-ci-registration.py` 自动发现 Python package 和 Python backend，校验 Make 目标、根 `make test`、workflow 调用、owner 路径及共享依赖路径登记。
 
 Go 全量测试使用 `make test-go`，根据 Git 已跟踪的全部 `go.mod` 在系统临时目录生成独立 workspace，再逐一运行 `go test ./...`，不依赖或修改本地被忽略的 `go.work`，也不维护第二份模块清单。`make test-execution-fixtures` 禁止业务测试手写 `task_executions` 表；Common 仓储自测、System PostgreSQL 专项测试及 Manager 历史表清理测试使用精确文件白名单。Model 的权限错误、URL 状态、ER 图过滤、DDL 请求和主题 token 回归使用 `make test-model-frontend`；该入口同时运行独立端口上的浏览器 E2E，覆盖 403 明确提示、业务域详情往返恢复和窄窗口深色 DDL 预览，并执行生产构建与 500 KiB 入口分块预算校验。
 
