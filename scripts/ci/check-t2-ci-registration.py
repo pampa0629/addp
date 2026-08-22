@@ -44,20 +44,31 @@ def make_recipe(makefile: str, target: str) -> str | None:
     return match.group("recipe") if match else None
 
 
+def yaml_blocks(content: str, pattern: str) -> list[str]:
+    matches = list(re.finditer(pattern, content))
+    return [
+        content[
+            match.start() : (
+                matches[index + 1].start() if index + 1 < len(matches) else len(content)
+            )
+        ]
+        for index, match in enumerate(matches)
+    ]
+
+
 def validate_registration(repository: Path) -> list[str]:
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
     workflow_path = repository / ".github/workflows/release-and-t2-gates.yml"
     if not workflow_path.is_file():
         raise RegistrationError(".github/workflows/release-and-t2-gates.yml is missing")
     workflow = workflow_path.read_text(encoding="utf-8")
+    jobs = yaml_blocks(workflow, r"(?m)^  [a-zA-Z0-9_-]+:\s*$")
+    steps = yaml_blocks(workflow, r"(?m)^      - name:\s*.+$")
     errors: list[str] = []
     integration_recipe = make_recipe(makefile, "test-integration")
 
     if integration_recipe is None:
         errors.append("Makefile target test-integration is missing")
-
-    if not re.search(r"(?m)^\s*image:\s*postgres:15@sha256:[0-9a-f]{64}\s*$", workflow):
-        errors.append("Release/T2 workflow must pin the PostgreSQL 15 service image by digest")
 
     for script, target, owner in discover_postgres_gates(repository):
         recipe = make_recipe(makefile, target)
@@ -72,15 +83,48 @@ def validate_registration(repository: Path) -> list[str]:
             errors.append(
                 f"{script}: root test-integration does not invoke {target} sequentially"
             )
-        if not re.search(
-            rf"(?m)^\s*(?:-\s*)?run:\s*make\s+{re.escape(target)}\s*$",
-            workflow,
-        ):
+        target_job = next(
+            (
+                job
+                for job in jobs
+                if re.search(
+                    rf"(?m)^\s*(?:-\s*)?run:\s*make\s+{re.escape(target)}\s*$",
+                    job,
+                )
+            ),
+            None,
+        )
+        if target_job is None:
             errors.append(f"{script}: GitHub Actions target {target} is missing")
-        if f"'{script}'" not in workflow:
+        elif not re.search(
+            r"(?m)^\s*image:\s*postgres:15@sha256:[0-9a-f]{64}\s*$",
+            target_job,
+        ):
+            errors.append(f"{script}: PostgreSQL 15 service image is not pinned in {target} job")
+
+        selection_step = next(
+            (
+                step
+                for step in steps
+                if re.search(rf"(?m)^\s*id:\s*{re.escape(owner)}\s*$", step)
+            ),
+            None,
+        )
+        if selection_step is None:
+            errors.append(f"{script}: selection step id {owner} is missing")
             errors.append(f"{script}: gate script path registration is missing")
-        if f"'{owner}/backend/*'" not in workflow:
             errors.append(f"{script}: owner path {owner}/backend/* is missing")
+            errors.append(f"{script}: shared path common/* is missing")
+            errors.append(f"{script}: selector script change path is missing")
+            continue
+        if f"'{script}'" not in selection_step:
+            errors.append(f"{script}: gate script path registration is missing")
+        if f"'{owner}/backend/*'" not in selection_step:
+            errors.append(f"{script}: owner path {owner}/backend/* is missing")
+        if "'common/*'" not in selection_step:
+            errors.append(f"{script}: shared path common/* is missing")
+        if "'scripts/ci/select-gate-by-paths.sh'" not in selection_step:
+            errors.append(f"{script}: selector script change path is missing")
     return errors
 
 
