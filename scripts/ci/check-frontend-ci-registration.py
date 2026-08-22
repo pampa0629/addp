@@ -62,24 +62,12 @@ def validate_registration(repository: Path) -> list[str]:
         ):
             errors.append(f"{module}: GitHub Actions path registration is missing")
         test_target = re.search(r"(?m)^test\s*:(?P<dependencies>[^\n]*)", logical_makefile)
-        aggregate_dependency = "test-agent-eval" if module == "agent" else target
         if (
             test_target is None
-            or aggregate_dependency not in test_target.group("dependencies").split()
+            or target not in test_target.group("dependencies").split()
         ):
             errors.append(
-                f"{module}: root test target dependency {aggregate_dependency} is missing"
-            )
-    if "agent" in modules:
-        agent_eval = re.search(
-            r"(?m)^test-agent-eval\s*:(?P<dependencies>[^\n]*)", logical_makefile
-        )
-        if (
-            agent_eval is None
-            or "test-agent-frontend" not in agent_eval.group("dependencies").split()
-        ):
-            errors.append(
-                "agent: test-agent-eval dependency test-agent-frontend is missing"
+                f"{module}: root test target dependency {target} is missing"
             )
     return errors
 

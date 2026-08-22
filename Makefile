@@ -88,10 +88,10 @@ infra-status: ## 查看系统库基础设施状态与健康
 ports-validate: ## 校验 System/Business 端口分配是否符合策略
 	@bash scripts/utils/ports-validate.sh
 
-test-agent-eval: test-agent-frontend ## 运行 Agent 统一离线评测门禁（含 Agent 前端）
+test-agent-eval: ## 运行 Agent 统一离线评测门禁
 	@bash scripts/test/agent-evaluation-gate.sh offline
 
-test-agent-eval-release: test-agent-frontend ## 使用三份新鲜在线证据运行 Agent 发布门禁（含 Agent 前端）
+test-agent-eval-release: ## 使用三份新鲜在线证据运行 Agent 发布门禁
 	@bash scripts/test/agent-evaluation-gate.sh release
 
 test-common-python: ## 运行 common-python 全量测试
@@ -268,7 +268,7 @@ test-authorization: ## 校验 IAM Manifest、生成常量和授权覆盖报告
 	@SWAGGER_COVERAGE_WARN_ONLY=1 bash scripts/swagger/check-route-coverage.sh all
 
 test: test-platform test-go test-common-python test-agent-eval test-copilot \
-	test-asset-frontend test-console-frontend test-develop-frontend \
+	test-agent-frontend test-asset-frontend test-console-frontend test-develop-frontend \
 	test-graph-frontend test-inference-frontend test-manager-frontend test-meta-frontend \
 	test-model-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend \
 	test-quality-frontend test-service-frontend test-standard-frontend test-system-frontend \

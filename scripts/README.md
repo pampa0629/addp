@@ -451,6 +451,8 @@ scripts/test/
 
 根 `make test` 是 T0-T1 全部无外部服务确定性门禁的唯一聚合入口，包含 `make test-platform`、全部 Go 模块、Common Python、Agent 离线评测、Copilot 后端，以及所有已登记前端的测试和生产构建。前端与 Python CI 登记检查同时要求每个自动发现的组件进入该聚合入口，新增测试组件不能只登记 CI 而遗漏本地总门禁。需要专用 PostgreSQL、真实运行服务、在线证据或发布环境的 T2-T5 门禁不并入 `make test`，必须使用各自显式入口。
 
+Agent 的 `test-agent-eval` 与 `test-agent-frontend` 保持独立：前者只运行 Python 离线评测，后者运行前端测试和生产构建。根 `make test` 与模块门禁负责同时选择二者；CI 使用独立 Job 准备 Python 或 Node 环境，不能让评测目标隐式依赖前端安装。
+
 单模块交付使用 `make test-module MODULE=<模块>`。`scripts/test/module-gate.py` 从 Git 跟踪的 Go module、`*/frontend/package.json`、`*/pyproject.toml` 和 `scripts/test/*-postgres-gate.sh` 自动生成该模块的 T0-T3 执行计划：先运行 `test-platform`，再串行执行语言测试、前端测试与生产构建、已登记 PostgreSQL T2。`--dry-run` 只用于检查计划；正式入口不跳过缺少连接条件的 T2。模块发现与执行计划的确定性测试已纳入 `make test-platform`。
 
 AI 完成一组改动后使用 `make test-changed`；默认读取相对 `HEAD` 的已跟踪改动及未跟踪文件，或通过 `BASE_REF=<ref>` 指定比较基线。`scripts/test/changed-gate.py` 始终保留平台 T0，把普通路径映射到已登记 owner，并从 `go.mod`、前端 `file:` 依赖和 Python requirements 推导共享模块消费者，再复用模块门禁计划且去重。若受影响模块含 PostgreSQL T2，仍须提供对应安全连接条件，不会自动跳过。

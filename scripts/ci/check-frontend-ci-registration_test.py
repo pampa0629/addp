@@ -66,7 +66,7 @@ class FrontendCIRegistrationTest(unittest.TestCase):
             MODULE.validate_registration(self.repository),
         )
 
-    def test_rejects_agent_eval_without_frontend_dependency(self) -> None:
+    def test_requires_agent_frontend_directly_in_root_aggregate(self) -> None:
         frontend = self.repository / "agent/frontend"
         frontend.mkdir(parents=True)
         (frontend / "package.json").write_text(
@@ -90,7 +90,7 @@ class FrontendCIRegistrationTest(unittest.TestCase):
         )
         subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
         self.assertIn(
-            "agent: test-agent-eval dependency test-agent-frontend is missing",
+            "agent: root test target dependency test-agent-frontend is missing",
             MODULE.validate_registration(self.repository),
         )
 

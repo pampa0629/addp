@@ -118,6 +118,8 @@ Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job �
 
 根 `make test` 已收敛为 T0-T1 全部无外部服务确定性门禁，聚合平台一致性、全部 Go 模块、Agent 离线评测及所有已登记前端的测试与生产构建；需要 disposable PostgreSQL、真实运行服务、在线证据或发布环境的 T2-T5 门禁保持显式独立入口。前端登记检查会自动要求每个新前端同时进入 CI 矩阵和根 `make test`，避免本地总门禁与 CI 覆盖漂移。重复的 System 单模块 Go 测试入口已删除，由动态发现全部 `go.mod` 的 `make test-go` 唯一覆盖。
 
+Agent 离线评测与 Agent 前端是两个独立 owner 门禁：`test-agent-eval` 只需要 Python 评测环境，`test-agent-frontend` 只需要 Node 前端环境；根 `make test` 和 `test-module MODULE=agent` 同时编排二者，GitHub Actions 分 Job 准备各自环境。禁止通过 Make 依赖把前端安装条件注入评测 Job。
+
 开发交付使用 `make test-module MODULE=<模块>` 运行指定模块的 T0-T3。该入口根据 Git 跟踪文件自动发现 Go、Python、前端和 PostgreSQL 门禁，先执行平台一致性，再串行调用 owner 事实入口；不维护模块清单，也不复制 CI 路径映射。模块存在 PostgreSQL T2 时必须显式提供 owner 要求的安全连接变量，缺失即失败，不能用跳过伪装通过。
 
 AI 修改完成后优先使用 `make test-changed`。该入口默认包含相对 `HEAD` 的已跟踪和未跟踪改动；需要验证一段提交时使用 `BASE_REF=<ref>`。普通模块按顶层 owner 映射，共享 Go、前端和 Python 代码根据仓库内真实依赖声明扩散到已登记消费者，所有模块计划合并去重后串行执行。它不替代 CI 的干净 Runner 和 Job 隔离，只把可在推送前确定的影响范围提前到本地。

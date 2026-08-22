@@ -33,7 +33,7 @@ class ModuleGateTest(unittest.TestCase):
             path.write_text("{}\n", encoding="utf-8")
         (self.repository / "Makefile").write_text(
             "test-platform:\n\t@true\n"
-            "test-sample-eval: test-sample-frontend\n\t@true\n"
+            "test-sample-eval:\n\t@true\n"
             "test-sample-frontend:\n\t@true\n"
             "test-sample-postgres:\n\t@true\n",
             encoding="utf-8",
@@ -50,6 +50,7 @@ class ModuleGateTest(unittest.TestCase):
                 ("make", "test-platform"),
                 ("go", "test", "./..."),
                 ("make", "test-sample-eval"),
+                ("make", "test-sample-frontend"),
                 ("make", "test-sample-postgres"),
             ],
             [step.command for step in steps],
