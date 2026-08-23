@@ -99,6 +99,21 @@ bash scripts/build/package.sh
 
 `make build` 与 `make build-images` 是平台唯一标准构建入口，分别薄调用 `scripts/build/compile.sh` 与 `scripts/build/build-images.sh`。新增正式服务、Worker、前端或 Compose 镜像时，必须在同一次变更中补齐对应构建登记；`make test-platform` 会自动校验完整性。
 
+代码交付前默认使用统一影响分析入口，不要等推送后的 CI 通知才补测试或构建适配：
+
+```bash
+# 当前工作区：包含已跟踪和未跟踪改动
+make test-changed
+
+# 一段已提交变更
+make test-changed BASE_REF=<ref>
+
+# 明确验证单个 owner 的 T0-T3 门禁
+make test-module MODULE=<模块>
+```
+
+共享 Go、前端和 Python 代码会根据仓库内真实依赖扩散到消费者。`make test-platform` 负责检查新模块、测试入口、前端、Python 包、PostgreSQL 门禁和产品构建是否完整登记。GitHub Actions 在 `main` push 后和每日定时任务中使用独立 Runner 复验；本地 `start.sh`、`restart.sh`、`git commit` 均不会触发 CI。
+
 `model3d-workflow-engine` 使用专用镜像构建链路：先构建绑定 `_3dtile` 的 `addp-model3d-converter`，再构建内置转换器的 `addp-model3d-workflow-engine`。当前转换器构建一次只支持一个 Linux 平台，Apple Silicon 本机优先使用默认的 `linux/arm64` 容器路径。
 
 `model3d-workflow-engine` 运行在 Docker 中时，NFS/localfs 数据根目录必须挂载进 runtime 容器，并且 Manager 传给 operator 的本地路径必须在容器内可见。Compose 默认提供：

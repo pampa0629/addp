@@ -84,3 +84,12 @@
 - ❌ 不得只增加测试文件却不把它纳入标准入口，也不得只修改 workflow 而在 YAML 中复制业务测试逻辑
 
 Workflow 只负责触发、环境准备、超时、并发和报告；测试事实必须由根 `Makefile`、`scripts/test/` 或模块 owner 的标准测试入口拥有。能够通过自动发现完成的登记不维护手写列表；必须手工登记的门禁，应当由平台一致性检查验证登记完整性。
+
+#### 开发交付与 CI 触发契约
+
+- AI 或开发者开始修改前，先确认受影响的 owner、共享依赖消费者、构建产物以及 T0-T5 门禁；不能等 GitHub Actions 失败后再补登记。
+- 工作区改动交付前默认运行 `make test-changed`。该入口同时识别已跟踪和未跟踪改动，并按真实依赖把 `common/`、`common-frontend/`、`common-python/` 变更扩散到消费者。
+- 验证一段已经提交的变更时运行 `make test-changed BASE_REF=<ref>`；明确验证单个 owner 时运行 `make test-module MODULE=<模块>`。不得自行拼接一组语言命令来替代标准入口。
+- `make test-platform` 是平台一致性门禁，负责拒绝新增模块、前端、Python 包、PostgreSQL 门禁、构建单元或 Dockerfile 后遗漏 Make、CI、构建和路径登记的变更。
+- GitHub Actions 在 `main` push 后负责独立 Runner 复验；本地开发启动、`scripts/dev/restart.sh` 和 Git 提交本身不触发 CI。每日定时运行用于发现缓存、依赖或环境漂移，不能替代推送前的本地最小充分验证。
+- 共享代码变更必须验证实际消费者。若 `common/` 变更使全部 Go 产品镜像成为受影响对象，全量后端镜像验证是依赖边界产生的必要门禁，不能为了缩短耗时按文件名主观裁剪。

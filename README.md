@@ -85,6 +85,19 @@ bash scripts/dev/stop.sh
 - 快速重启：**15-25s**（无需重新编译）
 - 选择性重启：**10-20s**（只编译修改的模块）
 
+#### 开发交付验证
+
+```bash
+# 默认：验证当前已跟踪和未跟踪改动影响的 T0-T3 门禁
+make test-changed
+
+# 验证一段已提交变更，或明确验证单个模块
+make test-changed BASE_REF=<ref>
+make test-module MODULE=<模块>
+```
+
+GitHub Actions 会在代码推送到 `main` 后使用独立环境复验，并每日定时检查环境和依赖漂移。本地启动、`scripts/dev/restart.sh` 和 `git commit` 不会触发 CI。新增模块、测试入口、构建单元或外部服务依赖时，必须在同一次变更中补齐根 `Makefile`、CI 路径或自动发现、平台一致性检查和文档；详细要求见 [开发原则](docs/spec/addp开发原则.md)。
+
 #### 方式二：本地 Docker 部署 (推荐集成测试)
 
 ```bash

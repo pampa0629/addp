@@ -930,6 +930,9 @@ app.mount('#app')
 - [ ] 修改 `scripts/dev/start.sh`（参数、启动标志、全量启动、模块 case、编译、启动、前端配置；单模块公共依赖不要重复写）
 - [ ] 修改 `scripts/dev/restart.sh` (3个位置)
 - [ ] 修改 `scripts/utils/detect-common.sh`
+- [ ] 根 `Makefile` 能自动发现或显式提供模块测试入口，`.github/workflows/` 的路径选择能命中该模块
+- [ ] 正式服务、Worker、前端、Python 包、PostgreSQL 门禁和 Dockerfile 已通过 `make test-platform` 的登记完整性检查
+- [ ] 运行 `make test-module MODULE=<模块>`；提交前再运行 `make test-changed`
 - [ ] 验证独立启动 (`-your-module`)
 - [ ] 验证全量启动
 

@@ -249,8 +249,8 @@ T4 环境达到以下条件后才能接入 workflow：
 
 ### 阶段 5：规范化与清理
 
-- [ ] 更新 `docs/spec/` 中稳定下来的 CI 规则。
-- [ ] 更新根 README、开发步骤、模块验证说明和 GitHub required checks 清单。
+- [x] 将稳定下来的 CI 交付契约更新到 `docs/spec/addp开发原则.md`。
+- [x] 更新根 README、开发步骤和新模块验证说明；GitHub required checks 现状继续以本文 5.5 的在线核实记录为准。
 - [ ] 删除迁移期 workflow、兼容入口和重复说明。
 - [ ] 本专题只保留实施历史和尚未完成事项；全部完成后归档或删除。
 
