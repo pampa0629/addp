@@ -117,6 +117,12 @@ jobs:
       - name: Compile all product binaries
         run: make build BUILD_ARGS=--force
 
+      - name: Start disposable image registry
+        run: make registry-start
+
+      - name: Verify representative product images
+        run: make build-images IMAGE_BUILD_ARGS="--verify --services system-backend,agent-backend,console,nginx"
+
       - name: Summarize product build gate
         if: always()
         uses: ./.github/actions/ci-gate-summary

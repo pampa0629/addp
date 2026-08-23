@@ -386,6 +386,16 @@ def validate_registration(repository: Path) -> list[str]:
         platform_workflow_path.read_text(encoding="utf-8"),
     ):
         errors.append("Platform CI must run make build BUILD_ARGS=--force")
+    else:
+        platform_workflow = platform_workflow_path.read_text(encoding="utf-8")
+        if 'make registry-start' not in platform_workflow:
+            errors.append("Platform CI product build must start the standard local registry")
+        if not re.search(
+            r'(?m)^\s*(?:-\s*)?run:\s*make\s+build-images\s+'
+            r'IMAGE_BUILD_ARGS="--verify\s+--services\s+[^"\s]+"\s*$',
+            platform_workflow,
+        ):
+            errors.append("Platform CI must verify representative images through make build-images")
 
     for source, target in seed_entries:
         if uses_latest_tag(source):

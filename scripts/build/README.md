@@ -133,6 +133,9 @@ BUILD_TYPE=debug ./scripts/build/compile.sh --local
 # 仅构建特定服务
 ./scripts/build/build-images.sh --services system-backend,manager-backend
 
+# CI/一次性验证：强制构建但不推送产品镜像，也不修改 Docker daemon 配置
+./scripts/build/build-images.sh --verify --services system-backend,agent-backend,console,nginx
+
 # 组合使用（生产场景）
 IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
   --multi-arch \
@@ -147,6 +150,9 @@ IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
 | `--multi-arch` | - | 构建多架构镜像（amd64 + arm64） |
 | `--skip-cache` | - | 禁用 Docker 构建缓存 |
 | `--services` | 服务列表 | 逗号分隔的服务名（默认：`all`） |
+| `--verify` | - | 非交互强制构建；基础镜像仍预热到临时 Registry，产品镜像只加载到本机、不推送 |
+
+基础镜像预热只处理所选服务实际引用的镜像：优先复用本机同架构镜像，否则最多尝试拉取三次；拉取或推送到临时 Registry 失败仍会使构建失败。
 
 ### 环境变量
 

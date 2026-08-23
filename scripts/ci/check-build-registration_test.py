@@ -60,7 +60,9 @@ class BuildRegistrationTest(unittest.TestCase):
         self._write(
             ".github/workflows/platform-ci.yml",
             "jobs:\n  product-build:\n    steps:\n"
-            "      - run: make build BUILD_ARGS=--force\n",
+            "      - run: make build BUILD_ARGS=--force\n"
+            "      - run: make registry-start\n"
+            "      - run: make build-images IMAGE_BUILD_ARGS=\"--verify --services sample-backend,sample-frontend\"\n",
         )
         subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
 
@@ -93,6 +95,33 @@ class BuildRegistrationTest(unittest.TestCase):
         self._write(".github/workflows/platform-ci.yml", "jobs: {}\n")
         self.assertIn(
             "Platform CI must run make build BUILD_ARGS=--force",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_missing_product_image_verification(self) -> None:
+        workflow = self.repository / ".github/workflows/platform-ci.yml"
+        workflow.write_text(
+            workflow.read_text(encoding="utf-8").replace(
+                "      - run: make build-images IMAGE_BUILD_ARGS=\"--verify --services sample-backend,sample-frontend\"\n",
+                "",
+            ),
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "Platform CI must verify representative images through make build-images",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_missing_standard_registry_start(self) -> None:
+        workflow = self.repository / ".github/workflows/platform-ci.yml"
+        workflow.write_text(
+            workflow.read_text(encoding="utf-8").replace(
+                "      - run: make registry-start\n", ""
+            ),
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "Platform CI product build must start the standard local registry",
             MODULE.validate_registration(self.repository),
         )
 

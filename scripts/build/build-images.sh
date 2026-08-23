@@ -11,6 +11,7 @@
 #   --services SERVICE_LIST   Build specific services (comma-separated)
 #   --multi-arch              Build for both ARM64 and AMD64 (default: native only)
 #   --force                   Force rebuild all images (skip smart cache check)
+#   --verify                  CI verification: non-interactive, force build, do not push product images
 #
 # Default behavior: Builds for native platform only (faster, no Docker Hub needed)
 # Use --multi-arch for cross-platform deployment (requires Docker Hub access)
@@ -34,6 +35,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_PLATFORMS="linux/$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"  # Native platform by default
 MULTI_ARCH=false
 FORCE_BUILD=false
+VERIFY_ONLY=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -63,12 +65,22 @@ while [[ $# -gt 0 ]]; do
             FORCE_BUILD=true
             shift
             ;;
+        --verify)
+            VERIFY_ONLY=true
+            FORCE_BUILD=true
+            shift
+            ;;
         *)
             echo -e "${RED}Unknown option: $1${NC}"
             exit 1
             ;;
     esac
 done
+
+if [ "$VERIFY_ONLY" = true ] && [ "$MULTI_ARCH" = true ]; then
+    echo -e "${RED}Error: --verify only supports one native platform${NC}"
+    exit 1
+fi
 
 cd "$PROJECT_ROOT"
 
@@ -81,6 +93,7 @@ echo -e "Tag: ${GREEN}${IMAGE_TAG}${NC}"
 echo -e "Platforms: ${GREEN}${BUILD_PLATFORMS}${NC}"
 echo -e "Cache: ${GREEN}$([ -z "$USE_CACHE" ] && echo "disabled" || echo "enabled")${NC}"
 echo -e "Services: ${GREEN}${SERVICES_TO_BUILD}${NC}"
+echo -e "Mode: ${GREEN}$([ "$VERIFY_ONLY" = true ] && echo "verify (no product image push)" || echo "build and push")${NC}"
 echo ""
 
 # Function to configure Docker registry mirrors automatically
@@ -572,15 +585,17 @@ build_service() {
             MODEL3D_CONVERTER_IMAGE="${converter_image}" \
             MODEL3D_RUNTIME_IMAGE="${image_name}" \
             "${service_dir}/scripts/build-linux-arm64-images.sh"; then
-            if [ "$MULTI_ARCH" = false ]; then
+            if [ "$MULTI_ARCH" = false ] && [ "$VERIFY_ONLY" = false ]; then
                 echo -e "${YELLOW}Pushing ${converter_image} to registry...${NC}"
                 docker push "${converter_image}"
                 echo -e "${YELLOW}Pushing ${image_name} to registry...${NC}"
                 docker push "${image_name}"
             fi
-            mkdir -p ".build-cache"
-            date +%s > ".build-cache/${service}-${IMAGE_TAG}.timestamp"
-            echo -e "${GREEN}✓ Successfully built and pushed ${service}${NC}"
+            if [ "$VERIFY_ONLY" = false ]; then
+                mkdir -p ".build-cache"
+                date +%s > ".build-cache/${service}-${IMAGE_TAG}.timestamp"
+            fi
+            echo -e "${GREEN}✓ Successfully built ${service}$([ "$VERIFY_ONLY" = false ] && echo " and pushed")${NC}"
             return 0
         fi
 
@@ -612,10 +627,12 @@ build_service() {
             -f "${PROJECT_ROOT}/engines/supermap-workflow/Dockerfile" \
             -t "${image_name}" \
             "${PROJECT_ROOT}/engines/supermap-workflow" \
-            && docker push "${image_name}"; then
-            mkdir -p ".build-cache"
-            date +%s > ".build-cache/${service}-${IMAGE_TAG}.timestamp"
-            echo -e "${GREEN}✓ Successfully built and pushed ${service}${NC}"
+            && { [ "$VERIFY_ONLY" = true ] || docker push "${image_name}"; }; then
+            if [ "$VERIFY_ONLY" = false ]; then
+                mkdir -p ".build-cache"
+                date +%s > ".build-cache/${service}-${IMAGE_TAG}.timestamp"
+            fi
+            echo -e "${GREEN}✓ Successfully built ${service}$([ "$VERIFY_ONLY" = false ] && echo " and pushed")${NC}"
             return 0
         fi
 
@@ -817,6 +834,10 @@ build_service() {
     echo -e "${YELLOW}Executing: ${build_cmd}${NC}"
 
     if eval "$build_cmd"; then
+        if [ "$VERIFY_ONLY" = true ]; then
+            echo -e "${GREEN}✓ Successfully verified ${service}${NC}"
+            return 0
+        fi
         # Push to registry for native builds
         if [ "$MULTI_ARCH" = false ]; then
             echo -e "${YELLOW}Pushing ${image_name} to registry...${NC}"
@@ -845,6 +866,17 @@ build_service() {
 
 # Pull base images and push to local registry so Dockerfiles can use localhost:5001/ prefix
 seed_base_images() {
+    local service_def
+    local required_images=""
+    for service_def in "$@"; do
+        local service_dir="${service_def#*:}"
+        local dockerfile
+        while IFS= read -r dockerfile; do
+            required_images+="$(grep -Eho 'localhost:5001/[A-Za-z0-9._/-]+:[A-Za-z0-9._-]+' "$dockerfile" 2>/dev/null | sed 's#^localhost:5001/##')"$'\n'
+        done < <(find "$service_dir" -type f -name 'Dockerfile*' 2>/dev/null)
+    done
+    required_images=$(printf '%s' "$required_images" | sed '/^$/d' | sort -u)
+
     echo -e "${YELLOW}Seeding base images to local registry...${NC}"
 
     local arch
@@ -870,6 +902,10 @@ seed_base_images() {
             target_img="$source_img"
         fi
 
+        if ! grep -Fxq "$target_img" <<< "$required_images"; then
+            continue
+        fi
+
         local img_name="${target_img%%:*}"
         local img_tag="${target_img#*:}"
         local local_img="${REGISTRY}/${target_img}"
@@ -881,9 +917,28 @@ seed_base_images() {
             continue
         fi
 
-        echo -e "${YELLOW}Pulling ${source_img} (linux/${arch})...${NC}"
-        if docker pull --platform "linux/${arch}" "${source_img}" \
-            && docker tag "${source_img}" "${local_img}" \
+        local source_arch
+        source_arch=$(docker image inspect "${source_img}" --format '{{.Architecture}}' 2>/dev/null || true)
+        if [ "$source_arch" = "$arch" ]; then
+            echo -e "${GREEN}✓ Reusing local ${source_img} (linux/${arch})${NC}"
+        else
+            local pull_ok=false
+            local attempt
+            for attempt in 1 2 3; do
+                echo -e "${YELLOW}Pulling ${source_img} (linux/${arch}), attempt ${attempt}/3...${NC}"
+                if docker pull --platform "linux/${arch}" "${source_img}"; then
+                    pull_ok=true
+                    break
+                fi
+            done
+            if [ "$pull_ok" = false ]; then
+                echo -e "${RED}✗ Failed to pull ${source_img} after 3 attempts${NC}"
+                any_failed=true
+                continue
+            fi
+        fi
+
+        if docker tag "${source_img}" "${local_img}" \
             && docker push "${local_img}"; then
             echo -e "${GREEN}✓ Seeded ${target_img}${NC}"
         else
@@ -901,10 +956,11 @@ seed_base_images() {
 
 # Main build process
 main() {
-    check_docker_config
+    if [ "$VERIFY_ONLY" = false ]; then
+        check_docker_config
+    fi
     check_buildx
     check_registry
-    seed_base_images
 
     # Define services to build
     local services=(
@@ -973,7 +1029,14 @@ main() {
             done
         done
         services=("${filtered_services[@]}")
+
+        if [ ${#services[@]} -ne ${#SELECTED_SERVICES[@]} ]; then
+            echo -e "${RED}Error: --services contains an unknown or duplicate service name${NC}"
+            return 1
+        fi
     fi
+
+    seed_base_images "${services[@]}"
 
     echo -e "${YELLOW}Building ${#services[@]} services...${NC}"
     echo ""
@@ -1012,7 +1075,11 @@ main() {
         local built_count=$((${#services[@]} - ${#skipped_services[@]}))
         echo -e "${GREEN}✓ Successfully built ${built_count} service(s)${NC}"
         echo ""
-        echo "Images pushed to: ${REGISTRY}"
+        if [ "$VERIFY_ONLY" = true ]; then
+            echo "Verification images were loaded locally and were not pushed."
+        else
+            echo "Images pushed to: ${REGISTRY}"
+        fi
         echo "Platforms: ${BUILD_PLATFORMS}"
         return 0
     else
