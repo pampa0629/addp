@@ -4,7 +4,7 @@
 
 ## 一、专题定位
 
-ADDP 已经具备较多本地测试、集成门禁和发布验证入口，但 GitHub Actions 只覆盖 IAM / CLI 与 Quality 的少数场景，尚未形成平台级持续集成体系。
+ADDP 已完成 T0-T3 平台持续集成主线，并保留现有 CLI T5 发布认证；当前唯一尚未接入的主要层级是依赖专用测试部署和 macOS 自托管 Runner 的 T4 Online 验收。
 
 本专题负责回答：
 
@@ -14,7 +14,7 @@ ADDP 已经具备较多本地测试、集成门禁和发布验证入口，但 Gi
 4. 如何通过变更路径选择、并发取消和缓存控制执行成本。
 5. 如何在不改变单人直接推送 `main` 的开发方式下及时反馈失败。
 
-当前阶段采用“推送后验证”而不是“合并前阻断”：开发者继续直接推送 `main`，CI 失败后由 GitHub 通知并由开发者修复；任何自动部署都必须等待前置检查成功。若未来需要阻止问题代码进入 `main`，再单独讨论 Pull Request 和 required checks，不在本专题首期引入。
+当前采用“推送后验证”而不是“合并前阻断”：开发者继续直接推送 `main`，CI 失败后由 GitHub 通知并由开发者修复；任何自动部署都必须等待前置检查成功。若未来需要阻止问题代码进入 `main`，应单独调整 Pull Request 和 required checks 策略。
 
 测试分层、数据隔离、Online Tenant、安全数据库和 T0-T5 定义以 [ADDP 统一测试与 Online 验收体系方案](ADDP统一测试与Online验收体系方案.md) 为准。本文不建立第二套测试分类，也不在 workflow YAML 中复制业务测试逻辑。
 
@@ -94,23 +94,23 @@ Renovate App 是否启用、Dependency Dashboard 是否存在以及仓库侧权�
 
 该脚本由 `make test-platform` 调用并已接入 Platform CI，依赖版本漂移会在每次 `main` 推送和夜间任务中自动发现。
 
-## 五、当前主要缺口
+## 五、已收敛边界与剩余缺口
 
-### 5.1 平台级 T0 门禁正在接入
+### 5.1 平台级 T0 门禁
 
-当前任意模块都可能修改 `go.mod`、技术栈规约、Permission Manifest、Swagger 或执行夹具。本阶段通过 `make test-platform` 建立唯一的无外部服务平台入口，并在 `main` 推送后自动反馈；它不承诺在推送前阻止代码进入 `main`。
+任意模块都可能修改 `go.mod`、技术栈规约、Permission Manifest、Swagger 或执行夹具。`make test-platform` 是唯一的无外部服务平台入口，并在 `main` 推送后自动反馈；它不承诺在推送前阻止代码进入 `main`。
 
-### 5.2 全仓 Go T1 门禁正在接入
+### 5.2 全仓 Go T1 门禁
 
 `make test-go` 已经具备动态模块发现和临时 workspace 生成，并已接入 CI。每个模块先在独立模式下执行 `go mod tidy -diff`，依赖文件未同步时立即失败且不修改工作树；随后才在临时 workspace 中测试。整个过程不读取或修改本地被忽略的 `go.work`。
 
-### 5.3 前端覆盖仍不完整
+### 5.3 Python 与前端确定性门禁
 
 Common Python、Quality、Agent 和 Model 已通过统一脚本按各自模块、共享依赖、根 Makefile 和 workflow 自身的变更路径选择正式门禁；Asset、Console、Develop、Graph、Inference、Manager、Meta、Monitor、Orchestrator、Portal、Service、Standard、System 和 Transfer 复用同一个确定性前端矩阵定义，手工触发及平台夜间任务始终执行。当前所有具备前端测试的模块均已登记，后续新增前端模块或测试入口时必须同步纳入矩阵。
 
 Copilot Python 后端已通过 `make test-copilot` 纳入根 `make test` 和 Platform CI 路径选择；`common-python` 变更会同时选择 Common Python、Agent 和 Copilot 消费者门禁。Python CI 登记检查自动发现 `*/pyproject.toml` 与 `*/backend/requirements.txt`，要求根 Make 目标、默认确定性聚合、workflow 调用和 owner 路径同时存在。
 
-### 5.4 模块专项门禁结构仍待统一
+### 5.4 模块专项门禁
 
 Quality 前端、Agent 离线评测、Model 前端和 Common Python 使用 Job 内路径选择。`release-and-t2-gates.yml` 通过单一选择 Job 声明 CLI、System IAM、Quality 与 Standard PostgreSQL 的 path mapping；三个 PostgreSQL Job 统一使用固定 PostgreSQL 15、30 分钟超时、关闭 Go 缓存和相同 Summary 格式，未命中时不会启动数据库 Service。`v*` Tag 只强制执行 CLI 与 System IAM 门禁。Ruleset 要求的 CLI 和 System IAM 检查由汇总 Job 提供：命中路径时等待重测试成功，未命中时明确报告跳过并稳定成功。
 
@@ -140,7 +140,7 @@ AI 修改完成后优先使用 `make test-changed`。该入口默认包含相对
 - macOS Runner 与浏览器门禁的实际耗时和月度成本。
 - CI 失败通知、Artifact 保留和历史趋势是否满足需要。
 
-这些外部状态必须在专题实施前读取 GitHub 当前配置，并在实施记录中留下核实日期。
+调整仓库策略、通知、Artifact 或 Runner 前，必须重新读取 GitHub 当前配置，并在实施记录中留下核实日期。
 
 ## 六、目标边界
 
@@ -166,9 +166,9 @@ AI 修改完成后优先使用 `make test-changed`。该入口默认包含相对
 
 新增统一 workflow 或入口时，必须同步迁移、合并或删除被替代的旧 workflow。不得长期保留“旧专项 workflow + 新矩阵 workflow”两套重复门禁。
 
-## 七、目标 CI 结构
+## 七、稳定 CI 结构
 
-目标结构应按职责收敛为四类，而不是按每个模块无限新增 workflow：
+CI 按职责保持以下四类边界，不按每个模块无限新增 workflow：
 
 | 类别 | 默认触发 | 内容 |
 | --- | --- | --- |
@@ -177,7 +177,7 @@ AI 修改完成后优先使用 `make test-changed`。该入口默认包含相对
 | 模块集成矩阵 | 相关路径 PR、`main` push、手工 | PostgreSQL、Redis、MinIO 等 disposable T2 门禁 |
 | Online / Release | 夜间、手工或 Tag | T4 专用测试部署验收；T5 产品发布认证 |
 
-具体 workflow 文件名、Job 拆分和矩阵生成方式在实施阶段确认；确认后只能保留一套正式结构。
+T0-T3 与现有 T5 已由第二节列出的三个 workflow 承担；T4 只在阶段 4 的环境准入完成后加入现有职责结构，不创建无法运行的占位 workflow。
 
 ## 八、分阶段实施路线
 
@@ -251,36 +251,5 @@ T4 环境达到以下条件后才能接入 workflow：
 
 - [x] 将稳定下来的 CI 交付契约更新到 `docs/spec/addp开发原则.md`。
 - [x] 更新根 README、开发步骤和新模块验证说明；GitHub required checks 现状继续以本文 5.5 的在线核实记录为准。
-- [ ] 删除迁移期 workflow、兼容入口和重复说明。
-- [ ] 本专题只保留实施历史和尚未完成事项；全部完成后归档或删除。
-
-## 九、阶段 1 验收标准
-
-首期平台一致性门禁完成时至少满足：
-
-1. 任意 PR 修改技术栈规约或任一 `go.mod` 后都会执行依赖一致性检查。
-2. 规约版本与模块声明不一致时 Job 必须失败，并明确输出依赖、期望版本、实际版本和模块路径。
-3. 新增 Go 模块无需修改 workflow 或检查脚本即可被发现。
-4. 同一依赖在规约中声明多个目标版本时 Job 必须失败。
-5. PR 提交范围中的空白错误能被真实检测，不能因干净 checkout 而永远通过。
-6. Job 只需要仓库只读权限，不使用 Secret，不连接开发或生产服务。
-7. Job 名称稳定；当前不配置 required check，失败通过 GitHub Actions 通知开发者修复。
-8. 本地命令与 CI 调用完全一致，失败可以在本地复现。
-
-## 十、实施前必须核实的外部状态
-
-开始编码前，先通过 GitHub 当前配置核实：
-
-1. Repository Ruleset / Branch Protection 现状；当前不依赖 required checks。
-2. GitHub Actions 默认权限、fork PR 策略和手工批准策略。
-3. 最近至少 30 次 workflow 的耗时、失败原因和 Runner 成本。
-4. Renovate App 安装状态、Dependency Dashboard 和实际更新记录。
-5. 是否需要自托管 Runner；没有明确资源或安全价值时，默认继续使用 GitHub Hosted Runner。
-
-2026-08-21 在线核实结果：仓库自托管 Runner、Environment 和 Actions Secret 数量均为 0；Actions 已启用，默认 workflow 权限为 `contents: read`，workflow 不能审批 Pull Request。阶段 4 必须先完成上述环境准入，不能从仓库现状推断测试机器已经可用。
-
-## 十一、建议的首次开展范围
-
-首次实施开展“阶段 1：平台一致性门禁”，并同时接入已有的全仓 Go 确定性测试；不重构现有 IAM、Quality 和 Release workflow。
-
-阶段 1 稳定后，再根据真实耗时与失败数据设计 Python、前端和模块集成矩阵。首期使用 GitHub Hosted Runner，不接入个人 macOS 机器；该机器仅作为未来 macOS Keychain、CLI 生命周期等必须依赖真实 macOS 能力的候选 self-hosted Runner。
+- [x] 删除迁移期 workflow、兼容入口和已经失效的首次实施说明。
+- [x] 本专题收敛为现状、实施历史和 T4 / 发布闭环待办；全部完成后归档或删除。
