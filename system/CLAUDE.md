@@ -80,7 +80,6 @@ backend/
 │   │   ├── cleanup_handler.go         # 资源回收
 │   │   ├── module_registry_handler.go # 模块注册与发现
 │   │   ├── task_provider_handler.go   # TaskProvider 读取投影
-│   │   ├── registry_handler.go        # 引擎能力注册与发现
 │   │   └── internal_handler.go        # API Key 验证（内部 API）
 │   ├── config/         # 配置管理
 │   ├── middleware/     # 中间件（认证、日志等）

@@ -1697,6 +1697,8 @@
       "directory": "Directory",
       "dir": "Directory",
       "root": "Root",
+      "server": "Service",
+      "service": "Service",
       "table": "Table",
       "view": "View",
       "collection": "Collection",

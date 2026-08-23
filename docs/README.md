@@ -61,6 +61,7 @@
 - [前端路由与可恢复状态规范](spec/addp前端路由与可恢复状态规范.md)
 - [统一测试与 Online 验收体系方案](next/ADDP统一测试与Online验收体系方案.md)
 - [ADDP 持续集成体系改进专题](next/ADDP持续集成体系改进专题.md)
+- [ADDP 模块与引擎注册治理专题](next/ADDP模块与引擎注册治理专题.md)
 - [Manager 前端浏览器回归测试专题](next/Manager前端浏览器回归测试专题.md)
 - [ADDP 企业数据目录能力专题](next/ADDP企业数据目录能力专题.md)
 - [规划文档](plan/)

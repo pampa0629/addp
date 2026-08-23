@@ -1698,6 +1698,8 @@
       "directory": "目录",
       "dir": "目录",
       "root": "根目录",
+      "server": "服务",
+      "service": "服务",
       "table": "表",
       "view": "视图",
       "collection": "集合",

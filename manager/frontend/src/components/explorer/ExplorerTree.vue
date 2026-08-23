@@ -94,6 +94,7 @@ import {
   isVectorizableRangeNode,
   isStorageEngineNode
 } from '@/utils/vectorization'
+import { resolveCanonicalNodeSelection } from '@/utils/dataExplorerSelection'
 
 const { t } = useI18n()
 
@@ -111,6 +112,7 @@ const emit = defineEmits(['node-select'])
 const store = useExplorerStore()
 const resourceTreeRef = ref(null)
 const embeddingStates = ref({})
+const catalogRootLoadPromises = new Map()
 let scanStatusTimer = 0
 const activeScan = ref({
   visible: false,
@@ -226,13 +228,36 @@ const handleRefresh = async () => {
 
 // 事件处理：节点点击
 const handleNodeClick = async (node) => {
-  const locator = node.locator || node.id
+  let selectedNode = node
+  let locator = node.locator || node.id
+
+  if (isCatalogRootNode(node) && node.engineId && !node.loaded) {
+    store.expandNode(locator)
+    try {
+      const resolved = await resolveCanonicalNodeSelection({
+        node,
+        locator,
+        loadTree: loadCatalogRoot
+      })
+      selectedNode = resolved.node
+      const syntheticLocator = locator
+      locator = resolved.locator
+      if (locator !== syntheticLocator) {
+        store.collapseNode(syntheticLocator)
+        store.expandNode(locator)
+      }
+    } catch (error) {
+      console.error('加载引擎内容失败:', error)
+      ElMessage.error(t('manager.explorer.loadEngineFailed', { error: error.message }))
+      return
+    }
+  }
 
   // 选择节点
   store.selectNode(locator)
-  emit('node-select', { node, locator })
-  if (isNodeEngineAvailable(node)) {
-    await loadItemEmbeddingState(node, locator)
+  emit('node-select', { node: selectedNode, locator })
+  if (isNodeEngineAvailable(selectedNode)) {
+    await loadItemEmbeddingState(selectedNode, locator)
   }
 
   // 关键：@node-collapse / @node-expand 在 element-plus 中先于 @node-click 触发，
@@ -242,16 +267,7 @@ const handleNodeClick = async (node) => {
   const isCurrentlyExpanded = store.expandedLocators.has(locator)
 
   // Catalog root 节点：仅首次展开（未加载）时强制展开并加载数据
-  if (isCatalogRootNode(node) && node.engineId) {
-    if (!isCurrentlyExpanded && !node.loaded) {
-      store.expandNode(locator)
-      try {
-        await store.loadTree(node.engineId)
-      } catch (error) {
-        console.error('加载引擎内容失败:', error)
-        ElMessage.error(t('manager.explorer.loadEngineFailed', { error: error.message }))
-      }
-    }
+  if (isCatalogRootNode(selectedNode) && selectedNode.engineId) {
     return
   }
 
@@ -388,7 +404,7 @@ const handleNodeExpand = async (node) => {
   // 如果是 catalog root 节点且未加载过，懒加载其内容
   if (isCatalogRootNode(node) && node.engineId && !node.loaded) {
     try {
-      await store.loadTree(node.engineId)
+      await loadCatalogRoot(node.engineId)
     } catch (error) {
       console.error('加载引擎内容失败:', error)
       ElMessage.error(t('manager.explorer.loadEngineFailed', { error: error.message }))
@@ -427,6 +443,20 @@ const branchTypes = new Set(['directory', 'bucket', 'prefix', 'schema', 'databas
 const isCatalogRootNode = (node) => {
   const fullName = node?.metadata?.full_name
   return !!node && rootTypes.has(node.type) && (fullName === '' || (node.locator || node.id || '').includes('/path/?'))
+}
+
+const loadCatalogRoot = (engineId) => {
+  const key = Number(engineId)
+  const existing = catalogRootLoadPromises.get(key)
+  if (existing) return existing
+
+  const request = store.loadTree(key).finally(() => {
+    if (catalogRootLoadPromises.get(key) === request) {
+      catalogRootLoadPromises.delete(key)
+    }
+  })
+  catalogRootLoadPromises.set(key, request)
+  return request
 }
 
 const isBranchNode = (node) => !!node && branchTypes.has(node.type)
