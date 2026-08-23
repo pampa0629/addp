@@ -202,7 +202,6 @@ func TestRegisterAndHeartbeatReregistersImmediatelyAndDeregistersOnShutdown(t *t
 	case <-time.After(time.Second):
 		t.Fatal("heartbeat failure did not trigger immediate re-registration")
 	}
-	time.Sleep(10 * time.Millisecond)
 	cancel()
 	select {
 	case <-deregistered:

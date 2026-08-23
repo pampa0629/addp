@@ -368,11 +368,23 @@ func (c *SystemServiceClient) registerAndHeartbeat(
 		}
 
 		registered := false
+		shouldDeregister := false
+		defer func() {
+			if !shouldDeregister {
+				return
+			}
+			shutdownContext, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if err := c.DeregisterModule(shutdownContext, registration.ModuleName, registration.InstanceID); err != nil {
+				log.Printf("%s module deregistration failed: %v", registration.ModuleName, err)
+			}
+		}()
 		retryInterval := initialRetryInterval
 		for {
 			if !registered {
 				registered = register()
 				if registered {
+					shouldDeregister = true
 					retryInterval = initialRetryInterval
 					continue
 				}
@@ -394,11 +406,6 @@ func (c *SystemServiceClient) registerAndHeartbeat(
 			select {
 			case <-ctx.Done():
 				timer.Stop()
-				shutdownContext, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				if err := c.DeregisterModule(shutdownContext, registration.ModuleName, registration.InstanceID); err != nil {
-					log.Printf("%s module deregistration failed: %v", registration.ModuleName, err)
-				}
-				cancel()
 				return
 			case <-timer.C:
 			}
