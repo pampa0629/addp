@@ -251,7 +251,13 @@ class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(api_error.status_code, 400)
             self.assertEqual(api_error.error_code, "module_registration_invalid")
             self.assertEqual(api_error.error_message, "instance_id and role are required")
-            self.assertIn('"error_code":"module_registration_invalid"', api_error.response_body)
+            self.assertEqual(
+                json.loads(api_error.response_body),
+                {
+                    "error": "instance_id and role are required",
+                    "error_code": "module_registration_invalid",
+                },
+            )
 
             with self.assertLogs("addp.module_registry", level="WARNING") as captured_logs:
                 registry_task = asyncio.create_task(client.run(registration))
