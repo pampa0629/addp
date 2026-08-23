@@ -407,6 +407,21 @@ def validate_registration(repository: Path) -> list[str]:
             product_job,
         ):
             errors.append("Platform CI must verify selected images through make build-images")
+        if (
+            "ADDP_CI_SUMMARY_FILE" not in product_job
+            or "details-file:" not in product_job
+        ):
+            errors.append("Platform CI product build must publish image diagnostics")
+
+        go_match = re.search(
+            r"(?ms)^  go-tests:\s*\n(?P<job>.*?)(?=^  [A-Za-z0-9_-]+:\s*$|\Z)",
+            platform_workflow,
+        )
+        go_job = go_match.group("job") if go_match else ""
+        if not go_job:
+            errors.append("Platform CI go-tests job is missing")
+        elif "ADDP_CI_SUMMARY_FILE" not in go_job or "details-file:" not in go_job:
+            errors.append("Platform CI Go workspace gate must publish module diagnostics")
 
     for source, target in seed_entries:
         if uses_latest_tag(source):
@@ -518,6 +533,10 @@ def validate_registration(repository: Path) -> list[str]:
     go_test_recipe = make_recipe(makefile, "test-go")
     if go_test_recipe is None or "GOWORK=off go mod tidy -diff" not in go_test_recipe:
         errors.append("Makefile target test-go must reject untidy Go module files")
+    if go_test_recipe is None or "ADDP_CI_SUMMARY_FILE" not in go_test_recipe:
+        errors.append("Makefile target test-go must report the failing Go module to CI")
+    if "ADDP_CI_SUMMARY_FILE" not in image_script:
+        errors.append("build-images.sh must report selected and failed images to CI")
     for target in sorted(RETIRED_MAKE_TARGETS):
         if make_recipe(makefile, target) is not None:
             errors.append(f"Makefile retired target still exists: {target}")

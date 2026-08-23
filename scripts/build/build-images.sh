@@ -1044,6 +1044,26 @@ main() {
     local failed_services=()
     local skipped_services=()
 
+    write_ci_summary() {
+        local result="$1"
+        [ -n "${ADDP_CI_SUMMARY_FILE:-}" ] || return 0
+        {
+            echo "### Product image details"
+            echo
+            echo "- Result: ${result}"
+            echo "- Selected: ${#services[@]} service(s)"
+            for service_def in "${services[@]}"; do
+                echo "  - ${service_def%%:*}"
+            done
+            if [ ${#failed_services[@]} -gt 0 ]; then
+                echo "- Failed: ${#failed_services[@]} service(s)"
+                for failed in "${failed_services[@]}"; do
+                    echo "  - ${failed}"
+                done
+            fi
+        } > "$ADDP_CI_SUMMARY_FILE"
+    }
+
     # Build each service
     for service_def in "${services[@]}"; do
         IFS=':' read -r service_name service_dir <<< "$service_def"
@@ -1074,6 +1094,7 @@ main() {
     if [ ${#failed_services[@]} -eq 0 ]; then
         local built_count=$((${#services[@]} - ${#skipped_services[@]}))
         echo -e "${GREEN}✓ Successfully built ${built_count} service(s)${NC}"
+        write_ci_summary success
         echo ""
         if [ "$VERIFY_ONLY" = true ]; then
             echo "Verification images were loaded locally and were not pushed."
@@ -1087,6 +1108,7 @@ main() {
         for failed in "${failed_services[@]}"; do
             echo -e "  - ${failed}"
         done
+        write_ci_summary failure
         return 1
     fi
 }

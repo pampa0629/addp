@@ -242,17 +242,37 @@ test-go: ## 校验依赖文件并使用临时 workspace 运行全部已跟踪 Go
 	trap 'rm -rf "$$workspace_dir"' EXIT; \
 	workspace_file="$$workspace_dir/go.work"; \
 	modules="$$(git ls-files -- 'go.mod' '**/go.mod' | sed 's#/go.mod$$##; s#^go.mod$$#.#')"; \
+	summary_file="$${ADDP_CI_SUMMARY_FILE:-}"; \
+	write_summary() { \
+		[ -n "$$summary_file" ] || return 0; \
+		{ \
+			echo "### Go workspace details"; \
+			echo; \
+			echo "- Result: $$1"; \
+			echo "- Module: $$2"; \
+			echo "- Phase: $$3"; \
+		} > "$$summary_file"; \
+	}; \
 	if [ -z "$$modules" ]; then \
 		echo "$(RED)仓库中没有已跟踪的 Go 模块$(NC)" >&2; \
+		write_summary failure repository module-discovery; \
 		exit 1; \
 	fi; \
 	GOWORK="$$workspace_file" go work init $$(printf '%s\n' "$$modules" | sed "s#^#$(CURDIR)/#"); \
 	for module in $$modules; do \
 		echo "$(GREEN)校验 $$module go.mod/go.sum...$(NC)"; \
-		(cd "$$module" && GOWORK=off go mod tidy -diff); \
+		if ! (cd "$$module" && GOWORK=off go mod tidy -diff); then \
+			write_summary failure "$$module" go-mod-tidy; \
+			exit 1; \
+		fi; \
 		echo "$(GREEN)运行 $$module 测试...$(NC)"; \
-		(cd "$$module" && GOWORK="$$workspace_file" go test ./...); \
-	done
+		if ! (cd "$$module" && GOWORK="$$workspace_file" go test ./...); then \
+			write_summary failure "$$module" go-test; \
+			exit 1; \
+		fi; \
+	done; \
+	module_count="$$(printf '%s\n' "$$modules" | wc -l | tr -d ' ')"; \
+	write_summary success "$$module_count modules" tidy-and-test
 
 compare-agent-eval: ## 比较两份仓库外 Agent v2 评测报告
 	@bash scripts/test/agent-evaluation-gate.sh compare

@@ -83,6 +83,8 @@ jobs:
             **/go.sum
 
       - name: Run all tracked Go module tests
+        env:
+          ADDP_CI_SUMMARY_FILE: ${{ runner.temp }}/go-workspace-summary.md
         run: make test-go
 
       - name: Summarize Go workspace gate
@@ -91,6 +93,7 @@ jobs:
         with:
           gate: Go workspace tests
           status: ${{ job.status }}
+          details-file: ${{ runner.temp }}/go-workspace-summary.md
 
   product-build:
     name: Product binary build
@@ -134,6 +137,7 @@ jobs:
       - name: Verify baseline and affected product images
         env:
           IMAGE_SERVICES: ${{ steps.image-selection.outputs.services }}
+          ADDP_CI_SUMMARY_FILE: ${{ runner.temp }}/product-images-summary.md
         run: make build-images IMAGE_BUILD_ARGS="--verify --services $IMAGE_SERVICES"
 
       - name: Summarize product build gate
@@ -142,6 +146,7 @@ jobs:
         with:
           gate: Product binary build
           status: ${{ job.status }}
+          details-file: ${{ runner.temp }}/product-images-summary.md
 
   common-python-tests:
     name: Common Python tests

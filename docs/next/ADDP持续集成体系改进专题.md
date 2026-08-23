@@ -37,7 +37,7 @@ ADDP 已经具备较多本地测试、集成门禁和发布验证入口，但 Gi
 - 只有 CLI Tag 发布 Job 具有写权限，其余 Job 默认只读。
 - 门禁超时按成本分级：选择与汇总 5 分钟，普通 T0/T1 20 分钟，浏览器或多语言门禁 25 分钟，数据库与 macOS 门禁 30 分钟，全仓 Go 45 分钟。
 - 普通 Node 和 Python 确定性测试分别按 `package-lock.json`、Python 依赖声明缓存；disposable PostgreSQL 和生成发布产物的 CLI 验证关闭缓存，避免复用环境掩盖集成问题或引入缓存投毒风险。
-- 核心门禁统一通过 `.github/actions/ci-gate-summary` 输出 Gate、Selected、Result 三列 Step Summary；CLI 验证 wheel 只保留 7 天。
+- 核心门禁统一通过 `.github/actions/ci-gate-summary` 输出 Gate、Selected、Result 三列 Step Summary；Go workspace 追加失败模块与阶段，产品镜像门禁追加全部选中镜像及失败镜像，避免通知只暴露通用退出码；CLI 验证 wheel 只保留 7 天。
 
 ## 三、当前依赖自动化
 
@@ -124,7 +124,7 @@ Agent 离线评测与 Agent 前端是两个独立 owner 门禁：`test-agent-eva
 
 AI 修改完成后优先使用 `make test-changed`。该入口默认包含相对 `HEAD` 的已跟踪和未跟踪改动；需要验证一段提交时使用 `BASE_REF=<ref>`。普通模块按顶层 owner 映射，共享 Go、前端和 Python 代码根据仓库内真实依赖声明扩散到已登记消费者，所有模块计划合并去重后串行执行。它不替代 CI 的干净 Runner 和 Job 隔离，只把可在推送前确定的影响范围提前到本地。
 
-平台构建入口也已收敛为单一路线：仓库只维护根 `Makefile`，`make build` 唯一调用 `scripts/build/compile.sh`，`make build-images` 唯一调用 `scripts/build/build-images.sh`，旧的模块 Makefile、分模块、debug/release、生产镜像和 Compose build Make 目标已删除。开发、基础设施和生产生命周期目标分别只封装 `scripts/dev/`、`scripts/infra/` 和 `scripts/prod/` 的标准脚本，直接 `go run`、直接 Compose 生命周期目标及兼容别名已删除。只覆盖 System 却宣称全平台的依赖、lint、格式化目标，会吞掉错误的伪检查，只登记部分旧前端的 Docker 修复脚本，未校验删除范围的清理目标，以及硬编码凭据或缺少完整恢复契约的初始化、数据库终端和备份恢复目标也已删除。Registry 固定使用构建链路的 `localhost:5001` 临时仓库，不再保留端口、容器名和持久化语义冲突的第二套初始化路线。`make test-platform` 自动发现正式 Go Server/Worker、前端与 Compose ADDP 镜像，要求所有正式构建定义及 Docker `COPY` 来源必须真实存在并被 Git 跟踪，所有 Git 跟踪 Dockerfile 归属于正式镜像或明确的辅助构建，并核对构建登记、Docker build context、`.dockerignore` 排除规则、本地 Registry 基础镜像预热登记、浮动 `latest` 标签、预编译二进制名称、前端 Rollup 原生包架构选择以及根 `Makefile` 引用脚本；Platform CI 在干净 Ubuntu Runner 中强制编译全部正式服务与 Worker，随后通过 `make select-image-services` 保留预编译后端、Python 源码后端、前端及 Nginx 四类基线，并自动追加当次模块及共享代码改动的实际消费者镜像，最后通过同一 `make build-images` 路线实际构建。`--verify` 模式非交互、强制构建，只向一次性 Registry 预热已选服务真正需要的基础镜像，产品镜像只加载到 Runner 而不推送。SuperMap 私有 arm64 基础镜像和 Model3D arm64 专用构建明确排除于 GitHub amd64 Runner，仍由静态登记检查覆盖，后续交给 macOS Runner 真实构建。以后 AI 新增或调整部署单元时，本地未跟踪文件、恢复退休 Make 目标、重复模块 Makefile、引用失效脚本、遗漏构建登记、硬编码前端原生包架构、正式编译失败或受影响镜像构建失败都会在同次 CI 中直接暴露。
+平台构建入口也已收敛为单一路线：仓库只维护根 `Makefile`，`make build` 唯一调用 `scripts/build/compile.sh`，`make build-images` 唯一调用 `scripts/build/build-images.sh`，旧的模块 Makefile、分模块、debug/release、生产镜像和 Compose build Make 目标已删除。开发、基础设施和生产生命周期目标分别只封装 `scripts/dev/`、`scripts/infra/` 和 `scripts/prod/` 的标准脚本，直接 `go run`、直接 Compose 生命周期目标及兼容别名已删除。只覆盖 System 却宣称全平台的依赖、lint、格式化目标，会吞掉错误的伪检查，只登记部分旧前端的 Docker 修复脚本，未校验删除范围的清理目标，以及硬编码凭据或缺少完整恢复契约的初始化、数据库终端和备份恢复目标也已删除。Registry 固定使用构建链路的 `localhost:5001` 临时仓库，不再保留端口、容器名和持久化语义冲突的第二套初始化路线。`make test-platform` 自动发现正式 Go Server/Worker、前端与 Compose ADDP 镜像，要求所有正式构建定义及 Docker `COPY` 来源必须真实存在并被 Git 跟踪，所有 Git 跟踪 Dockerfile 归属于正式镜像或明确的辅助构建，并核对构建登记、Docker build context、`.dockerignore` 排除规则、本地 Registry 基础镜像预热登记、浮动 `latest` 标签、预编译二进制名称、前端 Rollup 原生包架构选择、CI 诊断摘要以及根 `Makefile` 引用脚本；Platform CI 在干净 Ubuntu Runner 中强制编译全部正式服务与 Worker，随后通过 `make select-image-services` 保留预编译后端、Python 源码后端、前端及 Nginx 四类基线，并自动追加当次模块及共享代码改动的实际消费者镜像，最后通过同一 `make build-images` 路线实际构建。`--verify` 模式非交互、强制构建，只向一次性 Registry 预热已选服务真正需要的基础镜像，产品镜像只加载到 Runner 而不推送；脚本通过 CI 注入的摘要文件输出选中与失败服务，本地不设置时不产生额外文件。SuperMap 私有 arm64 基础镜像和 Model3D arm64 专用构建明确排除于 GitHub amd64 Runner，仍由静态登记检查覆盖，后续交给 macOS Runner 真实构建。以后 AI 新增或调整部署单元时，本地未跟踪文件、恢复退休 Make 目标、重复模块 Makefile、引用失效脚本、遗漏构建登记、硬编码前端原生包架构、正式编译失败或受影响镜像构建失败都会在同次 CI 中直接暴露。
 
 | T2 门禁 | Owner | Service | 数据库安全检查 | Path mapping |
 | --- | --- | --- | --- | --- |

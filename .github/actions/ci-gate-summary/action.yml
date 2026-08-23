@@ -12,6 +12,10 @@ inputs:
   status:
     description: Final job status reported by the GitHub job context.
     required: true
+  details-file:
+    description: Optional Markdown file containing gate-owned diagnostic facts.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -22,6 +26,7 @@ runs:
         ADDP_CI_GATE: ${{ inputs.gate }}
         ADDP_CI_SELECTED: ${{ inputs.selected }}
         ADDP_CI_STATUS: ${{ inputs.status }}
+        ADDP_CI_DETAILS_FILE: ${{ inputs.details-file }}
       run: |
         {
           echo "## ADDP CI gate result"
@@ -29,4 +34,8 @@ runs:
           echo "| Gate | Selected | Result |"
           echo "| --- | --- | --- |"
           echo "| ${ADDP_CI_GATE} | ${ADDP_CI_SELECTED} | ${ADDP_CI_STATUS} |"
+          if [[ -n "$ADDP_CI_DETAILS_FILE" && -f "$ADDP_CI_DETAILS_FILE" ]]; then
+            echo
+            cat -- "$ADDP_CI_DETAILS_FILE"
+          fi
         } >> "$GITHUB_STEP_SUMMARY"

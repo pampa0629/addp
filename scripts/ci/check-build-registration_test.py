@@ -38,6 +38,7 @@ class BuildRegistrationTest(unittest.TestCase):
         )
         self._write(
             "scripts/build/build-images.sh",
+            'ADDP_CI_SUMMARY_FILE="${ADDP_CI_SUMMARY_FILE:-}"\n'
             'seed_base_images() {\n    local base_images=(\n'
             '        "python:3.12-slim"\n'
             "    )\n}\n\n"
@@ -57,16 +58,21 @@ class BuildRegistrationTest(unittest.TestCase):
             "build:\n\t@bash scripts/build/compile.sh $(BUILD_ARGS)\n\n"
             "build-images:\n\t@bash scripts/build/build-images.sh $(IMAGE_BUILD_ARGS)\n\n"
             "select-image-services:\n\t@python3 scripts/ci/select-image-services.py\n\n"
-            "test-go:\n\t@GOWORK=off go mod tidy -diff\n",
+            "test-go:\n\t@echo $${ADDP_CI_SUMMARY_FILE:-}; GOWORK=off go mod tidy -diff\n",
         )
         self._write(
             ".github/workflows/platform-ci.yml",
-            "jobs:\n  product-build:\n    steps:\n"
+            "jobs:\n  go-tests:\n    steps:\n"
+            "      - run: make test-go\n        env:\n          ADDP_CI_SUMMARY_FILE: go.md\n"
+            "      - uses: ./.github/actions/ci-gate-summary\n        with:\n          details-file: go.md\n"
+            "  product-build:\n    steps:\n"
             "      - uses: actions/checkout@sha\n        with:\n          fetch-depth: 0\n"
             "      - run: make build BUILD_ARGS=--force\n"
             "      - run: echo \"services=$(make --no-print-directory select-image-services)\"\n"
             "      - run: make registry-start\n"
-            "      - run: make build-images IMAGE_BUILD_ARGS=\"--verify --services $IMAGE_SERVICES\"\n",
+            "      - run: make build-images IMAGE_BUILD_ARGS=\"--verify --services $IMAGE_SERVICES\"\n"
+            "        env:\n          ADDP_CI_SUMMARY_FILE: images.md\n"
+            "      - uses: ./.github/actions/ci-gate-summary\n        with:\n          details-file: images.md\n",
         )
         subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
 
@@ -143,6 +149,32 @@ class BuildRegistrationTest(unittest.TestCase):
             MODULE.validate_registration(self.repository),
         )
 
+    def test_rejects_missing_product_image_diagnostics(self) -> None:
+        workflow = self.repository / ".github/workflows/platform-ci.yml"
+        workflow.write_text(
+            workflow.read_text(encoding="utf-8")
+            .replace("          ADDP_CI_SUMMARY_FILE: images.md\n", "")
+            .replace("          details-file: images.md\n", ""),
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "Platform CI product build must publish image diagnostics",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_missing_go_workspace_diagnostics(self) -> None:
+        workflow = self.repository / ".github/workflows/platform-ci.yml"
+        workflow.write_text(
+            workflow.read_text(encoding="utf-8")
+            .replace("          ADDP_CI_SUMMARY_FILE: go.md\n", "")
+            .replace("          details-file: go.md\n", ""),
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "Platform CI Go workspace gate must publish module diagnostics",
+            MODULE.validate_registration(self.repository),
+        )
+
     def test_rejects_missing_standard_registry_start(self) -> None:
         workflow = self.repository / ".github/workflows/platform-ci.yml"
         workflow.write_text(
@@ -160,7 +192,7 @@ class BuildRegistrationTest(unittest.TestCase):
         makefile = self.repository / "Makefile"
         makefile.write_text(
             makefile.read_text(encoding="utf-8").replace(
-                "\ntest-go:\n\t@GOWORK=off go mod tidy -diff\n", ""
+                "\ntest-go:\n\t@echo $${ADDP_CI_SUMMARY_FILE:-}; GOWORK=off go mod tidy -diff\n", ""
             ),
             encoding="utf-8",
         )
