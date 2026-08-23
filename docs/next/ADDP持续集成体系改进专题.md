@@ -233,8 +233,8 @@ T0-T3 与现有 T5 已由第二节列出的三个 workflow 承担；T4 只在阶
 - [ ] 准备独立于开发环境的测试部署、显式测试 Tenant、专用测试身份和构建身份校验。
 - [ ] 注册带 `self-hosted`、`macOS`、`ARM64`、`addp-online` 标签的专用 Runner，并绑定 `addp-online-test` Environment；Runner 不复用开发服务进程或开发数据库。
 - [ ] 按统一测试方案建立手工 / 夜间 T4 workflow；环境准入未完成前不得提交一个会永久排队或连接开发环境的占位 workflow。
-- [ ] 保留 CLI 等产品级 T5 门禁，但统一调用、报告和 Artifact 规则。
-- [ ] 核实 Tag、GitHub Release、Artifact Attestation 与仓库 Ruleset 的闭环。
+- [x] 保留 CLI 等产品级 T5 门禁，并统一调用、报告和 Artifact 规则。
+- [x] 核实 Tag、GitHub Release、Artifact Attestation 与仓库 Ruleset：发布 Tag 必须匹配包版本、位于 `main` 历史且同 SHA 的 Platform CI 已成功；随后强制执行 CLI macOS Keychain 与 System IAM 门禁，只发布该次验证生成的 wheel、SHA-256 和 provenance attestation。分支 Ruleset 不保护 Tag，因此发布资格由 workflow 显式拒绝不合格 Tag。
 
 阶段 4 只采用一条路线：GitHub Hosted Runner 继续承担 T0-T3 与现有 CLI T5；macOS 自托管 Runner 只承担需要访问专用 ADDP 测试部署的 T4。个人日常开发环境不注册为 Online 测试目标，`restart.sh` 也不触发 CI 或 Online 测试。
 

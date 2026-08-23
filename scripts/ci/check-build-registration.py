@@ -370,6 +370,7 @@ def validate_registration(repository: Path) -> list[str]:
     compose = (repository / "docker-compose.yml").read_text(encoding="utf-8")
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
     platform_workflow_path = repository / ".github/workflows/platform-ci.yml"
+    release_workflow_path = repository / ".github/workflows/release-and-t2-gates.yml"
     compiled = shell_array(compile_script, "SERVICES")
     images = shell_array(image_script, "services")
     seed_entries = base_image_seed_entries(image_script)
@@ -422,6 +423,39 @@ def validate_registration(repository: Path) -> list[str]:
             errors.append("Platform CI go-tests job is missing")
         elif "ADDP_CI_SUMMARY_FILE" not in go_job or "details-file:" not in go_job:
             errors.append("Platform CI Go workspace gate must publish module diagnostics")
+
+    if not release_workflow_path.is_file():
+        errors.append(".github/workflows/release-and-t2-gates.yml is missing")
+    else:
+        release_workflow = release_workflow_path.read_text(encoding="utf-8")
+        eligibility_match = re.search(
+            r"(?ms)^  cli-release-eligibility:\s*\n(?P<job>.*?)(?=^  [A-Za-z0-9_-]+:\s*$|\Z)",
+            release_workflow,
+        )
+        eligibility_job = eligibility_match.group("job") if eligibility_match else ""
+        if not eligibility_job:
+            errors.append("CLI release eligibility job is missing")
+        else:
+            if "fetch-depth: 0" not in eligibility_job:
+                errors.append("CLI release eligibility must check out full Git history")
+            if "actions: read" not in eligibility_job:
+                errors.append("CLI release eligibility must read Platform CI results")
+            if "scripts/ci/check-release-eligibility.py" not in eligibility_job:
+                errors.append("CLI release eligibility must invoke its standard checker")
+        release_match = re.search(
+            r"(?ms)^  release-cli:\s*\n(?P<job>.*?)(?=^  [A-Za-z0-9_-]+:\s*$|\Z)",
+            release_workflow,
+        )
+        release_job = release_match.group("job") if release_match else ""
+        if not release_job:
+            errors.append("CLI GitHub Release job is missing")
+        else:
+            if "cli-release-eligibility" not in release_job:
+                errors.append("CLI GitHub Release must require release eligibility")
+            if "actions/attest@" not in release_job:
+                errors.append("CLI GitHub Release must attest the verified wheel")
+            if "gh release create" not in release_job:
+                errors.append("CLI GitHub Release must publish through the single release path")
 
     for source, target in seed_entries:
         if uses_latest_tag(source):

@@ -150,6 +150,7 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@python3 scripts/ci/check-python-ci-registration.py --repository "$(CURDIR)"
 	@python3 scripts/ci/check-t2-ci-registration_test.py
 	@python3 scripts/ci/check-t2-ci-registration.py --repository "$(CURDIR)"
+	@python3 scripts/ci/check-release-eligibility_test.py
 	@python3 scripts/test/module-gate_test.py
 	@python3 scripts/test/changed-gate_test.py
 	@$(MAKE) test-engine-startup-isolation

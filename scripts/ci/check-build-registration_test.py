@@ -48,6 +48,7 @@ class BuildRegistrationTest(unittest.TestCase):
             "    )\n}\n",
         )
         self._write("scripts/ci/select-image-services.py", "print('sample-backend')\n")
+        self._write("scripts/ci/check-release-eligibility.py", "print('eligible')\n")
         self._write(
             "docker-compose.yml",
             "services:\n  sample:\n"
@@ -73,6 +74,20 @@ class BuildRegistrationTest(unittest.TestCase):
             "      - run: make build-images IMAGE_BUILD_ARGS=\"--verify --services $IMAGE_SERVICES\"\n"
             "        env:\n          ADDP_CI_SUMMARY_FILE: images.md\n"
             "      - uses: ./.github/actions/ci-gate-summary\n        with:\n          details-file: images.md\n",
+        )
+        self._write(
+            ".github/workflows/release-and-t2-gates.yml",
+            "jobs:\n"
+            "  cli-release-eligibility:\n"
+            "    permissions:\n      actions: read\n"
+            "    steps:\n"
+            "      - uses: actions/checkout@sha\n        with:\n          fetch-depth: 0\n"
+            "      - run: python3 scripts/ci/check-release-eligibility.py\n"
+            "  release-cli:\n"
+            "    needs:\n      - cli-release-eligibility\n"
+            "    steps:\n"
+            "      - uses: actions/attest@sha\n"
+            "      - run: gh release create v1 artifact\n",
         )
         subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
 
@@ -107,6 +122,18 @@ class BuildRegistrationTest(unittest.TestCase):
             "Platform CI product-build job is missing",
             MODULE.validate_registration(self.repository),
         )
+
+    def test_rejects_release_without_eligibility_gate(self) -> None:
+        workflow = self.repository / ".github/workflows/release-and-t2-gates.yml"
+        workflow.write_text(
+            "jobs:\n  release-cli:\n    steps:\n"
+            "      - uses: actions/attest@sha\n"
+            "      - run: gh release create v1 artifact\n",
+            encoding="utf-8",
+        )
+        errors = MODULE.validate_registration(self.repository)
+        self.assertIn("CLI release eligibility job is missing", errors)
+        self.assertIn("CLI GitHub Release must require release eligibility", errors)
 
     def test_rejects_shallow_product_checkout(self) -> None:
         workflow = self.repository / ".github/workflows/platform-ci.yml"
