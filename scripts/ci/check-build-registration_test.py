@@ -46,6 +46,7 @@ class BuildRegistrationTest(unittest.TestCase):
             '        "sample-frontend:sample/frontend"\n'
             "    )\n}\n",
         )
+        self._write("scripts/ci/select-image-services.py", "print('sample-backend')\n")
         self._write(
             "docker-compose.yml",
             "services:\n  sample:\n"
@@ -55,14 +56,17 @@ class BuildRegistrationTest(unittest.TestCase):
             "Makefile",
             "build:\n\t@bash scripts/build/compile.sh $(BUILD_ARGS)\n\n"
             "build-images:\n\t@bash scripts/build/build-images.sh $(IMAGE_BUILD_ARGS)\n\n"
+            "select-image-services:\n\t@python3 scripts/ci/select-image-services.py\n\n"
             "test-go:\n\t@GOWORK=off go mod tidy -diff\n",
         )
         self._write(
             ".github/workflows/platform-ci.yml",
             "jobs:\n  product-build:\n    steps:\n"
+            "      - uses: actions/checkout@sha\n        with:\n          fetch-depth: 0\n"
             "      - run: make build BUILD_ARGS=--force\n"
+            "      - run: echo \"services=$(make --no-print-directory select-image-services)\"\n"
             "      - run: make registry-start\n"
-            "      - run: make build-images IMAGE_BUILD_ARGS=\"--verify --services sample-backend,sample-frontend\"\n",
+            "      - run: make build-images IMAGE_BUILD_ARGS=\"--verify --services $IMAGE_SERVICES\"\n",
         )
         subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
 
@@ -94,7 +98,20 @@ class BuildRegistrationTest(unittest.TestCase):
     def test_rejects_missing_product_build_ci_gate(self) -> None:
         self._write(".github/workflows/platform-ci.yml", "jobs: {}\n")
         self.assertIn(
-            "Platform CI must run make build BUILD_ARGS=--force",
+            "Platform CI product-build job is missing",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_shallow_product_checkout(self) -> None:
+        workflow = self.repository / ".github/workflows/platform-ci.yml"
+        workflow.write_text(
+            workflow.read_text(encoding="utf-8").replace(
+                "          fetch-depth: 0\n", ""
+            ),
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "Platform CI product build must check out full Git history",
             MODULE.validate_registration(self.repository),
         )
 
@@ -102,13 +119,27 @@ class BuildRegistrationTest(unittest.TestCase):
         workflow = self.repository / ".github/workflows/platform-ci.yml"
         workflow.write_text(
             workflow.read_text(encoding="utf-8").replace(
-                "      - run: make build-images IMAGE_BUILD_ARGS=\"--verify --services sample-backend,sample-frontend\"\n",
+                "      - run: make build-images IMAGE_BUILD_ARGS=\"--verify --services $IMAGE_SERVICES\"\n",
                 "",
             ),
             encoding="utf-8",
         )
         self.assertIn(
-            "Platform CI must verify representative images through make build-images",
+            "Platform CI must verify selected images through make build-images",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_missing_product_image_selection(self) -> None:
+        workflow = self.repository / ".github/workflows/platform-ci.yml"
+        workflow.write_text(
+            workflow.read_text(encoding="utf-8").replace(
+                "      - run: echo \"services=$(make --no-print-directory select-image-services)\"\n",
+                "",
+            ),
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "Platform CI must select baseline and affected product images",
             MODULE.validate_registration(self.repository),
         )
 

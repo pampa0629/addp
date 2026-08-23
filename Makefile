@@ -1,4 +1,4 @@
-.PHONY: help build build-images test test-changed test-module test-platform test-engine-startup-isolation test-integration test-online test-online-runner test-go test-agent-frontend test-asset-frontend test-console-frontend test-copilot test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats \
+.PHONY: help build build-images select-image-services test test-changed test-module test-platform test-engine-startup-isolation test-integration test-online test-online-runner test-go test-agent-frontend test-asset-frontend test-console-frontend test-copilot test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats \
         build-iam-bootstrap build-iam-recovery \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
@@ -71,6 +71,9 @@ build: ## 编译全部正式 Go 服务与 Worker；附加参数使用 BUILD_ARGS
 build-images: ## 构建全部正式 ADDP 镜像；附加参数使用 IMAGE_BUILD_ARGS="..."
 	@bash scripts/build/build-images.sh $(IMAGE_BUILD_ARGS)
 
+select-image-services: ## 输出 CI 基线及当前改动影响的镜像服务列表
+	@python3 scripts/ci/select-image-services.py --repository "$(CURDIR)"
+
 # ===== 基础设施脚本入口 =====
 infra-up: ## 启动系统库基础设施（带端口预检与健康检查）
 	@bash scripts/infra/up.sh
@@ -139,6 +142,7 @@ test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
 test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@bash scripts/utils/check-deps-version.sh
 	@python3 scripts/ci/check-build-registration_test.py
+	@python3 scripts/ci/select-image-services_test.py
 	@python3 scripts/ci/check-build-registration.py --repository "$(CURDIR)"
 	@python3 scripts/ci/check-frontend-ci-registration_test.py
 	@python3 scripts/ci/check-frontend-ci-registration.py --repository "$(CURDIR)"

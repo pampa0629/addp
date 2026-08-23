@@ -381,21 +381,32 @@ def validate_registration(repository: Path) -> list[str]:
 
     if not platform_workflow_path.is_file():
         errors.append(".github/workflows/platform-ci.yml is missing")
-    elif not re.search(
-        r"(?m)^\s*(?:-\s*)?run:\s*make\s+build\s+BUILD_ARGS=--force\s*$",
-        platform_workflow_path.read_text(encoding="utf-8"),
-    ):
-        errors.append("Platform CI must run make build BUILD_ARGS=--force")
     else:
         platform_workflow = platform_workflow_path.read_text(encoding="utf-8")
-        if 'make registry-start' not in platform_workflow:
+        product_match = re.search(
+            r"(?ms)^  product-build:\s*\n(?P<job>.*?)(?=^  [A-Za-z0-9_-]+:\s*$|\Z)",
+            platform_workflow,
+        )
+        product_job = product_match.group("job") if product_match else ""
+        if not product_job:
+            errors.append("Platform CI product-build job is missing")
+        elif not re.search(
+            r"(?m)^\s*(?:-\s*)?run:\s*make\s+build\s+BUILD_ARGS=--force\s*$",
+            product_job,
+        ):
+            errors.append("Platform CI must run make build BUILD_ARGS=--force")
+        if "fetch-depth: 0" not in product_job:
+            errors.append("Platform CI product build must check out full Git history")
+        if 'make registry-start' not in product_job:
             errors.append("Platform CI product build must start the standard local registry")
+        if "make --no-print-directory select-image-services" not in product_job:
+            errors.append("Platform CI must select baseline and affected product images")
         if not re.search(
             r'(?m)^\s*(?:-\s*)?run:\s*make\s+build-images\s+'
-            r'IMAGE_BUILD_ARGS="--verify\s+--services\s+[^"\s]+"\s*$',
-            platform_workflow,
+            r'IMAGE_BUILD_ARGS="--verify\s+--services\s+\$IMAGE_SERVICES"\s*$',
+            product_job,
         ):
-            errors.append("Platform CI must verify representative images through make build-images")
+            errors.append("Platform CI must verify selected images through make build-images")
 
     for source, target in seed_entries:
         if uses_latest_tag(source):
@@ -499,6 +510,11 @@ def validate_registration(repository: Path) -> list[str]:
     images_recipe = make_recipe(makefile, "build-images")
     if images_recipe is None or "scripts/build/build-images.sh" not in images_recipe:
         errors.append("Makefile target build-images must invoke scripts/build/build-images.sh")
+    selection_recipe = make_recipe(makefile, "select-image-services")
+    if selection_recipe is None or "scripts/ci/select-image-services.py" not in selection_recipe:
+        errors.append(
+            "Makefile target select-image-services must invoke scripts/ci/select-image-services.py"
+        )
     go_test_recipe = make_recipe(makefile, "test-go")
     if go_test_recipe is None or "GOWORK=off go mod tidy -diff" not in go_test_recipe:
         errors.append("Makefile target test-go must reject untidy Go module files")

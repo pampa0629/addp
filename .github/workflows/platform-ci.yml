@@ -72,6 +72,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Go
@@ -99,6 +100,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Go
@@ -117,11 +119,22 @@ jobs:
       - name: Compile all product binaries
         run: make build BUILD_ARGS=--force
 
+      - name: Select baseline and affected product images
+        id: image-selection
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: echo "services=$(make --no-print-directory select-image-services)" >> "$GITHUB_OUTPUT"
+
       - name: Start disposable image registry
         run: make registry-start
 
-      - name: Verify representative product images
-        run: make build-images IMAGE_BUILD_ARGS="--verify --services system-backend,agent-backend,console,nginx"
+      - name: Verify baseline and affected product images
+        env:
+          IMAGE_SERVICES: ${{ steps.image-selection.outputs.services }}
+        run: make build-images IMAGE_BUILD_ARGS="--verify --services $IMAGE_SERVICES"
 
       - name: Summarize product build gate
         if: always()
