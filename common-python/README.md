@@ -22,6 +22,8 @@ addp --version
 
 GitHub Release 是当前唯一正式分发路径。也可以用 `python3 -m venv` 和该 wheel 安装到隔离环境；正式安装不使用本地源码构建、editable 源码目录或仓库内 `.venv`。PyPI 或私有包仓库待账号、权限和发布策略明确后另行设计，不与当前路径并存。
 
+维护者准备新版本时使用根目录唯一入口 `make prepare-cli-release RELEASE_VERSION=X.Y.Z`，不要分别手改上述版本位置。该命令只更新版本事实，不提交、不打 Tag、不推送；版本提交的 Platform CI 成功后，再运行 `make check-cli-release RELEASE_TAG=vX.Y.Z` 完成 Tag 前校验。
+
 ### CLI 升级与卸载
 
 升级时先把上面的 `RELEASE` 改为目标版本，重新下载并验证该 GitHub Release 的 wheel 和 SHA-256，再覆盖现有 pipx 环境：

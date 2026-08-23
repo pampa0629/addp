@@ -74,7 +74,11 @@ build-images: ## 构建全部正式 ADDP 镜像；附加参数使用 IMAGE_BUILD
 select-image-services: ## 输出 CI 基线及当前改动影响的镜像服务列表
 	@python3 scripts/ci/select-image-services.py --repository "$(CURDIR)"
 
-.PHONY: check-cli-release
+.PHONY: prepare-cli-release check-cli-release
+prepare-cli-release: ## 一致更新 CLI 版本事实（需 RELEASE_VERSION=X.Y.Z；不提交、不打 Tag）
+	@test -n "$(RELEASE_VERSION)" || (echo "RELEASE_VERSION is required" >&2; exit 2)
+	@python3 scripts/ci/update-cli-version.py --repository "$(CURDIR)" --version "$(RELEASE_VERSION)"
+
 check-cli-release: ## 创建 Tag 前校验 CLI 版本、main HEAD 和 Platform CI（需 RELEASE_TAG=v<version>）
 	@test -n "$(RELEASE_TAG)" || (echo "RELEASE_TAG is required" >&2; exit 2)
 	@git fetch origin main --tags
@@ -157,6 +161,7 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@python3 scripts/ci/check-t2-ci-registration_test.py
 	@python3 scripts/ci/check-t2-ci-registration.py --repository "$(CURDIR)"
 	@python3 scripts/ci/check-release-eligibility_test.py
+	@python3 scripts/ci/update-cli-version_test.py
 	@python3 scripts/test/module-gate_test.py
 	@python3 scripts/test/changed-gate_test.py
 	@$(MAKE) test-engine-startup-isolation

@@ -457,6 +457,14 @@ def validate_registration(repository: Path) -> list[str]:
             if "gh release create" not in release_job:
                 errors.append("CLI GitHub Release must publish through the single release path")
 
+    version_prepare_recipe = make_recipe(makefile, "prepare-cli-release")
+    if version_prepare_recipe is None:
+        errors.append("Makefile target prepare-cli-release is missing")
+    elif "scripts/ci/update-cli-version.py" not in version_prepare_recipe:
+        errors.append("Makefile prepare-cli-release must invoke the standard version updater")
+    if "scripts/ci/update-cli-version_test.py" not in makefile:
+        errors.append("Makefile test-platform must run the CLI version updater tests")
+
     release_check_recipe = make_recipe(makefile, "check-cli-release")
     if release_check_recipe is None:
         errors.append("Makefile target check-cli-release is missing")

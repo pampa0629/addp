@@ -49,6 +49,8 @@ class BuildRegistrationTest(unittest.TestCase):
         )
         self._write("scripts/ci/select-image-services.py", "print('sample-backend')\n")
         self._write("scripts/ci/check-release-eligibility.py", "print('eligible')\n")
+        self._write("scripts/ci/update-cli-version.py", "print('updated')\n")
+        self._write("scripts/ci/update-cli-version_test.py", "print('tested')\n")
         self._write(
             "docker-compose.yml",
             "services:\n  sample:\n"
@@ -59,7 +61,9 @@ class BuildRegistrationTest(unittest.TestCase):
             "build:\n\t@bash scripts/build/compile.sh $(BUILD_ARGS)\n\n"
             "build-images:\n\t@bash scripts/build/build-images.sh $(IMAGE_BUILD_ARGS)\n\n"
             "select-image-services:\n\t@python3 scripts/ci/select-image-services.py\n\n"
+            "prepare-cli-release:\n\t@python3 scripts/ci/update-cli-version.py\n\n"
             "check-cli-release:\n\t@python3 scripts/ci/check-release-eligibility.py --pre-tag\n\n"
+            "test-platform:\n\t@python3 scripts/ci/update-cli-version_test.py\n\n"
             "test-go:\n\t@echo $${ADDP_CI_SUMMARY_FILE:-}; GOWORK=off go mod tidy -diff\n",
         )
         self._write(
@@ -147,6 +151,34 @@ class BuildRegistrationTest(unittest.TestCase):
         )
         self.assertIn(
             "Makefile target check-cli-release is missing",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_missing_version_prepare_gate(self) -> None:
+        makefile = self.repository / "Makefile"
+        makefile.write_text(
+            makefile.read_text(encoding="utf-8").replace(
+                "prepare-cli-release:\n\t@python3 scripts/ci/update-cli-version.py\n\n",
+                "",
+            ),
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "Makefile target prepare-cli-release is missing",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_missing_version_updater_test_registration(self) -> None:
+        makefile = self.repository / "Makefile"
+        makefile.write_text(
+            makefile.read_text(encoding="utf-8").replace(
+                "test-platform:\n\t@python3 scripts/ci/update-cli-version_test.py\n\n",
+                "test-platform:\n\t@true\n\n",
+            ),
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "Makefile test-platform must run the CLI version updater tests",
             MODULE.validate_registration(self.repository),
         )
 
