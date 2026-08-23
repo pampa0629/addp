@@ -14,6 +14,9 @@
       <span v-if="displayLatency">
         {{ t('monitor.module_status.latency', { ms: displayLatency }) }}
       </span>
+      <span v-if="backendSummary">
+        {{ backendSummary }}
+      </span>
       <span v-if="taskDiscoverySummary">
         {{ taskDiscoverySummary }}
       </span>
@@ -67,11 +70,23 @@ const statusText = computed(() => {
 })
 
 const displayLatency = computed(() => {
-  return props.module.latency || props.module.module_health?.latency || 0
+  const latencies = (props.module.backends || [])
+    .map(item => item.module_health?.latency || 0)
+    .filter(value => value > 0)
+  return latencies.length > 0 ? Math.max(...latencies) : 0
+})
+
+const backendSummary = computed(() => {
+  const backends = props.module.backends || []
+  if (backends.length === 0) {
+    return ''
+  }
+  const upCount = backends.filter(item => item.status === 'up').length
+  return t('monitor.module_status.backends', { up: upCount, total: backends.length })
 })
 
 const taskDiscoverySummary = computed(() => {
-  const checks = props.module.task_discovery || []
+  const checks = (props.module.backends || []).flatMap(item => item.task_discovery || [])
   if (checks.length === 0) {
     return ''
   }

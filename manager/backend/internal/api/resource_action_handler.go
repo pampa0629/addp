@@ -1,10 +1,12 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
 	commonAPI "github.com/addp/common/api"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -27,6 +29,7 @@ func NewResourceActionHandler(service *service.ResourceActionService) *ResourceA
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Failure 503 {object} map[string]interface{} "引擎不可用 | Engine unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.data_item.read"]
 // @Router /resource-actions [get]
@@ -39,6 +42,10 @@ func (h *ResourceActionHandler) GetResourceActions(c *gin.Context) {
 	}
 	resp, err := h.service.GetResourceActions(c.Request.Context(), locator, tenantIDFromContext(c))
 	if err != nil {
+		if errors.Is(err, engineaccess.ErrUnavailable) {
+			engineUnavailable(c)
+			return
+		}
 		if err == service.ErrEngineAccessDenied {
 			accessDeniedToEngine(c)
 			return

@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/addp/common/engine/plugin"
+	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	metaRepo "github.com/addp/meta/internal/repository"
@@ -25,7 +26,7 @@ func NewCatalogRootReconciler(db *gorm.DB) *CatalogRootReconciler {
 }
 
 func (r *CatalogRootReconciler) Reconcile(resource *commonModels.Engine) bool {
-	if r == nil || r.db == nil || !resource.IsUsable() || resource.TenantID == nil {
+	if r == nil || r.db == nil || !engineselection.IsSelectionOption(resource) || resource.TenantID == nil {
 		return false
 	}
 	enginePlugin, err := plugin.Get(resource.EngineType)

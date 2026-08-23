@@ -5,8 +5,6 @@ import (
 	"net/http"
 
 	commonAuth "github.com/addp/common/middleware/auth"
-	commoni18n "github.com/addp/common/middleware/i18n"
-	moni18n "github.com/addp/monitor/i18n"
 	"github.com/addp/monitor/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -21,25 +19,6 @@ func NewHealthHandler(healthService *service.HealthCheckService) *HealthHandler 
 	return &HealthHandler{
 		healthService: healthService,
 	}
-}
-
-// GetModules 获取所有模块列表
-// @Summary 获取模块列表 | Get module list
-// @Tags Monitor
-// @Produce json
-// @Success 200 {object} map[string]interface{}
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["monitor.health.read"]
-// @Router /modules [get]
-// @Security BearerAuth
-func (h *HealthHandler) GetModules(c *gin.Context) {
-	modules, err := h.healthService.GetModules(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, modules)
 }
 
 // GetTaskProviders 获取所有任务提供者
@@ -63,7 +42,7 @@ func (h *HealthHandler) GetTaskProviders(c *gin.Context) {
 
 // CheckAllProvidersHealth 检查所有任务提供者运行态健康状态
 // @Summary 检查所有任务提供者运行态健康状态 | Check all task provider health
-// @Description 从 System 读取启用 TaskProvider，并探测模块 /health 与标准 GET /tasks?task_type= endpoint。| Read enabled TaskProviders from System and probe module /health plus standard GET /tasks?task_type= endpoints.
+// @Description 从 System 读取启用 TaskProvider 及其当前有效 Backend 实例池，逐实例探测模块 /health 与标准 GET /tasks?task_type= endpoint，并聚合 Provider 状态。| Read enabled TaskProviders and their currently valid Backend instance pools from System, probe module /health plus standard GET /tasks?task_type= endpoints per instance, and aggregate Provider status.
 // @Tags Monitor
 // @Produce json
 // @Success 200 {array} service.ProviderHealthStatus
@@ -84,7 +63,7 @@ func (h *HealthHandler) CheckAllProvidersHealth(c *gin.Context) {
 
 // CheckProviderHealth 检查单个任务提供者运行态健康状态
 // @Summary 检查单个任务提供者运行态健康状态 | Check task provider health
-// @Description 从 System 读取指定 TaskProvider，并探测模块 /health 与标准 GET /tasks?task_type= endpoint。| Read a TaskProvider from System and probe module /health plus standard GET /tasks?task_type= endpoints.
+// @Description 从 System 读取指定 TaskProvider 及其当前有效 Backend 实例池，逐实例探测模块 /health 与标准 GET /tasks?task_type= endpoint，并聚合 Provider 状态。| Read the TaskProvider and its currently valid Backend instance pool from System, probe module /health plus standard GET /tasks?task_type= endpoints per instance, and aggregate Provider status.
 // @Tags Monitor
 // @Produce json
 // @Param module path string true "模块名 | Module"
@@ -107,69 +86,6 @@ func (h *HealthHandler) CheckProviderHealth(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, status)
-}
-
-// CheckModuleHealth 检查单个模块健康状态
-// @Summary 检查模块健康状态 | Check module health
-// @Tags Monitor
-// @Produce json
-// @Param module path string true "模块名 | Module"
-// @Success 200 {object} map[string]interface{}
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["monitor.health.read"]
-// @Router /modules/{module}/health [get]
-// @Security BearerAuth
-func (h *HealthHandler) CheckModuleHealth(c *gin.Context) {
-	moduleName := c.Param("module")
-
-	// 获取模块信息
-	modules, err := h.healthService.GetModules(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 查找模块
-	var moduleInfo *service.ModuleInfo
-	for _, m := range modules {
-		if m.Name == moduleName {
-			moduleInfo = m
-			break
-		}
-	}
-
-	if moduleInfo == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, moni18n.MsgModuleNotFound)})
-		return
-	}
-
-	// 检查健康状态
-	status, err := h.healthService.CheckModuleHealth(c.Request.Context(), moduleInfo.Name, moduleInfo.BaseURL)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, status)
-}
-
-// CheckAllModules 检查所有模块健康状态
-// @Summary 检查所有模块健康状态 | Check all modules health
-// @Tags Monitor
-// @Produce json
-// @Success 200 {object} map[string]interface{}
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["monitor.health.read"]
-// @Router /modules/health/all [get]
-// @Security BearerAuth
-func (h *HealthHandler) CheckAllModules(c *gin.Context) {
-	statuses, err := h.healthService.CheckAllModules(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, statuses)
 }
 
 func currentTenantID(c *gin.Context) uint {

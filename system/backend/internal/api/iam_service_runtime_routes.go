@@ -62,6 +62,7 @@ func RegisterIAMServiceRuntimeRoutes(
 	{
 		platformRoutes.POST("/modules", moduleHandler.RegisterService)
 		platformRoutes.POST("/modules/heartbeat", moduleHandler.HeartbeatService)
+		platformRoutes.DELETE("/modules/:module_name/instances/:instance_id", moduleHandler.DeregisterService)
 		platformRoutes.POST("/engines", engineHandler.RegisterRuntimeEngine)
 	}
 	platformReadRoutes := runtimeRoutes.Group("")
@@ -70,6 +71,7 @@ func RegisterIAMServiceRuntimeRoutes(
 		platformReadRoutes.GET("/task-providers", taskProviderHandler.ListService)
 		platformReadRoutes.GET("/task-providers/:module_name", taskProviderHandler.GetService)
 		platformReadRoutes.GET("/modules", moduleHandler.ListModulesService)
+		platformReadRoutes.GET("/modules/watch", moduleHandler.WatchModulesService)
 		platformReadRoutes.GET("/modules/:module_name", moduleHandler.GetModuleService)
 	}
 	tenantEngineRoutes := runtimeRoutes.Group("/engine-descriptors")

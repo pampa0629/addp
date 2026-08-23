@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	commonSpatial "github.com/addp/common/spatial"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/minio/minio-go/v7"
 )
 
@@ -27,8 +28,8 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) prepareDatabaseTableFlatGeobufS
 	if err != nil {
 		return "", nil, nil, noopCleanup, fmt.Errorf("get database table source engine: %w", err)
 	}
-	if !engine.IsUsable() {
-		return "", nil, nil, noopCleanup, errors.New("source engine is not active")
+	if err := engineaccess.EnsureAvailable(engine); err != nil {
+		return "", nil, nil, noopCleanup, err
 	}
 	if engine.TenantID != nil && *engine.TenantID != tenantID {
 		return "", nil, nil, noopCleanup, ErrEngineAccessDenied

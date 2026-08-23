@@ -18,6 +18,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/catalogutil"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
 	"github.com/addp/manager/internal/preview"
@@ -81,6 +82,9 @@ func (s *MetadataService) RefreshItem(ctx context.Context, tenantID *uint, engin
 	if opts.ItemID == 0 {
 		return nil, fmt.Errorf("item_id is required")
 	}
+	if _, err := s.getResourceForTenant(ctx, engineID, tenantID); err != nil {
+		return nil, err
+	}
 	metaClient := s.metaClient
 	if tenantID != nil {
 		metaClient = metaClient.WithTenantID(*tenantID)
@@ -112,8 +116,8 @@ func (s *MetadataService) RefreshItem(ctx context.Context, tenantID *uint, engin
 	return resp, nil
 }
 
-func resourceAccessible(resource *models.Engine, tenantID *uint) bool {
-	if !resource.IsUsable() {
+func resourceBelongsToTenant(resource *models.Engine, tenantID *uint) bool {
+	if resource == nil {
 		return false
 	}
 	if tenantID == nil {
@@ -139,16 +143,19 @@ func (s *MetadataService) getResource(ctx context.Context, engineID uint, tenant
 	return convertResource(sysResource), nil
 }
 
-func (s *MetadataService) getResourceForTenant(engineID uint, tenantID *uint) (*models.Engine, error) {
+func (s *MetadataService) getResourceForTenant(ctx context.Context, engineID uint, tenantID *uint) (*models.Engine, error) {
 	if tenantID == nil || *tenantID == 0 {
 		return nil, ErrEngineAccessDenied
 	}
-	resource, err := s.getResource(context.Background(), engineID, *tenantID)
+	resource, err := s.getResource(ctx, engineID, *tenantID)
 	if err != nil {
 		return nil, err
 	}
-	if !resourceAccessible(resource, tenantID) {
+	if !resourceBelongsToTenant(resource, tenantID) {
 		return nil, ErrEngineAccessDenied
+	}
+	if err := engineaccess.EnsureAvailable(resource); err != nil {
+		return nil, err
 	}
 	return resource, nil
 }
@@ -170,14 +177,15 @@ func convertResource(src *commonModels.Engine) *models.Engine {
 	}
 
 	return &models.Engine{
-		ID:             src.ID,
-		Name:           src.Name,
-		EngineType:     src.EngineType,
-		ConnectionInfo: connInfo,
-		Description:    src.Description,
-		CreatedBy:      src.CreatedBy,
-		TenantID:       tenantIDPtr,
-		LifecycleState: src.LifecycleState,
+		ID:               src.ID,
+		Name:             src.Name,
+		EngineType:       src.EngineType,
+		ConnectionInfo:   connInfo,
+		Description:      src.Description,
+		CreatedBy:        src.CreatedBy,
+		TenantID:         tenantIDPtr,
+		LifecycleState:   src.LifecycleState,
+		ConnectionStatus: src.ConnectionStatus,
 	}
 }
 
@@ -190,9 +198,9 @@ func (s *MetadataService) StreamStorageContent(
 	tenantID *uint,
 ) (io.ReadCloser, int64, string, string, error) {
 	// 获取resource信息
-	resource, err := s.getResourceForTenant(resourceID, tenantID)
+	resource, err := s.getResourceForTenant(ctx, resourceID, tenantID)
 	if err != nil {
-		return nil, 0, "", "", ErrEngineAccessDenied
+		return nil, 0, "", "", err
 	}
 
 	pl, err := plugin.Get(resource.EngineType)
@@ -243,9 +251,9 @@ func (s *MetadataService) StreamStorageContent(
 }
 
 func (s *MetadataService) ResolveStorageDownloadPlan(ctx context.Context, resourceID uint, storageRef string, tenantID *uint) (*models.DownloadPlan, error) {
-	resource, err := s.getResourceForTenant(resourceID, tenantID)
+	resource, err := s.getResourceForTenant(ctx, resourceID, tenantID)
 	if err != nil {
-		return nil, ErrEngineAccessDenied
+		return nil, err
 	}
 	_, displayPath, err := streamStorageRefPath(resource.EngineType, resource.ID, storageRef)
 	if err != nil {
@@ -314,9 +322,9 @@ func (s *MetadataService) ResolveStorageDownloadPlanByLocator(ctx context.Contex
 	if !isStorageItemType(loc.Type) {
 		return 0, nil, fmt.Errorf("%w: locator must reference a storage item", ErrDownloadNotSupported)
 	}
-	resource, err := s.getResourceForTenant(loc.EngineID, tenantID)
+	resource, err := s.getResourceForTenant(ctx, loc.EngineID, tenantID)
 	if err != nil {
-		return 0, nil, ErrEngineAccessDenied
+		return 0, nil, err
 	}
 	if !storageCanRead(resource) {
 		return 0, nil, fmt.Errorf("%w: engine does not support content read", ErrDownloadNotSupported)

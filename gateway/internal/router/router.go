@@ -51,8 +51,8 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	accessLoggerMiddleware := middleware.NewAccessLoggerMiddleware(db)
 
 	moduleDiscovery := internal.NewModuleDiscovery(systemClient)
-	if err := moduleDiscovery.Start(cfg.ModuleRefreshInterval); err != nil {
-		log.Printf("模块注册表初次加载失败，将按刷新间隔继续重试: %v", err)
+	if err := moduleDiscovery.Start(cfg.ModuleWatchTimeout); err != nil {
+		log.Printf("模块注册表初次加载失败，将通过 revision watch 继续重试: %v", err)
 	}
 
 	// 健康检查（无需鉴权）

@@ -120,12 +120,13 @@ func apiDownloadTestSystemClient(t *testing.T, engineID uint, engineType string)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"id":              engineID,
-			"tenant_id":       1,
-			"name":            "engine",
-			"engine_type":     engineType,
-			"connection_info": map[string]interface{}{},
-			"lifecycle_state": "active",
+			"id":                engineID,
+			"tenant_id":         1,
+			"name":              "engine",
+			"engine_type":       engineType,
+			"connection_info":   map[string]interface{}{},
+			"lifecycle_state":   "active",
+			"connection_status": "online",
 		})
 	}))
 	t.Cleanup(server.Close)

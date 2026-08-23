@@ -36,7 +36,7 @@ func (f fakeRasterMosaicSystemClient) GetEngineForTenant(_ context.Context, _ ui
 	if f.engine == nil || f.engine.ID != engineID {
 		return nil, nil
 	}
-	return f.engine, nil
+	return onlineEngineFixture(f.engine), nil
 }
 
 type fakeRasterMosaicRuntime struct {

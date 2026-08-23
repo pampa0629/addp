@@ -15,6 +15,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	rastercogref "github.com/addp/manager/internal/cog"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/minio/minio-go/v7"
 )
 
@@ -52,8 +53,8 @@ func (e *ManagerCADPreviewExecutor) BuildCADPreview(ctx context.Context, req CAD
 	if err != nil {
 		return nil, fmt.Errorf("get CAD source engine: %w", err)
 	}
-	if !sourceEngine.IsUsable() {
-		return nil, errors.New("CAD source engine is not active")
+	if err := engineaccess.EnsureAvailable(sourceEngine); err != nil {
+		return nil, err
 	}
 	if sourceEngine.TenantID != nil && *sourceEngine.TenantID != req.Task.TenantID {
 		return nil, ErrEngineAccessDenied

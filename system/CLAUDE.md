@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 应用管理（外部应用注册、API Key 管理）
 - 资源回收管理（跨模块评估和执行资源回收）
 - 模块注册与发现（供 Gateway 动态路由）
-- 任务提供者注册（供 Orchestrator 查询调用）
+- TaskProvider 模块角色声明与动态发现（供 Orchestrator 查询调用）
 - 数据存储在 PostgreSQL 数据库（system schema）
 
 技术栈：
@@ -79,7 +79,7 @@ backend/
 │   │   ├── application_handler.go     # 应用与 API Key 管理
 │   │   ├── cleanup_handler.go         # 资源回收
 │   │   ├── module_registry_handler.go # 模块注册与发现
-│   │   ├── task_provider_handler.go   # 任务提供者注册
+│   │   ├── task_provider_handler.go   # TaskProvider 读取投影
 │   │   ├── registry_handler.go        # 引擎能力注册与发现
 │   │   └── internal_handler.go        # API Key 验证（内部 API）
 │   ├── config/         # 配置管理
@@ -91,8 +91,7 @@ backend/
 │   │   ├── engine.go
 │   │   ├── application.go     # 应用 + APIKey 模型
 │   │   ├── cleanup.go         # 资源回收任务模型
-│   │   ├── module_registry.go # 模块注册表模型
-│   │   └── task_provider.go   # 任务提供者模型
+│   │   └── module_registry.go # 模块定义、运行实例与角色声明模型
 │   ├── repository/     # 数据访问层
 │   └── service/        # 业务逻辑层
 └── pkg/                # 可对外暴露的工具包
@@ -259,7 +258,7 @@ frontend/src/
 **TaskProvider 模块角色**:
 - Provider 声明保存在 `system.module_definitions.task_provider`，不建立独立注册实体或独立启用状态
 - Provider ID 复用模块定义 ID，重复相同声明保持模块版本不变；声明变化递增模块定义版本
-- `base_url` 只在读取时从当前有效 Backend 实例解析，不写入模块定义；模块离线时声明保留但 `available=false`
+- 有效端点池只在读取时从当前 Backend 租约解析，不写入模块定义；模块离线时声明保留但 `available=false`，System 不固定选择单个 Backend
 
 ### 日志中间件
 

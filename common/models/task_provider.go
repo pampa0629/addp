@@ -18,6 +18,13 @@ type TaskProviderDeclaration struct {
 	Capabilities *JSONString `json:"capabilities,omitempty"`
 }
 
+// TaskProviderBackend 是 System 根据当前有效 Backend 租约生成的运行端点投影。
+type TaskProviderBackend struct {
+	InstanceID     string    `json:"instance_id"`
+	BaseURL        string    `json:"base_url"`
+	LeaseExpiresAt time.Time `json:"lease_expires_at"`
+}
+
 // TaskProvider 是 System 根据模块定义和当前 Backend 租约生成的读取投影。
 type TaskProvider struct {
 	ID            uint   `json:"id"`
@@ -26,9 +33,12 @@ type TaskProvider struct {
 	Enabled       bool   `json:"enabled"`
 	TaskProviderDeclaration
 
-	Available         bool   `json:"available"`
-	BaseURL           string `json:"base_url"`
-	BackendInstanceID string `json:"backend_instance_id"`
+	Available         bool                  `json:"available"`
+	UnavailableReason string                `json:"unavailable_reason,omitempty"`
+	Backends          []TaskProviderBackend `json:"backends"`
+
+	// ResolvedBaseURL 由调用方在一次实际调用前从 Backends 中选择，不属于 API 投影。
+	ResolvedBaseURL string `json:"-"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

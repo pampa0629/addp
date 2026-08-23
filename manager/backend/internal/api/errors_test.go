@@ -1,12 +1,35 @@
 package api
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	commoni18n "github.com/addp/common/middleware/i18n"
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/gin-gonic/gin"
 )
+
+func TestEngineUnavailableUsesStableTransientErrorContract(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Set("addp_lang", commoni18n.LangZhCN)
+
+	engineUnavailable(c)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusServiceUnavailable)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["error_code"] != "engine_unavailable" || body["error_type"] != "transient" || body["error"] == "" {
+		t.Fatalf("response = %#v", body)
+	}
+}
 
 func TestManagerErrorMessagesRegistered(t *testing.T) {
 	c := &gin.Context{}
@@ -17,6 +40,7 @@ func TestManagerErrorMessagesRegistered(t *testing.T) {
 		manageri18n.MsgInvalidEngineIDParam,
 		manageri18n.MsgMissingLocator,
 		manageri18n.MsgEngineAccessDenied,
+		manageri18n.MsgEngineUnavailable,
 		manageri18n.MsgMetaScanRequired,
 		manageri18n.MsgMissingEngineIDOrStorageRef,
 		manageri18n.MsgSearchKeywordTooShort,

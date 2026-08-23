@@ -18,7 +18,10 @@ func taskProviderModuleRegistryForTest(t *testing.T) (*gorm.DB, *ModuleRegistryS
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}); err != nil {
+	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.ModuleRegistryState{ID: 1, Revision: 1}).Error; err != nil {
 		t.Fatal(err)
 	}
 	return db, NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
@@ -49,7 +52,8 @@ func TestTaskProviderProjectionKeepsDeclarationAndResolvesCurrentBackend(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !provider.Available || provider.BaseURL != request.ModuleURL || provider.BackendInstanceID != request.InstanceID || provider.ID == 0 || provider.ModuleVersion != 1 {
+	if !provider.Available || len(provider.Backends) != 1 || provider.Backends[0].BaseURL != request.ModuleURL ||
+		provider.Backends[0].InstanceID != request.InstanceID || provider.ID == 0 || provider.ModuleVersion != 1 {
 		t.Fatalf("provider = %#v", provider)
 	}
 
@@ -61,8 +65,34 @@ func TestTaskProviderProjectionKeepsDeclarationAndResolvesCurrentBackend(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if provider.Available || provider.BaseURL != "" || provider.BackendInstanceID != "" || provider.Capabilities == nil {
+	if provider.Available || len(provider.Backends) != 0 || provider.UnavailableReason != "no_valid_backend" || provider.Capabilities == nil {
 		t.Fatalf("offline provider = %#v", provider)
+	}
+}
+
+func TestTaskProviderProjectionReturnsAllCurrentBackendsInStableOrder(t *testing.T) {
+	_, modules := taskProviderModuleRegistryForTest(t)
+	providers := NewTaskProviderService(modules)
+	first := taskProviderModuleRequestForTest()
+	first.InstanceID = "meta-b"
+	first.ModuleURL = "http://meta-b:8082"
+	if err := modules.Register(first); err != nil {
+		t.Fatal(err)
+	}
+	second := taskProviderModuleRequestForTest()
+	second.InstanceID = "meta-a"
+	second.ModuleURL = "http://meta-a:8082/"
+	if err := modules.Register(second); err != nil {
+		t.Fatal(err)
+	}
+
+	provider, err := providers.GetByModuleName("meta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.Backends) != 2 || provider.Backends[0].InstanceID != "meta-a" || provider.Backends[0].BaseURL != "http://meta-a:8082" ||
+		provider.Backends[1].InstanceID != "meta-b" {
+		t.Fatalf("backends = %#v", provider.Backends)
 	}
 }
 

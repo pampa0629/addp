@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	commonClient "github.com/addp/common/client"
@@ -26,6 +27,8 @@ type TaskProviderResolver struct {
 	loadProvider          func(context.Context, string) (*commonModels.TaskProvider, error)
 	listProviders         func(context.Context) ([]*commonModels.TaskProvider, error)
 	loadExecutionContract func(context.Context, *commonModels.TaskProvider, string, uint, uint) (*taskprovider.ExecutionContract, error)
+	backendMu             sync.Mutex
+	nextBackend           map[string]uint64
 }
 
 // NewTaskProviderResolver 创建任务提供者动态解析器。
@@ -33,6 +36,7 @@ func NewTaskProviderResolver(systemClient *commonClient.SystemServiceClient) *Ta
 	return &TaskProviderResolver{
 		systemClient: systemClient,
 		httpClient:   &http.Client{Timeout: 30 * time.Second},
+		nextBackend:  make(map[string]uint64),
 	}
 }
 
@@ -49,10 +53,38 @@ func (r *TaskProviderResolver) GetProvider(ctx context.Context, moduleName strin
 	if err != nil {
 		return nil, fmt.Errorf("failed to get task provider %s: %w", moduleName, err)
 	}
-	if provider == nil || !provider.Available || strings.TrimSpace(provider.BaseURL) == "" {
+	if provider == nil || !provider.Available {
 		return nil, fmt.Errorf("%w: %s", ErrTaskProviderUnavailable, moduleName)
 	}
+	baseURL, ok := r.selectBackend(provider, time.Now())
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrTaskProviderUnavailable, moduleName)
+	}
+	provider.ResolvedBaseURL = baseURL
 	return provider, nil
+}
+
+func (r *TaskProviderResolver) selectBackend(provider *commonModels.TaskProvider, now time.Time) (string, bool) {
+	if provider == nil {
+		return "", false
+	}
+	eligible := make([]commonModels.TaskProviderBackend, 0, len(provider.Backends))
+	for _, backend := range provider.Backends {
+		if strings.TrimSpace(backend.BaseURL) != "" && backend.LeaseExpiresAt.After(now) {
+			eligible = append(eligible, backend)
+		}
+	}
+	if len(eligible) == 0 {
+		return "", false
+	}
+	r.backendMu.Lock()
+	defer r.backendMu.Unlock()
+	if r.nextBackend == nil {
+		r.nextBackend = make(map[string]uint64)
+	}
+	index := r.nextBackend[provider.ModuleName] % uint64(len(eligible))
+	r.nextBackend[provider.ModuleName] = index + 1
+	return strings.TrimRight(eligible[index].BaseURL, "/"), true
 }
 
 // ListAllProviders 列出所有声明了 TaskProvider 角色的模块，包括当前不可用模块。
@@ -314,14 +346,14 @@ func (r *TaskProviderResolver) getTaskDetailPayload(
 	taskID uint,
 	tenantID uint,
 ) (map[string]interface{}, error) {
-	if provider == nil || strings.TrimSpace(provider.BaseURL) == "" || strings.TrimSpace(provider.TaskDetailEndpoint) == "" {
+	if provider == nil || strings.TrimSpace(provider.ResolvedBaseURL) == "" || strings.TrimSpace(provider.TaskDetailEndpoint) == "" {
 		return nil, fmt.Errorf("task provider detail endpoint is unavailable")
 	}
 	if taskID == 0 || tenantID == 0 {
 		return nil, fmt.Errorf("task_id and tenant_id are required")
 	}
 	endpoint := replaceTaskProviderEndpoint(provider.TaskDetailEndpoint, taskType, strconv.FormatUint(uint64(taskID), 10), "")
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, provider.BaseURL+endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, provider.ResolvedBaseURL+endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create task detail request: %w", err)
 	}

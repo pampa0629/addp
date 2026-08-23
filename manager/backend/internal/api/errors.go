@@ -28,3 +28,11 @@ func missingLocator(c *gin.Context) {
 func accessDeniedToEngine(c *gin.Context) {
 	managerError(c, http.StatusForbidden, manageri18n.MsgEngineAccessDenied)
 }
+
+func engineUnavailable(c *gin.Context) {
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"error":      commoni18n.T(c, manageri18n.MsgEngineUnavailable),
+		"error_code": "engine_unavailable",
+		"error_type": "transient",
+	})
+}

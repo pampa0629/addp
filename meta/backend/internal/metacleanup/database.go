@@ -30,7 +30,7 @@ func metaEngineEligibilityByID(engines []commonModels.Engine) map[uint]metaEngin
 		engine := &engines[index]
 		eligibility := metaEngineEligibility{name: engine.Name}
 		switch {
-		case !engine.IsUsable():
+		case !engineselection.IsSelectionOption(engine):
 			eligibility.invalidReason = "引擎已禁用"
 		case !engineselection.HasStorageCapability(engine):
 			eligibility.invalidReason = "引擎不具备存储能力"

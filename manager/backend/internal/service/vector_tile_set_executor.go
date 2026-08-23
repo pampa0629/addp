@@ -19,6 +19,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/common/spatial"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/tilecache"
 	"github.com/minio/minio-go/v7"
@@ -71,8 +72,11 @@ func (e *ManagerVectorTileSetExecutor) GenerateVectorTileSet(ctx context.Context
 		return nil, err
 	}
 	targetEngine, err := e.systemClient.GetEngineForTenant(ctx, req.Task.TenantID, req.Config.TargetEngineID)
-	if err != nil || !targetEngine.IsUsable() {
-		return nil, errors.New("target business engine is not active")
+	if err != nil {
+		return nil, fmt.Errorf("get target business engine: %w", err)
+	}
+	if err := engineaccess.EnsureAvailable(targetEngine); err != nil {
+		return nil, err
 	}
 	if targetEngine.IsBuiltin || targetEngine.TenantID == nil || *targetEngine.TenantID != req.Task.TenantID {
 		return nil, ErrEngineAccessDenied

@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/engine/instanceprovider"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/spatial"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/repository"
@@ -63,8 +64,11 @@ func (s *MVTService) tenantIDForEngine(engineID uint, tenantID *uint) (uint, err
 		return 0, err
 	}
 	managerEngine := convertResource(res)
-	if !resourceAccessible(managerEngine, tenantID) {
+	if !resourceBelongsToTenant(managerEngine, tenantID) {
 		return 0, ErrEngineAccessDenied
+	}
+	if err := engineaccess.EnsureAvailable(managerEngine); err != nil {
+		return 0, err
 	}
 
 	if tenantID != nil {

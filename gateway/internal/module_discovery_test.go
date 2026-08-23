@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"testing"
@@ -14,21 +15,31 @@ type recoveringModuleLister struct {
 	calls int
 }
 
-func (l *recoveringModuleLister) GetModules() ([]*client.ModuleInfo, error) {
+func (l *recoveringModuleLister) WatchModules(ctx context.Context, revision int64, wait time.Duration) (*client.ModuleRoutingSnapshot, error) {
 	l.mu.Lock()
-	defer l.mu.Unlock()
 	l.calls++
-	if l.calls == 1 {
+	call := l.calls
+	l.mu.Unlock()
+	if call == 1 {
 		return nil, errors.New("system unavailable")
 	}
-	return []*client.ModuleInfo{{
+	if revision == 1 && wait > 0 {
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return &client.ModuleRoutingSnapshot{Revision: 1, Modules: []*client.ModuleInfo{{
 		ModuleName: "manager",
 		Enabled:    true,
 		Instances: []client.ModuleRuntimeInstanceInfo{{
 			InstanceID: "manager-backend", Role: "backend", ModuleURL: "http://manager.test",
 			Status: "up", LeaseExpiresAt: time.Now().Add(time.Minute),
 		}},
-	}}, nil
+	}}}, nil
 }
 
 func TestModuleDiscoveryRetriesAfterInitialRefreshFailure(t *testing.T) {
@@ -79,7 +90,7 @@ func TestModuleDiscoveryRoundRobinsValidBackendsAndStopsAtLeaseExpiry(t *testing
 	discovery := NewModuleDiscovery(lister)
 	discovery.now = func() time.Time { return now }
 	defer discovery.Stop()
-	if err := discovery.refreshModules(); err != nil {
+	if err := discovery.refreshModules(0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -104,7 +115,7 @@ func TestModuleDiscoveryRoundRobinsValidBackendsAndStopsAtLeaseExpiry(t *testing
 	for index := range lister.modules[0].Instances {
 		lister.modules[0].Instances[index].LeaseExpiresAt = now.Add(time.Minute)
 	}
-	if err := discovery.refreshModules(); err != nil {
+	if err := discovery.refreshModules(0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := discovery.GetProxy("manager"); err != nil {
@@ -112,10 +123,53 @@ func TestModuleDiscoveryRoundRobinsValidBackendsAndStopsAtLeaseExpiry(t *testing
 	}
 }
 
+func TestModuleDiscoveryRefreshesLeaseProjectionWithoutRevisionChange(t *testing.T) {
+	now := time.Now()
+	watcher := &renewingModuleWatcher{now: func() time.Time { return now }}
+	discovery := NewModuleDiscovery(watcher)
+	discovery.now = func() time.Time { return now }
+	defer discovery.Stop()
+
+	if err := discovery.refreshModules(0); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(25 * time.Second)
+	if err := discovery.refreshModules(0); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(10 * time.Second)
+	if _, err := discovery.GetProxy("manager"); err != nil {
+		t.Fatalf("same-revision fresh snapshot did not renew cached lease: %v", err)
+	}
+}
+
+type renewingModuleWatcher struct {
+	now func() time.Time
+}
+
+func (w *renewingModuleWatcher) WatchModules(context.Context, int64, time.Duration) (*client.ModuleRoutingSnapshot, error) {
+	return &client.ModuleRoutingSnapshot{Revision: 1, Modules: []*client.ModuleInfo{{
+		ModuleName: "manager", Enabled: true,
+		Instances: []client.ModuleRuntimeInstanceInfo{{
+			InstanceID: "manager-backend", Role: "backend", ModuleURL: "http://manager.test",
+			Status: "up", LeaseExpiresAt: w.now().Add(30 * time.Second),
+		}},
+	}}}, nil
+}
+
 type staticModuleLister struct {
 	modules []*client.ModuleInfo
 }
 
-func (l *staticModuleLister) GetModules() ([]*client.ModuleInfo, error) {
-	return l.modules, nil
+func (l *staticModuleLister) WatchModules(ctx context.Context, revision int64, wait time.Duration) (*client.ModuleRoutingSnapshot, error) {
+	if revision == 1 && wait > 0 {
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return &client.ModuleRoutingSnapshot{Revision: 1, Modules: l.modules}, nil
 }

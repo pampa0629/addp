@@ -8,6 +8,7 @@ import (
 	commonmodels "github.com/addp/common/models"
 
 	engineplugin "github.com/addp/common/engine/plugin"
+	engineselection "github.com/addp/common/engine/selection"
 )
 
 type SystemEngineGetter interface {
@@ -56,8 +57,8 @@ func (r *SystemEngineResolver) ResolveEngine(ref EngineRef) (EngineBinding, erro
 	if engine == nil {
 		return EngineBinding{}, fmt.Errorf("engine %d not found", ref.ID)
 	}
-	if !engine.IsUsable() {
-		return EngineBinding{}, fmt.Errorf("engine %d is inactive", ref.ID)
+	if !engineselection.IsAvailable(engine) {
+		return EngineBinding{}, fmt.Errorf("engine %d is unavailable", ref.ID)
 	}
 
 	engineType := strings.TrimSpace(engine.EngineType)

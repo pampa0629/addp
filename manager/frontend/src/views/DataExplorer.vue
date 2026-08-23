@@ -22,8 +22,37 @@
 
       <!-- 右侧预览面板（独立滚动容器） -->
       <div class="preview-container">
+        <div v-if="selectedEngineUnavailable" class="engine-unavailable-panel">
+          <el-alert
+            :title="t('manager.explorer.engineUnavailableTitle')"
+            type="warning"
+            :closable="false"
+            show-icon
+          >
+            <template #default>
+              <p class="engine-unavailable-panel__description">
+                {{ t('manager.explorer.engineUnavailableDescription', { status: selectedEngineStatusLabel }) }}
+              </p>
+              <dl class="engine-unavailable-panel__facts">
+                <div>
+                  <dt>{{ t('manager.explorer.engine') }}</dt>
+                  <dd>{{ selectedEngine?.name }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t('manager.explorer.engineStatus') }}</dt>
+                  <dd>{{ selectedEngineStatusLabel }}</dd>
+                </div>
+                <div v-if="store.selectedNode?.label">
+                  <dt>{{ t('manager.explorer.selectedResource') }}</dt>
+                  <dd>{{ store.selectedNode.label }}</dd>
+                </div>
+              </dl>
+            </template>
+          </el-alert>
+        </div>
+
         <EnginePanel
-          v-if="panelType === 'engine'"
+          v-else-if="panelType === 'engine'"
           :engine="selectedEngine"
           :tree-root="selectedEngineTree"
         />
@@ -55,11 +84,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onBeforeUnmount, onMounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { engineRootLocator, parseLocator } from '@addp/common-frontend'
+import { engineSelectionState, isEngineSelectable, parseLocator } from '@addp/common-frontend'
 import ExplorerTree from '@/components/explorer/ExplorerTree.vue'
 import ExplorerSearch from '@/components/explorer/ExplorerSearch.vue'
 import EnginePanel from '@/components/explorer/EnginePanel.vue'
@@ -84,6 +113,10 @@ const route = useRoute()
 const router = useRouter()
 const store = useExplorerStore()
 const activeTab = ref(resolveDataExplorerRouteState(route.query).tab)
+const ENGINE_STATUS_REFRESH_INTERVAL_MS = 15000
+let engineStatusTimer = 0
+let engineInitializationPromise = null
+let engineInitializationErrorShown = false
 
 // 引用
 const treeRef = ref(null)
@@ -151,6 +184,14 @@ const selectedEngineTree = computed(() => {
   return store.engineTrees[engine.id] || null
 })
 
+const selectedEngineUnavailable = computed(() => (
+  !!selectedEngine.value && !isEngineSelectable(selectedEngine.value)
+))
+
+const selectedEngineStatusLabel = computed(() => (
+  t(`common.engineStatus.${engineSelectionState(selectedEngine.value)}`)
+))
+
 const panelType = computed(() => {
   const node = store.selectedNode
   if (!node) return 'item'
@@ -189,6 +230,12 @@ const handleNodeSelect = async ({ node, locator }, options = {}) => {
     }
 
     if (itemTypes.has(node.type)) {
+      const loc = parseLocator(locator)
+      if (!store.isEngineAvailable(loc.engineId)) {
+        store.selectNodeContext(node, locator)
+        store.clearPreview()
+        return
+      }
       await store.loadPreview(locator, 1)
     }
   } catch (error) {
@@ -226,7 +273,7 @@ const handleSearchResultSelect = async (result) => {
 
 // 事件处理：分页变化
 const handlePageChange = async (payload) => {
-  if (!store.selectedLocator) return
+  if (!store.selectedLocator || selectedEngineUnavailable.value) return
   const page = typeof payload === 'object' ? payload?.page || 1 : payload
   const pageSize = typeof payload === 'object' ? Number(payload?.pageSize || 0) : 0
   if (pageSize > 0) {
@@ -246,7 +293,7 @@ const handleChildChange = async (payload) => {
   const refPath = typeof payload === 'object' ? payload?.refPath || '' : ''
   const nestedChildPath = typeof payload === 'object' ? payload?.nestedChildPath || '' : ''
   const refSwitch = typeof payload === 'object' && payload?.refSwitch
-  if (!store.selectedLocator || (!childName && !refPath && !nestedChildPath && !refSwitch)) return
+  if (!store.selectedLocator || selectedEngineUnavailable.value || (!childName && !refPath && !nestedChildPath && !refSwitch)) return
   try {
     if (activeTab.value !== 'preview') {
       activeTab.value = 'preview'
@@ -286,32 +333,100 @@ const scrollToLocatedNode = async (path, locator) => {
   return false
 }
 
-// 初始化
-onMounted(async () => {
+const ensureEnginesLoaded = () => {
+  if (store.engines.length > 0) {
+    return Promise.resolve(store.engines)
+  }
+  if (engineInitializationPromise) {
+    return engineInitializationPromise
+  }
+  const task = store.loadEngines()
+    .then(engines => {
+      engineInitializationErrorShown = false
+      return engines
+    })
+    .catch(error => {
+      if (!engineInitializationErrorShown) {
+        engineInitializationErrorShown = true
+        ElMessage.error(t('manager.explorer.initFailed', { error: error.message }))
+      }
+      throw error
+    })
+    .finally(() => {
+      if (engineInitializationPromise === task) {
+        engineInitializationPromise = null
+      }
+    })
+  engineInitializationPromise = task
+  return task
+}
+
+const locateRouteLocator = async (targetLocator, options = {}) => {
+  const loc = parseLocator(targetLocator)
+  if (!loc?.engineId) {
+    console.warn('[DataExplorer] 无效 locator:', targetLocator)
+    return
+  }
+  if (!hasLocatorIdentity(loc)) {
+    console.warn('[DataExplorer] locator 缺少 node_id/item_id，拒绝定位:', targetLocator)
+    ElMessage.warning(t('manager.explorer.locateFailed'))
+    return
+  }
+  const engine = store.engines.find(e => e.id === loc.engineId)
+  if (!engine) {
+    console.warn('[DataExplorer] 引擎未找到:', loc.engineId)
+    ElMessage.warning(t('manager.explorer.engineNotFound', { engineId: loc.engineId }))
+    return
+  }
+  const revealed = await store.revealLocator(targetLocator)
+  const revealedLocator = revealed.locator || targetLocator
+  const targetNode = revealed.node || nodeContextFromLocator(revealedLocator, { type: loc.type })
+  await scrollToLocatedNode(revealed.path || [], revealedLocator)
+  await handleNodeSelect({ node: targetNode, locator: revealedLocator }, { updateRoute: false })
+
+  if (revealedLocator !== targetLocator) {
+    await replaceDataExplorerRoute(revealedLocator, activeTab.value)
+  }
+  if (options.notifySuccess !== false) {
+    ElMessage.success(t('manager.explorer.locateSuccess'))
+  }
+}
+
+const refreshEngineStatuses = async () => {
+  const targetLocator = String(store.selectedLocator || route.query.locator || '').trim()
+  const targetEngineID = targetLocator ? parseLocator(targetLocator)?.engineId : null
+  const wasAvailable = targetEngineID ? store.isEngineAvailable(targetEngineID) : false
   try {
-    // 1. 加载引擎列表
-    await store.loadEngines()
+    await store.loadEngines({ silent: true })
+    if (!targetEngineID) return
 
-    // 2. 并行加载所有引擎的树结构（使用默认深度 2）
-    if (store.engines.length > 0) {
-      await Promise.all(
-        store.engines.map(engine => store.loadTree(engine.id))
-      )
-
-      // 等待 DOM 更新后，设置初始展开状态（只展开引擎层级）
-      await nextTick()
-
-      // 收集初始需要展开的引擎节点 locators
-      const engineLocators = store.engines.map(engine =>
-        store.engineTrees[engine.id]?.locator || engineRootLocator(engine)
-      )
-
-      // 设置展开状态
-      store.expandedLocators = new Set(engineLocators)
-
+    const isAvailable = store.isEngineAvailable(targetEngineID)
+    if (!isAvailable) {
+      store.clearPreview()
+      return
+    }
+    if (!wasAvailable || !store.selectedNode) {
+      await locateRouteLocator(targetLocator, { notifySuccess: false })
     }
   } catch (error) {
-    ElMessage.error(t('manager.explorer.initFailed', { error: error.message }))
+    console.warn('[DataExplorer] 刷新引擎状态失败:', error)
+  }
+}
+
+// 初始化
+onMounted(async () => {
+  engineStatusTimer = window.setInterval(refreshEngineStatuses, ENGINE_STATUS_REFRESH_INTERVAL_MS)
+  try {
+    await ensureEnginesLoaded()
+  } catch {
+    // ensureEnginesLoaded 统一展示一次初始化错误；状态轮询会继续恢复。
+  }
+})
+
+onBeforeUnmount(() => {
+  if (engineStatusTimer) {
+    window.clearInterval(engineStatusTimer)
+    engineStatusTimer = 0
   }
 })
 
@@ -338,40 +453,13 @@ watch(() => route.query.locator, async (locator) => {
   }
 
   try {
-    const loc = parseLocator(targetLocator)
-    if (!loc?.engineId) {
-      console.warn('[DataExplorer] 无效 locator:', targetLocator)
-      return
-    }
-    if (!hasLocatorIdentity(loc)) {
-      console.warn('[DataExplorer] locator 缺少 node_id/item_id，拒绝定位:', targetLocator)
-      ElMessage.warning(t('manager.explorer.locateFailed'))
-      return
-    }
-    const engineId = loc.engineId
+    await ensureEnginesLoaded()
+  } catch {
+    return
+  }
 
-    if (store.engines.length === 0) {
-      await store.loadEngines()
-    }
-
-    const engine = store.engines.find(e => e.id === engineId)
-    if (!engine) {
-      console.warn('[DataExplorer] 引擎未找到:', engineId)
-      ElMessage.warning(t('manager.explorer.engineNotFound', { engineId }))
-      return
-    }
-
-    const revealed = await store.revealLocator(targetLocator)
-    const revealedLocator = revealed.locator || targetLocator
-    const targetNode = revealed.node || nodeContextFromLocator(revealedLocator, { type: loc.type })
-    await scrollToLocatedNode(revealed.path || [], revealedLocator)
-    await handleNodeSelect({ node: targetNode, locator: revealedLocator }, { updateRoute: false })
-
-    if (revealedLocator !== targetLocator) {
-      await replaceDataExplorerRoute(revealedLocator, activeTab.value)
-    }
-
-    ElMessage.success(t('manager.explorer.locateSuccess'))
+  try {
+    await locateRouteLocator(targetLocator)
   } catch (error) {
     console.error('[DataExplorer] 定位失败:', error)
     ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
@@ -412,5 +500,36 @@ watch(() => route.query.locator, async (locator) => {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+}
+
+.engine-unavailable-panel {
+  padding: 24px;
+}
+
+.engine-unavailable-panel__description {
+  margin: 8px 0 16px;
+  line-height: 1.6;
+}
+
+.engine-unavailable-panel__facts {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.engine-unavailable-panel__facts > div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.engine-unavailable-panel__facts dt {
+  color: var(--el-text-color-secondary);
+}
+
+.engine-unavailable-panel__facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 </style>

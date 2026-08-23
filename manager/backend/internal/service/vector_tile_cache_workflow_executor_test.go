@@ -55,7 +55,7 @@ func TestManagerVectorTileCacheWorkflowExecutorUsesVSIS3ForObjectStoreSource(t *
 				t.Fatalf("unexpected system path: %s", r.URL.Path)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":9,"tenant_id":7,"name":"Source S3","engine_type":"s3","connection_info":{"endpoint":"http://localhost:9002","access_key":"source-ak","secret_key":"source-sk","use_ssl":false},"lifecycle_state":"active"}`))
+			_, _ = w.Write([]byte(`{"id":9,"tenant_id":7,"name":"Source S3","engine_type":"s3","connection_info":{"endpoint":"http://localhost:9002","access_key":"source-ak","secret_key":"source-sk","use_ssl":false},"lifecycle_state":"active","connection_status":"online"}`))
 		}),
 	}
 	systemListener, err := net.Listen("tcp", "127.0.0.1:0")

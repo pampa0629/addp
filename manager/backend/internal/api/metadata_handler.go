@@ -10,6 +10,7 @@ import (
 	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/addp/common/resourcetree"
 	manageri18n "github.com/addp/manager/i18n"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -40,6 +41,7 @@ func NewMetadataHandler(metadataService *service.MetadataService) *MetadataHandl
 // @Success 200 {object} models.MetaScanResponse "同步扫描结果 | Synchronous scan result"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Failure 503 {object} map[string]interface{} "引擎不可用 | Engine unavailable"
 // @Security BearerAuth
 func (h *MetadataHandler) RefreshItem(c *gin.Context) {
 	engineID, ok := parseUintParam(c, "id")
@@ -81,6 +83,14 @@ func (h *MetadataHandler) RefreshItem(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 	result, err := h.metadataService.RefreshItem(c.Request.Context(), &tenantID, engineID, &req)
 	if err != nil {
+		if errors.Is(err, engineaccess.ErrUnavailable) {
+			engineUnavailable(c)
+			return
+		}
+		if errors.Is(err, service.ErrEngineAccessDenied) {
+			accessDeniedToEngine(c)
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

@@ -19,6 +19,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	_ "github.com/addp/common/engine/plugins/minio"
 	_ "github.com/addp/common/engine/plugins/nfs"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -45,9 +46,18 @@ func TestMetadataServiceRefreshItemUsesMetaClient(t *testing.T) {
 		_, _ = w.Write([]byte(`{"status":"success","message":"ok","catalog_nodes_scanned":2,"items_scanned":1,"fields_scanned":7,"duration_ms":33,"started_at":"2026-05-20T00:00:00Z","extraction":{"documents":1,"extracted":1,"unsupported":0,"failed":0,"indexed":1,"index_failed":0}}`))
 	}))
 	defer metaServer.Close()
+	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/system/engines/26" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":26,"tenant_id":11,"name":"test","engine_type":"postgresql","connection_info":{},"lifecycle_state":"active","connection_status":"online"}`))
+	}))
+	defer systemServer.Close()
 
 	metaClient := newServiceTestMetaClient(metaServer.URL)
-	service := &MetadataService{metaClient: metaClient}
+	service := &MetadataService{metaClient: metaClient, systemClient: newTestSystemClient(systemServer.URL)}
 	tenantID := uint(11)
 	resp, err := service.RefreshItem(t.Context(), &tenantID, 26, &models.MetaManualScanRequest{ItemID: 1831})
 	if err != nil {
@@ -76,6 +86,33 @@ func TestMetadataServiceRefreshItemUsesMetaClient(t *testing.T) {
 	}
 	if resp.Extraction == nil || resp.Extraction.Documents != 1 || resp.Extraction.Indexed != 1 {
 		t.Fatalf("extraction = %#v", resp.Extraction)
+	}
+}
+
+func TestMetadataServiceRefreshItemRejectsOfflineEngineBeforeMetaCall(t *testing.T) {
+	metaCalled := false
+	metaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		metaCalled = true
+		http.Error(w, "unexpected meta call", http.StatusInternalServerError)
+	}))
+	defer metaServer.Close()
+	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":26,"tenant_id":11,"name":"offline","engine_type":"postgresql","connection_info":{},"lifecycle_state":"active","connection_status":"offline"}`))
+	}))
+	defer systemServer.Close()
+
+	svc := &MetadataService{
+		metaClient:   newServiceTestMetaClient(metaServer.URL),
+		systemClient: newTestSystemClient(systemServer.URL),
+	}
+	tenantID := uint(11)
+	_, err := svc.RefreshItem(t.Context(), &tenantID, 26, &models.MetaManualScanRequest{ItemID: 1831})
+	if !errors.Is(err, engineaccess.ErrUnavailable) {
+		t.Fatalf("RefreshItem() error = %v, want ErrUnavailable", err)
+	}
+	if metaCalled {
+		t.Fatal("offline engine must be rejected before calling Meta")
 	}
 }
 
@@ -513,12 +550,13 @@ func testSystemClient(t *testing.T, engineID uint, engineType string, connInfo m
 			return
 		}
 		payload := map[string]interface{}{
-			"id":              engineID,
-			"name":            "engine",
-			"engine_type":     engineType,
-			"connection_info": connInfo,
-			"tenant_id":       11,
-			"lifecycle_state": "active",
+			"id":                engineID,
+			"name":              "engine",
+			"engine_type":       engineType,
+			"connection_info":   connInfo,
+			"tenant_id":         11,
+			"lifecycle_state":   "active",
+			"connection_status": "online",
 		}
 		_ = json.NewEncoder(w).Encode(payload)
 	}))
@@ -638,9 +676,9 @@ func setupExplorerService(t *testing.T) (*ExplorerService, func()) {
 				fmt.Fprint(w, `[]`)
 			}
 		case "/api/v1/system/engines/1":
-			fmt.Fprintf(w, `{"id":1,"name":"tenant-one-db","engine_type":"postgresql","connection_info":{},"tenant_id":1,"lifecycle_state":"active","capabilities":%q}`, capabilities)
+			fmt.Fprintf(w, `{"id":1,"name":"tenant-one-db","engine_type":"postgresql","connection_info":{},"tenant_id":1,"lifecycle_state":"active","connection_status":"online","capabilities":%q}`, capabilities)
 		case "/api/v1/system/engines/2":
-			fmt.Fprintf(w, `{"id":2,"name":"tenant-two-db","engine_type":"postgresql","connection_info":{},"tenant_id":2,"lifecycle_state":"active","capabilities":%q}`, capabilities)
+			fmt.Fprintf(w, `{"id":2,"name":"tenant-two-db","engine_type":"postgresql","connection_info":{},"tenant_id":2,"lifecycle_state":"active","connection_status":"online","capabilities":%q}`, capabilities)
 		default:
 			http.NotFound(w, r)
 		}

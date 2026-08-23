@@ -16,6 +16,7 @@ import (
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
+	"github.com/addp/manager/internal/engineaccess"
 )
 
 const (
@@ -202,11 +203,11 @@ func (s *RasterMosaicTileService) RenderTile(ctx context.Context, req RasterMosa
 	if err != nil {
 		return nil, err
 	}
-	if !engine.IsUsable() {
-		return nil, errors.New("engine is not active")
-	}
-	if !resourceAccessible(engine, req.TenantID) {
+	if !resourceBelongsToTenant(engine, req.TenantID) {
 		return nil, ErrEngineAccessDenied
+	}
+	if err := engineaccess.EnsureAvailable(engine); err != nil {
+		return nil, err
 	}
 	datasetLoc := &resourcetree.ResourceLocator{
 		EngineID: item.EngineID,

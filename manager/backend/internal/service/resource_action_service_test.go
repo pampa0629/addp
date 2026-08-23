@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/manager/internal/engineaccess"
 )
 
 type fakeResourceActionSystemClient struct {
@@ -14,11 +16,20 @@ type fakeResourceActionSystemClient struct {
 }
 
 func (c fakeResourceActionSystemClient) GetEngine(engineID uint) (*commonModels.Engine, error) {
-	return c.engines[engineID], nil
+	return onlineEngineFixture(c.engines[engineID]), nil
 }
 
 func (c fakeResourceActionSystemClient) GetEngineForTenant(_ context.Context, _ uint, engineID uint) (*commonModels.Engine, error) {
-	return c.engines[engineID], nil
+	return onlineEngineFixture(c.engines[engineID]), nil
+}
+
+func onlineEngineFixture(engine *commonModels.Engine) *commonModels.Engine {
+	if engine == nil || engine.ConnectionStatus != "" {
+		return engine
+	}
+	copy := *engine
+	copy.ConnectionStatus = commonModels.EngineConnectionOnline
+	return &copy
 }
 
 func TestResourceActionsStorageNodeSupportsUploadOnly(t *testing.T) {
@@ -166,6 +177,25 @@ func TestResourceActionsRespectsInactiveEngine(t *testing.T) {
 	_, err := svc.GetResourceActions(t.Context(), "addp://engine/3/path/data/raw?type=prefix&node_id=20", nil)
 	if err != ErrEngineAccessDenied {
 		t.Fatalf("GetResourceActions() error = %v, want ErrEngineAccessDenied", err)
+	}
+}
+
+func TestResourceActionsRejectsOfflineEngineAsUnavailable(t *testing.T) {
+	svc := NewResourceActionService(fakeResourceActionSystemClient{
+		engines: map[uint]*commonModels.Engine{
+			3: {
+				ID:               3,
+				TenantID:         uintPtr(7),
+				EngineType:       "minio",
+				LifecycleState:   commonModels.EngineLifecycleActive,
+				ConnectionStatus: commonModels.EngineConnectionOffline,
+			},
+		},
+	})
+
+	_, err := svc.GetResourceActions(t.Context(), "addp://engine/3/path/data/raw?type=prefix&node_id=20", uintPtr(7))
+	if !errors.Is(err, engineaccess.ErrUnavailable) {
+		t.Fatalf("GetResourceActions() error = %v, want ErrUnavailable", err)
 	}
 }
 

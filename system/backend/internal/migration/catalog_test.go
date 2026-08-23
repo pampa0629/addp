@@ -14,8 +14,25 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 72 {
-		t.Fatalf("LatestVersion = %d, want 72", catalog.LatestVersion)
+	if catalog.LatestVersion != 73 {
+		t.Fatalf("LatestVersion = %d, want 73", catalog.LatestVersion)
+	}
+}
+
+func TestModuleRegistryRevisionMigration(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000073_module_registry_revision.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 73: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"CREATE TABLE system.module_registry_state",
+		"revision bigint NOT NULL",
+		"VALUES (1, 1)",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 73 missing %q", fragment)
+		}
 	}
 }
 

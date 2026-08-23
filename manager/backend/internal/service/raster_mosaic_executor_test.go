@@ -50,9 +50,9 @@ func TestManagerRasterMosaicExecutorSendsAccessPlanToPython(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			switch r.URL.Path {
 			case "/api/v1/system/engines/26":
-				_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"Source MinIO","engine_type":"minio","connection_info":{"endpoint":"http://source-minio:9000","access_key":"source-ak","secret_key":"source-sk","use_ssl":false},"lifecycle_state":"active"}`))
+				_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"Source MinIO","engine_type":"minio","connection_info":{"endpoint":"http://source-minio:9000","access_key":"source-ak","secret_key":"source-sk","use_ssl":false},"lifecycle_state":"active","connection_status":"online"}`))
 			case "/api/v1/system/engines/31":
-				_, _ = w.Write([]byte(`{"id":31,"tenant_id":7,"name":"Target MinIO","engine_type":"minio","connection_info":{"endpoint":"http://target-minio:9000","access_key":"target-ak","secret_key":"target-sk","use_ssl":false},"lifecycle_state":"active"}`))
+				_, _ = w.Write([]byte(`{"id":31,"tenant_id":7,"name":"Target MinIO","engine_type":"minio","connection_info":{"endpoint":"http://target-minio:9000","access_key":"target-ak","secret_key":"target-sk","use_ssl":false},"lifecycle_state":"active","connection_status":"online"}`))
 			default:
 				t.Fatalf("unexpected system path: %s", r.URL.Path)
 			}
@@ -167,7 +167,7 @@ func TestManagerRasterMosaicExecutorRejectsObjectStoreInPlace(t *testing.T) {
 			if r.URL.Path != "/api/v1/system/engines/26" {
 				t.Fatalf("unexpected system path: %s", r.URL.Path)
 			}
-			_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"Source MinIO","engine_type":"minio","connection_info":{"endpoint":"http://source-minio:9000","access_key":"source-ak","secret_key":"source-sk","use_ssl":false},"lifecycle_state":"active"}`))
+			_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"Source MinIO","engine_type":"minio","connection_info":{"endpoint":"http://source-minio:9000","access_key":"source-ak","secret_key":"source-sk","use_ssl":false},"lifecycle_state":"active","connection_status":"online"}`))
 		}),
 	}
 	systemListener, err := net.Listen("tcp", "127.0.0.1:0")

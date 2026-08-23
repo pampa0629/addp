@@ -68,7 +68,7 @@ PORT=8000
 
 # System bootstrap 和模块发现
 SYSTEM_URL=http://localhost:8180
-MODULE_REFRESH_INTERVAL=30s
+MODULE_WATCH_TIMEOUT=10s
 
 # 数据库配置（用于访问日志）
 POSTGRES_HOST=localhost

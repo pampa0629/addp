@@ -52,6 +52,16 @@ type ModuleRuntimeInstance struct {
 
 func (ModuleRuntimeInstance) TableName() string { return "module_runtime_instances" }
 
+// ModuleRegistryState 保存 Gateway 路由拓扑的单调递增修订号。
+type ModuleRegistryState struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Revision  int64     `gorm:"not null" json:"revision"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+func (ModuleRegistryState) TableName() string { return "module_registry_state" }
+
 type ModuleRegistrationRequest struct {
 	ModuleName              string                                     `json:"module_name" binding:"required"`
 	InstanceID              string                                     `json:"instance_id" binding:"required"`
@@ -67,6 +77,12 @@ type ModuleRegistrationRequest struct {
 type HeartbeatRequest struct {
 	ModuleName string `json:"module_name" binding:"required"`
 	InstanceID string `json:"instance_id" binding:"required"`
+}
+
+type ModuleRoutingSnapshot struct {
+	Revision   int64         `json:"revision"`
+	Modules    []*ModuleInfo `json:"modules"`
+	ObservedAt time.Time     `json:"observed_at"`
 }
 
 type ModuleDefinitionUpdateRequest struct {

@@ -47,7 +47,7 @@ graph TB
     subgraph "模块控制面 (System 模块)"
         Definitions[module_definitions<br/>TaskProvider 声明]
         Instances[module_runtime_instances<br/>Backend 租约]
-        Projection[动态 TaskProvider 投影<br/>available + base_url]
+        Projection[动态 TaskProvider 投影<br/>available + 有效 Backend 池]
 
         Definitions --> Projection
         Instances --> Projection
@@ -96,8 +96,8 @@ graph TB
 - Provider ID 复用稳定的模块定义 ID；重复相同声明是幂等的，只有声明变化才递增模块版本
 
 **步骤 2: Orchestrator 动态发现任务**
-- System 每次读取都用当前有效 Backend 租约投影 `available` 和 `base_url`；运行地址不写入模块定义
-- Orchestrator 不缓存运行可用性，在查询、详情和执行前重新解析
+- System 每次读取都用当前有效 Backend 租约投影 `available`、`unavailable_reason` 和有效 Backend 池；运行地址不写入模块定义
+- Orchestrator 不缓存运行可用性，在查询、详情、执行和执行状态轮询时重新解析；同一模块的多个有效 Backend 以稳定顺序轮询选择，非幂等执行请求不做跨实例自动重放
 - 前端保留离线模块的声明，但禁止选择和调用；模块 Backend 恢复后，刷新即可继续使用
 
 **步骤 3: 配置编排**

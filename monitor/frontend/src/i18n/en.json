@@ -327,6 +327,7 @@
       "down": "Offline",
       "unknown": "Unknown",
       "latency": "Latency: {ms}ms",
+      "backends": "Backend instances: {up}/{total}",
       "task_discovery": "Task discovery: {up}/{total}",
       "capabilities_invalid": "Invalid capabilities"
     },

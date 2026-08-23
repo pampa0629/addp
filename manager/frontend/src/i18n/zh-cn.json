@@ -993,6 +993,12 @@
     },
     "explorer": {
       "storageEngines": "存储引擎",
+      "engine": "引擎",
+      "engineStatus": "引擎状态",
+      "selectedResource": "当前资源",
+      "engineUnavailableTitle": "引擎当前不可用",
+      "engineUnavailableDescription": "当前引擎状态为“{status}”。已扫描的历史资源树仍可浏览；预览、刷新和其他实时操作将在引擎恢复在线后自动可用。",
+      "engineUnavailableAction": "引擎当前不可用，实时操作已禁用",
       "countText": "共 {count} 个",
       "refresh": "深度扫描",
       "refreshItem": "刷新数据项",

@@ -1,8 +1,11 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"strconv"
+	"time"
 
 	commonapi "github.com/addp/common/api"
 	commonauthmiddleware "github.com/addp/common/middleware/auth"
@@ -96,6 +99,38 @@ func (h *ModuleRegistryHandler) HeartbeatService(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgModuleHeartbeat), "module": req.ModuleName})
 }
 
+// DeregisterService godoc
+// @Summary      注销当前模块运行实例 | Deregister current module runtime instance
+// @Description  正常退出的模块进程将自身实例立即标记为 down；持久模块定义和实例历史保留 | A normally exiting module process immediately marks its own instance down while preserving the persistent definition and instance history
+// @Tags         运行时注册 | Runtime Registry
+// @Produce      json
+// @Security     BearerAuth
+// @Param        module_name path string true "模块名 | Module name"
+// @Param        instance_id path string true "运行实例 ID | Runtime instance ID"
+// @Success      204
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.runtime_registry.update"]
+// @Router       /runtime/modules/{module_name}/instances/{instance_id} [delete]
+func (h *ModuleRegistryHandler) DeregisterService(c *gin.Context) {
+	moduleName := c.Param("module_name")
+	if err := iamServiceOwnsModule(c, moduleName); err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	if err := h.service.Deregister(moduleName, c.Param("instance_id")); err != nil {
+		if errors.Is(err, service.ErrInvalidModuleRegistration) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgModuleRegistrationInvalid)})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 // ListModulesService godoc
 // @Summary      查询平台注册模块 | List registered platform modules
 // @Description  平台 Service Principal 查询持久模块定义及运行实例；status=up 仅返回已启用且存在有效 Backend 租约的模块 | A platform service principal lists persistent module definitions and runtime instances; status=up returns only enabled modules with a valid Backend lease
@@ -124,6 +159,44 @@ func (h *ModuleRegistryHandler) ListModulesService(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"modules": modules, "count": len(modules)})
+}
+
+// WatchModulesService godoc
+// @Summary      等待模块路由快照 | Watch module routing snapshot
+// @Description  revision 变化时立即返回完整可路由 Backend 快照；等待超时也返回同 revision 的新鲜快照以更新租约投影 | Returns the complete routable Backend snapshot immediately when the revision changes; a timeout also returns a fresh snapshot at the same revision to renew lease projections
+// @Tags         运行时注册 | Runtime Registry
+// @Produce      json
+// @Security     BearerAuth
+// @Param        revision query int false "客户端当前修订号 | Client current revision" default(0)
+// @Param        wait_seconds query int false "最长等待秒数，范围 0-30 | Maximum wait in seconds, range 0-30" default(10)
+// @Success      200 {object} models.ModuleRoutingSnapshot
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      401 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.runtime_registry.read"]
+// @Router       /runtime/modules/watch [get]
+func (h *ModuleRegistryHandler) WatchModulesService(c *gin.Context) {
+	revision, err := strconv.ParseInt(c.DefaultQuery("revision", "0"), 10, 64)
+	if err != nil || revision < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "revision must be a non-negative integer"})
+		return
+	}
+	waitSeconds, err := strconv.Atoi(c.DefaultQuery("wait_seconds", "10"))
+	if err != nil || waitSeconds < 0 || waitSeconds > 30 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "wait_seconds must be between 0 and 30"})
+		return
+	}
+	snapshot, err := h.service.WatchRoutingSnapshot(c.Request.Context(), revision, time.Duration(waitSeconds)*time.Second)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, snapshot)
 }
 
 // ListModulesPlatform godoc
@@ -206,7 +279,7 @@ func (h *ModuleRegistryHandler) UpdateModulePlatform(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgModuleRegistrationInvalid)})
 		return
 	case err != nil:
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, commonapi.ErrNotFound) || errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgModuleNotFound)})
 			return
 		}

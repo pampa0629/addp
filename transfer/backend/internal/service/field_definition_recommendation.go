@@ -11,6 +11,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/format"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -75,7 +76,7 @@ func (s *FieldDefinitionRecommendationService) Recommend(
 		return nil, fmt.Errorf("%w: source_locator must identify a scanned table item", ErrFieldRecommendationInvalid)
 	}
 	engine, err := s.engines.GetEngineForTenant(ctx, tenantID, locator.EngineID)
-	if err != nil || engine == nil || !engine.IsUsable() {
+	if err != nil || !engineselection.IsAvailable(engine) {
 		return nil, fmt.Errorf("%w: source engine is unavailable", ErrFieldRecommendationUnavailable)
 	}
 	if engine.TenantID != nil && *engine.TenantID != tenantID {

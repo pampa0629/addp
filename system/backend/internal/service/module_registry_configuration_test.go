@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"strings"
@@ -20,7 +21,10 @@ func TestListConfigurationManagementEntriesFiltersContextPermissionAndModuleStat
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}); err != nil {
+	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.ModuleRegistryState{ID: 1, Revision: 1}).Error; err != nil {
 		t.Fatal(err)
 	}
 	registryService := NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
@@ -104,7 +108,10 @@ func TestModuleRegistrySeparatesDefinitionFromRuntimeInstanceLease(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}); err != nil {
+	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.ModuleRegistryState{ID: 1, Revision: 1}).Error; err != nil {
 		t.Fatal(err)
 	}
 	repo := repository.NewModuleRegistryRepository(db)
@@ -181,7 +188,7 @@ func TestModuleRegistrySeparatesDefinitionFromRuntimeInstanceLease(t *testing.T)
 		t.Fatalf("disabled module appeared active: %#v", active)
 	}
 
-	if err := repo.MarkStaleModules(time.Now().Add(time.Hour)); err != nil {
+	if _, err := repo.MarkStaleModules(time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	module, err = registry.GetModule("manager")
@@ -193,8 +200,69 @@ func TestModuleRegistrySeparatesDefinitionFromRuntimeInstanceLease(t *testing.T)
 			t.Fatalf("instance remained up: %#v", instance)
 		}
 	}
-	if err := registry.SendHeartbeat("manager", "missing-instance"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := registry.SendHeartbeat("manager", "missing-instance"); !errors.Is(err, commonapi.ErrNotFound) {
 		t.Fatalf("missing instance heartbeat error = %v", err)
+	}
+}
+
+func TestModuleRoutingRevisionChangesOnlyWithTopologyAndWatchReturnsFreshSnapshot(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.ModuleRegistryState{ID: 1, Revision: 1}).Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := repository.NewModuleRegistryRepository(db)
+	registry := NewModuleRegistryService(repo)
+	registration := &models.ModuleRegistrationRequest{
+		ModuleName: "manager", InstanceID: "manager-a", Role: models.ModuleRuntimeRoleBackend,
+		ModuleURL: "http://manager-a:8081", RoutePrefix: "/manager",
+	}
+
+	if err := registry.Register(registration); err != nil {
+		t.Fatal(err)
+	}
+	revision, err := repo.GetRegistryRevision()
+	if err != nil || revision != 2 {
+		t.Fatalf("revision after registration = %d, error=%v, want 2", revision, err)
+	}
+	if err := registry.Register(registration); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.SendHeartbeat("manager", "manager-a"); err != nil {
+		t.Fatal(err)
+	}
+	if revision, _ = repo.GetRegistryRevision(); revision != 2 {
+		t.Fatalf("idempotent registration and heartbeat changed revision to %d", revision)
+	}
+
+	snapshot, err := registry.WatchRoutingSnapshot(context.Background(), revision, 20*time.Millisecond)
+	if err != nil || snapshot.Revision != revision || len(snapshot.Modules) != 1 {
+		t.Fatalf("timeout snapshot = %#v, error=%v", snapshot, err)
+	}
+
+	registration.ModuleURL = "http://manager-b:8081"
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		_ = registry.Register(registration)
+	}()
+	snapshot, err = registry.WatchRoutingSnapshot(context.Background(), revision, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Revision != 3 || len(snapshot.Modules) != 1 || snapshot.Modules[0].Instances[0].ModuleURL != registration.ModuleURL {
+		t.Fatalf("changed topology snapshot = %#v", snapshot)
+	}
+
+	if err := registry.Deregister("manager", "manager-a"); err != nil {
+		t.Fatal(err)
+	}
+	if revision, _ = repo.GetRegistryRevision(); revision != 4 {
+		t.Fatalf("revision after deregistration = %d, want 4", revision)
 	}
 }
 
@@ -203,7 +271,10 @@ func TestModuleDefinitionAdminUpdateUsesVersionAndKeepsRegistrationIdempotent(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}); err != nil {
+	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.ModuleRegistryState{ID: 1, Revision: 1}).Error; err != nil {
 		t.Fatal(err)
 	}
 	registry := NewModuleRegistryService(repository.NewModuleRegistryRepository(db))

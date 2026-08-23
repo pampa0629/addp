@@ -22,6 +22,9 @@ other = "Missing resource locator parameter"
 [manager.error.engine_access_denied]
 other = "Access denied to this engine"
 
+[manager.error.engine_unavailable]
+other = "The engine is currently unavailable. Wait until it is online and try again"
+
 [manager.error.meta_scan_required]
 other = "This target has not been scanned by meta"
 

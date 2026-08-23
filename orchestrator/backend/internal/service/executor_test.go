@@ -266,7 +266,7 @@ func TestExecuteWithTaskProviderUsesTenantServiceBearer(t *testing.T) {
 
 	executor := &Executor{
 		taskProviderResolver: taskProviderResolverWithProvider(&commonModels.TaskProvider{
-			ModuleName: "quality", BaseURL: server.URL, Available: true,
+			ModuleName: "quality", Backends: taskProviderBackendsForTest(server.URL), Available: true,
 			TaskProviderDeclaration: commonModels.TaskProviderDeclaration{
 				TaskExecuteEndpoint: "/api/v1/quality/tasks/{task_type}/{id}/execute",
 				TaskStatusEndpoint:  "/api/v1/quality/executions/{execution_id}",
@@ -319,7 +319,7 @@ func TestExecuteWithTaskProviderForwardsScheduledExistingResultActionWithoutOwne
 
 	executor := &Executor{
 		taskProviderResolver: taskProviderResolverWithProvider(&commonModels.TaskProvider{
-			ModuleName: "manager", BaseURL: server.URL, Available: true,
+			ModuleName: "manager", Backends: taskProviderBackendsForTest(server.URL), Available: true,
 			TaskProviderDeclaration: commonModels.TaskProviderDeclaration{
 				TaskExecuteEndpoint: "/api/v1/manager/tasks/{task_type}/{id}/execute",
 				TaskStatusEndpoint:  "/api/v1/manager/executions/{execution_id}",
@@ -366,7 +366,7 @@ func TestExecuteWithTaskProviderRejectsDeprecatedTaskTypeBeforeHTTPCall(t *testi
 
 	executor := &Executor{
 		taskProviderResolver: taskProviderResolverWithProvider(&commonModels.TaskProvider{
-			ModuleName: "develop", BaseURL: server.URL, Available: true,
+			ModuleName: "develop", Backends: taskProviderBackendsForTest(server.URL), Available: true,
 			TaskProviderDeclaration: commonModels.TaskProviderDeclaration{
 				TaskExecuteEndpoint: "/api/v1/develop/tasks/{task_type}/{id}/execute",
 				TaskStatusEndpoint:  "/api/v1/develop/executions/{execution_id}",
@@ -401,7 +401,7 @@ func TestExecuteWithTaskProviderRejectsDisallowedParametersBeforeHTTPCall(t *tes
 
 	executor := &Executor{
 		taskProviderResolver: taskProviderResolverWithProvider(&commonModels.TaskProvider{
-			ModuleName: "meta", BaseURL: server.URL, Available: true,
+			ModuleName: "meta", Backends: taskProviderBackendsForTest(server.URL), Available: true,
 			TaskProviderDeclaration: commonModels.TaskProviderDeclaration{
 				TaskExecuteEndpoint: "/api/v1/meta/tasks/{task_type}/{id}/execute",
 				TaskStatusEndpoint:  "/api/v1/meta/executions/{execution_id}",
@@ -441,7 +441,7 @@ func TestExecuteWithTaskProviderStrictlyValidatesResolvedParametersBeforeHTTPCal
 	}`
 	executor := &Executor{
 		taskProviderResolver: taskProviderResolverWithProvider(&commonModels.TaskProvider{
-			ModuleName: "develop", BaseURL: server.URL, Available: true,
+			ModuleName: "develop", Backends: taskProviderBackendsForTest(server.URL), Available: true,
 			TaskProviderDeclaration: commonModels.TaskProviderDeclaration{
 				TaskExecuteEndpoint: "/api/v1/develop/tasks/{task_type}/{id}/execute",
 				TaskStatusEndpoint:  "/api/v1/develop/executions/{execution_id}",

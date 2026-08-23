@@ -676,6 +676,13 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "503": {
+                        "description": "引擎不可用 | Engine unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 },
                 "x-addp-auth-mode": "resource_ticket",
@@ -1232,6 +1239,13 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "503": {
+                        "description": "引擎不可用 | Engine unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -1601,6 +1615,13 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "引擎不可用 | Engine unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3747,6 +3768,13 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "503": {
+                        "description": "引擎不可用 | Engine unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -5084,6 +5112,13 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "503": {
+                        "description": "引擎不可用 | Engine unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -5139,6 +5174,13 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "缺少已扫描的数据项事实 | Scanned item facts not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "引擎不可用 | Engine unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -6048,6 +6090,13 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "引擎不可用 | Engine unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

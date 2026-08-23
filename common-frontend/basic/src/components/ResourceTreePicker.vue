@@ -112,6 +112,7 @@ import { Search } from '@element-plus/icons-vue'
 import { formatLocatorDisplayPath, parseLocatorSafe } from '../types/resourceLocator.js'
 import { getEngineFamily } from '../utils/engineDisplay.js'
 import { engineSelectionState, isEngineSelectable } from '../utils/engineAvailability.js'
+import { withTransientRetry } from '../utils/transientRequest.js'
 import {
   addExpandedKey,
   defaultExpandedKeys,
@@ -266,6 +267,8 @@ const searchResults = ref([])
 let treeLoadRequestSeq = 0
 let restoreRequestSeq = 0
 let searchRequestSeq = 0
+let engineLoadRequestSeq = 0
+let engineLoadPromise = null
 let searchTimer = null
 
 const selectedEngine = computed(() => {
@@ -312,21 +315,37 @@ const resourceTreeAdapter = computed(() => {
   }
 })
 
-const loadEngines = async () => {
-  loadingEngines.value = true
-  try {
-    let nextEngines = await resourceTreeAdapter.value.listEngines()
-    nextEngines = normalizeEngines(nextEngines)
-    if (props.adapter) {
-      nextEngines = filterEngines(nextEngines)
-    }
-    engines.value = nextEngines
-    applyDefaultEngineSelection()
-  } catch (error) {
-    handleError(error)
-  } finally {
-    loadingEngines.value = false
+const loadEngines = () => {
+  if (engineLoadPromise) {
+    return engineLoadPromise
   }
+  const requestSeq = ++engineLoadRequestSeq
+  loadingEngines.value = true
+  const task = withTransientRetry(() => resourceTreeAdapter.value.listEngines())
+    .then(result => {
+      if (requestSeq !== engineLoadRequestSeq) return
+      let nextEngines = normalizeEngines(result)
+      if (props.adapter) {
+        nextEngines = filterEngines(nextEngines)
+      }
+      engines.value = nextEngines
+      applyDefaultEngineSelection()
+    })
+    .catch(error => {
+      if (requestSeq === engineLoadRequestSeq) {
+        handleError(error)
+      }
+    })
+    .finally(() => {
+      if (requestSeq === engineLoadRequestSeq) {
+        loadingEngines.value = false
+      }
+      if (engineLoadPromise === task) {
+        engineLoadPromise = null
+      }
+    })
+  engineLoadPromise = task
+  return task
 }
 
 const handleEngineDropdownVisible = visible => {
@@ -918,6 +937,8 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  engineLoadRequestSeq += 1
+  loadingEngines.value = false
   if (searchTimer) {
     clearTimeout(searchTimer)
   }

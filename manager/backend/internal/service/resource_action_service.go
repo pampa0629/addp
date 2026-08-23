@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
+	"github.com/addp/manager/internal/engineaccess"
 )
 
 type ResourceActionService struct {
@@ -61,8 +62,11 @@ func (s *ResourceActionService) GetResourceActions(ctx context.Context, locatorU
 	if err != nil {
 		return nil, err
 	}
-	if !resourceAccessible(engine, tenantID) {
+	if !resourceBelongsToTenant(engine, tenantID) {
 		return nil, ErrEngineAccessDenied
+	}
+	if err := engineaccess.EnsureAvailable(engine); err != nil {
+		return nil, err
 	}
 
 	category := engineCategory(engine)

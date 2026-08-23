@@ -1281,6 +1281,17 @@ definitions:
     - role
     - route_prefix
     type: object
+  github_com_addp_system_internal_models.ModuleRoutingSnapshot:
+    properties:
+      modules:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.ModuleInfo'
+        type: array
+      observed_at:
+        type: string
+      revision:
+        type: integer
+    type: object
   github_com_addp_system_internal_models.ModuleRuntimeInstanceInfo:
     properties:
       health_check_url:
@@ -2531,10 +2542,10 @@ definitions:
     properties:
       available:
         type: boolean
-      backend_instance_id:
-        type: string
-      base_url:
-        type: string
+      backends:
+        items:
+          $ref: '#/definitions/models.TaskProviderBackend'
+        type: array
       capabilities:
         description: 能力描述（JSON 格式，含 task.capabilities/v2、task_capabilities 等）
         type: string
@@ -2569,7 +2580,18 @@ definitions:
       task_status_endpoint:
         description: 任务状态端点
         type: string
+      unavailable_reason:
+        type: string
       updated_at:
+        type: string
+    type: object
+  models.TaskProviderBackend:
+    properties:
+      base_url:
+        type: string
+      instance_id:
+        type: string
+      lease_expires_at:
         type: string
     type: object
   models.TaskProviderDeclaration:
@@ -6150,6 +6172,47 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.runtime_registry.read
+  /runtime/modules/{module_name}/instances/{instance_id}:
+    delete:
+      description: 正常退出的模块进程将自身实例立即标记为 down；持久模块定义和实例历史保留 | A normally exiting module
+        process immediately marks its own instance down while preserving the persistent
+        definition and instance history
+      parameters:
+      - description: 模块名 | Module name
+        in: path
+        name: module_name
+        required: true
+        type: string
+      - description: 运行实例 ID | Runtime instance ID
+        in: path
+        name: instance_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 注销当前模块运行实例 | Deregister current module runtime instance
+      tags:
+      - 运行时注册 | Runtime Registry
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.runtime_registry.update
   /runtime/modules/heartbeat:
     post:
       consumes:
@@ -6197,6 +6260,54 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.runtime_registry.update
+  /runtime/modules/watch:
+    get:
+      description: revision 变化时立即返回完整可路由 Backend 快照；等待超时也返回同 revision 的新鲜快照以更新租约投影
+        | Returns the complete routable Backend snapshot immediately when the revision
+        changes; a timeout also returns a fresh snapshot at the same revision to renew
+        lease projections
+      parameters:
+      - default: 0
+        description: 客户端当前修订号 | Client current revision
+        in: query
+        name: revision
+        type: integer
+      - default: 10
+        description: 最长等待秒数，范围 0-30 | Maximum wait in seconds, range 0-30
+        in: query
+        name: wait_seconds
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ModuleRoutingSnapshot'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 等待模块路由快照 | Watch module routing snapshot
+      tags:
+      - 运行时注册 | Runtime Registry
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.runtime_registry.read
   /runtime/task-authorization-subjects/{id}/resolve:
     post:
       consumes:
@@ -6245,9 +6356,9 @@ paths:
       - system.task_authorization.execute
   /runtime/task-providers:
     get:
-      description: 返回全部 Provider 声明，并按当前模块 Backend 租约动态解析可用性和调用地址 | Returns all Provider
-        declarations and dynamically resolves availability and call address from current
-        module Backend leases
+      description: 返回全部 Provider 声明，并按当前模块 Backend 租约动态解析可用性和有效端点池 | Returns all Provider
+        declarations and dynamically resolves availability and the eligible endpoint
+        pool from current module Backend leases
       produces:
       - application/json
       responses:
@@ -6271,9 +6382,9 @@ paths:
       - system.runtime_registry.read
   /runtime/task-providers/{module_name}:
     get:
-      description: 每次读取都重新解析当前有效 Backend；模块离线时仍返回声明但 available=false | Resolves the
-        current valid Backend on every read; an offline module keeps its declaration
-        with available=false
+      description: 每次读取都重新解析当前有效 Backend 池；模块离线时仍返回声明但 available=false | Resolves
+        the current valid Backend pool on every read; an offline module keeps its
+        declaration with available=false
       parameters:
       - description: 模块名 | Module name
         in: path

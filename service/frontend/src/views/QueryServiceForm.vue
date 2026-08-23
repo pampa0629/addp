@@ -96,13 +96,16 @@
               <el-select
                 v-model="form.runtime_engine_id"
                 :placeholder="t('service.query.runtimeEnginePlaceholder')"
+                :loading="loadingEngines"
                 style="width: 400px"
+                @visible-change="handleEngineDropdownVisible"
               >
                 <el-option
                   v-for="engine in queryRuntimes"
                   :key="engine.id"
-                  :label="engine.name"
+                  :label="engineOptionLabel(engine)"
                   :value="engine.id"
+                  :disabled="!isEngineSelectable(engine)"
                 />
               </el-select>
               <div class="help-text">{{ t('service.query.objectTableRuntimeHelp') }}</div>
@@ -149,14 +152,16 @@
                 v-model="form.execution_engine_id"
                 :placeholder="t('service.query.enginePlaceholder')"
                 style="width: 400px"
-                :loading="loadingSampleQuery"
+                :loading="loadingEngines || loadingSampleQuery"
                 @change="handleSQLExecutionEngineChange"
+                @visible-change="handleEngineDropdownVisible"
               >
                 <el-option
                   v-for="engine in sqlSupportedEngines"
                   :key="engine.id"
-                  :label="`${engine.name} (${engine.engine_type})`"
+                  :label="engineOptionLabel(engine)"
                   :value="engine.id"
+                  :disabled="!isEngineSelectable(engine)"
                 />
               </el-select>
               <div class="help-text">
@@ -387,7 +392,15 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft, Grid, Document, Search } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import queryServiceAPI from '@/api/queryService'
-import { ResourceTreePicker, createLatestRequestCoordinator, detectTableMetadata, locatorPathFromSelection } from '@common-ui'
+import {
+  ResourceTreePicker,
+  createLatestRequestCoordinator,
+  detectTableMetadata,
+  engineSelectionState,
+  isEngineSelectable,
+  locatorPathFromSelection,
+  withTransientRetry
+} from '@common-ui'
 import {
   QUERY_TABLE_ENGINE_TYPES,
   isQueryableTableNode,
@@ -410,6 +423,7 @@ const submitting = ref(false)
 const currentStep = ref(0)
 const detectingSQLOutput = ref(false)
 const loadingSampleQuery = ref(false)
+const loadingEngines = ref(false)
 const sampleRequests = createLatestRequestCoordinator()
 const outputContractRequests = createLatestRequestCoordinator()
 
@@ -435,6 +449,7 @@ const form = reactive({
 // 存储引擎列表（SQL 模式下使用）
 const engines = ref([])
 const tableUsesRuntime = ref(false)
+let engineLoadPromise = null
 
 // Meta resource-tree API 基础 URL。资源选择使用 locator 主身份，业务层按需检测空间能力。
 const metaApiBaseUrl = computed(() => {
@@ -492,6 +507,17 @@ const hasGeometryField = computed(() => {
 
 const sqlSupportedEngines = computed(() => queryServiceExecutionEngines(engines.value))
 const queryRuntimes = computed(() => federatedQueryRuntimes(engines.value))
+const engineOptionLabel = engine => (
+  `${engine.name} (${engine.engine_type}) · ${t(`common.engineStatus.${engineSelectionState(engine)}`)}`
+)
+const selectedExecutionEngineAvailable = computed(() => {
+  const selected = engines.value.find(engine => Number(engine.id) === Number(form.execution_engine_id))
+  return isEngineSelectable(selected)
+})
+const selectedRuntimeAvailable = computed(() => {
+  const selected = engines.value.find(engine => Number(engine.id) === Number(form.runtime_engine_id))
+  return isEngineSelectable(selected)
+})
 const sqlOutputFields = computed(() => sqlOutputContract.value?.table?.fields || [])
 const sqlStableKeyFields = computed(() => {
 	const scalarTypes = new Set(['string', 'bool', 'int', 'bigint', 'float', 'double', 'decimal', 'date', 'time', 'timestamp', 'uuid'])
@@ -509,9 +535,9 @@ const canProceed = computed(() => {
     return !!form.config_type
   } else if (currentStep.value === 1) {
     if (form.config_type === 'table') {
-      return !!form.locator && (!tableUsesRuntime.value || !!form.runtime_engine_id)
+      return !!form.locator && (!tableUsesRuntime.value || (!!form.runtime_engine_id && selectedRuntimeAvailable.value))
     } else {
-		return !!form.execution_engine_id && !!form.sql_query && !!sqlOutputContract.value?.table && sqlStableKey.value.length > 0
+		return !!form.execution_engine_id && selectedExecutionEngineAvailable.value && !!form.sql_query && !!sqlOutputContract.value?.table && sqlStableKey.value.length > 0
     }
   }
   return true
@@ -625,6 +651,33 @@ const handleSQLExecutionEngineChange = async (engineID) => {
       loadingSampleQuery.value = false
     }
   }
+}
+
+const loadStorageEngines = () => {
+  if (engineLoadPromise) {
+    return engineLoadPromise
+  }
+  loadingEngines.value = true
+  const task = withTransientRetry(() => queryServiceAPI.getStorageEngines())
+    .then(response => {
+      engines.value = response || []
+    })
+    .catch(error => {
+      console.error('[QueryServiceForm] 加载存储引擎失败:', error)
+      ElMessage.warning(t('service.query.loadEnginesFailed'))
+    })
+    .finally(() => {
+      loadingEngines.value = false
+      if (engineLoadPromise === task) {
+        engineLoadPromise = null
+      }
+    })
+  engineLoadPromise = task
+  return task
+}
+
+const handleEngineDropdownVisible = visible => {
+  if (visible) loadStorageEngines()
 }
 
 // 方法：处理表选择（ResourceTreePicker 回调）
@@ -835,13 +888,7 @@ const goBack = () => {
 // 生命周期：加载编辑数据
 onMounted(async () => {
   // 加载存储引擎列表（SQL 模式下使用）
-  try {
-    const response = await queryServiceAPI.getStorageEngines()
-    engines.value = response
-  } catch (error) {
-    console.error('[QueryServiceForm] 加载存储引擎失败:', error)
-    ElMessage.warning(t('service.query.loadEnginesFailed'))
-  }
+  await loadStorageEngines()
 
   if (isEdit.value) {
     loading.value = true

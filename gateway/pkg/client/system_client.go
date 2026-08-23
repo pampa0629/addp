@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 )
@@ -31,6 +32,6 @@ func (c *SystemClient) BulkGetAPIKeys() ([]APIKeyValidationResponse, error) {
 	return []APIKeyValidationResponse{}, nil
 }
 
-func (c *SystemClient) GetModules() ([]*commonClient.ModuleInfo, error) {
-	return c.serviceClient.ListActiveModules(context.Background())
+func (c *SystemClient) WatchModules(ctx context.Context, revision int64, wait time.Duration) (*commonClient.ModuleRoutingSnapshot, error) {
+	return c.serviceClient.WatchActiveModules(ctx, revision, wait)
 }

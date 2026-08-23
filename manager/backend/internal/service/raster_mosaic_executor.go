@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/engine/plugins/objectstore"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
+	"github.com/addp/manager/internal/engineaccess"
 )
 
 type ManagerRasterMosaicExecutor struct {
@@ -195,8 +196,8 @@ func (e *ManagerRasterMosaicExecutor) getRasterMosaicEngine(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	if !engine.IsUsable() {
-		return nil, errors.New("engine is not active")
+	if err := engineaccess.EnsureAvailable(engine); err != nil {
+		return nil, err
 	}
 	if engine.TenantID != nil && *engine.TenantID != tenantID {
 		return nil, ErrEngineAccessDenied

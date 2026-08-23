@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	commonAPI "github.com/addp/common/api"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/preview"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -30,6 +31,7 @@ func NewDownloadHandler(metadataService *service.MetadataService) *DownloadHandl
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Failure 503 {object} map[string]interface{} "引擎不可用 | Engine unavailable"
 // @x-addp-auth-mode "resource_ticket"
 // @x-addp-required-permissions ["manager.content.read"]
 // @Router /downloads/file [get]
@@ -46,6 +48,10 @@ func (h *DownloadHandler) DownloadFile(c *gin.Context) {
 	}
 	engineID, plan, err := h.metadataService.ResolveStorageDownloadPlanByLocator(c.Request.Context(), locator, tenantIDFromContext(c))
 	if err != nil {
+		if errors.Is(err, engineaccess.ErrUnavailable) {
+			engineUnavailable(c)
+			return
+		}
 		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
 			accessDeniedToEngine(c)
 			return
@@ -62,6 +68,10 @@ func (h *DownloadHandler) DownloadFile(c *gin.Context) {
 	}
 	reader, err := h.metadataService.OpenStorageDownloadPlan(c.Request.Context(), engineID, plan, tenantIDFromContext(c))
 	if err != nil {
+		if errors.Is(err, engineaccess.ErrUnavailable) {
+			engineUnavailable(c)
+			return
+		}
 		if errors.Is(err, service.ErrDownloadNotSupported) {
 			commonAPI.BadRequestError(c, err.Error())
 			return

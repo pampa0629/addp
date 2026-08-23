@@ -27,13 +27,17 @@ type Config struct {
 	// Authentication
 	ServiceClientSecret string
 
-	ModuleRefreshInterval time.Duration
+	ModuleWatchTimeout time.Duration
 }
 
 func Load() *Config {
 	port := getEnv("GATEWAY_PORT", "8000")
 	if len(port) > 0 && port[0] != ':' {
 		port = ":" + port
+	}
+	moduleWatchTimeout := getEnvDuration("MODULE_WATCH_TIMEOUT", "10s")
+	if moduleWatchTimeout < time.Second || moduleWatchTimeout > 30*time.Second {
+		moduleWatchTimeout = 10 * time.Second
 	}
 
 	return &Config{
@@ -57,7 +61,7 @@ func Load() *Config {
 
 		ServiceClientSecret: getEnv("GATEWAY_SERVICE_CLIENT_SECRET", ""),
 
-		ModuleRefreshInterval: getEnvDuration("MODULE_REFRESH_INTERVAL", "30s"),
+		ModuleWatchTimeout: moduleWatchTimeout,
 	}
 }
 

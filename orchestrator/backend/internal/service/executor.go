@@ -178,7 +178,7 @@ func (e *Executor) executeWithTaskProvider(ctx context.Context, step *models.Ste
 	// 2. 构建执行 URL（替换 {task_type} 和 {id} 占位符）
 	taskIDStr := fmt.Sprintf("%d", step.TaskID)
 	executeEndpoint := replaceTaskProviderEndpoint(provider.TaskExecuteEndpoint, step.TaskType, taskIDStr, "")
-	targetURL := provider.BaseURL + executeEndpoint
+	targetURL := provider.ResolvedBaseURL + executeEndpoint
 
 	// 3. 构建请求体
 	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
@@ -319,9 +319,8 @@ func extractProviderExecutionID(respData map[string]interface{}) string {
 
 // pollTaskProviderExecution 轮询 TaskProvider 执行状态（任务引用模式）
 func (e *Executor) pollTaskProviderExecution(ctx context.Context, provider *commonModels.TaskProvider, executionID string, tenantID int) (map[string]interface{}, error) {
-	// 构建状态查询 URL（替换 {execution_id} 占位符）
+	// 每次轮询重新从 System 获取有效 Backend 池，避免固定实例下线后状态查询失效。
 	statusEndpoint := replaceTaskProviderEndpoint(provider.TaskStatusEndpoint, "", "", executionID)
-	targetURL := provider.BaseURL + statusEndpoint
 
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	ticker := time.NewTicker(5 * time.Second)
@@ -332,6 +331,11 @@ func (e *Executor) pollTaskProviderExecution(ctx context.Context, provider *comm
 		case <-ctx.Done():
 			return nil, fmt.Errorf("轮询超时")
 		case <-ticker.C:
+			currentProvider, err := e.taskProviderResolver.GetProvider(ctx, provider.ModuleName)
+			if err != nil {
+				continue
+			}
+			targetURL := currentProvider.ResolvedBaseURL + statusEndpoint
 			req, err := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
 			if err != nil {
 				continue

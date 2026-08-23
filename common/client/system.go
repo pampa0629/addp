@@ -262,6 +262,12 @@ type ModuleInfo struct {
 	UpdatedAt               time.Time                                  `json:"updated_at"`
 }
 
+type ModuleRoutingSnapshot struct {
+	Revision   int64         `json:"revision"`
+	Modules    []*ModuleInfo `json:"modules"`
+	ObservedAt time.Time     `json:"observed_at"`
+}
+
 type ModuleRuntimeInstanceInfo struct {
 	ID             uint                   `json:"id"`
 	InstanceID     string                 `json:"instance_id"`

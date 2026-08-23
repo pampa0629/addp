@@ -85,7 +85,7 @@ Orchestrator 通过 System 模块控制面中的 TaskProvider 声明和 Backend 
 
 ### 任务提供者何时恢复？
 
-Orchestrator 不缓存 TaskProvider 运行可用性，每次使用都从 System 重新解析当前 Backend 租约。离线模块的声明仍会展示但不可选；对应 Backend 恢复并重新心跳后，刷新任务库即可使用，无需重启 Orchestrator。
+Orchestrator 不缓存 TaskProvider 运行可用性，每次使用都从 System 重新解析当前有效 Backend 池，并在多个端点间稳定轮询。离线模块的声明仍会展示但不可选；对应 Backend 恢复并重新心跳后，刷新任务库即可使用，无需重启 Orchestrator。非幂等执行请求失败后不自动切换实例重放。
 
 ### 更多问题？
 

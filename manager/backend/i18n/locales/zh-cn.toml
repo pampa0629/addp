@@ -22,6 +22,9 @@ other = "缺少资源定位符参数"
 [manager.error.engine_access_denied]
 other = "无权访问该存储引擎"
 
+[manager.error.engine_unavailable]
+other = "引擎当前不可用，请等待引擎恢复在线后重试"
+
 [manager.error.meta_scan_required]
 other = "该目标尚未完成元数据扫描"
 

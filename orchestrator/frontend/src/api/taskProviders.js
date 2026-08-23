@@ -15,7 +15,7 @@ export default {
    *     module_name: "meta",
    *     module_version: 3,
    *     display_name: "元数据",
-   *     base_url: "http://localhost:8082",
+   *     backends: [{ instance_id: "meta-a", base_url: "http://meta-a:8082", lease_expires_at: "..." }],
    *     enabled: true,
    *     available: true,
    *     capabilities: {"schema_version":"task.capabilities/v2","task_capabilities":[]}

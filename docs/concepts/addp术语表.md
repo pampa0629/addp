@@ -341,6 +341,8 @@
 | module runtime instance | 模块运行实例 | Backend、Worker 或 Scheduler 一次具体进程登记及其短期租约。 | 健康由心跳和租约计算；不能由管理员手工改成在线，也不拥有独立并发版本。 |
 | module enabled state | 模块启用状态 | 平台系统管理员是否允许该模块参与路由和动态入口聚合的持久意图。 | 与实例 `status` 独立；注册和心跳不得覆盖。 |
 | routable backend | 可路由 Backend | 同时满足模块已启用、角色为 `backend`、状态为 `up`、租约未过期且 URL 有效的运行实例。 | Worker 和 Scheduler 只可观测，不参与 Gateway 路由。 |
+| module registry revision | 模块注册表修订号 | System 对可路由模块拓扑变更维护的单调递增版本。 | 新增、恢复、下线、端点变化和管理员启停会递增；普通续租心跳不递增。 |
+| module routing snapshot | 模块路由快照 | System 在某个注册表修订号下返回的全部可路由 Backend 及其当前租约投影。 | Gateway 只原子替换完整快照，不拼接多次查询结果；长轮询超时也返回新鲜快照以续新租约投影。 |
 
 ## Cleanup 与生命周期
 

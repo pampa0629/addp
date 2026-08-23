@@ -15,6 +15,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
+	"github.com/addp/manager/internal/engineaccess"
 )
 
 var (
@@ -90,8 +91,11 @@ func (s *UploadService) UploadFiles(ctx context.Context, req *UploadRequest) (*U
 	if tenantID > 0 {
 		tenantPtr = &tenantID
 	}
-	if !resourceAccessible(engine, tenantPtr) {
+	if !resourceBelongsToTenant(engine, tenantPtr) {
 		return nil, ErrEngineAccessDenied
+	}
+	if err := engineaccess.EnsureAvailable(engine); err != nil {
+		return nil, err
 	}
 	if !storageCanWrite(engine) {
 		return nil, ErrUploadEngineUnsupported

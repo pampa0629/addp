@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	commonAPI "github.com/addp/common/api"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/preview"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -95,6 +96,8 @@ func (h *RasterMosaicTileHandler) GetRasterMosaicTile(c *gin.Context) {
 	})
 	if err != nil {
 		switch {
+		case errors.Is(err, engineaccess.ErrUnavailable):
+			engineUnavailable(c)
 		case errors.Is(err, service.ErrEngineAccessDenied), errors.Is(err, preview.ErrEngineAccessDenied):
 			accessDeniedToEngine(c)
 		case errors.Is(err, service.ErrRasterMosaicTileInvalidLocator), errors.Is(err, service.ErrRasterMosaicTileUnsupported):

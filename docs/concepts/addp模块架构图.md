@@ -537,12 +537,14 @@ graph TB
     subgraph "2. System 模块注册中心"
         SystemReg --> DefinitionTable[(module_definitions<br/>持久模块身份/路由/声明)]
         SystemReg --> InstanceTable[(module_runtime_instances<br/>实例端点/角色/租约)]
+        SystemReg --> RevisionTable[(module_registry_state<br/>路由拓扑修订号)]
         DefinitionTable --> RegAPI[注册 API<br/>/api/v1/system/runtime/modules/*]
         InstanceTable --> RegAPI
+        RevisionTable --> RegAPI
     end
 
     subgraph "3. Gateway 动态发现"
-        Gateway[Gateway<br/>:8000] -.30秒刷新.-> RegAPI
+        Gateway[Gateway<br/>:8000] -.revision 长轮询.-> RegAPI
         Gateway --> Discovery[ModuleDiscovery<br/>模块发现管理器]
         Discovery --> Proxies[动态代理映射<br/>module -> ServiceProxy]
     end
@@ -585,6 +587,7 @@ graph TB
 - 模块每 **10 秒**发送一次心跳到 System
 - System 将超过租约超时时间未心跳的运行实例标记为 `down`，但不删除运行实例历史，也不删除持久模块定义。
 - 同一 `instance_id` 重新注册可恢复为 `up`；新进程必须使用新的 `instance_id`。
+- 模块正常退出时应注销本次 `instance_id`；异常退出仍由租约到期收敛。
 
 **管理面边界**:
 - `platform.module.read` 允许平台系统管理员查看模块定义及其 Backend、Worker、Scheduler 实例投影；`platform.module.update` 只允许修改模块定义的 `enabled` 管理意图。
@@ -592,9 +595,11 @@ graph TB
 - 管理界面按固定周期重新读取 System 当前投影；进程稍后启动并重新注册后，无需重启 System 或前端即可显示为可用。
 
 **4. Gateway 动态发现**:
-- Gateway 启动时从 System 获取已启用模块及其 `up` 的 Backend 实例
-- 每 **30 秒**定期刷新模块列表（可配置 `MODULE_REFRESH_INTERVAL`）
+- Gateway 启动时以 `revision=0` 从 System 获取已启用模块及其 `up` 的 Backend 完整快照。
+- 后续只通过 revision 长轮询等待拓扑变化；新增、恢复、下线、端点变化和管理员启停会立即唤醒请求。
+- 长轮询达到 `MODULE_WATCH_TIMEOUT`（默认 **10 秒**）时，即使 revision 未变化也返回一份新鲜完整快照，使 Gateway 持有的租约截止时间持续更新，不会因缓存租约老化形成路由空窗。
 - 只根据 `enabled + role=backend + status=up + lease valid` 的实例创建、更新和移除 HTTP 代理
+- Gateway 原子替换完整快照；System 短暂不可达时保留最近一次快照，但每次选路仍校验其中的租约截止时间。
 - 多个 Backend 实例的选择必须来自同一发现结果，不能回退到环境变量中的第二套路由事实源
 
 **5. 单一路由机制**:
@@ -646,7 +651,7 @@ graph LR
 ```bash
 # 启用模块发现（推荐）
 MODULE_REGISTRY_ENABLED=true                 # 启用动态路由发现
-MODULE_REFRESH_INTERVAL=30s                  # 模块列表刷新间隔
+MODULE_WATCH_TIMEOUT=10s                     # revision 长轮询超时
 
 # System 模块配置（用于获取注册信息）
 SYSTEM_URL=http://system-backend:8180
@@ -911,7 +916,8 @@ graph TB
 **要点**：
 - 各模块 Backend 启动时通过模块注册一次性发布实例与 TaskProvider capabilities（任务类型、定义 schema、owner 前端入口和标准 API endpoint）；不再存在独立 Provider 注册请求
 - Provider 声明是模块定义的一部分，管理员 `enabled` 与运行实例租约是可用性的唯一事实；Provider 不保存独立地址或启用状态
-- Orchestrator 和 Monitor 每次实际使用前从 System 解析当前有效 Backend；模块离线期间保留声明但不可调用，Backend 恢复租约后立即可用
+- Orchestrator 和 Monitor 每次实际使用前从 System 解析当前有效 Backend 池；模块离线期间保留声明但不可调用，Backend 恢复租约后立即可用
+- TaskProvider 投影不得固定选择排序第一条 Backend，也不得把单个 `base_url` 当作模块事实；调用方从 System 返回的有效端点池中按稳定轮询选择，执行 POST 失败后不得自动换实例重放
 - Orchestrator 不硬编码对任何模块的依赖，完全由注册信息驱动
 - DAG 步骤只能引用 owner 模块已保存的任务定义，通过 `provider + task_type + task_id` 调用标准 TaskProvider API
 

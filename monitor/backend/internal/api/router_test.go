@@ -62,6 +62,15 @@ func TestSetupRouterRegistersProviderHealthRoutes(t *testing.T) {
 	if !routes["/api/v1/monitor/providers/:module/health"] {
 		t.Fatal("provider health detail route is not registered")
 	}
+	for _, oldRoute := range []string{
+		"/api/v1/monitor/modules",
+		"/api/v1/monitor/modules/:module/health",
+		"/api/v1/monitor/modules/health/all",
+	} {
+		if routes[oldRoute] {
+			t.Fatalf("legacy single-Backend health route %s must not be registered", oldRoute)
+		}
+	}
 }
 
 func TestSetupRouterRegistersWebhookRoutes(t *testing.T) {

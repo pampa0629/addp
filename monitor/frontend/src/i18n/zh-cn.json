@@ -327,6 +327,7 @@
       "down": "离线",
       "unknown": "未知",
       "latency": "延迟: {ms}ms",
+      "backends": "后端实例: {up}/{total}",
       "task_discovery": "任务发现: {up}/{total}",
       "capabilities_invalid": "能力声明异常"
     },

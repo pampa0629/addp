@@ -16,6 +16,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	"github.com/addp/common/resourcetree"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/models"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
@@ -145,8 +146,11 @@ func (s *ExportService) CreateExport(ctx context.Context, req *ExportRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	if !resourceAccessible(engine, tenantPtr(req.TenantID)) {
+	if !resourceBelongsToTenant(engine, tenantPtr(req.TenantID)) {
 		return nil, ErrEngineAccessDenied
+	}
+	if err := engineaccess.EnsureAvailable(engine); err != nil {
+		return nil, err
 	}
 	if !databaseCanRead(engine) {
 		return nil, ErrExportSourceUnsupported

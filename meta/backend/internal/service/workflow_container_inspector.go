@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/dbbridge"
 	engineplugin "github.com/addp/common/engine/plugin"
+	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/engine/workflowaccess"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
@@ -150,7 +151,7 @@ func (i *WorkflowContainerInspector) resolveRuntime(
 	})
 	failures := make([]string, 0)
 	for _, candidate := range engines {
-		if !candidate.IsUsable() {
+		if !engineselection.IsAvailable(candidate) {
 			continue
 		}
 		if _, providerErr := dbbridge.WorkflowRuntimeProviderForEngine(candidate); providerErr != nil {

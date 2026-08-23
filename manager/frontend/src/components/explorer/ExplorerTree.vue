@@ -51,6 +51,7 @@
         v-model:expanded-keys="expandedKeys"
         :current-node-key="currentNodeKey"
         :node-actions="nodeActions"
+        :node-class-name="resolveNodeClassName"
         :expand-on-click-node="true"
         :title="t('manager.explorer.storageEngines')"
         :count-text="(count) => t('manager.explorer.countText', { count })"
@@ -59,7 +60,21 @@
         @node-action="handleNodeAction"
         @node-expand="handleNodeExpand"
         @node-collapse="handleNodeCollapse"
-      />
+      >
+        <template #node-label="{ data }">
+          <span class="explorer-node-label" :title="data.label">
+            <span class="explorer-node-label__text">{{ data.label }}</span>
+            <el-tag
+              v-if="isCatalogRootNode(data) && !isNodeEngineAvailable(data)"
+              size="small"
+              type="warning"
+              effect="plain"
+            >
+              {{ engineStatusLabel(data) }}
+            </el-tag>
+          </span>
+        </template>
+      </ResourceTree>
     </template>
   </div>
 </template>
@@ -115,6 +130,7 @@ const nodeActions = computed(() => {
       label: t('manager.explorer.refresh'),
       tooltip: t('manager.explorer.refreshTooltip'),
       icon: 'Refresh',
+      disabled: (node) => !isNodeEngineAvailable(node),
       visible: () => true
     },
     // 已向量化状态提示（仅支持向量化的单个对象）
@@ -137,6 +153,7 @@ const nodeActions = computed(() => {
       name: 'embedding',
       label: t('manager.explorer.vectorize'),
       icon: 'MagicStick',
+      disabled: (node) => !isNodeEngineAvailable(node),
       visible: (node) => {
         const state = embeddingStates.value[node.locator || node.id]
         return isVectorizableObjectNode(node) && canShowVectorizeAction(node, state)
@@ -148,6 +165,7 @@ const nodeActions = computed(() => {
       name: 'embedding-batch',
       label: t('manager.explorer.batchVectorize'),
       icon: 'MagicStick',
+      disabled: (node) => !isNodeEngineAvailable(node),
       visible: (node) => {
         return isVectorizableRangeNode(node)
       }
@@ -213,7 +231,9 @@ const handleNodeClick = async (node) => {
   // 选择节点
   store.selectNode(locator)
   emit('node-select', { node, locator })
-  await loadItemEmbeddingState(node, locator)
+  if (isNodeEngineAvailable(node)) {
+    await loadItemEmbeddingState(node, locator)
+  }
 
   // 关键：@node-collapse / @node-expand 在 element-plus 中先于 @node-click 触发，
   // 因此这里读到的是"点击后"的 store 状态，而不是点击前的状态。
@@ -274,6 +294,11 @@ const loadItemEmbeddingState = async (node, locator) => {
 // 事件处理：节点操作
 const handleNodeAction = async ({ node, action }) => {
   const locator = node.locator || node.id
+
+  if (!isNodeEngineAvailable(node)) {
+    ElMessage.warning(t('manager.explorer.engineUnavailableAction'))
+    return
+  }
 
   if (action === 'refresh') {
     try {
@@ -405,6 +430,18 @@ const isCatalogRootNode = (node) => {
 }
 
 const isBranchNode = (node) => !!node && branchTypes.has(node.type)
+
+const nodeEngineID = (node) => {
+  if (node?.engineId) return node.engineId
+  const locator = node?.locator || node?.id
+  return locator ? parseLocator(locator)?.engineId : null
+}
+
+const isNodeEngineAvailable = (node) => store.isEngineAvailable(nodeEngineID(node))
+
+const engineStatusLabel = (node) => t(`common.engineStatus.${store.engineState(nodeEngineID(node))}`)
+
+const resolveNodeClassName = (node) => isNodeEngineAvailable(node) ? '' : 'engine-resource-offline'
 
 function startScanStatus(title, detail, percent = 5) {
   cancelScanStatusTimer()
@@ -552,5 +589,22 @@ defineExpose({
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.explorer-node-label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.explorer-node-label__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:deep(.engine-resource-offline .tree-node) {
+  opacity: 0.68;
 }
 </style>

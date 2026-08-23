@@ -20,6 +20,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/dataprofile"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -346,6 +347,9 @@ func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context
 	// 验证租户权限
 	if tenantID != nil && engine.TenantID != nil && *engine.TenantID != *tenantID {
 		return nil, ErrEngineAccessDenied
+	}
+	if err := engineaccess.EnsureAvailable(engine); err != nil {
+		return nil, err
 	}
 
 	// 3. 尝试从 Meta 获取元数据。

@@ -10,6 +10,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
+	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/engine/workflowaccess"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
@@ -35,7 +36,7 @@ func (i *SuperMapCADInspector) InspectCAD(ctx context.Context, source *commonMod
 	}
 	var runtime *commonModels.Engine
 	for idx := range engines {
-		if engines[idx].IsUsable() && strings.EqualFold(engines[idx].EngineType, "supermap_workflow") {
+		if engineselection.IsAvailable(engines[idx]) && strings.EqualFold(engines[idx].EngineType, "supermap_workflow") {
 			runtime, err = i.engineService.GetResourceByID(engines[idx].ID, tenantID)
 			if err != nil {
 				return nil, fmt.Errorf("load SuperMap workflow engine connection: %w", err)

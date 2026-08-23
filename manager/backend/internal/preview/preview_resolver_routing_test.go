@@ -2,6 +2,7 @@ package preview
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/catalogutil"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
 	"github.com/addp/manager/internal/repository"
@@ -186,7 +188,7 @@ func TestPreviewFromURIWithBasicItemDoesNotSubmitDeepScanRun(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/v1/system/engines/26":
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":26,"tenant_id":1,"name":"preview","engine_type":"preview-routing-model","connection_info":{},"lifecycle_state":"active"}`))
+			_, _ = w.Write([]byte(`{"id":26,"tenant_id":1,"name":"preview","engine_type":"preview-routing-model","connection_info":{},"lifecycle_state":"active","connection_status":"online"}`))
 		case "/api/v1/meta/items/1831":
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"id":1831,"tenant_id":1,"engine_id":26,"node_id":7,"item_type":"table","name":"users","full_name":"public.users","scanned_depth":"basic","attributes":{"item":{"data_type":"table","layout":"single"}}}`))
@@ -234,6 +236,43 @@ func TestPreviewFromURIWithBasicItemDoesNotSubmitDeepScanRun(t *testing.T) {
 	}
 	if result.Metadata == nil || result.Metadata.ScannedDepth != "basic" {
 		t.Fatalf("metadata scanned depth = %#v, want basic", result.Metadata)
+	}
+}
+
+func TestResolvePreviewRequestRejectsOfflineEngineBeforeMetaLookup(t *testing.T) {
+	metaCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/system/engines/26":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":26,"tenant_id":1,"name":"offline","engine_type":"postgresql","connection_info":{},"lifecycle_state":"active","connection_status":"offline"}`))
+		default:
+			metaCalled = true
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	resolver := NewPreviewResolver(
+		NewPreviewRegistry(),
+		client.NewSystemClient(server.URL, client.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+			return "system-token", nil
+		})),
+		client.NewMetaClient(server.URL, client.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+			return "meta-token", nil
+		})),
+	)
+	tenantID := uint(1)
+	_, err := resolver.ResolveRequestFromURIWithSelection(
+		t.Context(),
+		"addp://engine/26/path/public/users?type=table&item_id=1831",
+		1, 20, "", "", "", plugin.GraphSampleFilter{}, &tenantID,
+	)
+	if !errors.Is(err, engineaccess.ErrUnavailable) {
+		t.Fatalf("ResolveRequestFromURIWithSelection() error = %v, want ErrUnavailable", err)
+	}
+	if metaCalled {
+		t.Fatal("offline engine must be rejected before looking up Meta")
 	}
 }
 

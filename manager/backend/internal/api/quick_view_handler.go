@@ -19,6 +19,7 @@ import (
 	"github.com/addp/common/resourcetree"
 	commonSpatial "github.com/addp/common/spatial"
 	manageri18n "github.com/addp/manager/i18n"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/preview"
 	"github.com/addp/manager/internal/service"
@@ -42,6 +43,8 @@ func quickViewError(c *gin.Context, err error) {
 
 func quickViewLocatorError(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, engineaccess.ErrUnavailable):
+		engineUnavailable(c)
 	case errors.Is(err, preview.ErrEngineAccessDenied), errors.Is(err, service.ErrEngineAccessDenied):
 		accessDeniedToEngine(c)
 	case errors.Is(err, preview.ErrPreviewRequiresScannedMeta):

@@ -40,21 +40,6 @@ export function getExecutionRuntimeMetrics(params) {
   return client.get('/monitor/executions/runtime-metrics', { params })
 }
 
-// 获取所有模块列表
-export function listModules() {
-  return client.get('/monitor/modules')
-}
-
-// 检查单个模块健康状态
-export function checkModuleHealth(module) {
-  return client.get(`/monitor/modules/${module}/health`)
-}
-
-// 检查所有模块健康状态
-export function checkAllModules() {
-  return client.get('/monitor/modules/health/all')
-}
-
 // 检查所有任务提供者运行态健康状态
 export function checkAllProviderHealth() {
   return client.get('/monitor/providers/health')

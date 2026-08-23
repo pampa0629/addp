@@ -118,9 +118,9 @@ monitor/
 | `/api/v1/executions/:id` | GET | 获取单条执行详情 | ✅ |
 | `/api/v1/executions/stats` | GET | 获取统计数据 | ✅ |
 | `/api/v1/executions/trend` | GET | 获取趋势数据（按天聚合） | ✅ |
-| `/api/v1/modules` | GET | 获取所有模块列表 | ✅ |
-| `/api/v1/modules/:module/health` | GET | 检查单个模块健康 | ✅ |
-| `/api/v1/modules/health/all` | GET | 检查所有模块健康 | ✅ |
+| `/api/v1/monitor/task-providers` | GET | 获取 System 的 TaskProvider 读取投影 | ✅ |
+| `/api/v1/monitor/providers/health` | GET | 逐 Backend 实例检查并聚合全部 TaskProvider 健康状态 | ✅ |
+| `/api/v1/monitor/providers/:module/health` | GET | 逐 Backend 实例检查并聚合指定 TaskProvider 健康状态 | ✅ |
 
 ### 3.2 查询参数支持
 

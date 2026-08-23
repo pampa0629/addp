@@ -43,7 +43,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 **关于 Module 与 TaskProvider**：
 - `TaskProvider` 不是独立对象，而是 `Module` 的一种可选角色，通过注册时声明任务 API 来体现
 - `module_definitions` 保存稳定模块身份、管理员意图和可选 `task_provider` 声明；`module_runtime_instances` 单独保存进程租约和运行端点
-- TaskProvider 的 `base_url` 和 `available` 是 System 根据当前有效 Backend 租约生成的读取投影，不是持久事实
+- TaskProvider 的 `available`、`unavailable_reason` 和有效 Backend 端点池是 System 根据当前租约生成的读取投影，不是持久事实；调用方不得把单个端点缓存为模块身份
 - 不是所有模块都是任务提供者：Console / Gateway / Monitor 不暴露任务接口
 
 **关于 Engine**：
@@ -238,43 +238,47 @@ erDiagram
         string engine_type "postgresql|mysql|minio|acme_geo_workflow|..."
         string engine_origin "general | extension"
         bool is_builtin
+        json identity_key "永久物理身份键"
+        int version "乐观并发版本"
+        string lifecycle_state "active|disabled|deleting|deleted"
         json connection_info
         json capabilities "存储/计算能力声明(JSONB)"
         string connection_status "online|offline|unknown|checking"
         string check_message
         timestamp last_check_at
         uint created_by FK
-        bool is_active
+        timestamp deleted_at
+        uint deleted_by
+        timestamp restored_at
+        uint restored_by
         timestamp created_at
         timestamp updated_at
     }
 
-    Module {
+    ModuleDefinition {
         uint id PK
         string module_name "system|manager|meta|transfer|..."
-        string module_url
         string route_prefix
-        string health_check_url
-        string status "up | down"
-        json metadata "版本、权重等扩展信息(JSONB)"
-        timestamp last_heartbeat
+        bool enabled "管理员意图"
+        int version "声明聚合版本"
+        json configuration_management "可选配置管理角色声明"
+        json task_provider "可选 TaskProvider 角色声明"
         timestamp created_at
         timestamp updated_at
     }
 
-    TaskProvider {
+    ModuleRuntimeInstance {
         uint id PK
-        string module_name "与 Module.module_name 对应"
-        string display_name
-        string description
-        string base_url
-        string task_list_endpoint "GET /api/tasks"
-        string task_detail_endpoint "GET /api/tasks/{task_type}/{id}"
-        string task_execute_endpoint "POST /api/tasks/{task_type}/{id}/execute"
-        string task_status_endpoint "GET /api/executions/{execution_id}"
-        string task_cancel_endpoint "POST /api/executions/{execution_id}/cancel，仅当存在 supports_cancel=true 的 task type"
-        json capabilities "声明支持的 task_capabilities[] 任务类型能力及前端路由(JSONB)"
-        bool is_enabled
+        uint module_definition_id FK
+        string instance_id
+        string role "backend | worker | scheduler"
+        string module_url
+        string health_check_url
+        string status "up | down"
+        timestamp last_heartbeat
+        timestamp lease_expires_at
+        json metadata
+        timestamp registered_at
         timestamp created_at
         timestamp updated_at
     }
@@ -304,7 +308,7 @@ erDiagram
     Tenant ||--o{ Engine : "注册"
     Tenant ||--o{ Application : "拥有"
     Application ||--o{ APIKey : "持有"
-    Module ||--o| TaskProvider : "可选角色(module_name关联)"
+    ModuleDefinition ||--o{ ModuleRuntimeInstance : "拥有运行实例"
 ```
 
 **⚠️ 发现的问题**：
@@ -1178,7 +1182,7 @@ graph LR
         Application
         APIKey
         Module
-        TaskProvider
+        TaskProviderRole["TaskProvider角色"]
     end
 
     subgraph META["Meta"]
@@ -1248,7 +1252,7 @@ graph LR
     Tenant --> Engine
     Tenant --> Application
     Application --> APIKey
-    Module -.->|"可选角色"| TaskProvider
+    Module -.->|"内嵌可选声明"| TaskProviderRole
 
     %% Engine 是枢纽
     Engine --> DataNode
@@ -1332,7 +1336,7 @@ graph LR
 
 ```mermaid
 graph TD
-    SYS["System\nIAM / Tenant / Engine / Module / TaskProvider"]
+    SYS["System\nIAM / Tenant / Engine / Module / TaskProvider角色"]
     META["Meta\nDataNode / DataItem / ScanTask"]
     TRF["Transfer\nTransferTask / FieldMapping"]
     DEV["Develop\nDevTask"]
@@ -1381,7 +1385,7 @@ graph TD
 
 | 编号 | 分类     | 问题描述                                                              | 优先级 | 状态       |
 |------|----------|-----------------------------------------------------------------------|--------|------------|
-| S-1  | System   | TaskProvider 与 Module 通过 module_name 字符串关联，无 DB FK，考虑合并两表 | 中  | 待讨论     |
+| S-1  | System   | TaskProvider 曾与 Module 通过 `module_name` 跨表关联 | — | ✅ 已收敛为 `module_definitions.task_provider` 内嵌角色声明，Provider ID 复用 Module ID |
 | S-2  | System   | Module 无 tenant_id，模块是全局的                                     | —      | 已确认合理 |
 | S-3  | System   | Engine.created_by 无 DB FK（跨 schema 引用 User）                     | —      | 已确认合理 |
 | T-1  | Task     | ScanTask 调度字段与其他任务不一致（schedule_type+cron_expression vs 单字段 schedule） | 中 | ✅ 已修正（任务调度字段已统一为单字段 schedule） |

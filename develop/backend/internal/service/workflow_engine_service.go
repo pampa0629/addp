@@ -13,6 +13,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
+	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/engine/workflowaccess"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -159,8 +160,8 @@ func (s *WorkflowEngineService) executeWorkflowWithResolver(
 	if err != nil {
 		return nil, fmt.Errorf("查询工作流引擎失败: %w", err)
 	}
-	if !engine.IsUsable() {
-		return nil, fmt.Errorf("工作流引擎未启用")
+	if !engineselection.IsAvailable(engine) {
+		return nil, fmt.Errorf("工作流引擎当前不可用")
 	}
 	if engine.TenantID != nil && *engine.TenantID != tenantID {
 		return nil, fmt.Errorf("工作流引擎不属于当前租户")
@@ -279,8 +280,8 @@ func (s *WorkflowEngineService) workflowRuntimeEngineID(
 	if sparkEngine.EngineType != "spark" {
 		return 0, fmt.Errorf("spark_cluster_id 必须指向 engine_type=spark 的通用引擎资源")
 	}
-	if !sparkEngine.IsUsable() {
-		return 0, fmt.Errorf("spark_cluster_id 指向的 Spark 通用引擎资源未启用")
+	if !engineselection.IsAvailable(sparkEngine) {
+		return 0, fmt.Errorf("spark_cluster_id 指向的 Spark 通用引擎资源当前不可用")
 	}
 	if err := requireTenantBusinessEngine(sparkEngine, tenantID, "Spark 通用引擎资源"); err != nil {
 		return 0, err
@@ -667,11 +668,11 @@ func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
 	if err != nil {
 		return nil, fmt.Errorf("get target engine %d: %w", targetParent.EngineID, err)
 	}
-	if !sourceEngine.IsUsable() {
-		return nil, fmt.Errorf("source engine is not active")
+	if !engineselection.IsAvailable(sourceEngine) {
+		return nil, fmt.Errorf("source engine is unavailable")
 	}
-	if !targetEngine.IsUsable() {
-		return nil, fmt.Errorf("target engine is not active")
+	if !engineselection.IsAvailable(targetEngine) {
+		return nil, fmt.Errorf("target engine is unavailable")
 	}
 	if err := requireTenantBusinessEngine(sourceEngine, tenantID, "source engine"); err != nil {
 		return nil, err

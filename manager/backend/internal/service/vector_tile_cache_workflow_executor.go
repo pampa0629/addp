@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/objectstore"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/tilecache"
 	"github.com/minio/minio-go/v7"
@@ -189,8 +190,8 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) prepareSourceURI(ctx context.Co
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("get source engine: %w", err)
 	}
-	if !engine.IsUsable() {
-		return "", nil, nil, errors.New("source engine is not active")
+	if err := engineaccess.EnsureAvailable(engine); err != nil {
+		return "", nil, nil, err
 	}
 	if engine.TenantID != nil && *engine.TenantID != tenantID {
 		return "", nil, nil, ErrEngineAccessDenied

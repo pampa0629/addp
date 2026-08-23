@@ -23,7 +23,10 @@ func TestUpdateModulePlatformUsesOptimisticVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}); err != nil {
+	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.ModuleRegistryState{ID: 1, Revision: 1}).Error; err != nil {
 		t.Fatal(err)
 	}
 	registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))

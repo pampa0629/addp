@@ -16,6 +16,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	rastercogref "github.com/addp/manager/internal/cog"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/models"
 	"github.com/minio/minio-go/v7"
 )
@@ -212,8 +213,8 @@ func (e *ManagerModel3DTilesExecutor) getModel3DTilesEngine(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	if !engine.IsUsable() {
-		return nil, errors.New("engine is not active")
+	if err := engineaccess.EnsureAvailable(engine); err != nil {
+		return nil, err
 	}
 	if engine.TenantID != nil && *engine.TenantID != tenantID {
 		return nil, ErrEngineAccessDenied

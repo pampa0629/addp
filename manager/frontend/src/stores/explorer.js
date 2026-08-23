@@ -1,5 +1,12 @@
 import { defineStore } from 'pinia'
-import { catalogRootTypeForEngine, engineRootLocator, parseLocator } from '@addp/common-frontend'
+import {
+  catalogRootTypeForEngine,
+  engineRootLocator,
+  engineSelectionState,
+  isEngineSelectable,
+  parseLocator,
+  withTransientRetry
+} from '@addp/common-frontend'
 import client from '@/api/client'
 import { dataExplorerAPI } from '@/api/dataExplorer'
 import { mergeAncestorChainIntoResourceTree } from '@/utils/tileCacheResourceTree'
@@ -8,6 +15,7 @@ const SCAN_RUN_POLL_INTERVAL_MS = 2000
 const ACTIVE_SCAN_STATUSES = new Set(['pending', 'running'])
 const SUCCESS_SCAN_STATUSES = new Set(['success'])
 const FAILED_SCAN_STATUSES = new Set(['failed', 'timeout', 'cancelled', 'canceled'])
+const engineLoadRequests = new WeakMap()
 
 /**
  * explorerStore - 数据探查状态管理
@@ -69,6 +77,8 @@ export const useExplorerStore = defineStore('explorer', {
         const rootType = catalogRootTypeForEngine(engine)
         const locator = engineRootLocator(engine)
         const tree = state.engineTrees[engine.id]
+        const engineState = engineSelectionState(engine)
+        const engineAvailable = isEngineSelectable(engine)
 
         if (tree) {
           return {
@@ -76,6 +86,9 @@ export const useExplorerStore = defineStore('explorer', {
             engineId: tree.engineId || engine.id,
             engineType: tree.engineType || engine.engine_type,
             engineName: tree.engineName || engine.name,
+            connectionStatus: engine.connection_status,
+            engineState,
+            engineAvailable,
             loaded: true,
             loading: Number(state.loadingEngineIds[engine.id] || 0) > 0
           }
@@ -89,6 +102,9 @@ export const useExplorerStore = defineStore('explorer', {
           engineId: engine.id,
           engineType: engine.engine_type,
           engineName: engine.name,
+          connectionStatus: engine.connection_status,
+          engineState,
+          engineAvailable,
           children: [],
           hasChildren: true,
           loaded: false,
@@ -152,6 +168,22 @@ export const useExplorerStore = defineStore('explorer', {
      */
     isLoadingEngine: (state) => {
       return (engineId) => Number(state.loadingEngineIds[engineId] || 0) > 0
+    },
+
+    engineById: (state) => {
+      return (engineId) => state.engines.find(engine => Number(engine.id) === Number(engineId)) || null
+    },
+
+    isEngineAvailable: (state) => {
+      return (engineId) => isEngineSelectable(
+        state.engines.find(engine => Number(engine.id) === Number(engineId)) || null
+      )
+    },
+
+    engineState: (state) => {
+      return (engineId) => engineSelectionState(
+        state.engines.find(engine => Number(engine.id) === Number(engineId)) || null
+      )
     }
   },
 
@@ -159,19 +191,43 @@ export const useExplorerStore = defineStore('explorer', {
     /**
      * 加载引擎列表
      */
-    async loadEngines() {
-      this.loadingEngines = true
-      try {
-        const response = await client.get('/manager/engines')
-        // API 客户端已经通过 extractData 提取了 response.data
-        // 后端返回 { data: engines }，这里的 response 就是 { data: engines }
-        this.engines = response.data || []
-      } catch (error) {
-        console.error('加载引擎列表失败:', error)
-        throw error
-      } finally {
-        this.loadingEngines = false
+    loadEngines(options = {}) {
+      const silent = options.silent === true
+      const activeRequest = engineLoadRequests.get(this)
+      if (activeRequest) {
+        if (!silent) {
+          activeRequest.visible = true
+          this.loadingEngines = true
+        }
+        return activeRequest.promise
       }
+      const request = { visible: !silent, promise: null }
+      if (!silent) {
+        this.loadingEngines = true
+      }
+      const operation = () => client.get('/manager/engines')
+      const task = withTransientRetry(operation)
+        .then(response => {
+          // API 客户端已经通过 extractData 提取了 response.data
+          // 后端返回 { data: engines }，这里的 response 就是 { data: engines }
+          this.engines = response.data || []
+          return this.engines
+        })
+        .catch(error => {
+          console.error('加载引擎列表失败:', error)
+          throw error
+        })
+        .finally(() => {
+          if (request.visible) {
+            this.loadingEngines = false
+          }
+          if (engineLoadRequests.get(this) === request) {
+            engineLoadRequests.delete(this)
+          }
+        })
+      request.promise = task
+      engineLoadRequests.set(this, request)
+      return task
     },
 
     /**
@@ -518,6 +574,13 @@ export const useExplorerStore = defineStore('explorer', {
     reset() {
       this.selectedLocator = null
       this.selectedNodeContext = null
+      this.clearPreview()
+    },
+
+    /**
+     * 清空依赖实时引擎访问的预览状态，同时保留当前资源树和选择身份。
+     */
+    clearPreview() {
       this.selectedChildName = ''
       this.selectedChildKey = ''
       this.selectedRefPath = ''

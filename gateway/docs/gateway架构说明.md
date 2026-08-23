@@ -228,10 +228,11 @@ Gateway 只保留一条模块路由主路径：System 使用配置中的 `SYSTEM
 
 ### 模块定义与运行实例
 
-System 使用两张表表达两类生命周期不同的事实：
+System 使用三张表表达生命周期不同的定义、实例与发现状态事实：
 
 - `system.module_definitions`：持久模块定义。`module_name`、路由前缀、管理员 `enabled` 状态和配置入口声明不会因进程离线而消失。
 - `system.module_runtime_instances`：临时运行实例。以 `(module_definition_id, instance_id)` 唯一标识一次进程实例，保存 `role`、端点、心跳与租约到期时间。
+- `system.module_registry_state`：模块路由拓扑修订号。只在可路由拓扑发生实际变化时递增；普通续租心跳不递增。
 
 该机制借鉴 Nacos 对 Service、Instance、enabled 和 healthy 的分离，但 ADDP 不依赖 Nacos 产品；System/PostgreSQL 是注册事实的唯一来源。`enabled` 表达管理员意图，`status + lease_expires_at` 表达实例运行状态，两者不得互相覆盖。
 
@@ -259,6 +260,7 @@ System 使用两张表表达两类生命周期不同的事实：
 4. System 定时检查到期租约
    - 租约默认 30 秒，实例每 10 秒续租
    - 到期实例标记为 down，模块定义仍然保留
+   - 正常退出的进程主动注销本次 instance_id；异常退出由租约到期收敛
 ```
 
 ### Gateway 动态路由流程
@@ -268,18 +270,19 @@ System 使用两张表表达两类生命周期不同的事实：
    - 使用 `SYSTEM_URL` 创建 System bootstrap 代理
    - 创建其他模块使用的 ModuleDiscovery 实例
    ↓
-2. 初始化模块列表
-   - 使用 Gateway Platform Service Access Token 调用 System API: GET /api/v1/system/runtime/modules?status=up
-   - 只获取 enabled=true 且至少存在一个有效 Backend 租约的模块
+2. 初始化模块路由快照
+   - 使用 Gateway Platform Service Access Token 调用 System API: GET /api/v1/system/runtime/modules/watch?revision=0
+   - 获取 registry revision，以及 enabled=true 且至少存在一个有效 Backend 租约的完整模块快照
    ↓
 3. 构建动态路由映射
    - 只从 role=backend、status=up、租约未到期的实例中构建 Backend 池
    - Backend 池按 instance_id 稳定排序，并为每个实例维护独立 ServiceProxy
    - 存储模块信息：map[module_name]*ModuleInfo
    ↓
-4. 启动定时刷新任务
-   - 定期刷新模块列表（MODULE_REFRESH_INTERVAL，默认 30 秒）
-   - 检测模块变更：
+4. 持续 revision 长轮询
+   - 以当前 revision 调用 watch API；拓扑变化时 System 立即返回
+   - `MODULE_WATCH_TIMEOUT`（默认 10 秒）到期时，即使 revision 未变化也返回新鲜完整快照，以更新 Gateway 持有的租约投影
+   - 原子应用模块快照：
      - 新增模块 → 创建新代理
      - 可路由 Backend 实例变化 → 原子替换 Backend 池并复用端点未变化的代理
      - 模块被禁用或无可路由 Backend → 删除 Backend 池
@@ -305,14 +308,14 @@ System 使用两张表表达两类生命周期不同的事实：
 | **健康监控** | 通过心跳机制实时监控模块状态，及时发现服务故障 |
 | **多实例路由** | 同一模块可登记多个 Backend/Worker/Scheduler 实例；所有有效 Backend 按请求轮询参与流量，Worker/Scheduler 仅观测 |
 | **灰度发布基础** | 未来可支持同一模块的多个版本（v1/v2），通过 metadata 控制流量分配 |
-| **配置热更新** | 模块 URL 变更无需重启 Gateway，定时刷新自动生效 |
+| **配置热更新** | 模块 URL 变更无需重启 Gateway，注册表修订号变化后立即生效 |
 
 ### 配置示例
 
 **System bootstrap 与动态路由**（`.env`）：
 ```bash
 SYSTEM_URL=http://localhost:8180    # System bootstrap 唯一目标
-MODULE_REFRESH_INTERVAL=30s         # 刷新间隔（默认 30 秒）
+MODULE_WATCH_TIMEOUT=10s            # revision 长轮询超时（默认 10 秒）
 ```
 
 ## 路由规则

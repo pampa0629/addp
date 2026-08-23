@@ -1234,102 +1234,6 @@ const docTemplate = `{
                 ]
             }
         },
-        "/modules": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Monitor"
-                ],
-                "summary": "获取模块列表 | Get module list",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "monitor.health.read"
-                ]
-            }
-        },
-        "/modules/health/all": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Monitor"
-                ],
-                "summary": "检查所有模块健康状态 | Check all modules health",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "monitor.health.read"
-                ]
-            }
-        },
-        "/modules/{module}/health": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Monitor"
-                ],
-                "summary": "检查模块健康状态 | Check module health",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "模块名 | Module",
-                        "name": "module",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "monitor.health.read"
-                ]
-            }
-        },
         "/providers/health": {
             "get": {
                 "security": [
@@ -1337,7 +1241,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "从 System 读取启用 TaskProvider，并探测模块 /health 与标准 GET /tasks?task_type= endpoint。| Read enabled TaskProviders from System and probe module /health plus standard GET /tasks?task_type= endpoints.",
+                "description": "从 System 读取启用 TaskProvider 及其当前有效 Backend 实例池，逐实例探测模块 /health 与标准 GET /tasks?task_type= endpoint，并聚合 Provider 状态。| Read enabled TaskProviders and their currently valid Backend instance pools from System, probe module /health plus standard GET /tasks?task_type= endpoints per instance, and aggregate Provider status.",
                 "produces": [
                     "application/json"
                 ],
@@ -1375,7 +1279,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "从 System 读取指定 TaskProvider，并探测模块 /health 与标准 GET /tasks?task_type= endpoint。| Read a TaskProvider from System and probe module /health plus standard GET /tasks?task_type= endpoints.",
+                "description": "从 System 读取指定 TaskProvider 及其当前有效 Backend 实例池，逐实例探测模块 /health 与标准 GET /tasks?task_type= endpoint，并聚合 Provider 状态。| Read the TaskProvider and its currently valid Backend instance pool from System, probe module /health plus standard GET /tasks?task_type= endpoints per instance, and aggregate Provider status.",
                 "produces": [
                     "application/json"
                 ],
@@ -2811,6 +2715,35 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_monitor_internal_service.ProviderBackendHealthStatus": {
+            "type": "object",
+            "properties": {
+                "base_url": {
+                    "type": "string"
+                },
+                "instance_id": {
+                    "type": "string"
+                },
+                "lease_expires_at": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "module_health": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.HealthStatus"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "task_discovery": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProviderTaskDiscoveryCheck"
+                    }
+                }
+            }
+        },
         "github_com_addp_monitor_internal_service.ProviderCapabilitiesStatus": {
             "type": "object",
             "properties": {
@@ -2834,8 +2767,14 @@ const docTemplate = `{
         "github_com_addp_monitor_internal_service.ProviderHealthStatus": {
             "type": "object",
             "properties": {
-                "base_url": {
-                    "type": "string"
+                "available": {
+                    "type": "boolean"
+                },
+                "backends": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProviderBackendHealthStatus"
+                    }
                 },
                 "capabilities": {
                     "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProviderCapabilitiesStatus"
@@ -2852,17 +2791,8 @@ const docTemplate = `{
                 "module": {
                     "type": "string"
                 },
-                "module_health": {
-                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.HealthStatus"
-                },
                 "status": {
                     "type": "string"
-                },
-                "task_discovery": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProviderTaskDiscoveryCheck"
-                    }
                 }
             }
         },
@@ -3834,9 +3764,14 @@ const docTemplate = `{
         "models.TaskProvider": {
             "type": "object",
             "properties": {
-                "base_url": {
-                    "description": "API 配置",
-                    "type": "string"
+                "available": {
+                    "type": "boolean"
+                },
+                "backends": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.TaskProviderBackend"
+                    }
                 },
                 "capabilities": {
                     "description": "能力描述（JSON 格式，含 task.capabilities/v2、task_capabilities 等）",
@@ -3853,16 +3788,17 @@ const docTemplate = `{
                     "description": "显示名称",
                     "type": "string"
                 },
+                "enabled": {
+                    "type": "boolean"
+                },
                 "id": {
                     "type": "integer"
                 },
-                "is_enabled": {
-                    "description": "状态",
-                    "type": "boolean"
-                },
                 "module_name": {
-                    "description": "'transfer', 'meta', 'develop', 'manager'",
                     "type": "string"
+                },
+                "module_version": {
+                    "type": "integer"
                 },
                 "task_cancel_endpoint": {
                     "description": "任务取消端点",
@@ -3884,7 +3820,24 @@ const docTemplate = `{
                     "description": "任务状态端点",
                     "type": "string"
                 },
+                "unavailable_reason": {
+                    "type": "string"
+                },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.TaskProviderBackend": {
+            "type": "object",
+            "properties": {
+                "base_url": {
+                    "type": "string"
+                },
+                "instance_id": {
+                    "type": "string"
+                },
+                "lease_expires_at": {
                     "type": "string"
                 }
             }

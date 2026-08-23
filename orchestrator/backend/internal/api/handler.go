@@ -620,12 +620,12 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 	}
 
 	// 2. 构建目标 URL
-	if provider.BaseURL == "" || provider.TaskListEndpoint == "" {
+	if provider.ResolvedBaseURL == "" || provider.TaskListEndpoint == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, "orchestrator.error.provider_not_configured")})
 		return
 	}
 
-	targetURL := provider.BaseURL + provider.TaskListEndpoint
+	targetURL := provider.ResolvedBaseURL + provider.TaskListEndpoint
 
 	// 3. 传递请求中的查询参数（page, page_size, task_type 等）
 	queryParams := url.Values{}

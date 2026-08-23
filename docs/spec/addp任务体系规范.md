@@ -605,8 +605,11 @@ TaskProvider 按模块声明，不按任务类型注册。一个模块只有一�
 | `display_name` | 展示名称 |
 | `description` | 描述 |
 | `available` | 是否存在 `enabled + backend + up + lease valid` 的可调用实例 |
-| `base_url` | System 在读取时从当前有效 Backend 实例解析的临时调用地址；声明和数据库均不保存 |
-| `backend_instance_id` | 本次解析到的 Backend 运行实例 ID；不可用时为空 |
+| `unavailable_reason` | 不可用原因；当前为 `module_disabled` 或 `no_valid_backend`，可用时为空 |
+| `backends[]` | System 在读取时从当前有效 Backend 租约生成的临时端点池；声明和数据库均不保存，按 `instance_id` 稳定排序 |
+| `backends[].instance_id` | Backend 运行实例 ID |
+| `backends[].base_url` | Backend 实例临时调用地址 |
+| `backends[].lease_expires_at` | Backend 实例当前租约到期时间 |
 | `task_list_endpoint` | 任务列表 endpoint |
 | `task_detail_endpoint` | 任务详情 endpoint |
 | `task_execute_endpoint` | 任务执行 endpoint |
@@ -798,7 +801,7 @@ HTTP 状态码表达错误类型，响应体不得重复携带 `status=error`。
 8. Orchestrator Step 参数编辑必须以具体任务详情的 `execution_contract` 为唯一能力来源。闭合对象中声明的标量字段渲染为结构化控件，资源引用按 `input_ui_schema` 渲染资源选择器；每个输入可选择使用“工作流配置”、在当前 Step 中“执行时指定”或引用显式依赖的“上游输出”。“工作流配置”表示不提交覆盖字段，执行时读取 owner 任务定义中已保存的当前值；“执行时指定”表示 Step 保存显式覆盖值，但不改写 owner 任务定义。编排画布必须按 `input_schema + input_ui_schema` 生成逻辑输入端口，按 `output_schema` 生成稳定输出端口；资源对象只生成一个逻辑端口，不得把 locator 或自动派生的 geometry 字段拆成用户端口。连接输出端口与输入端口时必须校验类型和环路，原子地写入上游输出绑定并补充 `depends_on`；参数表单和画布连线必须双向同步。资源参数摘要必须展示引擎实例名称、按引擎原生风格格式化的资源路径和本地化资源类型，不得展示 Engine ID 或 `addp://` locator；展示事实不得写回执行参数。资源选择结果已经声明 geometry 字段时，单字段必须自动选中，多字段只能从识别结果中选择，不得要求用户自由输入字段名。闭合空对象不显示参数编辑；不得按 provider 或 task type 硬编码表单能力，也不得保留整份任意 JSON 作为旁路。
 9. `supports_inline_execution` 在 `task.capabilities/v2` 中必须为 `false`。内联执行需要新的 endpoint、执行配置 schema 和 Orchestrator Step 模型，必须作为后续专题设计，不得只通过 capabilities 布尔值打开。
 10. `supports_cancel` 与 `task_cancel_endpoint` 必须双向一致：任一任务类型声明 `supports_cancel=true` 时 provider 必须注册标准取消 endpoint；没有任务类型支持取消时 provider 不得注册 `task_cancel_endpoint`。模块内部已有取消 API 不等于 TaskProvider 标准取消能力。
-11. Orchestrator 可以按 `module_version` 缓存纯 capabilities 解析结果，但每次任务发现、详情读取、执行提交和状态回查前都必须向 System 解析当前 Provider 可用性和 Backend 地址；不得缓存 `available`、`base_url` 或 `backend_instance_id`，也不得在模块离线后继续调用旧地址。
+11. Orchestrator 可以按 `module_version` 缓存纯 capabilities 解析结果，但每次任务发现、详情读取、执行提交和状态回查前都必须向 System 获取当前 Provider 可用性与 `backends[]`，并从有效端点池中按稳定轮询选择一个实例；不得缓存 `available`、`backends[]` 或已解析的单个地址，也不得在模块离线后继续调用旧地址。非幂等执行 POST 只能发送一次，失败后不得自动换实例重放；后续只读状态回查可以重新解析实例。
 12. `create_url` / `edit_url` 应使用 Console 路由形式，可包含模块内深层路径和 query，例如 `/transfer/tasks/:id/edit`、`/develop/workflow?action=edit&id=:id`、`/graph/graphs/:graph_id/build/tasks/:id`；前端负责替换 `:id` / `{id}` / `:task_id` / `{task_id}` / `:graph_id` / `{graph_id}`。地址栏同步、canonical 参数和浏览器历史必须同时遵守 `docs/spec/addp前端路由与可恢复状态规范.md`。
 13. 模块新增或删除任务类型时，必须更新自身 capabilities、文档和 Swagger；修改任务级输入/输出契约时必须同步任务详情和执行入口测试。
 14. `deprecated=true` 的 task type 不再作为可用任务类型处理。Orchestrator 保存和执行编排时都必须拒绝引用 deprecated task type；ADDP 当前不为废弃任务类型保留兼容迁移路径。历史 execution 查询只按既有 execution 记录展示，不要求 owner 继续提供可编辑任务定义入口。
@@ -931,16 +934,16 @@ provider health 至少检查以下内容：
 | --- | --- | --- |
 | registration | System `module_definitions.task_provider` | 模块是否声明 provider 并具备基础 endpoint。 |
 | capabilities | System `module_definitions.task_provider.capabilities` | JSON 是否可解析、`schema_version` 是否为 `task.capabilities/v2`、`task_capabilities[]` 是否非空。 |
-| module_health | `provider.base_url + /health` | 模块进程是否可访问。 |
-| task_discovery | `provider.base_url + task_list_endpoint + ?task_type=` | 每个未 deprecated task type 的标准任务发现 endpoint 是否可访问，且响应体必须是标准任务列表对象，包含 `items`、`total`、`page`、`page_size`。 |
+| backend_health | 每个 `provider.backends[].base_url + /health` | 当前有效端点池中的每个 Backend 实例是否可访问。 |
+| task_discovery | 每个 `provider.backends[].base_url + task_list_endpoint + ?task_type=` | 每个 Backend 实例上、每个未 deprecated task type 的标准任务发现 endpoint 是否可访问，且响应体必须是标准任务列表对象，包含 `items`、`total`、`page`、`page_size`。 |
 
-System 返回 `available=false` 时，Monitor 直接判定 Provider `down`，不对空地址发起探测；`available=true` 时才继续以下健康检查。provider health 状态只使用：
+System 返回 `available=false` 或空 `backends[]` 时，Monitor 直接判定 Provider `down`，不对空地址发起探测；`available=true` 时逐个检查当前端点池，再聚合 Provider 状态。provider health 状态只使用：
 
 | 状态 | 说明 |
 | --- | --- |
-| `up` | 所有检查通过。 |
-| `degraded` | provider 已注册，但 capabilities 非法、部分 task type 发现失败，或模块健康与任务发现状态不一致。 |
-| `down` | 模块 `/health` 不可访问，或所有可用 task type 发现都失败。 |
+| `up` | 所有 Backend 实例的全部检查通过。 |
+| `degraded` | capabilities 非法，或部分 Backend 实例 / task type 检查失败。 |
+| `down` | 没有有效 Backend 租约，或全部 Backend 实例不可访问 / 任务发现全部失败。 |
 | `unknown` | 无可检查 task type，或 System 注册信息暂时无法获取。 |
 
 Monitor 探测任务发现时只发送 `GET` 请求，不读取 owner 私有表，不触发执行，不创建 execution。deprecated task type 不作为可用任务类型处理，不进入健康失败统计。

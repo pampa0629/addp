@@ -13,15 +13,15 @@ import (
 
 // ModuleDiscovery 模块发现管理器
 type ModuleDiscovery struct {
-	systemClient  moduleLister
-	modules       map[string]*client.ModuleInfo // moduleName -> ModuleInfo
-	backendPools  map[string][]moduleBackend
-	nextBackend   map[string]uint64
-	mu            sync.RWMutex
-	refreshTicker *time.Ticker
-	ctx           context.Context
-	cancel        context.CancelFunc
-	now           func() time.Time
+	systemClient moduleWatcher
+	modules      map[string]*client.ModuleInfo // moduleName -> ModuleInfo
+	backendPools map[string][]moduleBackend
+	nextBackend  map[string]uint64
+	revision     int64
+	mu           sync.RWMutex
+	ctx          context.Context
+	cancel       context.CancelFunc
+	now          func() time.Time
 }
 
 type moduleBackend struct {
@@ -31,12 +31,12 @@ type moduleBackend struct {
 	proxy          *proxy.ServiceProxy
 }
 
-type moduleLister interface {
-	GetModules() ([]*client.ModuleInfo, error)
+type moduleWatcher interface {
+	WatchModules(ctx context.Context, revision int64, wait time.Duration) (*client.ModuleRoutingSnapshot, error)
 }
 
 // NewModuleDiscovery 创建模块发现管理器
-func NewModuleDiscovery(systemClient moduleLister) *ModuleDiscovery {
+func NewModuleDiscovery(systemClient moduleWatcher) *ModuleDiscovery {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &ModuleDiscovery{
@@ -50,23 +50,13 @@ func NewModuleDiscovery(systemClient moduleLister) *ModuleDiscovery {
 	}
 }
 
-// Start 启动模块发现（加载模块列表并定期刷新）
-func (md *ModuleDiscovery) Start(refreshInterval time.Duration) error {
-	initialErr := md.refreshModules()
-	md.refreshTicker = time.NewTicker(refreshInterval)
-	go func() {
-		for {
-			select {
-			case <-md.ctx.Done():
-				return
-			case <-md.refreshTicker.C:
-				if err := md.refreshModules(); err != nil {
-					// 日志记录错误，但不中断服务
-					fmt.Printf("刷新模块列表失败: %v\n", err)
-				}
-			}
-		}
-	}()
+// Start 启动模块发现：先获取完整快照，再持续通过 revision 长轮询收敛。
+func (md *ModuleDiscovery) Start(watchTimeout time.Duration) error {
+	if watchTimeout <= 0 {
+		watchTimeout = 10 * time.Second
+	}
+	initialErr := md.refreshModules(0)
+	go md.watchLoop(watchTimeout)
 
 	if initialErr != nil {
 		return fmt.Errorf("初始化模块列表失败: %w", initialErr)
@@ -76,19 +66,40 @@ func (md *ModuleDiscovery) Start(refreshInterval time.Duration) error {
 
 // Stop 停止模块发现
 func (md *ModuleDiscovery) Stop() {
-	if md.refreshTicker != nil {
-		md.refreshTicker.Stop()
-	}
 	md.cancel()
 }
 
-// refreshModules 从 System 获取模块列表并更新代理
-func (md *ModuleDiscovery) refreshModules() error {
-	// 获取所有活跃模块
-	modules, err := md.systemClient.GetModules()
+func (md *ModuleDiscovery) watchLoop(watchTimeout time.Duration) {
+	for {
+		if err := md.refreshModules(watchTimeout); err != nil {
+			if md.ctx.Err() != nil {
+				return
+			}
+			fmt.Printf("监听模块路由快照失败: %v\n", err)
+			timer := time.NewTimer(500 * time.Millisecond)
+			select {
+			case <-md.ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+		}
+	}
+}
+
+// refreshModules 从 System 获取完整路由快照并原子更新代理。
+func (md *ModuleDiscovery) refreshModules(wait time.Duration) error {
+	md.mu.RLock()
+	revision := md.revision
+	md.mu.RUnlock()
+	snapshot, err := md.systemClient.WatchModules(md.ctx, revision, wait)
 	if err != nil {
 		return err
 	}
+	if snapshot == nil {
+		return fmt.Errorf("System 返回空模块路由快照")
+	}
+	modules := snapshot.Modules
 
 	md.mu.Lock()
 	defer md.mu.Unlock()
@@ -130,8 +141,9 @@ func (md *ModuleDiscovery) refreshModules() error {
 
 	md.modules = newModules
 	md.backendPools = newBackendPools
+	md.revision = snapshot.Revision
 
-	fmt.Printf("模块列表已刷新: %d 个活跃模块\n", len(md.modules))
+	fmt.Printf("模块路由快照已应用: revision=%d, active_modules=%d\n", md.revision, len(md.modules))
 	return nil
 }
 

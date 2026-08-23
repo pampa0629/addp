@@ -24,6 +24,8 @@ type ModuleRegistryService struct {
 	leaseDuration time.Duration
 }
 
+const moduleRegistryWatchPollInterval = 250 * time.Millisecond
+
 func NewModuleRegistryService(repo *repository.ModuleRegistryRepository) *ModuleRegistryService {
 	return &ModuleRegistryService{repo: repo, leaseDuration: models.ModuleRuntimeLeaseDuration}
 }
@@ -58,7 +60,7 @@ func (s *ModuleRegistryService) Register(req *models.ModuleRegistrationRequest) 
 	if err := taskprovider.ValidateDeclaration(req.TaskProvider); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidModuleRegistration, err)
 	}
-	if err := s.repo.Register(req, s.leaseDuration); err != nil {
+	if _, err := s.repo.Register(req, s.leaseDuration); err != nil {
 		logger.L().Error("模块运行实例注册失败", "module", req.ModuleName, "instance_id", req.InstanceID, "error", err)
 		return err
 	}
@@ -70,7 +72,7 @@ func (s *ModuleRegistryService) SendHeartbeat(moduleName, instanceID string) err
 	if strings.TrimSpace(moduleName) == "" || strings.TrimSpace(instanceID) == "" {
 		return fmt.Errorf("module_name and instance_id are required")
 	}
-	if err := s.repo.UpdateHeartbeat(moduleName, instanceID, s.leaseDuration); err != nil {
+	if _, err := s.repo.UpdateHeartbeat(moduleName, instanceID, s.leaseDuration); err != nil {
 		logger.L().Error("模块运行实例心跳更新失败", "module", moduleName, "instance_id", instanceID, "error", err)
 		return err
 	}
@@ -94,7 +96,7 @@ func (s *ModuleRegistryService) UpdateModuleDefinition(moduleName string, req *m
 	if moduleName == "" || req == nil || req.Enabled == nil || req.Version < 1 {
 		return nil, fmt.Errorf("%w: enabled and positive version are required", ErrInvalidModuleRegistration)
 	}
-	definition, err := s.repo.UpdateEnabled(moduleName, *req.Enabled, req.Version)
+	definition, _, err := s.repo.UpdateEnabled(moduleName, *req.Enabled, req.Version)
 	if errors.Is(err, repository.ErrModuleDefinitionVersionConflict) {
 		return nil, ErrModuleDefinitionVersionConflict
 	}
@@ -107,6 +109,57 @@ func (s *ModuleRegistryService) UpdateModuleDefinition(moduleName string, req *m
 // ListActiveModules 只返回已启用且至少有一个租约有效 Backend 实例的模块。
 func (s *ModuleRegistryService) ListActiveModules() ([]*models.ModuleInfo, error) {
 	return s.listModules(true)
+}
+
+// WatchRoutingSnapshot 在拓扑 revision 变化或等待超时后返回完整的新鲜路由快照。
+// 超时返回同一 revision 的快照是协议的一部分，用于续新 Gateway 持有的租约投影。
+func (s *ModuleRegistryService) WatchRoutingSnapshot(ctx context.Context, afterRevision int64, wait time.Duration) (*models.ModuleRoutingSnapshot, error) {
+	if afterRevision < 0 || wait < 0 {
+		return nil, fmt.Errorf("%w: revision and wait must not be negative", ErrInvalidModuleRegistration)
+	}
+	deadline := time.NewTimer(wait)
+	defer deadline.Stop()
+	ticker := time.NewTicker(moduleRegistryWatchPollInterval)
+	defer ticker.Stop()
+
+	for {
+		revision, err := s.repo.GetRegistryRevision()
+		if err != nil {
+			return nil, err
+		}
+		if revision != afterRevision || wait == 0 {
+			return s.routingSnapshot(revision)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-deadline.C:
+			revision, err = s.repo.GetRegistryRevision()
+			if err != nil {
+				return nil, err
+			}
+			return s.routingSnapshot(revision)
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *ModuleRegistryService) routingSnapshot(revision int64) (*models.ModuleRoutingSnapshot, error) {
+	modules, err := s.ListActiveModules()
+	if err != nil {
+		return nil, err
+	}
+	return &models.ModuleRoutingSnapshot{Revision: revision, Modules: modules, ObservedAt: time.Now()}, nil
+}
+
+func (s *ModuleRegistryService) Deregister(moduleName, instanceID string) error {
+	moduleName = strings.TrimSpace(moduleName)
+	instanceID = strings.TrimSpace(instanceID)
+	if moduleName == "" || instanceID == "" {
+		return fmt.Errorf("%w: module_name and instance_id are required", ErrInvalidModuleRegistration)
+	}
+	_, err := s.repo.Deregister(moduleName, instanceID)
+	return err
 }
 
 func (s *ModuleRegistryService) listModules(activeOnly bool) ([]*models.ModuleInfo, error) {
@@ -179,7 +232,7 @@ func (s *ModuleRegistryService) StartCleanupTask(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case now := <-ticker.C:
-			if err := s.repo.MarkStaleModules(now); err != nil {
+			if _, err := s.repo.MarkStaleModules(now); err != nil {
 				logger.L().Error("标记超时模块运行实例失败", "error", err)
 			}
 		}

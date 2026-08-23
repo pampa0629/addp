@@ -8,6 +8,7 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	"github.com/addp/common/middleware/auth"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -31,6 +32,7 @@ func NewExportHandler(exportService *service.ExportService) *ExportHandler {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Failure 503 {object} map[string]interface{} "引擎不可用 | Engine unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.create"]
 // @Router /exports [post]
@@ -126,6 +128,8 @@ func parseExportSessionID(c *gin.Context) (uint, bool) {
 
 func exportError(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, engineaccess.ErrUnavailable):
+		engineUnavailable(c)
 	case errors.Is(err, service.ErrEngineAccessDenied):
 		accessDeniedToEngine(c)
 	case errors.Is(err, service.ErrExportSessionNotFound):

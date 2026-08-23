@@ -171,6 +171,11 @@ func (c *SystemServiceClient) RegisterModule(ctx context.Context, request *Modul
 	return c.doPlatformJSON(ctx, http.MethodPost, "/api/v1/system/runtime/modules", request, nil)
 }
 
+func (c *SystemServiceClient) DeregisterModule(ctx context.Context, moduleName, instanceID string) error {
+	path := fmt.Sprintf("/api/v1/system/runtime/modules/%s/instances/%s", url.PathEscape(moduleName), url.PathEscape(instanceID))
+	return c.doPlatformJSON(ctx, http.MethodDelete, path, nil, nil)
+}
+
 // RegisterRuntimeEngine registers or updates one platform runtime Engine Instance.
 // Runtime processes call this only after their own HTTP server is ready to accept probes.
 func (c *SystemServiceClient) RegisterRuntimeEngine(ctx context.Context, request *models.CapabilityRegistrationRequest) error {
@@ -264,6 +269,19 @@ func (c *SystemServiceClient) ListActiveModules(ctx context.Context) ([]*ModuleI
 	return c.listModules(ctx, "/api/v1/system/runtime/modules?status=up")
 }
 
+func (c *SystemServiceClient) WatchActiveModules(ctx context.Context, revision int64, wait time.Duration) (*ModuleRoutingSnapshot, error) {
+	waitSeconds := int(wait / time.Second)
+	if wait > 0 && waitSeconds == 0 {
+		waitSeconds = 1
+	}
+	path := fmt.Sprintf("/api/v1/system/runtime/modules/watch?revision=%d&wait_seconds=%d", revision, waitSeconds)
+	var snapshot ModuleRoutingSnapshot
+	if err := c.doPlatformJSON(ctx, http.MethodGet, path, nil, &snapshot); err != nil {
+		return nil, err
+	}
+	return &snapshot, nil
+}
+
 func (c *SystemServiceClient) listModules(ctx context.Context, path string) ([]*ModuleInfo, error) {
 	var response struct {
 		Modules []*ModuleInfo `json:"modules"`
@@ -307,9 +325,28 @@ func (c *SystemServiceClient) RegisterAndHeartbeatWithMetadata(
 }
 
 func (c *SystemServiceClient) RegisterAndHeartbeat(ctx context.Context, request *ModuleRegistrationRequest) {
+	c.registerAndHeartbeat(ctx, request, time.Second, 10*time.Second, 10*time.Second)
+}
+
+func (c *SystemServiceClient) registerAndHeartbeat(
+	ctx context.Context,
+	request *ModuleRegistrationRequest,
+	initialRetryInterval time.Duration,
+	maxRetryInterval time.Duration,
+	heartbeatInterval time.Duration,
+) {
 	go func() {
 		if request == nil {
 			return
+		}
+		if initialRetryInterval <= 0 {
+			initialRetryInterval = time.Second
+		}
+		if maxRetryInterval < initialRetryInterval {
+			maxRetryInterval = initialRetryInterval
+		}
+		if heartbeatInterval <= 0 {
+			heartbeatInterval = 10 * time.Second
 		}
 		registration := *request
 		if strings.TrimSpace(registration.InstanceID) == "" {
@@ -331,36 +368,43 @@ func (c *SystemServiceClient) RegisterAndHeartbeat(ctx context.Context, request 
 		}
 
 		registered := false
-		for attempt := 1; attempt <= 3 && !registered; attempt++ {
-			registered = register()
+		retryInterval := initialRetryInterval
+		for {
 			if !registered {
+				registered = register()
+				if registered {
+					retryInterval = initialRetryInterval
+					continue
+				}
+				timer := time.NewTimer(retryInterval)
 				select {
 				case <-ctx.Done():
+					timer.Stop()
 					return
-				case <-time.After(time.Duration(attempt*5) * time.Second):
+				case <-timer.C:
 				}
+				retryInterval *= 2
+				if retryInterval > maxRetryInterval {
+					retryInterval = maxRetryInterval
+				}
+				continue
 			}
-		}
 
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		consecutiveFailures := 0
-		for {
+			timer := time.NewTimer(heartbeatInterval)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
+				shutdownContext, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				if err := c.DeregisterModule(shutdownContext, registration.ModuleName, registration.InstanceID); err != nil {
+					log.Printf("%s module deregistration failed: %v", registration.ModuleName, err)
+				}
+				cancel()
 				return
-			case <-ticker.C:
-				if err := c.SendModuleHeartbeat(ctx, registration.ModuleName, registration.InstanceID); err != nil {
-					consecutiveFailures++
-					log.Printf("%s module heartbeat failed: %v", registration.ModuleName, err)
-				} else {
-					registered = true
-					consecutiveFailures = 0
-				}
-				if consecutiveFailures >= 3 {
-					registered = register()
-					consecutiveFailures = 0
-				}
+			case <-timer.C:
+			}
+			if err := c.SendModuleHeartbeat(ctx, registration.ModuleName, registration.InstanceID); err != nil {
+				log.Printf("%s module heartbeat failed, re-registering immediately: %v", registration.ModuleName, err)
+				registered = false
 			}
 		}
 	}()

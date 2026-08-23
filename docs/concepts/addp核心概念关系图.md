@@ -98,7 +98,7 @@ mindmap
         Workflow → 工作流编辑器
         Notebook 开发 → Notebook编辑器
     任务编排
-      任务库动态注册
+      TaskProvider 模块角色声明与动态发现
       任务编排流 vs 算子工作流
       DAG 依赖管理
       定时调度

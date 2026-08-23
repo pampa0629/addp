@@ -15,6 +15,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	rastercogref "github.com/addp/manager/internal/cog"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/minio/minio-go/v7"
 )
 
@@ -202,8 +203,8 @@ func (e *ManagerPointCloudCOPCExecutor) prepareSourceAccess(ctx context.Context,
 	if err != nil {
 		return workflowaccess.Access{}, nil, fmt.Errorf("get source engine: %w", err)
 	}
-	if !engine.IsUsable() {
-		return workflowaccess.Access{}, nil, errors.New("source engine is not active")
+	if err := engineaccess.EnsureAvailable(engine); err != nil {
+		return workflowaccess.Access{}, nil, err
 	}
 	if engine.TenantID != nil && *engine.TenantID != tenantID {
 		return workflowaccess.Access{}, nil, ErrEngineAccessDenied

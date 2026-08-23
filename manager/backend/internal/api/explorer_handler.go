@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/logger"
 	manageri18n "github.com/addp/manager/i18n"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/preview"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -69,6 +70,7 @@ func bearerToken(c *gin.Context) string {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
+// @Failure 503 {object} map[string]interface{} "引擎不可用 | Engine unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.data_item.read"]
 // @Router /preview [get]
@@ -111,6 +113,10 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	// 调用 PreviewResolver
 	result, err := h.previewResolver.PreviewFromURIWithSelection(c.Request.Context(), locatorURI, page, pageSize, childName, refPath, nestedChildPath, graphSample, tenantID)
 	if err != nil {
+		if errors.Is(err, engineaccess.ErrUnavailable) {
+			engineUnavailable(c)
+			return
+		}
 		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
 			accessDeniedToEngine(c)
 			return
@@ -149,6 +155,7 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "缺少已扫描的数据项事实 | Scanned item facts not found"
+// @Failure 503 {object} map[string]interface{} "引擎不可用 | Engine unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.data_item.read"]
 // @Router /resource-facts [get]
@@ -161,6 +168,10 @@ func (h *ExplorerHandler) ResourceFacts(c *gin.Context) {
 	}
 	facts, err := h.previewResolver.ResourceFactsFromURI(c.Request.Context(), locatorURI, tenantIDFromContext(c))
 	if err != nil {
+		if errors.Is(err, engineaccess.ErrUnavailable) {
+			engineUnavailable(c)
+			return
+		}
 		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
 			accessDeniedToEngine(c)
 			return
@@ -287,6 +298,10 @@ func (h *ExplorerHandler) StorageStream(c *gin.Context) {
 		tenantID,
 	)
 	if err != nil {
+		if errors.Is(err, engineaccess.ErrUnavailable) {
+			engineUnavailable(c)
+			return
+		}
 		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
 			accessDeniedToEngine(c)
 			return

@@ -210,7 +210,3 @@ func (d *EngineRuntimeDescriptor) AsEngine() *Engine {
 		ConnectionInfo: connectionInfo,
 	}
 }
-
-func (e *Engine) IsUsable() bool {
-	return e != nil && e.LifecycleState == EngineLifecycleActive
-}

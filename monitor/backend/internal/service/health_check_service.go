@@ -36,13 +36,6 @@ func NewHealthCheckService(systemClient taskProviderLister, tokenSource commonCl
 	}
 }
 
-// ModuleInfo 模块信息
-type ModuleInfo struct {
-	Name    string `json:"name"`
-	BaseURL string `json:"base_url"`
-	Status  string `json:"status"`
-}
-
 // HealthStatus 健康状态
 type HealthStatus struct {
 	Module  string `json:"module"`
@@ -53,16 +46,25 @@ type HealthStatus struct {
 
 // ProviderHealthStatus 是 Monitor 对 TaskProvider 运行态契约的即时观测结果。
 type ProviderHealthStatus struct {
-	Module        string                        `json:"module"`
-	DisplayName   string                        `json:"display_name"`
-	BaseURL       string                        `json:"base_url"`
-	Available     bool                          `json:"available"`
-	Status        string                        `json:"status"`
-	Message       string                        `json:"message,omitempty"`
-	ModuleHealth  *HealthStatus                 `json:"module_health"`
-	Capabilities  *ProviderCapabilitiesStatus   `json:"capabilities"`
-	TaskDiscovery []*ProviderTaskDiscoveryCheck `json:"task_discovery"`
-	CheckedAt     time.Time                     `json:"checked_at"`
+	Module       string                         `json:"module"`
+	DisplayName  string                         `json:"display_name"`
+	Available    bool                           `json:"available"`
+	Status       string                         `json:"status"`
+	Message      string                         `json:"message,omitempty"`
+	Capabilities *ProviderCapabilitiesStatus    `json:"capabilities"`
+	Backends     []*ProviderBackendHealthStatus `json:"backends"`
+	CheckedAt    time.Time                      `json:"checked_at"`
+}
+
+// ProviderBackendHealthStatus 是一个 TaskProvider Backend 实例的即时探活结果。
+type ProviderBackendHealthStatus struct {
+	InstanceID     string                        `json:"instance_id"`
+	BaseURL        string                        `json:"base_url"`
+	LeaseExpiresAt time.Time                     `json:"lease_expires_at"`
+	Status         string                        `json:"status"`
+	Message        string                        `json:"message,omitempty"`
+	ModuleHealth   *HealthStatus                 `json:"module_health"`
+	TaskDiscovery  []*ProviderTaskDiscoveryCheck `json:"task_discovery"`
 }
 
 type ProviderCapabilitiesStatus struct {
@@ -84,27 +86,6 @@ type ProviderTaskDiscoveryCheck struct {
 	StatusCode int    `json:"status_code,omitempty"`
 	Latency    int64  `json:"latency"`
 	Message    string `json:"message,omitempty"`
-}
-
-// GetModules 获取所有声明 TaskProvider 角色的模块。
-func (s *HealthCheckService) GetModules(ctx context.Context) ([]*ModuleInfo, error) {
-	// 从 System 获取任务提供者列表
-	providers, err := s.systemClient.ListTaskProviders()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get task providers: %w", err)
-	}
-
-	// 转换为模块信息
-	modules := make([]*ModuleInfo, 0, len(providers))
-	for _, provider := range providers {
-		modules = append(modules, &ModuleInfo{
-			Name:    provider.ModuleName,
-			BaseURL: provider.BaseURL,
-			Status:  "unknown",
-		})
-	}
-
-	return modules, nil
 }
 
 // ListTaskProviders 获取 System 中已启用的 TaskProvider。
@@ -148,29 +129,65 @@ func (s *HealthCheckService) checkProviderHealth(ctx context.Context, provider *
 	result := &ProviderHealthStatus{
 		Module:      provider.ModuleName,
 		DisplayName: provider.DisplayName,
-		BaseURL:     provider.BaseURL,
 		Available:   provider.Available,
 		Status:      "unknown",
 		CheckedAt:   time.Now(),
 	}
 
 	result.Capabilities = parseProviderCapabilities(provider.Capabilities)
-	if !provider.Available || strings.TrimSpace(provider.BaseURL) == "" {
-		result.ModuleHealth = &HealthStatus{Module: provider.ModuleName, Status: "down", Message: "module has no valid Backend lease"}
+	if !provider.Available || len(provider.Backends) == 0 {
 		result.Status = "down"
-		result.Message = "TaskProvider is currently unavailable"
+		result.Message = providerUnavailableMessage(provider.UnavailableReason)
 		return result
 	}
-	result.ModuleHealth, _ = s.CheckModuleHealth(ctx, provider.ModuleName, provider.BaseURL)
-	if result.Capabilities.Status == "up" {
-		for _, taskType := range result.Capabilities.TaskCapabilities {
+
+	result.Backends = make([]*ProviderBackendHealthStatus, 0, len(provider.Backends))
+	for _, backend := range provider.Backends {
+		result.Backends = append(result.Backends, s.checkProviderBackendHealth(ctx, provider, backend, result.Capabilities, tenantID))
+	}
+	result.Status, result.Message = summarizeProviderHealth(result)
+	return result
+}
+
+func (s *HealthCheckService) checkProviderBackendHealth(
+	ctx context.Context,
+	provider *models.TaskProvider,
+	backend models.TaskProviderBackend,
+	capabilities *ProviderCapabilitiesStatus,
+	tenantID uint,
+) *ProviderBackendHealthStatus {
+	result := &ProviderBackendHealthStatus{
+		InstanceID:     backend.InstanceID,
+		BaseURL:        backend.BaseURL,
+		LeaseExpiresAt: backend.LeaseExpiresAt,
+		Status:         "unknown",
+	}
+
+	if strings.TrimSpace(backend.BaseURL) == "" {
+		result.Status = "down"
+		result.Message = "Backend base_url is empty"
+		return result
+	}
+	if !backend.LeaseExpiresAt.After(time.Now()) {
+		result.Status = "down"
+		result.Message = "Backend lease has expired"
+		return result
+	}
+
+	result.ModuleHealth, _ = s.checkModuleHealth(ctx, provider.ModuleName, backend.BaseURL)
+	if result.ModuleHealth.Status == "down" {
+		result.Status, result.Message = summarizeProviderBackendHealth(result, capabilities)
+		return result
+	}
+	if capabilities.Status == "up" {
+		for _, taskType := range capabilities.TaskCapabilities {
 			if taskType.Deprecated {
 				continue
 			}
-			result.TaskDiscovery = append(result.TaskDiscovery, s.checkTaskDiscovery(ctx, provider, taskType.Type, tenantID))
+			result.TaskDiscovery = append(result.TaskDiscovery, s.checkTaskDiscovery(ctx, backend.BaseURL, provider.TaskListEndpoint, taskType.Type, tenantID))
 		}
 	}
-	result.Status, result.Message = summarizeProviderHealth(result)
+	result.Status, result.Message = summarizeProviderBackendHealth(result, capabilities)
 	return result
 }
 
@@ -197,8 +214,8 @@ func parseProviderCapabilities(capabilities *models.JSONString) *ProviderCapabil
 	return status
 }
 
-func (s *HealthCheckService) checkTaskDiscovery(ctx context.Context, provider *models.TaskProvider, taskType string, tenantID uint) *ProviderTaskDiscoveryCheck {
-	endpoint := provider.BaseURL + provider.TaskListEndpoint
+func (s *HealthCheckService) checkTaskDiscovery(ctx context.Context, baseURL, taskListEndpoint, taskType string, tenantID uint) *ProviderTaskDiscoveryCheck {
+	endpoint := baseURL + taskListEndpoint
 	discoveryURL := appendTaskTypeQuery(endpoint, taskType)
 	check := &ProviderTaskDiscoveryCheck{
 		TaskType: taskType,
@@ -251,15 +268,43 @@ func validateTaskDiscoveryResponse(body io.Reader) error {
 }
 
 func summarizeProviderHealth(status *ProviderHealthStatus) (string, string) {
+	if len(status.Backends) == 0 {
+		return "down", "TaskProvider has no Backend instance to check"
+	}
+
+	upCount, downCount, degradedCount := 0, 0, 0
+	for _, backend := range status.Backends {
+		switch backend.Status {
+		case "up":
+			upCount++
+		case "down":
+			downCount++
+		case "degraded":
+			degradedCount++
+		}
+	}
+	if upCount == len(status.Backends) {
+		return "up", ""
+	}
+	if downCount == len(status.Backends) {
+		return "down", "all Backend instances are unhealthy"
+	}
+	if downCount > 0 || degradedCount > 0 {
+		return "degraded", "some Backend instances are unhealthy"
+	}
+	return "unknown", "Backend health could not be determined"
+}
+
+func summarizeProviderBackendHealth(status *ProviderBackendHealthStatus, capabilities *ProviderCapabilitiesStatus) (string, string) {
 	if status.ModuleHealth == nil {
 		return "unknown", "module health was not checked"
 	}
 	if status.ModuleHealth.Status == "down" {
 		return "down", status.ModuleHealth.Message
 	}
-	if status.Capabilities == nil || status.Capabilities.Status == "down" {
-		if status.Capabilities != nil {
-			return "degraded", status.Capabilities.Message
+	if capabilities == nil || capabilities.Status == "down" {
+		if capabilities != nil {
+			return "degraded", capabilities.Message
 		}
 		return "degraded", "capabilities was not checked"
 	}
@@ -282,6 +327,17 @@ func summarizeProviderHealth(status *ProviderHealthStatus) (string, string) {
 	return "degraded", "some task discovery checks failed"
 }
 
+func providerUnavailableMessage(reason string) string {
+	switch reason {
+	case "module_disabled":
+		return "TaskProvider module is disabled"
+	case "no_valid_backend":
+		return "TaskProvider has no valid Backend lease"
+	default:
+		return "TaskProvider is currently unavailable"
+	}
+}
+
 func appendTaskTypeQuery(rawURL string, taskType string) string {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -297,8 +353,8 @@ func appendTaskTypeQuery(rawURL string, taskType string) string {
 	return parsed.String()
 }
 
-// CheckModuleHealth 检查模块健康状态（带重试机制）
-func (s *HealthCheckService) CheckModuleHealth(ctx context.Context, moduleName, baseURL string) (*HealthStatus, error) {
+// checkModuleHealth 检查一个 Backend 实例的模块健康状态（带重试机制）。
+func (s *HealthCheckService) checkModuleHealth(ctx context.Context, moduleName, baseURL string) (*HealthStatus, error) {
 	maxRetries := 3
 	var lastErr error
 
@@ -352,20 +408,4 @@ func (s *HealthCheckService) checkHealth(ctx context.Context, moduleName, baseUR
 		Status:  status,
 		Latency: latency,
 	}, nil
-}
-
-// CheckAllModules 检查所有模块健康状态
-func (s *HealthCheckService) CheckAllModules(ctx context.Context) ([]*HealthStatus, error) {
-	modules, err := s.GetModules(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	statuses := make([]*HealthStatus, len(modules))
-	for i, module := range modules {
-		status, _ := s.CheckModuleHealth(ctx, module.Name, module.BaseURL)
-		statuses[i] = status
-	}
-
-	return statuses, nil
 }

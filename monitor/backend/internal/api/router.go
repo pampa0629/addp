@@ -143,9 +143,6 @@ func SetupRouter(
 		api.GET("/task-providers", permission(monitorauthorization.PermissionMonitorHealthRead), healthHandler.GetTaskProviders)
 		api.GET("/providers/health", permission(monitorauthorization.PermissionMonitorHealthRead), healthHandler.CheckAllProvidersHealth)
 		api.GET("/providers/:module/health", permission(monitorauthorization.PermissionMonitorHealthRead), healthHandler.CheckProviderHealth)
-		api.GET("/modules", permission(monitorauthorization.PermissionMonitorHealthRead), healthHandler.GetModules)
-		api.GET("/modules/:module/health", permission(monitorauthorization.PermissionMonitorHealthRead), healthHandler.CheckModuleHealth)
-		api.GET("/modules/health/all", permission(monitorauthorization.PermissionMonitorHealthRead), healthHandler.CheckAllModules)
 		if runtimeHealthHandler != nil {
 			api.GET("/runtime-instances/health", permission(monitorauthorization.PermissionMonitorHealthRead), runtimeHealthHandler.ListHealth)
 		}

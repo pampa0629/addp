@@ -993,6 +993,12 @@
     },
     "explorer": {
       "storageEngines": "Storage Engines",
+      "engine": "Engine",
+      "engineStatus": "Engine Status",
+      "selectedResource": "Selected Resource",
+      "engineUnavailableTitle": "Engine Unavailable",
+      "engineUnavailableDescription": "The current engine status is “{status}”. Previously scanned resources remain browsable; preview, refresh, and other live operations will become available automatically when the engine is online again.",
+      "engineUnavailableAction": "The engine is unavailable, so live operations are disabled",
       "countText": "{count} items",
       "refresh": "Deep Scan",
       "refreshItem": "Refresh Item",

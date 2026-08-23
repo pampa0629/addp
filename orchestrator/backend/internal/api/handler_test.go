@@ -746,20 +746,9 @@ func newTaskProviderSystemServerWithProvider(t *testing.T, provider *commonModel
 			t.Fatalf("invalid System service authentication headers: %#v", r.Header)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(w, `{
-			"id":1,
-			"module_name":%q,
-			"display_name":"Meta",
-			"description":"Meta provider",
-			"base_url":%q,
-			"available":%t,
-			"enabled":%t,
-			"task_list_endpoint":%q,
-			"task_detail_endpoint":"/api/v1/meta/tasks/{task_type}/{id}",
-			"task_execute_endpoint":"/api/v1/meta/tasks/{task_type}/{id}/execute",
-			"task_status_endpoint":"/api/v1/meta/executions/{execution_id}",
-			"capabilities":%s
-		}`, provider.ModuleName, provider.BaseURL, provider.Available, provider.Enabled, provider.TaskListEndpoint, string(*provider.Capabilities))
+		if err := json.NewEncoder(w).Encode(provider); err != nil {
+			t.Fatal(err)
+		}
 	}))
 }
 
@@ -785,9 +774,16 @@ func taskProviderForAPITest(moduleName, baseURL string) *commonModels.TaskProvid
 		}]
 	}`)
 	return &commonModels.TaskProvider{
-		ModuleName: moduleName, BaseURL: baseURL, Enabled: true, Available: true,
+		ModuleName: moduleName, Enabled: true, Available: true,
+		Backends: []commonModels.TaskProviderBackend{{
+			InstanceID: "backend-1", BaseURL: baseURL, LeaseExpiresAt: time.Now().Add(time.Hour),
+		}},
 		TaskProviderDeclaration: commonModels.TaskProviderDeclaration{
-			TaskListEndpoint: "/api/v1/meta/tasks", Capabilities: &capabilities,
+			TaskListEndpoint:    "/api/v1/meta/tasks",
+			TaskDetailEndpoint:  "/api/v1/meta/tasks/{task_type}/{id}",
+			TaskExecuteEndpoint: "/api/v1/meta/tasks/{task_type}/{id}/execute",
+			TaskStatusEndpoint:  "/api/v1/meta/executions/{execution_id}",
+			Capabilities:        &capabilities,
 		},
 	}
 }

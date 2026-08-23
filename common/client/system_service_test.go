@@ -147,6 +147,70 @@ func TestListActiveModulesRequestsRoutableRegistryProjection(t *testing.T) {
 	}
 }
 
+func TestWatchActiveModulesSendsRevisionAndWait(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/system/runtime/modules/watch" ||
+			r.URL.Query().Get("revision") != "7" || r.URL.Query().Get("wait_seconds") != "3" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(ModuleRoutingSnapshot{
+			Revision: 8, Modules: []*ModuleInfo{{ModuleName: "manager", Enabled: true}},
+		})
+	}))
+	defer server.Close()
+
+	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
+	snapshot, err := client.WatchActiveModules(context.Background(), 7, 3*time.Second)
+	if err != nil || snapshot.Revision != 8 || len(snapshot.Modules) != 1 {
+		t.Fatalf("WatchActiveModules() snapshot=%#v error=%v", snapshot, err)
+	}
+}
+
+func TestRegisterAndHeartbeatReregistersImmediatelyAndDeregistersOnShutdown(t *testing.T) {
+	t.Parallel()
+	var registrations atomic.Int32
+	reregistered := make(chan struct{})
+	deregistered := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/system/runtime/modules":
+			count := registrations.Add(1)
+			w.WriteHeader(http.StatusOK)
+			if count == 2 {
+				close(reregistered)
+			}
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/system/runtime/modules/heartbeat":
+			http.Error(w, "instance missing", http.StatusNotFound)
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/v1/system/runtime/modules/manager/instances/"):
+			close(deregistered)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
+	client.registerAndHeartbeat(ctx, &ModuleRegistrationRequest{
+		ModuleName: "manager", ModuleURL: "http://manager:8081", RoutePrefix: "/manager",
+	}, time.Millisecond, 2*time.Millisecond, time.Millisecond)
+	select {
+	case <-reregistered:
+	case <-time.After(time.Second):
+		t.Fatal("heartbeat failure did not trigger immediate re-registration")
+	}
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+	select {
+	case <-deregistered:
+	case <-time.After(time.Second):
+		t.Fatal("context cancellation did not deregister the runtime instance")
+	}
+}
+
 func TestSystemServiceClientRefreshesRejectedContextTokenOnce(t *testing.T) {
 	t.Parallel()
 

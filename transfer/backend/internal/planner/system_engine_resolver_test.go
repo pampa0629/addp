@@ -12,10 +12,11 @@ func TestSystemEngineResolverResolveEngine(t *testing.T) {
 	client := fakeSystemEngineClient{
 		engines: map[uint]*commonmodels.Engine{
 			7: {
-				ID:             7,
-				EngineType:     "postgresql",
-				ConnectionInfo: commonmodels.ConnectionInfo{"host": "localhost", "database": "gis"},
-				LifecycleState: "active",
+				ID:               7,
+				EngineType:       "postgresql",
+				ConnectionInfo:   commonmodels.ConnectionInfo{"host": "localhost", "database": "gis"},
+				LifecycleState:   "active",
+				ConnectionStatus: commonmodels.EngineConnectionOnline,
 			},
 		},
 	}
@@ -35,7 +36,7 @@ func TestSystemEngineResolverResolveEngine(t *testing.T) {
 func TestSystemEngineResolverRejectsTypeMismatch(t *testing.T) {
 	client := fakeSystemEngineClient{
 		engines: map[uint]*commonmodels.Engine{
-			7: {ID: 7, EngineType: "postgresql", LifecycleState: "active"},
+			7: {ID: 7, EngineType: "postgresql", LifecycleState: "active", ConnectionStatus: commonmodels.EngineConnectionOnline},
 		},
 	}
 
@@ -59,8 +60,21 @@ func TestSystemEngineResolverRejectsInactiveEngine(t *testing.T) {
 	if err == nil {
 		t.Fatal("ResolveEngine succeeded, want inactive error")
 	}
-	if !strings.Contains(err.Error(), "inactive") {
-		t.Fatalf("error = %q, want inactive", err)
+	if !strings.Contains(err.Error(), "unavailable") {
+		t.Fatalf("error = %q, want unavailable", err)
+	}
+}
+
+func TestSystemEngineResolverRejectsOfflineEngine(t *testing.T) {
+	client := fakeSystemEngineClient{
+		engines: map[uint]*commonmodels.Engine{
+			7: {ID: 7, EngineType: "postgresql", LifecycleState: "active", ConnectionStatus: commonmodels.EngineConnectionOffline},
+		},
+	}
+
+	_, err := BindEngineResolver(NewSystemEngineResolver(client), 3).ResolveEngine(EngineRef{ID: 7})
+	if err == nil || !strings.Contains(err.Error(), "unavailable") {
+		t.Fatalf("ResolveEngine() error = %v, want offline rejection", err)
 	}
 }
 

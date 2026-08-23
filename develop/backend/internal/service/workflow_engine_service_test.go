@@ -469,6 +469,19 @@ func TestWorkflowRuntimeEngineIDMapsSparkClusterIDString(t *testing.T) {
 	}
 }
 
+func TestWorkflowRuntimeEngineIDRejectsOfflineSparkCluster(t *testing.T) {
+	offline := testEngine(34, "spark", true)
+	offline.ConnectionStatus = commonModels.EngineConnectionOffline
+	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{34: offline})
+	cfg := models.WorkflowExecutionConfig{
+		EngineSpecific: map[string]interface{}{"spark_cluster_id": float64(34)},
+	}
+
+	if _, err := svc.workflowRuntimeEngineID(7, "spark_workflow", cfg); err == nil || !strings.Contains(err.Error(), "当前不可用") {
+		t.Fatalf("workflowRuntimeEngineID() error = %v, want offline rejection", err)
+	}
+}
+
 func TestWorkflowRuntimeEngineIDRequiresSparkClusterIDForSparkWorkflow(t *testing.T) {
 	svc := newWorkflowEngineServiceWithEnginesForTest(t, nil)
 	cfg := models.WorkflowExecutionConfig{}
@@ -1067,6 +1080,9 @@ func newWorkflowEngineServiceWithRawEnginesForTest(t *testing.T, engines map[uin
 	t.Helper()
 	cached := make(map[uint]*commonModels.Engine, len(engines))
 	for id, engine := range engines {
+		if engine.ConnectionStatus == "" {
+			engine.ConnectionStatus = commonModels.EngineConnectionOnline
+		}
 		copy := engine
 		cached[id] = &copy
 	}

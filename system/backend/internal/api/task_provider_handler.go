@@ -23,7 +23,7 @@ func NewTaskProviderHandler(service *service.TaskProviderService) *TaskProviderH
 
 // ListService godoc
 // @Summary      读取 TaskProvider 模块角色 | Read TaskProvider module roles
-// @Description  返回全部 Provider 声明，并按当前模块 Backend 租约动态解析可用性和调用地址 | Returns all Provider declarations and dynamically resolves availability and call address from current module Backend leases
+// @Description  返回全部 Provider 声明，并按当前模块 Backend 租约动态解析可用性和有效端点池 | Returns all Provider declarations and dynamically resolves availability and the eligible endpoint pool from current module Backend leases
 // @Tags         运行时注册 | Runtime Registry
 // @Produce      json
 // @Security     BearerAuth
@@ -43,7 +43,7 @@ func (h *TaskProviderHandler) ListService(c *gin.Context) {
 
 // GetService godoc
 // @Summary      读取 TaskProvider 详情 | Read TaskProvider detail
-// @Description  每次读取都重新解析当前有效 Backend；模块离线时仍返回声明但 available=false | Resolves the current valid Backend on every read; an offline module keeps its declaration with available=false
+// @Description  每次读取都重新解析当前有效 Backend 池；模块离线时仍返回声明但 available=false | Resolves the current valid Backend pool on every read; an offline module keeps its declaration with available=false
 // @Tags         运行时注册 | Runtime Registry
 // @Produce      json
 // @Security     BearerAuth

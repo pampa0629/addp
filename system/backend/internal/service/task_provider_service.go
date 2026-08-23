@@ -1,6 +1,7 @@
 package service
 
 import (
+	"sort"
 	"strings"
 	"time"
 
@@ -49,9 +50,11 @@ func projectTaskProvider(module *models.ModuleInfo) *commonmodels.TaskProvider {
 	provider := &commonmodels.TaskProvider{
 		ID: module.ID, ModuleName: module.ModuleName, ModuleVersion: module.Version, Enabled: module.Enabled,
 		TaskProviderDeclaration: *module.TaskProvider,
+		Backends:                make([]commonmodels.TaskProviderBackend, 0),
 		CreatedAt:               module.CreatedAt, UpdatedAt: module.UpdatedAt,
 	}
 	if !module.Enabled {
+		provider.UnavailableReason = "module_disabled"
 		return provider
 	}
 	now := time.Now()
@@ -61,10 +64,18 @@ func projectTaskProvider(module *models.ModuleInfo) *commonmodels.TaskProvider {
 			!instance.LeaseExpiresAt.After(now) || strings.TrimSpace(instance.ModuleURL) == "" {
 			continue
 		}
-		provider.Available = true
-		provider.BaseURL = strings.TrimRight(instance.ModuleURL, "/")
-		provider.BackendInstanceID = instance.InstanceID
-		break
+		provider.Backends = append(provider.Backends, commonmodels.TaskProviderBackend{
+			InstanceID:     instance.InstanceID,
+			BaseURL:        strings.TrimRight(instance.ModuleURL, "/"),
+			LeaseExpiresAt: instance.LeaseExpiresAt,
+		})
+	}
+	sort.Slice(provider.Backends, func(i, j int) bool {
+		return provider.Backends[i].InstanceID < provider.Backends[j].InstanceID
+	})
+	provider.Available = len(provider.Backends) > 0
+	if !provider.Available {
+		provider.UnavailableReason = "no_valid_backend"
 	}
 	return provider
 }

@@ -3205,6 +3205,11 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "503":
+          description: 引擎不可用 | Engine unavailable
+          schema:
+            additionalProperties: true
+            type: object
       security:
       - BearerAuth: []
       summary: 下载存储数据项 | Download storage item
@@ -3580,6 +3585,11 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "503":
+          description: 引擎不可用 | Engine unavailable
+          schema:
+            additionalProperties: true
+            type: object
       security:
       - BearerAuth: []
       summary: 刷新数据项元数据 | Refresh item metadata
@@ -3836,6 +3846,11 @@ paths:
             type: object
         "500":
           description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 引擎不可用 | Engine unavailable
           schema:
             additionalProperties: true
             type: object
@@ -5287,6 +5302,11 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "503":
+          description: 引擎不可用 | Engine unavailable
+          schema:
+            additionalProperties: true
+            type: object
       security:
       - BearerAuth: []
       summary: 数据预览 | Data preview
@@ -6209,6 +6229,11 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "503":
+          description: 引擎不可用 | Engine unavailable
+          schema:
+            additionalProperties: true
+            type: object
       security:
       - BearerAuth: []
       summary: 查询资源动作能力 | Get resource action capabilities
@@ -6247,6 +6272,11 @@ paths:
             type: object
         "404":
           description: 缺少已扫描的数据项事实 | Scanned item facts not found
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 引擎不可用 | Engine unavailable
           schema:
             additionalProperties: true
             type: object
@@ -6853,6 +6883,11 @@ paths:
             type: object
         "500":
           description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 引擎不可用 | Engine unavailable
           schema:
             additionalProperties: true
             type: object

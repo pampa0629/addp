@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
@@ -160,7 +161,7 @@ func taskProviderResolverForTest(t *testing.T, contracts map[uint]string) *TaskP
 	tokenSource := registrationServiceTokens("tenant-token")
 	systemClient := commonClient.NewSystemServiceClient(server.URL, tokenSource, server.Client())
 	provider := &commonModels.TaskProvider{
-		ModuleName: "develop", BaseURL: server.URL, Available: true, Enabled: true,
+		ModuleName: "develop", Backends: taskProviderBackendsForTest(server.URL), Available: true, Enabled: true,
 		TaskProviderDeclaration: commonModels.TaskProviderDeclaration{
 			TaskDetailEndpoint: "/tasks/{task_type}/{id}", Capabilities: capabilityJSONForTest("workflow", false),
 		},
@@ -168,6 +169,38 @@ func taskProviderResolverForTest(t *testing.T, contracts map[uint]string) *TaskP
 	return &TaskProviderResolver{
 		systemClient: systemClient, httpClient: server.Client(),
 		loadProvider: func(context.Context, string) (*commonModels.TaskProvider, error) { return provider, nil },
+	}
+}
+
+func taskProviderBackendsForTest(baseURLs ...string) []commonModels.TaskProviderBackend {
+	backends := make([]commonModels.TaskProviderBackend, 0, len(baseURLs))
+	for index, baseURL := range baseURLs {
+		backends = append(backends, commonModels.TaskProviderBackend{
+			InstanceID: fmt.Sprintf("backend-%d", index+1), BaseURL: baseURL, LeaseExpiresAt: time.Now().Add(time.Hour),
+		})
+	}
+	return backends
+}
+
+func TestTaskProviderResolverRoundRobinsCurrentBackendPool(t *testing.T) {
+	provider := &commonModels.TaskProvider{
+		ModuleName: "meta", Available: true, Backends: taskProviderBackendsForTest("http://meta-a:8082", "http://meta-b:8082"),
+	}
+	resolver := &TaskProviderResolver{
+		loadProvider: func(context.Context, string) (*commonModels.TaskProvider, error) { return provider, nil },
+	}
+
+	first, err := resolver.GetProvider(context.Background(), "meta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstURL := first.ResolvedBaseURL
+	second, err := resolver.GetProvider(context.Background(), "meta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstURL != "http://meta-a:8082" || second.ResolvedBaseURL != "http://meta-b:8082" {
+		t.Fatalf("resolved URLs = %q, %q", firstURL, second.ResolvedBaseURL)
 	}
 }
 
