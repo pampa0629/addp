@@ -59,6 +59,7 @@ class BuildRegistrationTest(unittest.TestCase):
             "build:\n\t@bash scripts/build/compile.sh $(BUILD_ARGS)\n\n"
             "build-images:\n\t@bash scripts/build/build-images.sh $(IMAGE_BUILD_ARGS)\n\n"
             "select-image-services:\n\t@python3 scripts/ci/select-image-services.py\n\n"
+            "check-cli-release:\n\t@python3 scripts/ci/check-release-eligibility.py --pre-tag\n\n"
             "test-go:\n\t@echo $${ADDP_CI_SUMMARY_FILE:-}; GOWORK=off go mod tidy -diff\n",
         )
         self._write(
@@ -134,6 +135,20 @@ class BuildRegistrationTest(unittest.TestCase):
         errors = MODULE.validate_registration(self.repository)
         self.assertIn("CLI release eligibility job is missing", errors)
         self.assertIn("CLI GitHub Release must require release eligibility", errors)
+
+    def test_rejects_missing_local_pre_tag_gate(self) -> None:
+        makefile = self.repository / "Makefile"
+        makefile.write_text(
+            makefile.read_text(encoding="utf-8").replace(
+                "check-cli-release:\n\t@python3 scripts/ci/check-release-eligibility.py --pre-tag\n\n",
+                "",
+            ),
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "Makefile target check-cli-release is missing",
+            MODULE.validate_registration(self.repository),
+        )
 
     def test_rejects_shallow_product_checkout(self) -> None:
         workflow = self.repository / ".github/workflows/platform-ci.yml"

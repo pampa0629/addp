@@ -74,6 +74,12 @@ build-images: ## 构建全部正式 ADDP 镜像；附加参数使用 IMAGE_BUILD
 select-image-services: ## 输出 CI 基线及当前改动影响的镜像服务列表
 	@python3 scripts/ci/select-image-services.py --repository "$(CURDIR)"
 
+.PHONY: check-cli-release
+check-cli-release: ## 创建 Tag 前校验 CLI 版本、main HEAD 和 Platform CI（需 RELEASE_TAG=v<version>）
+	@test -n "$(RELEASE_TAG)" || (echo "RELEASE_TAG is required" >&2; exit 2)
+	@git fetch origin main --tags
+	@python3 scripts/ci/check-release-eligibility.py --repository "$(CURDIR)" --pre-tag --tag "$(RELEASE_TAG)" --sha "$$(git rev-parse HEAD)"
+
 # ===== 基础设施脚本入口 =====
 infra-up: ## 启动系统库基础设施（带端口预检与健康检查）
 	@bash scripts/infra/up.sh

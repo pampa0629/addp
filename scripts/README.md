@@ -489,6 +489,8 @@ GitHub Actions 的 IAM/CLI 发布工作流并行运行 macOS CLI 产品门禁和
 
 当前唯一正式分发路径是 GitHub Release。版本发布预检复用 common-python 全量测试中的 `tests/test_version.py`，统一校验运行时、安装包、命令和长期文档版本。推送 `v<version>` Tag 后，发布资格门禁要求 Tag 与包版本一致、Tag commit 位于 `origin/main` 历史，并等待相同 SHA 的 Platform CI push run 成功；分支 Ruleset 不保护 Tag，因此该检查不能省略。发布工作流中的第三方 `uses:` 全部固定到不可变提交 SHA；固定版本的 zizmor 只扫描该工作流，并在现有 required Job 内阻断浮动 Action Tag 和中高风险供应链问题。资格检查、CLI macOS Keychain 和 System IAM 三项均成功后，发布 Job 只下载 `addp-cli-wheel` artifact，校验便携 SHA-256、包名和 wheel `METADATA` 版本，使用 GitHub OIDC 为 wheel 生成 build provenance attestation，再创建 Release。发布 Job 不检出源码、不重新构建 wheel，Release 仍只包含 wheel 和 checksum；attestation 由 GitHub Attestations API 保存，使用 `gh attestation verify` 验证。PyPI 或私有包仓库待账号、权限和发布策略明确后另行设计。
 
+创建 Tag 前必须先运行 `make check-cli-release RELEASE_TAG=v<version>`。该入口会更新远端 `main` 与 Tag 引用，要求目标 Tag 尚不存在、当前 `HEAD` 等于最新 `origin/main`、版本与包事实源一致，并确认同 SHA 的 Platform CI 已成功；通过后才执行 `git tag` 和 `git push origin <tag>`。公开仓库可匿名查询 Actions 结果，设置 `GITHUB_TOKEN` 时会使用 Token 提高 API 限额。
+
 System IAM 和 Fosite 正式发布使用 `make test-system-iam-postgres`，必须显式提供唯一变量 `ADDP_SYSTEM_POSTGRES_TEST_DSN`，且数据库名包含独立的 `test` 或 `disposable` 段。门禁先清理一次性数据库中的 `system` 和 `common` Schema，再串行运行 IAM Domain、Fosite Storage、IAM API 和 Migration 的全部 PostgreSQL `AgainstPostgres` 测试；缺少 DSN、指向非一次性数据库或测试被阻断时立即失败。该入口只能指向专用临时数据库。
 
 Standard 的正式 PostgreSQL 集成门禁使用 `make test-standard-postgres`，必须显式提供唯一变量 `STANDARD_POSTGRES_TEST_DSN`，且数据库名包含 `test` 或 `disposable`。门禁验证 Standard migration、删除约束、引用删除协调的并发锁和失败恢复，并拒绝任何测试 Skip。该入口只操作 Standard owner Schema；Standard ↔ Model 的生产调用通过 `common/client`，不允许使用跨 Schema SQL 模拟 Online 验收。

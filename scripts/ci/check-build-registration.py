@@ -457,6 +457,15 @@ def validate_registration(repository: Path) -> list[str]:
             if "gh release create" not in release_job:
                 errors.append("CLI GitHub Release must publish through the single release path")
 
+    release_check_recipe = make_recipe(makefile, "check-cli-release")
+    if release_check_recipe is None:
+        errors.append("Makefile target check-cli-release is missing")
+    elif (
+        "scripts/ci/check-release-eligibility.py" not in release_check_recipe
+        or "--pre-tag" not in release_check_recipe
+    ):
+        errors.append("Makefile check-cli-release must invoke the standard pre-tag checker")
+
     for source, target in seed_entries:
         if uses_latest_tag(source):
             errors.append(

@@ -40,11 +40,24 @@ class ReleaseEligibilityTest(unittest.TestCase):
         self.temporary_directory.cleanup()
 
     def test_accepts_matching_tag_on_origin_main(self) -> None:
-        MODULE.validate_tag(self.repository, "v1.2.3", self.sha)
+        MODULE.validate_release_source(self.repository, "v1.2.3", self.sha, False)
 
     def test_rejects_tag_that_does_not_match_package_version(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "must equal package tag"):
-            MODULE.validate_tag(self.repository, "v1.2.4", self.sha)
+            MODULE.validate_release_source(self.repository, "v1.2.4", self.sha, False)
+
+    def test_accepts_pre_tag_only_at_origin_main_tip_without_existing_tag(self) -> None:
+        subprocess.run(
+            ["git", "tag", "-d", "v1.2.3"],
+            cwd=self.repository,
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+        MODULE.validate_release_source(self.repository, "v1.2.3", self.sha, True)
+
+    def test_rejects_pre_tag_when_tag_already_exists(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "already exists locally"):
+            MODULE.validate_release_source(self.repository, "v1.2.3", self.sha, True)
 
     def test_rejects_commit_outside_origin_main(self) -> None:
         subprocess.run(["git", "checkout", "-qb", "detached-release"], cwd=self.repository, check=True)
@@ -59,7 +72,7 @@ class ReleaseEligibilityTest(unittest.TestCase):
             stdout=subprocess.DEVNULL,
         )
         with self.assertRaises(subprocess.CalledProcessError):
-            MODULE.validate_tag(self.repository, "v1.2.3", outside_sha)
+            MODULE.validate_release_source(self.repository, "v1.2.3", outside_sha, False)
 
     def test_platform_ci_state_requires_successful_push_run_for_sha(self) -> None:
         payload = {

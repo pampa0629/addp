@@ -31,13 +31,28 @@ def package_version(repository: Path) -> str:
     return match.group(1)
 
 
-def validate_tag(repository: Path, tag: str, sha: str) -> None:
+def validate_release_source(repository: Path, tag: str, sha: str, pre_tag: bool) -> None:
     expected_tag = f"v{package_version(repository)}"
     if tag != expected_tag:
         raise RuntimeError(f"release tag {tag!r} must equal package tag {expected_tag!r}")
-    tag_sha = git(repository, "rev-parse", f"{tag}^{{commit}}")
-    if tag_sha != sha:
-        raise RuntimeError(f"release tag resolves to {tag_sha}, expected {sha}")
+    if pre_tag:
+        head_sha = git(repository, "rev-parse", "HEAD")
+        main_sha = git(repository, "rev-parse", "refs/remotes/origin/main")
+        if sha != head_sha or sha != main_sha:
+            raise RuntimeError(
+                f"pre-tag release commit must equal HEAD and origin/main: "
+                f"release={sha}, HEAD={head_sha}, origin/main={main_sha}"
+            )
+        tag_exists = subprocess.run(
+            ["git", "show-ref", "--verify", "--quiet", f"refs/tags/{tag}"],
+            cwd=repository,
+        ).returncode == 0
+        if tag_exists:
+            raise RuntimeError(f"release tag already exists locally: {tag}")
+    else:
+        tag_sha = git(repository, "rev-parse", f"{tag}^{{commit}}")
+        if tag_sha != sha:
+            raise RuntimeError(f"release tag resolves to {tag_sha}, expected {sha}")
     subprocess.run(
         ["git", "merge-base", "--is-ancestor", sha, "refs/remotes/origin/main"],
         cwd=repository,
@@ -65,13 +80,15 @@ def platform_ci_state(payload: dict, sha: str) -> tuple[str, str]:
 
 def fetch_runs(repository_name: str, sha: str, token: str) -> dict:
     query = urllib.parse.urlencode({"head_sha": sha, "event": "push", "per_page": 100})
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(
         f"https://api.github.com/repos/{repository_name}/actions/runs?{query}",
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
+        headers=headers,
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         return json.load(response)
@@ -102,7 +119,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repository", type=Path, default=Path.cwd())
     parser.add_argument("--tag", required=True)
     parser.add_argument("--sha", required=True)
-    parser.add_argument("--github-repository", required=True)
+    parser.add_argument("--github-repository")
+    parser.add_argument("--pre-tag", action="store_true")
     parser.add_argument("--max-wait-seconds", type=int, default=600)
     parser.add_argument("--poll-seconds", type=int, default=15)
     return parser.parse_args()
@@ -111,13 +129,18 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     token = os.environ.get("GITHUB_TOKEN", "")
-    if not token:
-        print("GITHUB_TOKEN is required", file=sys.stderr)
-        return 2
     try:
-        validate_tag(args.repository.resolve(), args.tag, args.sha)
+        repository = args.repository.resolve()
+        repository_name = args.github_repository
+        if not repository_name:
+            origin = git(repository, "remote", "get-url", "origin")
+            match = re.search(r"github\.com[/:]([^/]+/[^/]+?)(?:\.git)?$", origin)
+            if not match:
+                raise RuntimeError(f"cannot derive GitHub repository from origin: {origin!r}")
+            repository_name = match.group(1)
+        validate_release_source(repository, args.tag, args.sha, args.pre_tag)
         wait_for_platform_ci(
-            args.github_repository,
+            repository_name,
             args.sha,
             token,
             args.max_wait_seconds,
