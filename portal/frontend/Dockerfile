@@ -5,7 +5,7 @@ WORKDIR /app
 COPY portal/frontend/package.json ./
 
 RUN npm install --no-package-lock && \
-    npm install --no-save @rollup/rollup-linux-arm64-musl && \
+    npm install --no-save "@rollup/rollup-linux-$(node -p 'process.arch')-musl" && \
     npm cache clean --force
 
 COPY common-frontend /common-frontend

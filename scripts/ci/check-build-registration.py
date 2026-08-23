@@ -470,6 +470,15 @@ def validate_registration(repository: Path) -> list[str]:
             errors.append(f"{path}: image registration {image} is missing")
 
     tracked_dockerfiles = set(git_files(repository, "*Dockerfile*"))
+    for path in sorted(tracked_dockerfiles):
+        dockerfile_path = repository / path
+        if not dockerfile_path.is_file():
+            continue
+        dockerfile_text = dockerfile_path.read_text(encoding="utf-8")
+        if re.search(r"@rollup/rollup-linux-(?:arm64|x64)-musl", dockerfile_text):
+            errors.append(
+                f"{path}: Rollup native package architecture must be selected dynamically"
+            )
     for path in sorted(
         tracked_dockerfiles - registered_dockerfiles - set(AUXILIARY_DOCKERFILES)
     ):

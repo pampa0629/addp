@@ -377,6 +377,16 @@ class BuildRegistrationTest(unittest.TestCase):
             MODULE.validate_registration(self.repository),
         )
 
+    def test_rejects_hardcoded_rollup_architecture(self) -> None:
+        self._write(
+            "sample/frontend/Dockerfile",
+            "FROM scratch\nRUN npm install @rollup/rollup-linux-arm64-musl\n",
+        )
+        self.assertIn(
+            "sample/frontend/Dockerfile: Rollup native package architecture must be selected dynamically",
+            MODULE.validate_registration(self.repository),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

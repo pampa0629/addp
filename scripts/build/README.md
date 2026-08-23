@@ -153,6 +153,7 @@ IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
 | `--verify` | - | 非交互强制构建；基础镜像仍预热到临时 Registry，产品镜像只加载到本机、不推送 |
 
 基础镜像预热只处理所选服务实际引用的镜像：优先复用本机同架构镜像，否则最多尝试拉取三次；拉取或推送到临时 Registry 失败仍会使构建失败。
+前端 Dockerfile 必须根据容器的 `process.arch` 选择 Rollup musl 原生包，禁止写死 arm64 或 x64；该约束由 `make test-platform` 自动检查。
 
 ### 环境变量
 

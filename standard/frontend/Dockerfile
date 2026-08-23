@@ -8,7 +8,7 @@ COPY standard/frontend/package.json ./
 # 安装依赖 (不使用 lock 文件以避免 npm bug)
 # 显式安装 rollup 的本地依赖
 RUN npm install --no-package-lock && \
-    npm install --no-save @rollup/rollup-linux-arm64-musl && \
+    npm install --no-save "@rollup/rollup-linux-$(node -p 'process.arch')-musl" && \
     npm cache clean --force
 
 # 复制 common-frontend (Vite 别名需要)
