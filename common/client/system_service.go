@@ -29,14 +29,26 @@ type SystemServiceClient struct {
 }
 
 type SystemAPIError struct {
-	Method     string
-	Path       string
-	StatusCode int
-	ErrorCode  string
+	Method       string
+	Path         string
+	StatusCode   int
+	ErrorCode    string
+	ErrorMessage string
+	ResponseBody string
 }
 
 func (e *SystemAPIError) Error() string {
-	return fmt.Sprintf("System API %s %s returned HTTP %d", e.Method, e.Path, e.StatusCode)
+	message := fmt.Sprintf("System API %s %s returned HTTP %d", e.Method, e.Path, e.StatusCode)
+	if e.ErrorCode != "" {
+		message += fmt.Sprintf(" error_code=%q", e.ErrorCode)
+	}
+	if e.ErrorMessage != "" {
+		message += fmt.Sprintf(" error=%q", e.ErrorMessage)
+	}
+	if e.ResponseBody != "" {
+		message += fmt.Sprintf(" response_body=%q", e.ResponseBody)
+	}
+	return message
 }
 
 func SystemAPIStatusCode(err error) (int, bool) {
@@ -317,15 +329,18 @@ func (c *SystemServiceClient) RegisterAndHeartbeatWithMetadata(
 	ctx context.Context,
 	moduleName, moduleURL, routePrefix string,
 	metadata map[string]interface{},
-) {
-	c.RegisterAndHeartbeat(ctx, &ModuleRegistrationRequest{
+) <-chan struct{} {
+	return c.RegisterAndHeartbeat(ctx, &ModuleRegistrationRequest{
 		ModuleName: moduleName, ModuleURL: moduleURL, RoutePrefix: routePrefix,
 		HealthCheckURL: moduleURL + "/health", Metadata: metadata,
 	})
 }
 
-func (c *SystemServiceClient) RegisterAndHeartbeat(ctx context.Context, request *ModuleRegistrationRequest) {
-	c.registerAndHeartbeat(ctx, request, time.Second, 10*time.Second, 10*time.Second)
+// RegisterAndHeartbeat starts the module lease lifecycle and returns a channel
+// that closes after cancellation handling, including the bounded deregistration
+// attempt, has completed. Process entrypoints must wait for it before exiting.
+func (c *SystemServiceClient) RegisterAndHeartbeat(ctx context.Context, request *ModuleRegistrationRequest) <-chan struct{} {
+	return c.registerAndHeartbeat(ctx, request, time.Second, 10*time.Second, 10*time.Second)
 }
 
 func (c *SystemServiceClient) registerAndHeartbeat(
@@ -334,8 +349,10 @@ func (c *SystemServiceClient) registerAndHeartbeat(
 	initialRetryInterval time.Duration,
 	maxRetryInterval time.Duration,
 	heartbeatInterval time.Duration,
-) {
+) <-chan struct{} {
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		if request == nil {
 			return
 		}
@@ -361,7 +378,7 @@ func (c *SystemServiceClient) registerAndHeartbeat(
 		}
 		register := func() bool {
 			if err := c.RegisterModule(ctx, &registration); err != nil {
-				log.Printf("%s module registration failed: %v", registration.ModuleName, err)
+				log.Print(moduleRegistryFailureLog("register", registration, err))
 				return false
 			}
 			return true
@@ -376,7 +393,7 @@ func (c *SystemServiceClient) registerAndHeartbeat(
 			shutdownContext, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			if err := c.DeregisterModule(shutdownContext, registration.ModuleName, registration.InstanceID); err != nil {
-				log.Printf("%s module deregistration failed: %v", registration.ModuleName, err)
+				log.Print(moduleRegistryFailureLog("deregister", registration, err))
 			}
 		}()
 		retryInterval := initialRetryInterval
@@ -410,11 +427,34 @@ func (c *SystemServiceClient) registerAndHeartbeat(
 			case <-timer.C:
 			}
 			if err := c.SendModuleHeartbeat(ctx, registration.ModuleName, registration.InstanceID); err != nil {
-				log.Printf("%s module heartbeat failed, re-registering immediately: %v", registration.ModuleName, err)
+				log.Print(moduleRegistryFailureLog("heartbeat", registration, err) + " next_action=reregister")
 				registered = false
 			}
 		}
 	}()
+	return done
+}
+
+func moduleRegistryFailureLog(operation string, registration ModuleRegistrationRequest, err error) string {
+	prefix := fmt.Sprintf(
+		"module registry request failed: operation=%s module=%s instance_id=%s role=%s",
+		operation,
+		registration.ModuleName,
+		registration.InstanceID,
+		registration.Role,
+	)
+	var apiError *SystemAPIError
+	if errors.As(err, &apiError) {
+		return fmt.Sprintf(
+			"%s status_code=%d error_code=%q error_message=%q response_body=%q",
+			prefix,
+			apiError.StatusCode,
+			apiError.ErrorCode,
+			apiError.ErrorMessage,
+			apiError.ResponseBody,
+		)
+	}
+	return fmt.Sprintf("%s error=%q", prefix, err)
 }
 
 func (c *SystemServiceClient) doTenantJSON(ctx context.Context, method, path string, payload, result any) error {
@@ -490,11 +530,14 @@ func (c *SystemServiceClient) doJSON(ctx context.Context, method, path, token st
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		var errorResponse struct {
 			ErrorCode string `json:"error_code"`
+			Error     string `json:"error"`
 		}
-		_ = json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&errorResponse)
+		encoded, _ := io.ReadAll(io.LimitReader(response.Body, 64<<10))
+		_ = json.Unmarshal(encoded, &errorResponse)
 		return response.StatusCode, &SystemAPIError{
 			Method: method, Path: pathWithoutQuery(path), StatusCode: response.StatusCode,
-			ErrorCode: errorResponse.ErrorCode,
+			ErrorCode: errorResponse.ErrorCode, ErrorMessage: errorResponse.Error,
+			ResponseBody: limitedDiagnosticBody(encoded),
 		}
 	}
 	if result == nil || response.StatusCode == http.StatusNoContent {
@@ -505,6 +548,15 @@ func (c *SystemServiceClient) doJSON(ctx context.Context, method, path, token st
 		return response.StatusCode, fmt.Errorf("decode System response: %w", err)
 	}
 	return response.StatusCode, nil
+}
+
+func limitedDiagnosticBody(encoded []byte) string {
+	const maxDiagnosticBodyBytes = 8 << 10
+	body := strings.TrimSpace(string(encoded))
+	if len(body) <= maxDiagnosticBodyBytes {
+		return body
+	}
+	return body[:maxDiagnosticBodyBytes] + "..."
 }
 
 func pathWithoutQuery(path string) string {

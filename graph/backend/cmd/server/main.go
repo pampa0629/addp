@@ -16,6 +16,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	commonExecution "github.com/addp/common/execution"
 
@@ -37,6 +39,8 @@ func main() {
 	commonConfig.LoadEnv()
 
 	cfg := config.Load()
+	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopRuntime()
 	commonConfig.InitLogger("graph-backend.log", &commonConfig.LoggerOptions{
 		Level:     cfg.LogLevel,
 		Format:    cfg.LogFormat,
@@ -103,7 +107,7 @@ func main() {
 	buildSvc := service.NewBuildService(buildRepo, ontologyRepo, ontologySvc, graphRepo, taskExecutionRepo, neo4jSvc, materialReader, materialWriter, cfg.CopilotServiceURL, graphTokenSource)
 	analysisSvc := service.NewAnalysisService(graphRepo, ontologyRepo, systemServiceClient, neo4jSvc)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
-	if err := cleanupSvc.Start(context.Background()); err != nil {
+	if err := cleanupSvc.Start(runtimeContext); err != nil {
 		logger.Warn("Graph 资源回收执行方启动失败", "error", err)
 	}
 	defer cleanupSvc.Stop()
@@ -130,13 +134,14 @@ func main() {
 	// 模块注册
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
+	var registrationDone <-chan struct{}
 	if cfg.SystemServiceURL != "" {
 		provider, err := service.GraphTaskProviderDeclaration()
 		if err != nil {
 			logger.Error("构建 Graph TaskProvider 声明失败", "error", err)
 			os.Exit(1)
 		}
-		systemServiceClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
+		registrationDone = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
 			ModuleName: "graph", ModuleURL: serviceURL, RoutePrefix: "/graph", HealthCheckURL: serviceURL + "/health",
 			TaskProvider: provider,
 			Metadata: map[string]interface{}{
@@ -154,8 +159,14 @@ func main() {
 	addr := ":" + cfg.Port
 	logger.Info("Graph 模块启动", "addr", addr, "schema", cfg.DBSchema)
 
-	if err := router.Run(addr); err != nil {
-		logger.Error("Graph 模块启动失败", "error", err)
-		os.Exit(1)
+	go func() {
+		if err := router.Run(addr); err != nil {
+			logger.Error("Graph 模块启动失败", "error", err)
+			stopRuntime()
+		}
+	}()
+	<-runtimeContext.Done()
+	if registrationDone != nil {
+		<-registrationDone
 	}
 }

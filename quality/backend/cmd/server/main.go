@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	commonClient "github.com/addp/common/client"
@@ -34,6 +37,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopRuntime()
 
 	db, err := gorm.Open(postgres.Open(cfg.GetDatabaseDSN()), &gorm.Config{TranslateError: true})
 	if err != nil {
@@ -78,7 +83,7 @@ func main() {
 	checkExecutor := service.NewCheckExecutor(systemServiceClient, executionAuthorizationClient, checkTaskRepo, issueRepo, cfg.CheckTimeout, cfg.WorkerConcurrency)
 	issueSvc := service.NewIssueService(issueRepo)
 	cleanupService := service.NewCleanupService(db, redisClient, commonExecution.NewTaskExecutionRepository(db))
-	if err := cleanupService.Start(context.Background()); err != nil {
+	if err := cleanupService.Start(runtimeContext); err != nil {
 		log.Printf("Quality 资源回收服务启动失败: %v", err)
 	}
 	defer cleanupService.Stop()
@@ -98,7 +103,8 @@ func main() {
 
 	go func() {
 		if err := router.Run(addr); err != nil {
-			log.Fatalf("Failed to start server: %v", err)
+			log.Printf("Failed to start server: %v", err)
+			stopRuntime()
 		}
 	}()
 
@@ -108,7 +114,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("构建 Quality TaskProvider 声明失败: %v", err)
 	}
-	systemServiceClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
+	registrationDone := systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
 		ModuleName: "quality", ModuleURL: serviceURL, RoutePrefix: "/quality", HealthCheckURL: serviceURL + "/health",
 		TaskProvider: provider,
 		Metadata: map[string]interface{}{
@@ -122,5 +128,6 @@ func main() {
 		},
 	})
 
-	select {}
+	<-runtimeContext.Done()
+	<-registrationDone
 }

@@ -4,6 +4,8 @@ const ENGINE = {
   id: 11,
   name: 'PostgreSQL Demo',
   engine_type: 'postgresql',
+  lifecycle_state: 'active',
+  connection_status: 'online',
   capabilities: {
     compute: {
       query: {
@@ -25,6 +27,8 @@ const MONGO_ENGINE = {
   id: 12,
   name: 'MongoDB Demo',
   engine_type: 'mongodb',
+  lifecycle_state: 'active',
+  connection_status: 'online',
   capabilities: {
     compute: {
       query: {
@@ -46,6 +50,8 @@ const DUCKDB_RUNTIME = {
   id: 18,
   name: 'DuckDB Federation',
   engine_type: 'duckdb',
+  lifecycle_state: 'active',
+  connection_status: 'online',
   capabilities: {
     compute: {
       query: {
@@ -190,7 +196,7 @@ test('generates a natural-language query with current-engine resource confirmati
     .fill('计算铁路两边宽度50米所占用的耕地面积')
   await page.getByRole('button', { name: '生成查询', exact: true }).click()
 
-  const confirmation = page.getByRole('dialog', { name: '确认查询资源', exact: true })
+  const confirmation = page.getByRole('dialog', { name: '需要确认查询含义', exact: true })
   await expect(confirmation).toBeVisible()
   await expect(confirmation.getByText('railway', { exact: true }).first()).toBeVisible()
   await expect(confirmation.getByText('farmland_b', { exact: true }).first()).toBeVisible()
@@ -211,6 +217,29 @@ test('generates a natural-language query with current-engine resource confirmati
   await expect(page.locator('.monaco-editor .view-lines')).toContainText('ST_Intersection')
   await expect(page.getByRole('button', { name: '执行', exact: true })).toBeEnabled()
   expect(copilotRequests.every(request => request.engine_id === ENGINE.id)).toBe(true)
+})
+
+test('continues generation with a structured calculation-rule clarification', async ({ page }) => {
+  const copilotRequests = []
+  await installMockBackend(page, { resultKind: 'table', copilotRequests })
+  await page.goto('/sql')
+
+  await page.getByRole('button', { name: 'AI 查询助手', exact: true }).click()
+  await page.getByPlaceholder('描述你要查询的内容，例如：计算铁路两边宽度50米所占用的耕地面积')
+    .fill('计算两个集合的重叠度')
+  await page.getByRole('button', { name: '生成查询', exact: true }).click()
+
+  const clarification = page.getByRole('dialog', { name: '需要确认查询含义', exact: true })
+  await clarification.getByText('farmland_b', { exact: true }).click()
+  await clarification.getByRole('button', { name: '确认并生成', exact: true }).click()
+  await expect(clarification.getByText('请选择本次指标的计算规则', { exact: true })).toBeVisible()
+  await clarification.getByText('Jaccard 相似度', { exact: true }).click()
+  await clarification.getByRole('button', { name: '确认并生成', exact: true }).click()
+
+  await expect.poll(() => copilotRequests.length).toBe(3)
+  expect(copilotRequests[2].clarification_answers).toEqual({ 'metric.definition': 'jaccard' })
+  await expect(clarification).toBeHidden()
+  await expect(page.locator('.monaco-editor .view-lines')).toContainText('ST_Intersection')
 })
 
 test('defines a query parameter, inserts its reference, and submits an execution override', async ({ page }) => {
@@ -291,8 +320,15 @@ async function installMockBackend(page, {
         return fulfillJSON(route, {
           status: 'need_clarification',
           query_language: 'sql',
-          clarification_reason: 'data_source_confirmation_required',
-          data_source_candidates: [
+          resources: [],
+          clarifications: [{
+            key: 'query.resources',
+            category: 'resource_selection',
+            prompt: '请选择查询资源',
+            control: 'resource_choice',
+            required: true,
+            options: [],
+            resource_candidates: [
             {
               role: 'railway',
               name: 'railway',
@@ -327,7 +363,27 @@ async function installMockBackend(page, {
               geometry_column: 'shape',
               crs: 'EPSG:32650'
             }
-          ]
+            ]
+          }]
+        })
+      }
+      if (body.query.includes('重叠度') && !body.clarification_answers?.['metric.definition']) {
+        return fulfillJSON(route, {
+          status: 'need_clarification',
+          query_language: 'sql',
+          resources: body.resources,
+          clarifications: [{
+            key: 'metric.definition',
+            category: 'calculation_rule',
+            prompt: '请选择本次指标的计算规则',
+            control: 'single_choice',
+            required: true,
+            options: [
+              { value: 'count', label: '共同元素数量', description: '统计交集数量' },
+              { value: 'jaccard', label: 'Jaccard 相似度', description: '交集除以并集' }
+            ],
+            resource_candidates: []
+          }]
         })
       }
       return fulfillJSON(route, {

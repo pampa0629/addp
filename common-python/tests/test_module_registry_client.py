@@ -9,6 +9,7 @@ from addp_common.client import (
     ConfigurationManagementDeclaration,
     ConfigurationManagementEntry,
     ModuleRegistration,
+    ModuleRegistryAPIError,
     ModuleRegistryClient,
     OAuthServiceTokenSource,
 )
@@ -220,7 +221,10 @@ class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
             })
 
         async def registry_handler(_request):
-            return httpx.Response(400, json={"error": "instance_id and role are required"})
+            return httpx.Response(400, json={
+                "error": "instance_id and role are required",
+                "error_code": "module_registration_invalid",
+            })
 
         token_source = OAuthServiceTokenSource(
             "http://system",
@@ -239,8 +243,15 @@ class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
             route_prefix="/agent",
         )
         try:
-            with self.assertRaisesRegex(httpx.HTTPStatusError, "instance_id and role are required"):
+            with self.assertRaises(ModuleRegistryAPIError) as captured_error:
                 await client.register(registration)
+            api_error = captured_error.exception
+            self.assertEqual(api_error.method, "POST")
+            self.assertEqual(api_error.path, "/api/v1/system/runtime/modules")
+            self.assertEqual(api_error.status_code, 400)
+            self.assertEqual(api_error.error_code, "module_registration_invalid")
+            self.assertEqual(api_error.error_message, "instance_id and role are required")
+            self.assertIn('"error_code":"module_registration_invalid"', api_error.response_body)
 
             with self.assertLogs("addp.module_registry", level="WARNING") as captured_logs:
                 registry_task = asyncio.create_task(client.run(registration))
@@ -248,7 +259,18 @@ class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
                 registry_task.cancel()
                 with self.assertRaises(asyncio.CancelledError):
                     await registry_task
-            self.assertIn("instance_id and role are required", "\n".join(captured_logs.output))
+            diagnostic_log = "\n".join(captured_logs.output)
+            for expected in (
+                "operation=register",
+                "module=agent",
+                f"instance_id={registration.instance_id}",
+                "role=backend",
+                "status_code=400",
+                "error_code='module_registration_invalid'",
+                "error_message='instance_id and role are required'",
+                "response_body=",
+            ):
+                self.assertIn(expected, diagnostic_log)
         finally:
             await client.close()
             await token_source.close()

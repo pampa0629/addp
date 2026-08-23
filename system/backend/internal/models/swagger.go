@@ -2,7 +2,8 @@ package models
 
 // ErrorResponse 错误响应
 type ErrorResponse struct {
-	Error string `json:"error" example:"invalid credentials"`
+	Error     string `json:"error" example:"invalid credentials"`
+	ErrorCode string `json:"error_code,omitempty" example:"invalid_request"`
 }
 
 // SuccessResponse 成功响应

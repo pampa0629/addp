@@ -131,6 +131,55 @@ def test_mongodb_collection_uses_owner_table_data_type_for_mql_generation(monkey
     assert response.query == '{"find":"Persons","filter":{"age":{"$gte":18}},"limit":10}'
 
 
+def test_semantic_clarification_is_returned_as_structured_interaction(monkeypatch):
+    executor = FakeExecutor()
+    monkeypatch.setattr(query_agent_api, "ToolExecutor", lambda *_args, **_kwargs: executor)
+    monkeypatch.setattr(query_agent_api.CopilotInferenceService, "chat_model", lambda *_args, **_kwargs: object())
+
+    from services.query_clarification import (
+        ClarificationOption,
+        QueryClarification,
+        QueryClarificationRequired,
+    )
+
+    async def fake_generate(**_kwargs):
+        raise QueryClarificationRequired(QueryClarification(
+            key="metric.definition",
+            category="calculation_rule",
+            prompt="请选择指标计算规则",
+            control="single_choice",
+            options=(ClarificationOption("count", "数量"), ClarificationOption("ratio", "比例")),
+        ))
+
+    monkeypatch.setattr(query_agent_api.query_service, "generate", fake_generate)
+    response = asyncio.run(query_agent_api.generate_query(
+        QueryGenerationRequest(
+            query="计算指标",
+            engine_id=11,
+            query_language="mql",
+            engine_context={
+                "id": 11,
+                "engine_type": "mongodb",
+                "capabilities": {"compute": {"query": {"supported": True, "languages": ["mql"]}}},
+            },
+            resources=[ResourceFact(
+                role="人员",
+                engine_id=11,
+                locator="addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657",
+            )],
+        ),
+        user=AuthorizationContext(principal_id=1, tenant_id=1),
+        credentials=HTTPAuthorizationCredentials(scheme="Bearer", credentials="user-token"),
+        db=None,
+    ))
+
+    assert response.status == "need_clarification"
+    assert response.clarifications[0].key == "metric.definition"
+    assert response.clarifications[0].control == "single_choice"
+    assert [option.value for option in response.clarifications[0].options] == ["count", "ratio"]
+    assert not hasattr(response, "clarification_reason")
+
+
 def test_mongodb_current_query_without_resource_enters_resource_discovery(monkeypatch):
     executor = FakeExecutor()
     monkeypatch.setattr(query_agent_api, "ToolExecutor", lambda *_args, **_kwargs: executor)
@@ -167,7 +216,8 @@ def test_mongodb_current_query_without_resource_enters_resource_discovery(monkey
     ))
 
     assert response.status == "need_clarification"
-    assert response.clarification_reason == "data_source_not_found"
+    assert response.clarifications[0].key == "query.resources"
+    assert response.clarifications[0].control == "notice"
 
 
 def test_mongodb_database_scope_is_forwarded_to_shared_resource_resolution(monkeypatch):

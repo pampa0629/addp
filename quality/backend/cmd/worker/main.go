@@ -51,7 +51,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	systemServiceClient.RegisterAndHeartbeat(ctx, &commonClient.ModuleRegistrationRequest{
+	registrationDone := systemServiceClient.RegisterAndHeartbeat(ctx, &commonClient.ModuleRegistrationRequest{
 		ModuleName: commonExecution.ModuleQuality, InstanceID: executor.WorkerID(),
 		Role: commonClient.ModuleRuntimeRoleWorker, RoutePrefix: "/quality",
 		Metadata: map[string]interface{}{
@@ -73,5 +73,6 @@ func main() {
 	log.Printf("Quality worker started: concurrency=%d lease=%s", cfg.WorkerConcurrency, cfg.WorkerLease)
 	<-ctx.Done()
 	executor.StopWorker()
+	<-registrationDone
 	log.Printf("Quality worker stopped")
 }

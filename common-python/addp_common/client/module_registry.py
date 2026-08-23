@@ -64,6 +64,40 @@ class ModuleRegistration(_ContractModel):
     configuration_management: ConfigurationManagementDeclaration | None = None
 
 
+class ModuleRegistryAPIError(httpx.HTTPStatusError):
+    def __init__(self, response: httpx.Response) -> None:
+        body = response.text.strip()
+        if len(body) > 8192:
+            body = f"{body[:8192]}..."
+        error_code = ""
+        error_message = ""
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        if isinstance(payload, dict):
+            if isinstance(payload.get("error_code"), str):
+                error_code = payload["error_code"]
+            if isinstance(payload.get("error"), str):
+                error_message = payload["error"]
+
+        self.method = response.request.method
+        self.path = response.request.url.path
+        self.status_code = response.status_code
+        self.error_code = error_code
+        self.error_message = error_message
+        self.response_body = body
+
+        message = f"System API {self.method} {self.path} returned HTTP {self.status_code}"
+        if self.error_code:
+            message = f'{message} error_code="{self.error_code}"'
+        if self.error_message:
+            message = f'{message} error="{self.error_message}"'
+        if self.response_body:
+            message = f'{message} response_body="{self.response_body}"'
+        super().__init__(message, request=response.request, response=response)
+
+
 class ModuleRegistryClient:
     def __init__(
         self,
@@ -81,7 +115,7 @@ class ModuleRegistryClient:
             trust_env=False,
             headers={"Content-Type": "application/json"},
         )
-        self._active_instances: set[tuple[str, str]] = set()
+        self._active_instances: dict[tuple[str, str], str] = {}
 
     async def register(self, registration: ModuleRegistration) -> None:
         await self._request(
@@ -89,7 +123,7 @@ class ModuleRegistryClient:
             "/api/v1/system/runtime/modules",
             registration.model_dump(exclude_none=True),
         )
-        self._active_instances.add((registration.module_name, registration.instance_id))
+        self._active_instances[(registration.module_name, registration.instance_id)] = registration.role
 
     async def heartbeat(self, module_name: str, instance_id: str) -> None:
         await self._request(
@@ -107,13 +141,14 @@ class ModuleRegistryClient:
             "DELETE",
             f"/api/v1/system/runtime/modules/{encoded_module_name}/instances/{encoded_instance_id}",
         )
-        self._active_instances.discard((module_name, instance_id))
+        self._active_instances.pop((module_name, instance_id), None)
 
     async def run(self, registration: ModuleRegistration, *, interval: float = 10.0) -> None:
         registered = False
         failures = 0
         try:
             while True:
+                operation = "register" if not registered else "heartbeat"
                 try:
                     if not registered:
                         await self.register(registration)
@@ -125,6 +160,7 @@ class ModuleRegistryClient:
                             registration.instance_id,
                             registration.role,
                         )
+                    operation = "heartbeat"
                     await asyncio.sleep(interval)
                     await self.heartbeat(registration.module_name, registration.instance_id)
                     failures = 0
@@ -132,12 +168,7 @@ class ModuleRegistryClient:
                     raise
                 except Exception as exc:
                     failures += 1
-                    logger.warning(
-                        "模块注册或心跳失败: module=%s instance_id=%s error=%s",
-                        registration.module_name,
-                        registration.instance_id,
-                        exc,
-                    )
+                    self._log_failure(operation, registration, exc)
                     if failures >= 3:
                         registered = False
                     await asyncio.sleep(min(float(failures * 5), 20.0))
@@ -168,25 +199,50 @@ class ModuleRegistryClient:
     def _raise_for_status(response: httpx.Response) -> None:
         if response.is_success:
             return
-        body = response.text.strip()
-        if len(body) > 8192:
-            body = f"{body[:8192]}..."
-        message = f"System module registry API returned status {response.status_code}"
-        if body:
-            message = f"{message}: {body}"
-        raise httpx.HTTPStatusError(message, request=response.request, response=response)
+        raise ModuleRegistryAPIError(response)
+
+    @staticmethod
+    def _log_failure(operation: str, registration: ModuleRegistration, exc: Exception) -> None:
+        if isinstance(exc, ModuleRegistryAPIError):
+            logger.warning(
+                "module registry request failed: operation=%s module=%s instance_id=%s role=%s "
+                "status_code=%s error_code=%r error_message=%r response_body=%r",
+                operation,
+                registration.module_name,
+                registration.instance_id,
+                registration.role,
+                exc.status_code,
+                exc.error_code,
+                exc.error_message,
+                exc.response_body,
+            )
+            return
+        logger.warning(
+            "module registry request failed: operation=%s module=%s instance_id=%s role=%s error=%r",
+            operation,
+            registration.module_name,
+            registration.instance_id,
+            registration.role,
+            exc,
+        )
 
     async def _deregister_safely(self, module_name: str, instance_id: str) -> None:
         if (module_name, instance_id) not in self._active_instances:
             return
+        role = self._active_instances[(module_name, instance_id)]
         try:
             await asyncio.wait_for(self.deregister(module_name, instance_id), timeout=2.0)
             logger.info("模块注销成功: module=%s instance_id=%s", module_name, instance_id)
         except Exception as exc:
-            logger.warning(
-                "模块注销失败: module=%s instance_id=%s error=%s",
-                module_name,
-                instance_id,
+            self._log_failure(
+                "deregister",
+                ModuleRegistration(
+                    module_name=module_name,
+                    instance_id=instance_id,
+                    role=role,
+                    module_url="",
+                    route_prefix="",
+                ),
                 exc,
             )
 

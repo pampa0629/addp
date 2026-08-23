@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	commonClient "github.com/addp/common/client"
@@ -41,6 +43,8 @@ import (
 // @name Authorization
 
 func main() {
+	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopRuntime()
 	// 设置本地时区为 Asia/Shanghai (CST)
 	loc, err := time.LoadLocation("Asia/Shanghai")
 	if err != nil {
@@ -199,15 +203,13 @@ func main() {
 		taskService.SetCaptureControl(captureSupervisor)
 		taskService.SetSchemaChangeInspector(capturePlanResolver)
 		cleanupService.SetCaptureControl(captureSupervisor)
-		captureCtx, cancelCapture := context.WithCancel(context.Background())
-		defer cancelCapture()
 		go func() {
-			if err := captureSupervisor.Run(captureCtx); err != nil && err != context.Canceled {
+			if err := captureSupervisor.Run(runtimeContext); err != nil && err != context.Canceled {
 				logger.L().Error("Transfer capture supervisor 已退出", "error", err)
 			}
 		}()
 	}
-	if err := cleanupService.Start(context.Background()); err != nil {
+	if err := cleanupService.Start(runtimeContext); err != nil {
 		logger.L().Warn("Transfer 资源回收服务启动失败", "error", err)
 	}
 	defer cleanupService.Stop()
@@ -217,6 +219,7 @@ func main() {
 
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
+	var registrationDone <-chan struct{}
 
 	// ========== 模块定义、运行实例与 TaskProvider 声明发布 ==========
 	if systemRuntimeClient != nil {
@@ -224,7 +227,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("构建 Transfer TaskProvider 声明失败: %v", err)
 		}
-		systemRuntimeClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
+		registrationDone = systemRuntimeClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
 			ModuleName: "transfer", ModuleURL: serviceURL, RoutePrefix: "/transfer", HealthCheckURL: serviceURL + "/health",
 			TaskProvider: taskProvider,
 			Metadata: map[string]interface{}{
@@ -251,8 +254,15 @@ func main() {
 	log.Printf("🔗 System Service: %s", cfg.SystemServiceURL)
 	log.Printf("✅ Health check: http://localhost%s/health", addr)
 
-	if err := router.Run(addr); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	go func() {
+		if err := router.Run(addr); err != nil {
+			log.Printf("Failed to start server: %v", err)
+			stopRuntime()
+		}
+	}()
+	<-runtimeContext.Done()
+	if registrationDone != nil {
+		<-registrationDone
 	}
 }
 

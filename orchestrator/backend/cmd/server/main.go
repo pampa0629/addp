@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
@@ -32,6 +35,8 @@ func main() {
 
 	// 加载配置
 	cfg := config.LoadConfig()
+	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopRuntime()
 
 	// 检查端口是否可用
 	if err := commonConfig.CheckPortAvailable(cfg.ServerPort); err != nil {
@@ -111,6 +116,7 @@ func main() {
 
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerPort)
+	var registrationDone <-chan struct{}
 
 	// ========== 模块定义、运行实例与 TaskProvider 声明发布 ==========
 	if cfg.SystemServiceURL != "" {
@@ -118,7 +124,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("构建 Orchestrator TaskProvider 声明失败: %v", err)
 		}
-		systemServiceClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
+		registrationDone = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
 			ModuleName: "orchestrator", ModuleURL: serviceURL, RoutePrefix: "/orchestrator",
 			HealthCheckURL: serviceURL + "/health", Metadata: map[string]interface{}{"module": "orchestrator"},
 			TaskProvider: provider,
@@ -128,7 +134,14 @@ func main() {
 	// 启动服务器
 	addr := fmt.Sprintf(":%s", cfg.ServerPort)
 	log.Printf("🚀 Orchestrator 服务启动: %s", addr)
-	if err := router.Run(addr); err != nil {
-		log.Fatalf("服务器启动失败: %v", err)
+	go func() {
+		if err := router.Run(addr); err != nil {
+			log.Printf("服务器启动失败: %v", err)
+			stopRuntime()
+		}
+	}()
+	<-runtimeContext.Done()
+	if registrationDone != nil {
+		<-registrationDone
 	}
 }

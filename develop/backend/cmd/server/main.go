@@ -148,6 +148,9 @@ func main() {
 
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerAddr)
+	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopRuntime()
+	var registrationDone <-chan struct{}
 
 	// ========== 模块定义、运行实例与 TaskProvider 声明发布 ==========
 	if cfg.SystemServiceURL != "" {
@@ -155,7 +158,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("构建 Develop TaskProvider 声明失败: %v", err)
 		}
-		systemServiceClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
+		registrationDone = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
 			ModuleName: "develop", ModuleURL: serviceURL, RoutePrefix: "/develop", HealthCheckURL: serviceURL + "/health",
 			TaskProvider: taskProvider,
 			Metadata:     map[string]interface{}{"capabilities": map[string]interface{}{"cleanup_executor": map[string]interface{}{"enabled": true, "causes": []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted}}}},
@@ -166,10 +169,6 @@ func main() {
 		})
 	}
 
-	// 设置优雅关闭
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-
 	// 启动服务器（非阻塞）
 	addr := cfg.ServerAddr
 	log.Printf("🎉 Develop Service is running on %s", addr)
@@ -177,13 +176,17 @@ func main() {
 
 	go func() {
 		if err := router.Run(addr); err != nil {
-			log.Fatalf("❌ Failed to start server: %v", err)
+			log.Printf("❌ Failed to start server: %v", err)
+			stopRuntime()
 		}
 	}()
 
 	// 等待终止信号
-	<-sigCh
+	<-runtimeContext.Done()
 	log.Println("🛑 Shutting down Develop Service...")
+	if registrationDone != nil {
+		<-registrationDone
+	}
 	sessionShutdownContext, cancelSessionShutdown := context.WithTimeout(context.Background(), 20*time.Second)
 	notebookHandler.ShutdownSessions(sessionShutdownContext)
 	cancelSessionShutdown()

@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -86,6 +87,51 @@ func TestRegisterRuntimeEngineWithRetryDoesNotBlockAndRecovers(t *testing.T) {
 	}
 }
 
+func TestSystemServiceClientPreservesRegistryAPIErrorDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"module registration is invalid","error_code":"module_registration_invalid"}`))
+	}))
+	defer server.Close()
+
+	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
+	err := client.RegisterModule(context.Background(), &ModuleRegistrationRequest{ModuleName: "manager"})
+	var apiError *SystemAPIError
+	if !errors.As(err, &apiError) {
+		t.Fatalf("RegisterModule() error type = %T, want *SystemAPIError", err)
+	}
+	if apiError.Method != http.MethodPost || apiError.Path != "/api/v1/system/runtime/modules" ||
+		apiError.StatusCode != http.StatusBadRequest || apiError.ErrorCode != "module_registration_invalid" ||
+		apiError.ErrorMessage != "module registration is invalid" ||
+		apiError.ResponseBody != `{"error":"module registration is invalid","error_code":"module_registration_invalid"}` {
+		t.Fatalf("SystemAPIError = %#v", apiError)
+	}
+	for _, expected := range []string{
+		"HTTP 400", `error_code="module_registration_invalid"`,
+		`error="module registration is invalid"`, `response_body="{\"error\":`,
+	} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("error %q does not contain %q", err, expected)
+		}
+	}
+
+	diagnostic := moduleRegistryFailureLog("register", ModuleRegistrationRequest{
+		ModuleName: "manager", InstanceID: "manager-1", Role: ModuleRuntimeRoleBackend,
+	}, err)
+	for _, expected := range []string{
+		"operation=register", "module=manager", "instance_id=manager-1", "role=backend",
+		"status_code=400", `error_code="module_registration_invalid"`,
+		`error_message="module registration is invalid"`, `response_body="{\"error\":`,
+	} {
+		if !strings.Contains(diagnostic, expected) {
+			t.Fatalf("diagnostic %q does not contain %q", diagnostic, expected)
+		}
+	}
+}
+
 func TestRegisterAndHeartbeatGeneratesBackendInstanceDeclaration(t *testing.T) {
 	t.Parallel()
 
@@ -107,7 +153,7 @@ func TestRegisterAndHeartbeatGeneratesBackendInstanceDeclaration(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
-	client.RegisterAndHeartbeat(ctx, &ModuleRegistrationRequest{
+	done := client.RegisterAndHeartbeat(ctx, &ModuleRegistrationRequest{
 		ModuleName: "manager", ModuleURL: "http://manager:8080", RoutePrefix: "/manager",
 		Metadata: map[string]interface{}{"version": "test"},
 	})
@@ -122,6 +168,11 @@ func TestRegisterAndHeartbeatGeneratesBackendInstanceDeclaration(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("module registration was not sent")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("registration lifecycle did not finish after cancellation")
 	}
 }
 
@@ -194,7 +245,7 @@ func TestRegisterAndHeartbeatReregistersImmediatelyAndDeregistersOnShutdown(t *t
 
 	ctx, cancel := context.WithCancel(context.Background())
 	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
-	client.registerAndHeartbeat(ctx, &ModuleRegistrationRequest{
+	done := client.registerAndHeartbeat(ctx, &ModuleRegistrationRequest{
 		ModuleName: "manager", ModuleURL: "http://manager:8081", RoutePrefix: "/manager",
 	}, time.Millisecond, 2*time.Millisecond, time.Millisecond)
 	select {
@@ -207,6 +258,22 @@ func TestRegisterAndHeartbeatReregistersImmediatelyAndDeregistersOnShutdown(t *t
 	case <-deregistered:
 	case <-time.After(time.Second):
 		t.Fatal("context cancellation did not deregister the runtime instance")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("registration lifecycle did not finish after deregistration")
+	}
+}
+
+func TestRegisterAndHeartbeatNilRequestFinishesLifecycle(t *testing.T) {
+	t.Parallel()
+	client := NewSystemServiceClient("http://system.invalid", staticSystemServiceTokenSource("platform-token"), nil)
+	done := client.RegisterAndHeartbeat(context.Background(), nil)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("nil registration request left lifecycle running")
 	}
 }
 

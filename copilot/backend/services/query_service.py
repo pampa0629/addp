@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from addp_common.client.inference import ResponseSchema
 from services.inference_service import CopilotInferenceService
 from services.mql_compiler import MQLCompiler, MQLPlanError
+from services.query_clarification import QueryClarification, QueryClarificationRequired
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,8 @@ class QueryService:
         "field_paths 就不能为空。"
         "operations 只能使用 filter、list、project、sort、limit、group、aggregate、join、union、"
         "intersection、ratio、count、distinct。五个字段的每一项都只能是 JSON 字符串，禁止返回对象或键值结构。"
-        "用户要求重叠度但未指定定义时，默认采用 Jaccard intersection/union，并写入 assumptions。"
+        "不得自行补充会改变计算结果的口径、范围、时间窗口、分母、去重方式或其他假设；"
+        "凡是无法从用户原话和已验证资源事实唯一确定的计算规则，都必须逐项写入 assumptions。"
         "例如 operations 必须写成 [\"filter\",\"intersection\",\"ratio\"]。只返回 JSON 对象："
         '{"collections":[],"field_paths":[],"operations":[],"result_keys":[],"assumptions":[]}。'
     )
@@ -103,6 +105,7 @@ class QueryService:
         current_query: str | None,
         tenant_id: int,
         db: Session,
+        clarification_answers: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         language = query_language.strip().lower()
         query_name_key = "federated_sql" if language == "sql" and self._is_federated_query_engine(engine) else language
@@ -125,11 +128,19 @@ class QueryService:
         }
         if current_query and current_query.strip():
             context_payload["current_query"] = current_query.strip()
+        if clarification_answers:
+            context_payload["clarification_answers"] = clarification_answers
         context = json.dumps(context_payload, ensure_ascii=False, default=str)
         allowed_parameter_types = self._engine_query_parameter_types(engine, language)
 
         if language == "mql":
-            return await self._generate_compiled_mql(llm, context, query, resources)
+            return await self._generate_compiled_mql(
+                llm,
+                context,
+                query,
+                resources,
+                clarification_answers=clarification_answers or {},
+            )
 
         plan_response = await llm.ainvoke([
             SystemMessage(content=self._plan_prompt),
@@ -167,6 +178,17 @@ class QueryService:
                 raise ValueError("query plan validation failed: " + "; ".join(plan_errors))
         if plan is None:
             raise ValueError("query plan validation failed")
+
+        assumptions = plan.get("assumptions") or []
+        if assumptions:
+            raise QueryClarificationRequired(QueryClarification(
+                key="query.assumptions",
+                category="semantic_ambiguity",
+                prompt="以下计算规则尚不能唯一确定，请补充确认：\n" + "\n".join(
+                    f"- {assumption}" for assumption in assumptions
+                ),
+                control="text",
+            ))
 
         candidate_output = await self._generate_candidate(llm, context, query, language, plan)
         candidate, errors = self._parse_and_validate_candidate(
@@ -206,6 +228,8 @@ class QueryService:
         context: str,
         query: str,
         resources: list[dict[str, Any]],
+        *,
+        clarification_answers: dict[str, Any],
     ) -> dict[str, Any]:
         prompt = self._mql_semantic_plan_prompt()
         response = await llm.ainvoke([
@@ -215,7 +239,11 @@ class QueryService:
         output = str(getattr(response, "content", response))
         try:
             plan = MQLCompiler.parse_plan(output, self._decode_object)
-            return MQLCompiler.compile(plan, resources)
+            return MQLCompiler.compile(
+                plan,
+                resources,
+                clarification_answers=clarification_answers,
+            )
         except MQLPlanError as error:
             logger.warning("MQL semantic plan rejected: error=%s output=%s", error, output)
             repair = await llm.ainvoke([
@@ -229,7 +257,11 @@ class QueryService:
             ], response_schema=self._mql_semantic_plan_response_schema())
             repaired_output = str(getattr(repair, "content", repair))
             plan = MQLCompiler.parse_plan(repaired_output, self._decode_object)
-            return MQLCompiler.compile(plan, resources)
+            return MQLCompiler.compile(
+                plan,
+                resources,
+                clarification_answers=clarification_answers,
+            )
 
     @staticmethod
     def _mql_semantic_plan_prompt() -> str:

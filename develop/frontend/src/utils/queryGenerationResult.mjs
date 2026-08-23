@@ -1,26 +1,63 @@
-const clarificationKeys = {
-  data_source_not_found: 'develop.query.dataSourceNotFound',
-  data_source_confirmation_required: 'develop.query.dataSourceConfirmationRequired',
-  data_source_ambiguous: 'develop.query.dataSourceConfirmationRequired',
-  data_source_unverified: 'develop.query.dataSourceUnverified',
-  query_language_unsupported: 'develop.query.queryLanguageUnsupported'
+const clarificationControls = new Set([
+  'single_choice',
+  'multiple_choice',
+  'text',
+  'resource_choice',
+  'notice'
+])
+
+function normalizeClarification(clarification) {
+  const key = String(clarification?.key || '').trim()
+  const prompt = String(clarification?.prompt || '').trim()
+  const control = String(clarification?.control || '').trim()
+  if (!key || !prompt || !clarificationControls.has(control)) {
+    throw new Error('invalid query clarification response')
+  }
+  const options = Array.isArray(clarification.options)
+    ? clarification.options.map(option => {
+        const value = String(option?.value || '').trim()
+        const label = String(option?.label || '').trim()
+        if (!value || !label) throw new Error('invalid query clarification option')
+        return {
+          value,
+          label,
+          description: String(option?.description || '').trim()
+        }
+      })
+    : []
+  const resourceCandidates = Array.isArray(clarification.resource_candidates)
+    ? clarification.resource_candidates
+    : []
+  if (['single_choice', 'multiple_choice'].includes(control) && options.length === 0) {
+    throw new Error('invalid query clarification options')
+  }
+  if (control === 'resource_choice' && resourceCandidates.length === 0) {
+    throw new Error('invalid query resource clarification')
+  }
+  return {
+    key,
+    category: String(clarification.category || '').trim(),
+    prompt,
+    control,
+    required: clarification.required !== false,
+    options,
+    resourceCandidates
+  }
 }
 
 export function resolveQueryGenerationResult(result) {
   if (result?.status === 'need_clarification') {
+    if (!Array.isArray(result.clarifications) || result.clarifications.length === 0) {
+      throw new Error('invalid query clarification response')
+    }
     return {
       query: null,
-      queryLanguage: result.query_language || '',
-      resources: [],
+      queryLanguage: String(result.query_language || '').trim().toLowerCase(),
+      resources: Array.isArray(result.resources) ? result.resources : [],
       warnings: [],
       queryParameters: [],
       explanation: '',
-      clarificationKey: clarificationKeys[result.clarification_reason]
-        || 'develop.query.dataSourceClarificationRequired',
-      clarificationReason: result.clarification_reason || null,
-      candidates: Array.isArray(result.data_source_candidates)
-        ? result.data_source_candidates
-        : []
+      clarifications: result.clarifications.map(normalizeClarification)
     }
   }
 
@@ -44,8 +81,6 @@ export function resolveQueryGenerationResult(result) {
       ...(parameter.description ? { description: parameter.description } : {})
     })),
     explanation: String(result.explanation || '').trim(),
-    clarificationKey: null,
-    clarificationReason: null,
-    candidates: []
+    clarifications: []
   }
 }

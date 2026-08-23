@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	commonClient "github.com/addp/common/client"
@@ -51,6 +54,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopRuntime()
 
 	// 连接数据库
 	db, err := gorm.Open(postgres.Open(cfg.GetDatabaseDSN()), &gorm.Config{})
@@ -154,13 +159,16 @@ func main() {
 		ticker := time.NewTicker(cfg.AlertEvaluationInterval)
 		defer ticker.Stop()
 		for {
-			if err := alertService.Evaluate(context.Background(), time.Now()); err != nil {
+			if err := alertService.Evaluate(runtimeContext, time.Now()); err != nil && err != context.Canceled {
 				log.Printf("Alert evaluation failed: %v", err)
 			}
-			<-ticker.C
+			select {
+			case <-runtimeContext.Done():
+				return
+			case <-ticker.C:
+			}
 		}
 	}()
-	processCtx := context.Background()
 	webhookReporter, err := commonRuntimeHealth.NewReporter(commonRuntimeHealth.NewRepository(db), commonRuntimeHealth.ReporterConfig{
 		InstanceID: webhookWorkerID, Module: commonExecution.ModuleMonitor, Role: commonRuntimeHealth.RoleDispatcher,
 		RuntimeName: "webhook", Capacity: 1, Interval: commonRuntimeHealth.DefaultInterval, TTL: commonRuntimeHealth.DefaultTTL,
@@ -169,8 +177,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Webhook dispatcher heartbeat config is invalid: %v", err)
 	}
-	go webhookReporter.Run(processCtx)
-	go webhookDispatcher.Run(processCtx)
+	go webhookReporter.Run(runtimeContext)
+	go webhookDispatcher.Run(runtimeContext)
 	if emailSender != nil {
 		emailWorkerID := "monitor-email-" + uuid.NewString()
 		emailDispatcher := service.NewEmailDispatcher(
@@ -190,8 +198,8 @@ func main() {
 		if reporterErr != nil {
 			log.Fatalf("Email dispatcher heartbeat config is invalid: %v", reporterErr)
 		}
-		go emailReporter.Run(processCtx)
-		go emailDispatcher.Run(processCtx)
+		go emailReporter.Run(runtimeContext)
+		go emailDispatcher.Run(runtimeContext)
 	} else {
 		log.Printf("Email dispatcher disabled: SMTP relay is not configured")
 	}
@@ -203,14 +211,15 @@ func main() {
 	// 后台启动服务器
 	go func() {
 		if err := router.Run(addr); err != nil {
-			log.Fatalf("Failed to start server: %v", err)
+			log.Printf("Failed to start server: %v", err)
+			stopRuntime()
 		}
 	}()
 
 	// 启动模块注册和心跳
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerPort)
-	systemServiceClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
+	registrationDone := systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
 		ModuleName: "monitor", ModuleURL: serviceURL, RoutePrefix: "/monitor", HealthCheckURL: serviceURL + "/health",
 		Metadata: map[string]interface{}{"module": "monitor"},
 		ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{
@@ -219,6 +228,6 @@ func main() {
 		}}},
 	})
 
-	// 阻塞主 goroutine
-	select {}
+	<-runtimeContext.Done()
+	<-registrationDone
 }

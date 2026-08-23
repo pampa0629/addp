@@ -72,6 +72,8 @@ Develop 任务编辑器遵守 `docs/spec/addp前端路由与可恢复状态规�
 
 Copilot `resources[]` 只允许提交具有 `item_id`、可由 Owner `resource.facts.get` 返回平台 `data_type` 和字段事实的具体数据项。已选具体 MongoDB collection 且编辑器为空时，前端必须直接提交该 collection，不能用空 MQL 解析结果覆盖选择。MongoDB `database` 等容器节点可以作为查询执行范围和 discovery scope，但不是 AI 输入资源，不能提交到 `resources[]`。MongoDB 查询已有 MQL 时，前端从当前合法 command object 提取 `find/aggregate/count/distinct` 主 collection 和 `$lookup.from`、`$graphLookup.from`、`$unionWith` 引用，在该 database 资源树节点下逐一匹配具体 collection locator，并以这些 collection 的 `ResourceFact` 调用 Copilot；数据库执行范围仍只保存在 Develop 的 `target_locator` 中。只选 database 且编辑器为空时以 `resources=[] + resource_scope_locator=<database locator>` 调用共享范围发现，由 Copilot 通过 Owner Tool 枚举并返回当前 database 的具体 collection 候选，用户确认后再提交。已有 MQL 的 collection 引用不存在、跨出当前 database 或不唯一时直接要求用户澄清，不退回范围枚举或模糊发现，也不保留 `resources=[] + current_query` 的无字段事实旁路。
 
+查询工作台必须用统一澄清弹窗消费 Copilot 的结构化 `clarifications[]`。资源确认与计算规则、统计对象、时间范围、聚合维度、实体匹配、字段映射、去重/空值/分母规则等语义澄清使用同一交互框架；前端只按 `control` 渲染并提交 `clarification_answers`，不得识别“重叠度”等业务措辞或自行决定计算口径。用户取消澄清不能改写编辑器；回答后保留原问题、资源、语言和当前查询继续生成。Toast 只用于网络、权限、模块不可用和非法响应等系统错误，不能承载可恢复的用户澄清。
+
 执行列表 `/develop/executions` 的稳定筛选和分页状态使用 `dev_type`、`status`、`trigger_type`、`source_task_id`、`start_date`、`end_date`、`page`、`page_size` query；默认页码和默认每页数量从 URL 省略，未知或无效参数必须通过 `replace` 清理。
 
 TaskProvider、执行状态回查和 Asset 发现属于服务间接口，统一只接受 Bearer Service Access Token 和 canonical AuthContext。TaskProvider 固定由 `addp-orchestrator` 调用，Asset 发现固定由 `addp-asset` 调用；两者还要校验各自精确 Permission。代表用户创建或继续执行任务时必须引用由原 User AuthContext 派生、绑定唯一 execution 的 Execution Authorization；内部调用不能凭 Service Principal 自身权限伪造 User、Tenant、`triggered_by` 或数据访问能力。旧 `/api/v1/develop/internal`、`X-Internal-API-Key` 和 `X-Tenant-ID` 已删除，不保留双轨。

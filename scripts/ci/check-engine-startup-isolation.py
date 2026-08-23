@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enforce that ADDP module startup is independent from Engine Runtime availability."""
+"""Enforce ADDP runtime startup isolation and module registration lifecycle rules."""
 
 from __future__ import annotations
 
@@ -51,6 +51,10 @@ REMOVED_SYSTEM_RUNTIME_CONFIG = {
     "INFERENCE_URL",
 }
 
+MODULE_REGISTRATION_CALL = re.compile(
+    r"(?m)^\s*(?P<lifecycle>[A-Za-z][A-Za-z0-9_]*)\s*(?::=|=)\s*.*RegisterAndHeartbeat(?:WithMetadata)?\("
+)
+
 
 def selected_module_cases(start_script: str) -> dict[str, str]:
     match = re.search(r"(?ms)^\s*case \$SELECTED_MODULE in\n(?P<body>.*?)^\s*esac\s*$", start_script)
@@ -82,6 +86,49 @@ def compose_dependencies(block: str) -> set[str]:
     if not match:
         return set()
     return set(re.findall(r"(?m)^      -?\s*([a-z0-9-]+):?\s*$", match.group("body")))
+
+
+def validate_module_registration_lifecycle(repository: Path) -> list[str]:
+    errors: list[str] = []
+    call_count = 0
+    command_sources = sorted(
+        path
+        for path in repository.glob("*/backend/cmd/**/*.go")
+        if not path.name.endswith("_test.go")
+    )
+    for path in command_sources:
+        source = path.read_text(encoding="utf-8")
+        if "RegisterAndHeartbeat(" not in source and "RegisterAndHeartbeatWithMetadata(" not in source:
+            continue
+        relative = path.relative_to(repository)
+        call_count += source.count("RegisterAndHeartbeat(") + source.count("RegisterAndHeartbeatWithMetadata(")
+        if (
+            "RegisterAndHeartbeat(context.Background()" in source
+            or "RegisterAndHeartbeatWithMetadata(context.Background()" in source
+        ):
+            errors.append(f"{relative} uses context.Background() for module registration")
+        if "signal.NotifyContext(" not in source:
+            errors.append(f"{relative} does not own a signal lifecycle context")
+        matches = list(MODULE_REGISTRATION_CALL.finditer(source))
+        if not matches:
+            errors.append(f"{relative} ignores the registration lifecycle completion signal")
+            continue
+        for match in matches:
+            lifecycle = match.group("lifecycle")
+            if not re.search(rf"<-\s*{re.escape(lifecycle)}\b", source):
+                errors.append(f"{relative} does not wait for {lifecycle} before exiting")
+
+    if call_count == 0:
+        errors.append("no Go module registration callsites were found")
+
+    client_path = repository / "common/client/system_service.go"
+    client_source = client_path.read_text(encoding="utf-8")
+    if not re.search(
+        r"func \(c \*SystemServiceClient\) RegisterAndHeartbeat\([^)]*\) <-chan struct\{\}",
+        client_source,
+    ):
+        errors.append("common/client/system_service.go does not expose lifecycle completion")
+    return errors
 
 
 def validate(repository: Path) -> list[str]:
@@ -134,6 +181,7 @@ def validate(repository: Path) -> list[str]:
     for forbidden_call in ("RegisterBuiltinRuntime", "RefreshAllEngineCapabilities"):
         if forbidden_call in system_main:
             errors.append(f"system startup still calls {forbidden_call}")
+    errors.extend(validate_module_registration_lifecycle(repository))
     return errors
 
 
@@ -149,7 +197,7 @@ def main() -> int:
         for error in errors:
             print(f"Engine startup isolation check failed: {error}", file=sys.stderr)
         return 1
-    print("Engine startup isolation check passed.")
+    print("Runtime startup consistency check passed.")
     return 0
 
 

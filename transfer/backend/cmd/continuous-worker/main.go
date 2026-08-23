@@ -140,7 +140,7 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	systemRuntimeClient.RegisterAndHeartbeat(ctx, &commonClient.ModuleRegistrationRequest{
+	registrationDone := systemRuntimeClient.RegisterAndHeartbeat(ctx, &commonClient.ModuleRegistrationRequest{
 		ModuleName: commonExecution.ModuleTransfer, InstanceID: owner,
 		Role: commonClient.ModuleRuntimeRoleWorker, RoutePrefix: "/transfer",
 		Metadata: map[string]interface{}{
@@ -164,8 +164,11 @@ func main() {
 		}
 	}()
 	logger.L().Info("transfer continuous worker starting", "owner_instance_id", owner, "capacity", cfg.ContinuousWorkerCapacity, "data_plane", "kafka_or_postgresql_cdc_to_postgresql")
-	if err := supervisor.Run(ctx); err != nil && err != context.Canceled {
-		log.Fatalf("continuous supervisor 退出: %v", err)
+	runErr := supervisor.Run(ctx)
+	stop()
+	<-registrationDone
+	if runErr != nil && runErr != context.Canceled {
+		log.Fatalf("continuous supervisor 退出: %v", runErr)
 	}
 }
 

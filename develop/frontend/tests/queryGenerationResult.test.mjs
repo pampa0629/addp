@@ -39,11 +39,50 @@ const candidates = [
 
 const clarification = resolveQueryGenerationResult({
   status: 'need_clarification',
-  clarification_reason: 'data_source_confirmation_required',
-  data_source_candidates: candidates
+  query_language: 'mql',
+  resources: [],
+  clarifications: [{
+    key: 'query.resources',
+    category: 'resource_selection',
+    prompt: '请选择查询资源',
+    control: 'resource_choice',
+    required: true,
+    options: [],
+    resource_candidates: candidates
+  }]
 })
-assert.equal(clarification.clarificationKey, 'develop.query.dataSourceConfirmationRequired')
-assert.deepEqual(clarification.candidates, candidates)
+assert.equal(clarification.queryLanguage, 'mql')
+assert.deepEqual(clarification.clarifications[0].resourceCandidates, candidates)
+
+const semanticClarification = resolveQueryGenerationResult({
+  status: 'need_clarification',
+  query_language: 'mql',
+  resources: [{ role: '人员', locator: 'persons' }],
+  clarifications: [{
+    key: 'metric.definition',
+    category: 'calculation_rule',
+    prompt: '请选择计算规则',
+    control: 'single_choice',
+    required: true,
+    options: [
+      { value: 'count', label: '数量' },
+      { value: 'ratio', label: '比例', description: '计算比例' }
+    ],
+    resource_candidates: []
+  }]
+})
+assert.deepEqual(semanticClarification.clarifications[0], {
+  key: 'metric.definition',
+  category: 'calculation_rule',
+  prompt: '请选择计算规则',
+  control: 'single_choice',
+  required: true,
+  options: [
+    { value: 'count', label: '数量', description: '' },
+    { value: 'ratio', label: '比例', description: '计算比例' }
+  ],
+  resourceCandidates: []
+})
 
 const grouped = groupResourceCandidates(candidates)
 assert.equal(grouped.length, 2)
@@ -91,9 +130,7 @@ assert.deepEqual(resolveQueryGenerationResult({
   warnings: [],
   queryParameters: [],
   explanation: '',
-  clarificationKey: null,
-  clarificationReason: null,
-  candidates: []
+  clarifications: []
 })
 
 assert.deepEqual(resolveQueryGenerationResult({
@@ -107,5 +144,6 @@ assert.deepEqual(resolveQueryGenerationResult({
 
 assert.throws(() => resolveQueryGenerationResult({ status: 'success', query: '' }))
 assert.throws(() => resolveQueryGenerationResult({ status: 'success', query: 'SELECT 1', query_parameters: null }))
+assert.throws(() => resolveQueryGenerationResult({ status: 'need_clarification', clarifications: [] }))
 
 console.log('queryGenerationResult tests passed')

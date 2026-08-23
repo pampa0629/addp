@@ -22,6 +22,16 @@ type ModuleRegistryHandler struct {
 	service *service.ModuleRegistryService
 }
 
+const (
+	moduleRegistrationInvalidErrorCode    = "module_registration_invalid"
+	moduleRuntimeInstanceMissingErrorCode = "module_runtime_instance_not_found"
+	moduleRegistryUnauthorizedErrorCode   = "module_registry_unauthorized"
+	moduleRegistryForbiddenErrorCode      = "module_registry_forbidden"
+	moduleRegistrationFailedErrorCode     = "module_registration_failed"
+	moduleHeartbeatFailedErrorCode        = "module_heartbeat_failed"
+	moduleDeregistrationFailedErrorCode   = "module_deregistration_failed"
+)
+
 // NewModuleRegistryHandler 创建模块注册Handler
 func NewModuleRegistryHandler(service *service.ModuleRegistryService) *ModuleRegistryHandler {
 	return &ModuleRegistryHandler{service: service}
@@ -37,6 +47,7 @@ func NewModuleRegistryHandler(service *service.ModuleRegistryService) *ModuleReg
 // @Param        request body models.ModuleRegistrationRequest true "模块注册信息 | Module registration"
 // @Success      200 {object} object{message=string,module=string}
 // @Failure      400 {object} models.ErrorResponse
+// @Failure      401 {object} models.ErrorResponse
 // @Failure      403 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
@@ -45,19 +56,19 @@ func NewModuleRegistryHandler(service *service.ModuleRegistryService) *ModuleReg
 func (h *ModuleRegistryHandler) RegisterService(c *gin.Context) {
 	var req models.ModuleRegistrationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondModuleRegistryError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgModuleRegistrationInvalid), moduleRegistrationInvalidErrorCode)
 		return
 	}
 	if err := iamServiceOwnsModule(c, req.ModuleName); err != nil {
-		respondIAMError(c, err)
+		respondModuleRegistryIAMError(c, err)
 		return
 	}
 	if err := h.service.Register(&req); err != nil {
 		if errors.Is(err, service.ErrInvalidModuleRegistration) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgModuleRegistrationInvalid)})
+			respondModuleRegistryError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgModuleRegistrationInvalid), moduleRegistrationInvalidErrorCode)
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondModuleRegistryError(c, http.StatusInternalServerError, commoni18n.T(c, sysi18n.MsgInternalError), moduleRegistrationFailedErrorCode)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgModuleRegistered), "module": req.ModuleName})
@@ -72,6 +83,7 @@ func (h *ModuleRegistryHandler) RegisterService(c *gin.Context) {
 // @Param        request body models.HeartbeatRequest true "模块心跳 | Module heartbeat"
 // @Success      200 {object} object{message=string,module=string}
 // @Failure      400 {object} models.ErrorResponse
+// @Failure      401 {object} models.ErrorResponse
 // @Failure      403 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
@@ -81,19 +93,19 @@ func (h *ModuleRegistryHandler) RegisterService(c *gin.Context) {
 func (h *ModuleRegistryHandler) HeartbeatService(c *gin.Context) {
 	var req models.HeartbeatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondModuleRegistryError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgModuleRegistrationInvalid), moduleRegistrationInvalidErrorCode)
 		return
 	}
 	if err := iamServiceOwnsModule(c, req.ModuleName); err != nil {
-		respondIAMError(c, err)
+		respondModuleRegistryIAMError(c, err)
 		return
 	}
 	if err := h.service.SendHeartbeat(req.ModuleName, req.InstanceID); err != nil {
 		if errors.Is(err, commonapi.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgModuleRuntimeInstanceMissing)})
+			respondModuleRegistryError(c, http.StatusNotFound, commoni18n.T(c, sysi18n.MsgModuleRuntimeInstanceMissing), moduleRuntimeInstanceMissingErrorCode)
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondModuleRegistryError(c, http.StatusInternalServerError, commoni18n.T(c, sysi18n.MsgInternalError), moduleHeartbeatFailedErrorCode)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgModuleHeartbeat), "module": req.ModuleName})
@@ -109,6 +121,7 @@ func (h *ModuleRegistryHandler) HeartbeatService(c *gin.Context) {
 // @Param        instance_id path string true "运行实例 ID | Runtime instance ID"
 // @Success      204
 // @Failure      400 {object} models.ErrorResponse
+// @Failure      401 {object} models.ErrorResponse
 // @Failure      403 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
@@ -117,18 +130,34 @@ func (h *ModuleRegistryHandler) HeartbeatService(c *gin.Context) {
 func (h *ModuleRegistryHandler) DeregisterService(c *gin.Context) {
 	moduleName := c.Param("module_name")
 	if err := iamServiceOwnsModule(c, moduleName); err != nil {
-		respondIAMError(c, err)
+		respondModuleRegistryIAMError(c, err)
 		return
 	}
 	if err := h.service.Deregister(moduleName, c.Param("instance_id")); err != nil {
 		if errors.Is(err, service.ErrInvalidModuleRegistration) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgModuleRegistrationInvalid)})
+			respondModuleRegistryError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgModuleRegistrationInvalid), moduleRegistrationInvalidErrorCode)
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondModuleRegistryError(c, http.StatusInternalServerError, commoni18n.T(c, sysi18n.MsgInternalError), moduleDeregistrationFailedErrorCode)
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func respondModuleRegistryIAMError(c *gin.Context, err error) {
+	status := commonapi.MapErrorToHTTPStatus(err)
+	switch status {
+	case http.StatusUnauthorized:
+		respondModuleRegistryError(c, status, commoni18n.T(c, commoni18n.MsgUnauthorized), moduleRegistryUnauthorizedErrorCode)
+	case http.StatusForbidden:
+		respondModuleRegistryError(c, status, commoni18n.T(c, commoni18n.MsgForbidden), moduleRegistryForbiddenErrorCode)
+	default:
+		respondModuleRegistryError(c, http.StatusInternalServerError, commoni18n.T(c, sysi18n.MsgInternalError), moduleRegistrationFailedErrorCode)
+	}
+}
+
+func respondModuleRegistryError(c *gin.Context, status int, message, errorCode string) {
+	c.JSON(status, gin.H{"error": message, "error_code": errorCode})
 }
 
 // ListModulesService godoc

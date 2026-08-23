@@ -40,6 +40,16 @@ esac
 {runtime_dep}""",
             "system/backend/cmd/server/main.go": "package main\nfunc main() {}\n",
             "system/backend/internal/config/config.go": "package config\n",
+            "manager/backend/cmd/server/main.go": """package main
+func main() {
+    ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+    defer stop()
+    registrationDone := client.RegisterAndHeartbeat(ctx, request)
+    <-ctx.Done()
+    <-registrationDone
+}
+""",
+            "common/client/system_service.go": "func (c *SystemServiceClient) RegisterAndHeartbeat(ctx context.Context, request *ModuleRegistrationRequest) <-chan struct{} { return nil }\n",
             ".env.example": "POSTGRES_HOST=localhost\n",
         }
         for relative, content in files.items():
@@ -71,6 +81,44 @@ esac
         (root / "system/backend/cmd/server/main.go").write_text("RegisterBuiltinRuntime()\n", encoding="utf-8")
         errors = CHECKER.validate(root)
         self.assertTrue(any("RegisterBuiltinRuntime" in error for error in errors), errors)
+
+    def test_rejects_background_module_registration_context(self) -> None:
+        root = self.repository()
+        (root / "manager/backend/cmd/server/main.go").write_text(
+            """registrationDone := client.RegisterAndHeartbeat(context.Background(), request)
+<-registrationDone
+""",
+            encoding="utf-8",
+        )
+        errors = CHECKER.validate(root)
+        self.assertTrue(any("context.Background" in error for error in errors), errors)
+        self.assertTrue(any("signal lifecycle" in error for error in errors), errors)
+
+    def test_rejects_ignored_registration_completion(self) -> None:
+        root = self.repository()
+        (root / "manager/backend/cmd/server/main.go").write_text(
+            """ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+defer stop()
+client.RegisterAndHeartbeat(ctx, request)
+<-ctx.Done()
+""",
+            encoding="utf-8",
+        )
+        errors = CHECKER.validate(root)
+        self.assertTrue(any("ignores" in error for error in errors), errors)
+
+    def test_rejects_unwaited_registration_completion(self) -> None:
+        root = self.repository()
+        (root / "manager/backend/cmd/server/main.go").write_text(
+            """ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+defer stop()
+registrationDone := client.RegisterAndHeartbeat(ctx, request)
+<-ctx.Done()
+""",
+            encoding="utf-8",
+        )
+        errors = CHECKER.validate(root)
+        self.assertTrue(any("does not wait" in error for error in errors), errors)
 
 
 if __name__ == "__main__":

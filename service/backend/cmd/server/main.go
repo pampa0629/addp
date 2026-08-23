@@ -164,10 +164,13 @@ func main() {
 	router := api.SetupRouter(cfg, db, dataServiceHandler, queryServiceHandler, ogcFeaturesHandler, registeredServiceHandler, tileServiceHandler, tileEndpointHandler, wmtsHandler, ogcTilesHandler, resourceCapabilityHandler, serviceEndpointHandler, graphQueryHandler, systemClient, systemServiceClient, runtimePolicyService)
 
 	// ========== 模块注册（注册到 System service_registry）==========
+	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopRuntime()
+	var registrationDone <-chan struct{}
 	if cfg.SystemServiceURL != "" {
 		serviceHost := commonConfig.GetServiceHost()
 		serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
-		systemServiceClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{ModuleName: "service", ModuleURL: serviceURL, RoutePrefix: "/service", HealthCheckURL: serviceURL + "/health",
+		registrationDone = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{ModuleName: "service", ModuleURL: serviceURL, RoutePrefix: "/service", HealthCheckURL: serviceURL + "/health",
 			ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{
 				ID: "service.configuration", OwnerModule: "service", ScopeTypes: []string{commonconfiguration.ScopePlatformOnly}, FrontendRoute: "/configuration/service",
 				ReadPermission: serviceauthorization.PermissionServiceConfigurationRead, UpdatePermission: serviceauthorization.PermissionServiceConfigurationUpdate,
@@ -359,16 +362,17 @@ func main() {
 	go func() {
 		if err := router.Run(addr); err != nil {
 			logger.L().Error("Service 模块启动失败", "error", err)
-			os.Exit(1)
+			stopRuntime()
 		}
 	}()
 
 	// 等待中断信号以优雅关闭
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-	<-sigCh
+	<-runtimeContext.Done()
 
 	logger.L().Info("收到关闭信号，开始优雅关闭...")
+	if registrationDone != nil {
+		<-registrationDone
+	}
 
 	// 停止调度器（等待正在执行的任务完成）
 	stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

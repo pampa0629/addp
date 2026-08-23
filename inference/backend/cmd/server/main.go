@@ -4,7 +4,10 @@ import (
 	"context"
 	"log"
 	"net"
+	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 
 	commonclient "github.com/addp/common/client"
@@ -35,6 +38,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopRuntime()
 	db, err := gorm.Open(postgres.Open(cfg.DatabaseDSN()), &gorm.Config{})
 	if err != nil {
 		log.Fatal(err)
@@ -56,29 +61,39 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	register(cfg)
-	log.Fatal(router.RunListener(listener))
+	registrationDone := register(runtimeContext, cfg)
+	go func() {
+		if err := router.RunListener(listener); err != nil {
+			log.Printf("inference HTTP service stopped: %v", err)
+			stopRuntime()
+		}
+	}()
+	<-runtimeContext.Done()
+	if registrationDone != nil {
+		<-registrationDone
+	}
+	_ = listener.Close()
 }
 
-func register(cfg *config.Config) {
+func register(ctx context.Context, cfg *config.Config) <-chan struct{} {
 	if len(cfg.ServiceClientSecret) < 32 {
-		return
+		return nil
 	}
 	tokenSource, err := commonclient.NewOAuthServiceTokenSource(cfg.SystemURL, "addp-inference", cfg.ServiceClientSecret, nil)
 	if err != nil {
 		log.Printf("inference module registration disabled: %v", err)
-		return
+		return nil
 	}
 	client := commonclient.NewSystemServiceClient(cfg.SystemURL, tokenSource, nil)
 	host := commonconfig.GetServiceHost()
 	url := commonconfig.BuildServiceURL(host, cfg.Port)
-	client.RegisterAndHeartbeat(context.Background(), &commonclient.ModuleRegistrationRequest{ModuleName: "inference", ModuleURL: url, RoutePrefix: "/inference", HealthCheckURL: url + "/health", Metadata: map[string]interface{}{"runtime_api": "addp.inference/v1"}, ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{ID: "inference.configuration", OwnerModule: "inference", ScopeTypes: []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride}, FrontendRoute: "/inference/settings/models", ReadPermission: inferenceauthorization.PermissionInferenceProviderRead, UpdatePermission: inferenceauthorization.PermissionInferenceProviderUpdate}}}})
+	registrationDone := client.RegisterAndHeartbeat(ctx, &commonclient.ModuleRegistrationRequest{ModuleName: "inference", ModuleURL: url, RoutePrefix: "/inference", HealthCheckURL: url + "/health", Metadata: map[string]interface{}{"runtime_api": "addp.inference/v1"}, ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{ID: "inference.configuration", OwnerModule: "inference", ScopeTypes: []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride}, FrontendRoute: "/inference/settings/models", ReadPermission: inferenceauthorization.PermissionInferenceProviderRead, UpdatePermission: inferenceauthorization.PermissionInferenceProviderUpdate}}}})
 	port, err := strconv.Atoi(cfg.Port)
 	if err != nil || port <= 0 || port > 65535 {
 		log.Printf("inference runtime engine registration disabled: invalid port %q", cfg.Port)
-		return
+		return registrationDone
 	}
-	client.RegisterRuntimeEngineWithRetry(context.Background(), &commonmodels.CapabilityRegistrationRequest{
+	client.RegisterRuntimeEngineWithRetry(ctx, &commonmodels.CapabilityRegistrationRequest{
 		Name:        "Inference Runtime",
 		EngineType:  "inference_runtime",
 		IsBuiltin:   true,
@@ -89,6 +104,7 @@ func register(cfg *config.Config) {
 			"port":     port,
 		},
 	}, time.Second, 30*time.Second)
+	return registrationDone
 }
 
 func ensureSchemaConstraints(db *gorm.DB) error {

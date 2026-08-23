@@ -30,6 +30,7 @@ from .module_registry import (
     ConfigurationManagementDeclaration,
     ConfigurationManagementEntry,
     ModuleRegistration,
+    ModuleRegistryAPIError,
     ModuleRegistryClient,
 )
 from .runtime_registration import register_runtime_engine, retry_runtime_registration
@@ -60,6 +61,7 @@ __all__ = [
     "ConfigurationManagementDeclaration",
     "ConfigurationManagementEntry",
     "ModuleRegistration",
+    "ModuleRegistryAPIError",
     "ModuleRegistryClient",
     "register_runtime_engine",
     "retry_runtime_registration",

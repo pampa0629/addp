@@ -777,9 +777,113 @@
         "title": "PropertyInfo",
         "type": "object"
       },
+      "QueryClarification": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "control": {
+            "enum": [
+              "single_choice",
+              "multiple_choice",
+              "text",
+              "resource_choice",
+              "notice"
+            ],
+            "title": "Control",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/QueryClarificationOption"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "required": {
+            "default": true,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "resource_candidates": {
+            "items": {
+              "$ref": "#/components/schemas/QueryResourceCandidate"
+            },
+            "title": "Resource Candidates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "category",
+          "prompt",
+          "control"
+        ],
+        "title": "QueryClarification",
+        "type": "object"
+      },
+      "QueryClarificationOption": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "QueryClarificationOption",
+        "type": "object"
+      },
       "QueryGenerationRequest": {
         "additionalProperties": false,
         "properties": {
+          "clarification_answers": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            "description": "用户对本次查询语义缺口的已确认答案；key 必须来自上一次结构化澄清",
+            "maxProperties": 20,
+            "title": "Clarification Answers",
+            "type": "object"
+          },
           "current_query": {
             "anyOf": [
               {
@@ -854,30 +958,12 @@
       },
       "QueryGenerationResponse": {
         "properties": {
-          "clarification_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Clarification Reason"
-          },
-          "data_source_candidates": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/QueryResourceCandidate"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Data Source Candidates"
+          "clarifications": {
+            "items": {
+              "$ref": "#/components/schemas/QueryClarification"
+            },
+            "title": "Clarifications",
+            "type": "array"
           },
           "explanation": {
             "anyOf": [
@@ -889,17 +975,6 @@
               }
             ],
             "title": "Explanation"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message"
           },
           "query": {
             "anyOf": [

@@ -1208,6 +1208,9 @@ definitions:
       error:
         example: invalid credentials
         type: string
+      error_code:
+        example: invalid_request
+        type: string
     type: object
   github_com_addp_system_internal_models.HeartbeatRequest:
     properties:
@@ -6119,6 +6122,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
         "403":
           description: Forbidden
           schema:
@@ -6197,6 +6204,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
         "403":
           description: Forbidden
           schema:
@@ -6238,6 +6249,10 @@ paths:
             type: object
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
         "403":

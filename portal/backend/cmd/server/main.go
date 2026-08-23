@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
@@ -11,16 +14,6 @@ import (
 	"github.com/addp/portal/internal/config"
 	"github.com/redis/go-redis/v9"
 )
-
-type portalModuleRegistrar interface {
-	RegisterAndHeartbeatWithMetadata(
-		context.Context,
-		string,
-		string,
-		string,
-		map[string]interface{},
-	)
-}
 
 // @title           ADDP Portal API
 // @version         1.0
@@ -32,6 +25,8 @@ type portalModuleRegistrar interface {
 
 func main() {
 	cfg := config.LoadConfig()
+	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopRuntime()
 	tokenSource, err := commonClient.NewOAuthServiceTokenSource(
 		cfg.SystemURL, "addp-portal", cfg.ServiceClientSecret, nil,
 	)
@@ -58,15 +53,13 @@ func main() {
 
 	go func() {
 		if err := router.Run(addr); err != nil {
-			log.Fatalf("Failed to start server: %v", err)
+			log.Printf("Failed to start server: %v", err)
+			stopRuntime()
 		}
 	}()
 
-	registerPortalModule(context.Background(), systemClient, cfg.Port)
-	select {}
-}
-
-func registerPortalModule(ctx context.Context, registrar portalModuleRegistrar, port string) {
-	serviceURL := commonConfig.BuildServiceURL(commonConfig.GetServiceHost(), port)
-	registrar.RegisterAndHeartbeatWithMetadata(ctx, "portal", serviceURL, "/portal", nil)
+	serviceURL := commonConfig.BuildServiceURL(commonConfig.GetServiceHost(), cfg.Port)
+	registrationDone := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "portal", serviceURL, "/portal", nil)
+	<-runtimeContext.Done()
+	<-registrationDone
 }

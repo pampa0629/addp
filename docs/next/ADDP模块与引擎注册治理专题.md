@@ -1,6 +1,6 @@
 # ADDP 模块与引擎注册治理专题
 
-> 状态：阶段一盘点与 P0 收口完成（2026-08-23）
+> 状态：阶段二 P1 已完成，待进入 P2 冷启动与恢复验收（2026-08-23）
 
 ## 一、专题定位
 
@@ -43,7 +43,7 @@
 | 模块定义与运行实例分离 | 已完成 | `module_definitions` 保存稳定定义，`module_runtime_instances` 保存带租约的进程实例。 |
 | 多角色实例 | 已完成 | 支持 `backend / worker / scheduler`；只有在线且租约有效的 `backend` 可进入 Gateway 路由。 |
 | Gateway 动态发现 | 已完成 | Gateway 通过路由快照 revision 长轮询更新，不要求模块固定启动顺序。 |
-| Go 公共注册客户端 | 基本完成 | 进程级 `instance_id`、角色、心跳、重新注册和注销均已具备；部分调用方仍未把服务生命周期上下文贯穿到客户端。 |
+| Go 公共注册客户端 | 已完成生命周期主路径 | 进程级 `instance_id`、角色、心跳、重新注册和注销均已具备；所有生产调用方使用信号 Context 并在退出前等待注销完成。 |
 | Python 公共注册客户端 | 已完成 | 进程级 `instance_id`、角色、心跳、按实例注销和 4xx 响应正文日志已纳入契约测试。 |
 | 引擎永久身份与软删除 | 已完成 | 引擎 ID 单调增长且不复用；重复注册恢复原记录并沿用 ID。 |
 | 引擎生命周期与连接状态分离 | 已完成 | 生命周期表达管理意图，连接状态表达运行事实。 |
@@ -60,12 +60,12 @@
 - [x] 删除无生产调用方的旧 `RegistryService` 及其孤立测试。
 - [x] Runtime Engine 注册只保留 `POST /api/v1/system/runtime/engines` 主路径，由 `EngineService` 承担永久身份、幂等和生命周期规则。
 
-### P1：统一进程生命周期
+### P1：统一进程生命周期与诊断
 
-- [ ] 审计所有 Go 模块与附属 Worker 的注册调用，禁止用不可取消的 `context.Background()` 承载整个注册生命周期。
-- [ ] 由进程入口创建信号上下文，并把同一上下文传给 HTTP 服务、注册心跳和关闭流程。
-- [ ] 正常关闭时先按 `module_name + instance_id` 注销；异常退出由租约到期兜底。
-- [ ] 统一 Go 与 Python 客户端的注册失败诊断字段和日志语义。
+- [x] 审计所有 Go 模块与附属 Worker 的注册调用，禁止用不可取消的 `context.Background()` 承载整个注册生命周期。
+- [x] 由进程入口创建信号上下文，并把同一上下文传给 HTTP 服务、注册心跳和关闭流程。
+- [x] 正常关闭时先按 `module_name + instance_id` 注销并等待完成；异常退出由租约到期兜底。
+- [x] 统一 Go 与 Python 客户端的注册失败诊断字段和日志语义；System Runtime 注册错误统一返回 `{error, error_code}`。
 
 ### P2：把冷启动与恢复纳入 Online 验收
 
@@ -78,9 +78,9 @@
 
 | 层级 | 最小门禁 | 覆盖内容 |
 | --- | --- | --- |
-| T1 | `make test-common-python` | Python 注册请求、心跳、注销、进程级实例身份和错误日志契约 |
+| T1 | `make test-common-python` | Python 注册请求、心跳、注销、进程级实例身份、结构化 API 错误和失败日志契约 |
 | T1/T2 | `make test-module MODULE=system` | System 模块与引擎注册服务、Repository、Handler 和迁移规则 |
-| 平台一致性 | `make test-platform` | 模块发现、共享代码边界和平台级静态一致性 |
+| 平台一致性 | `make test-platform` | 模块发现、共享代码边界、禁止永久注册 Context、强制等待注销完成和平台级静态一致性 |
 | 改动收口 | `make test-changed` | 按工作区差异自动选择受影响门禁 |
 | T4 | Online 验收方案中的注册与路由场景 | 冷启动、乱序启动、租约失效、恢复和页面动态可用性 |
 

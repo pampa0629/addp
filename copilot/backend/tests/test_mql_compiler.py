@@ -3,7 +3,8 @@ import json
 
 import pytest
 
-from services.mql_compiler import MQLClarificationRequired, MQLCompiler, MQLPlanError
+from services.mql_compiler import MQLCompiler, MQLPlanError
+from services.query_clarification import QueryClarificationRequired
 from services.query_service import QueryService
 
 
@@ -117,8 +118,24 @@ def test_compile_requires_clarification_for_model_assumptions():
     plan = participation_plan()
     plan["assumptions"] = ["把攀爬解释为活动标题关键词"]
 
-    with pytest.raises(MQLClarificationRequired, match="未经确认的假设"):
+    with pytest.raises(QueryClarificationRequired, match="未经确认的假设") as captured:
         MQLCompiler.compile(plan, [persons_resource()])
+
+    assert captured.value.clarification.key == "query.assumptions"
+    assert captured.value.clarification.control == "text"
+
+
+def test_any_unclosed_calculation_rule_becomes_generic_text_clarification():
+    plan = participation_plan()
+    plan["clarification"] = "请明确增长率使用哪一个基期和分母"
+
+    with pytest.raises(QueryClarificationRequired, match="增长率") as captured:
+        MQLCompiler.compile(plan, [persons_resource()])
+
+    clarification = captured.value.clarification
+    assert clarification.key == "query.semantic_details"
+    assert clarification.category == "semantic_ambiguity"
+    assert clarification.control == "text"
 
 
 def test_compile_rejects_array_child_as_owner_filter():
@@ -133,15 +150,45 @@ def test_compile_rejects_unknown_schema_coverage():
     resource = persons_resource()
     resource["schema_coverage"] = "unknown"
 
-    with pytest.raises(MQLClarificationRequired, match="先扫描元数据"):
+    with pytest.raises(QueryClarificationRequired, match="先扫描元数据"):
         MQLCompiler.compile(participation_plan(), [resource])
 
 
 def test_set_overlap_requires_metric_clarification():
-    with pytest.raises(MQLClarificationRequired, match="共同活动数量、Jaccard") as captured:
+    with pytest.raises(QueryClarificationRequired, match="多种计算规则") as captured:
         MQLCompiler.compile(overlap_plan("unspecified"), [persons_resource()])
 
-    assert captured.value.clarification.reason == "set_comparison_metric_ambiguous"
+    clarification = captured.value.clarification
+    assert clarification.key == "set_comparison.metric"
+    assert clarification.category == "calculation_rule"
+    assert clarification.control == "single_choice"
+    assert [option.value for option in clarification.options] == [
+        "intersection_count",
+        "jaccard",
+        "overlap_coefficient",
+    ]
+
+
+def test_compile_applies_confirmed_metric_as_deterministic_constraint():
+    result = MQLCompiler.compile(
+        overlap_plan("unspecified"),
+        [persons_resource()],
+        clarification_answers={"set_comparison.metric": "jaccard"},
+    )
+
+    pipeline_text = json.dumps(json.loads(result["query"])["pipeline"], ensure_ascii=False)
+    assert "$setIntersection" in pipeline_text
+    assert "$setUnion" in pipeline_text
+    assert "$divide" in pipeline_text
+
+
+def test_compile_rejects_answer_outside_declared_calculation_rules():
+    with pytest.raises(MQLPlanError, match="clarification answer is unsupported"):
+        MQLCompiler.compile(
+            overlap_plan("unspecified"),
+            [persons_resource()],
+            clarification_answers={"set_comparison.metric": "cosine"},
+        )
 
 
 def test_compile_jaccard_overlap_uses_verified_ids_and_deduplicates():
@@ -196,3 +243,35 @@ def test_generate_mql_uses_single_semantic_plan_call(monkeypatch):
     assert '"userInfo.nickName"' in result["query"]
     assert '"$size"' in result["query"]
     assert "climbing" not in result["query"]
+
+
+def test_query_service_continues_with_confirmed_generic_calculation_rule(monkeypatch):
+    class FakeLLM:
+        async def ainvoke(self, _messages, **_kwargs):
+            return type("Response", (), {"content": json.dumps(overlap_plan("unspecified"), ensure_ascii=False)})()
+
+    monkeypatch.setattr(
+        "services.query_service.CopilotInferenceService.chat_model",
+        lambda *_args, **_kwargs: FakeLLM(),
+    )
+    result = asyncio.run(QueryService().generate(
+        query="查询攀爬和神采发起或者参加的活动重叠度",
+        engine={"id": 11, "engine_type": "mongodb", "capabilities": {}},
+        query_language="mql",
+        resources=[persons_resource()],
+        current_query=None,
+        tenant_id=1,
+        db=None,
+        clarification_answers={"set_comparison.metric": "jaccard"},
+    ))
+
+    command = json.loads(result["query"])
+    pipeline_text = json.dumps(command["pipeline"], ensure_ascii=False)
+    assert command["aggregate"] == "Persons"
+    assert "$setIntersection" in pipeline_text
+    assert "$setUnion" in pipeline_text
+    assert "$divide" in pipeline_text
+    assert result["query_parameters"] == [
+        {"name": "entity_1", "type": "string", "default": "攀爬"},
+        {"name": "entity_2", "type": "string", "default": "神采"},
+    ]

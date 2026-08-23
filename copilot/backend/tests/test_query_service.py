@@ -4,6 +4,7 @@ import pytest
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from services.query_clarification import QueryClarificationRequired
 from services.query_service import QueryService
 
 
@@ -120,6 +121,43 @@ def test_generate_uses_federated_sql_query_name(monkeypatch):
 
     assert result["query"] == "SELECT id FROM source_pg.analytics.users"
     assert '"query_name": "source_pg.analytics.users"' in captured[0][1].content
+
+
+def test_generate_requests_generic_clarification_for_unresolved_sql_assumptions(monkeypatch):
+    class FakeLLM:
+        async def ainvoke(self, _messages, **_kwargs):
+            return type("Response", (), {"content": (
+                '{"collections":["analytics.activities"],'
+                '"field_paths":["participant_id"],'
+                '"operations":["aggregate","ratio"],'
+                '"result_keys":["overlap"],'
+                '"assumptions":["重叠度的分母应采用并集还是较小集合"]}'
+            )})()
+
+    monkeypatch.setattr(
+        "services.query_service.CopilotInferenceService.chat_model",
+        lambda *_args, **_kwargs: FakeLLM(),
+    )
+    resources = [{
+        "query_names": {"sql": "analytics.activities"},
+        "fields": [{"name": "participant_id"}],
+    }]
+
+    with pytest.raises(QueryClarificationRequired) as raised:
+        asyncio.run(QueryService().generate(
+            query="计算两组活动的重叠度",
+            engine={"id": 1, "engine_type": "postgresql", "capabilities": {}},
+            query_language="sql",
+            resources=resources,
+            current_query=None,
+            tenant_id=1,
+            db=None,
+        ))
+
+    clarification = raised.value.clarification
+    assert clarification.key == "query.assumptions"
+    assert clarification.control == "text"
+    assert "分母应采用并集还是较小集合" in clarification.prompt
 
 
 def test_parse_plan_rejects_non_string_array_items():

@@ -4,24 +4,18 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from copy import deepcopy
 from typing import Any
+
+from services.query_clarification import (
+    ClarificationOption,
+    QueryClarification,
+    QueryClarificationRequired,
+)
 
 
 class MQLPlanError(ValueError):
     """计划不符合资源事实或当前编译器能力。"""
-
-
-@dataclass(frozen=True)
-class MQLClarification:
-    reason: str
-    message: str
-
-
-class MQLClarificationRequired(ValueError):
-    def __init__(self, clarification: MQLClarification):
-        super().__init__(clarification.message)
-        self.clarification = clarification
 
 
 class MQLCompiler:
@@ -79,15 +73,29 @@ class MQLCompiler:
         return parsed
 
     @classmethod
-    def compile(cls, plan: dict[str, Any], resources: list[dict[str, Any]]) -> dict[str, Any]:
+    def compile(
+        cls,
+        plan: dict[str, Any],
+        resources: list[dict[str, Any]],
+        *,
+        clarification_answers: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        plan = cls._apply_clarification_answers(plan, clarification_answers or {})
         clarification = str(plan.get("clarification") or "").strip()
         assumptions = [str(item).strip() for item in plan.get("assumptions", []) if str(item).strip()]
         if clarification:
-            raise MQLClarificationRequired(MQLClarification("query_semantics_ambiguous", clarification))
+            raise QueryClarificationRequired(QueryClarification(
+                key="query.semantic_details",
+                category="semantic_ambiguity",
+                prompt=clarification,
+                control="text",
+            ))
         if assumptions:
-            raise MQLClarificationRequired(MQLClarification(
-                "query_semantics_ambiguous",
-                "查询含义存在未经确认的假设：" + "；".join(assumptions),
+            raise QueryClarificationRequired(QueryClarification(
+                key="query.assumptions",
+                category="semantic_ambiguity",
+                prompt="查询含义存在未经确认的假设，请补充或修正：" + "；".join(assumptions),
+                control="text",
             ))
 
         collection = plan["collection"].strip()
@@ -119,6 +127,36 @@ class MQLCompiler:
             "plan": plan,
         }
 
+    @classmethod
+    def _apply_clarification_answers(
+        cls,
+        plan: dict[str, Any],
+        answers: dict[str, Any],
+    ) -> dict[str, Any]:
+        unsupported_keys = set(answers) - {
+            "set_comparison.metric",
+            "query.semantic_details",
+            "query.assumptions",
+        }
+        if unsupported_keys:
+            raise MQLPlanError(
+                "MQL clarification answer key is unsupported: " + ", ".join(sorted(unsupported_keys))
+            )
+        result = deepcopy(plan)
+        metric_answer = answers.get("set_comparison.metric")
+        if metric_answer is not None:
+            allowed = cls.SET_COMPARISON_METRICS - {"unspecified"}
+            if not isinstance(metric_answer, str) or metric_answer not in allowed:
+                raise MQLPlanError("MQL clarification answer is unsupported: set_comparison.metric")
+            comparison = result.get("set_comparison")
+            if not isinstance(comparison, dict):
+                raise MQLPlanError("MQL clarification answer does not match the semantic plan")
+            planned_metric = str(comparison.get("metric") or "").strip()
+            if planned_metric not in {"unspecified", metric_answer}:
+                raise MQLPlanError("MQL clarification answer conflicts with the semantic plan")
+            comparison["metric"] = metric_answer
+        return result
+
     @staticmethod
     def _resource_for_collection(collection: str, resources: list[dict[str, Any]]) -> dict[str, Any]:
         matches = [
@@ -129,9 +167,11 @@ class MQLCompiler:
         if len(matches) != 1:
             raise MQLPlanError(f"MQL collection is not uniquely verified: {collection}")
         if matches[0].get("schema_coverage") not in {"complete", "sampled"}:
-            raise MQLClarificationRequired(MQLClarification(
-                "resource_schema_unknown",
-                f"集合 {collection} 缺少可验证的字段结构，请先扫描元数据后再生成查询",
+            raise QueryClarificationRequired(QueryClarification(
+                key="resource.schema",
+                category="resource_facts",
+                prompt=f"集合 {collection} 缺少可验证的字段结构，请先扫描元数据后再生成查询",
+                control="notice",
             ))
         return matches[0]
 
@@ -389,9 +429,28 @@ class MQLCompiler:
         if metric not in cls.SET_COMPARISON_METRICS:
             raise MQLPlanError(f"MQL set comparison metric is unsupported: {metric}")
         if metric == "unspecified":
-            raise MQLClarificationRequired(MQLClarification(
-                "set_comparison_metric_ambiguous",
-                "“重叠度”需要明确计算口径：请选择共同活动数量、Jaccard 相似度，或以较少一方为基准的重叠系数。",
+            raise QueryClarificationRequired(QueryClarification(
+                key="set_comparison.metric",
+                category="calculation_rule",
+                prompt="当前集合比较存在多种计算规则，请选择本次使用的口径。",
+                control="single_choice",
+                options=(
+                    ClarificationOption(
+                        "intersection_count",
+                        "共同元素数量",
+                        "统计两个集合去重后的交集数量",
+                    ),
+                    ClarificationOption(
+                        "jaccard",
+                        "Jaccard 相似度",
+                        "交集数量除以并集数量",
+                    ),
+                    ClarificationOption(
+                        "overlap_coefficient",
+                        "重叠系数",
+                        "交集数量除以较小集合的元素数量",
+                    ),
+                ),
             ))
         entity_field = str(comparison["entity_field"] or "").strip()
         entity = cls._verified_field(entity_field, fields)

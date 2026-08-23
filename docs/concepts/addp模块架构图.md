@@ -588,6 +588,8 @@ graph TB
 - System 将超过租约超时时间未心跳的运行实例标记为 `down`，但不删除运行实例历史，也不删除持久模块定义。
 - 同一 `instance_id` 重新注册可恢复为 `up`；新进程必须使用新的 `instance_id`。
 - 模块正常退出时应注销本次 `instance_id`；异常退出仍由租约到期收敛。
+- Go 进程入口必须把同一个可取消的信号 Context 传给公共注册客户端；客户端返回生命周期完成信号，入口在关闭资源和退出进程前必须等待该信号，确保限时注销请求已经结束。不得用 `context.Background()` 承载进程级注册生命周期，也不得用 `os.Exit` 绕过等待与清理。
+- Runtime 模块注册、心跳和注销失败必须返回 `{error, error_code}`；稳定错误码使用 `module_registration_invalid`、`module_runtime_instance_not_found`、`module_registry_unauthorized`、`module_registry_forbidden`、`module_registration_failed`、`module_heartbeat_failed` 和 `module_deregistration_failed`。Go 与 Python 公共客户端都必须保留 `method`、`path`、`status_code`、`error_code`、`error_message` 和受限长度的 `response_body`；后台生命周期日志还必须包含 `operation`、`module`、`instance_id` 和 `role`，不得只输出无结构的异常文本。
 
 **管理面边界**:
 - `platform.module.read` 允许平台系统管理员查看模块定义及其 Backend、Worker、Scheduler 实例投影；`platform.module.update` 只允许修改模块定义的 `enabled` 管理意图。
@@ -677,7 +679,7 @@ MODULE_SERVICE_CLIENT_SECRET=your_module_service_client_secret
 | **System API** | [system/backend/internal/api/module_registry_handler.go](../../system/backend/internal/api/module_registry_handler.go) | 注册/心跳/查询 API |
 | **Gateway 发现** | [gateway/internal/module_discovery.go](../../gateway/internal/module_discovery.go) | 模块发现管理器（定期刷新） |
 | **Gateway 路由** | [gateway/internal/router/router.go](../../gateway/internal/router/router.go) | 动态路由配置 |
-| **Common 客户端** | [common/client/system.go](../../common/client/system.go) | 模块注册客户端（RegisterModule、SendHeartbeat） |
+| **Common 客户端** | [common/client/system_service.go](../../common/client/system_service.go) | 模块注册、心跳、重注册与退出注销客户端 |
 
 ### 优势与特性
 

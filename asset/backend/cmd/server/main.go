@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	_ "github.com/addp/asset/docs"
@@ -35,6 +38,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopRuntime()
 
 	db, err := gorm.Open(postgres.Open(cfg.GetDatabaseDSN()), &gorm.Config{})
 	if err != nil {
@@ -124,7 +129,7 @@ func main() {
 
 	authSvc := service.NewAuthorizationService(db)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
-	if err := cleanupSvc.Start(context.Background()); err != nil {
+	if err := cleanupSvc.Start(runtimeContext); err != nil {
 		log.Printf("Asset 资源回收执行方启动失败: %v", err)
 	}
 	defer cleanupSvc.Stop()
@@ -136,7 +141,8 @@ func main() {
 
 	go func() {
 		if err := router.Run(addr); err != nil {
-			log.Fatalf("Failed to start server: %v", err)
+			log.Printf("Failed to start server: %v", err)
+			stopRuntime()
 		}
 	}()
 
@@ -150,11 +156,16 @@ func main() {
 		} else if n > 0 {
 			log.Printf("✅ 授权过期扫描：标记 %d 条授权为已过期", n)
 		}
-		for range ticker.C {
-			if n, err := authSvc.ExpireOverdue(); err != nil {
-				log.Printf("⚠️  授权过期扫描失败: %v", err)
-			} else if n > 0 {
-				log.Printf("✅ 授权过期扫描：标记 %d 条授权为已过期", n)
+		for {
+			select {
+			case <-runtimeContext.Done():
+				return
+			case <-ticker.C:
+				if n, err := authSvc.ExpireOverdue(); err != nil {
+					log.Printf("⚠️  授权过期扫描失败: %v", err)
+				} else if n > 0 {
+					log.Printf("✅ 授权过期扫描：标记 %d 条授权为已过期", n)
+				}
 			}
 		}
 	}()
@@ -162,7 +173,7 @@ func main() {
 	// 模块注册 + 心跳
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
-	systemClient.RegisterAndHeartbeatWithMetadata(context.Background(), "asset", serviceURL, "/asset", map[string]interface{}{
+	registrationDone := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "asset", serviceURL, "/asset", map[string]interface{}{
 		"module": "asset",
 		"capabilities": map[string]interface{}{
 			"cleanup_executor": map[string]interface{}{
@@ -172,5 +183,6 @@ func main() {
 		},
 	})
 
-	select {}
+	<-runtimeContext.Done()
+	<-registrationDone
 }

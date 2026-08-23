@@ -470,13 +470,16 @@ func main() {
 	}
 
 	// ========== 模块定义、运行实例与 TaskProvider 声明发布 ==========
+	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopRuntime()
+	var registrationDone <-chan struct{}
 	if systemServiceClient != nil {
 		taskProvider, err := service.ManagerTaskProviderDeclaration()
 		if err != nil {
 			logger.L().Error("构建 Manager TaskProvider 声明失败", "error", err)
 			os.Exit(1)
 		}
-		systemServiceClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
+		registrationDone = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
 			ModuleName: "manager", ModuleURL: serviceURL, RoutePrefix: "/manager",
 			HealthCheckURL: serviceURL + "/health",
 			TaskProvider:   taskProvider,
@@ -499,34 +502,31 @@ func main() {
 		})
 	}
 
-	// ✅ 注册优雅关闭处理器（关闭所有数据库连接池）
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-c
-		logger.L().Info("收到关闭信号，正在清理资源...")
-
-		// 停止扫描事件订阅
-		if scanEventHandler != nil {
-			scanEventHandler.Stop()
-		}
-		embeddingTaskScheduler.Stop()
-		cleanupSvc.Stop()
-
-		if err := mvtService.Close(); err != nil {
-			logger.L().Error("关闭数据库连接池失败", "error", err)
-		} else {
-			logger.L().Info("所有数据库连接池已关闭")
-		}
-		os.Exit(0)
-	}()
-
-	// 启动服务
+	// 启动服务并等待进程信号，统一关闭注册租约和本地资源。
 	addr := ":" + cfg.Port
 	logger.L().Info("Manager 服务启动", "addr", addr)
-	if err := router.Run(addr); err != nil {
-		logger.L().Error("Manager 服务启动失败", "error", err)
-		os.Exit(1)
+	go func() {
+		if err := router.Run(addr); err != nil {
+			logger.L().Error("Manager 服务启动失败", "error", err)
+			stopRuntime()
+		}
+	}()
+	<-runtimeContext.Done()
+	logger.L().Info("收到关闭信号，正在清理资源...")
+
+	if registrationDone != nil {
+		<-registrationDone
+	}
+	if scanEventHandler != nil {
+		scanEventHandler.Stop()
+	}
+	embeddingTaskScheduler.Stop()
+	cleanupSvc.Stop()
+
+	if err := mvtService.Close(); err != nil {
+		logger.L().Error("关闭数据库连接池失败", "error", err)
+	} else {
+		logger.L().Info("所有数据库连接池已关闭")
 	}
 }
 

@@ -423,9 +423,9 @@
     </el-dialog>
 
     <el-dialog
-      v-model="queryResourceConfirmationVisible"
+      v-model="queryClarificationVisible"
       class="addp-dialog"
-      :title="t('develop.query.confirmInputResources')"
+      :title="t('develop.query.clarificationTitle')"
       width="min(760px, calc(100vw - 24px))"
       :close-on-click-modal="!generatingQuery"
       :close-on-press-escape="!generatingQuery"
@@ -436,6 +436,68 @@
         <el-tag size="small" effect="plain">{{ currentQueryLanguage.toUpperCase() }}</el-tag>
       </div>
       <div class="query-resource-candidate-list">
+        <section
+          v-for="clarification in querySemanticClarifications"
+          :key="clarification.key"
+          class="query-resource-candidate-group"
+        >
+          <h3 v-if="clarification.control !== 'notice'">{{ clarification.prompt }}</h3>
+          <el-radio-group
+            v-if="clarification.control === 'single_choice'"
+            v-model="queryClarificationAnswers[clarification.key]"
+            class="query-resource-candidate-options"
+          >
+            <el-radio
+              v-for="option in clarification.options"
+              :key="option.value"
+              :value="option.value"
+              :disabled="generatingQuery"
+              class="query-resource-candidate"
+            >
+              <span class="query-resource-candidate-content">
+                <span class="query-resource-candidate-heading">{{ option.label }}</span>
+                <span v-if="option.description" class="query-resource-candidate-facts">
+                  {{ option.description }}
+                </span>
+              </span>
+            </el-radio>
+          </el-radio-group>
+          <el-checkbox-group
+            v-else-if="clarification.control === 'multiple_choice'"
+            v-model="queryClarificationAnswers[clarification.key]"
+            class="query-resource-candidate-options"
+          >
+            <el-checkbox
+              v-for="option in clarification.options"
+              :key="option.value"
+              :value="option.value"
+              :disabled="generatingQuery"
+              class="query-resource-candidate"
+            >
+              <span class="query-resource-candidate-content">
+                <span class="query-resource-candidate-heading">{{ option.label }}</span>
+                <span v-if="option.description" class="query-resource-candidate-facts">
+                  {{ option.description }}
+                </span>
+              </span>
+            </el-checkbox>
+          </el-checkbox-group>
+          <el-input
+            v-else-if="clarification.control === 'text'"
+            v-model="queryClarificationAnswers[clarification.key]"
+            type="textarea"
+            :rows="3"
+            :disabled="generatingQuery"
+            :placeholder="t('develop.query.clarificationAnswerPlaceholder')"
+          />
+          <el-alert
+            v-else-if="clarification.control === 'notice'"
+            :title="clarification.prompt"
+            type="warning"
+            :closable="false"
+            show-icon
+          />
+        </section>
         <section
           v-for="group in queryResourceCandidateGroups"
           :key="group.role"
@@ -475,14 +537,15 @@
         </section>
       </div>
       <template #footer>
-        <el-button :disabled="generatingQuery" @click="queryResourceConfirmationVisible = false">
+        <el-button :disabled="generatingQuery" @click="queryClarificationVisible = false">
           {{ t('develop.query.cancel') }}
         </el-button>
         <el-button
+          v-if="queryClarificationCanContinue"
           type="primary"
           :loading="generatingQuery"
-          :disabled="generatingQuery || !queryResourceSelectionComplete"
-          @click="confirmQueryResourceCandidates"
+          :disabled="generatingQuery || !queryClarificationComplete"
+          @click="confirmQueryClarifications"
         >
           {{ t('develop.query.confirmAndGenerate') }}
         </el-button>
@@ -720,8 +783,11 @@ const queryAiOpen = ref(false)
 const queryAiPrompt = ref('')
 const queryAiInputRef = ref(null)
 const generatingQuery = ref(false)
-const queryResourceConfirmationVisible = ref(false)
-const queryResourceCandidates = ref([])
+const queryClarificationVisible = ref(false)
+const queryClarifications = ref([])
+const queryClarificationAnswers = ref({})
+const queryAcceptedClarificationAnswers = ref({})
+const queryClarificationResources = ref([])
 const selectedQueryResourceCandidatesByRole = ref({})
 const savedSnapshot = ref('')
 const queryTaskRouteReady = ref(false)
@@ -789,10 +855,26 @@ const queryCopilotBusy = computed(() => (
   || switchingQueryTarget.value
   || savingForEngineSwitch.value
 ))
+const queryResourceCandidates = computed(() => queryClarifications.value.flatMap(clarification => (
+  clarification.control === 'resource_choice' ? clarification.resourceCandidates : []
+)))
+const querySemanticClarifications = computed(() => queryClarifications.value.filter(
+  clarification => clarification.control !== 'resource_choice'
+))
 const queryResourceCandidateGroups = computed(() => groupResourceCandidates(queryResourceCandidates.value))
 const queryResourceSelectionComplete = computed(() => hasSelectedResourceForEveryRole(
   queryResourceCandidates.value,
   selectedQueryResourceCandidatesByRole.value
+))
+const queryClarificationComplete = computed(() => queryClarifications.value.every(clarification => {
+  if (!clarification.required || clarification.control === 'notice') return true
+  if (clarification.control === 'resource_choice') return queryResourceSelectionComplete.value
+  const answer = queryClarificationAnswers.value[clarification.key]
+  if (clarification.control === 'multiple_choice') return Array.isArray(answer) && answer.length > 0
+  return typeof answer === 'string' && answer.trim().length > 0
+}))
+const queryClarificationCanContinue = computed(() => queryClarifications.value.some(
+  clarification => clarification.control !== 'notice'
 ))
 const selectedQueryContext = computed(() => {
   const selection = catalogSelection.value
@@ -1053,8 +1135,11 @@ async function applyQueryTargetSwitch(targetValue, { saved = false } = {}) {
   executionParameterOverrides.value = {}
   parameterDrawerVisible.value = false
   queryAiOpen.value = false
-  queryResourceConfirmationVisible.value = false
-  queryResourceCandidates.value = []
+  queryClarificationVisible.value = false
+  queryClarifications.value = []
+  queryClarificationAnswers.value = {}
+  queryAcceptedClarificationAnswers.value = {}
+  queryClarificationResources.value = []
   selectedQueryResourceCandidatesByRole.value = {}
   currentQueryLanguage.value = queryCapabilityForEngine(target.engine).defaultLanguage
   clearResult()
@@ -1770,6 +1855,7 @@ const generateQueryWithCopilot = async () => {
     ElMessage.warning(t('develop.query.selectDataSourceFirst'))
     return
   }
+  queryAcceptedClarificationAnswers.value = {}
   const selectedLocator = catalogSelection.value?.identity?.locator || targetLocator.value || ''
   let resources = collectSelectedQueryResources()
   if (
@@ -1794,26 +1880,39 @@ const generateQueryWithCopilot = async () => {
   await submitQueryGeneration(resources)
 }
 
-const submitQueryGeneration = async (resources, { resourceScopeLocator = '' } = {}) => {
+const submitQueryGeneration = async (
+  resources,
+  { resourceScopeLocator = '', clarificationAnswers = {} } = {}
+) => {
   generatingQuery.value = true
   try {
+    const confirmedAnswers = {
+      ...queryAcceptedClarificationAnswers.value,
+      ...clarificationAnswers
+    }
     const result = await generateQueryFromNL({
       query: queryAiPrompt.value.trim(),
       engine_id: selectedEngineId.value,
       query_language: currentQueryLanguage.value,
       resources,
       resource_scope_locator: resourceScopeLocator || undefined,
-      current_query: queryContent.value.trim() || undefined
+      current_query: queryContent.value.trim() || undefined,
+      clarification_answers: confirmedAnswers
     })
     const resolved = resolveQueryGenerationResult(result)
-    if (resolved.clarificationKey) {
-      if (resolved.candidates.length) {
-        queryResourceCandidates.value = resolved.candidates
-        selectedQueryResourceCandidatesByRole.value = defaultResourceCandidatesByRole(resolved.candidates)
-        queryResourceConfirmationVisible.value = true
-        return false
-      }
-      ElMessage.warning(t(resolved.clarificationKey))
+    if (resolved.clarifications.length) {
+      queryClarifications.value = resolved.clarifications
+      queryClarificationResources.value = resolved.resources
+      queryAcceptedClarificationAnswers.value = confirmedAnswers
+      queryClarificationAnswers.value = Object.fromEntries(resolved.clarifications.map(clarification => [
+        clarification.key,
+        confirmedAnswers[clarification.key]
+          ?? (clarification.control === 'multiple_choice' ? [] : '')
+      ]))
+      selectedQueryResourceCandidatesByRole.value = defaultResourceCandidatesByRole(
+        resolved.clarifications.flatMap(clarification => clarification.resourceCandidates)
+      )
+      queryClarificationVisible.value = true
       return false
     }
     if (queryContent.value.trim() && queryContent.value.trim() !== resolved.query) {
@@ -1841,8 +1940,11 @@ const submitQueryGeneration = async (resources, { resourceScopeLocator = '' } = 
     executionParameterOverrides.value = {}
     clearResult()
     queryAiOpen.value = false
-    queryResourceConfirmationVisible.value = false
-    queryResourceCandidates.value = []
+    queryClarificationVisible.value = false
+    queryClarifications.value = []
+    queryClarificationAnswers.value = {}
+    queryAcceptedClarificationAnswers.value = {}
+    queryClarificationResources.value = []
     selectedQueryResourceCandidatesByRole.value = {}
     announcement.value = t('develop.query.queryGenerated')
     if (resolved.warnings.length) ElMessage.warning(resolved.warnings.join('；'))
@@ -1857,13 +1959,22 @@ const submitQueryGeneration = async (resources, { resourceScopeLocator = '' } = 
   }
 }
 
-const confirmQueryResourceCandidates = async () => {
-  const resources = confirmedResources(
+const confirmQueryClarifications = async () => {
+  if (!queryClarificationComplete.value) return
+  const selectedResources = confirmedResources(
     queryResourceCandidates.value,
     selectedQueryResourceCandidatesByRole.value
   )
-  if (!resources.length) return
-  await submitQueryGeneration(resources)
+  const resources = selectedResources.length
+    ? selectedResources
+    : queryClarificationResources.value
+  const clarificationAnswers = Object.fromEntries(
+    Object.entries(queryClarificationAnswers.value).filter(([, value]) => (
+      Array.isArray(value) ? value.length > 0 : String(value || '').trim().length > 0
+    ))
+  )
+  queryClarificationVisible.value = false
+  await submitQueryGeneration(resources, { clarificationAnswers })
 }
 
 const queryResourceCandidateName = candidate => (
@@ -2023,8 +2134,11 @@ const resetQueryEditorForCreate = async () => {
   fieldCompletions.value = []
   fieldSourceContexts.value = []
   clearResult()
-  queryResourceConfirmationVisible.value = false
-  queryResourceCandidates.value = []
+  queryClarificationVisible.value = false
+  queryClarifications.value = []
+  queryClarificationAnswers.value = {}
+  queryAcceptedClarificationAnswers.value = {}
+  queryClarificationResources.value = []
   selectedQueryResourceCandidatesByRole.value = {}
   if (!selectedTarget.value) {
     selectedQueryTarget.value = queryTargets.value.find(target => target.available)?.value || ''

@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
@@ -33,6 +36,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopRuntime()
 
 	db, err := gorm.Open(postgres.Open(cfg.GetDatabaseDSN()), &gorm.Config{TranslateError: true})
 	if err != nil {
@@ -122,11 +127,11 @@ func main() {
 	dimHierarchySvc := service.NewDimensionHierarchyService(dimHierarchyRepo, tenantReferenceRepo, standardReferenceDeletionSvc)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo, minioClient)
-	if err := cleanupSvc.Start(context.Background()); err != nil {
+	if err := cleanupSvc.Start(runtimeContext); err != nil {
 		log.Printf("Standard 资源回收执行方启动失败: %v", err)
 	}
 	defer cleanupSvc.Stop()
-	standardReferenceDeletionSvc.Start(context.Background())
+	standardReferenceDeletionSvc.Start(runtimeContext)
 	defer standardReferenceDeletionSvc.Stop()
 
 	router := api.SetupRouter(
@@ -148,13 +153,14 @@ func main() {
 
 	go func() {
 		if err := router.Run(addr); err != nil {
-			log.Fatalf("Failed to start server: %v", err)
+			log.Printf("Failed to start server: %v", err)
+			stopRuntime()
 		}
 	}()
 
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
-	systemClient.RegisterAndHeartbeatWithMetadata(context.Background(), "standard", serviceURL, "/standard", map[string]interface{}{
+	registrationDone := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "standard", serviceURL, "/standard", map[string]interface{}{
 		"module": "standard",
 		"capabilities": map[string]interface{}{
 			"cleanup_executor": map[string]interface{}{
@@ -164,5 +170,6 @@ func main() {
 		},
 	})
 
-	select {}
+	<-runtimeContext.Done()
+	<-registrationDone
 }

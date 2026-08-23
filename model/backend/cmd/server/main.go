@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
@@ -34,6 +37,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopRuntime()
 
 	// 连接数据库
 	db, err := gorm.Open(postgres.Open(cfg.GetDatabaseDSN()), &gorm.Config{TranslateError: true})
@@ -90,7 +95,7 @@ func main() {
 	standardReferenceGuardSvc := service.NewStandardReferenceGuardService(standardReferenceGuardRepo)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
-	if err := cleanupSvc.Start(context.Background()); err != nil {
+	if err := cleanupSvc.Start(runtimeContext); err != nil {
 		log.Printf("Model 资源回收执行方启动失败: %v", err)
 	}
 	defer cleanupSvc.Stop()
@@ -115,14 +120,15 @@ func main() {
 	// 后台启动服务器
 	go func() {
 		if err := router.Run(addr); err != nil {
-			log.Fatalf("Failed to start server: %v", err)
+			log.Printf("Failed to start server: %v", err)
+			stopRuntime()
 		}
 	}()
 
 	// 启动模块注册和心跳
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
-	systemClient.RegisterAndHeartbeatWithMetadata(context.Background(), "model", serviceURL, "/model", map[string]interface{}{
+	registrationDone := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "model", serviceURL, "/model", map[string]interface{}{
 		"module": "model",
 		"capabilities": map[string]interface{}{
 			"cleanup_executor": map[string]interface{}{
@@ -133,5 +139,6 @@ func main() {
 	})
 
 	// 阻塞主 goroutine
-	select {}
+	<-runtimeContext.Done()
+	<-registrationDone
 }

@@ -73,7 +73,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	systemRuntimeClient.RegisterAndHeartbeat(ctx, &commonClient.ModuleRegistrationRequest{
+	registrationDone := systemRuntimeClient.RegisterAndHeartbeat(ctx, &commonClient.ModuleRegistrationRequest{
 		ModuleName: commonExecution.ModuleTransfer, InstanceID: workerInstanceID,
 		Role: commonClient.ModuleRuntimeRoleWorker, RoutePrefix: "/transfer",
 		Metadata: map[string]interface{}{
@@ -93,6 +93,7 @@ func main() {
 	go reporter.Run(ctx)
 	logger.L().Info("transfer bounded worker started", "concurrency", cfg.BoundedWorkerConcurrency, "lease", cfg.BoundedLeaseDuration)
 	runner.Run(ctx)
+	<-registrationDone
 	logger.L().Info("transfer bounded worker stopped")
 }
 

@@ -71,7 +71,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	systemClient.RegisterAndHeartbeat(ctx, &commonClient.ModuleRegistrationRequest{
+	registrationDone := systemClient.RegisterAndHeartbeat(ctx, &commonClient.ModuleRegistrationRequest{
 		ModuleName: commonExecution.ModuleMeta, InstanceID: workerInstanceID,
 		Role: commonClient.ModuleRuntimeRoleWorker, RoutePrefix: "/meta",
 		Metadata: map[string]interface{}{
@@ -91,6 +91,7 @@ func main() {
 	go reporter.Run(ctx)
 	logger.L().Info("meta bounded worker started", "concurrency", cfg.ConcurrentTasks, "lease", cfg.BoundedLeaseDuration)
 	runner.Run(ctx)
+	<-registrationDone
 	logger.L().Info("meta bounded worker stopped")
 }
 

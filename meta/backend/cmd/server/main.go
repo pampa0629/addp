@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	commonClient "github.com/addp/common/client"
@@ -78,8 +80,8 @@ func main() {
 		os.Exit(1)
 	}
 	systemClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
-	runtimeContext, cancelRuntime := context.WithCancel(context.Background())
-	defer cancelRuntime()
+	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopRuntime()
 
 	// 初始化 Redis 客户端（可选，仅用于事件与扫描范围锁，不承担有界执行队列职责）
 	var redisClient *redis.Client
@@ -115,12 +117,12 @@ func main() {
 	taskService := service.NewScanTaskService(db)
 	executionService := service.NewScanExecutionService(db, scanService, engineService, redisClient)
 	lineageService := service.NewLineageService(db, engineService)
-	lineageContext, cancelLineage := context.WithCancel(context.Background())
+	lineageContext, cancelLineage := context.WithCancel(runtimeContext)
 	defer cancelLineage()
 	go lineageService.RunCollector(lineageContext, time.Minute)
 
 	scheduler := service.NewScanTaskScheduler(taskService, executionService)
-	if err := scheduler.Start(context.Background()); err != nil {
+	if err := scheduler.Start(runtimeContext); err != nil {
 		logger.L().Error("扫描任务调度器启动失败", "error", err)
 		os.Exit(1)
 	}
@@ -132,7 +134,7 @@ func main() {
 		RetentionDays:   90,
 		CleanupInterval: 24 * time.Hour,
 	})
-	if err := cleanupService.Start(context.Background()); err != nil {
+	if err := cleanupService.Start(runtimeContext); err != nil {
 		logger.L().Error("Meta 资源回收服务启动失败", "error", err)
 		os.Exit(1)
 	}
@@ -141,7 +143,7 @@ func main() {
 
 	// 订阅资源回收事件（如果 Redis 可用）
 	if redisClient != nil {
-		if err := cleanupService.SubscribeCleanupEvents(context.Background()); err != nil {
+		if err := cleanupService.SubscribeCleanupEvents(runtimeContext); err != nil {
 			logger.L().Warn("订阅资源回收事件失败", "error", err)
 		} else {
 			logger.L().Info("已订阅资源回收事件")
@@ -165,7 +167,7 @@ func main() {
 		logger.L().Error("构建 TaskProvider 声明失败", "error", err)
 		os.Exit(1)
 	}
-	systemClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
+	registrationDone := systemClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
 		ModuleName: "meta", ModuleURL: serviceURL, RoutePrefix: "/meta", HealthCheckURL: serviceURL + "/health",
 		TaskProvider: taskProvider,
 		Metadata: map[string]interface{}{
@@ -183,8 +185,12 @@ func main() {
 	addr := fmt.Sprintf(":%s", cfg.ServerPort)
 	logger.L().Info("Meta 服务启动", "addr", addr)
 
-	if err := router.Run(addr); err != nil {
-		logger.L().Error("HTTP 服务启动失败", "error", err)
-		os.Exit(1)
-	}
+	go func() {
+		if err := router.Run(addr); err != nil {
+			logger.L().Error("HTTP 服务启动失败", "error", err)
+			stopRuntime()
+		}
+	}()
+	<-runtimeContext.Done()
+	<-registrationDone
 }
