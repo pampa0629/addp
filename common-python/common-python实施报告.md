@@ -34,7 +34,7 @@ Refresh Token 按归一化 ADDP Base URL 隔离，只保存到 OS Keychain。Acc
 正式交付使用 GitHub Release 中的 wheel，不以本地源码构建或 editable 源码目录作为用户安装方式。维护者复现构建、全新环境安装和产品 E2E 的唯一入口为：
 
 ```bash
-make test-common-python-cli-release
+make test-release RELEASE_SUITE=common-python-cli
 ```
 
 ## 发布门禁

@@ -30,6 +30,7 @@
       "disabledSuccess": "模块已禁用",
       "enabledAria": "切换模块 {name} 的启用状态",
       "columns": {
+        "id": "记录 ID",
         "name": "模块名",
         "routePrefix": "路由前缀",
         "availability": "路由可用性",
@@ -42,11 +43,13 @@
         "definitions": "模块定义",
         "routable": "可路由模块",
         "onlineInstances": "在线实例",
-        "workers": "Worker 实例"
+        "workers": "在线 Worker"
       },
       "availability": {
         "routable": "可路由",
-        "unavailable": "不可路由"
+        "disabled": "管理员禁用",
+        "no_backend": "无 Backend",
+        "backend_offline": "Backend 离线"
       },
       "status": {
         "up": "在线",
@@ -57,16 +60,32 @@
         "worker": "Worker",
         "scheduler": "Scheduler"
       },
-      "instanceSummary": "{online}/{total} 在线",
+      "declarations": {
+        "title": "模块声明",
+        "configuration": "配置入口 {count}",
+        "taskProvider": "TaskProvider",
+        "empty": "无模块级能力声明"
+      },
+      "instanceSummary": "{online} 在线 · {offline} 离线观测",
       "instances": {
-        "title": "运行实例（{count}）",
+        "title": "当前运行投影（{count}）",
+        "historyAction": "查看全部历史",
         "empty": "尚无运行实例登记",
         "id": "实例 ID",
         "role": "角色",
         "status": "状态",
         "url": "服务地址",
+        "healthCheckUrl": "健康检查地址",
         "lastHeartbeat": "最近心跳",
-        "leaseExpiresAt": "租约到期"
+        "leaseExpiresAt": "租约到期",
+        "registeredAt": "注册时间"
+      },
+      "history": {
+        "title": "{name} · 运行实例历史",
+        "roleFilter": "筛选角色",
+        "statusFilter": "筛选有效状态",
+        "empty": "没有符合条件的历史实例",
+        "loadFailed": "加载运行实例历史失败"
       }
     },
     "iam": {
@@ -404,6 +423,7 @@
         "none": "无"
       },
       "actions": {
+        "refresh": "刷新",
         "test": "测试",
         "detail": "详情",
         "edit": "编辑",
@@ -554,6 +574,7 @@
       },
       "msg": {
         "loadFailed": "加载引擎列表失败",
+        "refreshed": "引擎状态已刷新",
         "testSuccess": "连接测试成功！",
         "testFailed": "连接测试失败: {error}",
         "createSuccess": "创建成功",

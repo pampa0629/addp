@@ -14,8 +14,26 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 73 {
-		t.Fatalf("LatestVersion = %d, want 73", catalog.LatestVersion)
+	if catalog.LatestVersion != 74 {
+		t.Fatalf("LatestVersion = %d, want 74", catalog.LatestVersion)
+	}
+}
+
+func TestModuleRuntimeInstanceProjectionIndexesMigration(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000074_module_runtime_instance_projection_indexes.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 74: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"idx_module_runtime_instances_definition_role_updated",
+		"module_definition_id, role, updated_at DESC, id DESC",
+		"idx_module_runtime_instances_definition_registered",
+		"module_definition_id, registered_at DESC, id DESC",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 74 missing %q", fragment)
+		}
 	}
 }
 

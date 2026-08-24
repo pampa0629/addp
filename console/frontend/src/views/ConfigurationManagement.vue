@@ -50,7 +50,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, Refresh } from '@element-plus/icons-vue'
@@ -66,6 +66,9 @@ const route = useRoute()
 const authStore = useAuthStore()
 const loading = ref(false)
 const entries = ref([])
+const ENTRY_REFRESH_INTERVAL_MS = 10000
+let entriesRequest = null
+let refreshTimer = null
 const CONSOLE_MODULE_ROUTES = {
   agent: '/configuration/agent',
   copilot: '/configuration/copilot',
@@ -128,15 +131,31 @@ function entryLabel(entry) {
   return key ? t(key) : entry.id
 }
 
-async function loadEntries() {
-  loading.value = true
-  try {
-    entries.value = await listConfigurationManagementEntries()
-  } catch (error) {
-    entries.value = []
-    ElMessage.error(t('console.configuration.loadFailed'))
-  } finally {
-    loading.value = false
+function loadEntries({ silent = false } = {}) {
+  if (entriesRequest) return entriesRequest
+
+  if (!silent) loading.value = true
+  entriesRequest = listConfigurationManagementEntries()
+    .then((result) => {
+      entries.value = result
+    })
+    .catch(() => {
+      if (!silent) {
+        entries.value = []
+        ElMessage.error(t('console.configuration.loadFailed'))
+      }
+    })
+    .finally(() => {
+      if (!silent) loading.value = false
+      entriesRequest = null
+    })
+
+  return entriesRequest
+}
+
+function refreshEntries() {
+  if (!selectedOwner.value && document.visibilityState !== 'hidden') {
+    loadEntries({ silent: true })
   }
 }
 
@@ -154,6 +173,11 @@ function entryRowClass({ row }) {
 
 onMounted(() => {
   if (!selectedOwner.value) loadEntries()
+  refreshTimer = window.setInterval(refreshEntries, ENTRY_REFRESH_INTERVAL_MS)
+})
+
+onBeforeUnmount(() => {
+  if (refreshTimer !== null) window.clearInterval(refreshTimer)
 })
 </script>
 

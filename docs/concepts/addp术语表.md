@@ -153,7 +153,7 @@
 | execution lease | 执行租约 | bounded execution worker 对当前 execution attempt 的限时运行所有权。 | 由不可复用 `lease_token`、观测用 `lease_owner` 和 `lease_expires_at` 构成；heartbeat、进度和终态写入必须匹配当前 attempt 与 token。 |
 | background runtime heartbeat | 后台运行实例心跳 | ADDP 应用层后台进程周期写入的公共活性观测事实。 | 统一记录模块、运行时角色、运行时名称、实例、容量、当前占用和过期时间；只用于 Monitor 判断 execution worker、continuous worker 与 dispatcher 的进程健康，不授予 execution/runtime/delivery 所有权，也不替代对应 lease。 |
 | module definition | 模块定义 | System 中按稳定 `module_name` 保存的持久模块身份、路由前缀、管理员启用状态和模块级能力入口声明。 | 模块进程离线不删除定义；`enabled` 表示管理员意图，不由心跳覆盖。 |
-| module runtime instance | 模块运行实例 | 某模块 Backend、Worker 或 Scheduler 进程的一次具体运行登记。 | 使用进程级唯一 `instance_id`，保存 role、端点、元数据和租约状态；只有 `enabled + backend + up + lease valid` 的实例可进入 Gateway 路由。 |
+| module runtime instance | 模块运行实例 | 某模块 Backend、Worker 或 Scheduler 进程的一次具体运行登记。 | 使用进程级唯一 `instance_id`，保存 role、端点、元数据和租约状态；只有 `enabled + backend + up + lease valid` 的实例可进入 Gateway 路由。平台模块列表只返回当前运行投影，全部实例历史通过模块下的只读分页集合查询；实例历史不是追加式审计事件。 |
 | module runtime lease | 模块运行租约 | System 根据运行实例注册和周期心跳维护的短期存活事实。 | 心跳只续租，不修改模块定义或管理员启用状态；超时标记实例 `down`，不删除模块定义和实例历史。 |
 | dispatcher | 投递器 | 从 owner outbox 或 delivery 队列领取待发送事项并调用外部接收方的后台角色。 | Monitor Webhook/邮件 dispatcher 不执行业务任务，不创建业务 execution；投递记录和重试状态归 Monitor outbox。 |
 | maintenance loop | 维护循环 | 处理固定系统维护、清理、注册同步或观测采集的后台循环。 | 不等于 execution worker；只有演进为可持久执行、可审计的任务定义后，才进入 owner scheduler + execution worker 体系。 |

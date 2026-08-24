@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import os
 import re
 import subprocess
@@ -22,17 +23,34 @@ class Step:
     command: tuple[str, ...]
     cwd: Path
     environment: tuple[tuple[str, str], ...] = ()
+    excluded_environment: tuple[str, ...] = ()
+
+
+GO_T1_EXCLUDED_ENVIRONMENT = (
+    "*_POSTGRES_TEST_DSN",
+    "ADDP_POSTGRES_INTEGRATION",
+)
+
+
+def step_environment(step: Step, base: dict[str, str] | None = None) -> dict[str, str]:
+    environment = dict(os.environ if base is None else base)
+    for pattern in step.excluded_environment:
+        for name in tuple(environment):
+            if fnmatch.fnmatchcase(name, pattern):
+                environment.pop(name)
+    environment.update(step.environment)
+    return environment
 
 
 def git_files(repository: Path, *patterns: str) -> list[str]:
     result = subprocess.run(
-        ["git", "ls-files", "--", *patterns],
+        ["git", "ls-files", "-z", "--", *patterns],
         cwd=repository,
         check=True,
         capture_output=True,
         text=True,
     )
-    return [line for line in result.stdout.splitlines() if line]
+    return [path for path in result.stdout.split("\0") if path]
 
 
 def make_target(makefile: str, target: str) -> re.Match[str] | None:
@@ -89,6 +107,7 @@ def plan_module(repository: Path, module: str, include_platform: bool = True) ->
                 ("go", "test", "./..."),
                 repository / relative_path,
                 (("GOWORK", "off"),),
+                GO_T1_EXCLUDED_ENVIRONMENT,
             )
         )
 
@@ -138,8 +157,7 @@ def run_steps(steps: list[Step], dry_run: bool) -> None:
         print(f"==> {step.label}: {command} (cwd={step.cwd})", flush=True)
         if dry_run:
             continue
-        environment = os.environ.copy()
-        environment.update(step.environment)
+        environment = step_environment(step)
         subprocess.run(step.command, cwd=step.cwd, env=environment, check=True)
 
 

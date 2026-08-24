@@ -133,6 +133,31 @@ func (r *EngineRepository) Update(engine *models.Engine) error {
 	return nil
 }
 
+// UpdateConnectionObservation persists the latest runtime connectivity facts
+// without changing the Engine Instance aggregate version. Connectivity is an
+// observation cache, not an administrator edit baseline.
+func (r *EngineRepository) UpdateConnectionObservation(
+	engineID uint,
+	status string,
+	checkedAt time.Time,
+	message string,
+) error {
+	result := r.db.Model(&models.Engine{}).
+		Where("id = ? AND lifecycle_state <> ?", engineID, models.EngineLifecycleDeleted).
+		UpdateColumns(map[string]interface{}{
+			"connection_status": status,
+			"last_check_at":     checkedAt,
+			"check_message":     message,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 // FindByIdentityKey 返回同一永久身份的 Engine Instance，包含 deleted 墓碑。
 func (r *EngineRepository) FindByIdentityKey(engineType string, tenantID *uint, identityKey models.JSONString) (*models.Engine, error) {
 	var engine models.Engine

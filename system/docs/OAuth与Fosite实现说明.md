@@ -136,4 +136,4 @@ go test ./internal/iam/oauth ./internal/api ./internal/middleware
 ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?...' make test-system-iam-postgres
 ```
 
-正式 CLI 发布还必须运行 `make test-common-python-cli-release`，验证 wheel 安装、RFC 8252 loopback、Device Flow、刷新、撤销和真实 OS Keychain。
+正式 CLI 发布还必须运行 `make test-release RELEASE_SUITE=common-python-cli`，验证 wheel 安装、RFC 8252 loopback、Device Flow、刷新、撤销和真实 OS Keychain。

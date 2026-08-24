@@ -24,10 +24,10 @@ class Response:
 
 
 class GatewayClient:
-    def __init__(self, base_url: str, token: str, timeout: float) -> None:
+    def __init__(self, base_url: str, token: str, timeout: float, name: str = "GATEWAY_URL") -> None:
         parsed = urllib.parse.urlsplit(base_url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise SuiteError("GATEWAY_URL must be an absolute HTTP(S) URL")
+            raise SuiteError(f"{name} must be an absolute HTTP(S) URL")
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.timeout = timeout
@@ -69,6 +69,80 @@ class GatewayClient:
             code = payload.get("error_code", "unknown")
             raise SuiteError(f"{method} {path} returned HTTP {status} ({code})")
         return Response(status=status, payload=payload)
+
+
+REQUIRED_USER_PERMISSIONS = {
+    "standard.domain.create",
+    "standard.domain.read",
+    "standard.domain.delete",
+    "model.entity.create",
+    "model.entity.read",
+    "model.entity.delete",
+}
+FORBIDDEN_ADMIN_ROLES = {
+    "platform.audit_administrator",
+    "platform.security_administrator",
+    "platform.system_administrator",
+    "tenant.administrator",
+}
+
+
+def validate_user_identity(
+    system: GatewayClient, tenant_id: int
+) -> dict[str, object]:
+    payload = system.request("GET", "/api/v1/system/auth/context", (200,)).payload
+    principal = payload.get("principal")
+    context = payload.get("context")
+    token = payload.get("token")
+    authorization = payload.get("authorization")
+    if not isinstance(principal, dict) or principal.get("type") != "user":
+        raise SuiteError("Online business token must belong to a User")
+    if not isinstance(context, dict) or context.get("type") != "tenant":
+        raise SuiteError("Online business token must use Tenant Context")
+    if context.get("tenant_id") != str(tenant_id):
+        raise SuiteError("Online business token Tenant does not match ADDP_ONLINE_TEST_TENANT_ID")
+    if not isinstance(token, dict) or token.get("type") not in {
+        "first_party_access_token",
+        "oauth_access_token",
+    }:
+        raise SuiteError("Online business token must be a User Access Token")
+    if not isinstance(authorization, dict):
+        raise SuiteError("System AuthContext authorization must be an object")
+    assignments = authorization.get("role_assignments")
+    if not isinstance(assignments, list):
+        raise SuiteError("System AuthContext role_assignments must be an array")
+    roles: set[str] = set()
+    permissions: set[str] = set()
+    for assignment in assignments:
+        if not isinstance(assignment, dict):
+            raise SuiteError("System AuthContext role assignment must be an object")
+        role = assignment.get("role_key")
+        assigned_permissions = assignment.get("permissions")
+        if not isinstance(role, str) or not isinstance(assigned_permissions, list):
+            raise SuiteError("System AuthContext role assignment is incomplete")
+        if not all(isinstance(permission, str) for permission in assigned_permissions):
+            raise SuiteError("System AuthContext permissions must contain strings")
+        roles.add(role)
+        permissions.update(assigned_permissions)
+    forbidden = roles & FORBIDDEN_ADMIN_ROLES
+    if forbidden:
+        raise SuiteError(
+            "Online business token must not use administrator roles: "
+            + ", ".join(sorted(forbidden))
+        )
+    missing = REQUIRED_USER_PERMISSIONS - permissions
+    if missing:
+        raise SuiteError(
+            "Online business token is missing required permissions: "
+            + ", ".join(sorted(missing))
+        )
+    return {
+        "principal_type": "user",
+        "context_type": "tenant",
+        "tenant_id": str(tenant_id),
+        "roles": sorted(roles),
+        "permissions_verified": sorted(REQUIRED_USER_PERMISSIONS),
+    }
 
 
 def require_positive_int(payload: dict[str, object], field: str) -> int:
@@ -162,6 +236,7 @@ def run_suite(client: GatewayClient, tenant_id: int, run_id: str) -> dict[str, o
             "created_resources": created,
             "deleted_resources": deleted,
             "residual_resources": 0,
+            "cleanup": "passed",
         }
     finally:
         for resource, path in (("Model Entity", entity_path), ("Standard Domain", domain_path)):
@@ -187,7 +262,16 @@ def main() -> int:
         timeout = float(os.environ.get("ADDP_ONLINE_TEST_HTTP_TIMEOUT_SECONDS", "10"))
         if timeout <= 0:
             raise SuiteError("ADDP_ONLINE_TEST_HTTP_TIMEOUT_SECONDS must be greater than zero")
-        report = run_suite(GatewayClient(os.environ["GATEWAY_URL"], token, timeout), tenant_id, run_id)
+        identity = validate_user_identity(
+            GatewayClient(os.environ["SYSTEM_URL"], token, timeout, "SYSTEM_URL"),
+            tenant_id,
+        )
+        report = run_suite(
+            GatewayClient(os.environ["GATEWAY_URL"], token, timeout),
+            tenant_id,
+            run_id,
+        )
+        report["identity"] = identity
     except (KeyError, ValueError, SuiteError) as error:
         print(f"Standard-Model Online suite failed: {error}", file=sys.stderr)
         return 1

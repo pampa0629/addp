@@ -71,6 +71,7 @@ class OnlinePreflightTest(unittest.TestCase):
 
     def args(self):
         return Namespace(
+            environment_only=False,
             repository=self.repository,
             service=[f"system=http://127.0.0.1:{self.server.server_port}"],
             timeout=2.0,
@@ -82,6 +83,7 @@ class OnlinePreflightTest(unittest.TestCase):
             "ADDP_ONLINE_TEST": "1",
             "ADDP_ONLINE_TEST_TENANT_ID": "42",
             "ADDP_ONLINE_TEST_RUN_ID": "run-42",
+            "POSTGRES_DB": "addp_online",
         },
         clear=True,
     )
@@ -93,6 +95,16 @@ class OnlinePreflightTest(unittest.TestCase):
     def test_rejects_non_loopback_service(self):
         with self.assertRaisesRegex(ONLINE_PREFLIGHT.PreflightError, "loopback"):
             ONLINE_PREFLIGHT.parse_service("system=https://example.com")
+
+    def test_requires_explicit_valid_service_port(self):
+        for declaration in (
+            "system=http://localhost",
+            "system=http://localhost:0",
+            "system=http://localhost:invalid",
+        ):
+            with self.subTest(declaration=declaration):
+                with self.assertRaisesRegex(ONLINE_PREFLIGHT.PreflightError, "port"):
+                    ONLINE_PREFLIGHT.parse_service(declaration)
 
     def test_rejects_non_positive_timeout(self):
         args = self.args()
@@ -106,6 +118,7 @@ class OnlinePreflightTest(unittest.TestCase):
             "ADDP_ONLINE_TEST": "1",
             "ADDP_ONLINE_TEST_TENANT_ID": "1",
             "ADDP_ONLINE_TEST_RUN_ID": "run-1",
+            "POSTGRES_DB": "addp_online",
         },
         clear=True,
     )
@@ -119,6 +132,7 @@ class OnlinePreflightTest(unittest.TestCase):
             "ADDP_ONLINE_TEST": "1",
             "ADDP_ONLINE_TEST_TENANT_ID": "42",
             "ADDP_ONLINE_TEST_RUN_ID": "run-42",
+            "POSTGRES_DB": "addp_online",
         },
         clear=True,
     )
@@ -133,6 +147,7 @@ class OnlinePreflightTest(unittest.TestCase):
             "ADDP_ONLINE_TEST": "1",
             "ADDP_ONLINE_TEST_TENANT_ID": "42",
             "ADDP_ONLINE_TEST_RUN_ID": "run-42",
+            "POSTGRES_DB": "addp_online",
         },
         clear=True,
     )
@@ -146,12 +161,41 @@ class OnlinePreflightTest(unittest.TestCase):
         {
             "ADDP_ONLINE_TEST": "1",
             "ADDP_ONLINE_TEST_TENANT_ID": "42",
+            "POSTGRES_DB": "addp_online",
         },
         clear=True,
     )
     def test_requires_explicit_run_id(self):
         with self.assertRaisesRegex(ONLINE_PREFLIGHT.PreflightError, "RUN_ID"):
             ONLINE_PREFLIGHT.run_preflight(self.args())
+
+    @patch.dict(
+        os.environ,
+        {
+            "ADDP_ONLINE_TEST": "1",
+            "ADDP_ONLINE_TEST_TENANT_ID": "42",
+            "ADDP_ONLINE_TEST_RUN_ID": "run-42",
+            "POSTGRES_DB": "addp",
+        },
+        clear=True,
+    )
+    def test_rejects_default_business_database(self):
+        with self.assertRaisesRegex(ONLINE_PREFLIGHT.PreflightError, "addp_online"):
+            ONLINE_PREFLIGHT.run_preflight(self.args())
+
+    @patch.dict(
+        os.environ,
+        {
+            "ADDP_ONLINE_TEST": "1",
+            "ADDP_ONLINE_TEST_TENANT_ID": "42",
+            "POSTGRES_DB": "addp_online",
+        },
+        clear=True,
+    )
+    def test_environment_only_does_not_require_run_id_or_services(self):
+        report = ONLINE_PREFLIGHT.validate_online_environment(require_run_id=False)
+        self.assertEqual(report["database"], "addp_online")
+        self.assertEqual(report["tenant_id"], "42")
 
 
 if __name__ == "__main__":

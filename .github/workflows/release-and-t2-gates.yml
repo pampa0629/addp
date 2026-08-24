@@ -45,6 +45,8 @@ jobs:
           bash scripts/ci/select-gate-by-paths.sh "CLI product" \
             'common-python/*' \
             'scripts/test/common-python-cli-release-gate.sh' \
+            'scripts/test/release-gate.py' \
+            'scripts/ci/check-release-ci-registration.py' \
             'scripts/ci/select-gate-by-paths.sh' \
             'scripts/ci/report-selected-gate.sh' \
             '.github/actions/ci-gate-summary/*' \
@@ -59,15 +61,7 @@ jobs:
           ADDP_CI_EVENT: ${{ github.event_name }}
           ADDP_CI_HEAD: ${{ github.sha }}
           ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          bash scripts/ci/select-gate-by-paths.sh "Quality PostgreSQL" \
-            'quality/backend/*' \
-            'common/*' \
-            'scripts/test/quality-postgres-gate.sh' \
-            'scripts/ci/select-gate-by-paths.sh' \
-            '.github/actions/ci-gate-summary/*' \
-            'Makefile' \
-            '.github/workflows/release-and-t2-gates.yml'
+        run: python3 scripts/ci/select-module-gate.py --module quality
 
       - name: Select System IAM PostgreSQL gate
         id: system
@@ -77,16 +71,7 @@ jobs:
           ADDP_CI_FORCE: ${{ startsWith(github.ref, 'refs/tags/v') }}
           ADDP_CI_HEAD: ${{ github.sha }}
           ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          bash scripts/ci/select-gate-by-paths.sh "System IAM PostgreSQL" \
-            'system/backend/*' \
-            'common/*' \
-            'scripts/test/system-iam-postgres-gate.sh' \
-            'scripts/ci/select-gate-by-paths.sh' \
-            'scripts/ci/report-selected-gate.sh' \
-            '.github/actions/ci-gate-summary/*' \
-            'Makefile' \
-            '.github/workflows/release-and-t2-gates.yml'
+        run: python3 scripts/ci/select-module-gate.py --module system
 
       - name: Select Standard PostgreSQL gate
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
@@ -96,15 +81,7 @@ jobs:
           ADDP_CI_EVENT: ${{ github.event_name }}
           ADDP_CI_HEAD: ${{ github.sha }}
           ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          bash scripts/ci/select-gate-by-paths.sh "Standard PostgreSQL" \
-            'standard/backend/*' \
-            'common/*' \
-            'scripts/test/standard-postgres-gate.sh' \
-            'scripts/ci/select-gate-by-paths.sh' \
-            '.github/actions/ci-gate-summary/*' \
-            'Makefile' \
-            '.github/workflows/release-and-t2-gates.yml'
+        run: python3 scripts/ci/select-module-gate.py --module standard
 
   cli-product-macos-verification:
     name: CLI product verification (macOS Keychain)
@@ -125,14 +102,14 @@ jobs:
 
       - name: Run installed-wheel product gate
         env:
-          ADDP_CLI_RELEASE_DIST: ${{ runner.temp }}/addp-cli-dist
-        run: make test-common-python-cli-release
+          ADDP_RELEASE_ARTIFACT_DIR: ${{ runner.temp }}/addp-cli-release-gate
+        run: make test-release RELEASE_SUITE=common-python-cli
 
       - name: Upload verified wheel
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: addp-cli-wheel
-          path: ${{ runner.temp }}/addp-cli-dist/
+          path: ${{ runner.temp }}/addp-cli-release-gate/
           if-no-files-found: error
           retention-days: 7
 
@@ -142,6 +119,7 @@ jobs:
         with:
           gate: CLI product verification (macOS Keychain)
           status: ${{ job.status }}
+          details-file: ${{ runner.temp }}/addp-cli-release-gate/release-summary.md
 
   system-iam-postgres-verification:
     name: System IAM verification (PostgreSQL 15)

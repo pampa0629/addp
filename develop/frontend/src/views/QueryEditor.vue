@@ -707,6 +707,8 @@ import { navigateDevelopTaskEditor } from '@/utils/developNavigation'
 import { createLatestRequestCoordinator } from '@common-ui'
 import {
   formatterLanguageForQuery,
+  formatGeneratedQueryForEditor,
+  formatMQLQuery,
   buildQueryExecutionContract,
   isTerminalExecutionStatus,
   monacoLanguageForQuery,
@@ -1444,12 +1446,14 @@ const submitQuery = async (parameters = {}) => {
 const formatQuery = () => {
   if (!formatterLanguage.value || !queryContent.value) return
   try {
-    queryContent.value = format(queryContent.value, {
-      language: formatterLanguage.value,
-      indent: '  ',
-      keywordCase: 'upper',
-      linesBetweenQueries: 2
-    })
+    queryContent.value = formatterLanguage.value === 'mql'
+      ? formatMQLQuery(queryContent.value)
+      : format(queryContent.value, {
+          language: formatterLanguage.value,
+          indent: '  ',
+          keywordCase: 'upper',
+          linesBetweenQueries: 2
+        })
     ElMessage.success(t('develop.query.formatSuccess'))
   } catch (error) {
     ElMessage.error(t('develop.query.formatFailed') + error.message)
@@ -1915,7 +1919,9 @@ const submitQueryGeneration = async (
       queryClarificationVisible.value = true
       return false
     }
-    if (queryContent.value.trim() && queryContent.value.trim() !== resolved.query) {
+    const generatedLanguage = resolved.queryLanguage || currentQueryLanguage.value
+    const generatedQuery = formatGeneratedQueryForEditor(resolved.query, generatedLanguage)
+    if (queryContent.value.trim() && queryContent.value.trim() !== generatedQuery.trim()) {
       try {
         await ElMessageBox.confirm(
           t('develop.query.replaceGeneratedQueryConfirm'),
@@ -1931,8 +1937,8 @@ const submitQueryGeneration = async (
         return false
       }
     }
-    queryContent.value = resolved.query
-    currentQueryLanguage.value = resolved.queryLanguage || currentQueryLanguage.value
+    queryContent.value = generatedQuery
+    currentQueryLanguage.value = generatedLanguage
     const generatedAt = Date.now()
     queryParameters.value = resolved.queryParameters.map((parameter, index) => (
       queryParameterEditorItem(parameter, `generated-${generatedAt}-${index}`)

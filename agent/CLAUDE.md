@@ -123,7 +123,7 @@ python evals/agent-scenarios/online_runner.py \
 python evals/agent-scenarios/gate.py --output /tmp/addp-agent-evaluation-gate.json
 ```
 
-仓库标准入口为 `make test-agent-eval`；根 `make test` 已包含该离线门禁。人工发布验收使用 `make test-agent-eval-release`，并显式提供 `ADDP_AGENT_READ_ONLY_EVIDENCE`、`ADDP_AGENT_APPROVAL_EVIDENCE`、`ADDP_AGENT_REJECTION_EVIDENCE` 三份仓库外证据。在线证据固定 24 小时有效，未来时间只容忍 5 分钟时钟偏差。
+仓库离线标准入口为 `make test-agent-eval`；根 `make test` 已包含该门禁。人工发布验收统一使用 `make test-release RELEASE_SUITE=agent-evaluation`，并显式提供 `ADDP_AGENT_READ_ONLY_EVIDENCE`、`ADDP_AGENT_APPROVAL_EVIDENCE`、`ADDP_AGENT_REJECTION_EVIDENCE` 三份仓库外证据；T5 分发器再调用 Agent owner 内部门禁并生成统一发布报告。在线证据固定 24 小时有效，未来时间只容忍 5 分钟时钟偏差。
 
 两份已归档 v2 报告使用 `make compare-agent-eval` 只读比较，并显式提供 `ADDP_AGENT_EVAL_BASELINE`、`ADDP_AGENT_EVAL_CURRENT`。比较结果 Schema 为 `addp.agent-evaluation-comparison/v1`；场景/检查删除、passed 状态退化或当前报告失败才返回回归，契约摘要变化和检查耗时差值只用于审查，不设置阈值。比较不重跑门禁、不读取在线证据，也不保存输入路径或证据摘要。
 

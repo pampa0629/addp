@@ -140,6 +140,33 @@ func TestGetForExecutionRejectsOfflineEngine(t *testing.T) {
 	}
 }
 
+func TestConnectionObservationDoesNotAdvanceResourceVersion(t *testing.T) {
+	repo := newEngineServiceTestRepository(t)
+	tenantID := uint(7)
+	engine := createDeletionTestEngine(t, repo, tenantID)
+	originalVersion := engine.Version
+	originalUpdatedAt := engine.UpdatedAt
+
+	service := NewEngineService(repo, nil, nil)
+	if err := service.RecordConnectionStatus(engine.ID, models.EngineConnectionOffline, "connection refused"); err != nil {
+		t.Fatalf("RecordConnectionStatus() error = %v", err)
+	}
+
+	stored, err := repo.GetByID(engine.ID)
+	if err != nil {
+		t.Fatalf("GetByID() error = %v", err)
+	}
+	if stored.Version != originalVersion {
+		t.Fatalf("connection observation advanced version from %d to %d", originalVersion, stored.Version)
+	}
+	if !stored.UpdatedAt.Equal(originalUpdatedAt) {
+		t.Fatalf("connection observation changed updated_at from %s to %s", originalUpdatedAt, stored.UpdatedAt)
+	}
+	if stored.ConnectionStatus != models.EngineConnectionOffline || stored.LastCheckAt == nil || stored.CheckMessage != "connection refused" {
+		t.Fatalf("connection observation was not persisted: %#v", stored)
+	}
+}
+
 func TestRuntimeDescriptorsExposeComputeRuntimeEndpointsAndNoDataConnection(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {

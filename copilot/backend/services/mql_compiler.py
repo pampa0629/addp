@@ -468,6 +468,7 @@ class MQLCompiler:
         if not isinstance(set_fields, list) or not set_fields:
             raise MQLPlanError("MQL set comparison set_fields must be a non-empty array")
         normalized_fields: list[str] = []
+        normalized_field_types: list[str] = []
         for value in set_fields:
             field_name = str(value or "").strip()
             field = cls._verified_field(field_name, fields)
@@ -481,6 +482,7 @@ class MQLCompiler:
                 raise MQLPlanError(f"MQL set comparison parent field must be an array: {array_name}")
             if field_name not in normalized_fields:
                 normalized_fields.append(field_name)
+                normalized_field_types.append(str(field.get("type") or "unknown").lower())
         metric_plan = cls._validate_metric(plan["metric"], fields)
         if metric_plan["operation"] != "none":
             raise MQLPlanError("MQL set_comparison requires metric.operation none")
@@ -488,6 +490,7 @@ class MQLCompiler:
             "entity_field": entity_field,
             "entity_values": [value.strip() for value in entity_values],
             "set_fields": normalized_fields,
+            "set_field_types": normalized_field_types,
             "metric": metric,
         }
 
@@ -502,39 +505,79 @@ class MQLCompiler:
             {"name": "entity_2", "type": "string", "default": comparison["entity_values"][1]},
         ]
 
-        def branch(parameter: str) -> list[dict[str, Any]]:
-            mapped_sets = []
-            for field_name in comparison["set_fields"]:
-                array_name, leaf_name = field_name.rsplit(".", 1)
-                mapped_sets.append({
-                    "$map": {
-                        "input": {"$ifNull": [f"${array_name}", []]},
-                        "as": "item",
-                        "in": f"$$item.{leaf_name}",
-                    },
-                })
-            return [
-                {"$match": {comparison["entity_field"]: {"$param": parameter}}},
-                {"$project": {"_values": {"$setUnion": mapped_sets}}},
-                {"$group": {"_id": None, "_value_sets": {"$push": "$_values"}}},
-                {"$project": {
-                    "_id": 0,
-                    "values": {
-                        "$reduce": {
-                            "input": "$_value_sets",
-                            "initialValue": [],
-                            "in": {"$setUnion": ["$$value", "$$this"]},
+        mapped_sets = []
+        for field_name, field_type in zip(
+            comparison["set_fields"],
+            comparison["set_field_types"],
+            strict=True,
+        ):
+            array_name, leaf_name = field_name.rsplit(".", 1)
+            mapped_values = {
+                "$map": {
+                    "input": {"$ifNull": [f"${array_name}", []]},
+                    "as": "item",
+                    "in": f"$$item.{leaf_name}",
+                },
+            }
+            mapped_sets.append({
+                "$filter": {
+                    "input": mapped_values,
+                    "as": "value",
+                    "cond": cls._valid_set_value_condition(field_type),
+                },
+            })
+
+        def entity_values(parameter: str) -> dict[str, Any]:
+            return {
+                "$let": {
+                    "vars": {
+                        "entity": {
+                            "$arrayElemAt": [
+                                {
+                                    "$filter": {
+                                        "input": "$_entities",
+                                        "as": "entry",
+                                        "cond": {"$eq": ["$$entry.entity", {"$param": parameter}]},
+                                    },
+                                },
+                                0,
+                            ],
                         },
                     },
-                }},
-            ]
+                    "in": {"$ifNull": ["$$entity.values", []]},
+                },
+            }
 
         pipeline: list[dict[str, Any]] = [
-            {"$facet": {"left": branch("entity_1"), "right": branch("entity_2")}},
+            {"$match": {
+                comparison["entity_field"]: {
+                    "$in": [{"$param": "entity_1"}, {"$param": "entity_2"}],
+                },
+            }},
+            {"$project": {
+                "_entity": f"${comparison['entity_field']}",
+                "_values": {"$setUnion": mapped_sets},
+            }},
+            {"$group": {"_id": "$_entity", "_value_sets": {"$push": "$_values"}}},
             {"$project": {
                 "_id": 0,
-                "left": {"$ifNull": [{"$arrayElemAt": ["$left.values", 0]}, []]},
-                "right": {"$ifNull": [{"$arrayElemAt": ["$right.values", 0]}, []]},
+                "entity": "$_id",
+                "values": {
+                    "$reduce": {
+                        "input": "$_value_sets",
+                        "initialValue": [],
+                        "in": {"$setUnion": ["$$value", "$$this"]},
+                    },
+                },
+            }},
+            {"$group": {
+                "_id": None,
+                "_entities": {"$push": {"entity": "$entity", "values": "$values"}},
+            }},
+            {"$project": {
+                "_id": 0,
+                "left": entity_values("entity_1"),
+                "right": entity_values("entity_2"),
             }},
             {"$project": {
                 "left_count": {"$size": "$left"},
@@ -575,3 +618,31 @@ class MQLCompiler:
                 }},
             ])
         return {"aggregate": collection, "pipeline": pipeline}, parameters
+
+    @staticmethod
+    def _valid_set_value_condition(field_type: str) -> dict[str, Any]:
+        bson_types = {
+            "string": ["string"],
+            "int": ["int", "long"],
+            "integer": ["int", "long"],
+            "bigint": ["long", "int"],
+            "float": ["double", "decimal", "int", "long"],
+            "double": ["double", "decimal", "int", "long"],
+            "decimal": ["decimal", "double", "int", "long"],
+            "number": ["double", "decimal", "int", "long"],
+            "bool": ["bool"],
+            "boolean": ["bool"],
+            "date": ["date"],
+            "time": ["date"],
+            "timestamp": ["date"],
+            "objectid": ["objectId"],
+        }.get(field_type)
+        conditions: list[dict[str, Any]] = [
+            {"$ne": ["$$value", None]},
+            {"$ne": [{"$type": "$$value"}, "missing"]},
+        ]
+        if bson_types:
+            conditions.append({"$in": [{"$type": "$$value"}, bson_types]})
+        if field_type == "string":
+            conditions.append({"$ne": ["$$value", ""]})
+        return {"$and": conditions}

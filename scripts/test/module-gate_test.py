@@ -56,6 +56,35 @@ class ModuleGateTest(unittest.TestCase):
             [step.command for step in steps],
         )
         self.assertEqual((("GOWORK", "off"),), steps[1].environment)
+        self.assertEqual(
+            ("*_POSTGRES_TEST_DSN", "ADDP_POSTGRES_INTEGRATION"),
+            steps[1].excluded_environment,
+        )
+
+    def test_go_t1_environment_excludes_postgres_integration_opt_ins(self) -> None:
+        step = MODULE.Step(
+            "sample Go T1",
+            ("go", "test", "./..."),
+            self.repository,
+            (("GOWORK", "off"),),
+            MODULE.GO_T1_EXCLUDED_ENVIRONMENT,
+        )
+
+        environment = MODULE.step_environment(
+            step,
+            {
+                "ADDP_SYSTEM_POSTGRES_TEST_DSN": "postgres://system-test",
+                "STANDARD_POSTGRES_TEST_DSN": "postgres://standard-test",
+                "ADDP_POSTGRES_INTEGRATION": "1",
+                "UNRELATED_TEST_FLAG": "kept",
+            },
+        )
+
+        self.assertNotIn("ADDP_SYSTEM_POSTGRES_TEST_DSN", environment)
+        self.assertNotIn("STANDARD_POSTGRES_TEST_DSN", environment)
+        self.assertNotIn("ADDP_POSTGRES_INTEGRATION", environment)
+        self.assertEqual("kept", environment["UNRELATED_TEST_FLAG"])
+        self.assertEqual("off", environment["GOWORK"])
 
     def test_rejects_unknown_module(self) -> None:
         with self.assertRaisesRegex(MODULE.ModuleGateError, "unknown MODULE"):
@@ -64,6 +93,15 @@ class ModuleGateTest(unittest.TestCase):
     def test_rejects_invalid_module_name(self) -> None:
         with self.assertRaisesRegex(MODULE.ModuleGateError, "lowercase ADDP module name"):
             MODULE.plan_module(self.repository, "sample;echo")
+
+    def test_git_files_preserves_unicode_and_spaces(self) -> None:
+        path = self.repository / "sample/frontend/中文 说明.md"
+        path.write_text("说明\n", encoding="utf-8")
+        subprocess.run(["git", "add", str(path)], cwd=self.repository, check=True)
+        self.assertIn(
+            "sample/frontend/中文 说明.md",
+            MODULE.git_files(self.repository, "*/frontend/*"),
+        )
 
 
 if __name__ == "__main__":

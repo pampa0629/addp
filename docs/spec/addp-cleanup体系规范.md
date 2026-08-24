@@ -453,7 +453,7 @@ active / disabled
 → 权威复扫并比较 impact digest
 → cleanup execute
 → cleanup 全部成功
-→ 物理删除 system.engines 记录并发布 engine.deleted
+→ 转为 deleted 墓碑、清除敏感连接信息并发布 engine.deleted
 ```
 
 约束：
@@ -466,7 +466,7 @@ active / disabled
 6. 外部引擎不可达且存在 owner 已登记外部产物时，管理员可显式选择 `external_artifact_policy=abandon`。Owner 模块必须把记录终止为 `abandoned_external`，保存外部 schema/object、最后错误、放弃时间和操作者审计；该记录不再进入自动 cleanup 候选。
 7. `abandoned_external` 表示平台放弃后续物理删除责任，不表示外部对象已删除。外部对象由 DBA 或外部系统管理员处理。
 8. System 不读取或修改 owner 私有表；放弃语义仍通过 cleanup request 的中性 context 传递，由 owner executor 落库。
-9. 删除后重新注册产生新的 Engine Instance；cleanup 不做旧 ID 到新 ID 的自动映射。
+9. cleanup 完成后必须保留原 Engine Instance 的永久 ID、Tenant、类型和身份键墓碑，不得物理删除或释放 ID。相同物理身份的普通注册必须返回“需要恢复”的冲突，只有用户显式恢复才能沿用原 ID 重新启用；不同物理身份才创建新的 Engine Instance。cleanup 不做 ID 映射，也不改写 owner 的既有绑定。
 
 ### Standard 被引用资源删除工作流
 
@@ -595,7 +595,7 @@ curl -sS "$BASE/monitor/executions/by-execution-id/$EXECUTION_ID/tree" \
 | item 删除后 artifact state 如何处理 | 有审计和诊断价值的 artifact state 默认标记 `missing_source`，从活跃查询中隐藏；纯缓存可物理删除，但必须保留 execution / audit 摘要。 |
 | engine 删除前如何检查影响 | 先执行无副作用的只读影响评估；确认后进入 `deleting` 并权威复扫。参与模块缺失、运行任务、扫描失败或影响摘要变化时硬阻断删除。 |
 | engine 删除后任务定义如何处理 | 用户创建的任务、服务和治理配置统一保留；可重绑定的报告为 `rebindable`，强绑定配置禁用并记录 `missing_engine`。只有 Meta 快照、缓存和明确登记的派生产物可以随 engine 生命周期物理清理。 |
-| 删除后重新注册能否自动重绑定 | 不能。新注册始终产生新的 Engine Instance；System 不按名称或连接信息猜测对应关系。用户在 owner 模块选择目标 Engine 后，由 owner 原子更新自己的绑定并保留审计。 |
+| 删除后重新注册能否自动重绑定 | 不能按名称或相似连接信息猜测、映射或改写绑定。相同物理身份的普通注册返回“需要恢复”的冲突；用户显式恢复墓碑时沿用原 Engine ID，仍引用该 ID 的既有绑定在实例重新在线后自然恢复可执行。不同物理身份必须创建新的 Engine Instance，并由用户在 owner 模块显式选择后原子重绑并保留审计。 |
 | tenant 删除后如何处理 cleanup | 必须通过 system-owned cleanup execution 汇总各模块结果；业务资源可清理，System 审计日志保留或归档。 |
 | 源事实变化后如何处理派生产物 | 主路径是事件驱动标记 `outdated`；查询和执行时做惰性复查作为防线；不因 facts 变化直接物理删除派生产物。 |
 | 配置变化如何判断产物过期 | 按产物类型保存和比较 `source_version`、`config_version`；不使用一个粗粒度全局版本覆盖所有产物。 |

@@ -272,6 +272,43 @@ func (h *ModuleRegistryHandler) GetModulePlatform(c *gin.Context) {
 	c.JSON(http.StatusOK, module)
 }
 
+// ListModuleRuntimeInstancesPlatform godoc
+// @Summary      分页查询模块运行实例历史 | List module runtime instance history
+// @Description  平台系统管理员分页读取指定模块全部 Backend、Worker、Scheduler 实例历史；该集合只读，不提供健康状态写入 | A platform system administrator reads the complete Backend, Worker, and Scheduler instance history of a module with pagination; this collection is read-only and exposes no health-state writes
+// @Tags         平台模块管理 | Platform Module Management
+// @Produce      json
+// @Security     BearerAuth
+// @Param        module_name path string true "模块名 | Module name"
+// @Param        role query string false "角色过滤：backend、worker、scheduler | Role filter: backend, worker, scheduler"
+// @Param        status query string false "有效状态过滤：up、down | Effective status filter: up, down"
+// @Param        page query int false "页码 | Page number" default(1)
+// @Param        page_size query int false "每页数量，最大 100 | Page size, maximum 100" default(10)
+// @Success      200 {object} object{data=[]models.ModuleRuntimeInstanceInfo,total=int64,page=int,page_size=int,total_pages=int}
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      401 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["platform.module.read"]
+// @Router       /platform/modules/{module_name}/instances [get]
+func (h *ModuleRegistryHandler) ListModuleRuntimeInstancesPlatform(c *gin.Context) {
+	page, pageSize := commonapi.ParsePagination(c)
+	instances, total, err := h.service.ListModuleRuntimeInstances(c.Param("module_name"), models.ModuleRuntimeInstanceFilter{
+		Role: c.Query("role"), Status: c.Query("status"), Page: page, PageSize: pageSize,
+	})
+	switch {
+	case errors.Is(err, service.ErrInvalidModuleRuntimeInstanceQuery):
+		commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, commoni18n.MsgInvalidParams))
+	case errors.Is(err, commonapi.ErrNotFound):
+		commonapi.RespondError(c, http.StatusNotFound, commoni18n.T(c, sysi18n.MsgModuleNotFound))
+	case err != nil:
+		commonapi.RespondError(c, http.StatusInternalServerError, commoni18n.T(c, sysi18n.MsgInternalError))
+	default:
+		commonapi.RespondPaginated(c, instances, total, page, pageSize)
+	}
+}
+
 // UpdateModulePlatform godoc
 // @Summary      更新平台模块启用状态 | Update platform module enabled state
 // @Description  只更新管理员 enabled 意图；运行实例健康仍由注册、心跳和租约决定 | Updates only the administrator enabled intent; runtime instance health remains determined by registration, heartbeat, and lease

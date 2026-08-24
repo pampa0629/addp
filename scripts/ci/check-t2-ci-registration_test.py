@@ -50,10 +50,7 @@ class T2CIRegistrationTest(unittest.TestCase):
             "    steps:\n"
             "      - name: Select sample gate\n"
             "        id: sample\n"
-            "        run: |\n"
-            "          select-gate 'sample/backend/*' "
-            "'common/*' 'scripts/test/sample-postgres-gate.sh' "
-            "'scripts/ci/select-gate-by-paths.sh'\n"
+            "        run: python3 scripts/ci/select-module-gate.py --module sample\n"
             "      - name: Run sample gate\n"
             "        run: make test-sample-postgres\n"
         )
@@ -74,37 +71,24 @@ class T2CIRegistrationTest(unittest.TestCase):
             errors,
         )
         self.assertIn(
-            "scripts/test/sample-postgres-gate.sh: owner path sample/backend/* is missing",
+            "scripts/test/sample-postgres-gate.sh: shared module change selector is missing",
             errors,
         )
 
-    def test_rejects_paths_registered_in_another_selection_step(self) -> None:
+    def test_rejects_selector_registered_in_another_selection_step(self) -> None:
         self.workflow.write_text(
             self._workflow_text().replace(
-                "          select-gate 'sample/backend/*' "
-                "'common/*' 'scripts/test/sample-postgres-gate.sh' "
-                "'scripts/ci/select-gate-by-paths.sh'\n",
-                "          select-gate\n"
+                "        run: python3 scripts/ci/select-module-gate.py --module sample\n",
+                "        run: true\n"
                 "      - name: Select unrelated gate\n"
                 "        id: unrelated\n"
-                "        run: |\n"
-                "          select-gate 'sample/backend/*' 'common/*' "
-                "'scripts/test/sample-postgres-gate.sh' "
-                "'scripts/ci/select-gate-by-paths.sh'\n",
+                "        run: python3 scripts/ci/select-module-gate.py --module sample\n",
             ),
             encoding="utf-8",
         )
         errors = MODULE.validate_registration(self.repository)
         self.assertIn(
-            "scripts/test/sample-postgres-gate.sh: gate script path registration is missing",
-            errors,
-        )
-        self.assertIn(
-            "scripts/test/sample-postgres-gate.sh: owner path sample/backend/* is missing",
-            errors,
-        )
-        self.assertIn(
-            "scripts/test/sample-postgres-gate.sh: shared path common/* is missing",
+            "scripts/test/sample-postgres-gate.sh: shared module change selector is missing",
             errors,
         )
 

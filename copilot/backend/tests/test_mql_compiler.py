@@ -209,6 +209,37 @@ def test_compile_jaccard_overlap_uses_verified_ids_and_deduplicates():
     ]
 
 
+def test_compile_set_overlap_excludes_null_missing_and_empty_identity_values():
+    result = MQLCompiler.compile(overlap_plan("overlap_coefficient"), [persons_resource()])
+    command = json.loads(result["query"])
+    pipeline_text = json.dumps(command["pipeline"], ensure_ascii=False)
+
+    assert '"$filter"' in pipeline_text
+    assert '"$type"' in pipeline_text
+    assert '"string"' in pipeline_text
+    assert '"$ne": ["$$value", ""]' in pipeline_text
+
+
+def test_compile_set_overlap_uses_one_shared_entity_pipeline():
+    result = MQLCompiler.compile(overlap_plan("overlap_coefficient"), [persons_resource()])
+    command = json.loads(result["query"])
+
+    assert command["pipeline"][0] == {
+        "$match": {
+            "userInfo.nickName": {
+                "$in": [
+                    {"$param": "entity_1"},
+                    {"$param": "entity_2"},
+                ],
+            },
+        },
+    }
+    pipeline_text = json.dumps(command["pipeline"], ensure_ascii=False)
+    assert '"$facet"' not in pipeline_text
+    assert pipeline_text.count('"$myOutdoors"') == 1
+    assert pipeline_text.count('"$entriedOutdoors"') == 1
+
+
 def test_compile_intersection_count_has_no_ratio():
     result = MQLCompiler.compile(overlap_plan("intersection_count"), [persons_resource()])
     pipeline_text = json.dumps(json.loads(result["query"])["pipeline"], ensure_ascii=False)

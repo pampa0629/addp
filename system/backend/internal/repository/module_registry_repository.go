@@ -207,21 +207,100 @@ func (r *ModuleRegistryRepository) UpdateHeartbeat(moduleName, instanceID string
 
 func (r *ModuleRegistryRepository) GetModule(moduleName string) (*models.ModuleDefinition, error) {
 	var definition models.ModuleDefinition
-	err := r.db.Preload("RuntimeInstances", func(db *gorm.DB) *gorm.DB {
-		return db.Order("role ASC, instance_id ASC")
-	}).Where("module_name = ?", moduleName).First(&definition).Error
+	err := r.db.Where("module_name = ?", moduleName).First(&definition).Error
 	if err != nil {
 		return nil, commonrepo.WrapDBError(err)
 	}
+	instances, err := r.listCurrentRuntimeInstances([]uint{definition.ID}, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	definition.RuntimeInstances = instances[definition.ID]
 	return &definition, nil
 }
 
 func (r *ModuleRegistryRepository) ListModules() ([]models.ModuleDefinition, error) {
 	var definitions []models.ModuleDefinition
-	err := r.db.Preload("RuntimeInstances", func(db *gorm.DB) *gorm.DB {
-		return db.Order("role ASC, instance_id ASC")
-	}).Order("module_name ASC").Find(&definitions).Error
-	return definitions, err
+	if err := r.db.Order("module_name ASC").Find(&definitions).Error; err != nil {
+		return nil, err
+	}
+	definitionIDs := make([]uint, 0, len(definitions))
+	for index := range definitions {
+		definitionIDs = append(definitionIDs, definitions[index].ID)
+	}
+	instances, err := r.listCurrentRuntimeInstances(definitionIDs, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	for index := range definitions {
+		definitions[index].RuntimeInstances = instances[definitions[index].ID]
+	}
+	return definitions, nil
+}
+
+// listCurrentRuntimeInstances 返回有界当前投影：全部有效租约实例，以及每个
+// 当前无有效实例角色的最近一次离线观测。窗口排序在数据库完成，避免加载全部历史。
+func (r *ModuleRegistryRepository) listCurrentRuntimeInstances(definitionIDs []uint, now time.Time) (map[uint][]models.ModuleRuntimeInstance, error) {
+	result := make(map[uint][]models.ModuleRuntimeInstance, len(definitionIDs))
+	if len(definitionIDs) == 0 {
+		return result, nil
+	}
+	base := r.db.Model(&models.ModuleRuntimeInstance{}).
+		Where("module_definition_id IN ?", definitionIDs).
+		Select(`module_runtime_instances.*,
+			CASE WHEN status = ? AND lease_expires_at > ? THEN 1 ELSE 0 END AS effective_up,
+			ROW_NUMBER() OVER (
+				PARTITION BY module_definition_id, role
+				ORDER BY CASE WHEN status = ? AND lease_expires_at > ? THEN 0 ELSE 1 END,
+					updated_at DESC, id DESC
+			) AS role_rank`,
+			models.ModuleRuntimeStatusUp, now, models.ModuleRuntimeStatusUp, now)
+	var instances []models.ModuleRuntimeInstance
+	if err := r.db.Table("(?) AS current_instances", base).
+		Where("effective_up = 1 OR role_rank = 1").
+		Order("module_definition_id ASC, role ASC, instance_id ASC").
+		Scan(&instances).Error; err != nil {
+		return nil, err
+	}
+	for index := range instances {
+		instance := instances[index]
+		result[instance.ModuleDefinitionID] = append(result[instance.ModuleDefinitionID], instance)
+	}
+	return result, nil
+}
+
+func (r *ModuleRegistryRepository) ListModuleRuntimeInstances(
+	moduleName string,
+	filter models.ModuleRuntimeInstanceFilter,
+	now time.Time,
+) ([]models.ModuleRuntimeInstance, int64, error) {
+	var definition models.ModuleDefinition
+	if err := r.db.Select("id").Where("module_name = ?", moduleName).First(&definition).Error; err != nil {
+		return nil, 0, commonrepo.WrapDBError(err)
+	}
+	query := r.db.Model(&models.ModuleRuntimeInstance{}).
+		Where("module_definition_id = ?", definition.ID)
+	if filter.Role != "" {
+		query = query.Where("role = ?", filter.Role)
+	}
+	switch filter.Status {
+	case models.ModuleRuntimeStatusUp:
+		query = query.Where("status = ? AND lease_expires_at > ?", models.ModuleRuntimeStatusUp, now)
+	case models.ModuleRuntimeStatusDown:
+		query = query.Where("status = ? OR lease_expires_at <= ?", models.ModuleRuntimeStatusDown, now)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var instances []models.ModuleRuntimeInstance
+	if err := query.Order("registered_at DESC, id DESC").
+		Offset((filter.Page - 1) * filter.PageSize).
+		Limit(filter.PageSize).
+		Find(&instances).Error; err != nil {
+		return nil, 0, err
+	}
+	return instances, total, nil
 }
 
 func (r *ModuleRegistryRepository) MarkStaleModules(now time.Time) (bool, error) {

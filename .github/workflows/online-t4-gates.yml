@@ -1,0 +1,65 @@
+name: Online T4 gates
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Registered Online suite
+        required: true
+        type: choice
+        options:
+          - module-registry-recovery
+          - standard-model-reference-deletion
+
+permissions:
+  contents: read
+
+concurrency:
+  group: online-t4-${{ inputs.suite }}
+  cancel-in-progress: false
+
+jobs:
+  online-t4:
+    name: Online T4 (${{ inputs.suite }})
+    runs-on:
+      - self-hosted
+      - macOS
+      - addp-online
+    environment: addp-online
+    timeout-minutes: 60
+    env:
+      ADDP_ONLINE_HOST: "1"
+      ADDP_ONLINE_ENV_FILE: ${{ vars.ADDP_ONLINE_ENV_FILE }}
+      ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
+      ONLINE_SUITE: ${{ inputs.suite }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate dedicated Online Runner readiness
+        run: bash scripts/test/online-host-gate.sh --check-only
+
+      - name: Run dedicated Online deployment gate
+        run: bash scripts/test/online-host-gate.sh
+
+      - name: Upload Online evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: online-t4-${{ inputs.suite }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/addp-online-${{ github.run_id }}/
+            logs/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Summarize Online T4 gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Online T4 (${{ inputs.suite }})
+          status: ${{ job.status }}
+          details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt

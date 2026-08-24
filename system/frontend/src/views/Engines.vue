@@ -5,6 +5,9 @@
         <div class="card-header">
           <span>{{ t('system.engine.title') }}</span>
           <div class="header-buttons">
+            <el-button :icon="Refresh" :loading="loading" @click="refreshEngines">
+              {{ t('system.engine.actions.refresh') }}
+            </el-button>
             <el-button type="primary" :icon="Plus" @click="showAddStorageDialog">{{ t('system.engine.addStorage') }}</el-button>
             <el-button type="warning" :icon="Plus" @click="showAddExtensionDialog">{{ t('system.engine.addExtension') }}</el-button>
           </div>
@@ -688,13 +691,13 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { enginesAPI } from '../api/engines'
-import { Plus, Edit, Delete } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { StorageEngineForm, requestConsoleBridge } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useConsolePageDescriptor } from '@common-ui'
-import { paginateEngines } from '../utils/engineList'
+import { getEngineRefreshInterval, paginateEngines } from '../utils/engineList'
 import { switchStorageEngineType } from '../utils/engineForm'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
 import { resolveEngineDetailRouteState } from '../utils/routeState'
@@ -705,6 +708,7 @@ const router = useRouter()
 
 const allEngines = ref([])
 const loading = ref(false)
+let engineListRequestInFlight = false
 const currentPage = ref(1)
 const pageSize = ref(10)
 const total = computed(() => allEngines.value.length)
@@ -1271,14 +1275,24 @@ const getConnectionTooltip = (row) => {
   return tooltip
 }
 
-const loadEngines = async () => {
-  loading.value = true
+const syncSelectedEngineProjection = (response) => {
+  if (!selectedEngine.value) return
+  const latest = response.find(engine => String(engine.id) === String(selectedEngine.value.id))
+  if (!latest) return
+  const { connection_info: _maskedConnectionInfo, ...latestProjection } = latest
+  selectedEngine.value = { ...selectedEngine.value, ...latestProjection }
+}
+
+const loadEngines = async ({ silent = false } = {}) => {
+  if (engineListRequestInFlight) return false
+  engineListRequestInFlight = true
+  if (!silent) loading.value = true
   try {
     const capabilityGroups = ['storage', 'compute'].filter(value => selectedCategories.value.includes(value))
     const engineOrigins = ['general', 'extension'].filter(value => selectedCategories.value.includes(value))
     if (capabilityGroups.length === 0 && engineOrigins.length === 0) {
       allEngines.value = []
-      return
+      return true
     }
 
     const response = await enginesAPI.list({
@@ -1293,14 +1307,22 @@ const loadEngines = async () => {
       throw new TypeError('System engine list response must be an array')
     }
     allEngines.value = response
+    syncSelectedEngineProjection(response)
     const lastPage = Math.max(1, Math.ceil(response.length / pageSize.value))
     currentPage.value = Math.min(currentPage.value, lastPage)
+    return true
   } catch (error) {
-    ElMessage.error(t('system.engine.msg.loadFailed'))
+    if (!silent) ElMessage.error(t('system.engine.msg.loadFailed'))
     console.error(error)
+    return false
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
+    engineListRequestInFlight = false
   }
+}
+
+const refreshEngines = async () => {
+  if (await loadEngines()) ElMessage.success(t('system.engine.msg.refreshed'))
 }
 
 const selectStorageEngineType = (engineType) => {
@@ -1951,22 +1973,29 @@ watch(extensionCapabilitiesText, () => {
   resetExtensionRuntimeStatus()
 })
 
-let deletionPollTimer = null
+let engineRefreshTimer = null
+let engineRefreshStopped = false
+
+const scheduleEngineRefresh = () => {
+  if (engineRefreshStopped) return
+  if (engineRefreshTimer) window.clearTimeout(engineRefreshTimer)
+  engineRefreshTimer = window.setTimeout(async () => {
+    await loadEngines({ silent: true })
+    scheduleEngineRefresh()
+  }, getEngineRefreshInterval(allEngines.value))
+}
 
 onMounted(() => {
-		loadEngines()
-		restoreEngineDetails()
-	deletionPollTimer = window.setInterval(() => {
-		if (allEngines.value.some(engine => engine.lifecycle_state === 'deleting')) {
-			loadEngines()
-		}
-	}, 3000)
+	engineRefreshStopped = false
+	loadEngines().finally(scheduleEngineRefresh)
+	restoreEngineDetails()
 })
 
 watch(() => [route.params.id, route.query.tab], restoreEngineDetails)
 
 onUnmounted(() => {
-	if (deletionPollTimer) window.clearInterval(deletionPollTimer)
+	engineRefreshStopped = true
+	if (engineRefreshTimer) window.clearTimeout(engineRefreshTimer)
 })
 </script>
 

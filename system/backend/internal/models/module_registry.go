@@ -104,6 +104,13 @@ type ModuleRuntimeInstanceInfo struct {
 	UpdatedAt      time.Time              `json:"updated_at"`
 }
 
+type ModuleRuntimeInstanceFilter struct {
+	Role     string
+	Status   string
+	Page     int
+	PageSize int
+}
+
 type ModuleInfo struct {
 	ID                      uint                                       `json:"id"`
 	ModuleName              string                                     `json:"module_name"`

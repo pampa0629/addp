@@ -62,7 +62,7 @@ uv run pytest -q
 
 # 正式 CLI wheel、全新 venv、pipx 生命周期和 macOS Keychain 产品门禁
 cd ..
-make test-common-python-cli-release
+make test-release RELEASE_SUITE=common-python-cli
 ```
 
 如本地未安装测试依赖，可先用引用模块的虚拟环境做导入和最小调用验证。

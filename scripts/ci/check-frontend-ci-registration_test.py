@@ -43,7 +43,7 @@ class FrontendCIRegistrationTest(unittest.TestCase):
             "        - module: sample\n"
             "          target: test-sample-frontend\n"
             "    steps:\n"
-            "      - run: select 'common-frontend/*' '.github/actions/prepare-frontend-gate/*'\n"
+            "      - run: python3 scripts/ci/select-module-gate.py --module '${{ matrix.module }}'\n"
             "      - uses: ./.github/actions/prepare-frontend-gate\n",
             encoding="utf-8",
         )
@@ -59,7 +59,7 @@ class FrontendCIRegistrationTest(unittest.TestCase):
         self.workflow.write_text("jobs: {}\n", encoding="utf-8")
         errors = MODULE.validate_registration(self.repository)
         self.assertIn("sample: GitHub Actions target test-sample-frontend is missing", errors)
-        self.assertIn("sample: GitHub Actions path registration is missing", errors)
+        self.assertIn("sample: shared module change selector is missing", errors)
 
     def test_rejects_missing_root_test_dependency(self) -> None:
         makefile = self.repository / "Makefile"
@@ -86,21 +86,17 @@ class FrontendCIRegistrationTest(unittest.TestCase):
             MODULE.validate_registration(self.repository),
         )
 
-    def test_rejects_missing_shared_and_setup_change_paths(self) -> None:
+    def test_rejects_missing_shared_module_change_selector(self) -> None:
         self.workflow.write_text(
             self.workflow.read_text(encoding="utf-8").replace(
-                "      - run: select 'common-frontend/*' '.github/actions/prepare-frontend-gate/*'\n",
-                "      - run: select\n",
+                "      - run: python3 scripts/ci/select-module-gate.py --module '${{ matrix.module }}'\n",
+                "      - run: true\n",
             ),
             encoding="utf-8",
         )
         errors = MODULE.validate_registration(self.repository)
         self.assertIn(
-            "sample: frontend gate setup change path is missing from test-sample-frontend job",
-            errors,
-        )
-        self.assertIn(
-            "sample: shared path common-frontend/* is missing from test-sample-frontend job",
+            "sample: shared module change selector is missing from test-sample-frontend job",
             errors,
         )
 

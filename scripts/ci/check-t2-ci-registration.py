@@ -112,19 +112,13 @@ def validate_registration(repository: Path) -> list[str]:
         )
         if selection_step is None:
             errors.append(f"{script}: selection step id {owner} is missing")
-            errors.append(f"{script}: gate script path registration is missing")
-            errors.append(f"{script}: owner path {owner}/backend/* is missing")
-            errors.append(f"{script}: shared path common/* is missing")
-            errors.append(f"{script}: selector script change path is missing")
+            errors.append(f"{script}: shared module change selector is missing")
             continue
-        if f"'{script}'" not in selection_step:
-            errors.append(f"{script}: gate script path registration is missing")
-        if f"'{owner}/backend/*'" not in selection_step:
-            errors.append(f"{script}: owner path {owner}/backend/* is missing")
-        if "'common/*'" not in selection_step:
-            errors.append(f"{script}: shared path common/* is missing")
-        if "'scripts/ci/select-gate-by-paths.sh'" not in selection_step:
-            errors.append(f"{script}: selector script change path is missing")
+        if not re.search(
+            rf"python3\s+scripts/ci/select-module-gate\.py\s+--module\s+['\"]?{re.escape(owner)}['\"]?",
+            selection_step,
+        ):
+            errors.append(f"{script}: shared module change selector is missing")
     return errors
 
 

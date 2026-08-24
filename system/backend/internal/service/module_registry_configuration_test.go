@@ -205,6 +205,114 @@ func TestModuleRegistrySeparatesDefinitionFromRuntimeInstanceLease(t *testing.T)
 	}
 }
 
+func TestModuleRegistrySeparatesBoundedCurrentProjectionFromPaginatedHistory(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.ModuleRegistryState{ID: 1, Revision: 1}).Error; err != nil {
+		t.Fatal(err)
+	}
+	registry := NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
+	register := func(instanceID, role, moduleURL string) {
+		t.Helper()
+		if err := registry.Register(&models.ModuleRegistrationRequest{
+			ModuleName: "manager", InstanceID: instanceID, Role: role,
+			ModuleURL: moduleURL, RoutePrefix: "/manager",
+		}); err != nil {
+			t.Fatalf("register %s: %v", instanceID, err)
+		}
+	}
+	register("backend-old", models.ModuleRuntimeRoleBackend, "http://manager-old:8081")
+	if err := registry.Deregister("manager", "backend-old"); err != nil {
+		t.Fatal(err)
+	}
+	register("backend-current", models.ModuleRuntimeRoleBackend, "http://manager-current:8081")
+	register("backend-current-second", models.ModuleRuntimeRoleBackend, "http://manager-current-second:8081")
+	register("worker-old", models.ModuleRuntimeRoleWorker, "")
+	if err := registry.Deregister("manager", "worker-old"); err != nil {
+		t.Fatal(err)
+	}
+	register("worker-latest", models.ModuleRuntimeRoleWorker, "")
+	if err := registry.Deregister("manager", "worker-latest"); err != nil {
+		t.Fatal(err)
+	}
+	register("scheduler-current", models.ModuleRuntimeRoleScheduler, "")
+	if err := registry.Register(&models.ModuleRegistrationRequest{
+		ModuleName: "service", InstanceID: "service-old", Role: models.ModuleRuntimeRoleBackend,
+		ModuleURL: "http://service-old:8086", RoutePrefix: "/service",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Deregister("service", "service-old"); err != nil {
+		t.Fatal(err)
+	}
+
+	module, err := registry.GetModule("manager")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(module.Instances) != 4 {
+		t.Fatalf("current projection instances = %#v, want every effective-up instance and one fallback for an offline-only role", module.Instances)
+	}
+	projection := make(map[string]map[string]struct{}, len(module.Instances))
+	for _, instance := range module.Instances {
+		if projection[instance.Role] == nil {
+			projection[instance.Role] = make(map[string]struct{})
+		}
+		projection[instance.Role][instance.InstanceID] = struct{}{}
+	}
+	if _, ok := projection[models.ModuleRuntimeRoleBackend]["backend-current"]; !ok {
+		t.Fatalf("current projection = %#v", projection)
+	}
+	if _, ok := projection[models.ModuleRuntimeRoleBackend]["backend-current-second"]; !ok {
+		t.Fatalf("current projection = %#v", projection)
+	}
+	if _, ok := projection[models.ModuleRuntimeRoleWorker]["worker-latest"]; !ok {
+		t.Fatalf("current projection = %#v", projection)
+	}
+	if _, ok := projection[models.ModuleRuntimeRoleScheduler]["scheduler-current"]; !ok {
+		t.Fatalf("current projection = %#v", projection)
+	}
+
+	page, total, err := registry.ListModuleRuntimeInstances("manager", models.ModuleRuntimeInstanceFilter{
+		Page: 1, PageSize: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 6 || len(page) != 2 || page[0].InstanceID != "scheduler-current" || page[1].InstanceID != "worker-latest" {
+		t.Fatalf("history page = %#v, total=%d", page, total)
+	}
+
+	up, upTotal, err := registry.ListModuleRuntimeInstances("manager", models.ModuleRuntimeInstanceFilter{
+		Status: models.ModuleRuntimeStatusUp, Page: 1, PageSize: 10,
+	})
+	if err != nil || upTotal != 3 || len(up) != 3 {
+		t.Fatalf("up history = %#v, total=%d, error=%v", up, upTotal, err)
+	}
+	down, downTotal, err := registry.ListModuleRuntimeInstances("manager", models.ModuleRuntimeInstanceFilter{
+		Status: models.ModuleRuntimeStatusDown, Page: 1, PageSize: 10,
+	})
+	if err != nil || downTotal != 3 || len(down) != 3 || down[0].InstanceID != "worker-latest" {
+		t.Fatalf("down history = %#v, total=%d, error=%v", down, downTotal, err)
+	}
+	workers, workerTotal, err := registry.ListModuleRuntimeInstances("manager", models.ModuleRuntimeInstanceFilter{
+		Role: models.ModuleRuntimeRoleWorker, Page: 1, PageSize: 10,
+	})
+	if err != nil || workerTotal != 2 || len(workers) != 2 {
+		t.Fatalf("worker history = %#v, total=%d, error=%v", workers, workerTotal, err)
+	}
+	if _, _, err := registry.ListModuleRuntimeInstances("manager", models.ModuleRuntimeInstanceFilter{
+		Role: "api", Page: 1, PageSize: 10,
+	}); !errors.Is(err, ErrInvalidModuleRuntimeInstanceQuery) {
+		t.Fatalf("invalid role error = %v", err)
+	}
+}
+
 func TestModuleRoutingRevisionChangesOnlyWithTopologyAndWatchReturnsFreshSnapshot(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {

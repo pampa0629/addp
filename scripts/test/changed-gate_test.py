@@ -32,6 +32,10 @@ class ChangedGateTest(unittest.TestCase):
                 '{"dependencies":{"@addp/common-frontend":"file:../../common-frontend"}}\n'
             ),
             "other/frontend/package.json": "{}\n",
+            "alias/frontend/package.json": "{}\n",
+            "alias/frontend/vite.config.js": (
+                "resolve(__dirname, '../../common-frontend/basic/src')\n"
+            ),
             "common-python/pyproject.toml": "[project]\nname='common-python'\n",
             "agent/backend/requirements.txt": "-e ../../common-python\n",
             "agent/frontend/package.json": "{}\n",
@@ -64,9 +68,9 @@ class ChangedGateTest(unittest.TestCase):
             MODULE.affected_modules(self.repository, ["common/client/system.go"]),
         )
 
-    def test_common_frontend_changes_expand_only_to_declared_consumers(self) -> None:
+    def test_common_frontend_changes_expand_to_package_and_alias_consumers(self) -> None:
         self.assertEqual(
-            ["sample"],
+            ["alias", "sample"],
             MODULE.affected_modules(self.repository, ["common-frontend/basic/index.js"]),
         )
 
@@ -74,6 +78,53 @@ class ChangedGateTest(unittest.TestCase):
         self.assertEqual(
             ["agent", "common-python"],
             MODULE.affected_modules(self.repository, ["common-python/addp_common/client.py"]),
+        )
+
+    def test_evaluation_scenarios_and_gate_scripts_map_to_owner(self) -> None:
+        self.assertEqual(
+            ["agent"],
+            MODULE.affected_modules(
+                self.repository,
+                ["evals/agent-scenarios/registry.json"],
+            ),
+        )
+
+        gate = self.repository / "scripts/test/sample-postgres-gate.sh"
+        gate.parent.mkdir(parents=True, exist_ok=True)
+        gate.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+        subprocess.run(["git", "add", str(gate)], cwd=self.repository, check=True)
+        self.assertEqual(
+            ["sample"],
+            MODULE.affected_modules(
+                self.repository,
+                ["scripts/test/sample-postgres-gate.sh"],
+            ),
+        )
+
+    def test_gate_control_changes_select_all_registered_modules(self) -> None:
+        self.assertEqual(
+            ["agent", "alias", "common", "common-python", "other", "sample"],
+            MODULE.affected_modules(self.repository, [".github/workflows/platform-ci.yml"]),
+        )
+
+    def test_changed_files_between_uses_merge_base_range(self) -> None:
+        base = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=self.repository,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        (self.repository / "sample/new.go").write_text("package sample\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        subprocess.run(
+            ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "change"],
+            cwd=self.repository,
+            check=True,
+        )
+        self.assertEqual(
+            ["sample/new.go"],
+            MODULE.changed_files_between(self.repository, base, "HEAD"),
         )
 
     def test_changed_files_include_tracked_and_untracked_worktree_changes(self) -> None:

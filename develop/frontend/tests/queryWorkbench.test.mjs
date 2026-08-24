@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import {
   buildQueryExecutionContract,
   buildQueryResultCSV,
+  formatGeneratedQueryForEditor,
+  formatMQLQuery,
   formatterLanguageForQuery,
   monacoLanguageForQuery,
   queryCapabilityForEngine,
@@ -84,7 +86,22 @@ assert.equal(parameterContract.input_ui_schema.status.order, 0)
 assert.equal(monacoLanguageForQuery('mql'), 'mql')
 assert.equal(monacoLanguageForQuery('cypher'), 'cypher')
 assert.equal(formatterLanguageForQuery('sql'), 'sql')
+assert.equal(formatterLanguageForQuery('mql'), 'mql')
 assert.equal(formatterLanguageForQuery('cypher'), '')
+assert.equal(formatMQLQuery('{"find":"Persons","filter":{},"limit":10}'), `{
+  "find": "Persons",
+  "filter": {},
+  "limit": 10
+}`)
+assert.equal(
+  formatGeneratedQueryForEditor('{"aggregate":"Persons","pipeline":[]}', 'mql'),
+  `{
+  "aggregate": "Persons",
+  "pipeline": []
+}`
+)
+assert.equal(formatGeneratedQueryForEditor('SELECT * FROM users', 'sql'), 'SELECT * FROM users')
+assert.throws(() => formatMQLQuery('db.Persons.find({})'))
 assert.equal(
   queryErrorMessage('mongodb_database_required', 'raw provider error', key => key),
   'develop.queryResult.mongodbDatabaseRequired'
@@ -253,6 +270,59 @@ assert.deepEqual(diagnoseQuery({
   language: 'mql',
   query: '{"find":"Persons","filter":{"missing":true},"limit":10}',
   fields: ['_id', 'name'],
+  targetLocator: 'addp://engine/1/collection?item_id=3'
+}), [{ code: 'field_unknown', severity: 'warning', field: 'missing' }])
+
+const overlapPipeline = JSON.stringify({
+  aggregate: 'Persons',
+  pipeline: [
+    {
+      $facet: {
+        left: [
+          { $match: { 'userInfo.nickName': { $param: 'entity_1' } } },
+          { $project: { _values: { $setUnion: ['$myOutdoors', '$entriedOutdoors'] } } },
+          { $group: { _id: null, _value_sets: { $push: '$_values' } } },
+          { $project: { _id: 0, values: '$_value_sets' } }
+        ],
+        right: [
+          { $match: { 'userInfo.nickName': { $param: 'entity_2' } } },
+          { $project: { _values: { $setUnion: ['$myOutdoors', '$entriedOutdoors'] } } },
+          { $group: { _id: null, _value_sets: { $push: '$_values' } } },
+          { $project: { _id: 0, values: '$_value_sets' } }
+        ]
+      }
+    },
+    { $project: { left: { $arrayElemAt: ['$left.values', 0] }, right: { $arrayElemAt: ['$right.values', 0] } } },
+    {
+      $project: {
+        left_count: { $size: '$left' },
+        right_count: { $size: '$right' },
+        intersection_count: { $size: { $setIntersection: ['$left', '$right'] } }
+      }
+    },
+    { $set: { _overlap_denominator: { $min: ['$left_count', '$right_count'] } } },
+    {
+      $project: {
+        left_count: 1,
+        right_count: 1,
+        intersection_count: 1,
+        overlap_coefficient: { $divide: ['$intersection_count', '$_overlap_denominator'] }
+      }
+    }
+  ]
+})
+assert.deepEqual(diagnoseQuery({
+  language: 'mql',
+  engineType: 'mongodb',
+  query: overlapPipeline,
+  fields: ['userInfo.nickName', 'myOutdoors', 'entriedOutdoors'],
+  targetLocator: 'addp://engine/1/collection?item_id=3'
+}), [])
+assert.deepEqual(diagnoseQuery({
+  language: 'mql',
+  engineType: 'mongodb',
+  query: '{"aggregate":"Persons","pipeline":[{"$match":{"missing":true}},{"$project":{"derived":"$missing"}}]}',
+  fields: ['userInfo.nickName'],
   targetLocator: 'addp://engine/1/collection?item_id=3'
 }), [{ code: 'field_unknown', severity: 'warning', field: 'missing' }])
 

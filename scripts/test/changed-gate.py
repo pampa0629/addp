@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +22,19 @@ def load_module_gate():
 
 
 MODULE_GATE = load_module_gate()
+
+GLOBAL_GATE_CONTROL_PATHS = (
+    ".github/actions/",
+    ".github/workflows/",
+    "scripts/ci/",
+)
+GLOBAL_GATE_CONTROL_FILES = {
+    "Makefile",
+    "scripts/test/changed-gate.py",
+    "scripts/test/changed-gate_test.py",
+    "scripts/test/module-gate.py",
+    "scripts/test/module-gate_test.py",
+}
 
 
 def git_lines(repository: Path, arguments: list[str]) -> list[str]:
@@ -41,23 +55,52 @@ def changed_files(repository: Path, base_ref: str | None) -> list[str]:
     return sorted(files)
 
 
+def changed_files_between(repository: Path, base_ref: str, head_ref: str) -> list[str]:
+    return sorted(
+        set(
+            git_lines(
+                repository,
+                ["diff", "--name-only", f"{base_ref}...{head_ref}", "--"],
+            )
+        )
+    )
+
+
 def file_consumers(repository: Path, pattern: str, marker: str) -> set[str]:
     consumers = set()
     for relative_path in MODULE_GATE.git_files(repository, pattern):
         path = repository / relative_path
-        if marker in path.read_text(encoding="utf-8"):
+        if marker in path.read_text(encoding="utf-8", errors="ignore"):
             consumers.add(relative_path.split("/", 1)[0])
     return consumers
 
 
 def affected_modules(repository: Path, files: list[str]) -> list[str]:
     registered = MODULE_GATE.discover_modules(repository)
+    if any(
+        path in GLOBAL_GATE_CONTROL_FILES
+        or path.startswith(GLOBAL_GATE_CONTROL_PATHS)
+        for path in files
+    ):
+        return sorted(registered)
+
     affected = {
         path.split("/", 1)[0]
         for path in files
         if "/" in path and path.split("/", 1)[0] in registered
     }
     roots = {path.split("/", 1)[0] for path in files if "/" in path}
+
+    for path in files:
+        evaluation_match = re.fullmatch(r"evals/([a-z][a-z0-9-]*)-scenarios(?:/.*)?", path)
+        if evaluation_match:
+            affected.add(evaluation_match.group(1))
+        gate_match = re.fullmatch(
+            r"scripts/test/([a-z][a-z0-9-]*)-(?:postgres|evaluation|frontend)-gate\.sh",
+            path,
+        )
+        if gate_match:
+            affected.add(gate_match.group(1))
 
     if "common" in roots:
         affected.add("common")
@@ -71,8 +114,8 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
         affected.update(
             file_consumers(
                 repository,
-                "*/frontend/package.json",
-                "file:../../common-frontend",
+                "*/frontend/*",
+                "common-frontend",
             )
         )
     if "common-python" in roots:

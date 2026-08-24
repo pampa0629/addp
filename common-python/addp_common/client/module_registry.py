@@ -169,8 +169,10 @@ class ModuleRegistryClient:
                 except Exception as exc:
                     failures += 1
                     self._log_failure(operation, registration, exc)
-                    if failures >= 3:
+                    if operation == "heartbeat":
                         registered = False
+                        failures = 0
+                        continue
                     await asyncio.sleep(min(float(failures * 5), 20.0))
         finally:
             await self._deregister_safely(registration.module_name, registration.instance_id)

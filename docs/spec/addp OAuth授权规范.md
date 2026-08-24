@@ -155,13 +155,13 @@ CLI 还必须满足：
 CLI wheel、全新环境、命令入口和真实 OS Keychain 的唯一发布门禁为：
 
 ```bash
-make test-common-python-cli-release
+make test-release RELEASE_SUITE=common-python-cli
 ```
 
 门禁只能使用 macOS 原生 Keychain；不得通过测试环境变量切换到明文文件、内存或空 Keyring 后端后宣告发布通过。Windows 和 Linux 保持产品目标，但必须在各自真实 OS 凭据后端建立同等级发布证据后，才能加入正式支持矩阵。门禁中的临时 OAuth 协议服务器只验证已安装 CLI 的客户端行为，不进入生产包，也不替代 System Fosite 协议、PostgreSQL 事务和安全审计测试。正式发布必须同时通过 CLI 产品门禁与 System IAM PostgreSQL 门禁：
 
 ```bash
-make test-common-python-cli-release
+make test-release RELEASE_SUITE=common-python-cli
 ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?sslmode=disable' \
   make test-system-iam-postgres
 ```

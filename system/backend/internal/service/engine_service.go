@@ -1585,25 +1585,17 @@ func (s *EngineService) AsyncCheckConnection(engineID uint) error {
 
 // updateConnectionStatus 内部方法：更新连接状态
 func (s *EngineService) updateConnectionStatus(engineID uint, status, message string) error {
-	// 获取资源
-	engine, err := s.repo.GetByID(engineID)
-	if err != nil {
-		return err
-	}
-
-	// 更新状态字段
 	now := time.Now()
-	engine.ConnectionStatus = status
-	engine.LastCheckAt = &now
-	engine.CheckMessage = message
-
-	// 保存更新
-	if err := s.persistEngine(engine); err != nil {
+	if err := s.repo.UpdateConnectionObservation(engineID, status, now, message); err != nil {
 		return err
 	}
 
 	if !strings.EqualFold(strings.TrimSpace(status), "online") {
 		return nil
+	}
+	engine, err := s.repo.GetByID(engineID)
+	if err != nil {
+		return err
 	}
 	if _, err := s.workflowRuntimeProbeEngine(engine); err != nil {
 		return nil

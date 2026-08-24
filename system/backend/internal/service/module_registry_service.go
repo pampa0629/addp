@@ -18,6 +18,7 @@ import (
 
 var ErrInvalidModuleRegistration = errors.New("invalid module registration")
 var ErrModuleDefinitionVersionConflict = errors.New("module definition version conflict")
+var ErrInvalidModuleRuntimeInstanceQuery = errors.New("invalid module runtime instance query")
 
 type ModuleRegistryService struct {
 	repo          *repository.ModuleRegistryRepository
@@ -89,6 +90,38 @@ func (s *ModuleRegistryService) GetModule(moduleName string) (*models.ModuleInfo
 
 func (s *ModuleRegistryService) ListModules() ([]*models.ModuleInfo, error) {
 	return s.listModules(false)
+}
+
+func (s *ModuleRegistryService) ListModuleRuntimeInstances(
+	moduleName string,
+	filter models.ModuleRuntimeInstanceFilter,
+) ([]models.ModuleRuntimeInstanceInfo, int64, error) {
+	moduleName = strings.TrimSpace(moduleName)
+	filter.Role = strings.ToLower(strings.TrimSpace(filter.Role))
+	filter.Status = strings.ToLower(strings.TrimSpace(filter.Status))
+	if moduleName == "" || filter.Page < 1 || filter.PageSize < 1 || filter.PageSize > 100 {
+		return nil, 0, ErrInvalidModuleRuntimeInstanceQuery
+	}
+	switch filter.Role {
+	case "", models.ModuleRuntimeRoleBackend, models.ModuleRuntimeRoleWorker, models.ModuleRuntimeRoleScheduler:
+	default:
+		return nil, 0, ErrInvalidModuleRuntimeInstanceQuery
+	}
+	switch filter.Status {
+	case "", models.ModuleRuntimeStatusUp, models.ModuleRuntimeStatusDown:
+	default:
+		return nil, 0, ErrInvalidModuleRuntimeInstanceQuery
+	}
+	now := time.Now()
+	instances, total, err := s.repo.ListModuleRuntimeInstances(moduleName, filter, now)
+	if err != nil {
+		return nil, 0, err
+	}
+	result := make([]models.ModuleRuntimeInstanceInfo, 0, len(instances))
+	for index := range instances {
+		result = append(result, convertRuntimeInstanceInfo(&instances[index], now))
+	}
+	return result, total, nil
 }
 
 func (s *ModuleRegistryService) UpdateModuleDefinition(moduleName string, req *models.ModuleDefinitionUpdateRequest) (*models.ModuleInfo, error) {
@@ -264,16 +297,7 @@ func (s *ModuleRegistryService) convertToModuleInfo(definition *models.ModuleDef
 		if activeInstancesOnly && status != models.ModuleRuntimeStatusUp {
 			continue
 		}
-		var metadata map[string]interface{}
-		if len(instance.Metadata) > 0 {
-			_ = json.Unmarshal(instance.Metadata, &metadata)
-		}
-		instances = append(instances, models.ModuleRuntimeInstanceInfo{
-			ID: instance.ID, InstanceID: instance.InstanceID, Role: instance.Role,
-			ModuleURL: instance.ModuleURL, HealthCheckURL: instance.HealthCheckURL,
-			Status: status, LastHeartbeat: instance.LastHeartbeat, LeaseExpiresAt: instance.LeaseExpiresAt,
-			Metadata: metadata, RegisteredAt: instance.RegisteredAt, UpdatedAt: instance.UpdatedAt,
-		})
+		instances = append(instances, convertRuntimeInstanceInfoWithStatus(&instance, status))
 	}
 	return &models.ModuleInfo{
 		ID: definition.ID, ModuleName: definition.ModuleName, RoutePrefix: definition.RoutePrefix,
@@ -281,5 +305,26 @@ func (s *ModuleRegistryService) convertToModuleInfo(definition *models.ModuleDef
 		Instances: instances, ConfigurationManagement: configuration,
 		TaskProvider: provider,
 		CreatedAt:    definition.CreatedAt, UpdatedAt: definition.UpdatedAt,
+	}
+}
+
+func convertRuntimeInstanceInfo(instance *models.ModuleRuntimeInstance, now time.Time) models.ModuleRuntimeInstanceInfo {
+	status := instance.Status
+	if !instance.LeaseExpiresAt.After(now) {
+		status = models.ModuleRuntimeStatusDown
+	}
+	return convertRuntimeInstanceInfoWithStatus(instance, status)
+}
+
+func convertRuntimeInstanceInfoWithStatus(instance *models.ModuleRuntimeInstance, status string) models.ModuleRuntimeInstanceInfo {
+	var metadata map[string]interface{}
+	if len(instance.Metadata) > 0 {
+		_ = json.Unmarshal(instance.Metadata, &metadata)
+	}
+	return models.ModuleRuntimeInstanceInfo{
+		ID: instance.ID, InstanceID: instance.InstanceID, Role: instance.Role,
+		ModuleURL: instance.ModuleURL, HealthCheckURL: instance.HealthCheckURL,
+		Status: status, LastHeartbeat: instance.LastHeartbeat, LeaseExpiresAt: instance.LeaseExpiresAt,
+		Metadata: metadata, RegisteredAt: instance.RegisteredAt, UpdatedAt: instance.UpdatedAt,
 	}
 }

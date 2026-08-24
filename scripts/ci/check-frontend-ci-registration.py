@@ -16,7 +16,7 @@ class RegistrationError(RuntimeError):
 
 
 FRONTEND_GATE_ACTION = "uses: ./.github/actions/prepare-frontend-gate"
-FRONTEND_GATE_ACTION_PATH = "'.github/actions/prepare-frontend-gate/*'"
+MODULE_GATE_SELECTOR = "python3 scripts/ci/select-module-gate.py"
 
 
 def git_files(repository: Path, pattern: str) -> list[str]:
@@ -84,20 +84,23 @@ def validate_registration(repository: Path) -> list[str]:
         )
         if target_job is None:
             errors.append(f"{module}: GitHub Actions target {target} is missing")
-            errors.append(f"{module}: GitHub Actions path registration is missing")
+            errors.append(f"{module}: shared module change selector is missing")
             continue
         if FRONTEND_GATE_ACTION not in target_job:
             errors.append(f"{module}: standard frontend gate setup is missing from {target} job")
-        if FRONTEND_GATE_ACTION_PATH not in target_job:
-            errors.append(f"{module}: frontend gate setup change path is missing from {target} job")
-        path_pattern = f"'{module}/frontend/*'"
-        if path_pattern not in target_job and module not in re.findall(
-            r"(?m)^\s*- module:\s*([a-z][a-z0-9-]*)\s*$", target_job
-        ):
-            errors.append(f"{module}: GitHub Actions path registration is missing")
-        package = (repository / module / "frontend/package.json").read_text(encoding="utf-8")
-        if "common-frontend" in package and "'common-frontend/*'" not in target_job:
-            errors.append(f"{module}: shared path common-frontend/* is missing from {target} job")
+        direct_selector = re.search(
+            rf"{re.escape(MODULE_GATE_SELECTOR)}\s+--module\s+['\"]?{re.escape(module)}['\"]?",
+            target_job,
+        )
+        matrix_selector = (
+            MODULE_GATE_SELECTOR in target_job
+            and "--module '${{ matrix.module }}'" in target_job
+            and module in re.findall(
+                r"(?m)^\s*- module:\s*([a-z][a-z0-9-]*)\s*$", target_job
+            )
+        )
+        if direct_selector is None and not matrix_selector:
+            errors.append(f"{module}: shared module change selector is missing from {target} job")
         test_target = re.search(r"(?m)^test\s*:(?P<dependencies>[^\n]*)", logical_makefile)
         if (
             test_target is None

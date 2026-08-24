@@ -104,13 +104,15 @@ func TestDelegationServiceAgainstPostgres(t *testing.T) {
 		issued.Audience != "develop" || len(issued.Scopes) != 1 || issued.Scopes[0] != "workflow.run" {
 		t.Fatalf("issued delegation = %#v", issued)
 	}
-	if issued.ExpiresAt.After(time.Now().UTC().Add(2 * time.Minute)) {
-		t.Fatalf("delegated expiry exceeds two minutes: %s", issued.ExpiresAt)
-	}
-
 	var stored DelegatedAccessToken
 	if err := db.Where("agent_run_id = ? AND tool_call_id = ?", "run-first-party", "call-first-party").Take(&stored).Error; err != nil {
 		t.Fatalf("load stored delegation: %v", err)
+	}
+	if lifetime := stored.ExpiresAt.Sub(stored.CreatedAt); lifetime <= 0 || lifetime > defaultDelegatedAccessTokenTTL {
+		t.Fatalf("delegated lifetime = %s, want within (0, %s]", lifetime, defaultDelegatedAccessTokenTTL)
+	}
+	if !issued.ExpiresAt.Equal(stored.ExpiresAt) {
+		t.Fatalf("issued expiry %s differs from stored expiry %s", issued.ExpiresAt, stored.ExpiresAt)
 	}
 	if stored.TokenHash == issued.AccessToken || stored.TokenHash != hashOpaqueToken(issued.AccessToken) {
 		t.Fatalf("delegated token was not stored as SHA-256 hash: %q", stored.TokenHash)

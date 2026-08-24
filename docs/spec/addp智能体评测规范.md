@@ -86,14 +86,16 @@ Runner 写文件必须使用临时文件后原子替换。审批场景固定为�
 
 统一实现为 `evals/agent-scenarios/gate.py`，薄脚本 `scripts/test/agent-evaluation-gate.sh` 和 Makefile 只映射参数，不实现第二套评测逻辑。
 
-四个标准入口为：
+公共标准入口为：
 
 ```bash
 make test-agent-eval
-make test-agent-eval-release
+make test-release RELEASE_SUITE=agent-evaluation
 make compare-agent-eval
 make compare-agent-eval-release
 ```
+
+`test-release` 分发器调用 Agent owner 内部的发布门禁并生成统一 T5 报告；owner 目标不作为第二个公共入口。
 
 ### 5.2 离线门禁
 
@@ -108,7 +110,7 @@ make compare-agent-eval-release
 
 ### 5.3 发布门禁
 
-`make test-agent-eval-release` 在同一离线门禁上，要求三个黄金场景分别通过以下显式环境变量提供仓库外证据：
+`make test-release RELEASE_SUITE=agent-evaluation` 在同一离线门禁上，要求三个黄金场景分别通过以下显式环境变量提供仓库外证据：
 
 ```text
 ADDP_AGENT_READ_ONLY_EVIDENCE

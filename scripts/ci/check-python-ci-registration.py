@@ -15,7 +15,7 @@ class RegistrationError(RuntimeError):
 
 
 PYTHON_GATE_ACTION = "uses: ./.github/actions/prepare-python-gate"
-PYTHON_GATE_ACTION_PATH = "'.github/actions/prepare-python-gate/*'"
+MODULE_GATE_SELECTOR = "python3 scripts/ci/select-module-gate.py"
 
 
 def git_files(repository: Path, *patterns: str) -> list[str]:
@@ -29,11 +29,11 @@ def git_files(repository: Path, *patterns: str) -> list[str]:
     return [line for line in result.stdout.splitlines() if line]
 
 
-def discover_python_modules(repository: Path) -> list[tuple[str, str, str]]:
+def discover_python_modules(repository: Path) -> list[tuple[str, str]]:
     discovered = {}
     for path in git_files(repository, "*/pyproject.toml", "*/backend/requirements.txt"):
         owner = path.split("/", 1)[0]
-        discovered[owner] = (owner, path, f"{owner}/*" if "/backend/" not in path else f"{owner}/backend/*")
+        discovered[owner] = (owner, path)
     if not discovered:
         raise RegistrationError("no tracked Python module manifests found")
     return [discovered[owner] for owner in sorted(discovered)]
@@ -66,7 +66,7 @@ def validate_registration(repository: Path) -> list[str]:
     jobs = workflow_jobs(repository)
     root_dependencies = make_dependencies(makefile, "test") or []
     errors = []
-    for owner, manifest, owner_path in discover_python_modules(repository):
+    for owner, manifest in discover_python_modules(repository):
         eval_target = f"test-{owner}-eval"
         target = eval_target if make_dependencies(makefile, eval_target) is not None else f"test-{owner}"
         if make_dependencies(makefile, target) is None:
@@ -86,13 +86,11 @@ def validate_registration(repository: Path) -> list[str]:
             continue
         if PYTHON_GATE_ACTION not in target_job:
             errors.append(f"{manifest}: Python gate setup action is missing from {target} job")
-        if PYTHON_GATE_ACTION_PATH not in target_job:
-            errors.append(f"{manifest}: Python gate setup change path is missing from {target} job")
-        if f"'{owner_path}'" not in target_job:
-            errors.append(f"{manifest}: workflow path {owner_path} is missing")
-        content = (repository / manifest).read_text(encoding="utf-8")
-        if "common-python" in content and "'common-python/*'" not in target_job:
-            errors.append(f"{manifest}: shared path common-python/* is missing")
+        if not re.search(
+            rf"{re.escape(MODULE_GATE_SELECTOR)}\s+--module\s+['\"]?{re.escape(owner)}['\"]?",
+            target_job,
+        ):
+            errors.append(f"{manifest}: shared module change selector is missing")
     return errors
 
 

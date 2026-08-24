@@ -587,6 +587,7 @@ graph TB
 - 模块每 **10 秒**发送一次心跳到 System
 - System 将超过租约超时时间未心跳的运行实例标记为 `down`，但不删除运行实例历史，也不删除持久模块定义。
 - 同一 `instance_id` 重新注册可恢复为 `up`；新进程必须使用新的 `instance_id`。
+- 任一次心跳失败后，Go 与 Python 公共客户端的下一次请求都必须使用同一 `instance_id` 幂等重注册；注册失败使用有界退避，不能继续发送必然失败的心跳直到租约过期。
 - 模块正常退出时应注销本次 `instance_id`；异常退出仍由租约到期收敛。
 - Go 进程入口必须把同一个可取消的信号 Context 传给公共注册客户端；客户端返回生命周期完成信号，入口在关闭资源和退出进程前必须等待该信号，确保限时注销请求已经结束。不得用 `context.Background()` 承载进程级注册生命周期，也不得用 `os.Exit` 绕过等待与清理。
 - Runtime 模块注册、心跳和注销失败必须返回 `{error, error_code}`；稳定错误码使用 `module_registration_invalid`、`module_runtime_instance_not_found`、`module_registry_unauthorized`、`module_registry_forbidden`、`module_registration_failed`、`module_heartbeat_failed` 和 `module_deregistration_failed`。Go 与 Python 公共客户端都必须保留 `method`、`path`、`status_code`、`error_code`、`error_message` 和受限长度的 `response_body`；后台生命周期日志还必须包含 `operation`、`module`、`instance_id` 和 `role`，不得只输出无结构的异常文本。
@@ -595,6 +596,9 @@ graph TB
 - `platform.module.read` 允许平台系统管理员查看模块定义及其 Backend、Worker、Scheduler 实例投影；`platform.module.update` 只允许修改模块定义的 `enabled` 管理意图。
 - 管理界面不得创建模块定义、删除运行实例、手工修改 `status` 或延长租约。定义由 owner 首次注册产生，实例健康只能由注册、心跳和租约到期推进。
 - 管理界面按固定周期重新读取 System 当前投影；进程稍后启动并重新注册后，无需重启 System 或前端即可显示为可用。
+- `GET /api/v1/system/platform/modules` 和模块详情只返回有界的当前运行投影：保留全部租约有效的实例；某个角色当前没有有效租约时，仅保留该角色最近一次离线观测，用于区分“从未注册该角色”和“该角色当前离线”。不得在模块主列表中携带全部历史实例。
+- `GET /api/v1/system/platform/modules/{module_name}/instances` 是全部实例历史的唯一只读分页入口，按 `registered_at DESC, id DESC` 稳定排序，并支持 role、status 过滤。历史记录继续保留，管理面不提供删除或健康写入。
+- `module_runtime_instances` 记录会被心跳、注销和租约收敛更新，是实例生命周期历史，不是追加式审计事件；管理员启停等操作审计仍以 `audit_logs` 为唯一事实源。
 
 **4. Gateway 动态发现**:
 - Gateway 启动时以 `revision=0` 从 System 获取已启用模块及其 `up` 的 Backend 完整快照。
@@ -967,9 +971,9 @@ graph LR
 
 ---
 
-## 模块启动顺序
+## 模块启动与恢复
 
-ADDP 平台各模块存在依赖关系，必须按以下顺序启动：
+ADDP 部署可以按以下顺序启动，以减少初始等待时间；该顺序是运维建议，不是业务模块、扩展运行时或 Gateway 的运行正确性前提。除各进程自身必需的 Infra 外，平台不得要求固定启动顺序：
 
 ```
 1. 基础设施层（必须最先就绪）
@@ -978,10 +982,10 @@ ADDP 平台各模块存在依赖关系，必须按以下顺序启动：
    ├─ MinIO
    └─ Meilisearch
 
-2. 核心系统层
+2. 控制面（推荐先启动）
    └─ System Backend（认证中心、模块注册中心、引擎注册表）
 
-3. Go 业务模块层（可并行启动）
+3. 业务模块层（可并行，也可早于 System 启动）
    ├─ Manager Backend
    ├─ Meta Backend + Worker
    ├─ Transfer Backend + Worker
@@ -990,17 +994,18 @@ ADDP 平台各模块存在依赖关系，必须按以下顺序启动：
    ├─ Service Backend
    └─ Monitor Backend
 
-4. 扩展运行时层（可并行启动）
+4. 扩展运行时层（可并行，也可早于 System 或业务模块启动）
    ├─ GeoPython Workflow 运行时
    ├─ Math Workflow 参考运行时（自动启动服务、手动注册）
    ├─ Spark Workflow 运行时
    └─ Jupyter 脚本运行时
 
-5. Copilot（Python 应用层，独立启动）
-   └─ Copilot Backend（启动时仅向 System 注册，运行时才调用 Meta/Develop）
+5. Python 应用层（独立启动）
+   ├─ Agent Backend
+   └─ Copilot Backend
 
-6. 网关层
-   └─ Gateway（从 System 获取已注册的模块路由信息，建立动态路由）
+6. 网关层（System 可达后即可启动，不等待业务模块）
+   └─ Gateway（从 System 获取并持续监听模块路由快照）
 
 7. 前端层（可并行启动）
    ├─ Console Frontend
@@ -1014,13 +1019,16 @@ ADDP 平台各模块存在依赖关系，必须按以下顺序启动：
    └─ Monitor Frontend
 ```
 
-**关键顺序约束说明**：
+**启动与恢复边界说明**：
 
 | 约束 | 说明 |
 |------|------|
-| **System → Go 业务模块** | 业务模块依赖 System 提供的认证和注册服务 |
-| **Go 业务模块 → Gateway** | 业务模块启动后 3 秒自动向 System 注册；Gateway 启动时从 System 获取已注册模块列表建立路由，必须在业务模块之后启动 |
-| **Copilot 独立于 Go 业务模块层** | Copilot 是 Python 应用服务，语言运行时与 Go 模块不同，不适合混入 Go 三段式（编译→启动→健康检查）流程；但启动时依赖相同（仅 System），运行时才调用 Meta/Develop |
+| **Infra → 使用该 Infra 的进程** | PostgreSQL、Redis、MinIO、Meilisearch 等部署基础设施可以是进程自身的硬依赖；Infra 不属于 Engine Instance 启动解耦范围。 |
+| **业务模块 ↔ System** | 业务模块 HTTP 服务和 readiness 不依赖 System 当时可达；注册客户端在后台有界退避重试，System 恢复后使用同一进程级 `instance_id` 自动注册。需要认证或 System 控制面事实的具体请求可以在 System 不可用时失败。 |
+| **Gateway ↔ 业务模块** | Gateway 在 System 可达后以 `revision=0` 取得完整路由快照，随后长轮询更新；它不要求业务模块预先启动。模块稍后注册、租约失效或重新注册时，路由池自动收敛。 |
+| **System 暂时不可达** | Gateway 只保留最近一次仍在本地租约有效期内的快照；模块继续提供自身健康检查并重试注册。快照租约失效后请求返回 503，不回退到硬编码模块地址。 |
+| **扩展运行时与 Engine Instance** | Runtime 自身就绪后异步注册；零个 Engine Instance 是合法状态，业务模块启动不得依赖任何内置或外部引擎存在。 |
+| **Agent / Copilot 独立启动** | Python 应用与 Go 模块共用同一模块注册契约，可以在任意时刻启动；运行时调用其他模块时再动态判断其可用性。 |
 | **前端无严格顺序约束** | Console 通过 iframe 动态加载各模块前端（用户访问时才加载），各前端可完全并行启动 |
 
 ---
@@ -1039,5 +1047,5 @@ ADDP 平台各模块存在依赖关系，必须按以下顺序启动：
 
 **文档版本**: v1.1
 **创建日期**: 2026-02-16
-**更新日期**: 2026-02-16
+**更新日期**: 2026-08-23
 **作者**: ADDP 开发团队

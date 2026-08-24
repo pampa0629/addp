@@ -173,6 +173,63 @@ class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
             await client.close()
             await token_source.close()
 
+    async def test_heartbeat_failure_reregisters_same_instance_without_waiting_for_lease_expiry(self):
+        registration_count = 0
+        heartbeat_failed = asyncio.Event()
+        reregistered = asyncio.Event()
+        registered_instance_ids = []
+
+        async def token_handler(_request):
+            return httpx.Response(200, json={
+                "access_token": "addp_at_platform-token",
+                "token_type": "Bearer",
+                "expires_in": 120,
+                "scope": "addp.api",
+            })
+
+        async def registry_handler(request):
+            nonlocal registration_count
+            if request.method == "POST" and request.url.path == "/api/v1/system/runtime/modules":
+                registration_count += 1
+                registered_instance_ids.append(json.loads(request.content)["instance_id"])
+                if registration_count == 2:
+                    reregistered.set()
+                return httpx.Response(200, json={})
+            if request.method == "POST" and request.url.path == "/api/v1/system/runtime/modules/heartbeat":
+                heartbeat_failed.set()
+                return httpx.Response(404, json={"error": "runtime instance not found"})
+            if request.method == "DELETE":
+                return httpx.Response(204)
+            return httpx.Response(404)
+
+        token_source = OAuthServiceTokenSource(
+            "http://system",
+            "addp-agent",
+            "test-service-client-secret-32bytes",
+            transport=httpx.MockTransport(token_handler),
+        )
+        client = ModuleRegistryClient(
+            "http://system",
+            token_source,
+            transport=httpx.MockTransport(registry_handler),
+        )
+        registration = ModuleRegistration(
+            module_name="agent",
+            module_url="http://agent:8190",
+            route_prefix="/agent",
+        )
+        task = asyncio.create_task(client.run(registration, interval=0.01))
+        try:
+            await asyncio.wait_for(heartbeat_failed.wait(), timeout=1.0)
+            await asyncio.wait_for(reregistered.wait(), timeout=1.0)
+            self.assertEqual(registered_instance_ids, [registration.instance_id, registration.instance_id])
+        finally:
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+            await client.close()
+            await token_source.close()
+
     async def test_registry_retries_once_with_refreshed_platform_token_on_401(self):
         issued = 0
         requests = 0

@@ -235,7 +235,7 @@ dist/release-$(go env GOOS)-$(go env GOARCH)/addp-iam-recovery apply
 3. 输入认证器当前显示的 6 位验证码；
 4. 等验证码变化后输入紧邻的下一个 6 位验证码。
 
-三个账号全部验证成功后才会在一个事务中替换凭据、撤销旧会话并完成恢复。任一步失败都不会留下部分恢复结果。恢复完成后应全量重启 ADDP，再分别验证三员 Browser `platform + AAL2` 登录。仓库已由 `common-python` wheel 发布正式 `addp` 命令入口；版本发布前还必须运行 `make test-common-python-cli-release`，验证 OAuth 登录、Context 绑定、Keychain、刷新轮换和撤销。三员 Platform Context 的在线人工验收仍要求 AAL2，不能用 CLI 的通用 Tenant E2E 替代。
+三个账号全部验证成功后才会在一个事务中替换凭据、撤销旧会话并完成恢复。任一步失败都不会留下部分恢复结果。恢复完成后应全量重启 ADDP，再分别验证三员 Browser `platform + AAL2` 登录。仓库已由 `common-python` wheel 发布正式 `addp` 命令入口；版本发布前还必须运行 `make test-release RELEASE_SUITE=common-python-cli`，验证 OAuth 登录、Context 绑定、Keychain、刷新轮换和撤销。三员 Platform Context 的在线人工验收仍要求 AAL2，不能用 CLI 的通用 Tenant E2E 替代。
 
 若 `prepare` 报告三员角色持有人缺失、重复、已暂停或账号已禁用，不得使用 SQL 临时修补后继续。该状态已经超出凭据恢复边界，需要先按身份与授权治理流程处理。
 

@@ -312,7 +312,18 @@ export function monacoLanguageForQuery(language) {
 }
 
 export function formatterLanguageForQuery(language) {
-  return String(language || '').trim().toLowerCase() === 'sql' ? 'sql' : ''
+  const normalized = String(language || '').trim().toLowerCase()
+  return normalized === 'sql' || normalized === 'mql' ? normalized : ''
+}
+
+export function formatMQLQuery(query) {
+  return JSON.stringify(JSON.parse(String(query || '')), null, 2)
+}
+
+export function formatGeneratedQueryForEditor(query, language) {
+  return String(language || '').trim().toLowerCase() === 'mql'
+    ? formatMQLQuery(query)
+    : String(query || '')
 }
 
 const QUERY_DIAGNOSTIC_KEYWORDS = new Set([
@@ -565,80 +576,117 @@ function fieldDiagnostic(name, lookup, seen, engineType, seenKey = name) {
   return { code: 'field_unknown', severity: 'warning', field: candidate }
 }
 
-function collectMQLFieldCandidates(query) {
+function collectMQLFieldCandidates(query, fields = []) {
   try {
     const root = JSON.parse(String(query || ''))
     const candidates = []
+    const sourceScope = new Set(fields.map(field => String(typeof field === 'string' ? field : field?.label || field?.name || '').trim()).filter(Boolean))
     const addCandidate = name => {
       const normalized = String(name || '').replace(/^\$+/, '').trim()
-      if (normalized) candidates.push(normalized)
+      if (!normalized) return
+      const known = Array.from(sourceScope).some(field => (
+        field === normalized || field.startsWith(`${normalized}.`)
+      ))
+      if (!known) candidates.push(normalized)
     }
-    const visitExpression = value => {
+    const scopeHas = (scope, name) => {
+      const normalized = String(name || '').replace(/^\$+/, '').trim()
+      if (!normalized) return true
+      return Array.from(scope).some(field => (
+        field === normalized || field.startsWith(`${normalized}.`) || normalized.startsWith(`${field}.`)
+      ))
+    }
+    const visitExpression = (value, scope) => {
       if (Array.isArray(value)) {
-        value.forEach(visitExpression)
+        value.forEach(item => visitExpression(item, scope))
         return
       }
       if (typeof value === 'string') {
-        if (value.startsWith('$') && !value.startsWith('$$')) addCandidate(value)
+        if (value.startsWith('$') && !value.startsWith('$$') && !scopeHas(scope, value)) addCandidate(value)
         return
       }
       if (!value || typeof value !== 'object') return
-      Object.values(value).forEach(visitExpression)
+      Object.values(value).forEach(child => visitExpression(child, scope))
     }
-    const visitDocument = (value, path = []) => {
+    const visitDocument = (value, scope, path = []) => {
       if (Array.isArray(value)) {
-        value.forEach(item => visitDocument(item, path))
+        value.forEach(item => visitDocument(item, scope, path))
         return
       }
       if (!value || typeof value !== 'object') return
       Object.entries(value).forEach(([key, child]) => {
         if (key.startsWith('$')) {
-          visitDocument(child, path)
-          visitExpression(child)
+          visitDocument(child, scope, path)
+          visitExpression(child, scope)
           return
         }
         const nextPath = [...path, ...fieldNameParts(key)]
-        addCandidate(nextPath.join('.'))
-        visitDocument(child, nextPath)
+        const fieldName = nextPath.join('.')
+        if (!scopeHas(scope, fieldName)) addCandidate(fieldName)
+        visitDocument(child, scope, nextPath)
       })
     }
-    const visitProjection = value => {
-      if (!value || typeof value !== 'object' || Array.isArray(value)) return
+    const visitProjection = (value, scope) => {
+      const output = new Set()
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return output
       Object.entries(value).forEach(([key, child]) => {
-        if (child === 1 || child === true || child === 0 || child === false) addCandidate(key)
-        else visitExpression(child)
+        if (child === 1 || child === true) {
+          if (!scopeHas(scope, key)) addCandidate(key)
+          output.add(key)
+        } else if (child !== 0 && child !== false) {
+          visitExpression(child, scope)
+          output.add(key)
+        }
       })
+      return output
     }
-    const visitPipeline = pipeline => {
-      if (!Array.isArray(pipeline)) return
+    const visitPipeline = (pipeline, initialScope) => {
+      let scope = new Set(initialScope)
+      if (!Array.isArray(pipeline)) return scope
       pipeline.forEach(stage => {
         if (!stage || typeof stage !== 'object' || Array.isArray(stage)) return
         Object.entries(stage).forEach(([operator, value]) => {
-          if (operator === '$match' || operator === '$sort') visitDocument(value)
-          else if (operator === '$project') visitProjection(value)
-          else if (operator === '$unwind') visitExpression(value)
+          if (operator === '$match' || operator === '$sort') visitDocument(value, scope)
+          else if (operator === '$project') scope = visitProjection(value, scope)
+          else if (operator === '$group') {
+            visitExpression(value, scope)
+            scope = new Set(Object.keys(value || {}))
+          } else if (operator === '$set' || operator === '$addFields') {
+            Object.entries(value || {}).forEach(([key, expression]) => {
+              visitExpression(expression, scope)
+              scope.add(key)
+            })
+          } else if (operator === '$facet' && value && typeof value === 'object') {
+            const facetScope = new Set()
+            Object.entries(value).forEach(([name, branch]) => {
+              facetScope.add(name)
+              visitPipeline(branch, scope).forEach(field => facetScope.add(`${name}.${field}`))
+            })
+            scope = facetScope
+          } else if (operator === '$unwind') visitExpression(value, scope)
           else if (operator === '$lookup' && value && typeof value === 'object') {
-            addCandidate(value.localField)
-            visitPipeline(value.pipeline)
+            if (value.localField && !scopeHas(scope, value.localField)) addCandidate(value.localField)
+            if (value.as) scope.add(String(value.as))
           } else {
-            visitExpression(value)
+            visitExpression(value, scope)
           }
         })
       })
+      return scope
     }
 
     if (root && typeof root === 'object' && !Array.isArray(root)) {
       if (typeof root.find === 'string') {
-        visitDocument(root.filter)
-        visitDocument(root.sort)
-        visitProjection(root.projection)
+        visitDocument(root.filter, sourceScope)
+        visitDocument(root.sort, sourceScope)
+        visitProjection(root.projection, sourceScope)
       } else if (typeof root.count === 'string') {
-        visitDocument(root.query)
+        visitDocument(root.query, sourceScope)
       } else if (typeof root.distinct === 'string') {
-        addCandidate(root.key)
-        visitDocument(root.query)
+        if (!scopeHas(sourceScope, root.key)) addCandidate(root.key)
+        visitDocument(root.query, sourceScope)
       } else if (typeof root.aggregate === 'string') {
-        visitPipeline(root.pipeline)
+        visitPipeline(root.pipeline, sourceScope)
       }
     }
     return { candidates, parseError: false }
@@ -757,7 +805,7 @@ export function diagnoseQuery({ language, engineType = '', query, fields = [], f
 
   let result
   if (normalizedLanguage === 'mql') {
-    result = collectMQLFieldCandidates(text)
+    result = collectMQLFieldCandidates(text, fields)
     if (result.parseError) return diagnostics
   } else if (normalizedLanguage === 'cypher') {
     result = { candidates: collectCypherFieldCandidates(text) }
@@ -793,7 +841,7 @@ export function diagnoseQuery({ language, engineType = '', query, fields = [], f
       candidate?.field || candidateName,
       candidateLookup,
       seen,
-      normalizedEngineType,
+      normalizedLanguage === 'mql' ? '' : normalizedEngineType,
       candidate?.qualifier ? `${candidate.qualifier}.${candidate.field}` : candidateName
     )
     if (diagnostic && typeof candidate === 'object' && diagnostic.suggested) {

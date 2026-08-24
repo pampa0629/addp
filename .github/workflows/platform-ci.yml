@@ -166,14 +166,7 @@ jobs:
           ADDP_CI_EVENT: ${{ github.event_name }}
           ADDP_CI_HEAD: ${{ github.sha }}
           ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          bash scripts/ci/select-gate-by-paths.sh "Common Python" \
-            'common-python/*' \
-            'scripts/ci/select-gate-by-paths.sh' \
-            '.github/actions/prepare-python-gate/*' \
-            '.github/actions/ci-gate-summary/*' \
-            'Makefile' \
-            '.github/workflows/platform-ci.yml'
+        run: python3 scripts/ci/select-module-gate.py --module common-python
 
       - name: Prepare Common Python test environment
         if: steps.selection.outputs.run == 'true'
@@ -217,17 +210,7 @@ jobs:
           ADDP_CI_EVENT: ${{ github.event_name }}
           ADDP_CI_HEAD: ${{ github.sha }}
           ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          bash scripts/ci/select-gate-by-paths.sh "Agent offline evaluation" \
-            'agent/backend/*' \
-            'common-python/*' \
-            'evals/agent-scenarios/*' \
-            'scripts/test/agent-evaluation-gate.sh' \
-            'scripts/ci/select-gate-by-paths.sh' \
-            '.github/actions/prepare-python-gate/*' \
-            '.github/actions/ci-gate-summary/*' \
-            'Makefile' \
-            '.github/workflows/platform-ci.yml'
+        run: python3 scripts/ci/select-module-gate.py --module agent
 
       - name: Prepare Agent evaluation environment
         if: steps.selection.outputs.run == 'true'
@@ -273,17 +256,7 @@ jobs:
           ADDP_CI_EVENT: ${{ github.event_name }}
           ADDP_CI_HEAD: ${{ github.sha }}
           ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          bash scripts/ci/select-gate-by-paths.sh "Copilot backend" \
-            'copilot/backend/*' \
-            'common-python/*' \
-            'scripts/ci/check-python-ci-registration.py' \
-            'scripts/ci/check-python-ci-registration_test.py' \
-            'scripts/ci/select-gate-by-paths.sh' \
-            '.github/actions/prepare-python-gate/*' \
-            '.github/actions/ci-gate-summary/*' \
-            'Makefile' \
-            '.github/workflows/platform-ci.yml'
+        run: python3 scripts/ci/select-module-gate.py --module copilot
 
       - name: Prepare Copilot test environment
         if: steps.selection.outputs.run == 'true'
@@ -330,15 +303,7 @@ jobs:
           ADDP_CI_EVENT: ${{ github.event_name }}
           ADDP_CI_HEAD: ${{ github.sha }}
           ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          bash scripts/ci/select-gate-by-paths.sh "Model frontend" \
-            'model/frontend/*' \
-            'common-frontend/*' \
-            'scripts/ci/select-gate-by-paths.sh' \
-            '.github/actions/prepare-frontend-gate/*' \
-            '.github/actions/ci-gate-summary/*' \
-            'Makefile' \
-            '.github/workflows/platform-ci.yml'
+        run: python3 scripts/ci/select-module-gate.py --module model
 
       - name: Prepare Model frontend environment
         if: steps.selection.outputs.run == 'true'
@@ -434,15 +399,7 @@ jobs:
           ADDP_CI_EVENT: ${{ github.event_name }}
           ADDP_CI_HEAD: ${{ github.sha }}
           ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          bash scripts/ci/select-gate-by-paths.sh "${{ matrix.name }} frontend" \
-            '${{ matrix.module }}/frontend/*' \
-            'common-frontend/*' \
-            'scripts/ci/select-gate-by-paths.sh' \
-            '.github/actions/prepare-frontend-gate/*' \
-            '.github/actions/ci-gate-summary/*' \
-            'Makefile' \
-            '.github/workflows/platform-ci.yml'
+        run: python3 scripts/ci/select-module-gate.py --module '${{ matrix.module }}'
 
       - name: Prepare ${{ matrix.name }} frontend environment
         if: steps.selection.outputs.run == 'true'

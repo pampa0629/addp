@@ -1,4 +1,4 @@
-.PHONY: help build build-images select-image-services test test-changed test-module test-platform test-engine-startup-isolation test-integration test-online test-online-runner test-go test-agent-frontend test-asset-frontend test-console-frontend test-copilot test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats \
+.PHONY: help build build-images select-image-services test test-changed test-module test-platform test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-console-frontend test-copilot test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats \
         build-iam-bootstrap build-iam-recovery \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
@@ -104,7 +104,8 @@ ports-validate: ## 校验 System/Business 端口分配是否符合策略
 test-agent-eval: ## 运行 Agent 统一离线评测门禁
 	@bash scripts/test/agent-evaluation-gate.sh offline
 
-test-agent-eval-release: ## 使用三份新鲜在线证据运行 Agent 发布门禁
+# T5 owner 内部目标；公共入口统一由 test-release 分发。
+test-agent-eval-release:
 	@bash scripts/test/agent-evaluation-gate.sh release
 
 test-common-python: ## 运行 common-python 全量测试
@@ -113,7 +114,7 @@ test-common-python: ## 运行 common-python 全量测试
 test-copilot: ## 运行 Copilot 后端全量确定性测试
 	@cd copilot/backend && venv/bin/python -m pytest -q tests
 
-test-common-python-cli-release: ## 构建 wheel 并运行全新 venv、pipx 生命周期和 macOS Keychain 发布门禁
+test-common-python-cli-release:
 	@bash scripts/test/common-python-cli-release-gate.sh
 
 test-module: ## 运行指定模块的 T0-T3 门禁；用法：make test-module MODULE=standard
@@ -147,7 +148,15 @@ test-online: ## 运行指定 Online suite（必须设置 ONLINE_SUITE 和 ADDP_O
 	@python3 scripts/test/online-gate.py --repository "$(CURDIR)" --suite "$(ONLINE_SUITE)"
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
-	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/standard-model-reference-deletion-online_test.py
+	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/ci/check-online-ci-registration_test.py
+	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+
+test-release: ## 运行指定 T5 发布套件；用法：make test-release RELEASE_SUITE=common-python-cli
+	@python3 scripts/test/release-gate.py --repository "$(CURDIR)" --suite "$(RELEASE_SUITE)"
+
+test-release-runner: ## 运行 T5 分发器和 CI 登记检查的确定性测试
+	@python3 -m unittest scripts/test/release-gate_test.py scripts/ci/check-release-ci-registration_test.py
+	@python3 scripts/ci/check-release-ci-registration.py --repository "$(CURDIR)"
 
 test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@bash scripts/utils/check-deps-version.sh
@@ -161,6 +170,8 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@python3 scripts/ci/check-t2-ci-registration_test.py
 	@python3 scripts/ci/check-t2-ci-registration.py --repository "$(CURDIR)"
 	@python3 scripts/ci/check-release-eligibility_test.py
+	@$(MAKE) test-release-runner
+	@python3 scripts/ci/select-module-gate_test.py
 	@python3 scripts/ci/update-cli-version_test.py
 	@python3 scripts/test/module-gate_test.py
 	@python3 scripts/test/changed-gate_test.py

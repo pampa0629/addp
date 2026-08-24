@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import client from '../src/api/client'
 import { enginesAPI } from '../src/api/engines'
-import { paginateEngines } from '../src/utils/engineList'
+import {
+  ENGINE_DELETION_REFRESH_INTERVAL_MS,
+  ENGINE_STATUS_REFRESH_INTERVAL_MS,
+  getEngineRefreshInterval,
+  paginateEngines
+} from '../src/utils/engineList'
 
 vi.mock('../src/api/client', () => ({
   default: {
@@ -45,5 +50,19 @@ describe('engine management pagination', () => {
 
   it('returns the remaining engines on the last page', () => {
     expect(paginateEngines(engines, 3, 5).map(engine => engine.id)).toEqual([11, 12])
+  })
+})
+
+describe('engine management live refresh', () => {
+  it('refreshes connection observations periodically', () => {
+    expect(getEngineRefreshInterval([{ lifecycle_state: 'active' }]))
+      .toBe(ENGINE_STATUS_REFRESH_INTERVAL_MS)
+  })
+
+  it('uses a shorter interval while deletion cleanup is running', () => {
+    expect(getEngineRefreshInterval([
+      { lifecycle_state: 'active' },
+      { lifecycle_state: 'deleting' }
+    ])).toBe(ENGINE_DELETION_REFRESH_INTERVAL_MS)
   })
 })

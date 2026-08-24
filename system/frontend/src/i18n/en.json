@@ -30,6 +30,7 @@
       "disabledSuccess": "Module disabled",
       "enabledAria": "Toggle enabled state for module {name}",
       "columns": {
+        "id": "Record ID",
         "name": "Module",
         "routePrefix": "Route Prefix",
         "availability": "Routability",
@@ -42,11 +43,13 @@
         "definitions": "Module Definitions",
         "routable": "Routable Modules",
         "onlineInstances": "Online Instances",
-        "workers": "Worker Instances"
+        "workers": "Online Workers"
       },
       "availability": {
         "routable": "Routable",
-        "unavailable": "Unavailable"
+        "disabled": "Admin Disabled",
+        "no_backend": "No Backend",
+        "backend_offline": "Backend Offline"
       },
       "status": {
         "up": "Online",
@@ -57,16 +60,32 @@
         "worker": "Worker",
         "scheduler": "Scheduler"
       },
-      "instanceSummary": "{online}/{total} online",
+      "declarations": {
+        "title": "Module Declarations",
+        "configuration": "Configuration Entries {count}",
+        "taskProvider": "TaskProvider",
+        "empty": "No module-level capability declaration"
+      },
+      "instanceSummary": "{online} online · {offline} offline observations",
       "instances": {
-        "title": "Runtime Instances ({count})",
+        "title": "Current Runtime Projection ({count})",
+        "historyAction": "View Full History",
         "empty": "No runtime instance has registered yet",
         "id": "Instance ID",
         "role": "Role",
         "status": "Status",
         "url": "Service URL",
+        "healthCheckUrl": "Health Check URL",
         "lastHeartbeat": "Last Heartbeat",
-        "leaseExpiresAt": "Lease Expires"
+        "leaseExpiresAt": "Lease Expires",
+        "registeredAt": "Registered At"
+      },
+      "history": {
+        "title": "{name} · Runtime Instance History",
+        "roleFilter": "Filter by role",
+        "statusFilter": "Filter by effective status",
+        "empty": "No runtime instance history matches the filters",
+        "loadFailed": "Failed to load runtime instance history"
       }
     },
     "iam": {
@@ -404,6 +423,7 @@
         "none": "None"
       },
       "actions": {
+        "refresh": "Refresh",
         "test": "Test",
         "detail": "Detail",
         "edit": "Edit",
@@ -554,6 +574,7 @@
       },
       "msg": {
         "loadFailed": "Failed to load engine list",
+        "refreshed": "Engine state refreshed",
         "testSuccess": "Connection test successful!",
         "testFailed": "Connection test failed: {error}",
         "createSuccess": "Created successfully",

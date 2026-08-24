@@ -144,6 +144,60 @@ func TestUpdateModulePlatformUsesOptimisticVersion(t *testing.T) {
 	}
 }
 
+func TestListModuleRuntimeInstancesPlatformUsesPaginatedContract(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.ModuleRegistryState{ID: 1, Revision: 1}).Error; err != nil {
+		t.Fatal(err)
+	}
+	registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
+	for _, instanceID := range []string{"manager-a", "manager-b"} {
+		if err := registry.Register(&models.ModuleRegistrationRequest{
+			ModuleName: "manager", InstanceID: instanceID, Role: models.ModuleRuntimeRoleBackend,
+			ModuleURL: "http://" + instanceID + ":8081", RoutePrefix: "/manager",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	handler := NewModuleRegistryHandler(registry)
+	router := gin.New()
+	router.Use(commoni18n.I18nMiddleware())
+	router.GET("/platform/modules/:module_name/instances", handler.ListModuleRuntimeInstancesPlatform)
+
+	response := performModuleRegistryRequest(router, http.MethodGet, "/platform/modules/manager/instances?page=1&page_size=1", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Data       []models.ModuleRuntimeInstanceInfo `json:"data"`
+		Total      int64                              `json:"total"`
+		Page       int                                `json:"page"`
+		PageSize   int                                `json:"page_size"`
+		TotalPages int                                `json:"total_pages"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Data) != 1 || payload.Total != 2 || payload.Page != 1 || payload.PageSize != 1 || payload.TotalPages != 2 {
+		t.Fatalf("paginated response = %#v", payload)
+	}
+
+	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/modules/manager/instances?role=api", "")
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid role status = %d, body=%s", response.Code, response.Body.String())
+	}
+	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/modules/missing/instances", "")
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("missing module status = %d, body=%s", response.Code, response.Body.String())
+	}
+}
+
 func updatePlatformModule(t *testing.T, router http.Handler, payload string) *httptest.ResponseRecorder {
 	t.Helper()
 	request := httptest.NewRequest(http.MethodPut, "/platform/modules/manager", bytes.NewBufferString(payload))

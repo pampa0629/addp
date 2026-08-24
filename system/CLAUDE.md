@@ -234,6 +234,7 @@ frontend/src/
 **system.engines 表**:
 - 存储各类引擎连接信息 (数据库、对象存储等)
 - 字段: `id`, `name`, `engine_type`, `connection_info`, `tenant_id`, `created_by`, `lifecycle_state` 及删除工作流状态
+- `version` 只表示 Engine Instance 聚合根的管理员编辑基线；后台连通性观测只更新 `connection_status`、`last_check_at`、`check_message`，不得递增 `version` 或修改 `updated_at`
 - `connection_info` 为 JSONB 类型，灵活存储不同类型的连接配置
 - 敏感字段 (password, access_key 等) 使用 **AES-256-GCM** 加密存储
 
@@ -348,7 +349,8 @@ frontend/src/
 - `/api/v1/system/platform/users` - 全局 User 查询、创建、更新、暂停和重新激活；
 - `/api/v1/system/platform/identity_changes` - 平台身份变更申请、复核和监督；
 - `/api/v1/system/platform/audit/events` - 平台审计查询、汇总、趋势和导出。
-- `/api/v1/system/platform/modules` - 模块定义、运行实例观测和带版本的启用状态管理。
+- `/api/v1/system/platform/modules` - 模块定义、有界当前运行实例投影和带版本的启用状态管理；不得携带全部实例历史。
+- `/api/v1/system/platform/modules/:module_name/instances` - 当前模块全部运行实例历史的只读分页查询，支持 role、status 过滤。
 
 ### Tenant IAM 管理（Tenant Context + 精确 Permission）
 - `/api/v1/system/tenant/memberships` - 当前 Tenant Membership 查询、有效期和生命周期；

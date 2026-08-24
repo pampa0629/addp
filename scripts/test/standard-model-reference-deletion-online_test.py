@@ -55,7 +55,59 @@ class FakeGateway:
         raise AssertionError(f"unexpected request: {method} {path}")
 
 
+class FakeSystem:
+    def __init__(self, *, principal="user", tenant_id="42", roles=None, permissions=None):
+        self.payload = {
+            "principal": {"type": principal, "id": "99"},
+            "context": {"type": "tenant", "tenant_id": tenant_id},
+            "token": {"type": "first_party_access_token"},
+            "authorization": {
+                "role_assignments": [
+                    {
+                        "role_key": role,
+                        "permissions": sorted(permissions or ONLINE.REQUIRED_USER_PERMISSIONS),
+                    }
+                    for role in (roles or ["tenant.governance_manager", "tenant.data_architect"])
+                ]
+            },
+        }
+
+    def request(self, method, path, expected, body=None):
+        if (method, path, tuple(expected), body) != (
+            "GET",
+            "/api/v1/system/auth/context",
+            (200,),
+            None,
+        ):
+            raise AssertionError(f"unexpected identity request: {method} {path}")
+        return ONLINE.Response(200, self.payload)
+
+
 class StandardModelOnlineTest(unittest.TestCase):
+    def test_accepts_dedicated_tenant_user_with_exact_required_permissions(self):
+        report = ONLINE.validate_user_identity(FakeSystem(), 42)
+        self.assertEqual(report["principal_type"], "user")
+        self.assertEqual(report["tenant_id"], "42")
+        self.assertEqual(
+            set(report["permissions_verified"]), ONLINE.REQUIRED_USER_PERMISSIONS
+        )
+
+    def test_rejects_admin_or_underprivileged_online_user(self):
+        with self.assertRaisesRegex(ONLINE.SuiteError, "administrator roles"):
+            ONLINE.validate_user_identity(
+                FakeSystem(roles=["tenant.administrator"]), 42
+            )
+        with self.assertRaisesRegex(ONLINE.SuiteError, "missing required permissions"):
+            ONLINE.validate_user_identity(
+                FakeSystem(permissions={"standard.domain.read"}), 42
+            )
+
+    def test_rejects_wrong_tenant_or_non_user_token(self):
+        with self.assertRaisesRegex(ONLINE.SuiteError, "does not match"):
+            ONLINE.validate_user_identity(FakeSystem(tenant_id="7"), 42)
+        with self.assertRaisesRegex(ONLINE.SuiteError, "belong to a User"):
+            ONLINE.validate_user_identity(FakeSystem(principal="service_principal"), 42)
+
     def test_accepts_reference_block_release_and_zero_residual(self):
         gateway = FakeGateway()
         report = ONLINE.run_suite(gateway, 42, "run-42")
