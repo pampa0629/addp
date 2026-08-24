@@ -53,6 +53,17 @@ class OnlineHostGateTest(unittest.TestCase):
                 """
             ),
         )
+        self._write_executable(
+            "uname",
+            textwrap.dedent(
+                """\
+                #!/bin/bash
+                printf '%s\n' "${ADDP_TEST_UNAME_S:-Darwin}"
+                """
+            ),
+        )
+        for command in ("docker", "go", "node", "npm", "curl"):
+            self._write_executable(command, "#!/bin/bash\nexit 0\n")
         self.env_file = self.external / "online.env"
         self.env_file.write_text(
             textwrap.dedent(
@@ -182,6 +193,15 @@ class OnlineHostGateTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("ADDP_ONLINE_HOST", result.stderr)
+        self.assertFalse(self.command_log.exists())
+
+    def test_rejects_non_macos_host_before_any_lifecycle_action(self) -> None:
+        result = self._run(
+            "module-registry-recovery", ADDP_TEST_UNAME_S="Linux"
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("dedicated Online Runner must use macOS", result.stderr)
         self.assertFalse(self.command_log.exists())
 
     def test_rejects_missing_suite_environment_before_lifecycle_action(self) -> None:

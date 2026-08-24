@@ -79,8 +79,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                   - addp-online
                 environment: addp-online
                 steps:
-                  - run: bash scripts/test/online-host-gate.sh --check-only
-                  - run: bash scripts/test/online-host-gate.sh
+                  - env:
+                      ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
+                    run: bash scripts/test/online-host-gate.sh --check-only
+                  - env:
+                      ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
+                    run: bash scripts/test/online-host-gate.sh
                   - uses: actions/upload-artifact@pinned
             """
         )
@@ -112,12 +116,42 @@ class OnlineCIRegistrationTest(unittest.TestCase):
     def test_rejects_workflow_without_readiness_check(self) -> None:
         self.workflow.write_text(
             self._workflow().replace(
-                "      - run: bash scripts/test/online-host-gate.sh --check-only\n",
+                "      - env:\n"
+                "          ADDP_ONLINE_ARTIFACT_DIR: "
+                "${{ runner.temp }}/addp-online-${{ github.run_id }}\n"
+                "        run: bash scripts/test/online-host-gate.sh --check-only\n",
                 "",
             ),
             encoding="utf-8",
         )
         with self.assertRaisesRegex(CHECK.RegistrationError, "--check-only"):
+            CHECK.check_registration(self.repository)
+
+    def test_rejects_runner_context_in_job_level_environment(self) -> None:
+        self.workflow.write_text(
+            self._workflow().replace(
+                "    steps:\n",
+                "    env:\n"
+                "      ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/invalid\n"
+                "    steps:\n",
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(CHECK.RegistrationError, "job-level env"):
+            CHECK.check_registration(self.repository)
+
+    def test_requires_artifact_directory_on_both_lifecycle_steps(self) -> None:
+        self.workflow.write_text(
+            self._workflow().replace(
+                "      - env:\n"
+                "          ADDP_ONLINE_ARTIFACT_DIR: "
+                "${{ runner.temp }}/addp-online-${{ github.run_id }}\n"
+                "        run: bash scripts/test/online-host-gate.sh\n",
+                "      - run: bash scripts/test/online-host-gate.sh\n",
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(CHECK.RegistrationError, "both lifecycle steps"):
             CHECK.check_registration(self.repository)
 
     def test_rejects_host_gate_without_shared_environment_preflight(self) -> None:

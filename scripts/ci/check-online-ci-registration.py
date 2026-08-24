@@ -68,6 +68,23 @@ def load_workflow_suites(repository: Path) -> set[str]:
     missing = [fragment for fragment in required_fragments if fragment not in text]
     if missing:
         raise RegistrationError("Online T4 workflow is missing: " + ", ".join(missing))
+    job_environment_blocks = re.findall(
+        r"(?ms)^    env:\n(?P<body>(?:      [^\n]*\n)+)",
+        text,
+    )
+    if any("${{ runner." in block for block in job_environment_blocks):
+        raise RegistrationError(
+            "Online T4 workflow must not use the step-only runner context in job-level env"
+        )
+    artifact_assignment = (
+        "ADDP_ONLINE_ARTIFACT_DIR: "
+        "${{ runner.temp }}/addp-online-${{ github.run_id }}"
+    )
+    if text.count(artifact_assignment) != 2:
+        raise RegistrationError(
+            "Online T4 workflow must configure the Runner temp artifact directory "
+            "on both lifecycle steps"
+        )
     if re.search(r"(?m)^  schedule:\s*$", text):
         raise RegistrationError("Online T4 workflow must remain manual until the first real run passes")
     options = re.search(

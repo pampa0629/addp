@@ -30,7 +30,6 @@ jobs:
     env:
       ADDP_ONLINE_HOST: "1"
       ADDP_ONLINE_ENV_FILE: ${{ vars.ADDP_ONLINE_ENV_FILE }}
-      ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
       ONLINE_SUITE: ${{ inputs.suite }}
     steps:
       - name: Check out repository
@@ -40,9 +39,13 @@ jobs:
           persist-credentials: false
 
       - name: Validate dedicated Online Runner readiness
+        env:
+          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
         run: bash scripts/test/online-host-gate.sh --check-only
 
       - name: Run dedicated Online deployment gate
+        env:
+          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
         run: bash scripts/test/online-host-gate.sh
 
       - name: Upload Online evidence
