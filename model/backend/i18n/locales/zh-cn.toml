@@ -79,6 +79,18 @@ other = "相同的实体关系已存在"
 [model.logical_table.not_found]
 other = "逻辑表不存在"
 
+[model.materialization.invalid]
+other = "逻辑表物化定义或执行参数无效"
+
+[model.materialization.conflict]
+other = "逻辑表物化批次状态与当前操作冲突"
+
+[model.materialization.not_found]
+other = "逻辑表或物化批次不存在"
+
+[model.materialization.unavailable]
+other = "逻辑表物化授权或目标引擎暂时不可用"
+
 [model.logical_table.invalid_field_id]
 other = "无效的字段ID"
 

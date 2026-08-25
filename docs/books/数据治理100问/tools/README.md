@@ -1,32 +1,59 @@
-# Markdown 转 DOCX 工具
+# 《数据治理100问》发行工具
 
-本目录中的工具用于将《数据治理100问》的 Markdown 源稿转换为统一版式的 Word 发布稿。Markdown 始终是唯一源稿，DOCX 统一输出到 `发布稿/`。
+Markdown 是全书唯一源稿。统一发行工具从同一批源文件生成分篇 DOCX、合订本 DOCX、PDF、EPUB 和可离线阅读的 HTML 压缩包，产物默认写入 `发布稿/`，不反向修改源稿。
 
 ## 常用命令
 
 在《数据治理100问》目录下执行：
 
 ```bash
-# 转换大纲和所有已经编写的问题
-bash tools/convert.sh --all
+# 校验源稿目录、编号和延伸阅读链接
+make -C ../../.. test-book
 
-# 转换单篇文章
-bash tools/convert.sh 01-总则与战略篇/001-数据治理的第一性原理.md
+# 生成并校验全部发行物
+bash tools/publish.sh all
 
-# 同时转换指定的多个文件
-bash tools/convert.sh 大纲.md 02-概念辨析篇/014-数据治理和BI.md
+# 只生成一种发行物
+bash tools/publish.sh docx
+bash tools/publish.sh combined-docx
+bash tools/publish.sh pdf
+bash tools/publish.sh epub
+bash tools/publish.sh html
+
+# 只生成指定的分篇 DOCX
+bash tools/publish.sh docx 目录.md 000-为什么要写这本书.md \
+  01-总则与战略篇/001-数据治理的第一性原理.md
+
+# 校验已经生成的完整发行目录
+bash tools/publish.sh verify
 ```
 
-默认输出目录为 `发布稿/`，所有文章采用扁平化文件名，便于逐篇发布。大纲和文章中的本地 Markdown 链接会转换为发布稿目录下对应的 DOCX 链接。
+可通过 `--output-dir` 指定其他输出目录。完整发行目录包括：
+
+- `分篇DOCX/`：包含 `目录.docx`、`000-为什么要写这本书.docx` 和第 001—104 问的独立 DOCX；
+- `数据治理100问-合订本.docx`；
+- `数据治理100问.pdf`；
+- `数据治理100问.epub`；
+- `数据治理100问-html.zip`，解压后打开 `index.html` 阅读。
+
+## 链接规则
+
+- 源稿中的目录和“延伸阅读”使用相对 Markdown 链接；
+- 分篇 DOCX 统一存放在 `分篇DOCX/`，链接转换为该目录中的兄弟 DOCX，并在页尾增加上一篇、目录、下一篇导航；
+- 合订本 DOCX、PDF、EPUB 和 HTML 将链接转换为稳定锚点 `contents`、`q000`—`q104`；
+- PDF 从合订本 DOCX 转换，保留目录、书签和内部跳转；
+- EPUB 和 HTML 适合连续阅读，其中 HTML 包可直接作为静态网站发布。
+
+合订本 DOCX、PDF、EPUB、HTML 以及分篇的第000问使用作者笔名“攀爬”。为避免每问重复署名，`目录.docx` 和第001—104问不显示作者，也不写入作者元数据。
 
 ## 环境依赖
 
-- Python 3
-- `python-docx`
-- Pillow
-- Pandoc
-- Graphviz（用于把文中的 Mermaid `flowchart` 转换为图片）
+- Python 3、`python-docx`、Pillow；
+- Pandoc；
+- Graphviz（渲染 Mermaid 图）；
+- LibreOffice（从合订本 DOCX 生成 PDF）；
+- 可选 `pypdf`，安装后发行校验会进一步检查 PDF 页数、书签和链接。
 
-在 Codex 工作区中，`convert.sh` 会优先使用工作区自带的 Python 运行时；其他环境会使用 `PATH` 中的 `python3`。Pandoc 和 Graphviz 的 `dot` 命令需要位于 `PATH` 中。
+`publish.sh` 会优先使用 Codex 工作区自带的 Python 运行时，其他环境使用 `PATH` 中的 `python3`。Pandoc、Graphviz 的 `dot` 和 LibreOffice 的 `soffice` 需要可执行。
 
-当前支持本书使用的 Mermaid 流程图语法，包括 `flowchart LR`、`flowchart TB`、普通箭头、双向箭头以及带文字的虚线箭头。如果以后引入更复杂的 Mermaid 图形，需要同步扩展转换器。
+转换器覆盖本书当前使用的 Mermaid `flowchart` 和 `sequenceDiagram` 语法。以后引入新的 Mermaid 语法时，必须同步扩展转换器和测试。

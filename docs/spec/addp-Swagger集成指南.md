@@ -57,7 +57,7 @@ go install github.com/swaggo/swag/cmd/swag@latest
 
 通常不纳入 Swagger/OpenAPI：
 
-- 健康检查：`/health`。
+- 进程存活与模块就绪检查：`/health/live`、`/health/ready`。两者的响应契约由 [ADDP API 设计规范](addp-API设计规范.md#44-进程存活与模块就绪端点) 和公共类型统一维护，不在各模块 Swagger 重复声明。
 - Swagger/OpenAPI 自身路由：`/swagger/*any`、`/docs`、`/redoc`、`/openapi.json`。
 - 内部路由：`/api/v1/internal/**` 或明确标记为 internal/debug/metrics 的路由。
 - 临时调试接口。

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/addp/common/buildinfo"
+	"github.com/addp/common/modulelifecycle"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
 	commonAuth "github.com/addp/common/middleware/auth"
@@ -30,11 +30,14 @@ func SetupRouter(
 	systemClient *commonClient.SystemServiceClient,
 	taskAuthorizationClient *commonClient.SystemExecutionAuthorizationClient,
 	serviceTokens commonClient.ServiceTokenProvider,
+	lifecycle *modulelifecycle.Controller,
 ) *gin.Engine {
 	router := gin.Default()
 
 	// Swagger 文档
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	lifecycle.RegisterHealthRoutes(router)
+	router.Use(lifecycle.RequireReady())
 
 	// CORS 中间件
 	router.Use(func(c *gin.Context) {
@@ -106,11 +109,6 @@ func SetupRouter(
 		api.GET("/tasks/:task_type/:id", permission(orchestratorauthorization.PermissionOrchestratorWorkflowRead), handler.GetProviderOrchestrationTask)
 		api.POST("/tasks/:task_type/:id/execute", permission(orchestratorauthorization.PermissionOrchestratorWorkflowExecute), handler.ExecuteProviderOrchestrationTask)
 	}
-
-	// 健康检查
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, buildinfo.Health("orchestrator"))
-	})
 
 	return router
 }

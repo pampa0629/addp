@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: model
-manifest_version: 3
+manifest_version: 4
 permissions:
   - key: model.dw_layer.create
     allowed_scope_types: [tenant]
@@ -138,6 +138,14 @@ permissions:
     status: active
     name_i18n_key: permissions.model.logical_model.update.name
     description_i18n_key: permissions.model.logical_model.update.description
+  - key: model.materialization.execute
+    allowed_scope_types: [tenant]
+    risk_level: critical
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.materialization.execute.name
+    description_i18n_key: permissions.model.materialization.execute.description
   - key: model.standard_reference.update
     allowed_scope_types: [tenant]
     risk_level: high

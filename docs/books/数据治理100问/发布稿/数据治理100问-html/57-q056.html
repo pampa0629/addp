@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-CN" xml:lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>056 为什么说“SQL 是数据工程师的第一语言”？</title>
+  <style>
+    div.sitenav { display: flex; flex-direction: row; flex-wrap: wrap; }
+    span.navlink { flex: 1; }
+    span.navlink-label { display: inline-block; min-width: 4em; }
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <link rel="stylesheet" href="book.css" />
+</head>
+<body>
+<nav id="sitenav">
+<div class="sitenav">
+<span class="navlink">
+<span class="navlink-label">Up:</span> <a href="index.html" accesskey="u" rel="up">《数据治理100问》</a>
+</span>
+<span class="navlink">
+<span class="navlink-label">Top:</span> <a href="index.html" accesskey="t" rel="top">《数据治理100问》</a>
+</span>
+</div>
+<div class="sitenav">
+<span class="navlink">
+<span class="navlink-label">Next:</span> <a href="58-q057.html" accesskey="n" rel="next">057 可视化工作流如何通过算子编排数据处理逻辑？</a>
+</span>
+<span class="navlink">
+<span class="navlink-label">Previous:</span> <a href="56-q055.html" accesskey="p" rel="previous">055 数据开发有哪些方式，SQL、可视化工作流和 Notebook 应该如何选择？</a>
+</span>
+</div>
+</nav>
+<h1 data-number="57" id="q056">056 为什么说“SQL
+是数据工程师的第一语言”？</h1>
+<h2 data-number="57.1" id="一句话回答-55">一句话回答</h2>
+<blockquote>
+<p>SQL 之所以被称为数据工程师的第一语言，不是因为数据工程师只需要
+SQL，而是因为它普及程度高、适用范围广，能够直接表达数据筛选、关联、转换、聚合和指标计算等核心工作。关系数据库、数据仓库、湖仓平台以及
+Spark、Flink 等分布式计算平台普遍支持 SQL，因此熟练使用 SQL
+也成为大多数数据工程师岗位的必备技能。</p>
+</blockquote>
+<p>SQL
+语法并不难入门，真正困难的是理解数据代表什么、应该怎样关联、按照什么粒度计算，以及怎样把业务口径转化为可持续运行的数据生产过程。</p>
+<h2 data-number="57.2"
+id="一第一语言是什么意思">一、“第一语言”是什么意思</h2>
+<p>这里所说的“第一语言”，不是要争论 SQL
+是不是传统意义上的编程语言，也不意味着 SQL
+能够解决所有数据问题，而是强调它在数据工程工作中的基础地位：</p>
+<ul>
+<li>使用频率高，日常数据开发大量依赖 SQL；</li>
+<li>覆盖范围广，多种数据库和计算平台都支持 SQL；</li>
+<li>学习迁移成本相对较低，核心查询思想可以跨平台复用；</li>
+<li>接近数据模型，能够直接操作表、字段、关系和统计粒度；</li>
+<li>便于审阅，业务规则和计算逻辑可以被相对直观地检查。</li>
+</ul>
+<p>数据工程师可能还需要掌握Python、Java、Scala、Shell或其他语言，但这些技能通常是在
+SQL
+基础上补充复杂算法、工程控制、系统集成和平台开发能力。对大多数以结构化数据和分析计算为主的岗位而言，SQL
+是很难绕开的基本功。</p>
+<h2 data-number="57.3" id="二为什么-sql-如此普及">二、为什么 SQL
+如此普及</h2>
+<p>SQL
+最初主要用于关系数据库，后来逐步成为跨越多种数据系统的通用数据处理语言。</p>
+<p>今天，SQL 可以出现在：</p>
+<ul>
+<li>业务系统使用的关系数据库中；</li>
+<li>面向分析的数据仓库中；</li>
+<li>分布式查询和大数据计算平台中；</li>
+<li>数据湖与湖仓平台中；</li>
+<li>流式计算平台中；</li>
+<li>BI、自助分析和指标平台中；</li>
+<li>数据开发、质量检查和数据服务工具中。</li>
+</ul>
+<p>例如：</p>
+<ul>
+<li><strong>Spark
+SQL</strong>可以在分布式环境中查询和处理大规模结构化、半结构化数据，并与
+Spark 的数据处理能力结合；</li>
+<li><strong>Flink
+SQL</strong>可以基于动态表等机制表达持续变化的数据和流式计算逻辑，用于实时清洗、关联、窗口统计和结果更新；</li>
+<li>许多湖仓和分布式查询引擎也提供 SQL
+入口，让使用者不必直接编写底层分布式计算程序。</li>
+</ul>
+<p>这说明 SQL
+已经不只是“查询数据库表的语言”，还是多种计算引擎共同采用的数据处理抽象。平台可以更换，执行方式可以从单机变为分布式、从批量变为流式，但筛选、关联、分组和聚合等核心表达仍然可以使用
+SQL。</p>
+<h2 data-number="57.4"
+id="三普遍支持不等于完全兼容">三、普遍支持不等于完全兼容</h2>
+<p>SQL 有通用标准，常被称为ANSI SQL 或ISO
+SQL，但不同产品通常会在标准基础上形成自己的方言。</p>
+<p>常见差异包括：</p>
+<ul>
+<li>字符串、日期和时间函数；</li>
+<li>数据类型及其转换规则；</li>
+<li>分页、采样和递归查询语法；</li>
+<li>数组、JSON和嵌套数据处理；</li>
+<li>地理空间函数；</li>
+<li>流式窗口、时间属性和状态处理；</li>
+<li>用户自定义函数和扩展机制；</li>
+<li>表创建、分区、存储格式和性能提示。</li>
+</ul>
+<p>Spark SQL、Flink SQL 和关系数据库虽然都支持
+SQL，但面对的数据、执行过程和结果更新方式并不完全相同。例如，传统数据库查询通常面对某一时刻的有限数据集，而Flink
+SQL 可能描述一条持续运行的计算逻辑：新事件不断到来，结果也随之更新。</p>
+<p>因此，“掌握 SQL”包含两个层次：</p>
+<ol type="1">
+<li>掌握选择、连接、分组、窗口、集合运算等通用思想；</li>
+<li>理解当前计算引擎的数据模型、执行语义、方言和性能特点。</li>
+</ol>
+<p>不应因为一段 SQL
+能在某个平台运行，就默认它可以原样迁移到另一个平台，也不能默认相同写法一定得到完全相同的业务结果。</p>
+<h2 data-number="57.5" id="四为什么-sql-适合数据开发">四、为什么 SQL
+适合数据开发</h2>
+<h3 data-number="57.5.1" id="sql-是声明式语言">1. SQL 是声明式语言</h3>
+<p>使用 SQL
+时，开发人员主要说明“需要什么结果”，而不是逐步规定“计算机怎样完成每一个动作”。</p>
+<p>例如：</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode sql"><code class="sourceCode sql"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    region_id,</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    product_id,</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">SUM</span>(net_sales_amount) <span class="kw">AS</span> net_sales_amount</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="kw">FROM</span> sales_order_detail</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="kw">WHERE</span> business_date <span class="op">&gt;=</span> <span class="ch">:start_date</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>  <span class="kw">AND</span> business_date <span class="op">&lt;</span> <span class="ch">:end_date</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="kw">GROUP</span> <span class="kw">BY</span> region_id, product_id;</span></code></pre></div>
+<p>这段 SQL
+表达了筛选范围、分组维度和汇总指标。至于先扫描哪张表、使用哪种连接算法、是否使用索引、怎样在多个计算节点之间交换数据，通常由数据库或计算引擎的优化器和执行器决定。</p>
+<p>这种声明式方式使数据工程师能够更多关注业务规则和结果结构，也使平台有机会根据数据规模、存储方式和计算资源优化执行计划。</p>
+<h3 data-number="57.5.2" id="sql-天然面向集合处理">2. SQL
+天然面向集合处理</h3>
+<p>数据工程面对的通常不是单条记录，而是一批订单、一段时间的交易、所有客户的标签或一个区域内的设备事件。SQL
+擅长以集合为单位进行过滤、关联、聚合和窗口计算，与数据仓库和分析场景十分契合。</p>
+<h3 data-number="57.5.3" id="sql-贴近数据模型">3. SQL 贴近数据模型</h3>
+<p>表、字段、主键、关联、事实、维度和粒度都能够直接反映在 SQL
+中。开发人员可以通过 SQL
+把数据模型落地为实际的数据集，也可以根据业务维度组织指标计算。</p>
+<h3 data-number="57.5.4" id="sql-便于复核和协作">4. SQL
+便于复核和协作</h3>
+<p>相对于封装在应用程序深处的计算逻辑，SQL
+通常更容易被数据工程师、分析人员和数据库人员共同查看。配合清晰命名、分层模型和指标定义，可以更直接地判断数据来源、过滤条件和计算方式。</p>
+<h2 data-number="57.6" id="五sql-在数据治理中用来做什么">五、SQL
+在数据治理中用来做什么</h2>
+<p>SQL 在数据治理中的用途远不止临时查询。</p>
+<h3 data-number="57.6.1" id="数据汇聚与转换">1. 数据汇聚与转换</h3>
+<p>读取不同来源的数据，完成字段映射、格式转换、去重、增量合并和目标表写入。ETL和ELT都可能大量使用
+SQL。</p>
+<h3 data-number="57.6.2" id="数据标准化">2. 数据标准化</h3>
+<p>统一日期格式、计量单位、枚举码值、空值表示和业务标识，并记录不能正常转换的数据。</p>
+<h3 data-number="57.6.3" id="数据建模落地">3. 数据建模落地</h3>
+<p>构建实体明细、事实表、维度表、汇总表和服务数据集，使业务模型和数据模型转化为可以持续计算的数据结构。</p>
+<h3 data-number="57.6.4" id="指标与标签计算">4. 指标与标签计算</h3>
+<p>按照统一的统计对象、时间范围、过滤条件和聚合方式计算指标，并根据规则为客户、产品、区域或其他实体生成标签。</p>
+<h3 data-number="57.6.5" id="数据质量检查">5. 数据质量检查</h3>
+<p>检查非空、唯一、值域、引用关系、跨表一致性和业务逻辑。例如，可以通过
+SQL 识别没有对应客户的订单、金额不平衡的交易或异常变化的每日数据量。</p>
+<h3 data-number="57.6.6" id="数据核对和问题排查">6.
+数据核对和问题排查</h3>
+<p>在指标异常或上下游结果不一致时，逐层核对数据量、关键字段、关联关系和汇总结果，帮助定位问题发生在哪个环节。</p>
+<h3 data-number="57.6.7" id="数据服务准备">7. 数据服务准备</h3>
+<p>为
+BI、API、标签画像、算法模型和业务应用准备结构稳定、口径统一、性能合适的数据集。</p>
+<p>SQL
+贯穿了数据从源系统进入分析体系，再到形成模型、指标和服务的多个环节。这也是
+SQL 成为数据工程师核心技能的重要原因。</p>
+<h2 data-number="57.7" id="六会写-sql-为什么还不够">六、会写 SQL
+为什么还不够</h2>
+<p>SQL
+语法正确，只能说明查询可以执行，不能保证结果具有正确的业务含义。</p>
+<p>一段 SQL 是否可信，还取决于开发人员能否回答：</p>
+<ul>
+<li>每一行数据代表什么业务事实？</li>
+<li>当前表的粒度是什么？</li>
+<li>两张表是一对一、一对多还是多对多关系？</li>
+<li>使用订单创建时间、支付时间还是完成时间？</li>
+<li>退款、撤销和冲正应该怎样处理？</li>
+<li>维度变化后，历史数据按照当时归属还是当前归属统计？</li>
+<li>空值表示未知、不适用，还是数据缺失？</li>
+<li>数据尚未完整到达时，是否允许发布指标？</li>
+</ul>
+<p>很多错误 SQL
+不会报错，甚至能够快速返回一个看似合理的数字。最危险的问题往往不是语法错误，而是关联造成数据重复、统计粒度混乱、业务口径遗漏或时间条件选择错误。</p>
+<p>因此，优秀的数据工程师不仅要会写
+SQL，还要理解业务、数据模型、指标口径、质量规则和数据生命周期。</p>
+<h2 data-number="57.8"
+id="七案例一个销售汇总为什么可能算错">七、案例：一个销售汇总为什么可能算错</h2>
+<p>某集团希望按月份、区域、渠道和产品统计净销售额。这个需求看起来只需要把销售订单分组求和，但实际计算可能涉及：</p>
+<ul>
+<li>一张订单包含多个产品明细，订单表与明细表粒度不同；</li>
+<li>同一产品可能在统计期间调整产品线归属；</li>
+<li>线上订单按照收货区域还是下单区域统计；</li>
+<li>取消订单是否参与合同额统计；</li>
+<li>退款发生在次月时，冲减原销售月份还是退款月份；</li>
+<li>渠道信息缺失或后补时，历史结果是否重算；</li>
+<li>订单表与回款表直接关联，可能因多次回款造成销售额重复；</li>
+<li>不同系统对“净销售额”的含税和优惠处理方式可能不同。</li>
+</ul>
+<p>假设一笔订单有3条产品明细和2笔回款。如果把订单、明细和回款直接连接，可能得到6行结果，进而重复累计订单金额。这种
+SQL 完全可能成功执行，但结果是错的。</p>
+<p>正确做法通常要先明确：</p>
+<ol type="1">
+<li>每个指标采用什么统计粒度；</li>
+<li>订单、产品明细、回款和退款分别怎样汇总；</li>
+<li>不同粒度的数据在哪一层进行关联；</li>
+<li>维度归属和时间口径采用什么规则；</li>
+<li>哪些公共计算应沉淀为统一模型，而不是由每张报表重复实现。</li>
+</ol>
+<p>这个案例说明，SQL
+是业务规则的实现工具，但不能替代业务定义和数据建模。数据治理要做的，是让不同开发人员在使用
+SQL 时遵循相同的业务语义、数据标准和指标口径。</p>
+<h2 data-number="57.9"
+id="八怎样避免-sql-变成难以维护的脚本">八、怎样避免 SQL
+变成难以维护的脚本</h2>
+<h3 data-number="57.9.1" id="按数据层次和业务粒度拆分">1.
+按数据层次和业务粒度拆分</h3>
+<p>不要把数据清洗、实体整合、指标计算和结果发布全部塞进一条超长
+SQL。合理的中间模型能够表达清楚的数据粒度和复用边界。</p>
+<h3 data-number="57.9.2" id="避免硬编码">2. 避免硬编码</h3>
+<p>日期、区域、路径、阈值和运行批次等变化内容应通过参数传入；稳定的业务规则则应由指标、模型或规则定义统一管理。</p>
+<h3 data-number="57.9.3" id="复用公共模型和指标">3.
+复用公共模型和指标</h3>
+<p>多个报表都需要订单净额时，不应各写一套退款和优惠计算。应形成统一的明细模型或公共指标，减少重复开发和口径分裂。</p>
+<h3 data-number="57.9.4" id="为复杂逻辑增加测试">4.
+为复杂逻辑增加测试</h3>
+<p>不仅要测试 SQL
+能否运行，还要准备边界数据，验证重复关联、空值、迟到数据、退款、撤销和维度变化等情况。</p>
+<h3 data-number="57.9.5" id="纳入版本和血缘管理">5.
+纳入版本和血缘管理</h3>
+<p>SQL、依赖的数据模型、指标定义和运行参数都可能变化。需要记录版本、发布过程、输入输出和影响范围，使结果可以解释、比较和回溯。</p>
+<h3 data-number="57.9.6" id="根据引擎特点优化而不是盲目套用语法">6.
+根据引擎特点优化，而不是盲目套用语法</h3>
+<p>关系数据库、Spark
+和Flink的执行方式不同。开发人员需要理解数据规模、分区、数据倾斜、状态、窗口和资源消耗等问题，避免把能够执行误认为适合生产。</p>
+<h2 data-number="57.10" id="九ai-能够代替数据工程师写-sql-吗">九、AI
+能够代替数据工程师写 SQL 吗</h2>
+<p>AI 已经能够根据自然语言生成
+SQL、解释查询、补全语句和提出优化建议，这会显著降低 SQL 的编写门槛。但
+AI 生成的 SQL 仍然依赖提供给它的表结构、业务语义和上下文。</p>
+<p>AI 可能写出语法正确却业务错误的 SQL，例如：</p>
+<ul>
+<li>选择了名称相似但含义不同的字段；</li>
+<li>忽略表之间的一对多关系；</li>
+<li>使用了错误的时间字段；</li>
+<li>没有处理退款、撤销或迟到数据；</li>
+<li>把当前维度归属用于全部历史数据；</li>
+<li>生成目标引擎不支持或性能很差的写法。</li>
+</ul>
+<p>因此，AI 更适合作为 SQL
+开发助手，而不是业务口径和数据责任的替代者。业务人员可以借助 AI
+更方便地提出查询，数据工程师也可以减少机械编码，但仍然需要有人验证数据来源、关联关系、统计粒度、指标含义和执行成本。</p>
+<p>AI 让“写出一段 SQL”越来越容易，也让“判断这段 SQL
+是否可信”变得更加重要。理解 SQL 仍然是数据工程师审查和运用 AI
+生成结果的基础。</p>
+<h2 data-number="57.11" id="十常见误区-4">十、常见误区</h2>
+<h3 data-number="57.11.1"
+id="误区一会使用select就掌握了-sql">误区一：会使用SELECT就掌握了
+SQL</h3>
+<p>查询语法只是基础。复杂数据开发还需要理解连接、窗口、集合运算、事务或流式语义，并能判断粒度、口径和性能。</p>
+<h3 data-number="57.11.2"
+id="误区二支持-sql-的平台可以无缝替换">误区二：支持 SQL
+的平台可以无缝替换</h3>
+<p>不同平台的方言、数据类型、函数、执行语义和性能特点存在差异。迁移时既要检查语法，也要验证结果和运行特征。</p>
+<h3 data-number="57.11.3"
+id="误区三sql-能够运行结果就是正确的">误区三：SQL
+能够运行，结果就是正确的</h3>
+<p>SQL
+引擎只能判断语法和部分类型是否正确，无法自行判断业务口径是否正确。</p>
+<h3 data-number="57.11.4"
+id="误区四所有数据处理都应该使用-sql">误区四：所有数据处理都应该使用
+SQL</h3>
+<p>复杂算法、非结构化数据处理、外部系统交互和特殊格式解析可能更适合脚本、Notebook
+或专用算子。SQL 重要，但不是唯一工具。</p>
+<h3 data-number="57.11.5"
+id="误区五ai-会生成-sql所以不再需要学习-sql">误区五：AI 会生成
+SQL，所以不再需要学习 SQL</h3>
+<p>AI
+降低了编写难度，却不能替代对数据模型、业务语义和执行结果的判断。不会
+SQL，也就很难可靠地审查 AI 生成的 SQL。</p>
+<h2 data-number="57.12" id="十一实践检查清单-4">十一、实践检查清单</h2>
+<ol type="1">
+<li>开发人员是否理解 SQL 所处理数据的业务含义和粒度？</li>
+<li>是否核对了一对多和多对多关联可能造成的数据重复？</li>
+<li>指标计算是否采用统一的时间、过滤、维度和聚合口径？</li>
+<li>SQL 是否按数据层次合理拆分，并复用公共模型和指标？</li>
+<li>日期、区域、阈值和运行批次是否避免硬编码？</li>
+<li>是否针对空值、重复、迟到、退款和维度变化等情况进行测试？</li>
+<li>SQL 及其依赖是否纳入版本、血缘、调度和质量管理？</li>
+<li>在 Spark、Flink等平台上运行时，是否理解相应方言和执行语义？</li>
+<li>AI 生成的 SQL 是否经过业务口径、数据结果和执行成本验证？</li>
+</ol>
+<h2 data-number="57.13" id="小结-55">小结</h2>
+<p>SQL 从关系数据库走向数据仓库、数据湖、湖仓、Spark
+和Flink等平台，已经成为跨数据系统的通用处理语言。它普及程度高、表达能力强，并直接面向表、关系、粒度和聚合，因此成为大多数数据工程师岗位的必备技能。</p>
+<p>但数据工程师的价值不只是把需求翻译成
+SQL，而是理解业务事实和数据模型，把统一口径落实为可靠、可复用、可追溯的数据生产过程。SQL
+是第一语言，不是唯一语言；会写 SQL 是起点，能够用 SQL
+持续产生可信的业务结果才是目标。</p>
+<h2 data-number="57.14" id="延伸阅读-55">延伸阅读</h2>
+<ul>
+<li><a
+href="24-q023.html#q023">第023问：维度建模在数据治理中发挥什么作用？</a></li>
+<li><a
+href="31-q030.html#q030">第030问：数据汇聚在数据治理中的作用是什么？</a></li>
+<li><a
+href="56-q055.html#q055">第055问：数据开发有哪些方式，SQL、可视化工作流和
+Notebook 应该如何选择？</a></li>
+<li><a
+href="60-q059.html#q059">第059问：为什么数据开发需要参数化？</a></li>
+<li><a
+href="61-q060.html#q060">第060问：数据开发为什么需要版本管理？</a></li>
+</ul>
+<hr />
+<p><a href="56-q055.html#q055">← 上一问：055
+数据开发有哪些方式，SQL、可视化工作流和 Notebook 应该如何选择？</a> · <a
+href="-contents.html#contents">返回目录</a> · <a
+href="58-q057.html#q057">下一问：057
+可视化工作流如何通过算子编排数据处理逻辑？ →</a></p>
+</body>
+</html>

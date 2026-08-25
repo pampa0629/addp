@@ -41,6 +41,8 @@
 | item_type | 项类型 / 叶子术语 | data item 在所属引擎 catalog / 路径模型中的原生叶子术语。 | 例如 MinIO 为 `object`，NFS 为 `file`，PostgreSQL 为 `table`。它决定资源树路由和展示，不表示内容语义。 |
 | full_name | 逻辑全名 / 语义路径 | data item 在引擎内的稳定逻辑路径。 | 例如 `addp/image/开会.jpg`、`public.users`、`neo4j.graph`。它是定位和指纹的基础，但不是 URI。 |
 | ResourceLocator | 资源定位符 | 平台统一的资源 URI 定位形式。 | 形如 `addp://engine/{engine_id}/path/{resource_path}?type={type}&node_id={node_id}` 或 `...&item_id={item_id}`；`type` 表达 catalog 术语，`node_id` / `item_id` 表达真实 Meta 身份。 |
+| logical table materialization target | 逻辑表物化目标 | Model 中描述逻辑表准备落入哪个 Engine Instance 和父命名空间的设计事实。 | 使用 `target_parent_locator + target_name` 表达；Model 根据已审批逻辑表执行受控 DDL、staging 准备与原子发布，Develop 只计算并写入批次 staging，Orchestrator 只编排顺序。 |
+| Materialization Batch | 物化批次 | Model 为一次逻辑表重算创建的 Tenant 级受控发布聚合，绑定逻辑表版本、目标 Engine、staging、结构指纹和 prepare/publish execution。 | 同一逻辑表同时最多一个活动批次；批次不接受调用方提交 SQL、Schema、表名或 DDL。 |
 | locator | 定位符 | ResourceLocator URI 的简称。 | 检索结果和前端跳转只消费 locator，不再自行拼接。 |
 | data retrieval | 数据检索 | 面向 data item 的关键词、全文或语义检索能力。 | 检索命中以 data item 为结果对象；需要回到资源树时通过 locator 定位。 |
 
@@ -155,10 +157,15 @@
 | module definition | 模块定义 | System 中按稳定 `module_name` 保存的持久模块身份、路由前缀、管理员启用状态和模块级能力入口声明。 | 模块进程离线不删除定义；`enabled` 表示管理员意图，不由心跳覆盖。 |
 | module runtime instance | 模块运行实例 | 某模块 Backend、Worker 或 Scheduler 进程的一次具体运行登记。 | 使用进程级唯一 `instance_id`，保存 role、端点、元数据和租约状态；只有 `enabled + backend + up + lease valid` 的实例可进入 Gateway 路由。平台模块列表只返回当前运行投影，全部实例历史通过模块下的只读分页集合查询；实例历史不是追加式审计事件。 |
 | module runtime lease | 模块运行租约 | System 根据运行实例注册和周期心跳维护的短期存活事实。 | 心跳只续租，不修改模块定义或管理员启用状态；超时标记实例 `down`，不删除模块定义和实例历史。 |
+| process liveness | 进程存活状态 | 进程的 HTTP 服务是否已监听并能响应最小本地检查。 | 只表达 Alive，不读取 System、其他业务模块或可选 Engine Instance，也不表示已注册、可路由或可处理业务请求。 |
+| module readiness | 模块就绪状态 | 某个模块运行实例是否已满足自身必需 Infra，并成功在 System 建立当前进程租约。 | System 是业务模块 Ready 的唯一控制面强依赖；其他业务模块和可选 Engine Instance 不得进入 readiness 条件。只有 `registered` 注册生命周期状态可使实例 Ready。 |
+| module registration lifecycle state | 模块注册生命周期状态 | 进程内公共注册客户端对当前 `instance_id` 注册与恢复阶段的瞬时观测。 | 唯一取值集是 `starting`、`registered`、`recovering`、`failed`、`stopped`；它不落库，不替代 System 中的模块定义、运行实例和租约事实。 |
+| module routability | 模块可路由状态 | Gateway 能否从 System 最新有效快照中为模块选出 Backend 实例。 | 必须满足 `enabled + backend + up + lease valid`；Ready 是进程自身的服务资格，Routable 还受管理员 `enabled` 意图和 Gateway 快照收敛影响，两者不得混用。 |
 | dispatcher | 投递器 | 从 owner outbox 或 delivery 队列领取待发送事项并调用外部接收方的后台角色。 | Monitor Webhook/邮件 dispatcher 不执行业务任务，不创建业务 execution；投递记录和重试状态归 Monitor outbox。 |
 | maintenance loop | 维护循环 | 处理固定系统维护、清理、注册同步或观测采集的后台循环。 | 不等于 execution worker；只有演进为可持久执行、可审计的任务定义后，才进入 owner scheduler + execution worker 体系。 |
 | source task id | 来源任务 ID | execution 关联的 owner 模块任务定义 ID。 | 在 `common.task_executions.source_task_id` 中保存；查询时必须结合 `module + task_type`。 |
 | parent execution id | 父执行 ID | 当前 execution 的父级 execution UUID。 | 用于 Orchestrator 子步骤追踪父编排。 |
+| execution-scoped materialization context | 执行域物化上下文 | Model 按当前 execution 的 Tenant、Actor、父执行血缘和逻辑表 ID 解析出的唯一活动物化批次。 | Develop、Quality 和 Model publish 通过 owner Client 消费；调用方不传物理表名，Orchestrator 也不把动态 `batch_id` 伪装成 TaskProvider 必填参数。 |
 | ad-hoc execution | 一次性执行 | 不依赖持久任务定义、直接按本次配置创建的 execution。 | 可以没有 `source_task_id`，但必须在 `execution_config` 保存完整执行配置。 |
 | artifact state | 产物状态 | 描述派生产物当前是否可用、在哪里、由什么配置生成的状态对象。 | 例如瓦片缓存产物、embedding vectors；不是 execution。 |
 | existing result action | 已有结果动作 | 调用方在执行会刷新 owner 受管当前结果时显式声明的动作；当前只允许 `overwrite`。 | TaskProvider 请求参数为 `parameters.existing_result_action=overwrite`。前端人工执行时先二次确认再提交；Orchestrator 可将该动作保存为 Step 参数并在定时 Pipeline 中逐次提交。没有当前结果时可省略；业务派生数据不适用。 |
@@ -226,6 +233,7 @@
 | Runtime Operator Spec | 运行时算子规范 | Workflow Runtime 实际执行算子时消费的内部契约，只声明运行时真实需要的参数、输入输出端口和执行行为。 | 不解析 ADDP `ResourceLocator`，不承载资源树 UI 配置；`connection_info/schema/table/path` 属于适配层到运行时的内部参数。 |
 | Workflow Access Plan | 工作流访问计划 | Develop、Manager 等调用方把已解析的存储资源转换为 Workflow Runtime 可执行读写计划的内部契约。 | 当前版本为 `addp.workflow.access-plan/v1`；只在执行期携带 `mounted_path` 或 `object_store` 访问参数，不作为用户任务定义、资源身份或长期事实源。 |
 | Execution Effect | 执行效果 | 一次计算对数据或外部系统可能产生的效果分类。 | 固定为 `read`、`write`、`ddl`、`external_effect`；工作流按全部算子的最高效果收窄授权，不能由客户端自报后直接信任。 |
+| Execution Audience | 执行受众 | Execution Authorization 中标识唯一逻辑消费模块或 Runtime 的稳定协议标识。 | 使用不带 `addp-` 前缀的模块或 Runtime 标识，例如 `model`、`quality`、`develop`、`service`、`duckdb`；不是 OAuth Client ID、Service Principal 名称、进程名或前端包名。规范映射见 `docs/spec/addp登录认证的统一要求.md`。 |
 | Execution Authorization | 执行授权 | System 基于当前 User AuthContext 或已发布服务定义来源，绑定唯一 execution、Tenant、owner audience、Source Engine、允许效果、来源版本和有效期的短期授权事实。 | 两种来源互斥；Notebook 派生的用户来源还绑定其 Notebook Session Authorization，并继承 Session 与 Token Family 生命周期。服务定义来源只允许 owner Service Principal 为自己的已发布定义签发只读授权。它不是 Role、OAuth Scope 或第二种 Tenant Membership，只允许匹配 audience 的 Runtime Service Principal 消费。 |
 | Task Authorization Subject | 任务授权主体 | 持久任务定义为定时或延迟执行绑定的 User、Tenant Membership 和授权版本事实。 | 只能由同 Tenant 的当前 User AuthContext 在创建、更新或显式重新授权任务时写入；不保存 Access Token。任务定义变化或授权版本变化后必须重新授权，执行开始时仍需重新校验 Membership、Role、资源规则和授权版本。 |
 | Managed Compute Session | 受控计算会话 | Develop 按 Execution Authorization 创建并管理的 SQL、Workflow 或 Jupyter 执行会话。 | Runtime 只获得本次执行所需的短期访问能力；Jupyter 不再直接获得长期 Engine 凭据或共享 Lab 的无限制数据访问。 |

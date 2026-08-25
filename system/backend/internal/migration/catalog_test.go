@@ -14,8 +14,29 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 74 {
-		t.Fatalf("LatestVersion = %d, want 74", catalog.LatestVersion)
+	if catalog.LatestVersion != 75 {
+		t.Fatalf("LatestVersion = %d, want 75", catalog.LatestVersion)
+	}
+}
+
+func TestExecutionAudienceAndModelMaterializationMigration(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000075_iam_execution_audience_model_materialization.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 75: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"SET audience = 'quality'",
+		"WHERE audience = 'addp-quality'",
+		"CHECK (audience IN ('develop', 'duckdb', 'model', 'quality', 'service'))",
+		"'model.materialization.execute'",
+		"'tenant.data_architect'",
+		"'tenant.model_runtime'",
+		"'system.execution_authorization.execute'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 75 missing %q", fragment)
+		}
 	}
 }
 

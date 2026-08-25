@@ -68,6 +68,9 @@ T0-T1 必须：
 - 不连接开发业务数据库。
 - 可重复执行，失败后不留下外部状态。
 - 需要 Online 条件的测试默认不进入普通语言测试；对应专用门禁显式开启并拒绝意外 Skip。
+- 模块生命周期公共契约必须在 T1 覆盖 `starting → registered`、`registered → recovering → registered`、确定性拒绝进入 `failed`、取消后 `stopped` 与限时注销。
+- Backend 路由测试必须证明 `/health/live` 不触发外部调用，`/health/ready` 只在自身必需 Infra 和 System 注册都就绪时返回 200，业务路由在 Not Ready 时返回 `503 module_not_ready`。
+- Worker/Scheduler 测试必须证明未注册或 `recovering` 时不领取新工作，恢复后无需重启进程即继续领取。
 
 ### 4.2 T2
 
@@ -109,12 +112,21 @@ T4 只在隔离的 ADDP 测试部署执行：
 - `ADDP_ONLINE_TEST=1`。
 - 显式非默认 `ADDP_ONLINE_TEST_TENANT_ID`，禁止 Tenant 1。
 - 全局唯一的 `ADDP_ONLINE_TEST_RUN_ID`；未提供时由分发器生成并贯穿全部子测试。
-- 每个参与服务 `/health` 可用，且 Build ID、Git commit 或源码指纹与当前 checkout 匹配。
+- 每个参与 HTTP 服务 `/health/live` 可用，且 Build ID、Git commit 或源码指纹与当前 checkout 匹配；进入业务断言前 `/health/ready` 必须返回 200。
 - 测试 User、Service Principal 和 OAuth Scope 只具备场景所需的最小权限；不得使用个人会话、平台管理员 Token 或扩大生产身份权限。
 - 通过 System AuthContext API 证明 principal、context、Tenant、client、token 与 Permission 事实后，才进入资源创建或注册拓扑操作。
 - 同一 `suite + Run ID` 通过进程锁串行化，锁覆盖预检、业务断言和报告落盘全过程。
 
 每个断言只验证规范定义的唯一身份链路，不在 User Token、Service Token 和直接 SQL 之间兼容回退。Repository / Migration 的直接数据库夹具属于 T2，不能替代 T4 API 授权验收。
+
+模块注册与恢复类 T4 必须使用正式进程入口至少证明：
+
+1. 业务模块先启动、System 后启动时，模块先为 Alive/Not Ready，不能处理业务；System 恢复后使用同一 `instance_id` 自动进入 Ready。
+2. System 与业务模块先启动、Gateway 后启动时，Gateway 在首个完整快照后进入 Ready 并建立路由。
+3. System 运行中断后，Backend 在心跳失败被观测后转为 Not Ready，Worker/Scheduler 停止领取新工作，Gateway 在已有租约过期后返回 503。
+4. System 恢复后所有实例无需重启即重新 Ready，Gateway 自动恢复路由，不需要前端人工刷新或二次点击。
+
+仅启动 Probe Server 并直接调用 System 注册 API 可以验证租约与路由算法，但不能替代上述进程级就绪与恢复证据。
 
 ### 5.3 数据、超时与清理
 

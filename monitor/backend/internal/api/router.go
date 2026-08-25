@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/addp/common/buildinfo"
+	"github.com/addp/common/modulelifecycle"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
 	commonAuth "github.com/addp/common/middleware/auth"
@@ -31,6 +31,7 @@ func SetupRouter(
 	systemURL string,
 	redisClient *redis.Client,
 	systemClient *commonClient.SystemServiceClient,
+	lifecycle *modulelifecycle.Controller,
 	runtimeHealthServices ...*service.RuntimeHealthService,
 ) *gin.Engine {
 	router := gin.Default()
@@ -40,6 +41,8 @@ func SetupRouter(
 
 	// Swagger 文档
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	lifecycle.RegisterHealthRoutes(router)
+	router.Use(lifecycle.RequireReady())
 
 	// CORS 中间件
 	router.Use(func(c *gin.Context) {
@@ -147,11 +150,6 @@ func SetupRouter(
 			api.GET("/runtime-instances/health", permission(monitorauthorization.PermissionMonitorHealthRead), runtimeHealthHandler.ListHealth)
 		}
 	}
-
-	// 健康检查（无认证）
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, buildinfo.Health("monitor"))
-	})
 
 	return router
 }

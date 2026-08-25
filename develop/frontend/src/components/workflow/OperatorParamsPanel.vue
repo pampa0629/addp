@@ -334,6 +334,8 @@ const resourcePickerDialogTitle = computed(() => {
     : t('develop.operatorParams.dataSourceSelect')
 })
 const resourceGeometryColumnsByParam = ref({})
+// 节点切换时冻结重置基线；父组件会回写当前参数，不能再把回写值当作基线。
+const resetBaseline = ref({})
 let syncingFromProps = false
 let highlightTimer = null
 
@@ -429,24 +431,16 @@ function changeInputConnection(targetParam, optionKey) {
   })
 }
 
-// 监听 initialParams 变化,初始化表单
-watch(() => props.initialParams, (newParams) => {
-  syncingFromProps = true
-  formData.value = { ...newParams }
-  nextTick(() => {
-    syncingFromProps = false
-  })
-}, { immediate: true, deep: true })
-
-// 监听 operator 变化,重置表单
-watch(() => props.operator, () => {
+// 监听节点变化，建立新的重置基线。
+watch([() => props.operator, () => props.nodeId], () => {
   clearParamHighlight()
+  resetBaseline.value = { ...props.initialParams }
   syncingFromProps = true
   formData.value = { ...props.initialParams }
   nextTick(() => {
     syncingFromProps = false
   })
-}, { deep: true })
+}, { immediate: true })
 
 watch(() => props.nodeId, clearParamHighlight)
 
@@ -651,7 +645,7 @@ const buildDraftParams = () => {
 
     // 如果有值，使用实际值；否则使用默认值
     if (paramValue !== undefined && paramValue !== null && paramValue !== '') {
-      cleanedParams[paramName] = paramValue
+      cleanedParams[paramName] = normalizeParamValue(param, paramValue)
     } else if (param.default !== undefined && param.default !== null) {
       cleanedParams[paramName] = param.default
     }
@@ -661,9 +655,25 @@ const buildDraftParams = () => {
   return cleanedParams
 }
 
+// 文本控件承载 array/object 参数时，提交前还原为工作流运行时需要的结构化值。
+function normalizeParamValue(param, value) {
+  const dataType = String(param.type || param.data_type || '').trim().toLowerCase()
+  if (!['array', 'object', 'json'].includes(dataType) || typeof value !== 'string') return value
+
+  try {
+    const parsed = JSON.parse(value)
+    if (dataType === 'array' && !Array.isArray(parsed)) return value
+    if (dataType === 'object' && (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object')) return value
+    if (dataType === 'json' && (parsed === null || typeof parsed !== 'object')) return value
+    return parsed
+  } catch {
+    return value
+  }
+}
+
 // 重置参数
 const resetParams = () => {
-  formData.value = { ...props.initialParams }
+  formData.value = { ...resetBaseline.value }
   ElMessage.info(t('develop.operatorParams.resetSuccess'))
 }
 

@@ -28,6 +28,8 @@ class MQLCompiler:
         "count_array_elements",
         "count_distinct_array_elements",
         "count_distinct_documents",
+        "count_distinct_document_and_array_elements",
+        "directional_overlap_rate",
         "distinct_count",
         "sum",
         "avg",
@@ -120,7 +122,11 @@ class MQLCompiler:
         sort = cls._compile_sort(plan["sort"], fields)
         metric = cls._validate_metric(plan["metric"], fields)
         cls._validate_filter_metric_roles(plan["filters"], metric)
-        if metric["operation"] == "count_distinct_array_elements":
+        if metric["operation"] in {
+            "count_distinct_array_elements",
+            "count_distinct_document_and_array_elements",
+            "directional_overlap_rate",
+        }:
             element_filter_query, element_parameters = cls._compile_filters(
                 metric["element_filters"],
                 fields,
@@ -128,6 +134,11 @@ class MQLCompiler:
             )
             metric["_element_filter_query"] = element_filter_query
             parameters.extend(element_parameters)
+        if metric["operation"] == "directional_overlap_rate":
+            parameters.extend([
+                {"name": "entity_1", "type": "string", "default": metric["entity_values"][0]},
+                {"name": "entity_2", "type": "string", "default": metric["entity_values"][1]},
+            ])
         limit = plan["limit"]
 
         command = cls._compile_command(collection, filters, select_fields, sort, limit, metric)
@@ -343,6 +354,10 @@ class MQLCompiler:
     def _validate_metric(cls, metric: dict[str, Any], fields: dict[str, dict[str, Any]]) -> dict[str, Any]:
         if isinstance(metric, dict) and metric.get("operation") == "count_distinct_documents":
             return cls._validate_distinct_document_metric(metric, fields)
+        if isinstance(metric, dict) and metric.get("operation") == "count_distinct_document_and_array_elements":
+            return cls._validate_distinct_document_and_array_metric(metric, fields)
+        if isinstance(metric, dict) and metric.get("operation") == "directional_overlap_rate":
+            return cls._validate_directional_overlap_metric(metric, fields)
         if not isinstance(metric, dict) or "operation" not in metric or "field" not in metric:
             raise MQLPlanError("MQL metric fields must contain operation and field")
         operation = str(metric["operation"] or "").strip()
@@ -490,6 +505,171 @@ class MQLCompiler:
             "result_key": "distinct_document_count",
         }
 
+    @classmethod
+    def _validate_distinct_document_and_array_metric(
+        cls,
+        metric: dict[str, Any],
+        fields: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        allowed = {
+            "operation", "field", "group_by", "document_group_by", "distinct_by", "element_filters",
+        }
+        unknown = set(metric) - allowed
+        if unknown:
+            raise MQLPlanError(
+                "MQL count_distinct_document_and_array_elements metric contains unknown fields: "
+                + ", ".join(sorted(unknown))
+            )
+        array_field = str(metric.get("field") or "").strip()
+        array = cls._verified_field(array_field, fields)
+        if str(array.get("type") or "unknown").lower() != "array":
+            raise MQLPlanError(
+                "MQL count_distinct_document_and_array_elements requires an array field: " + array_field
+            )
+        group_by = metric.get("group_by")
+        document_group_by = metric.get("document_group_by")
+        distinct_by = metric.get("distinct_by")
+        element_filters = metric.get("element_filters")
+        if not isinstance(group_by, list) or len(group_by) != 1 or not str(group_by[0] or "").strip():
+            raise MQLPlanError(
+                "MQL count_distinct_document_and_array_elements group_by must contain exactly one field"
+            )
+        if not isinstance(document_group_by, list) or len(document_group_by) != 1 or not str(document_group_by[0] or "").strip():
+            raise MQLPlanError(
+                "MQL count_distinct_document_and_array_elements document_group_by must contain exactly one field"
+            )
+        if not isinstance(distinct_by, list) or not distinct_by:
+            raise MQLPlanError(
+                "MQL count_distinct_document_and_array_elements distinct_by must be a non-empty array"
+            )
+        if not isinstance(element_filters, list):
+            raise MQLPlanError(
+                "MQL count_distinct_document_and_array_elements element_filters must be an array"
+            )
+
+        normalized_group_by = [str(group_by[0]).strip()]
+        normalized_document_group_by = [str(document_group_by[0]).strip()]
+        normalized_distinct_by = list(dict.fromkeys(str(item).strip() for item in distinct_by))
+        array_group_field = cls._verified_field(normalized_group_by[0], fields)
+        if not normalized_group_by[0].startswith(array_field + "."):
+            raise MQLPlanError(
+                "MQL count_distinct_document_and_array_elements group_by field must belong to "
+                + array_field
+            )
+        if str(array_group_field.get("type") or "unknown").lower() in {"array", "object", "json"}:
+            raise MQLPlanError("MQL array group_by field must be scalar: " + normalized_group_by[0])
+        document_group_field = cls._verified_field(normalized_document_group_by[0], fields)
+        if str(document_group_field.get("type") or "unknown").lower() in {"array", "object", "json"}:
+            raise MQLPlanError(
+                "MQL document_group_by field must be scalar: " + normalized_document_group_by[0]
+            )
+        for index, name in enumerate(normalized_distinct_by):
+            if not name:
+                raise MQLPlanError(
+                    f"MQL count_distinct_document_and_array_elements distinct_by[{index}] must be non-empty"
+                )
+            field = cls._verified_field(name, fields)
+            if str(field.get("type") or "unknown").lower() in {"array", "object", "json"}:
+                raise MQLPlanError("MQL distinct_by field must be scalar: " + name)
+
+        for index, item in enumerate(element_filters):
+            if not isinstance(item, dict) or set(item) != {"field", "operator", "value"}:
+                raise MQLPlanError(
+                    "MQL count_distinct_document_and_array_elements element_filters["
+                    f"{index}] fields must be field, operator and value"
+                )
+            name = str(item["field"] or "").strip()
+            if not name.startswith(array_field + "."):
+                raise MQLPlanError(
+                    "MQL document-and-array element filter field must belong to " + array_field + ": " + name
+                )
+            field = cls._verified_field(name, fields)
+            operator = str(item["operator"] or "").strip()
+            if operator not in cls.FILTER_OPERATORS:
+                raise MQLPlanError(f"MQL filter operator is unsupported: {operator}")
+            cls._validate_filter_type(name, field, operator)
+            cls._validate_filter_value(operator, item["value"])
+
+        return {
+            "operation": metric["operation"],
+            "field": array_field,
+            "group_by": normalized_group_by,
+            "document_group_by": normalized_document_group_by,
+            "distinct_by": normalized_distinct_by,
+            "group_by_type": str(array_group_field.get("type") or "unknown").lower(),
+            "document_group_by_type": str(document_group_field.get("type") or "unknown").lower(),
+            "distinct_by_types": [
+                str(fields[name].get("type") or "unknown").lower() for name in normalized_distinct_by
+            ],
+            "element_filters": element_filters,
+            "result_key": "distinct_document_and_array_count",
+        }
+
+    @classmethod
+    def _validate_directional_overlap_metric(
+        cls,
+        metric: dict[str, Any],
+        fields: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        allowed = {
+            "operation", "field", "entity_field", "entity_values",
+            "activity_id_field", "element_filters",
+        }
+        unknown = set(metric) - allowed
+        if unknown:
+            raise MQLPlanError(
+                "MQL directional_overlap_rate metric contains unknown fields: "
+                + ", ".join(sorted(unknown))
+            )
+        array_field = str(metric.get("field") or "").strip()
+        array = cls._verified_field(array_field, fields)
+        if str(array.get("type") or "unknown").lower() != "array":
+            raise MQLPlanError("MQL directional_overlap_rate requires an array field: " + array_field)
+        entity_field = str(metric.get("entity_field") or "").strip()
+        if not entity_field.startswith(array_field + "."):
+            raise MQLPlanError("MQL directional_overlap_rate entity_field must belong to " + array_field)
+        entity = cls._verified_field(entity_field, fields)
+        if str(entity.get("type") or "unknown").lower() != "string":
+            raise MQLPlanError("MQL directional_overlap_rate entity_field must be a string field")
+        entity_values = metric.get("entity_values")
+        if (
+            not isinstance(entity_values, list)
+            or len(entity_values) != 2
+            or any(not isinstance(value, str) or not value.strip() for value in entity_values)
+            or entity_values[0] == entity_values[1]
+        ):
+            raise MQLPlanError("MQL directional_overlap_rate requires two distinct non-empty entity_values")
+        activity_id_field = str(metric.get("activity_id_field") or "").strip()
+        activity = cls._verified_field(activity_id_field, fields)
+        if str(activity.get("type") or "unknown").lower() in {"array", "object", "json"}:
+            raise MQLPlanError("MQL directional_overlap_rate activity_id_field must be scalar")
+        element_filters = metric.get("element_filters")
+        if not isinstance(element_filters, list) or not element_filters:
+            raise MQLPlanError("MQL directional_overlap_rate element_filters must be a non-empty array")
+        for index, item in enumerate(element_filters):
+            if not isinstance(item, dict) or set(item) != {"field", "operator", "value"}:
+                raise MQLPlanError(
+                    f"MQL directional_overlap_rate element_filters[{index}] fields must be field, operator and value"
+                )
+            name = str(item["field"] or "").strip()
+            if not name.startswith(array_field + "."):
+                raise MQLPlanError("MQL directional_overlap_rate element filter must belong to " + array_field)
+            field = cls._verified_field(name, fields)
+            operator = str(item["operator"] or "").strip()
+            if operator not in cls.FILTER_OPERATORS:
+                raise MQLPlanError(f"MQL filter operator is unsupported: {operator}")
+            cls._validate_filter_type(name, field, operator)
+            cls._validate_filter_value(operator, item["value"])
+        return {
+            "operation": metric["operation"],
+            "field": array_field,
+            "entity_field": entity_field,
+            "entity_values": [value.strip() for value in entity_values],
+            "activity_id_field": activity_id_field,
+            "element_filters": element_filters,
+            "result_key": "directional_overlap_rate",
+        }
+
     @staticmethod
     def _metric_result_key(operation: str, field_name: str) -> str:
         if operation == "none":
@@ -498,12 +678,21 @@ class MQLCompiler:
             return "document_count"
         if operation == "count_distinct_documents":
             return "distinct_document_count"
+        if operation == "count_distinct_document_and_array_elements":
+            return "distinct_document_and_array_count"
+        if operation == "directional_overlap_rate":
+            return "directional_overlap_rate"
         leaf = re.sub(r"[^A-Za-z0-9_]+", "_", field_name.split(".")[-1]).strip("_").lower() or "value"
         return f"{leaf}_{operation}"
 
     @staticmethod
     def _validate_filter_metric_roles(filters: list[Any], metric: dict[str, Any]) -> None:
-        if metric["operation"] not in {"count_array_elements", "count_distinct_array_elements"}:
+        if metric["operation"] not in {
+            "count_array_elements",
+            "count_distinct_array_elements",
+            "count_distinct_document_and_array_elements",
+            "directional_overlap_rate",
+        }:
             return
         array_field = metric["field"]
         for item in filters:
@@ -608,6 +797,83 @@ class MQLCompiler:
                 }},
                 {"$project": projection},
             ])
+        elif operation == "count_distinct_document_and_array_elements":
+            array_group_field = metric["group_by"][0]
+            document_group_field = metric["document_group_by"][0]
+            distinct_paths = metric["distinct_by"]
+
+            def identity_condition(field_type: str) -> dict[str, Any]:
+                if field_type == "string":
+                    return {"$exists": True, "$nin": [None, ""]}
+                return {"$exists": True, "$ne": None}
+
+            member_identity_match = {
+                array_group_field: identity_condition(metric["group_by_type"]),
+                **{
+                    path: identity_condition(field_type)
+                    for path, field_type in zip(
+                        distinct_paths, metric["distinct_by_types"], strict=True
+                    )
+                },
+            }
+            document_identity_match = {
+                document_group_field: identity_condition(metric["document_group_by_type"]),
+                **{
+                    path: identity_condition(field_type)
+                    for path, field_type in zip(
+                        distinct_paths, metric["distinct_by_types"], strict=True
+                    )
+                },
+            }
+
+            def distinct_expression(prefix: str) -> Any:
+                if len(distinct_paths) == 1:
+                    return f"${prefix}{distinct_paths[0]}"
+                return {
+                    f"distinct_{index}": f"${prefix}{path}"
+                    for index, path in enumerate(distinct_paths)
+                }
+
+            pipeline.extend([
+                {"$unwind": f"${metric['field']}"},
+            ])
+            if metric.get("_element_filter_query"):
+                pipeline.append({"$match": metric["_element_filter_query"]})
+            pipeline.extend([
+                {"$match": member_identity_match},
+                {"$project": {
+                    "_metric_group": f"${array_group_field}",
+                    "_metric_distinct": distinct_expression(""),
+                }},
+                {"$unionWith": {
+                    "coll": collection,
+                    "pipeline": [
+                        *([{"$match": filters}] if filters else []),
+                        {"$match": document_identity_match},
+                        {"$project": {
+                            "_metric_group": f"${document_group_field}",
+                            "_metric_distinct": distinct_expression(""),
+                        }},
+                    ],
+                }},
+                {"$group": {
+                    "_id": {"group": "$_metric_group", "distinct": "$_metric_distinct"},
+                }},
+                {"$group": {
+                    "_id": "$_id.group",
+                    "_distinct_count": {"$sum": 1},
+                }},
+            ])
+            group_alias = re.sub(
+                r"[^A-Za-z0-9_]+", "_", document_group_field.split(".")[-1]
+            ).strip("_").lower() or "group"
+            pipeline.append({"$project": {
+                "_id": 0,
+                group_alias: "$_id",
+                metric["result_key"]: "$_distinct_count",
+            }})
+        elif operation == "directional_overlap_rate":
+            pipeline.extend(cls._compile_directional_overlap_pipeline(metric))
         elif operation == "count_distinct_documents":
             identity_paths = list(dict.fromkeys(metric["group_by"] + metric["distinct_by"]))
             identity_types = {
@@ -661,6 +927,90 @@ class MQLCompiler:
                 {"$project": {"_id": 0, result_key: 1}},
             ])
         return {"aggregate": collection, "pipeline": pipeline}
+
+    @classmethod
+    def _compile_directional_overlap_pipeline(cls, metric: dict[str, Any]) -> list[dict[str, Any]]:
+        entity_field = metric["entity_field"]
+        activity_id_field = metric["activity_id_field"]
+        entity_1, entity_2 = metric["entity_values"]
+        pipeline: list[dict[str, Any]] = [
+            {"$unwind": f"${metric['field']}"},
+        ]
+        if metric.get("_element_filter_query"):
+            pipeline.append({"$match": metric["_element_filter_query"]})
+        pipeline.extend([
+            {"$match": {
+                entity_field: {"$in": [{"$param": "entity_1"}, {"$param": "entity_2"}]},
+                activity_id_field: {"$exists": True, "$nin": [None, ""]},
+            }},
+            {"$match": {
+                entity_field: {"$exists": True, "$nin": [None, ""]},
+            }},
+            {"$facet": {
+                "_entities": [
+                    {"$group": {
+                        "_id": {"entity": f"${entity_field}", "activity": f"${activity_id_field}"},
+                    }},
+                    {"$group": {
+                        "_id": "$_id.entity",
+                        "activities": {"$addToSet": "$_id.activity"},
+                    }},
+                    {"$project": {"_id": 0, "entity": "$_id", "activities": 1}},
+                ],
+            }},
+        ])
+
+        def values(parameter: str) -> dict[str, Any]:
+            return {
+                "$let": {
+                    "vars": {
+                        "entity": {
+                            "$arrayElemAt": [
+                                {
+                                    "$filter": {
+                                        "input": "$_entities",
+                                        "as": "entry",
+                                        "cond": {"$eq": ["$$entry.entity", {"$param": parameter}]},
+                                    },
+                                },
+                                0,
+                            ],
+                        },
+                    },
+                    "in": {"$ifNull": ["$$entity.activities", []]},
+                },
+            }
+
+        pipeline.extend([
+            {"$project": {
+                "_id": 0,
+                "left": values("entity_1"),
+                "right": values("entity_2"),
+            }},
+            {"$project": {
+                "_id": 0,
+                "left_count": {"$size": "$left"},
+                "right_count": {"$size": "$right"},
+                "intersection_count": {"$size": {"$setIntersection": ["$left", "$right"]}},
+            }},
+            {"$project": {
+                "_id": 0,
+                "left_count": 1,
+                "right_count": 1,
+                "intersection_count": 1,
+                "overlap_rate_from_left": {"$cond": [
+                    {"$eq": ["$left_count", 0]},
+                    0,
+                    {"$divide": ["$intersection_count", "$left_count"]},
+                ]},
+                "overlap_rate_from_right": {"$cond": [
+                    {"$eq": ["$right_count", 0]},
+                    0,
+                    {"$divide": ["$intersection_count", "$right_count"]},
+                ]},
+            }},
+        ])
+        return pipeline
 
     @classmethod
     def _validate_set_comparison(

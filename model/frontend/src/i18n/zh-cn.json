@@ -260,10 +260,9 @@
     },
     "materialization": {
       "title": "物化配置",
-      "schema_name": "Schema 名",
-      "schema_placeholder": "默认 public",
-      "table_name": "物理表名",
-      "table_placeholder": "默认使用 code",
+      "target_schema": "目标 Schema",
+      "target_name": "目标表名",
+      "target_name_placeholder": "小写字母、数字和下划线",
       "partition_by": "分区字段",
       "partition_type": "分区类型"
     },

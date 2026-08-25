@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-CN" xml:lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>006 如何制定并分阶段推进数据治理路线图？</title>
+  <style>
+    div.sitenav { display: flex; flex-direction: row; flex-wrap: wrap; }
+    span.navlink { flex: 1; }
+    span.navlink-label { display: inline-block; min-width: 4em; }
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <link rel="stylesheet" href="book.css" />
+</head>
+<body>
+<nav id="sitenav">
+<div class="sitenav">
+<span class="navlink">
+<span class="navlink-label">Up:</span> <a href="index.html" accesskey="u" rel="up">《数据治理100问》</a>
+</span>
+<span class="navlink">
+<span class="navlink-label">Top:</span> <a href="index.html" accesskey="t" rel="top">《数据治理100问》</a>
+</span>
+</div>
+<div class="sitenav">
+<span class="navlink">
+<span class="navlink-label">Next:</span> <a href="8-q007.html" accesskey="n" rel="next">007 数据治理的成效和投资回报应该如何衡量？</a>
+</span>
+<span class="navlink">
+<span class="navlink-label">Previous:</span> <a href="6-q005.html" accesskey="p" rel="previous">005 数据治理应该从哪里开始，如何选择首期业务场景？</a>
+</span>
+</div>
+</nav>
+<h1 data-number="7" id="q006">006
+如何制定并分阶段推进数据治理路线图？</h1>
+<h2 data-number="7.1" id="一句话回答-5">一句话回答</h2>
+<blockquote>
+<p>数据治理路线图不是平台功能清单或项目进度表，而是从业务目标和组织现状出发，选择重点场景，按能力依赖分阶段推进，并为每个阶段设定业务成果、治理成果和验收证据的行动路径。</p>
+</blockquote>
+<p>路线图的价值不在于预测一个不会变化的未来，而在于帮助组织持续回答：为什么现在做、先做什么、谁负责、做到什么程度，以及下一步是否值得继续投入。</p>
+<h2 data-number="7.2"
+id="一路线图首先要确定起点和边界">一、路线图首先要确定起点和边界</h2>
+<p>制定路线图前，需要了解：</p>
+<ul>
+<li>当前最重要的业务目标和管理问题；</li>
+<li>已经具备的数据、系统、制度和技术能力；</li>
+<li>哪些指标、模型和数据产品正在使用；</li>
+<li>数据治理主要依赖制度、项目还是个人经验；</li>
+<li>部门之间是否具备协作、授权和争议裁决机制；</li>
+<li>首期能够投入多少人员、预算和业务时间。</li>
+</ul>
+<p>路线图还要明确当前阶段不做什么。数据治理需求很容易不断扩大，如果没有范围边界，首期经营指标项目可能逐渐演变为覆盖全量历史数据、所有财务报表和全部数据资产的庞大平台工程。</p>
+<h2 data-number="7.3"
+id="二路线图的六个组成部分">二、路线图的六个组成部分</h2>
+<p>一份可落地的路线图至少要连接六件事：</p>
+<figure>
+<img src="diagram-5.png" alt="流程图" />
+<figcaption aria-hidden="true">流程图</figcaption>
+</figure>
+<h3 data-number="7.3.1" id="业务目标">1. 业务目标</h3>
+<p>目标应尽量转化为可观察的业务结果，例如按时获得可信的多渠道销售指标、缩短报表准备时间或支撑新的数据产品，而不是只写“提升数据能力”。</p>
+<h3 data-number="7.3.2" id="现状与问题">2. 现状与问题</h3>
+<p>说明目标为什么无法实现。问题可能来自数据缺失、口径冲突、更新不及时、质量不可靠、部门协作困难、加工链路脆弱或安全边界不清。</p>
+<h3 data-number="7.3.3" id="重点场景">3. 重点场景</h3>
+<p>从候选需求中选择价值、紧迫性、可行性、业务意愿和能力复用性较好的场景。首期场景要能形成闭环，而不是只交付一项孤立功能。</p>
+<h3 data-number="7.3.4" id="所需治理能力">4. 所需治理能力</h3>
+<p>围绕场景识别需要哪些数据、模型、标准、质量、组织、流程和平台能力，并区分当前必须补齐的短板与可以后置的能力。</p>
+<h3 data-number="7.3.5" id="阶段与交付成果">5. 阶段与交付成果</h3>
+<p>把任务按价值、依赖关系和资源约束分成几个阶段。每个阶段都要有业务人员可以使用的成果，不能把价值全部推到项目末期。</p>
+<h3 data-number="7.3.6" id="度量与滚动调整">6. 度量与滚动调整</h3>
+<p>为每个阶段设置验收指标，定期检查原有假设是否仍然成立。业务目标、数据条件或技术环境变化时，应调整顺序和范围。</p>
+<h2 data-number="7.4"
+id="三五个阶段及其交付内容">三、五个阶段及其交付内容</h2>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>阶段</th>
+<th>主要回答的问题</th>
+<th>业务成果</th>
+<th>治理成果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>诊断与设计</td>
+<td>为什么治理、先治理什么、谁负责？</td>
+<td>明确首期业务目标和场景</td>
+<td>现状诊断、范围、责任、路线图和验收标准</td>
+</tr>
+<tr>
+<td>场景试点</td>
+<td>能否解决一个真实问题？</td>
+<td>可使用的数据产品或分析结果</td>
+<td>统一口径、数据链路、质量和核对机制</td>
+</tr>
+<tr>
+<td>能力建设</td>
+<td>如何避免每个场景重复建设？</td>
+<td>试点成果稳定运行</td>
+<td>可复用的标准、模型、流程、调度、血缘和权限能力</td>
+</tr>
+<tr>
+<td>规模推广</td>
+<td>如何服务更多区域、部门和场景？</td>
+<td>更多业务数据产品和服务</td>
+<td>接入模板、差异管理、协作和培训机制</td>
+</tr>
+<tr>
+<td>持续运营</td>
+<td>如何让成果长期可靠并持续增值？</td>
+<td>持续可用、持续改进的业务结果</td>
+<td>监控、版本、问题闭环、价值度量和优化机制</td>
+</tr>
+</tbody>
+</table>
+<p>这五个阶段不一定完全串行。试点实施时可以同步建立必要的组织和平台基础，运营中发现的新问题也可能重新进入试点。阶段划分是为了控制重点，不是为了制造僵化的流程。</p>
+<h2 data-number="7.5"
+id="四案例集团多渠道销售指标如何安排路线">四、案例：集团多渠道销售指标如何安排路线</h2>
+<h3 data-number="7.5.1"
+id="第一阶段诊断与设计">第一阶段：诊断与设计</h3>
+<p>梳理产品、渠道、区域、订单、发货、退货和成本数据的来源及责任，确认销售额、销量、退货额和毛利的定义，明确不同销售事件的统计边界，并选定具有代表性的产品、渠道和区域作为试点范围。</p>
+<p>阶段验收不是“完成需求调研”，而是各方已经书面确认指标口径、分析颗粒度、数据范围、责任边界和验收方式。</p>
+<h3 data-number="7.5.2" id="第二阶段场景试点">第二阶段：场景试点</h3>
+<p>先在有限的产品、渠道和区域范围内打通订单、发货、退货及必要的财务数据，形成按约定周期更新、可追溯、可核对的销售结果。毛利可以先提供明确标识的滚动结果，待成本调整和财务结算后形成最终版本。</p>
+<p>阶段验收要看经营人员是否使用结果，指标是否能够按统一口径复算，差异是否能够定位，而不只是看任务和报表是否上线。</p>
+<h3 data-number="7.5.3" id="第三阶段能力建设">第三阶段：能力建设</h3>
+<p>将试点中的共性内容抽取为可复用能力，例如产品、渠道和区域模型、指标定义版本、维度映射、质量检查、调度监控、血缘追踪、权限和审计。</p>
+<p>各渠道的销售事件和数据结构可能存在差异，但版本管理、映射规则、异常告警和运行日志通常应成为公共能力。</p>
+<h3 data-number="7.5.4" id="第四阶段规模推广">第四阶段：规模推广</h3>
+<p>将经过验证的方法扩展到更多产品、区域、渠道和指标，再延伸到库存调配、促销评价和客户分析等相关场景。推广时要显式记录渠道差异，不能把差异偷偷写进脚本。</p>
+<p>阶段验收可以比较新增场景的接入周期、重复开发量、数据更新成功率、指标差异率和业务使用情况。</p>
+<h3 data-number="7.5.5" id="第五阶段持续运营">第五阶段：持续运营</h3>
+<p>持续关注数据源、模型、指标和规则的变化，维护质量问题、权限、版本和业务使用。对于长期无人使用或维护成本过高的数据产品，应考虑调整或下线。</p>
+<p>阶段验收应从稳定性、质量、使用和价值四个维度观察，而不是以项目合同到期或平台部署完成作为唯一标准。</p>
+<h2 data-number="7.6"
+id="五为阶段设置进入条件和退出条件">五、为阶段设置进入条件和退出条件</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>阶段</th>
+<th>进入条件</th>
+<th>退出条件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>诊断与设计</td>
+<td>管理层明确目标和授权</td>
+<td>场景、范围、口径、责任和验收标准已确认</td>
+</tr>
+<tr>
+<td>场景试点</td>
+<td>业务负责人、数据源和资源到位</td>
+<td>业务闭环运行，关键差异可解释</td>
+</tr>
+<tr>
+<td>能力建设</td>
+<td>试点出现明确的共性复用需求</td>
+<td>公共能力在相近场景中可复用</td>
+</tr>
+<tr>
+<td>规模推广</td>
+<td>推广对象和接入模板已确定</td>
+<td>接入效率提高且治理质量稳定</td>
+</tr>
+<tr>
+<td>持续运营</td>
+<td>数据产品进入日常使用</td>
+<td>形成稳定的监控、变更、问题和价值机制</td>
+</tr>
+</tbody>
+</table>
+<p>不能只用“平台上线”“项目付款”或“合同到期”作为阶段完成的依据。</p>
+<h2 data-number="7.7"
+id="六每个阶段都要维护三张清单">六、每个阶段都要维护三张清单</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>清单</th>
+<th>要回答的问题</th>
+<th>示例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>业务成果清单</td>
+<td>业务人员最终能用什么？</td>
+<td>多渠道销售指标、异常波动清单、经营分析报表</td>
+</tr>
+<tr>
+<td>治理能力清单</td>
+<td>哪些能力可以复用和持续运行？</td>
+<td>指标定义、维度映射、质量检查、调度监控</td>
+</tr>
+<tr>
+<td>验收证据清单</td>
+<td>用什么事实证明达到目标？</td>
+<td>更新记录、对账结果、使用记录、问题关闭记录</td>
+</tr>
+</tbody>
+</table>
+<p>只有治理能力清单而没有业务成果，项目容易变成平台建设；只有业务报表而没有验收证据，则很难判断结果是否稳定可靠。</p>
+<h2 data-number="7.8" id="七常见误区-1">七、常见误区</h2>
+<h3 data-number="7.8.1"
+id="误区一把路线图写成产品功能列表">误区一：把路线图写成产品功能列表</h3>
+<p>功能只能说明平台能做什么，不能说明组织为什么做、先做什么和如何产生价值。</p>
+<h3 data-number="7.8.2"
+id="误区二先建设全部公共平台再寻找业务场景">误区二：先建设全部公共平台，再寻找业务场景</h3>
+<p>没有真实场景，平台能力很难确定优先级，也很难验证是否真正解决了问题。</p>
+<h3 data-number="7.8.3"
+id="误区三把试点中的人工操作永久化">误区三：把试点中的人工操作永久化</h3>
+<p>试点可以有人工核对和临时补录，但必须记录哪些操作未来应自动化、哪些规则应制度化。</p>
+<h3 data-number="7.8.4"
+id="误区四路线图制定后不能调整">误区四：路线图制定后不能调整</h3>
+<p>业务和数据条件持续变化。路线图应按固定周期复盘，及时调整任务顺序，并根据情况推迟、合并或取消任务。</p>
+<h3 data-number="7.8.5"
+id="误区五项目结束后才安排运营">误区五：项目结束后才安排运营</h3>
+<p>数据产品上线后仍需要人员、流程和技术资源。运营责任和资源应在路线图中提前明确。</p>
+<h2 data-number="7.9" id="八实践检查清单-1">八、实践检查清单</h2>
+<ol type="1">
+<li>是否说明路线图服务的业务目标？</li>
+<li>是否基于真实现状和能力评估？</li>
+<li>是否明确首批场景及选择理由？</li>
+<li>是否识别场景所需的数据和治理能力？</li>
+<li>是否按照能力依赖安排实施顺序？</li>
+<li>每个阶段是否都有业务可使用的成果？</li>
+<li>是否明确责任人、资源、范围和验收标准？</li>
+<li>是否设置了进入条件、退出条件和复盘机制？</li>
+<li>是否为项目结束后的持续运营安排了责任和资源？</li>
+</ol>
+<h2 data-number="7.10" id="小结-5">小结</h2>
+<p>可落地的路线图不是一次性把所有治理能力规划完，而是让组织从真实场景出发，按依赖关系逐步打通业务成果和治理能力。</p>
+<p>在集团多渠道销售指标场景中，先把问题、口径和责任说清楚，再让有限范围的数据按约定周期被使用，然后抽取公共能力、推广到更多产品、区域和渠道，最后通过运营保持指标鲜活和结果可信。</p>
+<h2 data-number="7.11" id="延伸阅读-5">延伸阅读</h2>
+<ul>
+<li><a
+href="4-q003.html#q003">第003问：为什么说“数据治理只有起点，没有终点”？</a></li>
+<li><a
+href="5-q004.html#q004">第004问：数据治理的成熟度如何评估？</a></li>
+<li><a
+href="6-q005.html#q005">第005问：数据治理应该从哪里开始，如何选择首期业务场景？</a></li>
+<li><a
+href="8-q007.html#q007">第007问：数据治理的成效和投资回报应该如何衡量？</a></li>
+</ul>
+<hr />
+<p><a href="6-q005.html#q005">← 上一问：005
+数据治理应该从哪里开始，如何选择首期业务场景？</a> · <a
+href="-contents.html#contents">返回目录</a> · <a
+href="8-q007.html#q007">下一问：007
+数据治理的成效和投资回报应该如何衡量？ →</a></p>
+</body>
+</html>

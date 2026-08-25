@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/model/i18n"
 	"github.com/addp/model/internal/apperrors"
 	"github.com/addp/model/internal/models"
@@ -100,15 +101,6 @@ func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableR
 	if err := validateCreateLogicalTableRequest(req); err != nil {
 		return nil, err
 	}
-	if err := validateMaterializationKeys(req.Materialization); err != nil {
-		return nil, apperrors.Wrap(apperrors.KindValidation, "materialization_invalid", i18n.MsgValidationFailed, err)
-	}
-	if err := validateLogicalTableShape(req.TableType, req.SCDType, req.GrainDescription); err != nil {
-		return nil, err
-	}
-	if err := s.validateReferences(tenantID, req.DomainID, nil, nil); err != nil {
-		return nil, err
-	}
 	table := &models.LogicalTable{
 		TenantID:         tenantID,
 		DomainID:         req.DomainID,
@@ -125,7 +117,15 @@ func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableR
 		Materialization:  req.Materialization,
 		CreatedBy:        userID,
 	}
-
+	if err := validateMaterialization(table, nil); err != nil {
+		return nil, apperrors.Wrap(apperrors.KindValidation, "materialization_invalid", i18n.MsgValidationFailed, err)
+	}
+	if err := validateLogicalTableShape(req.TableType, req.SCDType, req.GrainDescription); err != nil {
+		return nil, err
+	}
+	if err := s.validateReferences(tenantID, req.DomainID, nil, nil); err != nil {
+		return nil, err
+	}
 	err := s.repo.DB().Transaction(func(tx *gorm.DB) error {
 		if err := lockStandardReferences(tx, tenantID, standardReference(models.StandardResourceDomain, req.DomainID)); err != nil {
 			return err
@@ -195,9 +195,6 @@ func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req
 	if strings.TrimSpace(req.Layer) == "" {
 		return nil, apperrors.Validation("logical_table_layer_required", i18n.MsgValidationFailed)
 	}
-	if err := validateMaterializationKeys(req.Materialization); err != nil {
-		return nil, apperrors.Wrap(apperrors.KindValidation, "materialization_invalid", i18n.MsgValidationFailed, err)
-	}
 	if err := validateLogicalTableShape(req.TableType, *req.SCDType, req.GrainDescription); err != nil {
 		return nil, err
 	}
@@ -216,6 +213,14 @@ func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req
 		}
 		if table.Status != "draft" {
 			return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
+		}
+		fields, err := repository.NewLogicalTableRepository(tx).GetFields(id)
+		if err != nil {
+			return err
+		}
+		previewTable := previewLogicalTableWithMaterialization(table, req.Materialization)
+		if err := validateMaterialization(previewTable, fields); err != nil {
+			return apperrors.Wrap(apperrors.KindValidation, "materialization_invalid", i18n.MsgValidationFailed, err)
 		}
 		if req.EntityID != nil {
 			if _, err := repository.LockEntity(tx, *req.EntityID, tenantID); err != nil {
@@ -560,19 +565,24 @@ func (s *LogicalTableService) generatePostgreSQLDDL(table *models.LogicalTable, 
 	var ddl strings.Builder
 
 	// 1. 提取配置
-	schemaName := "public"
+	schemaName := ""
 	tableName := table.Code
 	if table.Materialization != nil {
-		if schema, ok := table.Materialization["schema_name"].(string); ok && schema != "" {
-			schemaName = schema
+		if targetLocator, ok := materializationString(table.Materialization, "target_parent_locator"); ok && targetLocator != "" {
+			locator, _ := resourcetree.ParseURI(targetLocator)
+			schemaName = locator.Path[len(locator.Path)-1]
 		}
-		if tname, ok := table.Materialization["table_name"].(string); ok && tname != "" {
-			tableName = tname
+		if targetName, ok := materializationString(table.Materialization, "target_name"); ok && targetName != "" {
+			tableName = targetName
 		}
 	}
 
 	// 2. CREATE TABLE 头
-	ddl.WriteString(fmt.Sprintf("CREATE TABLE %s.%s (\n", quoteIdentifier(schemaName), quoteIdentifier(tableName)))
+	ddl.WriteString("CREATE TABLE ")
+	if schemaName != "" {
+		ddl.WriteString(quoteIdentifier(schemaName) + ".")
+	}
+	ddl.WriteString(quoteIdentifier(tableName) + " (\n")
 
 	// 3. 生成字段定义
 	var fieldDefs []string
@@ -682,7 +692,12 @@ var identifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 func quoteIdentifier(value string) string { return `"` + strings.ReplaceAll(value, `"`, `""`) + `"` }
 
 func validateMaterializationKeys(config map[string]interface{}) error {
-	allowedKeys := map[string]struct{}{"schema_name": {}, "table_name": {}, "partition_by": {}, "partition_type": {}}
+	allowedKeys := map[string]struct{}{
+		"target_parent_locator": {},
+		"target_name":           {},
+		"partition_by":          {},
+		"partition_type":        {},
+	}
 	for key := range config {
 		if _, ok := allowedKeys[key]; !ok {
 			return fmt.Errorf("不支持的物化配置字段: %s", key)
@@ -704,18 +719,44 @@ func validateMaterialization(table *models.LogicalTable, fields []models.Logical
 	if err := validateMaterializationKeys(map[string]interface{}(config)); err != nil {
 		return err
 	}
-	for _, key := range []string{"schema_name", "table_name", "partition_by"} {
-		if value, ok := config[key].(string); ok && value != "" && !identifierPattern.MatchString(value) {
+	targetLocator, err := requiredMaterializationString(config, "target_parent_locator")
+	if err != nil {
+		return err
+	}
+	targetName, err := requiredMaterializationString(config, "target_name")
+	if err != nil {
+		return err
+	}
+	if (targetLocator == "") != (targetName == "") {
+		return fmt.Errorf("物化目标父定位符与目标名称必须同时配置")
+	}
+	if targetLocator != "" {
+		locator, err := resourcetree.ParseURI(targetLocator)
+		if err != nil {
+			return fmt.Errorf("物化目标父定位符无效: %w", err)
+		}
+		if locator.EngineID == 0 || locator.Type != resourcetree.TypeSchema || len(locator.Path) == 0 {
+			return fmt.Errorf("物化目标父定位符必须指向具体引擎的 schema")
+		}
+		if !identifierPattern.MatchString(locator.Path[len(locator.Path)-1]) {
+			return fmt.Errorf("物化目标 schema 不是合法标识符")
+		}
+		if !identifierPattern.MatchString(targetName) {
+			return fmt.Errorf("物化配置 target_name 不是合法标识符")
+		}
+	}
+	for _, key := range []string{"partition_by"} {
+		if value, ok := materializationString(config, key); ok && value != "" && !identifierPattern.MatchString(value) {
 			return fmt.Errorf("物化配置 %s 不是合法标识符", key)
 		}
 	}
-	if value, ok := config["partition_type"].(string); ok && value != "" {
+	if value, ok := materializationString(config, "partition_type"); ok && value != "" {
 		value = strings.ToLower(value)
 		if value != "range" && value != "list" && value != "hash" {
 			return fmt.Errorf("不支持的分区类型: %s", value)
 		}
 	}
-	if partition, ok := config["partition_by"].(string); ok && partition != "" {
+	if partition, ok := config["partition_by"].(string); ok && partition != "" && len(fields) > 0 {
 		found := false
 		for _, field := range fields {
 			if field.ColumnName == partition {
@@ -736,6 +777,27 @@ func validateMaterialization(table *models.LogicalTable, fields []models.Logical
 		}
 	}
 	return nil
+}
+
+func requiredMaterializationString(config models.JSONB, key string) (string, error) {
+	value, exists := config[key]
+	if !exists || value == nil {
+		return "", nil
+	}
+	text, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf("物化配置 %s 必须是字符串", key)
+	}
+	return strings.TrimSpace(text), nil
+}
+
+func materializationString(config models.JSONB, key string) (string, bool) {
+	value, exists := config[key]
+	if !exists || value == nil {
+		return "", false
+	}
+	text, ok := value.(string)
+	return strings.TrimSpace(text), ok
 }
 
 // quoteDefault 处理默认值引号

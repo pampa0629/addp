@@ -203,6 +203,9 @@ const (
 	TaskTypeKGBuild = "kg_build"
 	// Quality 模块
 	TaskTypeQualityCheck = "check"
+	// Model 模块
+	TaskTypeMaterializationPrepare = "materialization_prepare"
+	TaskTypeMaterializationPublish = "materialization_publish"
 	// System 运维
 	TaskTypeCleanup         = "cleanup"
 	TaskTypeCleanupExecutor = "cleanup_executor"

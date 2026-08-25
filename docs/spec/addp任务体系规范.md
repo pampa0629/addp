@@ -256,6 +256,7 @@ Common 不维护全量业务 `task_type` 编译期枚举。稳定 execution type
 | Develop | `query` / `workflow` / `script` | `develop.dev_tasks` |
 | Manager | `vector_tile_cache_generation` / `vector_tile_set_generation` / `vector_materialized_view_generation` / `embedding` / `raster_cog_generation` / `raster_mosaic_generation` / `model_3d_glb_generation` / `model3d_tiles_generation` / `gaussian_splat_ksplat_generation` / `point_cloud_copc_generation` / `cad_preview_generation` | `manager.vector_tile_cache_tasks` / `manager.vector_tile_set_tasks` / `manager.vector_materialized_view_tasks` / `manager.embedding_tasks` / `manager.raster_cog_tasks` / `manager.raster_mosaic_tasks` / `manager.model_3d_glb_tasks` / `manager.model3d_tiles_tasks` / `manager.gaussian_splat_ksplat_tasks` / `manager.point_cloud_copc_tasks` / `manager.cad_preview_tasks` |
 | Quality | `check` | `quality.check_tasks` |
+| Model | `materialization_prepare` / `materialization_publish` | 已审批 `model.logical_tables`（来源驱动、不可变任务定义） |
 | Graph | `kg_build` | `graph.build_tasks` |
 | Orchestrator | `orchestration` | `orchestrator.orchestrations` |
 
@@ -266,6 +267,8 @@ Manager 表格数据剖析首期使用 `task_type=data_profiling` 的 ad-hoc exe
 System 资源回收（cleanup）不纳入 TaskProvider，也不进入 Orchestrator 编排。cleanup 属于系统级运维资源回收流程，不属于用户数据处理任务；但 cleanup 必须进入 `common.task_executions` 和 System 审计体系。System 创建 `module=system`、`task_type=cleanup` 的父 execution，各模块资源回收执行方创建 `task_type=cleanup_executor` 的子 execution，并通过 `parent_execution_id` 关联。cleanup 不得声明为可编排业务任务，不得出现在 Orchestrator 的任务选择列表中。
 
 Transfer 的内部任务语义统一收敛为同步执行。阶段 1 对外只声明 `task_type=sync`，并通过 TaskProvider 和 `common.task_executions` 关联任务定义。Manager 的导入 / 导出入口通过 client 创建并触发 Transfer `sync`，不得在 Transfer 侧并行保留 `import`、`export`、`transfer` 等旧任务类型。
+
+Model 的 `materialization_prepare` 与 `materialization_publish` 以已审批 LogicalTable 作为来源驱动任务定义，task ID 均为 LogicalTable ID。两者都不接受动态 `batch_id` 作为必填执行参数：prepare 创建批次；publish 按当前 execution 的 Tenant、Actor、`parent_execution_id` 和 LogicalTable ID 解析唯一 prepared 批次。Orchestrator 编排中的 Develop、Quality 和 publish 必须通过同一父 execution 血缘解析批次，不得用空默认值绕过 `execution_contract`，不得把 Schema、表名或 DDL 作为 Step 参数。prepare 可以在稳定 execution outputs 中返回 `batch_id` 供审计和诊断，但下游业务步骤不能据此绕过 Model 的执行域校验。
 
 Transfer `sync` 的稳定语义由以下正交维度表达：
 

@@ -228,13 +228,25 @@
           <el-form :model="materializationForm" label-width="110px">
             <el-row :gutter="16">
               <el-col :xs="24" :sm="12" :md="8">
-                <el-form-item :label="t('model.materialization.schema_name')">
-                  <el-input v-model="materializationForm.schema_name" :disabled="!canEdit" :placeholder="t('model.materialization.schema_placeholder')" />
+                <el-form-item :label="t('model.materialization.target_schema')">
+                  <ResourceTreePicker
+                    v-model="targetParentSelection"
+                    api-base-url="/api/v1/meta"
+                    mode="node"
+                    :engine-families="['tabular']"
+                    :selectable-filter="isSchemaSelection"
+                    :initial-locator="materializationForm.target_parent_locator"
+                    :show-selection-summary="false"
+                    :show-count="false"
+                    tree-height="260px"
+                    @update:model-value="handleTargetParentSelect"
+                    @select="handleTargetParentSelect"
+                  />
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :sm="12" :md="8">
-                <el-form-item :label="t('model.materialization.table_name')">
-                  <el-input v-model="materializationForm.table_name" :disabled="!canEdit" :placeholder="t('model.materialization.table_placeholder')" />
+                <el-form-item :label="t('model.materialization.target_name')">
+                  <el-input v-model="materializationForm.target_name" :disabled="!canEdit" :placeholder="t('model.materialization.target_name_placeholder')" />
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :sm="12" :md="8">
@@ -410,7 +422,7 @@
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useConsolePageDescriptor } from '@common-ui'
+import { ResourceTreePicker, useConsolePageDescriptor } from '@common-ui'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Plus, Refresh, View } from '@element-plus/icons-vue'
 import { logicalTableAPI, domainAPI, elementAPI, standardMetricAPI, dwLayerAPI } from '../api/model'
@@ -480,8 +492,9 @@ const form = reactive({
   grain_description: '', scd_type: 0, description: ''
 })
 const materializationForm = reactive({
-  schema_name: '', table_name: '', partition_by: '', partition_type: 'range'
+  target_parent_locator: '', target_name: '', partition_by: '', partition_type: 'range'
 })
+const targetParentSelection = ref(null)
 const fields = ref([])
 const domains = ref([])
 const layers = ref([])
@@ -573,11 +586,18 @@ const applyTable = resource => {
 
   const mat = table.value.materialization || {}
   Object.assign(materializationForm, {
-    schema_name: mat.schema_name || '',
-    table_name: mat.table_name || '',
+    target_parent_locator: mat.target_parent_locator || '',
+    target_name: mat.target_name || '',
     partition_by: mat.partition_by || '',
     partition_type: mat.partition_type || 'range',
   })
+  targetParentSelection.value = null
+}
+
+const isSchemaSelection = (node, { locator }) => Boolean(canEdit.value) && node?.type === 'schema' && locator.type === 'schema' && !locator.itemId
+
+const handleTargetParentSelect = selection => {
+  materializationForm.target_parent_locator = selection?.identity?.locator || ''
 }
 
 const loadTable = async () => applyTable(await logicalTableAPI.get(tableId.value))

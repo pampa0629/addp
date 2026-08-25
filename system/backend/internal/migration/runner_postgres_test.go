@@ -1461,13 +1461,14 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 	if tableName != "system.execution_authorizations" {
 		t.Fatalf("execution_authorizations table = %q", tableName)
 	}
-	var permissionCount, rolePermissionCount, triggerCount, qualityAudienceConstraintCount int
+	var permissionCount, rolePermissionCount, triggerCount, audienceConstraintCount int
 	if err := db.QueryRow(`
 		SELECT count(*)
 		FROM system.permissions
 		WHERE permission_key IN (
 			'develop.data_read.execute', 'develop.data_write.execute',
 			'develop.data_ddl.execute', 'develop.data_external_effect.execute',
+			'model.materialization.execute',
 			'system.execution_authorization.execute'
 		)
 		  AND status = 'active'
@@ -1480,6 +1481,10 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 		JOIN system.roles role ON role.id = role_permission.role_id
 		JOIN system.permissions permission ON permission.id = role_permission.permission_id
 		WHERE (role.role_key, permission.permission_key) IN (
+			('tenant.data_architect', 'develop.data_ddl.execute'),
+			('tenant.data_architect', 'develop.data_read.execute'),
+			('tenant.data_architect', 'model.materialization.execute'),
+			('tenant.data_architect', 'system.execution_authorization.create'),
 			('tenant.data_engineer', 'develop.data_read.execute'),
 			('tenant.data_engineer', 'develop.data_write.execute'),
 			('tenant.data_steward', 'develop.data_read.execute'),
@@ -1488,6 +1493,8 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 			('tenant.develop_runtime', 'system.execution_authorization.execute'),
 			('tenant.governance_manager', 'develop.data_read.execute'),
 			('tenant.governance_manager', 'system.execution_authorization.create'),
+			('tenant.model_runtime', 'system.engine_descriptor.read'),
+			('tenant.model_runtime', 'system.execution_authorization.execute'),
 			('tenant.quality_runtime', 'system.execution_authorization.execute')
 		)
 	`).Scan(&rolePermissionCount); err != nil {
@@ -1498,9 +1505,11 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 		FROM pg_constraint
 		WHERE conrelid = 'system.execution_authorizations'::regclass
 		  AND conname = 'execution_authorizations_audience_check'
-		  AND pg_get_constraintdef(oid) LIKE '%addp-quality%'
-	`).Scan(&qualityAudienceConstraintCount); err != nil {
-		t.Fatalf("inspect Quality execution authorization audience constraint: %v", err)
+		  AND pg_get_constraintdef(oid) LIKE '%model%'
+		  AND pg_get_constraintdef(oid) LIKE '%quality%'
+		  AND pg_get_constraintdef(oid) NOT LIKE '%addp-quality%'
+	`).Scan(&audienceConstraintCount); err != nil {
+		t.Fatalf("inspect execution authorization audience constraint: %v", err)
 	}
 	if err := db.QueryRow(`
 		SELECT count(*)
@@ -1513,8 +1522,8 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&triggerCount); err != nil {
 		t.Fatalf("count execution authorization triggers: %v", err)
 	}
-	if permissionCount != 5 || rolePermissionCount != 9 || triggerCount != 3 || qualityAudienceConstraintCount != 1 {
-		t.Fatalf("execution authorization catalog permissions=%d role_permissions=%d triggers=%d quality_audience_constraints=%d", permissionCount, rolePermissionCount, triggerCount, qualityAudienceConstraintCount)
+	if permissionCount != 6 || rolePermissionCount != 15 || triggerCount != 3 || audienceConstraintCount != 1 {
+		t.Fatalf("execution authorization catalog permissions=%d role_permissions=%d triggers=%d audience_constraints=%d", permissionCount, rolePermissionCount, triggerCount, audienceConstraintCount)
 	}
 }
 

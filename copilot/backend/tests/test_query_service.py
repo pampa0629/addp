@@ -8,6 +8,16 @@ from services.query_clarification import QueryClarificationRequired
 from services.query_service import QueryService
 
 
+def test_mql_semantic_plan_schema_exposes_directional_overlap_fields():
+    response_schema = QueryService._mql_semantic_plan_response_schema()
+    metric_properties = response_schema.schema_value["properties"]["metric"]["properties"]
+
+    assert metric_properties["entity_field"] == {"type": "string"}
+    assert metric_properties["entity_values"]["minItems"] == 2
+    assert metric_properties["entity_values"]["maxItems"] == 2
+    assert metric_properties["activity_id_field"] == {"type": "string"}
+
+
 @pytest.mark.parametrize("prefix", ["collections", 'collections":["'])
 def test_decode_object_recovers_single_schema_object_from_model_prefix(prefix):
     result = QueryService._decode_object(

@@ -1,10 +1,10 @@
-# ADDP 模块与引擎注册 T4 验收待办
+# ADDP 模块启动、就绪与注册治理待办
 
-> 状态：稳定治理机制已收口，人工验收与普通 CI 已通过，Online T4 workflow 已启用，待专用部署完成 T4 首跑与进程乱序自动化验收（2026-08-24）
+> 状态：启动与就绪契约已于 2026-08-25 收口，待完成公共生命周期实现、全模块切换与进程乱序 T4 验收
 
 ## 一、保留边界
 
-本文件不是新的治理规范，只临时跟踪尚未取得的外部运行证据。模块和引擎都由 System 管理，但必须保持为两个独立聚合：
+本文件不复制稳定规范，只临时跟踪尚未完成的公共实现、全模块迁移和外部运行证据。模块和引擎都由 System 管理，但必须保持为两个独立聚合：
 
 - 模块采用“持久模块定义 + 临时运行实例租约 + Gateway 动态发现”；稳定契约见 [模块架构图](../concepts/addp模块架构图.md)、[Gateway 架构说明](../../gateway/docs/gateway架构说明.md) 和 [System 数据库架构](../../system/docs/数据库架构.md)。
 - 引擎采用“永久 Engine Instance 身份 + 生命周期管理意图 + 连通性观测”；稳定契约见 [引擎体系图](../concepts/addp引擎体系图.md)。
@@ -22,17 +22,29 @@
 - Develop、Manager、Service 在实际使用时消费当前状态；离线引擎保留展示但禁选，恢复在线后不要求重启消费模块或整页刷新。
 - 2026-08-23 人工验收已覆盖全量冷启动、System/Gateway 晚启动、租约到期、同模块多实例、优雅注销和页面动态恢复。人工结果只作为基线，不替代自动化 T4 证据。
 
-## 三、剩余 T4 验收
+2026-08-25 新确认的稳定原则是：System 是所有业务模块进入 Ready 的唯一控制面强依赖，但不是进程保持 Alive 的强依赖。其他业务模块与可选 Engine Instance 不得进入当前模块 readiness。该原则已回写术语表、模块架构图、API 规范、新模块开发指南和测试验收规范。
+
+## 三、实现待办
+
+- [ ] 在 `common/` 建立唯一模块生命周期能力，统一 `starting|registered|recovering|failed|stopped` 状态、快照、完成信号、Ready 门禁和健康 DTO。
+- [ ] 在 `common-python` 实现等价契约，Agent/Copilot 不保留私有状态机或不同的重试分类。
+- [ ] 将全部 HTTP Backend 一次性切换为 `/health/live` 与 `/health/ready`，删除 `/health`，并在健康路由之后、业务路由之前安装 Ready 门禁。
+- [ ] Backend 先绑定 Listener 再注册；更新全部 `health_check_url`、Monitor 探测、Gateway 健康语义、Compose/镜像探针、开发启停脚本和 T4 预检。
+- [ ] Worker/Scheduler 未 `registered` 时停止领取新工作；已执行工作仍按 owner execution lease 和授权契约收敛。
+- [ ] 公共客户端只重试连接失败、超时、`429`、`5xx` 和心跳实例缺失；确定性注册拒绝进入 `failed` 并终止进程。
+- [ ] 补齐 T1 状态机、Ready 路由、未就绪业务门禁和 Worker 停止领取测试，并让 `make test-changed` 按共享依赖扩散覆盖全部消费方。
+
+## 四、剩余 T4 验收
 
 - [ ] 在 `addp-online` 专用 Runner 真实执行 `make test-online ONLINE_SUITE=module-registry-recovery`，保存 workflow、suite 报告和清理结果。
-- [ ] 由部署编排自动验证“业务模块先启动、System 后启动”，确认模块自动重注册且 Gateway 自动恢复路由。
+- [ ] 由部署编排自动验证“业务模块先启动、System 后启动”，确认模块先 Alive/Not Ready，业务路由不可用；System 恢复后以同 ID 自动 Ready 且 Gateway 自动恢复路由。
 - [ ] 由部署编排自动验证“System 与业务模块先启动、Gateway 后启动”，确认 Gateway 首个完整快照即可建立路由。
 - [ ] 由部署编排自动验证全量重启后的首次页面访问，Configuration、Manager 和 Service 不需要人工刷新或二次点击。
 - [ ] 自动验证模块租约失效与重新注册、Engine Instance 离线与恢复均不要求重启消费方。
 
 进程乱序场景必须由专用部署真实控制进程生命周期；不得以本地人工操作、Mock 或仅调用注册 API 冒充部署恢复证据。首次 Online 通过后再开放夜间触发。
 
-## 四、最小门禁
+## 五、最小门禁
 
 | 层级 | 入口 | 责任 |
 | --- | --- | --- |
@@ -43,11 +55,12 @@
 
 新增注册字段、角色、模块、Worker、路由或公共客户端行为时，必须在同一次变更中同步正式契约、相应测试和 CI 自动发现规则。
 
-## 五、删除条件
+## 六、删除条件
 
 以下条件全部满足后直接删除本文件，不归档完成历史：
 
 1. `module-registry-recovery` 在专用 Runner 首次真实通过，并保留可追溯报告。
-2. System 晚启动、Gateway 晚启动和全量重启首次访问均取得自动化进程级证据。
-3. 模块与引擎恢复不重启消费方的行为已由 T4 持续覆盖。
-4. 新发现的稳定规则已经回写上述正式概念、架构或测试规范，而不是继续沉淀在本文件。
+2. 公共生命周期、全模块健康端点、Ready 门禁、Worker/Scheduler 领取门禁和全部调用方切换完成，旧 `/health` 已删除。
+3. System 晚启动、Gateway 晚启动、System 运行中断与全量重启首次访问均取得自动化进程级证据。
+4. 模块与引擎恢复不重启消费方的行为已由 T4 持续覆盖。
+5. 新发现的稳定规则已经回写上述正式概念、架构或测试规范，而不是继续沉淀在本文件。

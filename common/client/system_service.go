@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/addp/common/engine/plugin"
@@ -329,17 +330,147 @@ func (c *SystemServiceClient) RegisterAndHeartbeatWithMetadata(
 	ctx context.Context,
 	moduleName, moduleURL, routePrefix string,
 	metadata map[string]interface{},
-) <-chan struct{} {
+) *ModuleRegistrationLifecycle {
 	return c.RegisterAndHeartbeat(ctx, &ModuleRegistrationRequest{
 		ModuleName: moduleName, ModuleURL: moduleURL, RoutePrefix: routePrefix,
-		HealthCheckURL: moduleURL + "/health", Metadata: metadata,
+		HealthCheckURL: moduleURL + "/health/ready", Metadata: metadata,
 	})
 }
 
-// RegisterAndHeartbeat starts the module lease lifecycle and returns a channel
-// that closes after cancellation handling, including the bounded deregistration
-// attempt, has completed. Process entrypoints must wait for it before exiting.
-func (c *SystemServiceClient) RegisterAndHeartbeat(ctx context.Context, request *ModuleRegistrationRequest) <-chan struct{} {
+type ModuleRegistrationState string
+
+const (
+	ModuleRegistrationStarting   ModuleRegistrationState = "starting"
+	ModuleRegistrationRegistered ModuleRegistrationState = "registered"
+	ModuleRegistrationRecovering ModuleRegistrationState = "recovering"
+	ModuleRegistrationFailed     ModuleRegistrationState = "failed"
+	ModuleRegistrationStopped    ModuleRegistrationState = "stopped"
+)
+
+type ModuleRegistrationSnapshot struct {
+	ModuleName string                  `json:"module_name"`
+	InstanceID string                  `json:"instance_id"`
+	Role       string                  `json:"role"`
+	State      ModuleRegistrationState `json:"state"`
+	ErrorCode  string                  `json:"error_code,omitempty"`
+}
+
+// ModuleRegistrationLifecycle is the process-local projection of the System
+// module lease. It does not persist or publish a second registration fact.
+type ModuleRegistrationLifecycle struct {
+	mu       sync.RWMutex
+	snapshot ModuleRegistrationSnapshot
+	changed  chan struct{}
+	done     chan struct{}
+	fatal    chan error
+}
+
+func newModuleRegistrationLifecycle(request *ModuleRegistrationRequest) (*ModuleRegistrationLifecycle, ModuleRegistrationRequest) {
+	lifecycle := &ModuleRegistrationLifecycle{
+		changed: make(chan struct{}),
+		done:    make(chan struct{}),
+		fatal:   make(chan error, 1),
+	}
+	if request == nil {
+		lifecycle.snapshot.State = ModuleRegistrationStopped
+		close(lifecycle.changed)
+		close(lifecycle.done)
+		close(lifecycle.fatal)
+		return lifecycle, ModuleRegistrationRequest{}
+	}
+	registration := *request
+	if strings.TrimSpace(registration.InstanceID) == "" {
+		registration.InstanceID = uuid.NewString()
+	}
+	if strings.TrimSpace(registration.Role) == "" {
+		registration.Role = ModuleRuntimeRoleBackend
+	}
+	registration.Metadata = map[string]interface{}{"module": registration.ModuleName}
+	for key, value := range request.Metadata {
+		registration.Metadata[key] = value
+	}
+	lifecycle.snapshot = ModuleRegistrationSnapshot{
+		ModuleName: registration.ModuleName,
+		InstanceID: registration.InstanceID,
+		Role:       registration.Role,
+		State:      ModuleRegistrationStarting,
+	}
+	return lifecycle, registration
+}
+
+func (l *ModuleRegistrationLifecycle) Snapshot() ModuleRegistrationSnapshot {
+	if l == nil {
+		return ModuleRegistrationSnapshot{State: ModuleRegistrationStopped}
+	}
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.snapshot
+}
+
+func (l *ModuleRegistrationLifecycle) IsRegistered() bool {
+	return l.Snapshot().State == ModuleRegistrationRegistered
+}
+
+func (l *ModuleRegistrationLifecycle) Done() <-chan struct{} {
+	if l == nil {
+		done := make(chan struct{})
+		close(done)
+		return done
+	}
+	return l.done
+}
+
+// Fatal receives the deterministic registration rejection that requires the
+// process owner to cancel its runtime context and perform normal cleanup.
+func (l *ModuleRegistrationLifecycle) Fatal() <-chan error {
+	if l == nil {
+		fatal := make(chan error)
+		close(fatal)
+		return fatal
+	}
+	return l.fatal
+}
+
+func (l *ModuleRegistrationLifecycle) WaitUntilRegistered(ctx context.Context) error {
+	for {
+		l.mu.RLock()
+		snapshot := l.snapshot
+		changed := l.changed
+		l.mu.RUnlock()
+		switch snapshot.State {
+		case ModuleRegistrationRegistered:
+			return nil
+		case ModuleRegistrationFailed:
+			return fmt.Errorf("module registration failed: %s", snapshot.ErrorCode)
+		case ModuleRegistrationStopped:
+			return context.Canceled
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-changed:
+		}
+	}
+}
+
+func (l *ModuleRegistrationLifecycle) transition(state ModuleRegistrationState, errorCode string) {
+	l.mu.Lock()
+	if l.snapshot.State == state && l.snapshot.ErrorCode == errorCode {
+		l.mu.Unlock()
+		return
+	}
+	previous := l.changed
+	l.snapshot.State = state
+	l.snapshot.ErrorCode = errorCode
+	l.changed = make(chan struct{})
+	close(previous)
+	l.mu.Unlock()
+}
+
+// RegisterAndHeartbeat starts the module lease lifecycle. Process entrypoints
+// must observe Fatal(), cancel through their normal shutdown path, and wait for
+// Done() before exiting.
+func (c *SystemServiceClient) RegisterAndHeartbeat(ctx context.Context, request *ModuleRegistrationRequest) *ModuleRegistrationLifecycle {
 	return c.registerAndHeartbeat(ctx, request, time.Second, 10*time.Second, 10*time.Second)
 }
 
@@ -349,13 +480,14 @@ func (c *SystemServiceClient) registerAndHeartbeat(
 	initialRetryInterval time.Duration,
 	maxRetryInterval time.Duration,
 	heartbeatInterval time.Duration,
-) <-chan struct{} {
-	done := make(chan struct{})
+) *ModuleRegistrationLifecycle {
+	lifecycle, registration := newModuleRegistrationLifecycle(request)
+	if request == nil {
+		return lifecycle
+	}
 	go func() {
-		defer close(done)
-		if request == nil {
-			return
-		}
+		defer close(lifecycle.done)
+		defer close(lifecycle.fatal)
 		if initialRetryInterval <= 0 {
 			initialRetryInterval = time.Second
 		}
@@ -365,23 +497,12 @@ func (c *SystemServiceClient) registerAndHeartbeat(
 		if heartbeatInterval <= 0 {
 			heartbeatInterval = 10 * time.Second
 		}
-		registration := *request
-		if strings.TrimSpace(registration.InstanceID) == "" {
-			registration.InstanceID = uuid.NewString()
-		}
-		if strings.TrimSpace(registration.Role) == "" {
-			registration.Role = ModuleRuntimeRoleBackend
-		}
-		registration.Metadata = map[string]interface{}{"module": registration.ModuleName}
-		for key, value := range request.Metadata {
-			registration.Metadata[key] = value
-		}
-		register := func() bool {
+		register := func() (bool, error) {
 			if err := c.RegisterModule(ctx, &registration); err != nil {
 				log.Print(moduleRegistryFailureLog("register", registration, err))
-				return false
+				return false, err
 			}
-			return true
+			return true, nil
 		}
 
 		registered := false
@@ -399,16 +520,30 @@ func (c *SystemServiceClient) registerAndHeartbeat(
 		retryInterval := initialRetryInterval
 		for {
 			if !registered {
-				registered = register()
+				var err error
+				registered, err = register()
 				if registered {
 					shouldDeregister = true
 					retryInterval = initialRetryInterval
+					lifecycle.transition(ModuleRegistrationRegistered, "")
 					continue
+				}
+				if !moduleRegistryErrorRetryable(err, false) {
+					errorCode, _ := SystemAPIErrorCode(err)
+					if errorCode == "" {
+						errorCode = "module_registration_failed"
+					}
+					lifecycle.transition(ModuleRegistrationFailed, errorCode)
+					lifecycle.fatal <- err
+					return
 				}
 				timer := time.NewTimer(retryInterval)
 				select {
 				case <-ctx.Done():
-					timer.Stop()
+					if !timer.Stop() {
+						<-timer.C
+					}
+					lifecycle.transition(ModuleRegistrationStopped, "")
 					return
 				case <-timer.C:
 				}
@@ -422,17 +557,45 @@ func (c *SystemServiceClient) registerAndHeartbeat(
 			timer := time.NewTimer(heartbeatInterval)
 			select {
 			case <-ctx.Done():
-				timer.Stop()
+				if !timer.Stop() {
+					<-timer.C
+				}
+				lifecycle.transition(ModuleRegistrationStopped, "")
 				return
 			case <-timer.C:
 			}
 			if err := c.SendModuleHeartbeat(ctx, registration.ModuleName, registration.InstanceID); err != nil {
+				if !moduleRegistryErrorRetryable(err, true) {
+					errorCode, _ := SystemAPIErrorCode(err)
+					if errorCode == "" {
+						errorCode = "module_heartbeat_failed"
+					}
+					log.Print(moduleRegistryFailureLog("heartbeat", registration, err) + " next_action=terminate")
+					lifecycle.transition(ModuleRegistrationFailed, errorCode)
+					lifecycle.fatal <- err
+					return
+				}
 				log.Print(moduleRegistryFailureLog("heartbeat", registration, err) + " next_action=reregister")
+				lifecycle.transition(ModuleRegistrationRecovering, "system_registration_unavailable")
 				registered = false
 			}
 		}
 	}()
-	return done
+	return lifecycle
+}
+
+func moduleRegistryErrorRetryable(err error, heartbeat bool) bool {
+	if err == nil {
+		return false
+	}
+	statusCode, ok := SystemAPIStatusCode(err)
+	if !ok {
+		return true
+	}
+	if heartbeat && statusCode == http.StatusNotFound {
+		return true
+	}
+	return statusCode == http.StatusTooManyRequests || statusCode >= http.StatusInternalServerError
 }
 
 func moduleRegistryFailureLog(operation string, registration ModuleRegistrationRequest, err error) string {

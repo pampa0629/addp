@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/addp/common/buildinfo"
+	"github.com/addp/common/modulelifecycle"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
 	"github.com/addp/common/middleware/auth"
@@ -54,6 +54,7 @@ func SetupRouter(
 	cadPreviewHandler *CADPreviewHandler,
 	model3DTilesHandler *Model3DTilesHandler,
 	dataProfileHandler *DataProfileHandler,
+	lifecycle *modulelifecycle.Controller,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -65,10 +66,8 @@ func SetupRouter(
 
 	// 注意：CORS 由 Gateway 统一处理，此处无需设置 CORS 中间件
 
-	// 健康检查
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, buildinfo.Health("manager"))
-	})
+	lifecycle.RegisterHealthRoutes(router)
+	router.Use(lifecycle.RequireReady())
 
 	// 根路由
 	router.GET("/", func(c *gin.Context) {

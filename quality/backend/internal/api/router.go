@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/addp/common/buildinfo"
+	"github.com/addp/common/modulelifecycle"
 	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
@@ -33,8 +33,12 @@ func SetupRouter(
 	db *gorm.DB,
 	systemURL string,
 	redisClient *redis.Client,
+	lifecycle *modulelifecycle.Controller,
 ) *gin.Engine {
 	router := gin.Default()
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	lifecycle.RegisterHealthRoutes(router)
+	router.Use(lifecycle.RequireReady())
 
 	router.Use(func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
@@ -109,12 +113,6 @@ func SetupRouter(
 			issues.PUT("/:id/status", permission(qualityauthorization.PermissionQualityIssueUpdate), issueHandler.UpdateStatus)
 		}
 	}
-
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, buildinfo.Health("quality"))
-	})
-
-	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	return router
 }

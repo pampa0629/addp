@@ -10,6 +10,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -21,6 +22,7 @@ const (
 	maximumExecutionAuthorizationTTL              = time.Hour
 	developExecutionPermission                    = "develop.task.execute"
 	qualityExecutionPermission                    = "quality.check_task.execute"
+	modelMaterializationExecutionPermission       = "model.materialization.execute"
 	serviceQuerySamplePermission                  = "service.definition.create"
 	serviceDataReadPermission                     = "service.data_read.execute"
 	executionAuthorizationSourceUser              = "user"
@@ -41,10 +43,11 @@ var executionEffectPermissions = map[string]string{
 }
 
 var executionAudienceClients = map[string]string{
-	"addp-quality": "addp-quality",
-	"develop":      "addp-develop",
-	"duckdb":       "addp-duckdb",
-	"service":      "addp-service",
+	commonExecution.AudienceModel:   "addp-model",
+	commonExecution.AudienceQuality: "addp-quality",
+	commonExecution.AudienceDevelop: "addp-develop",
+	commonExecution.AudienceDuckDB:  "addp-duckdb",
+	commonExecution.AudienceService: "addp-service",
 }
 
 type IssueExecutionAuthorizationInput struct {
@@ -757,13 +760,23 @@ func containsAllExecutionPermissions(
 	}
 
 	switch audience {
-	case "addp-quality":
+	case commonExecution.AudienceQuality:
 		return containsQualityReadBoundary()
-	case "develop":
+	case commonExecution.AudienceDevelop:
 		return containsDevelopBoundary()
-	case "service":
+	case commonExecution.AudienceModel:
+		if _, exists := available[modelMaterializationExecutionPermission]; !exists {
+			return false
+		}
+		for _, effect := range effects {
+			if _, exists := available[executionEffectPermissions[effect]]; !exists {
+				return false
+			}
+		}
+		return true
+	case commonExecution.AudienceService:
 		return containsServiceSampleBoundary()
-	case "duckdb":
+	case commonExecution.AudienceDuckDB:
 		return containsDevelopBoundary() || containsServiceSampleBoundary()
 	default:
 		return false

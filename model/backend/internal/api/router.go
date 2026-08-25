@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/addp/common/buildinfo"
+	"github.com/addp/common/modulelifecycle"
 	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/model/docs"
@@ -36,6 +36,7 @@ func SetupRouter(
 	standardReferenceGuardSvc *service.StandardReferenceGuardService,
 	systemURL string,
 	redisClient *redis.Client,
+	lifecycle *modulelifecycle.Controller,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -44,6 +45,8 @@ func SetupRouter(
 
 	// Swagger 文档
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	lifecycle.RegisterHealthRoutes(router)
+	router.Use(lifecycle.RequireReady())
 
 	// CORS 中间件
 	router.Use(func(c *gin.Context) {
@@ -153,11 +156,6 @@ func SetupRouter(
 		}
 
 	}
-
-	// 健康检查（无认证）
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, buildinfo.Health("model"))
-	})
 
 	return router
 }

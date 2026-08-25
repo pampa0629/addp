@@ -12,17 +12,23 @@
   -> Standard 语义资产
   -> Meta 物理字段绑定
   -> Model 逻辑实体与关系
-  -> 指标计算计划
-  -> Copilot 小模型上下文
-  -> 查询/工作流生成与结果回归
+  -> Model 准备 DIM/DWD/DWS 物化批次
+  -> Develop 计算并写入受限 staging
+  -> Develop 基于 DIM/DWD 计算 DWS 指标
+  -> Quality 数据门禁
+  -> Orchestrator 统一重算
+  -> Copilot/Service 消费已发布指标结果
 ```
 
 模块边界保持如下：
 
 - `Standard` 拥有 Outdoor 业务域、术语、数据元、码值、单位、指标和定义文档；
 - `Meta` 拥有 MongoDB collection、字段路径、动态 schema 采样事实和资源定位；
-- `Model` 拥有租户级实体、实体关系、逻辑表和 Standard 指标引用，不复制 Standard 事实；
-- `Copilot` 只消费经过验证的资源事实和已审核语义上下文，形成结构化计划，最终由确定性编译器生成 MQL 或工作流；
+- `Model` 拥有租户级实体、实体关系、逻辑表、Standard 指标引用和逻辑表物化结构控制面，负责受控 DDL、staging 准备、结构校验与原子发布；
+- `Develop` 通过查询任务计算维度、明细事实和指标汇总数据，只写入 Model 为本次物化批次签发的受限 staging 目标；生产指标只能读取已物化的 DIM/DWD，不能旁路直查 MongoDB；
+- `Quality` 负责物化结果的主键、引用完整性、业务关系和指标结果门禁；
+- `Orchestrator` 只引用各 owner 模块的持久任务，形成支持手动执行和定时调度的唯一全量重算 DAG；
+- `Copilot` 只消费经过验证的资源事实、已审核语义上下文和已发布指标结果；MongoDB MQL 编译结果只保留为指标金样和开发期回归工具，不作为生产指标计算路线；
 - `Graph`、`Asset`、`Service` 等模块只在各自 owner 边界内消费已发布语义，不新增第二套 Outdoor 事实源。
 
 照片、人脸、强度自动计算、群组排行和路线分析不进入第一批闭环。它们保留在业务文档中作为后续专题，避免不确定语义阻塞核心人员/活动指标。
@@ -184,7 +190,66 @@ erDiagram
 
 群组、照片和人脸暂不进入第一批 Model 设计；群组与活动之间不建立默认关系。
 
-## 8. 阶段六：Copilot 语义上下文与计算过程
+## 8. 阶段六：维度物化与指标计算
+
+生产链路固定为：
+
+```text
+Model 准备物化批次与 staging
+  -> Develop 查询任务读取 Business MongoDB 并计算 DIM/DWD
+  -> Develop SQL 查询任务只读本批次 DIM/DWD 并计算 DWS
+  -> Quality 门禁
+  -> Model 原子发布本次完整重算结果
+```
+
+Model 拥有物化结构和发布边界，只根据已审批模型生成受控 DDL；不接受任意 DDL。Develop 只负责查询计算和数据写入，不创建、删除或修改正式逻辑表。Orchestrator 只控制依赖、触发和执行追踪，不复制任务实现。所有 DWS 指标计算必须只读取本批次的 DIM/DWD staging，禁止直接读取 `Outdoor.Outdoors` 或 `Outdoor.Persons`。
+
+第一批物理表如下：
+
+| 物理表 | 粒度 | 用途 |
+| --- | --- | --- |
+| `dim_outdoor_person` | 每个人员一行 | 稳定人员标识及授权展示属性 |
+| `dim_outdoor_activity` | 每个有效活动一行 | 活动日期、状态和最终强度 |
+| `dwd_outdoor_participation` | 每个活动与人员组合一行 | 合并报名、实际参加和当前负责三类关系 |
+| `dws_outdoor_person_metric` | 每个人员、指标、指标版本和统计范围一行 | 四项人员活动数指标 |
+| `dws_outdoor_person_pair_metric` | 每个无序人员对、指标、指标版本和统计范围一行 | 共同活动数、两个分母和两个方向的重叠率 |
+
+`dwd_outdoor_participation` 必须以 `person_id + activity_id` 为复合主键，至少包含 `is_signup`、`is_actual_participant` 和 `is_current_leader`。同一人员在同一活动中的多种关系合并为一行布尔事实；当前主领队即使不在 `members[]` 中，也要进入该事实表。人员侧摘要数组不参与事实生成。
+
+两张 DWS 都属于指标事实表，不是业务实体表。人员对统一按稳定人员标识排序为 `person_id_a < person_id_b`，一对人员只存一行，同时保存 A→B 和 B→A 两个方向结果。Top 10 固定取同一次重算中 `outdoor_responsible_or_actual_activity_count` 降序、人员标识升序的前十名。
+
+### 8.1 Develop 持久查询任务
+
+第一批建立五个可独立审计和重试的持久任务：
+
+1. `outdoor_dim_person_full_refresh`；
+2. `outdoor_dim_activity_full_refresh`；
+3. `outdoor_dwd_participation_full_refresh`；
+4. `outdoor_dws_person_metric_full_refresh`；
+5. `outdoor_dws_person_pair_metric_full_refresh`。
+
+每个任务只能通过物化批次标识和逻辑表标识获取本次 staging 写入目标，不允许用户自行填写正式物理表名。查询任务不承担模型 DDL 或正式表替换；失败不能把半成品标记为成功。若现有查询执行 Runtime 缺少受限 staging 写入能力，应先形成 Develop 模块通用能力设计并确认，不能加入 Outdoor 专用脚本或通用 DDL 旁路。
+
+### 8.2 Quality 门禁
+
+第一批门禁至少包括：维表主键非空且唯一、DWD 复合主键唯一、DWD 人员和活动引用完整、实际参加集合是报名集合子集、各布尔关系口径可复现、DWS 粒度唯一，以及 Top 10 足够时人员对结果恰好为 45 行。门禁失败时本次总编排失败，不发布成功结论。
+
+### 8.3 Orchestrator 总编排
+
+唯一总编排命名为 `outdoor_governance_full_refresh`，手动执行和 Cron 调度必须进入同一个 DAG：
+
+```mermaid
+flowchart LR
+    P[人员维度] --> F[活动参与事实]
+    A[活动维度] --> F
+    F --> M[人员指标]
+    M --> O[Top 10 人员对指标]
+    O --> Q[Quality 完整性门禁]
+```
+
+Orchestrator 的父执行 ID 作为同一次重算的稳定 `run_id` 贯穿子任务和 DWS 结果。下游任务只能在依赖任务成功后启动，任一节点失败时终止后续节点。
+
+## 9. 阶段七：Copilot 语义上下文与结果消费
 
 ### 8.1 面向 27B 的最小语义包
 
@@ -227,8 +292,10 @@ Copilot 不直接喂入整篇讨论稿，而是由已批准 Standard 资产和 M
 3. 选择 `activity_id` 去重；
 4. 应用已批准的成员状态映射；
 5. 明确时间范围、活动状态和空值规则；
-6. 计划闭合后由 MQL 编译器生成查询；
-7. 返回计算过程、字段证据和结果引用。
+6. 生产查询读取已发布的 DWS 指标结果；
+7. 返回指标版本、计算批次、字段证据和结果引用。
+
+MongoDB MQL 编译器继续用于金样生成、源事实核验和开发期回归，不作为生产指标结果接口。Copilot 不得针对同一指标在运行时重新生成一条并行计算路线。
 
 对于定向重叠率，计划必须明确两个人、实际参加关系和两个方向的分母。不能把用户的“重叠度”自动改写为 Jaccard 或对称相似度。
 
@@ -266,10 +333,13 @@ Copilot 不直接喂入整篇讨论稿，而是由已批准 Standard 资产和 M
 | --- | --- |
 | Meta | 字段路径、动态 schema、记录数和关系质量检查 |
 | Standard | 术语、数据元、码值、指标公式和生命周期校验 |
-| Model | 实体粒度、关系方向、指标引用和版本约束 |
+| Model | 实体粒度、关系方向、指标引用、物化批次和受控发布 |
 | Copilot | 语义计划、澄清、敏感信息过滤和资源事实引用 |
-| Query/MQL | 编译结果只使用已验证 collection/字段，且计算过程与指标定义一致 |
-| 端到端 | 用户问题 -> 澄清 -> 计划 -> MQL -> 结果与解释 |
+| Develop | DIM/DWD/DWS 查询计算和受限 staging 写入 |
+| Quality | 主键、引用、关系口径和指标结果门禁 |
+| Orchestrator | 单一 DAG、手动执行、定时执行和失败传播 |
+| Query/MQL | 仅作为源事实金样，结果与 DWS 可复现一致 |
+| 端到端 | 源数据 -> DIM/DWD -> DWS -> 质量门禁 -> 指标结果消费 |
 
 ### 9.3 27B 验收标准
 
@@ -291,9 +361,11 @@ Copilot 不直接喂入整篇讨论稿，而是由已批准 Standard 资产和 M
 | 2 | Meta | 完成 MongoDB `Persons`、`Outdoors`、`Groups` 的深度扫描和字段事实 |
 | 3 | Quality | 关系一致性、状态分布、失效引用质量检查 |
 | 4 | Standard | 建立 Outdoor 域、术语、数据元、码值、指标和绑定入口 |
-| 5 | Model | 建立 Person/Activity/Participation 逻辑模型和指标引用 |
-| 6 | Copilot | 生成语义包、计划槽位、澄清和确定性 MQL 编译支持 |
-| 7 | Develop/Monitor | 查询预览、执行、审计、结果解释和统一监控 |
+| 5 | Model | 建立逻辑模型和指标引用，准备受控物化批次 |
+| 6 | Develop | 计算 DIM/DWD，并只基于 DIM/DWD 生成 DWS 数据 |
+| 7 | Quality | 执行物化和指标结果门禁 |
+| 8 | Orchestrator | 建立唯一的手动/定时全量重算 DAG |
+| 9 | Copilot/Service/Monitor | 消费已发布结果、提供解释并统一观测执行 |
 
 不能先在 Copilot 中硬编码 Outdoor 规则，再反向补 Standard；也不能在 Model 中复制一套独立指标定义。每次实现必须同步对应测试入口和 CI 门禁，至少覆盖受影响模块的标准测试。
 
@@ -315,9 +387,12 @@ Copilot 不直接喂入整篇讨论稿，而是由已批准 Standard 资产和 M
  -> Persons/Outdoors Meta 深度扫描
  -> Standard 术语/数据元/指标
  -> Model Person/Activity/Participation
- -> Copilot 结构化计划
- -> MQL 确定性编译
- -> 金样回归
+ -> Model 准备物化批次
+ -> Develop 计算 DIM/DWD 并写入 staging
+ -> Develop 计算 DWS
+ -> Quality 门禁
+ -> Orchestrator 统一重算
+ -> 金样回归与结果消费
 ```
 
 只有这条链路在样例和边界案例上通过，才扩展到 `Groups`、`Photos`、人脸识别、强度公式和路线分析。
@@ -334,6 +409,8 @@ Copilot 不直接喂入整篇讨论稿，而是由已批准 Standard 资产和 M
 | Standard 指标 | `outdoor_actual_participation_activity_count`（实际参加活动数） | 已审批 |
 | Standard 指标 | `outdoor_signup_activity_count`（报名活动数） | 已审批 |
 | Standard 指标 | `outdoor_current_responsible_activity_count`（当前负责活动数） | 已审批 |
+| Standard 指标 | `outdoor_responsible_or_actual_activity_count`（当前负责或实际参加的不同活动数） | 已审批 |
+| Standard 指标 | `outdoor_directional_actual_participation_overlap_rate`（定向实际参加活动重叠率，指标 ID `8`） | 已审批 |
 | Model 实体 | 活动、人员、活动参与；已绑定 Outdoor 数据元并补齐主键 | 已审批 |
 | Model 关系 | 人员 -> 活动参与（一对多）；活动 -> 活动参与（一对多） | 已配置 |
 
@@ -400,6 +477,8 @@ Copilot 不直接喂入整篇讨论稿，而是由已批准 Standard 资产和 M
 
 当前运行中的 `Outdoor.Outdoors` 快照按同一计划独立回归得到：583 个出现实际参加关系的人员、4,886 条去重后的人员-活动关系，最高人员“攀爬”（`W7cw8J25dhqgDMHA`）为 286 个活动。该快照与 2026-08-24 文档基线的总量不同，属于源数据变化；回归必须同时记录快照时间和口径，不能把任一批次数字写成业务定义。
 
+重叠率批量计算对象固定为“当前负责或实际参加的不同活动数”最多的 10 个人：先按指标 `outdoor_responsible_or_actual_activity_count` 的活动去重并集降序排序，人员标识作为同值时的稳定次序；再对实际人数生成无序人员对，10 人时共 45 对。每一对只存一行，但同时输出 A→B 与 B→A 两个方向的重叠率。少于 10 人时按实际人数生成组合，空集合返回空结果且不报错。
+
 Standard 指标 `outdoor_actual_participation_activity_count` 已通过登录 Console 的正式更新接口写入上述强类型计划，当前版本为 4、状态仍为已审批。配置只保存语义计划，不保存 MQL 文本；Meta collection、字段事实和执行范围仍由 Develop/Copilot 的资源事实链路提供。
 
 ### 13.8 第二个指标：报名活动数（2026-08-25）
@@ -443,6 +522,63 @@ Standard 指标 `outdoor_actual_participation_activity_count` 已通过登录 Co
 第二次重扫于 `2026-08-25 15:27:01+08` 完成，Meta 查询结果为 `leader.personid` 存在（`t`），同时已登记 `leader`、`leader.entryInfo`、`leader.userInfo` 等字段。该结果满足第三个指标的物理字段发布门禁；后续指标 MQL 验证可以使用真实 Meta 资源继续推进。
 
 随后用真实 Meta 字段集合编译并执行第三个指标的 MQL，执行成功。结果为 75 位当前主领队、577 条当前负责活动关系，人员 `W7cw8J25dhqgDMHA` 的去重活动数为 224，与独立 MongoDB 聚合回归一致。至此，第三个指标完成“Standard 定义 -> Meta 字段门禁 -> Copilot 确定性编译 -> MongoDB 执行 -> 结果对照”闭环。
+
+### 13.11 第四个指标：当前负责或实际参加的不同活动数（2026-08-25）
+
+已在 Standard 创建并审批 `outdoor_responsible_or_actual_activity_count`（指标 ID `7`，当前版本 `4`），所属业务域为“户外域”。指标粒度为人员，计算对象是两个集合的并集。其语义计算配置已通过指标详情页正式保存，数据库确认 `derivation_config` 为 JSON object，操作为 `count_distinct_document_and_array_elements`；不保存模型生成的 MQL 文本。
+
+指标计算对象是两个集合的并集：
+
+- `Outdoors.leader.personid` 代表当前主领队负责的活动；
+- `Outdoors.members[]` 中状态为 `报名中`、`领队`、`领队组` 的成员代表实际参加的活动；
+- 两个来源都应用有效活动过滤：排除 `拟定中`、`已取消` 和缺少 `title.date` 的活动；
+- 以 `人员标识 + Outdoors._id` 去重后按人员计数，不能把两个指标结果直接相加。
+
+为表达这一稳定的跨层集合语义，Copilot 新增通用操作 `count_distinct_document_and_array_elements`。编译器生成一条确定性 MongoDB 管道：成员数组分支先展开并过滤，当前主领队分支通过 `$unionWith` 合并，随后按人员和活动 ID 两级去重计数。该操作要求同时声明数组字段、数组分组字段、文档分组字段、活动身份字段和成员状态过滤，不接受 Outdoor 专用隐式规则。
+
+当前 Outdoor 快照的真实聚合结果为 583 位人员、4,888 条人员-活动去重关系；人员 `W7cw8J25dhqgDMHA` 为 286 条。独立 MongoDB 聚合与 Copilot 编译后的管道结果一致。与实际参加关系 4,886 条相比，合并后增加 2 条去重关系，说明结果确实是集合并集而非计数相加。
+
+### 13.12 双向实际参加活动重叠率（2026-08-25）
+
+业务要求的“重叠度”不是 Jaccard 或对称相似度，而是两个方向的条件比例：
+
+```text
+A 视角的 B 重叠率 = |A 实际参加活动 ∩ B 实际参加活动| / |A 实际参加活动|
+B 视角的 A 重叠率 = |A 实际参加活动 ∩ B 实际参加活动| / |B 实际参加活动|
+```
+
+该指标以 `Outdoors` 活动主体文档为唯一事实源，不使用 `Persons.myOutdoors[]`、`entriedOutdoors[]` 或 `caredOutdoors[]` 摘要。Copilot 新增通用语义操作 `directional_overlap_rate`，计划必须声明：
+
+- `field`：成员数组 `members`；
+- `entity_field`：成员人员标识 `members.personid`；
+- `entity_values`：待比较的两个稳定人员标识；
+- `activity_id_field`：活动标识 `_id`；
+- `element_filters`：实际参加状态 `报名中`、`领队`、`领队组`。
+
+确定性编译顺序为：有效活动过滤 -> 展开 `members[]` -> 实际参加状态过滤 -> 人员与活动标识去重 -> 形成两个人的活动集合 -> 计算交集、两个分母和两个方向比例。任一分母为 0 时对应比例返回 0；输出同时包含共同活动数、两个人各自活动数、`overlap_rate_from_left` 和 `overlap_rate_from_right`。该操作已加入 Copilot 编译器和 27B 语义提示约束，并由单元测试覆盖集合去重、双向输出和零分母保护。
+
+结构化推理的严格响应 Schema 已同步登记 `entity_field`、`entity_values` 和 `activity_id_field`，避免模型按提示生成合法计划后又被响应契约拒绝。聚合管道使用 `$facet` 收束人员活动集合，使过滤后没有任何匹配记录时仍返回一行结果，并把共同活动数、两个分母和两个方向比例全部稳定为 0，而不是返回空结果。
+
+使用当前 `Outdoor.Outdoors` 快照对实际参加活动数最高的两名人员执行真实 MongoDB 聚合回归：人员 `W7cw8J25dhqgDMHA` 有 286 个去重活动，人员 `W7Y6ad2AWotkW4_c` 有 193 个去重活动，共同活动 32 个；A→B 重叠率为 `32 / 286 = 0.11188811188811189`，B→A 重叠率为 `32 / 193 = 0.16580310880829016`。两个分母与独立的实际参加活动计数查询一致，证明集合构造、活动 ID 去重和双向分母均闭合。上述数字只作为 2026-08-25 当前快照的回归证据，不进入指标定义。
+
+随后按已冻结的批量口径完成 Top 10 全量回归：先以“当前负责或实际参加的不同活动数”降序、人员标识升序稳定选出 10 人，再基于实际参加活动集合生成 45 组无序人员对。当前快照得到 45/45 对结果，零分母人员对为 0，共同活动数最小为 0、最大为 178；既覆盖完全无交集，也覆盖高度单向重叠。批量调度只是对同一个双人强类型计划替换 `entity_1`、`entity_2` 参数并逐对执行，不新增批量专用 MQL 语义或 Outdoor 硬编码编译路径。
+
+使用查询工作台的本地 `qwen3.8:27b-mlx` 做了真实生成回归。资源发现阶段正确返回 Outdoor 范围内的 `Groups`、`Outdoors`、`Persons`、`Photos` 四个真实候选，并在用户确认 `Outdoors` 后进入语义规划；模型没有自行猜测 collection。首轮语义规划要求补充两个人员稳定标识和“实际参加”状态口径，符合缺少必需语义时必须澄清的门禁。补充 `members.personid` 字面测试值、`members.entryInfo.status` 三个已批准状态和有效活动过滤后，第二轮生成超过 110 秒仍未返回结果，Copilot 与 Inference 健康检查均正常、前端无错误日志。因最终强类型计划尚未返回，本次不能把 27B 计划生成标记为通过；该现象进一步证明查询助手需要明确的超时、取消或异步任务反馈，不能无限保持禁用态“生成中”。
+
+### 13.13 维度建模生产路线决策（2026-08-25）
+
+经确认，第一批指标的生产计算统一改为基于维度建模成果：Model 准备物化批次和受限 staging，Develop 查询任务计算 DIM/DWD/DWS 数据，Quality 执行门禁后由 Model 原子发布，最终由一个 Orchestrator DAG 完成手动或定时全量重算。现有直接读取 MongoDB 的指标 MQL 只保留为金样和回归证据，不再作为生产路线。
+
+实施前的模型修订项为：
+
+- `dwd_outdoor_participation` 增加 `is_signup` 和 `is_current_leader`，粒度改为“每个有效活动与人员组合一行，多种关系合并”；
+- `dws_outdoor_person_metric` 和 `dws_outdoor_person_pair_metric` 统一为 `fact`；
+- 为两张 DWS 补齐能表达人员、人员对、指标版本和统计范围的复合业务键；
+- 五项 Standard 指标全部建立到对应事实表的指标映射；
+- 建立五个 Develop 持久查询任务、Model 物化批次任务、Quality 门禁和唯一的 `outdoor_governance_full_refresh` 总编排；
+- 替代任务验证通过后删除旧的“户外活动重叠度”直算任务，禁止保留双轨生产路线。
+
+如果实施过程中发现现有模块缺少通用多输入关联、安全物化、跨表质量断言或共享批次上下文能力，必须先给出模块职责内的通用设计并确认，再修改代码。
 
 ### 13.6 Model 逻辑表与星型关系（2026-08-25）
 

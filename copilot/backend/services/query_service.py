@@ -278,6 +278,14 @@ class QueryService:
             "再按 group_by + distinct_by 去重，最后按 group_by 输出计数。"
             "统计文档按标量字段分组、按文档身份去重的数量时使用 count_distinct_documents；"
             "该操作必须同时提供 group_by 和 distinct_by，先过滤有效文档并去重，再按 group_by 输出计数。"
+            "统计文档字段分组与数组元素分组的去重并集时使用 count_distinct_document_and_array_elements；"
+            "该操作用于‘负责或参加的不同活动’等语义，必须同时提供 field、group_by、document_group_by、"
+            "distinct_by 和 element_filters；数组分支先展开并过滤，文档分支直接取 document_group_by，"
+            "两支都按人员与文档身份去重后合并，再按人员输出计数。"
+            "比较同一活动文档中两个人的实际参加活动集合时使用 directional_overlap_rate；"
+            "必须提供 field、entity_field、entity_values、activity_id_field 和 element_filters。"
+            "先展开成员数组并按实际参加状态过滤，再按人员与活动标识去重，返回共同活动数、两个人各自活动数，"
+            "以及从第一个人到第二个人、从第二个人到第一个人的两个方向重叠率；任一分母为 0 时对应结果为 0。"
             "比较两个实体各自拥有的去重元素集合时使用 set_comparison；entity_field 是实体标识字段，"
             "entity_values 必须原样保留两个实体值，set_fields 是一个或多个数组元素身份字段。"
             "set_comparison.metric 只能是 intersection_count、jaccard、overlap_coefficient 或 unspecified。"
@@ -286,6 +294,8 @@ class QueryService:
             "无法从资源事实唯一确定含义时必须填写 clarification；不得把猜测写成可执行计划。"
             "assumptions 必须为空，否则系统会要求用户澄清。参数名和结果列名由编译器生成，不要输出。"
             "metric.operation 只能是 none、count_documents、count_array_elements、count_distinct_array_elements、count_distinct_documents、"
+            "count_distinct_document_and_array_elements、"
+            "directional_overlap_rate、"
             "distinct_count、sum、avg、min、max。"
             "filter.operator 只能是 eq、ne、gt、gte、lt、lte、in、contains、regex、exists、not_empty；"
             "统计某记录拥有的数组元素数量时，filters 必须标识拥有该数组的记录，禁止选择该数组的子字段。"
@@ -294,6 +304,8 @@ class QueryService:
             "filters 和 element_filters 每项只有 field/operator/value；普通 metric 只有 operation/field；"
             "count_distinct_array_elements 的 metric 还必须提供 group_by、distinct_by、element_filters；"
             "count_distinct_documents 的 metric 必须提供 group_by、distinct_by。"
+            "count_distinct_document_and_array_elements 的 metric 必须提供 group_by、document_group_by、distinct_by、element_filters。"
+            "directional_overlap_rate 的 metric 必须提供 field、entity_field、entity_values、activity_id_field、element_filters。"
         )
 
     @staticmethod
@@ -330,7 +342,16 @@ class QueryService:
                 "operation": {"type": "string", "enum": sorted(MQLCompiler.METRIC_OPERATIONS)},
                 "field": {"type": "string"},
                 "group_by": {"type": "array", "items": {"type": "string"}},
+                "document_group_by": {"type": "array", "items": {"type": "string"}},
                 "distinct_by": {"type": "array", "items": {"type": "string"}},
+                "entity_field": {"type": "string"},
+                "entity_values": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {"type": "string"},
+                },
+                "activity_id_field": {"type": "string"},
                 "element_filters": {"type": "array", "items": filter_item},
             },
             "required": ["operation", "field"],

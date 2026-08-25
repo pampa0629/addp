@@ -135,6 +135,35 @@ def overlap_plan(metric):
     }
 
 
+def outdoor_directional_overlap_plan():
+    return {
+        "collection": "Outdoors",
+        "filters": [
+            {"field": "status", "operator": "ne", "value": "拟定中"},
+            {"field": "status", "operator": "ne", "value": "已取消"},
+            {"field": "title.date", "operator": "not_empty", "value": True},
+        ],
+        "select_fields": [],
+        "sort": [],
+        "limit": None,
+        "metric": {
+            "operation": "directional_overlap_rate",
+            "field": "members",
+            "entity_field": "members.personid",
+            "entity_values": ["A", "B"],
+            "activity_id_field": "_id",
+            "element_filters": [{
+                "field": "members.entryInfo.status",
+                "operator": "in",
+                "value": ["报名中", "领队", "领队组"],
+            }],
+        },
+        "set_comparison": None,
+        "assumptions": [],
+        "clarification": None,
+    }
+
+
 def test_compile_participation_count_uses_nickname_and_array_size():
     result = MQLCompiler.compile(participation_plan(), [persons_resource()])
     command = json.loads(result["query"])
@@ -258,6 +287,83 @@ def test_compile_distinct_documents_groups_by_current_leader_and_deduplicates_ac
             "distinct_document_count": "$_distinct_count",
         },
     }
+
+
+def test_compile_distinct_document_and_array_elements_unions_leader_and_participants():
+    plan = {
+        "collection": "Outdoors",
+        "filters": [
+            {"field": "status", "operator": "ne", "value": "拟定中"},
+            {"field": "status", "operator": "ne", "value": "已取消"},
+            {"field": "title.date", "operator": "not_empty", "value": True},
+        ],
+        "select_fields": [],
+        "sort": [],
+        "limit": None,
+        "metric": {
+            "operation": "count_distinct_document_and_array_elements",
+            "field": "members",
+            "group_by": ["members.personid"],
+            "document_group_by": ["leader.personid"],
+            "distinct_by": ["_id"],
+            "element_filters": [{
+                "field": "members.entryInfo.status",
+                "operator": "in",
+                "value": ["报名中", "领队", "领队组"],
+            }],
+        },
+        "set_comparison": None,
+        "assumptions": [],
+        "clarification": None,
+    }
+
+    result = MQLCompiler.compile(plan, [outdoors_resource()])
+    command = json.loads(result["query"])
+    pipeline = command["pipeline"]
+
+    assert command["aggregate"] == "Outdoors"
+    assert {"$unwind": "$members"} in pipeline
+    union_stage = next(stage["$unionWith"] for stage in pipeline if "$unionWith" in stage)
+    assert union_stage["coll"] == "Outdoors"
+    assert union_stage["pipeline"][-1]["$project"] == {
+        "_metric_group": "$leader.personid",
+        "_metric_distinct": "$_id",
+    }
+    assert pipeline[-2] == {
+        "$group": {"_id": "$_id.group", "_distinct_count": {"$sum": 1}},
+    }
+    assert pipeline[-1]["$project"]["distinct_document_and_array_count"] == "$_distinct_count"
+
+
+def test_compile_directional_overlap_rate_from_activity_members_returns_both_directions():
+    result = MQLCompiler.compile(outdoor_directional_overlap_plan(), [outdoors_resource()])
+    command = json.loads(result["query"])
+    pipeline_text = json.dumps(command["pipeline"], ensure_ascii=False)
+
+    assert command["aggregate"] == "Outdoors"
+    assert {"$unwind": "$members"} in command["pipeline"]
+    assert any("$facet" in stage for stage in command["pipeline"])
+    assert '"$setIntersection"' in pipeline_text
+    assert '"overlap_rate_from_left"' in pipeline_text
+    assert '"overlap_rate_from_right"' in pipeline_text
+    assert '"$eq": ["$left_count", 0]' in pipeline_text
+    assert '"$eq": ["$right_count", 0]' in pipeline_text
+    assert result["query_parameters"] == [
+        {"name": "status", "type": "string", "default": "拟定中"},
+        {"name": "status_2", "type": "string", "default": "已取消"},
+        {"name": "status_3", "type": "string", "default": "报名中"},
+        {"name": "status_4", "type": "string", "default": "领队"},
+        {"name": "status_5", "type": "string", "default": "领队组"},
+        {"name": "entity_1", "type": "string", "default": "A"},
+        {"name": "entity_2", "type": "string", "default": "B"},
+    ]
+
+
+def test_directional_overlap_rate_rejects_non_member_entity_field():
+    plan = outdoor_directional_overlap_plan()
+    plan["metric"]["entity_field"] = "leader.personid"
+    with pytest.raises(MQLPlanError, match="entity_field must belong to members"):
+        MQLCompiler.compile(plan, [outdoors_resource()])
 
 
 def test_compile_rejects_distinct_documents_object_group():

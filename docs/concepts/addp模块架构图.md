@@ -582,12 +582,15 @@ graph TB
 - 运行实例声明 `role`；只有 `backend` 实例具有 Gateway 路由端点，`worker`、`scheduler` 等角色只用于运行状态和容量观测。
 - 同一模块允许多个运行实例并存，注册不会互相覆盖 URL、版本或元数据。
 - 注册提交完整实例声明；后续心跳只续租并更新 `last_heartbeat`，不得借心跳覆盖模块定义、管理员启用状态或实例元数据。
+- Backend 必须先完成自身必需 Infra 初始化并成功绑定 HTTP 监听端口，再发起后台注册；不得把尚未监听的 `module_url` 提前发布为可路由实例。
 
 **3. 周期心跳机制**:
 - 模块每 **10 秒**发送一次心跳到 System
 - System 将超过租约超时时间未心跳的运行实例标记为 `down`，但不删除运行实例历史，也不删除持久模块定义。
 - 同一 `instance_id` 重新注册可恢复为 `up`；新进程必须使用新的 `instance_id`。
 - 任一次心跳失败后，Go 与 Python 公共客户端的下一次请求都必须使用同一 `instance_id` 幂等重注册；注册失败使用有界退避，不能继续发送必然失败的心跳直到租约过期。
+- 公共客户端必须发布 `starting|registered|recovering|failed|stopped` 五态进程内快照。首次注册成功进入 `registered`；任一心跳失败立即进入 `recovering`，重注册成功后恢复。该快照只供本进程就绪判断，不落库、不发布第二套注册事实。
+- 连接失败、超时、`429` 和 `5xx` 是可重试故障；严格刷新凭据后仍然出现的 `400`、`401`、`403` 或其他确定性契约拒绝必须进入 `failed` 并终止进程，不得无限重试永不可成功的配置。心跳返回实例不存在时仍使用同 ID 重注册。
 - 模块正常退出时应注销本次 `instance_id`；异常退出仍由租约到期收敛。
 - Go 进程入口必须把同一个可取消的信号 Context 传给公共注册客户端；客户端返回生命周期完成信号，入口在关闭资源和退出进程前必须等待该信号，确保限时注销请求已经结束。不得用 `context.Background()` 承载进程级注册生命周期，也不得用 `os.Exit` 绕过等待与清理。
 - Runtime 模块注册、心跳和注销失败必须返回 `{error, error_code}`；稳定错误码使用 `module_registration_invalid`、`module_runtime_instance_not_found`、`module_registry_unauthorized`、`module_registry_forbidden`、`module_registration_failed`、`module_heartbeat_failed` 和 `module_deregistration_failed`。Go 与 Python 公共客户端都必须保留 `method`、`path`、`status_code`、`error_code`、`error_message` 和受限长度的 `response_body`；后台生命周期日志还必须包含 `operation`、`module`、`instance_id` 和 `role`，不得只输出无结构的异常文本。
@@ -612,6 +615,29 @@ graph TB
 - 模块动态注册表是 Gateway 业务模块路由的唯一事实源。
 - System 注册中心暂时不可达时，Gateway 可以继续使用最近一次成功且尚未超过本地失效窗口的发现快照；不得读取 `*_SERVICE_URL` 建立平行 fallback 路由。
 - 没有可用 Backend 实例或快照已失效时返回 503，不能把请求静默发往未受租约管理的地址。
+
+### 存活、就绪、注册与可路由契约
+
+ADDP 必须分开以下四个状态，不再使用含义不明的“启动成功”同时表示进程与平台可用性：
+
+| 状态 | 唯一判断 | 消费方 |
+| --- | --- | --- |
+| Alive | HTTP 进程已监听并能处理本地存活请求 | 进程管理器、容器存活探针、T4 构建身份预检 |
+| Ready | 自身必需 Infra 已就绪，且业务模块当前注册生命周期为 `registered` | 部署就绪探针、开发启动脚本、业务路由门禁 |
+| Registered | System 已为当前 `module_name + instance_id` 建立或续期租约 | 当前进程注册生命周期、System 模块管理 |
+| Routable | System 快照中实例满足 `enabled + backend + up + lease valid`，并已被 Gateway 应用 | Gateway |
+
+Backend 的公开健康端点只保留两个唯一语义：
+
+- `GET /health/live`：只做本地进程存活判断，成功固定返回 `200`；响应包含 `status=live`、`module` 和统一构建身份。不访问 System、其他业务模块、必需 Infra 或可选 Engine Instance。
+- `GET /health/ready`：Ready 时返回 `200` 和 `status=ready`；否则返回 `503` 和 `status=not_ready`。响应包含 `module`、`role`、`instance_id`、`registration_state`、统一构建身份及受限的 `checks[]`；检查项只暴露稳定 `name/status/error_code`，不返回凭据、连接串或原始下游错误。
+- 旧 `/health` 不再保留；各模块、Monitor、注册的 `health_check_url`、开发脚本、Compose/部署探针和 T4 预检必须在同一次实施中切换，不得保留别名或 fallback。
+
+Backend 必须在健康路由之后、所有业务路由之前安装统一 Ready 门禁；未 Ready 时直连业务请求也返回 `503 module_not_ready`，不得借直连地址绕过 System 注册资格。Gateway 仍只依据 System 租约路由，不在每个请求前额外探测 Ready；System 不可达后的短暂观测延迟由 10 秒心跳和 30 秒租约边界收敛。
+
+Worker 和 Scheduler 不为健康检查额外分配 HTTP 端口。它们必须先完成自身必需 Infra 初始化，再注册实例；未进入 `registered` 或心跳失败进入 `recovering` 时，不得领取新 execution、创建新调度执行或接受新工作。已在执行的工作按 owner execution lease 和授权契约收敛，不因模块心跳一次失败就无条件中止。自身必需 Infra 出现无法恢复的故障时，必须停止心跳、注销并退出，不得以有效租约伪装可工作。
+
+System 是唯一例外：其 Ready 只依赖自身必需 Infra、迁移和 IAM/bootstrap 事实，不依赖它向自己注册。Gateway 的 Ready 要求已从 System 成功应用至少一次完整模块路由快照；业务模块不得把任何其他业务模块的可达性纳入 Ready。
 
 ### 路由请求流程
 
@@ -886,6 +912,7 @@ graph TB
         DevelopT["Develop<br/>query / workflow / script"]
         ManagerT["Manager<br/>vector_tile_cache_generation / vector_materialized_view_generation / embedding"]
         QualityT["Quality<br/>check"]
+        ModelT["Model<br/>materialization_prepare / materialization_publish"]
         GraphT["Graph<br/>kg_build"]
         OrchestratorT["Orchestrator<br/>orchestration"]
 
@@ -894,6 +921,7 @@ graph TB
         DevelopT -->|"模块注册同时声明 capabilities"| ModuleRegistry
         ManagerT -->|"模块注册同时声明 capabilities"| ModuleRegistry
         QualityT -->|"模块注册同时声明 capabilities"| ModuleRegistry
+        ModelT -->|"模块注册同时声明 capabilities"| ModuleRegistry
         GraphT -->|"模块注册同时声明 capabilities"| ModuleRegistry
         OrchestratorT -->|"模块注册同时声明 capabilities"| ModuleRegistry
     end
@@ -906,6 +934,7 @@ graph TB
         DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| DevelopT
         DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| ManagerT
         DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| QualityT
+        DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| ModelT
         DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| GraphT
         DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| OrchestratorT
     end
@@ -915,7 +944,7 @@ graph TB
     classDef orch fill:#e8eaf6,stroke:#283593,stroke-width:2px
 
     class System,ModuleRegistry system
-    class MetaT,TransferT,DevelopT,ManagerT,QualityT,GraphT,OrchestratorT provider
+    class MetaT,TransferT,DevelopT,ManagerT,QualityT,ModelT,GraphT,OrchestratorT provider
     class Orchestrator,DAGEngine orch
 ```
 
@@ -973,7 +1002,7 @@ graph LR
 
 ## 模块启动与恢复
 
-ADDP 部署可以按以下顺序启动，以减少初始等待时间；该顺序是运维建议，不是业务模块、扩展运行时或 Gateway 的运行正确性前提。除各进程自身必需的 Infra 外，平台不得要求固定启动顺序：
+ADDP 部署按以下顺序使实例进入 Ready。业务进程可以在 System 之前被操作系统或容器调度器创建，但只能保持 Alive/Not Ready 并后台注册；对平台业务可用性而言，System 是所有业务模块、Gateway 和 Python 应用的必要先行控制面：
 
 ```
 1. 基础设施层（必须最先就绪）
@@ -982,10 +1011,10 @@ ADDP 部署可以按以下顺序启动，以减少初始等待时间；该顺序
    ├─ MinIO
    └─ Meilisearch
 
-2. 控制面（推荐先启动）
+2. 控制面（必须先 Ready）
    └─ System Backend（认证中心、模块注册中心、引擎注册表）
 
-3. 业务模块层（可并行，也可早于 System 启动）
+3. 业务模块层（进程可并行创建，System Ready 后才能 Ready）
    ├─ Manager Backend
    ├─ Meta Backend + Worker
    ├─ Transfer Backend + Worker
@@ -1000,11 +1029,11 @@ ADDP 部署可以按以下顺序启动，以减少初始等待时间；该顺序
    ├─ Spark Workflow 运行时
    └─ Jupyter 脚本运行时
 
-5. Python 应用层（独立启动）
+5. Python 应用层（独立进程，同样依赖 System 才能 Ready）
    ├─ Agent Backend
    └─ Copilot Backend
 
-6. 网关层（System 可达后即可启动，不等待业务模块）
+6. 网关层（至少应用一次 System 完整快照后 Ready，不等待业务模块）
    └─ Gateway（从 System 获取并持续监听模块路由快照）
 
 7. 前端层（可并行启动）
@@ -1024,11 +1053,11 @@ ADDP 部署可以按以下顺序启动，以减少初始等待时间；该顺序
 | 约束 | 说明 |
 |------|------|
 | **Infra → 使用该 Infra 的进程** | PostgreSQL、Redis、MinIO、Meilisearch 等部署基础设施可以是进程自身的硬依赖；Infra 不属于 Engine Instance 启动解耦范围。 |
-| **业务模块 ↔ System** | 业务模块 HTTP 服务和 readiness 不依赖 System 当时可达；注册客户端在后台有界退避重试，System 恢复后使用同一进程级 `instance_id` 自动注册。需要认证或 System 控制面事实的具体请求可以在 System 不可用时失败。 |
+| **业务模块 ↔ System** | 业务进程的 Alive 不依赖 System 当时可达；Ready 强依赖当前进程已成功注册。注册客户端在后台对瞬时故障有界退避重试，System 恢复后使用同一进程级 `instance_id` 自动注册并恢复 Ready。 |
 | **Gateway ↔ 业务模块** | Gateway 在 System 可达后以 `revision=0` 取得完整路由快照，随后长轮询更新；它不要求业务模块预先启动。模块稍后注册、租约失效或重新注册时，路由池自动收敛。 |
-| **System 暂时不可达** | Gateway 只保留最近一次仍在本地租约有效期内的快照；模块继续提供自身健康检查并重试注册。快照租约失效后请求返回 503，不回退到硬编码模块地址。 |
+| **System 暂时不可达** | 模块在注册或心跳失败被观测后转为 Not Ready，但进程保持 Alive 并重试注册。Gateway 只保留最近一次仍在本地租约有效期内的快照；租约失效后请求返回 503，不回退到硬编码模块地址。 |
 | **扩展运行时与 Engine Instance** | Runtime 自身就绪后异步注册；零个 Engine Instance 是合法状态，业务模块启动不得依赖任何内置或外部引擎存在。 |
-| **Agent / Copilot 独立启动** | Python 应用与 Go 模块共用同一模块注册契约，可以在任意时刻启动；运行时调用其他模块时再动态判断其可用性。 |
+| **Agent / Copilot 独立进程** | Python 应用与 Go 模块共用同一模块注册和 Ready 契约；进程可以在任意时刻创建，但 System 注册成功前不得接受业务流量。运行时调用其他业务模块时仍只失败当前请求，不改变本模块 Ready。 |
 | **前端无严格顺序约束** | Console 通过 iframe 动态加载各模块前端（用户访问时才加载），各前端可完全并行启动 |
 
 ---
@@ -1047,5 +1076,5 @@ ADDP 部署可以按以下顺序启动，以减少初始等待时间；该顺序
 
 **文档版本**: v1.1
 **创建日期**: 2026-02-16
-**更新日期**: 2026-08-23
+**更新日期**: 2026-08-25
 **作者**: ADDP 开发团队

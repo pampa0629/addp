@@ -135,7 +135,7 @@ Redis 原子操作（Lua 脚本）
 - **编码透明**：代理不自动解压上游 gzip 响应，原样保留 `Content-Encoding` 与响应字节（例如 PMTiles 内的 gzip MVT）
 - **透明代理**：按 `/api/v1/:module/*path` 提取模块名，完整保留请求路径、头、体和查询参数
 - **跨域处理**：统一配置 CORS，允许前端跨域访问
-- **健康检查**：提供 `/health` 端点检查 Gateway 状态
+- **健康检查**：`/health/live` 表达 Gateway 进程存活，`/health/ready` 只在已从 System 成功应用至少一次完整模块路由快照后表达就绪
 
 ## 整体架构
 
@@ -242,9 +242,11 @@ System 使用三张表表达生命周期不同的定义、实例与发现状态�
 
 ```
 1. 模块启动
+   - 完成自身必需 Infra 初始化并先绑定 Backend HTTP Listener
    - 使用模块自身 Platform Service Access Token 调用 System API: POST /api/v1/system/runtime/modules
    - 生成本进程唯一 instance_id
-   - 传入：module_name, instance_id, role, module_url, route_prefix, health_check_url
+   - 传入：module_name, instance_id, role, module_url, route_prefix, health_check_url；Backend `health_check_url` 固定指向 `/health/ready`
+   - System 不可达时进程保持 Alive/Not Ready，公共客户端只对瞬时故障有界退避重试
    ↓
 2. System 原子维护定义和实例
    - module_name 幂等维护持久定义，但不覆盖管理员 enabled 状态
@@ -256,6 +258,7 @@ System 使用三张表表达生命周期不同的定义、实例与发现状态�
    - 调用 System API: POST /api/v1/system/runtime/modules/heartbeat
    - 传入 module_name 与 instance_id
    - System 只续租该实例，不修改模块定义和管理员 enabled 状态
+   - 心跳失败后当前进程立即进入 recovering/Not Ready，使用同一 instance_id 重注册；成功后恢复 Ready
    ↓
 4. System 定时检查到期租约
    - 租约默认 30 秒，实例每 10 秒续租
@@ -269,10 +272,12 @@ System 使用三张表表达生命周期不同的定义、实例与发现状态�
 1. Gateway 启动
    - 使用 `SYSTEM_URL` 创建 System bootstrap 代理
    - 创建其他模块使用的 ModuleDiscovery 实例
+   - HTTP 进程可先 Alive，在首个 System 完整快照成功应用前 `/health/ready` 返回 503
    ↓
 2. 初始化模块路由快照
    - 使用 Gateway Platform Service Access Token 调用 System API: GET /api/v1/system/runtime/modules/watch?revision=0
    - 获取 registry revision，以及 enabled=true 且至少存在一个有效 Backend 租约的完整模块快照
+   - 首个完整快照原子应用后 Gateway 才进入 Ready；空模块集合也是合法完整快照
    ↓
 3. 构建动态路由映射
    - 只从 role=backend、status=up、租约未到期的实例中构建 Backend 池
@@ -309,6 +314,8 @@ System 使用三张表表达生命周期不同的定义、实例与发现状态�
 | **多实例路由** | 同一模块可登记多个 Backend/Worker/Scheduler 实例；所有有效 Backend 按请求轮询参与流量，Worker/Scheduler 仅观测 |
 | **灰度发布基础** | 未来可支持同一模块的多个版本（v1/v2），通过 metadata 控制流量分配 |
 | **配置热更新** | 模块 URL 变更无需重启 Gateway，注册表修订号变化后立即生效 |
+
+Gateway 不以逐请求探测各 Backend `/health/ready` 作为第二套路由事实。Backend 通过注册、心跳、注销和租约到期向 System 发布运行资格；`health_check_url` 供部署、Monitor 和运维观测使用，不取代 System 租约。
 
 ### 配置示例
 

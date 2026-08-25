@@ -1,4 +1,4 @@
-.PHONY: help build build-images select-image-services test test-changed test-module test-platform test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-console-frontend test-copilot test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats \
+.PHONY: help build build-images select-image-services test test-changed test-module test-platform test-book test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-console-frontend test-copilot test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats \
         build-iam-bootstrap build-iam-recovery \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
@@ -159,6 +159,7 @@ test-release-runner: ## 运行 T5 分发器和 CI 登记检查的确定性测试
 	@python3 scripts/ci/check-release-ci-registration.py --repository "$(CURDIR)"
 
 test-platform: ## 运行无外部服务依赖的平台一致性门禁
+	@$(MAKE) test-book
 	@bash scripts/utils/check-deps-version.sh
 	@python3 scripts/ci/check-build-registration_test.py
 	@python3 scripts/ci/select-image-services_test.py
@@ -179,6 +180,11 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@$(MAKE) test-execution-fixtures
 	@$(MAKE) test-online-runner
 	@$(MAKE) test-authorization
+
+test-book: ## 校验《数据治理100问》源稿目录、编号和延伸阅读链接
+	@python3 docs/books/数据治理100问/tools/validate.py
+	@python3 docs/books/数据治理100问/tools/book_sources_test.py
+	@python3 docs/books/数据治理100问/tools/release_tools_test.py
 
 test-engine-startup-isolation: ## 校验模块启动不依赖 Engine Instance 或可选 Engine Runtime
 	@python3 scripts/ci/check-engine-startup-isolation_test.py

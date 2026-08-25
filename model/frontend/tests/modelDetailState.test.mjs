@@ -47,14 +47,24 @@ test('logical table details load metric names before rendering persisted mapping
   assert.match(source, /const metricNameMap = computed\(\(\) => \{/)
 })
 
+test('logical table materialization binds a schema locator and target name', async () => {
+  const source = await readFile(new URL('../src/views/LogicalTableDetail.vue', import.meta.url), 'utf8')
+  assert.match(source, /mode="node"/)
+  assert.match(source, /:selectable-filter="isSchemaSelection"/)
+  assert.match(source, /@update:model-value="handleTargetParentSelect"/)
+  assert.match(source, /target_parent_locator/)
+  assert.doesNotMatch(source, /materializationForm\.schema_name/)
+  assert.doesNotMatch(source, /materializationForm\.table_name/)
+})
+
 test('PUT payloads preserve complete nullable and zero-valued model state', () => {
   assert.deepEqual(buildLogicalTableUpdateRequest(
     { name: 'Order', domain_id: null, table_type: 'entity', layer: 'dwd' },
     { entity_id: 7, version: 3 },
-    { schema_name: '', table_name: '', partition_by: '', partition_type: 'range' }
+    { target_parent_locator: '', target_name: '', partition_by: '', partition_type: 'range' }
   ), {
     name: 'Order', domain_id: null, entity_id: 7, version: 3, table_type: 'entity', layer: 'dwd',
-    materialization: { schema_name: '', table_name: '', partition_by: '', partition_type: 'range' }
+    materialization: { target_parent_locator: '', target_name: '', partition_by: '', partition_type: 'range' }
   })
 
   assert.deepEqual(buildEntityAttributeUpdateRequest({
@@ -88,15 +98,15 @@ test('draft resource actions depend on their own permission instead of update pe
 
 test('DDL preview payload contains only current materialization fields', () => {
   assert.deepEqual(buildDDLPreviewRequest({
-    schema_name: ' analytics ',
-    table_name: 'fact_order',
+    target_parent_locator: ' addp://engine/2/path/analytics?type=schema ',
+    target_name: ' fact_order ',
     partition_by: '',
     partition_type: 'RANGE',
     extra_options: 'ignored'
   }), {
     materialization: {
-      schema_name: 'analytics',
-      table_name: 'fact_order',
+      target_parent_locator: 'addp://engine/2/path/analytics?type=schema',
+      target_name: 'fact_order',
       partition_by: '',
       partition_type: 'range'
     }
@@ -106,8 +116,8 @@ test('DDL preview payload contains only current materialization fields', () => {
 test('DDL preview payload normalizes absent materialization without leaking undefined fields', () => {
   assert.deepEqual(buildDDLPreviewRequest(), {
     materialization: {
-      schema_name: '',
-      table_name: '',
+      target_parent_locator: '',
+      target_name: '',
       partition_by: '',
       partition_type: ''
     }

@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/addp/common/buildinfo"
+	"github.com/addp/common/modulelifecycle"
 	commonClient "github.com/addp/common/client"
 	commonAuth "github.com/addp/common/middleware/auth"
 	_ "github.com/addp/portal/docs"
@@ -19,6 +19,7 @@ func SetupRouter(
 	redisClient *redis.Client,
 	assetClient *commonClient.AssetClient,
 	serviceClient *commonClient.ServiceClient,
+	lifecycle *modulelifecycle.Controller,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -34,13 +35,10 @@ func SetupRouter(
 		c.Next()
 	})
 
-	// 健康检查（无需认证）
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, buildinfo.Health("portal"))
-	})
-
 	// Swagger 文档
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	lifecycle.RegisterHealthRoutes(router)
+	router.Use(lifecycle.RequireReady())
 
 	// Portal BFF 路由（需要认证）
 	api := router.Group("/api/v1/portal")

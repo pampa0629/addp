@@ -57,6 +57,12 @@ const (
 	MsgTableRelationStateConflict  = "model.table_relation.state_conflict"
 	MsgTableRelationConflict       = "model.table_relation.conflict"
 
+	// 逻辑表物化
+	MsgMaterializationInvalid     = "model.materialization.invalid"
+	MsgMaterializationConflict    = "model.materialization.conflict"
+	MsgMaterializationNotFound    = "model.materialization.not_found"
+	MsgMaterializationUnavailable = "model.materialization.unavailable"
+
 	// 数仓分层
 	MsgLayerNotFound     = "model.dw_layer.not_found"
 	MsgLayerCodeConflict = "model.dw_layer.code_conflict"

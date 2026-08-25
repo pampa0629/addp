@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 47
+manifest_version: 48
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -401,6 +401,8 @@ roles:
     allowed_scope_types: [tenant]
     allowed_principal_types: [user]
     permissions:
+      - develop.data_ddl.execute
+      - develop.data_read.execute
       - model.dw_layer.create
       - model.dw_layer.delete
       - model.dw_layer.read
@@ -418,10 +420,12 @@ roles:
       - model.logical_model.delete
       - model.logical_model.read
       - model.logical_model.update
+      - model.materialization.execute
       - standard.dimension_hierarchy.read
       - standard.domain.read
       - standard.element.read
       - standard.metric.read
+      - system.execution_authorization.create
   - key: tenant.data_engineer
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.data_engineer.name
@@ -683,6 +687,8 @@ roles:
       - standard.domain.read
       - standard.element.read
       - standard.metric.read
+      - system.engine_descriptor.read
+      - system.execution_authorization.execute
   - key: tenant.monitor_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.monitor_runtime.name

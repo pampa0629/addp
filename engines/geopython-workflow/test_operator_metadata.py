@@ -87,7 +87,7 @@ def test_io_metadata_exposes_runtime_contract_only():
 
     load_params = {param["name"] for param in operators["load"]["parameters"]}
     save_params = {param["name"] for param in operators["save"]["parameters"]}
-    assert {"connection_info", "schema", "table", "path"} <= load_params
+    assert {"connection_info", "schema", "table", "path", "pipeline"} <= load_params
     assert {"connection_info", "schema", "table", "path"} <= save_params
     assert not {"locator", "target_parent_locator", "target_name"} & load_params
     assert not {"locator", "target_parent_locator", "target_name"} & save_params

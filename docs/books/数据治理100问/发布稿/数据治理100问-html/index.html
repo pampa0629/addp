@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-CN" xml:lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>《数据治理100问》</title>
+  <style>
+    div.sitenav { display: flex; flex-direction: row; flex-wrap: wrap; }
+    span.navlink { flex: 1; }
+    span.navlink-label { display: inline-block; min-width: 4em; }
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <link rel="stylesheet" href="book.css" />
+</head>
+<body>
+<nav id="sitenav">
+<div class="sitenav">
+<span class="navlink">
+</span>
+<span class="navlink">
+</span>
+</div>
+<div class="sitenav">
+<span class="navlink">
+<span class="navlink-label">Next:</span> <a href="-contents.html" accesskey="n" rel="next">目录</a>
+</span>
+<span class="navlink">
+</span>
+</div>
+</nav>
+<header id="title-block-header">
+<h1 class="title">《数据治理100问》</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="-contents.html#contents" id="toc-contents">目录</a></li>
+<li><a href="1-q000.html#q000" id="toc-q000">000
+为什么要写《数据治理100问》？</a></li>
+<li><a href="2-q001.html#q001" id="toc-q001">001
+数据治理的第一性原理是什么？</a></li>
+<li><a href="3-q002.html#q002" id="toc-q002">002
+为什么说“数据治理是一把手工程”？</a></li>
+<li><a href="4-q003.html#q003" id="toc-q003">003
+为什么说“数据治理只有起点，没有终点”？</a></li>
+<li><a href="5-q004.html#q004" id="toc-q004">004
+数据治理的成熟度如何评估？</a></li>
+<li><a href="6-q005.html#q005" id="toc-q005">005
+数据治理应该从哪里开始，如何选择首期业务场景？</a></li>
+<li><a href="7-q006.html#q006" id="toc-q006">006
+如何制定并分阶段推进数据治理路线图？</a></li>
+<li><a href="8-q007.html#q007" id="toc-q007">007
+数据治理的成效和投资回报应该如何衡量？</a></li>
+<li><a href="9-q008.html#q008" id="toc-q008">008
+数据治理与数据管理是什么关系？</a></li>
+<li><a href="10-q009.html#q009" id="toc-q009">009
+数据治理与数据处理是什么关系？</a></li>
+<li><a href="11-q010.html#q010" id="toc-q010">010
+数据治理与数据资产管理是什么关系？</a></li>
+<li><a href="12-q011.html#q011" id="toc-q011">011
+数据治理与数据库、数据仓库是什么关系？</a></li>
+<li><a href="13-q012.html#q012" id="toc-q012">012
+大数据平台、数据中台和数据治理平台有什么区别？</a></li>
+<li><a href="14-q013.html#q013" id="toc-q013">013
+业务建模、行业数据模型与数据治理是什么关系？</a></li>
+<li><a href="15-q014.html#q014" id="toc-q014">014 数据治理与
+BI（商业智能）、数据大屏是什么关系？</a></li>
+<li><a href="16-q015.html#q015" id="toc-q015">015 什么是数据编织（Data
+Fabric）？</a></li>
+<li><a href="17-q016.html#q016" id="toc-q016">016 什么是数据网格（Data
+Mesh）？</a></li>
+<li><a href="18-q017.html#q017" id="toc-q017">017
+基于数据的应用场景与传统应用系统是什么关系？</a></li>
+<li><a href="19-q018.html#q018" id="toc-q018">018
+数据和业务的关系是什么？</a></li>
+<li><a href="20-q019.html#q019" id="toc-q019">019
+数据如何为业务增值？</a></li>
+<li><a href="21-q020.html#q020" id="toc-q020">020
+数据治理和应用场景，哪个先、哪个后？</a></li>
+<li><a href="22-q021.html#q021" id="toc-q021">021
+数据治理中的数据建模和三维建模是一回事吗？</a></li>
+<li><a href="23-q022.html#q022" id="toc-q022">022
+实体建模在数据治理中发挥什么作用？</a></li>
+<li><a href="24-q023.html#q023" id="toc-q023">023
+维度建模在数据治理中发挥什么作用？</a></li>
+<li><a href="25-q024.html#q024" id="toc-q024">024
+范式建模主要解决什么问题，它与实体建模、维度建模是什么关系？</a></li>
+<li><a href="26-q025.html#q025" id="toc-q025">025
+标签画像能够在哪些业务场景中发挥价值？</a></li>
+<li><a href="27-q026.html#q026" id="toc-q026">026
+什么是数据产品？</a></li>
+<li><a href="28-q027.html#q027" id="toc-q027">027 什么是数据的 DIKW
+模型？</a></li>
+<li><a href="29-q028.html#q028" id="toc-q028">028
+数据从何而来？</a></li>
+<li><a href="30-q029.html#q029" id="toc-q029">029
+为什么要保持数据的鲜活度？</a></li>
+<li><a href="31-q030.html#q030" id="toc-q030">030
+数据汇聚在数据治理中的作用是什么？</a></li>
+<li><a href="32-q031.html#q031" id="toc-q031">031
+为什么数据探查在数据治理中使用频率很高？</a></li>
+<li><a href="33-q032.html#q032" id="toc-q032">032
+数据标准在数据治理中起到什么作用？</a></li>
+<li><a href="34-q033.html#q033" id="toc-q033">033
+数据治理为什么必须关注数据质量？</a></li>
+<li><a href="35-q034.html#q034" id="toc-q034">034
+数据治理应如何形成数据质量闭环？</a></li>
+<li><a href="36-q035.html#q035" id="toc-q035">035
+数据的生命周期管理是什么意思？</a></li>
+<li><a href="37-q036.html#q036" id="toc-q036">036
+主数据、参考数据和交易数据有什么区别，主数据的“黄金记录”如何形成？</a></li>
+<li><a href="38-q037.html#q037" id="toc-q037">037
+什么是数据可观测性（Data
+Observability），它和数据质量有什么区别？</a></li>
+<li><a href="39-q038.html#q038" id="toc-q038">038
+数据资源、数据资产和数据要素应如何区分？</a></li>
+<li><a href="40-q039.html#q039" id="toc-q039">039
+数据治理中的资产管理应该包括哪些内容？</a></li>
+<li><a href="41-q040.html#q040" id="toc-q040">040
+元数据在数据治理中有什么作用，业务元数据、技术元数据和运行元数据如何区分？</a></li>
+<li><a href="42-q041.html#q041" id="toc-q041">041
+数据血缘是什么意思，它与任务依赖关系有什么区别？</a></li>
+<li><a href="43-q042.html#q042" id="toc-q042">042
+数据资源如何从盘点、治理、编目到发布，形成可运营的数据资产？</a></li>
+<li><a href="44-q043.html#q043" id="toc-q043">043
+企业数据目录如何连接各类资源目录，并支撑数据资产目录？</a></li>
+<li><a href="45-q044.html#q044" id="toc-q044">044
+数据资产管理后台和资产门户有什么区别，二者如何协同？</a></li>
+<li><a href="46-q045.html#q045" id="toc-q045">045
+数据资产如何评价和持续运营，为什么编目上架不是终点？</a></li>
+<li><a href="47-q046.html#q046" id="toc-q046">046
+语义层和指标平台如何解决“同名不同义、同义不同名”？</a></li>
+<li><a href="48-q047.html#q047" id="toc-q047">047
+什么是本体（Ontology）和本体建模，它与业务模型、数据模型和知识图谱是什么关系？</a></li>
+<li><a href="49-q048.html#q048" id="toc-q048">048 什么是数据契约（Data
+Contract），它如何降低上下游协作成本？</a></li>
+<li><a href="50-q049.html#q049" id="toc-q049">049
+为什么数据治理不能只治理数据库中的表？</a></li>
+<li><a href="51-q050.html#q050" id="toc-q050">050
+时空数据在数据治理中发挥什么作用？</a></li>
+<li><a href="52-q051.html#q051" id="toc-q051">051
+时空数据的质量治理与普通表格数据有什么不同？</a></li>
+<li><a href="53-q052.html#q052" id="toc-q052">052
+遇到不认识的行业特有数据格式，应该如何开展治理？</a></li>
+<li><a href="54-q053.html#q053" id="toc-q053">053
+文档、图片、音视频等非结构化和多模态数据应如何治理？</a></li>
+<li><a href="55-q054.html#q054" id="toc-q054">054
+实时流数据和物联网数据给数据治理带来了哪些新问题？</a></li>
+<li><a href="56-q055.html#q055" id="toc-q055">055
+数据开发有哪些方式，SQL、可视化工作流和 Notebook 应该如何选择？</a></li>
+<li><a href="57-q056.html#q056" id="toc-q056">056 为什么说“SQL
+是数据工程师的第一语言”？</a></li>
+<li><a href="58-q057.html#q057" id="toc-q057">057
+可视化工作流如何通过算子编排数据处理逻辑？</a></li>
+<li><a href="59-q058.html#q058" id="toc-q058">058 Notebook
+在数据治理和数据开发中发挥什么作用？</a></li>
+<li><a href="60-q059.html#q059" id="toc-q059">059
+为什么数据开发需要参数化？</a></li>
+<li><a href="61-q060.html#q060" id="toc-q060">060
+数据开发为什么需要版本管理？</a></li>
+<li><a href="62-q061.html#q061" id="toc-q061">061
+为什么要区分开发、测试和生产环境？</a></li>
+<li><a href="63-q062.html#q062" id="toc-q062">062
+调度与任务编排有什么区别，它们如何协同？</a></li>
+<li><a href="64-q063.html#q063" id="toc-q063">063 什么是
+DataOps，它如何改进数据开发和交付过程？</a></li>
+<li><a href="65-q064.html#q064" id="toc-q064">064
+什么是流批一体化，它是否适用于所有场景？</a></li>
+<li><a href="66-q065.html#q065" id="toc-q065">065
+什么是计算引擎，为什么数据平台可能需要多种计算引擎？</a></li>
+<li><a href="67-q066.html#q066" id="toc-q066">066
+数据湖和数据仓库是什么关系？</a></li>
+<li><a href="68-q067.html#q067" id="toc-q067">067
+什么是湖仓一体化，它解决了哪些问题？</a></li>
+<li><a href="69-q068.html#q068" id="toc-q068">068
+数据治理底座为什么通常采用 Web 形态，何时仍需桌面端？</a></li>
+<li><a href="70-q069.html#q069" id="toc-q069">069
+支持时空数据的数据治理底座需要具备哪些 GIS 能力？</a></li>
+<li><a href="71-q070.html#q070" id="toc-q070">070 地图、GIS 服务和 GIS
+平台应该怎样纳入数据治理？</a></li>
+<li><a href="72-q071.html#q071" id="toc-q071">071
+为什么说数据安全是数据治理的生命线？</a></li>
+<li><a href="73-q072.html#q072" id="toc-q072">072
+数据安全治理通常包括哪些举措，它与网络安全有什么不同？</a></li>
+<li><a href="74-q073.html#q073" id="toc-q073">073
+数据分类分级应该依据什么，如何避免“只贴标签、不落控制”？</a></li>
+<li><a href="75-q074.html#q074" id="toc-q074">074
+个人信息与敏感个人信息应如何识别和保护？</a></li>
+<li><a href="76-q075.html#q075" id="toc-q075">075
+租户隔离、部门数据范围、角色权限和数据授权分别解决什么问题？</a></li>
+<li><a href="77-q076.html#q076" id="toc-q076">076
+权限控制、数据脱敏、加密、水印和审计分别解决什么问题？</a></li>
+<li><a href="78-q077.html#q077" id="toc-q077">077
+数据服务为什么需要独立的应用身份和应用授权？</a></li>
+<li><a href="79-q078.html#q078" id="toc-q078">078
+数据共享、开放、交换和交易有什么区别？</a></li>
+<li><a href="80-q079.html#q079" id="toc-q079">079
+公共数据授权运营为什么离不开数据治理？</a></li>
+<li><a href="81-q080.html#q080" id="toc-q080">080
+数联网怎样让分散的数据连接起来？</a></li>
+<li><a href="82-q081.html#q081" id="toc-q081">081
+可信数据空间怎样让多方放心使用数据？</a></li>
+<li><a href="83-q082.html#q082" id="toc-q082">082
+数据跨境流动怎样兼顾业务需要与安全合规？</a></li>
+<li><a href="84-q083.html#q083" id="toc-q083">083
+没有数据治理底座软件，也能开展数据治理吗？</a></li>
+<li><a href="85-q084.html#q084" id="toc-q084">084
+数据治理平台的核心能力是什么，怎样避免功能堆砌？</a></li>
+<li><a href="86-q085.html#q085" id="toc-q085">085
+数据治理平台应该大而全吗，统一底座怎样与专业工具协同？</a></li>
+<li><a href="87-q086.html#q086" id="toc-q086">086
+高可用和弹性伸缩是否是数据治理平台的必备能力？</a></li>
+<li><a href="88-q087.html#q087" id="toc-q087">087
+数据治理平台运维与一般应用系统运维有什么不同？</a></li>
+<li><a href="89-q088.html#q088" id="toc-q088">088
+数据治理平台应该自研、采购还是组合建设，如何作出选择？</a></li>
+<li><a href="90-q089.html#q089" id="toc-q089">089
+为什么不能把数据治理平台上线当作数据治理的终点？</a></li>
+<li><a href="91-q090.html#q090" id="toc-q090">090
+项目验收以后，如何形成持续的数据治理运营机制？</a></li>
+<li><a href="92-q091.html#q091" id="toc-q091">091
+数据治理需要哪些关键角色，如何分工协作？</a></li>
+<li><a href="93-q092.html#q092" id="toc-q092">092
+数据责任人、数据治理专员、数据保管员和数据资产运营者有什么区别？</a></li>
+<li><a href="94-q093.html#q093" id="toc-q093">093
+数据治理委员会如何建立有效的决策和争议处理机制？</a></li>
+<li><a href="95-q094.html#q094" id="toc-q094">094
+多个部门的数据口径发生冲突时，谁拥有最终裁决权？</a></li>
+<li><a href="96-q095.html#q095" id="toc-q095">095
+如何建立数据治理的考核、激励和问责机制？</a></li>
+<li><a href="97-q096.html#q096" id="toc-q096">096
+如何培养数据文化，打破部门墙并减少业务人员的抵触？</a></li>
+<li><a href="98-q097.html#q097" id="toc-q097">097 AI
+大模型与数据治理是什么关系？</a></li>
+<li><a href="99-q098.html#q098" id="toc-q098">098 AI
+能缓解数据治理中的哪些问题，不能解决哪些问题？</a></li>
+<li><a href="100-q099.html#q099" id="toc-q099">099 如何让 AI
+问数准确、可靠、可追溯？</a></li>
+<li><a href="101-q100.html#q100" id="toc-q100">100
+知识库、知识图谱和向量数据库如何协同支持 AI 开展数据治理？</a></li>
+<li><a href="102-q101.html#q101" id="toc-q101">101 高质量数据集、AI
+就绪数据与数据治理是什么关系？</a></li>
+<li><a href="103-q102.html#q102" id="toc-q102">102 AI Agent
+如何参与数据治理的设计与执行？</a></li>
+<li><a href="104-q103.html#q103" id="toc-q103">103 Palantir Ontology 与
+AI、数据治理是什么关系，它如何连接决策与行动？</a></li>
+<li><a href="105-q104.html#q104" id="toc-q104">104 AI
+治理与数据治理有什么区别，如何协同？</a></li>
+</ul>
+</nav>
+
+</body>
+</html>

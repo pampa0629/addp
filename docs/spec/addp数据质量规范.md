@@ -185,11 +185,11 @@ Quality 的 `failed` 或 `timeout` 终态 execution 必须在 `error_details.cod
 
 ## 6. Execution Authorization
 
-每次质量检查都必须持有绑定该 execution、Tenant、`addp-quality` audience、目标 Source Engine 和只读效果的 Execution Authorization。
+每次质量检查都必须持有绑定该 execution、Tenant、`quality` audience、目标 Source Engine 和只读效果的 Execution Authorization。Audience 与机器身份命名以 `docs/spec/addp登录认证的统一要求.md` 为唯一事实源。
 
 - Console/API 手动执行：Quality 使用当前请求的 User Access Token 向 System 签发授权；不得使用 Service Principal 代替用户数据权限。
 - Orchestrator 子 execution：Quality 只根据可验证的 `parent_execution_id` 向 System 派生授权；不得接受客户端自报用户身份或复用任务创建人权限。
-- Quality 的 Service Principal 只用于调用 System 控制面和消费已经签发给 `addp-quality` 的授权。
+- Quality 的 `addp-quality` Service Principal 只用于调用 System 控制面和消费已经签发给 `quality` audience 的授权。
 - execution 只保存授权 ID、允许效果和过期时间等授权事实摘要，不保存 User Token、Service Token 或引擎凭据。
 - 获取目标引擎连接必须消费本次 Execution Authorization；授权缺失、过期、audience 不匹配或 Engine 不在授权范围时 execution 失败。
 

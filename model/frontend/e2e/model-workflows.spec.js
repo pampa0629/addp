@@ -43,8 +43,8 @@ const LOGICAL_TABLE = {
   description: '',
   version: 1,
   materialization: {
-    schema_name: 'public',
-    table_name: 'dwd_province',
+    target_parent_locator: 'addp://engine/2/path/public?type=schema',
+    target_name: 'dwd_province',
     partition_by: '',
     partition_type: 'range'
   }
@@ -266,8 +266,8 @@ test.describe('DDL preview', () => {
     await expectDialogWithinViewport(page, dialog)
     await expect.poll(() => backend.getDDLRequests()).toEqual([{
       materialization: {
-        schema_name: 'public',
-        table_name: 'dwd_province',
+        target_parent_locator: 'addp://engine/2/path/public?type=schema',
+        target_name: 'dwd_province',
         partition_by: '',
         partition_type: 'range'
       }

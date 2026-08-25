@@ -368,7 +368,7 @@ func newQualityConcurrencyServer(t *testing.T, engineID, tenantID int64, delay t
 			}
 			authorizationID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/system/execution-authorizations/"), "/engine-accesses")
 			_ = json.NewEncoder(w).Encode(commonClient.ExecutionEngineAccess{
-				AuthorizationID: authorizationID, ExecutionID: request.ExecutionID, Audience: "addp-quality",
+				AuthorizationID: authorizationID, ExecutionID: request.ExecutionID, Audience: commonExecution.AudienceQuality,
 				EngineID: request.EngineID, Effects: request.RequiredEffects, ExpiresAt: time.Now().UTC().Add(time.Hour), Engine: &engine,
 			})
 		default:
@@ -460,7 +460,7 @@ func newQualityExecutionContractServer(t *testing.T, engineID, elementID, tenant
 				t.Fatalf("decode engine access request: %v", err)
 			}
 			authorizationID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/system/execution-authorizations/"), "/engine-accesses")
-			_ = json.NewEncoder(w).Encode(commonClient.ExecutionEngineAccess{AuthorizationID: authorizationID, ExecutionID: request.ExecutionID, Audience: "addp-quality", EngineID: request.EngineID, Effects: request.RequiredEffects, ExpiresAt: time.Now().UTC().Add(time.Hour), Engine: &engine})
+			_ = json.NewEncoder(w).Encode(commonClient.ExecutionEngineAccess{AuthorizationID: authorizationID, ExecutionID: request.ExecutionID, Audience: commonExecution.AudienceQuality, EngineID: request.EngineID, Effects: request.RequiredEffects, ExpiresAt: time.Now().UTC().Add(time.Hour), Engine: &engine})
 		default:
 			http.NotFound(w, r)
 		}

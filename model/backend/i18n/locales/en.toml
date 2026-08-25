@@ -79,6 +79,18 @@ other = "The same entity relation already exists"
 [model.logical_table.not_found]
 other = "Logical table not found"
 
+[model.materialization.invalid]
+other = "The logical-table materialization definition or execution parameters are invalid"
+
+[model.materialization.conflict]
+other = "The materialization batch state conflicts with this operation"
+
+[model.materialization.not_found]
+other = "The logical table or materialization batch was not found"
+
+[model.materialization.unavailable]
+other = "Materialization authorization or the target engine is temporarily unavailable"
+
 [model.logical_table.invalid_field_id]
 other = "Invalid field ID"
 

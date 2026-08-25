@@ -227,7 +227,7 @@ func (e *CheckExecutor) issueExecutionAuthorization(ctx context.Context, tenantI
 	if parentExecutionID != nil {
 		issued, err = e.systemClient.WithTenantID(uint(tenantID)).IssueExecutionAuthorizationFromExecution(ctx, commonClient.IssueExecutionAuthorizationFromExecutionRequest{
 			ParentExecutionID: *parentExecutionID,
-			Audience:          "addp-quality",
+			Audience:          commonExecution.AudienceQuality,
 			ExecutionID:       executionID,
 			EngineIDs:         engineIDs,
 			Effects:           []string{"read"},
@@ -238,7 +238,7 @@ func (e *CheckExecutor) issueExecutionAuthorization(ctx context.Context, tenantI
 			return nil, fmt.Errorf("user execution authorization client is not configured")
 		}
 		issued, err = e.executionAuthorization.Issue(ctx, userAccessToken, commonClient.IssueExecutionAuthorizationRequest{
-			Audience: "addp-quality", ExecutionID: executionID, EngineIDs: engineIDs, Effects: []string{"read"}, ExpiresIn: 3600,
+			Audience: commonExecution.AudienceQuality, ExecutionID: executionID, EngineIDs: engineIDs, Effects: []string{"read"}, ExpiresIn: 3600,
 		})
 	}
 	if err != nil {

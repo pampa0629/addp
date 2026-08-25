@@ -9,7 +9,8 @@
 - [config/loader.go](common/config/loader.go) - 部署环境配置读取；目标实现不得保留 System shared config 或环境变量 fallback 双轨
 - `common/config` - 根环境部署配置、服务地址构造、端口可用性检查和时区读取；模块注册端口直接使用 owner 已加载的部署配置，不维护共享默认端口表
 - `common/security` - System、Inference、Monitor 等模块共享的 AES-256-GCM 敏感凭据加解密；不承载 IAM 或业务字段识别
-- `common/buildinfo` - Go 服务统一构建身份与 `/health` 响应；构建脚本通过链接参数注入 build ID、Git commit、源码指纹和构建时间，进程启动时间由包初始化记录
+- `common/buildinfo` - Go 服务统一构建身份，由模块生命周期健康响应复用；构建脚本通过链接参数注入 build ID、Git commit、源码指纹和构建时间，进程启动时间由包初始化记录
+- `common/modulelifecycle` - Go Backend 统一的进程存活、System 注册生命周期状态、就绪门禁和 `/health/live`、`/health/ready` 响应；只保存当前进程瞬时状态，System 仍是模块定义、实例和租约的唯一持久事实源
 - `common/jsonmap` - decoded JSON map 的通用读取工具,不承载 `meta_item.attributes` 业务规范
 - `common/taskprovider` - `task.capabilities/v2`、标准任务列表响应、任务级 `execution_contract` 和执行输入实例校验；校验失败返回包含稳定 rule、path 和约束值的结构化错误。任务类型能力不再保存静态 `execution_schema`，Orchestrator 必须从具体任务详情取得精确输入/输出契约
 - `common/runtimehealth` - ADDP 应用层后台运行实例的公共心跳模型、发布器和查询仓库；只发布进程活性、角色、容量与当前占用，不承载 execution/runtime/delivery 的领取权或 fencing token
@@ -23,7 +24,7 @@
 - `common/resourcetree` - Meta 已落库 catalog / item 事实到跨模块资源树视图的投影层，提供 `TreeNode`、`TreeBuilder`、`ResourceLocator` 和 provider `CatalogPath` 纯转换能力；不持有 System / Meta client，不主动读取远程服务，不处理租户权限、token、降级策略、扫描或内容读取
 - [client/meta.go](common/client/meta.go) - MetaClient 是跨模块调用 Meta API 的唯一共享 Client；只接受 `ServiceTokenProvider`，按 Tenant 获取短期 Service Access Token 并只发送 Bearer，Manager 等模块不得保留私有 Meta Client、代传 User Token 或恢复 Internal API Key / Tenant Header
 - [client/service_token.go](common/client/service_token.go) - OAuthServiceTokenSource 按 `tenant_id` 或显式 `context_type=platform` 向 System 换取短期 Service Access Token，并按 Context 独立缓存
-- [client/system_service.go](../../common/client/system_service.go) - SystemServiceClient 是 Service Principal 调用 System 的 Bearer-only Client；Tenant 请求使用不可变 `WithTenantID`，平台模块注册、心跳以及随模块注册发布 TaskProvider 声明使用 Platform Context。实例首次注册成功后，无论生命周期 Context 从心跳等待、请求或重试阶段取消，Client 都必须使用独立的限时 Context 注销该实例。Go 进程入口必须传入信号 Context，并在退出前等待 `RegisterAndHeartbeat` 返回的生命周期完成信号。`SystemAPIError` 必须保留 System 错误的方法、路径、HTTP 状态、稳定错误码、错误文案和受限长度的原始响应正文，与 `common-python` 的模块注册客户端共用同一诊断语义
+- [client/system_service.go](../../common/client/system_service.go) - SystemServiceClient 是 Service Principal 调用 System 的 Bearer-only Client；Tenant 请求使用不可变 `WithTenantID`，平台模块注册、心跳以及随模块注册发布 TaskProvider 声明使用 Platform Context。模块注册返回可查询快照和完成信号的生命周期对象，状态固定为 `starting|registered|recovering|failed|stopped`，供 `common/modulelifecycle` 执行就绪判断。实例首次注册成功后，无论生命周期 Context 从心跳等待、请求或重试阶段取消，Client 都必须使用独立的限时 Context 注销该实例。Go 进程入口必须传入信号 Context，并在退出前等待生命周期完成信号。`SystemAPIError` 必须保留 System 错误的方法、路径、HTTP 状态、稳定错误码、错误文案和受限长度的原始响应正文，与 `common-python` 的模块注册客户端共用同一诊断语义
 - `common/client` 的 Tenant owner Client 统一通过 `TenantAPIError` 保留下游 HTTP 状态码和稳定 `error_code`，通过 `TenantTransportError` 表达连接失败和超时；调用方只能使用 `errors.As`、`TenantAPIStatusCode()`、`TenantAPIErrorCode()` 分类，不得解析本地化错误正文。`StandardClient` 的引用校验会将资源不存在和跨租户资源统一收敛为不可探测的“不存在”语义。
 - `common/engine/workflowaccess` - 把已解析的文件、对象或目录型存储资源转换为 `addp.workflow.access-plan/v1` 执行计划和脱敏审计计划；不保存任务定义、不决定产物归属，也不触发 Meta scan
 

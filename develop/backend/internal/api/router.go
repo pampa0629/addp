@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/addp/common/buildinfo"
+	"github.com/addp/common/modulelifecycle"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
 	commonAuth "github.com/addp/common/middleware/auth"
@@ -33,6 +33,7 @@ func SetupRouter(
 	notebookHandler *NotebookHandler,
 	devTaskService interface{}, // 添加 devTaskService 参数
 	systemClient *commonClient.SystemServiceClient, // 用于审计日志
+	lifecycle *modulelifecycle.Controller,
 	queryPolicyHandlers ...*QueryPolicyHandler,
 ) *gin.Engine {
 	router := gin.Default()
@@ -44,10 +45,8 @@ func SetupRouter(
 	router.Use(commonCors.CORS())
 	router.Use(i18nmiddleware.I18nMiddleware())
 
-	// 健康检查（无需认证）
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, buildinfo.Health("develop"))
-	})
+	lifecycle.RegisterHealthRoutes(router)
+	router.Use(lifecycle.RequireReady())
 
 	taskListHandler := NewTaskListHandler(devTaskService.(*service.DevTaskService))
 	assetDiscHandler := newAssetDiscoverableHandler(db)

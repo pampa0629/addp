@@ -12,8 +12,8 @@ export const snapshotUnsavedState = state => JSON.stringify(state ?? null)
 
 export const buildDDLPreviewRequest = materialization => ({
   materialization: {
-    schema_name: String(materialization?.schema_name || '').trim(),
-    table_name: String(materialization?.table_name || '').trim(),
+    target_parent_locator: String(materialization?.target_parent_locator || '').trim(),
+    target_name: String(materialization?.target_name || '').trim(),
     partition_by: String(materialization?.partition_by || '').trim(),
     partition_type: String(materialization?.partition_type || '').trim().toLowerCase()
   }
@@ -24,7 +24,12 @@ export const buildLogicalTableUpdateRequest = (form, table, materialization) => 
   version: table?.version,
   domain_id: form.domain_id ?? null,
   entity_id: table?.entity_id ?? null,
-  materialization: { ...materialization }
+  materialization: {
+    target_parent_locator: String(materialization?.target_parent_locator || '').trim(),
+    target_name: String(materialization?.target_name || '').trim(),
+    partition_by: String(materialization?.partition_by || '').trim(),
+    partition_type: String(materialization?.partition_type || '').trim().toLowerCase()
+  }
 })
 
 export const buildEntityAttributeUpdateRequest = (form, version) => ({

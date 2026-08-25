@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/addp/common/buildinfo"
+	"github.com/addp/common/modulelifecycle"
 	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	graphauthorization "github.com/addp/graph/internal/authorization"
@@ -25,19 +25,17 @@ func SetupRouter(
 	taskProviderHandler *TaskProviderHandler,
 	analysisHandler *AnalysisHandler,
 	serviceHandler *ServiceHandler,
+	lifecycle *modulelifecycle.Controller,
 ) *gin.Engine {
 	router := gin.Default()
 
 	// i18n 中间件（解析 Accept-Language 请求头）
 	router.Use(i18nmiddleware.I18nMiddleware())
 
-	// 健康检查（无需认证）
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, buildinfo.Health("graph"))
-	})
-
 	// Swagger 文档
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	lifecycle.RegisterHealthRoutes(router)
+	router.Use(lifecycle.RequireReady())
 
 	// 需要认证的路由
 	auth := router.Group("/api/v1/graph")

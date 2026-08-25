@@ -153,7 +153,7 @@ func TestRegisterAndHeartbeatGeneratesBackendInstanceDeclaration(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
-	done := client.RegisterAndHeartbeat(ctx, &ModuleRegistrationRequest{
+	lifecycle := client.RegisterAndHeartbeat(ctx, &ModuleRegistrationRequest{
 		ModuleName: "manager", ModuleURL: "http://manager:8080", RoutePrefix: "/manager",
 		Metadata: map[string]interface{}{"version": "test"},
 	})
@@ -170,7 +170,7 @@ func TestRegisterAndHeartbeatGeneratesBackendInstanceDeclaration(t *testing.T) {
 		t.Fatal("module registration was not sent")
 	}
 	select {
-	case <-done:
+	case <-lifecycle.Done():
 	case <-time.After(time.Second):
 		t.Fatal("registration lifecycle did not finish after cancellation")
 	}
@@ -245,13 +245,21 @@ func TestRegisterAndHeartbeatReregistersImmediatelyAndDeregistersOnShutdown(t *t
 
 	ctx, cancel := context.WithCancel(context.Background())
 	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
-	done := client.registerAndHeartbeat(ctx, &ModuleRegistrationRequest{
+	lifecycle := client.registerAndHeartbeat(ctx, &ModuleRegistrationRequest{
 		ModuleName: "manager", ModuleURL: "http://manager:8081", RoutePrefix: "/manager",
 	}, time.Millisecond, 2*time.Millisecond, time.Millisecond)
 	select {
 	case <-reregistered:
 	case <-time.After(time.Second):
 		t.Fatal("heartbeat failure did not trigger immediate re-registration")
+	}
+	waitContext, waitCancel := context.WithTimeout(context.Background(), time.Second)
+	defer waitCancel()
+	if err := lifecycle.WaitUntilRegistered(waitContext); err != nil {
+		t.Fatalf("wait for re-registration: %v", err)
+	}
+	if snapshot := lifecycle.Snapshot(); snapshot.State != ModuleRegistrationRegistered {
+		t.Fatalf("state after re-registration = %q", snapshot.State)
 	}
 	cancel()
 	select {
@@ -260,7 +268,7 @@ func TestRegisterAndHeartbeatReregistersImmediatelyAndDeregistersOnShutdown(t *t
 		t.Fatal("context cancellation did not deregister the runtime instance")
 	}
 	select {
-	case <-done:
+	case <-lifecycle.Done():
 	case <-time.After(time.Second):
 		t.Fatal("registration lifecycle did not finish after deregistration")
 	}
@@ -269,11 +277,45 @@ func TestRegisterAndHeartbeatReregistersImmediatelyAndDeregistersOnShutdown(t *t
 func TestRegisterAndHeartbeatNilRequestFinishesLifecycle(t *testing.T) {
 	t.Parallel()
 	client := NewSystemServiceClient("http://system.invalid", staticSystemServiceTokenSource("platform-token"), nil)
-	done := client.RegisterAndHeartbeat(context.Background(), nil)
+	lifecycle := client.RegisterAndHeartbeat(context.Background(), nil)
 	select {
-	case <-done:
+	case <-lifecycle.Done():
 	case <-time.After(time.Second):
 		t.Fatal("nil registration request left lifecycle running")
+	}
+	if snapshot := lifecycle.Snapshot(); snapshot.State != ModuleRegistrationStopped {
+		t.Fatalf("nil request state = %q", snapshot.State)
+	}
+}
+
+func TestRegisterAndHeartbeatDeterministicRejectionFailsWithoutRetry(t *testing.T) {
+	t.Parallel()
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"invalid declaration","error_code":"module_registration_invalid"}`))
+	}))
+	defer server.Close()
+
+	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
+	lifecycle := client.registerAndHeartbeat(context.Background(), &ModuleRegistrationRequest{
+		ModuleName: "meta", ModuleURL: "http://meta:8082", RoutePrefix: "/meta",
+	}, time.Millisecond, 2*time.Millisecond, time.Millisecond)
+	select {
+	case err := <-lifecycle.Fatal():
+		if err == nil {
+			t.Fatal("fatal error is nil")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("deterministic rejection did not fail the lifecycle")
+	}
+	if snapshot := lifecycle.Snapshot(); snapshot.State != ModuleRegistrationFailed || snapshot.ErrorCode != "module_registration_invalid" {
+		t.Fatalf("failed snapshot = %#v", snapshot)
+	}
+	if attempts.Load() != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts.Load())
 	}
 }
 

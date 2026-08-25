@@ -575,7 +575,10 @@ function buildWorkflowFromGraph() {
   const tasks = graph.value.getNodes().map(node => {
     const model = node.getModel()
     const inputEdges = edgesByTarget.get(model.id) || []
-    const params = removeStaleInputRefs(model.params, model.publicParameters)
+    const params = normalizeWorkflowParams(
+      removeStaleInputRefs(model.params, model.publicParameters),
+      model.publicParameters
+    )
     return {
       id: model.id,
       operator: model.operator,
@@ -588,6 +591,27 @@ function buildWorkflowFromGraph() {
     }
   })
   return { tasks }
+}
+
+function normalizeWorkflowParams(params = {}, parameters = []) {
+  const next = { ...params }
+  parameters.forEach(parameter => {
+    const name = parameter?.name
+    const dataType = String(parameter?.type || parameter?.data_type || '').trim().toLowerCase()
+    const value = next[name]
+    if (!name || !['array', 'object', 'json'].includes(dataType) || typeof value !== 'string') return
+
+    try {
+      const parsed = JSON.parse(value)
+      if (dataType === 'array' && !Array.isArray(parsed)) return
+      if (dataType === 'object' && (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object')) return
+      if (dataType === 'json' && (parsed === null || typeof parsed !== 'object')) return
+      next[name] = parsed
+    } catch {
+      // 保留原值，让工作流校验报告具体参数错误。
+    }
+  })
+  return next
 }
 
 function getClientValidationIssues() {

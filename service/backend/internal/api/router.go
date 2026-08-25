@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/addp/common/buildinfo"
+	"github.com/addp/common/modulelifecycle"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
 	authMiddleware "github.com/addp/common/middleware/auth"
@@ -37,6 +37,7 @@ func SetupRouter(
 	systemClient *commonClient.SystemClient,
 	systemServiceClient *commonClient.SystemServiceClient,
 	runtimePolicyService *service.RuntimePolicyService,
+	lifecycle *modulelifecycle.Controller,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -48,10 +49,8 @@ func SetupRouter(
 
 	// 注意：CORS 由 Gateway 统一处理，此处无需设置 CORS 中间件
 
-	// 健康检查端点（无需认证）
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, buildinfo.Health("service"))
-	})
+	lifecycle.RegisterHealthRoutes(router)
+	router.Use(lifecycle.RequireReady())
 
 	// 查询服务端点（支持公开访问，handler内部会检查权限）
 	// 可选认证：有 Bearer Header 就解析 AuthContext，没有就按公开访问处理。

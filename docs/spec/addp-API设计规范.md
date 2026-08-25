@@ -484,6 +484,64 @@ RESTful是指导原则，不是教条。优秀的API设计应该在RESTful原则
 3. **生产环境可隐藏 detail 字段** - 避免泄露敏感信息
 4. **统一错误处理中间件** - 避免每个 handler 重复处理
 
+### 4.4 进程存活与模块就绪端点
+
+所有 ADDP HTTP Backend 只使用两个公开、无认证健康端点：
+
+| 端点 | 成功 | 失败 | 语义 |
+| --- | --- | --- | --- |
+| `GET /health/live` | `200` | 进程无法响应 | 只证明 HTTP 进程 Alive，不检查任何远程依赖 |
+| `GET /health/ready` | `200` | `503` | 证明当前实例可以接受平台工作；业务模块必须已在 System 成功注册 |
+
+`/health/live` 响应使用统一构建身份字段：
+
+```json
+{
+  "status": "live",
+  "module": "meta",
+  "build_id": "...",
+  "git_commit": "...",
+  "source_fingerprint": "...",
+  "built_at": "...",
+  "started_at": "..."
+}
+```
+
+`/health/ready` 在 Ready 和 Not Ready 时使用同一响应结构：
+
+```json
+{
+  "status": "not_ready",
+  "module": "meta",
+  "role": "backend",
+  "instance_id": "process-uuid",
+  "registration_state": "recovering",
+  "checks": [
+    {"name": "local_dependencies", "status": "ready"},
+    {
+      "name": "system_registration",
+      "status": "not_ready",
+      "error_code": "system_registration_unavailable"
+    }
+  ],
+  "build_id": "...",
+  "git_commit": "...",
+  "source_fingerprint": "...",
+  "built_at": "...",
+  "started_at": "..."
+}
+```
+
+约束如下：
+
+- `status` 只能为 `live`、`ready`、`not_ready`；模块注册生命周期只能为 `starting`、`registered`、`recovering`、`failed`、`stopped`。
+- 业务 Backend 的 `role`、`instance_id`、`registration_state` 必填。System 不依赖自注册，Gateway 不是业务模块运行实例；两者的就绪响应省略不适用的三个字段。System 使用 `local_dependencies`、`iam_bootstrap` 检查项，Gateway 使用 `system_registry_snapshot` 检查项表达各自唯一 Ready 条件。
+- `checks[].name`、`status`、`error_code` 是机器可读稳定值，不国际化；健康端点不返回用户展示文案、凭据、DSN、下游响应正文或堆栈。
+- 业务 Backend Ready 必须同时满足自身必需 Infra 就绪且 `registration_state=registered`；任一心跳失败被观测后立即返回 `503`，重注册成功后恢复 `200`。
+- System 的 Ready 不依赖自注册；Gateway Ready 要求至少成功应用一次 System 完整模块路由快照。
+- 健康端点不属于业务 API，不使用通用 `{error, error_code}` 错误体；HTTP `503` 与上述固定就绪结构已构成唯一契约。
+- 旧 `GET /health` 必须与所有调用方一次性切换后删除，不保留别名、重定向或兼容响应。
+
 ---
 
 ## 五、API 版本控制
@@ -1408,16 +1466,17 @@ class DevelopClient(AddpBaseClient):
 
 ---
 
-**本规范最后更新：2026-01-06（v1.2 修订版）**
+**本规范最后更新：2026-08-25（v1.3 修订版）**
 **适用版本：ADDP v0.0.20+**
 
-**主要修订内容（v1.2）：**
+**主要修订内容（v1.3）：**
 1. **调整为灵活响应策略** - 简单 CRUD 直接返回数据，复杂场景适度包装，避免冗余
 2. **错误格式简化** - 使用简洁的 `{error: "..."}` 格式，充分利用 HTTP 状态码
 3. **统一版本前缀** - 所有模块 API 使用 `/api/v1/{module}`，旧 `/api/{module}` 路径不再保留
 4. **承认动词路径的合理性** - 更新推荐做法，认可 `change-password`、`export`、`test-connection` 等实用路径
 5. **删除不合理的迁移建议** - System 模块当前实现已是最佳实践，无需调整
 6. **更新实施指南和常见问题** - 反映实际的灵活响应策略和实用主义原则
+7. **统一健康契约** - 以 `/health/live` 和 `/health/ready` 分离进程存活与模块就绪，明确 System 注册是业务模块 Ready 的强依赖
 
 **设计理念：**
 - 规范应反映实际的最佳实践，而非理想化的标准

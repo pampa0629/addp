@@ -5,7 +5,7 @@ import (
 
 	assetauthorization "github.com/addp/asset/internal/authorization"
 	"github.com/addp/asset/internal/service"
-	"github.com/addp/common/buildinfo"
+	"github.com/addp/common/modulelifecycle"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/gin-gonic/gin"
@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, assetSvc *service.AssetService) *gin.Engine {
+func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, assetSvc *service.AssetService, lifecycle *modulelifecycle.Controller) *gin.Engine {
 	router := gin.Default()
 	router.Use(func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
@@ -28,10 +28,9 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 		c.Next()
 	})
 	router.Use(commoni18n.I18nMiddleware())
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, buildinfo.Health("asset"))
-	})
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	lifecycle.RegisterHealthRoutes(router)
+	router.Use(lifecycle.RequireReady())
 
 	handler := newHandler(db, assetSvc)
 	api := router.Group("/api/v1/asset")

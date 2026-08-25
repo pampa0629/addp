@@ -1,6 +1,6 @@
 # ADDP 登录认证的统一要求
 
-更新日期：2026-07-28
+更新日期：2026-08-25
 
 ## 一、认证事实与唯一主路径
 
@@ -40,6 +40,25 @@ Service Access Token 有效期最多 5 分钟且不可刷新。每个模块独�
 System 只保存 BCrypt Hash；Secret 轮换使旧 Client Credential 立即失效，Service Principal
 的 Membership、Role、Tenant 或 `authorization_version` 变化使已签发 Token 立即失效。
 owner 路由不得接受共享 Internal API Key、`X-Tenant-ID` 或 User Token 代传来构造服务身份。
+
+### 1.1 执行 audience 与机器身份命名
+
+Execution Audience、OAuth Client ID 和 Service Principal 是三个独立概念，不得因为当前存在一对一映射就混用名称：
+
+- Execution Audience 是执行授权协议中的逻辑消费方标识，固定使用模块或 Runtime 稳定标识，不加 `addp-` 前缀，例如 `model`、`quality`、`develop`、`service`、`duckdb`。
+- 机器身份使用的 Confidential OAuth Client ID 和 Service Principal 名称固定使用 `addp-<module_or_runtime>`，例如 `addp-model`、`addp-quality`、`addp-develop`、`addp-service`、`addp-duckdb`。
+- System 是 audience 到唯一 OAuth Client ID 的映射事实 owner。消费 Execution Authorization 时必须同时校验 audience 和当前 Service Principal 所属 OAuth Client，不能仅比较字符串是否相等。
+- audience 不接受 OAuth Client ID、服务进程名、前端包名或容器名作为别名。积极开发阶段修正命名时直接切换唯一标识，不保留旧 audience 兼容值。
+
+当前标准映射为：
+
+| Execution Audience | OAuth Client ID / Service Principal |
+| --- | --- |
+| `model` | `addp-model` |
+| `quality` | `addp-quality` |
+| `develop` | `addp-develop` |
+| `service` | `addp-service` |
+| `duckdb` | `addp-duckdb` |
 
 Tenant Runtime 必须提交正整数 `tenant_id`，并绑定该 Service Principal 的有效 Membership。
 平台控制面必须显式提交 `context_type=platform`，只允许平台所有 Service Principal 的专用

@@ -260,10 +260,9 @@
     },
     "materialization": {
       "title": "Materialization Config",
-      "schema_name": "Schema Name",
-      "schema_placeholder": "Default: public",
-      "table_name": "Physical Table Name",
-      "table_placeholder": "Default: use code",
+      "target_schema": "Target Schema",
+      "target_name": "Target Table Name",
+      "target_name_placeholder": "Lowercase letters, digits, and underscores",
       "partition_by": "Partition Field",
       "partition_type": "Partition Type"
     },

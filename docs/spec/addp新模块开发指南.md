@@ -43,6 +43,8 @@
 7. **启动依赖边界**
    - ✅ Backend 和附属 Worker 必须支持零 Engine Instance 启动并进入各自正常空闲状态
    - ✅ 模块可以把自身必需 Infra 作为启动或 readiness 条件；Infra 不属于 Engine Instance 启动解耦范围
+   - ✅ 业务进程可在 System 不可达时保持 Alive 并后台恢复注册，但必须在 System 注册成功后才能 Ready
+   - ✅ 其他业务模块不可达只失败依赖该能力的具体请求或 execution，不得成为本模块 Ready 条件
    - ✅ 引擎缺失、离线或能力不匹配只失败实际使用该引擎的请求或 execution
    - ✅ Engine Runtime 在自身服务就绪后异步自注册，注册失败不得阻塞 Runtime readiness
    - ❌ 模块启动、健康检查或构造函数不得查询、连接、等待或隐式拉起可选 Engine Instance / Engine Runtime
@@ -183,9 +185,9 @@
 
    - 在服务根目录创建 Dockerfile
    - 使用 `profile: full` 将服务添加到 `docker-compose.yml`
-   - 使用健康检查进行依赖管理
+   - 使用 `/health/live` 作为存活探针，使用 `/health/ready` 作为就绪探针
    - 连接到 `addp-network` 进行服务间通信
-   - `depends_on` 和健康检查只登记模块自身必需 Infra 与真实控制面依赖；不得为了可选功能把 Engine Runtime 设为 Backend/Worker 启动条件
+   - `depends_on` 只登记模块自身必需 Infra 和 System Ready；不得把其他业务模块或可选 Engine Runtime 设为 Backend/Worker 就绪条件
 
 7. **开发脚本集成**（新模块必做）:
 
@@ -794,36 +796,37 @@ func (c *Config) GetDatabaseDSN() string {
 }
 ```
 
-### 错误 6: 模块启动但未注册到 Gateway
+### 错误 6: 模块 Alive 但未 Ready，Gateway 无法路由
 
-**现象**: 模块服务正常运行，但 Gateway 无法路由请求
+**现象**: `/health/live` 返回 200，但 `/health/ready` 返回 503，Gateway 无法路由请求
 
-**原因**: 未向 System 服务注册模块
+**原因**: 模块尚未向 System 成功注册，或心跳失败后正处于 `recovering`
 
 **解决方案**:
-在 `cmd/server/main.go` 中添加模块注册逻辑：
-```go
-// 创建模块独立的 OAuth Service Token Source 和 System Service Client
-serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(
-    cfg.SystemURL, "addp-your-module", cfg.ServiceClientSecret, nil,
-)
-if err != nil {
-    log.Fatalf("Service Token Source 初始化失败: %v", err)
-}
-systemClient := commonClient.NewSystemServiceClient(cfg.SystemURL, serviceTokenSource, nil)
+在 `cmd/server/main.go` 中使用统一模块生命周期能力，不得只调用注册函数却不把注册状态接入 Ready 门禁。启动顺序固定为：
 
-// 使用 Platform Service Access Token 注册模块并维持心跳
-serviceURL := fmt.Sprintf("http://localhost:%s", cfg.Port)
-systemClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
+1. 校验部署配置并初始化自身必需 Infra；
+2. 创建可取消的进程信号 Context；
+3. 绑定 HTTP Listener，注册 `/health/live` 和 `/health/ready`；
+4. 用该 Context 启动统一模块注册生命周期，`health_check_url` 只指向 `/health/ready`；
+5. 在健康路由之后、业务路由之前安装 Ready 门禁；
+6. 进程退出前取消 Context，并等待限时注销完成。
+
+注册声明中的健康端点必须使用 Ready 语义：
+
+```go
+registration := &commonClient.ModuleRegistrationRequest{
     ModuleName:     "your-module",
     ModuleURL:      serviceURL,
     RoutePrefix:    "/your-module",
-    HealthCheckURL: serviceURL + "/health",
+    HealthCheckURL: serviceURL + "/health/ready",
     Metadata: map[string]interface{}{
         "module": "your-module",
     },
-})
+}
 ```
+
+不得使用 `context.Background()` 启动进程级注册，不得在端口绑定之前注册，也不得为了“注册成功”在入口同步阻塞等待 System。
 
 ### 错误 7: 前端 API 路径包含重复的 /api 前缀
 
@@ -912,8 +915,8 @@ app.mount('#app')
 - [ ] DSN 包含 `search_path` 参数
 - [ ] 在 `init-postgresql.sql` 中登记 owner schema
 - [ ] 模块唯一的启动迁移路径配置正确，并有 migration 测试和 CI 入口
-- [ ] 实现健康检查端点 (`/health`)
-- [ ] 添加模块注册和心跳逻辑
+- [ ] 实现唯一存活和就绪端点 (`/health/live`、`/health/ready`)
+- [ ] 使用统一模块生命周期接入注册、心跳、Ready 门禁和注销
 
 **前端开发**:
 - [ ] 复制并调整前端目录结构
@@ -943,8 +946,8 @@ app.mount('#app')
 - [ ] 更新根目录 `CLAUDE.md` 的模块列表
 
 **测试验证**:
-- [ ] 模块独立启动成功
-- [ ] 健康检查通过
+- [ ] System 不可达时模块 `/health/live` 通过、`/health/ready` 返回 503，业务路由返回 `module_not_ready`
+- [ ] System 恢复后同一 `instance_id` 自动注册，`/health/ready` 恢复 200
 - [ ] 数据库表创建在正确的 schema
 - [ ] 模块注册到 Gateway 成功
 - [ ] 前端可以访问后端 API

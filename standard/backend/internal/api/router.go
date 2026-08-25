@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/addp/common/buildinfo"
+	"github.com/addp/common/modulelifecycle"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/standard/docs"
@@ -30,11 +30,14 @@ func SetupRouter(
 	documentSvc *service.DocumentService,
 	dimHierarchySvc *service.DimensionHierarchyService,
 	systemURL string,
+	lifecycle *modulelifecycle.Controller,
 ) *gin.Engine {
 	router := gin.Default()
 
 	// Swagger 文档
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	lifecycle.RegisterHealthRoutes(router)
+	router.Use(lifecycle.RequireReady())
 
 	router.Use(commoni18n.I18nMiddleware())
 	router.Use(func(c *gin.Context) {
@@ -213,10 +216,6 @@ func SetupRouter(
 			dimHierarchies.DELETE("/:id/levels/:lid", permission(standardauthorization.PermissionStandardDimensionHierarchyUpdate), dimHierarchyHandler.DeleteLevel)
 		}
 	}
-
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, buildinfo.Health("standard"))
-	})
 
 	return router
 }

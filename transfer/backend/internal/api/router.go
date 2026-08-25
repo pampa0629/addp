@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/addp/common/buildinfo"
+	"github.com/addp/common/modulelifecycle"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
 	commonAuth "github.com/addp/common/middleware/auth"
@@ -31,6 +31,7 @@ func SetupRouter(
 	redisClient *redis.Client,
 	systemClient *commonClient.SystemClient,
 	systemServiceClient *commonClient.SystemServiceClient,
+	lifecycle *modulelifecycle.Controller,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -43,10 +44,8 @@ func SetupRouter(
 	router.Use(requestid.RequestIDMiddleware()) // Request ID 追踪
 	router.Use(logging.LoggingMiddleware())     // 结构化日志记录
 
-	// 健康检查
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, buildinfo.Health("transfer"))
-	})
+	lifecycle.RegisterHealthRoutes(router)
+	router.Use(lifecycle.RequireReady())
 
 	// API 路由组
 	api := router.Group("/api/v1/transfer")

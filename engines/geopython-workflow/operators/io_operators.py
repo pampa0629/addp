@@ -10,6 +10,8 @@ import os
 import pandas as pd
 import geopandas as gpd
 from typing import Dict, Any
+from bson import Binary, Decimal128, ObjectId
+from pymongo import MongoClient
 from sqlalchemy import create_engine, text
 from .base import (
     OperatorType,
@@ -88,6 +90,54 @@ def _spatial_driver(fmt: str) -> str:
             'gml': 'GML', 'fgb': 'FlatGeobuf', 'geojson': 'GeoJSON'}.get(fmt, 'GeoJSON')
 
 
+def _normalize_bson_value(value):
+    if isinstance(value, ObjectId):
+        return str(value)
+    if isinstance(value, Decimal128):
+        return value.to_decimal()
+    if isinstance(value, Binary):
+        return bytes(value)
+    if isinstance(value, dict):
+        return {key: _normalize_bson_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normalize_bson_value(item) for item in value]
+    return value
+
+
+def _load_mongodb_collection(
+    connection_info: Dict[str, Any],
+    database: str,
+    collection: str,
+    pipeline=None,
+):
+    host = _map_loopback_host(connection_info.get('host'))
+    port = connection_info.get('port')
+    user = connection_info.get('user') or connection_info.get('username')
+    password = connection_info.get('password')
+    auth_source = connection_info.get('auth_source') or connection_info.get('authSource') or 'admin'
+    if not all([host, port, database, collection]):
+        raise ValueError('MongoDB connection_info、database 和 collection 必须完整')
+    if pipeline is not None and not isinstance(pipeline, list):
+        raise ValueError('MongoDB pipeline 必须是数组')
+
+    client = MongoClient(
+        host=host,
+        port=int(port),
+        username=user or None,
+        password=password or None,
+        authSource=auth_source,
+        connectTimeoutMS=10000,
+        serverSelectionTimeoutMS=10000,
+    )
+    try:
+        source = client[database][collection]
+        cursor = source.aggregate(pipeline, allowDiskUse=True) if pipeline is not None else source.find({})
+        records = [_normalize_bson_value(record) for record in cursor]
+        return pd.DataFrame.from_records(records)
+    finally:
+        client.close()
+
+
 
 
 def load(
@@ -95,7 +145,8 @@ def load(
     schema: str = None,
     table: str = None,
     path: str = None,
-    geom_column: str = None
+    geom_column: str = None,
+    pipeline=None,
 ):
     """
     通用数据加载算子
@@ -122,7 +173,11 @@ def load(
         password = connection_info.get('password')
         database = connection_info.get('database')
 
-        if not all([engine_type, host, port, user, database]):
+        # MongoDB 的 database 由 locator 派生到 schema，连接信息本身可以不带默认 database。
+        required_connection_fields = [engine_type, host, port, user]
+        if engine_type not in ['mongodb', 'MongoDB']:
+            required_connection_fields.append(database)
+        if not all(required_connection_fields):
             raise ValueError(f"connection_info 缺少必要字段: {connection_info}")
 
         # 根据不同数据库类型加载
@@ -186,6 +241,9 @@ def load(
                 except Exception as e:
                     logger.warning(f"自动检测失败: {e}，作为普通 DataFrame 加载")
                     gdf = pd.read_sql(sql, engine_db)
+
+        elif engine_type in ['mongodb', 'MongoDB']:
+            return _load_mongodb_collection(connection_info, schema or database, table, pipeline)
 
         else:
             raise ValueError(f"Unsupported engine type for table: {engine_type}")
@@ -319,11 +377,11 @@ LOAD_METADATA = OperatorMetadata(
     type=OperatorType.GENERAL,
     category=OperatorCategory.DATA_IO,
     description="数据加载",
-    brief_description="从数据库表或文件资源加载数据",
+    brief_description="从数据库表、MongoDB collection 或文件资源加载数据",
     execution_modes=["workflow"],
     effects=["read"],
 
-    overview="通用数据加载算子，按 Develop Adapter 派生的 schema/table 或 path 自动选择数据库表或文件读取方式。文件格式从路径扩展名推断。",
+    overview="通用数据加载算子，按 Develop Adapter 派生的 schema/table 或 path 自动选择关系表、MongoDB collection 或文件读取方式。MongoDB 可提交确定性 aggregation pipeline，文件格式从路径扩展名推断。",
 
     params=[
         OperatorParam(
@@ -362,17 +420,28 @@ LOAD_METADATA = OperatorMetadata(
             description="几何列名",
             notes="空间数据的几何列名。如果不指定，geopandas会自动检测几何列（推荐）。仅在自动检测失败或需要指定特定列时使用",
             default=None
+        ),
+        OperatorParam(
+            name="pipeline",
+            type="param",
+            data_type="array",
+            required=False,
+            description="MongoDB aggregation pipeline",
+            notes="仅用于 MongoDB collection；为空时读取 collection 文档，非空时按给定 pipeline 聚合并返回 DataFrame",
+            default=None
         )
     ],
 
     use_cases=[
         "从业务数据库加载河流数据: schema=public, table=rivers",
+        "从 MongoDB collection 执行 aggregation pipeline 并加载结果",
         "从文件引擎加载CSV文件: path=data/points.csv",
         "从文件引擎加载Shapefile: path=gis/roads.shp",
     ],
 
     notes=[
         "数据库表和文件资源使用同一个 locator 公开参数，访问方式由 Adapter 派生结果决定",
+        "MongoDB collection 使用 locator 定位，pipeline 是可选的公开计算参数",
         "文件格式从扩展名自动推断",
         "文件引擎支持空间格式(shp/gpkg/geojson等)和非空间格式(csv/parquet/xlsx等)",
         "支持自动检测几何列,无需手动指定 geom_column (推荐)",

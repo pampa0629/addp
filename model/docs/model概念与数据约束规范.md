@@ -4,7 +4,34 @@
 
 Model 是 Tenant 级数据架构与建模事实的 owner，管理业务实体、实体关系、逻辑模型、数仓分层以及逻辑模型到 Standard 指标的引用。Standard 继续拥有业务域、数据元、维度层级和指标；Model 只保存经过 Standard API 验证的引用，不代理或复制 Standard 资源。
 
-Model 当前不拥有物理表创建和多引擎物化。DDL 预览是 PostgreSQL 方言的设计辅助能力，不改变逻辑模型状态，也不产生物理资源。未来物化必须先形成独立规范，明确目标引擎、执行授权、任务与回收语义后再实现。
+Model 是逻辑表物化的结构控制面 owner。逻辑表的 `materialization` 保存目标父节点 ResourceLocator、目标名称和分区设计；物理表准备、受控 DDL、结构校验、原子发布和 staging 回收必须由 Model 根据已审批逻辑模型执行，不得交给 Develop 的普通 SQL 任务。Develop 只负责计算数据并写入 Model 为单次物化批次签发的受限 staging 目标；Orchestrator 只编排准备、计算、质量门禁与发布顺序。
+
+PostgreSQL DDL 预览仍只是设计辅助能力，不改变逻辑模型状态，也不产生物理资源。真实物化使用独立 `MaterializationBatch` 聚合，不把 `materialized` 加入 LogicalTable 生命周期，也不允许其他模块直接读取 Model 私有表、自行拼装 DDL或持有永久数据库权限。
+
+### 逻辑表物化批次
+
+一次完整重算遵循唯一顺序：
+
+```text
+Model prepare -> Develop query compute -> Quality check -> Model publish
+```
+
+- `prepare` 只接受已审批且配置完整物化目标的 LogicalTable ID。Model 冻结逻辑表版本、物化目标和结构指纹，生成不可由调用方指定的 staging 名称，并使用 `audience=model` 的 Execution Authorization 执行受控 PostgreSQL/PostGIS DDL。
+- 目标表不存在时允许首次发布；目标表已存在时，只有 Model 管理标记中的结构指纹与当前已审批逻辑表一致才允许重算。结构不一致、未受 Model 管理或包含尚未支持的分区设计时拒绝自动替换，不能把破坏性 Schema 迁移隐藏在重算中。
+- Develop 任务不得接收或拼装 Schema、表名、DDL。它保存目标 `logical_table_id`，执行时通过 Model Client 按自身 execution 解析执行域物化上下文，再使用自身用户派生 Execution Authorization 向该批次 staging 写数据。
+- Quality 如需检查 staging，使用同一执行域解析边界和自身只读 Execution Authorization；不得读取 Model 私有表或借用 Model 的引擎授权。
+- `publish` 在同一目标数据库事务内完成旧目标暂存、staging 改名、旧目标删除和管理标记保留。事务失败必须保持原目标可用；重复执行按批次管理标记幂等收敛。
+- 同一 Tenant 的同一 LogicalTable 同时最多一个 `preparing|prepared|publishing` 批次。并发重算返回冲突，不建立多 staging 竞争或“最后完成者覆盖”语义。
+- 批次状态固定为 `preparing|prepared|publishing|published|failed|aborted`。prepare 失败进入 `failed`；publish 失败恢复为 `prepared`，允许在同一批次上重新发布；只有物理发布成功后才进入 `published`。
+
+### TaskProvider 与执行域解析
+
+已审批 LogicalTable 是来源驱动、不可变的物化任务定义，同一 LogicalTable ID 分别作为 `materialization_prepare` 与 `materialization_publish` 的 TaskProvider task ID。两个任务的执行输入契约均为空，不把动态 `batch_id` 设为必填运行参数：
+
+- Orchestrator 调用时，prepare、Develop、Quality 和 publish 子 execution 共享同一个 `parent_execution_id`。Model 按 `tenant_id + logical_table_id + parent_execution_id` 解析唯一 prepared 批次。
+- 手动全量重算同样由用户手动启动 Orchestrator 编排，不建立绕过编排的 Model 直执行路径；因此物化 TaskProvider execution 必须携带父编排 execution。
+- `batch_id` 仍是 Model 内部聚合身份、审计事实和 prepare 的稳定 execution 输出，但不是调用方选择物理目标的入口。
+- 执行域解析 API 只面向已有具体消费者的固定 Service Principal，并通过 `common/client` 暴露。没有 Develop/Quality 消费实现前不发布泛化只读“物化契约快照”接口。
 
 ## 二、授权边界
 
@@ -109,7 +136,7 @@ Mermaid 可逆子集必须通过 ADDP 元数据注释完整保存所有可编辑
 
 Cleanup 是内部强制生命周期写入，不从外部请求接收 `version`。它仍必须锁定受影响资源，推进被修改资源的 `version`，并在涉及实体模型集合时推进 Tenant `revision`；physical cleanup 必须在单个事务中完成锁定、删除和修订推进。
 
-PostgreSQL DDL 预览只接受结构化物化配置。Schema、表、字段和分区标识符必须统一校验与引用；分区类型使用固定枚举；不接受任意 SQL 扩展字段。
+PostgreSQL DDL 预览只接受结构化物化配置。物化目标统一使用 `target_parent_locator + target_name`：父定位符必须是标准 ResourceLocator 且指向 `schema` 节点，目标名称是尚未创建或准备替换的物理表名。配置不再接受脱离 Engine Instance 身份的 `schema_name/table_name`，也不构造尚不存在资源的伪 `target_locator`。父定位符与目标名称必须同时为空或同时存在；为空时 DDL 仅按逻辑表编码生成无 Schema 限定的设计预览。Schema、表、字段和分区标识符必须统一校验与引用；分区类型使用固定枚举；不接受任意 SQL 扩展字段。
 
 ## 六、完成条件
 

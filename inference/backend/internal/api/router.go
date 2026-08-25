@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/addp/common/buildinfo"
+	"github.com/addp/common/modulelifecycle"
 	commoninference "github.com/addp/common/inference"
 	commonauth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
@@ -16,11 +16,12 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
-func SetupRouter(cfg *config.Config, handler *Handler) *gin.Engine {
+func SetupRouter(cfg *config.Config, handler *Handler, lifecycle *modulelifecycle.Controller) *gin.Engine {
 	router := gin.Default()
 	router.Use(i18nmiddleware.I18nMiddleware())
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-	router.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, buildinfo.Health("inference")) })
+	lifecycle.RegisterHealthRoutes(router)
+	router.Use(lifecycle.RequireReady())
 	router.GET("/api/v1/inference/capabilities", handler.Capabilities)
 	authMiddleware := commonauth.MustNewMiddleware(commonauth.MiddlewareConfig{SystemURL: cfg.SystemURL})
 	permission := func(keys ...string) gin.HandlerFunc { return commonauth.MustNewPermissionGuard(keys...) }

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/addp/common/buildinfo"
+	"github.com/addp/common/modulelifecycle"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/middleware/audit"
@@ -22,7 +22,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService, executionService *service.ScanExecutionService, redisClient *redis.Client, systemClient *commonClient.SystemServiceClient, lineageServices ...*service.LineageService) *gin.Engine {
+func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService, executionService *service.ScanExecutionService, redisClient *redis.Client, systemClient *commonClient.SystemServiceClient, lifecycle *modulelifecycle.Controller, lineageServices ...*service.LineageService) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(i18nmiddleware.I18nMiddleware())
@@ -48,10 +48,8 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 	handler := NewHandler(engineService, scanService, taskService, executionService, metadataQueryService, inspectService, lineageService)
 	assetDiscHandler := newAssetDiscoverableHandler(db)
 
-	// 健康检查
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, buildinfo.Health("meta"))
-	})
+	lifecycle.RegisterHealthRoutes(router)
+	router.Use(lifecycle.RequireReady())
 
 	// API路由组（需要认证）
 	api := router.Group("/api/v1/meta")
