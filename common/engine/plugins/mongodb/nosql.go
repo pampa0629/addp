@@ -205,9 +205,15 @@ func (p *MongoDBPlugin) SampleDynamicSchema(ctx context.Context, connInfo plugin
 	}
 
 	fieldStats := make(map[string]*mongoFieldStat)
+	sampleDocuments := make([]map[string]interface{}, 0, len(documents))
+	// Reserve the field budget for the union of top-level fields before
+	// traversing nested objects. A single document can contain enough nested
+	// paths to otherwise hide top-level fields introduced by later documents.
 	for _, doc := range documents {
-		collectMongoDocumentFields(fieldStats, nil, map[string]interface{}(doc), 0)
+		sampleDocuments = append(sampleDocuments, map[string]interface{}(doc))
+		collectMongoTopLevelFields(fieldStats, sampleDocuments[len(sampleDocuments)-1])
 	}
+	collectMongoNestedFieldsAcrossDocuments(fieldStats, sampleDocuments, nil, 0)
 
 	fields := make([]datatype.FieldInfo, 0, len(fieldStats))
 	for name, stat := range fieldStats {
@@ -332,7 +338,11 @@ func ensureMongoFieldStat(stats map[string]*mongoFieldStat, path []string) *mong
 }
 
 func collectMongoFieldStats(stats map[string]*mongoFieldStat, path []string, value interface{}, depth int) {
-	if len(path) == 0 || depth > mongoSchemaMaxDepth || len(stats) >= mongoSchemaMaxFields {
+	if len(path) == 0 || depth > mongoSchemaMaxDepth {
+		return
+	}
+	fieldName := strings.Join(path, ".")
+	if _, exists := stats[fieldName]; !exists && len(stats) >= mongoSchemaMaxFields {
 		return
 	}
 	stat := ensureMongoFieldStat(stats, path)
@@ -419,26 +429,43 @@ func collectMongoDocumentFields(
 	depth int,
 ) {
 	if len(path) == 0 {
-		keys := make([]string, 0, len(document))
-		for key := range document {
-			if !looksLikeMongoDynamicKey(key) {
-				keys = append(keys, key)
-			}
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			fieldPath := appendMongoPath(path, key)
-			collectMongoFieldStats(stats, fieldPath, document[key], mongoSchemaMaxDepth)
-		}
-		for _, key := range keys {
-			fieldPath := appendMongoPath(path, key)
-			children := mongoDirectFields(fieldPath, document[key], 2)
-			if len(children) > 0 && len(stats) < mongoSchemaMaxFields {
-				collectMongoFieldStats(stats, children[0].path, children[0].value, mongoSchemaMaxDepth)
-			}
+		collectMongoTopLevelFields(stats, document)
+	}
+	collectMongoNestedFieldsWithinDocument(stats, path, document, depth)
+}
+
+func collectMongoTopLevelFields(stats map[string]*mongoFieldStat, document map[string]interface{}) {
+	keys := make([]string, 0, len(document))
+	for key := range document {
+		if !looksLikeMongoDynamicKey(key) {
+			keys = append(keys, key)
 		}
 	}
-	frontier := mongoDirectFields(path, map[string]interface{}(document), depth+1)
+	sort.Strings(keys)
+	for _, key := range keys {
+		collectMongoFieldStats(stats, []string{key}, document[key], mongoSchemaMaxDepth)
+	}
+}
+
+func collectMongoNestedFieldsWithinDocument(
+	stats map[string]*mongoFieldStat,
+	path []string,
+	document map[string]interface{},
+	depth int,
+) {
+	collectMongoNestedFieldsAcrossDocuments(stats, []map[string]interface{}{document}, path, depth)
+}
+
+func collectMongoNestedFieldsAcrossDocuments(
+	stats map[string]*mongoFieldStat,
+	documents []map[string]interface{},
+	path []string,
+	depth int,
+) {
+	frontier := make([]mongoSchemaField, 0)
+	for _, document := range documents {
+		frontier = append(frontier, mongoDirectFields(path, document, depth+1)...)
+	}
 	for len(frontier) > 0 && len(stats) < mongoSchemaMaxFields {
 		frontier = interleaveMongoSchemaFields(frontier)
 		next := make([]mongoSchemaField, 0)

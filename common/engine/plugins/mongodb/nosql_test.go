@@ -122,6 +122,27 @@ func TestCollectMongoDocumentFieldsPreservesLaterTopLevelFields(t *testing.T) {
 	}
 }
 
+func TestCollectMongoDocumentSamplesPreservesTopLevelFieldsAcrossDocuments(t *testing.T) {
+	first := bson.M{"early": bson.M{}}
+	for index := 0; index < mongoSchemaMaxFields+4; index++ {
+		first["early"].(bson.M)[fmt.Sprintf("nested_%03d", index)] = index
+	}
+	second := bson.M{"leader": bson.M{"personid": "person-1"}}
+
+	stats := make(map[string]*mongoFieldStat)
+	for _, document := range []bson.M{first, second} {
+		collectMongoTopLevelFields(stats, map[string]interface{}(document))
+	}
+	collectMongoNestedFieldsAcrossDocuments(stats, []map[string]interface{}{
+		map[string]interface{}(first),
+		map[string]interface{}(second),
+	}, nil, 0)
+
+	if stats["leader"] == nil || stats["leader.personid"] == nil {
+		t.Fatalf("top-level fields from later documents were lost: leader=%v personid=%v", stats["leader"], stats["leader.personid"])
+	}
+}
+
 func TestCollectMongoDocumentFieldsSkipsGeneratedRecordKeys(t *testing.T) {
 	stats := make(map[string]*mongoFieldStat)
 	document := bson.M{
