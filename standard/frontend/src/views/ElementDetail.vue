@@ -59,6 +59,15 @@
                 </el-form-item>
               </el-col>
               <el-col :span="12">
+                <el-form-item :label="$t('standard.glossary.domainLabel')">
+                  <el-select v-model="element.domain_id" filterable :placeholder="$t('standard.common.domainOptional')" style="width: 100%">
+                    <el-option v-for="domain in domainList" :key="domain.id" :label="domain.name" :value="domain.id" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
                 <el-form-item :label="$t('standard.element.unitLabel')">
                   <el-select v-model="element.unit_id" clearable filterable :placeholder="$t('standard.element.selectUnit')" style="width:100%">
                     <el-option-group v-for="cat in unitsByCategory" :key="cat.id" :label="cat.name">
@@ -252,7 +261,7 @@ import { useConsolePageDescriptor } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, CircleCheck, List } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { elementAPI, codeSetAPI, glossaryAPI, unitAPI, classificationAPI, gradingLevelAPI } from '../api/standard'
+import { domainAPI, elementAPI, codeSetAPI, glossaryAPI, unitAPI, classificationAPI, gradingLevelAPI } from '../api/standard'
 import DocumentPanel from '../components/DocumentPanel.vue'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
@@ -276,6 +285,7 @@ useConsolePageDescriptor(router, 'standard', {
   ready: computed(() => Boolean(element.value?.name))
 })
 const codeSets = ref([])
+const domainList = ref([])
 const codeItems = ref([])
 const codeItemsLoading = ref(false)
 const relatedGlossaries = ref([])
@@ -310,6 +320,18 @@ const unitsByCategory = computed(() => {
 const classificationTree = computed(() => buildTree(classifications.value))
 function buildTree(list, parentId = null) {
   return list.filter(i => (i.parent_id || null) === parentId).map(i => ({ ...i, children: buildTree(list, i.id) }))
+}
+
+const flattenDomains = (nodes) => {
+  const result = []
+  const traverse = (list) => {
+    for (const node of list) {
+      result.push(node)
+      if (node.children) traverse(node.children)
+    }
+  }
+  traverse(nodes)
+  return result
 }
 
 const qualityRules = computed({
@@ -373,6 +395,15 @@ const loadCodeSets = async () => {
     codeSets.value = res.data || []
   } catch (e) {
     codeSets.value = []
+  }
+}
+
+const loadDomains = async () => {
+  try {
+    const res = await domainAPI.list()
+    domainList.value = flattenDomains(res || [])
+  } catch (e) {
+    domainList.value = []
   }
 }
 
@@ -489,6 +520,7 @@ watch(() => route.params.id, () => {
 }, { immediate: true })
 
 onMounted(() => {
+  loadDomains()
   loadCodeSets()
   loadUnits()
   loadGradingLevels()

@@ -41,6 +41,12 @@ test('entity and logical table details preserve unsaved drafts across navigation
   }
 })
 
+test('logical table details load metric names before rendering persisted mappings', async () => {
+  const source = await readFile(new URL('../src/views/LogicalTableDetail.vue', import.meta.url), 'utf8')
+  assert.match(source, /Promise\.all\(\[loadFields\(\), loadMetrics\(\), loadAvailableMetrics\(\)\]\)/)
+  assert.match(source, /const metricNameMap = computed\(\(\) => \{/)
+})
+
 test('PUT payloads preserve complete nullable and zero-valued model state', () => {
   assert.deepEqual(buildLogicalTableUpdateRequest(
     { name: 'Order', domain_id: null, table_type: 'entity', layer: 'dwd' },

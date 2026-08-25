@@ -190,6 +190,7 @@
       "basic_info": "Basic Info",
       "grain_description": "Grain Description",
       "grain_placeholder": "Describe what each row represents, e.g. each row is a payment transaction",
+      "grain_required": "Fact tables require a grain declaration",
       "scd_type": "SCD Type",
       "scd_0": "0 - Static (no change)",
       "scd_1": "1 - Overwrite (no history)",

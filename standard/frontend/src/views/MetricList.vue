@@ -129,8 +129,23 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item :label="$t('standard.glossary.domainLabel')">
+          <el-select v-model="form.domain_id" filterable :placeholder="$t('standard.common.domainOptional')" style="width: 100%">
+            <el-option v-for="domain in domainList" :key="domain.id" :label="domain.name" :value="domain.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item :label="$t('standard.metric.definitionLabel')">
           <el-input v-model="form.definition" type="textarea" :rows="3" :placeholder="$t('standard.metric.definitionPlaceholder')" />
+        </el-form-item>
+        <el-form-item :label="$t('standard.metric.derivationConfigLabel')">
+          <el-input
+            v-model="derivationConfigText"
+            class="derivation-config-input"
+            type="textarea"
+            :rows="10"
+            resize="vertical"
+            :placeholder="$t('standard.metric.derivationConfigPlaceholder')"
+          />
         </el-form-item>
         <el-form-item :label="$t('standard.metric.formulaLabel')" v-if="form.type === 'composite'">
           <el-input v-model="form.formula" type="textarea" :rows="2" :placeholder="$t('standard.metric.formulaPlaceholder')" />
@@ -204,12 +219,13 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { metricAPI, metricCategoryAPI } from '../api/standard'
+import { domainAPI, metricAPI, metricCategoryAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 import { useStandardPermissions } from '../composables/useStandardPermissions'
 import { useActionLock } from '../composables/useActionLock'
 import { createLatestRequestCoordinator } from '@common-ui'
+import { parseMetricDerivationConfig } from '../utils/metricDerivationConfig'
 
 const { t } = useI18n()
 const { canCreate, canDelete, canApprove } = useStandardPermissions('metric')
@@ -219,6 +235,7 @@ const router = useRouter()
 const route = useRoute()
 const metrics = ref([])
 const categories = ref([])
+const domainList = ref([])
 const atomicMetrics = ref([])
 const loading = ref(false)
 const saving = ref(false)
@@ -235,7 +252,8 @@ const showCategoryDialog = ref(false)
 const formRef = ref(null)
 const listRequests = createLatestRequestCoordinator()
 
-const form = ref({ name: '', code: '', type: 'atomic', definition: '', formula: '', category_id: null, base_metric_id: null })
+const form = ref({ name: '', code: '', type: 'atomic', definition: '', formula: '', category_id: null, domain_id: null, base_metric_id: null })
+const derivationConfigText = ref('')
 const categoryForm = ref({ name: '', code: '', parent_id: null })
 const metricRules = computed(() => ({
   name: [{ required: true, message: t('standard.metric.nameRequired'), trigger: 'blur' }],
@@ -246,6 +264,18 @@ const metricRules = computed(() => ({
 const categoryTree = computed(() => buildTree(categories.value))
 function buildTree(list, parentId = null) {
   return list.filter(i => (i.parent_id || null) === parentId).map(i => ({ ...i, children: buildTree(list, i.id) }))
+}
+
+const flattenDomains = (nodes) => {
+  const result = []
+  const traverse = (list) => {
+    for (const node of list) {
+      result.push(node)
+      if (node.children) traverse(node.children)
+    }
+  }
+  traverse(nodes)
+  return result
 }
 
 const typeLabel = (type) => ({ atomic: t('standard.metric.atomicShort'), derived: t('standard.metric.derivedShort'), composite: t('standard.metric.compositeShort') }[type] || type)
@@ -305,6 +335,15 @@ const loadCategories = async () => {
   }
 }
 
+const loadDomains = async () => {
+  try {
+    const res = await domainAPI.list()
+    domainList.value = flattenDomains(res || [])
+  } catch (e) {
+    domainList.value = []
+  }
+}
+
 const loadAtomicMetrics = async () => {
   try {
     const res = await metricAPI.list({ type: 'atomic', page_size: 500 })
@@ -331,12 +370,18 @@ const createMetric = async () => {
     return
   }
   try {
-    await metricAPI.create(form.value)
+    const payload = { ...form.value, derivation_config: parseMetricDerivationConfig(derivationConfigText.value) }
+    await metricAPI.create(payload)
     ElMessage.success(t('standard.common.createSuccess'))
     showCreateDialog.value = false
-    form.value = { name: '', code: '', type: 'atomic', definition: '', formula: '', category_id: null, base_metric_id: null }
+    form.value = { name: '', code: '', type: 'atomic', definition: '', formula: '', category_id: null, domain_id: null, base_metric_id: null }
+    derivationConfigText.value = ''
     loadMetrics()
   } catch (e) {
+    if (e instanceof SyntaxError || e?.message === 'metric derivation config must be a JSON object') {
+      ElMessage.error(t('standard.metric.derivationConfigInvalid'))
+      return
+    }
     ElMessage.error(getStandardErrorMessage(e, t))
   } finally {
     saving.value = false
@@ -344,7 +389,8 @@ const createMetric = async () => {
 }
 
 const openCreateDialog = () => {
-  form.value = { name: '', code: '', type: filterType.value || 'atomic', definition: '', formula: '', category_id: selectedCategoryID.value, base_metric_id: null }
+  form.value = { name: '', code: '', type: filterType.value || 'atomic', definition: '', formula: '', category_id: selectedCategoryID.value, domain_id: null, base_metric_id: null }
+  derivationConfigText.value = ''
   showCreateDialog.value = true
 }
 
@@ -412,6 +458,7 @@ const deleteCategory = async (data) => {
 
 onMounted(async () => {
   await loadCategories()
+  await loadDomains()
   if (selectedCategoryID.value && !categories.value.some(category => category.id === selectedCategoryID.value)) {
     selectedCategoryID.value = null
     syncQuery()
@@ -422,6 +469,11 @@ onMounted(async () => {
 
 <style scoped>
 .metric-list { min-height: 100%; padding: 20px; color: var(--addp-text-primary); background: var(--addp-bg-secondary); }
+
+.derivation-config-input :deep(textarea) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  line-height: 1.5;
+}
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .header-left { display: flex; align-items: center; gap: 16px; }
 .header-left h2 { margin: 0; font-size: 18px; color: var(--addp-text-primary); }

@@ -192,6 +192,17 @@ func (p *MongoDBPlugin) SampleDynamicSchema(ctx context.Context, connInfo plugin
 	if err := cursor.All(ctx, &documents); err != nil {
 		return nil, fmt.Errorf("failed to decode sampled documents: %w", err)
 	}
+	// Dynamic collections often append newer document shapes after older
+	// records. Include a deterministic tail sample so fields introduced later
+	// are not invisible when the bounded head sample has a different schema.
+	tailCursor, err := coll.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "_id", Value: -1}}).SetLimit(int64(sampleSize)))
+	if err == nil {
+		var tailDocuments []bson.M
+		if decodeErr := tailCursor.All(ctx, &tailDocuments); decodeErr == nil {
+			documents = append(documents, tailDocuments...)
+		}
+		_ = tailCursor.Close(ctx)
+	}
 
 	fieldStats := make(map[string]*mongoFieldStat)
 	for _, doc := range documents {
@@ -407,23 +418,122 @@ func collectMongoDocumentFields(
 	document map[string]interface{},
 	depth int,
 ) {
-	keys := make([]string, 0, len(document))
-	for key := range document {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		// MongoDB documents frequently use generated identifiers as map keys
-		// (for example, participant IDs under members). Those keys are record
-		// data, not stable query fields, and must not enter the schema facts.
-		if looksLikeMongoDynamicKey(key) {
-			continue
+	if len(path) == 0 {
+		keys := make([]string, 0, len(document))
+		for key := range document {
+			if !looksLikeMongoDynamicKey(key) {
+				keys = append(keys, key)
+			}
 		}
-		collectMongoFieldStats(stats, appendMongoPath(path, key), document[key], depth+1)
-		if len(stats) >= mongoSchemaMaxFields {
+		sort.Strings(keys)
+		for _, key := range keys {
+			fieldPath := appendMongoPath(path, key)
+			collectMongoFieldStats(stats, fieldPath, document[key], mongoSchemaMaxDepth)
+		}
+		for _, key := range keys {
+			fieldPath := appendMongoPath(path, key)
+			children := mongoDirectFields(fieldPath, document[key], 2)
+			if len(children) > 0 && len(stats) < mongoSchemaMaxFields {
+				collectMongoFieldStats(stats, children[0].path, children[0].value, mongoSchemaMaxDepth)
+			}
+		}
+	}
+	frontier := mongoDirectFields(path, map[string]interface{}(document), depth+1)
+	for len(frontier) > 0 && len(stats) < mongoSchemaMaxFields {
+		frontier = interleaveMongoSchemaFields(frontier)
+		next := make([]mongoSchemaField, 0)
+		for _, field := range frontier {
+			if len(stats) >= mongoSchemaMaxFields {
+				return
+			}
+			collectMongoFieldStats(stats, field.path, field.value, mongoSchemaMaxDepth)
+			if field.depth < mongoSchemaMaxDepth {
+				next = append(next, mongoDirectFields(field.path, field.value, field.depth+1)...)
+			}
+		}
+		frontier = next
+	}
+}
+
+func interleaveMongoSchemaFields(fields []mongoSchemaField) []mongoSchemaField {
+	groups := make(map[string][]mongoSchemaField)
+	for _, field := range fields {
+		parent := strings.Join(field.path[:len(field.path)-1], ".")
+		groups[parent] = append(groups[parent], field)
+	}
+	parents := make([]string, 0, len(groups))
+	for parent := range groups {
+		parents = append(parents, parent)
+		sort.SliceStable(groups[parent], func(i, j int) bool {
+			return strings.Join(groups[parent][i].path, ".") < strings.Join(groups[parent][j].path, ".")
+		})
+	}
+	sort.Strings(parents)
+	result := make([]mongoSchemaField, 0, len(fields))
+	for index := 0; ; index++ {
+		added := false
+		for _, parent := range parents {
+			if index < len(groups[parent]) {
+				result = append(result, groups[parent][index])
+				added = true
+			}
+		}
+		if !added {
+			return result
+		}
+	}
+}
+
+type mongoSchemaField struct {
+	path  []string
+	value interface{}
+	depth int
+}
+
+func mongoDirectFields(path []string, value interface{}, depth int) []mongoSchemaField {
+	fields := make([]mongoSchemaField, 0)
+	appendField := func(key string, child interface{}) {
+		if looksLikeMongoDynamicKey(key) {
 			return
 		}
+		fields = append(fields, mongoSchemaField{path: appendMongoPath(path, key), value: child, depth: depth})
 	}
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			appendField(key, typed[key])
+		}
+	case bson.M:
+		return mongoDirectFields(path, map[string]interface{}(typed), depth)
+	case primitive.D:
+		children := append(primitive.D(nil), typed...)
+		sort.SliceStable(children, func(i, j int) bool { return children[i].Key < children[j].Key })
+		for _, child := range children {
+			appendField(child.Key, child.Value)
+		}
+	case primitive.A:
+		limit := len(typed)
+		if limit > mongoSchemaMaxArrayElements {
+			limit = mongoSchemaMaxArrayElements
+		}
+		for _, item := range typed[:limit] {
+			fields = append(fields, mongoDirectFields(path, item, depth)...)
+		}
+	case []interface{}:
+		limit := len(typed)
+		if limit > mongoSchemaMaxArrayElements {
+			limit = mongoSchemaMaxArrayElements
+		}
+		for _, item := range typed[:limit] {
+			fields = append(fields, mongoDirectFields(path, item, depth)...)
+		}
+	}
+	return fields
 }
 
 func looksLikeMongoDynamicKey(key string) bool {

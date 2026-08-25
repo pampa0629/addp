@@ -201,7 +201,7 @@ standard/
 | formula | text | 计算公式（复合指标） |
 | unit_id | int64? | 引用 `standard.units` |
 | base_metric_id | int64? | 基础指标（派生指标用） |
-| derivation_config | JSONB | 派生配置（聚合方式、过滤条件等） |
+| derivation_config | JSONB | 语义计算配置（聚合、过滤、去重等）；只保存结构化计划，不保存引擎查询文本 |
 | status | string | `draft` / `approved` / `deprecated` |
 | steward_id | int64? | 数据责任人 |
 | tags | StringArray | 标签 |
@@ -383,7 +383,7 @@ atomic（原子指标）
 
 derived（派生指标）
   ├─ base_metric_id → atomic 指标
-  └─ derivation_config（JSONB）存储派生规则
+  └─ derivation_config（JSONB）存储结构化语义计算计划
 
 composite（复合指标）
   └─ metric_dependencies 表记录依赖哪些 atomic/derived 指标

@@ -1,6 +1,6 @@
 # ADDP 统一测试与 Online 验收体系方案
 
-> 状态：稳定规则已迁入正式规范；仅保留专用 T4 Runner 首次真实验收与关闭条件（2026-08-23）。
+> 状态：稳定规则已迁入正式规范；Online T4 workflow 已在远端启用，仅保留专用 T4 Runner 首次真实验收与关闭条件（2026-08-24）。
 
 ## 一、专题边界
 
@@ -24,6 +24,7 @@
 - [x] `standard-model-reference-deletion` 与 `module-registry-recovery` 已登记为真实 T4 suite，不存在占位 suite。
 - [x] 专用宿主机门禁会在生命周期操作前检查 macOS、`ADDP_ONLINE_HOST=1`、仓库外环境文件与证据目录、干净 checkout、`addp_online` 数据库和 suite profile。
 - [x] 手工 `.github/workflows/online-t4-gates.yml` 已绑定 `addp-online` Environment，并使用 `self-hosted`、`macOS`、`addp-online` Runner 标签。
+- [x] 手工 Online T4 workflow 已进入远端并被 GitHub 识别为 active；workflow 语法和 Runner 上下文约束由 `make test-platform` 自动检查。
 - [x] 宿主机编排复用正式 Infra / Dev 生命周期与 `make test-online`，退出时停止应用并输出清理证据。
 - [x] `make test-release RELEASE_SUITE=<suite>` 与 `addp.release-gate/v1` 已统一现有 T5 产品门禁调用和报告。
 

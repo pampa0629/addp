@@ -107,6 +107,21 @@ func TestCollectMongoFieldStatsUsesStableMapOrderAtFieldLimit(t *testing.T) {
 	}
 }
 
+func TestCollectMongoDocumentFieldsPreservesLaterTopLevelFields(t *testing.T) {
+	stats := make(map[string]*mongoFieldStat)
+	early := bson.M{}
+	for index := 0; index < mongoSchemaMaxFields; index++ {
+		early[fmt.Sprintf("nested_%03d", index)] = bson.M{"deep": index}
+	}
+	document := bson.M{"early": early, "leader": bson.M{"personid": "person-1"}}
+
+	collectMongoDocumentFields(stats, nil, map[string]interface{}(document), 0)
+
+	if stats["leader"] == nil || stats["leader.personid"] == nil {
+		t.Fatalf("later top-level leader fields were lost: leader=%v personid=%v", stats["leader"], stats["leader.personid"])
+	}
+}
+
 func TestCollectMongoDocumentFieldsSkipsGeneratedRecordKeys(t *testing.T) {
 	stats := make(map[string]*mongoFieldStat)
 	document := bson.M{

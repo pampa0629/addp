@@ -135,6 +135,18 @@
             <el-option v-for="layer in layers" :key="layer.layer_code" :label="layer.layer_name" :value="layer.layer_code" />
           </el-select>
         </el-form-item>
+        <el-form-item
+          v-if="createForm.table_type === 'fact'"
+          :label="t('model.logical_table.grain_description')"
+          prop="grain_description"
+        >
+          <el-input
+            v-model="createForm.grain_description"
+            type="textarea"
+            :rows="2"
+            :placeholder="t('model.logical_table.grain_placeholder')"
+          />
+        </el-form-item>
         <el-form-item :label="t('model.entity.description')">
           <el-input v-model="createForm.description" type="textarea" :rows="2" />
         </el-form-item>
@@ -177,12 +189,25 @@ const createFormRef = ref(null)
 
 const searchForm = reactive({ keyword: '', domain_id: null, layer: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
-const createForm = reactive({ name: '', code: '', domain_id: null, table_type: 'entity', layer: '', description: '' })
+const createForm = reactive({
+  name: '', code: '', domain_id: null, table_type: 'entity', layer: '',
+  grain_description: '', description: ''
+})
 const createRules = {
   name: [{ required: true, message: t('model.logical_table.name_required'), trigger: 'blur' }],
   code: [{ required: true, message: t('model.logical_table.code_required'), trigger: 'blur' }],
   table_type: [{ required: true, message: t('model.logical_table.type_required'), trigger: 'change' }],
-  layer: [{ required: true, message: t('model.logical_table.layer_required'), trigger: 'change' }]
+  layer: [{ required: true, message: t('model.logical_table.layer_required'), trigger: 'change' }],
+  grain_description: [{
+    validator: (_rule, value, callback) => {
+      if (createForm.table_type === 'fact' && !String(value || '').trim()) {
+        callback(new Error(t('model.logical_table.grain_required')))
+        return
+      }
+      callback()
+    },
+    trigger: 'blur'
+  }]
 }
 
 const layerTagType = (layer) => ({ ods: '', dwd: 'success', dws: 'warning', ads: 'danger' }[layer] ?? 'info')
@@ -262,7 +287,10 @@ const handlePageChange = async () => {
 }
 
 const openCreateDialog = () => {
-  Object.assign(createForm, { name: '', code: '', domain_id: null, table_type: 'entity', layer: '', description: '' })
+  Object.assign(createForm, {
+    name: '', code: '', domain_id: null, table_type: 'entity', layer: '',
+    grain_description: '', description: ''
+  })
   createDialogVisible.value = true
 }
 

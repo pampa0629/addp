@@ -19,11 +19,15 @@ class MQLPlanError(ValueError):
 
 
 class MQLCompiler:
-    FILTER_OPERATORS = {"eq", "ne", "gt", "gte", "lt", "lte", "in", "contains", "regex", "exists"}
+    FILTER_OPERATORS = {
+        "eq", "ne", "gt", "gte", "lt", "lte", "in", "contains", "regex", "exists", "not_empty",
+    }
     METRIC_OPERATIONS = {
         "none",
         "count_documents",
         "count_array_elements",
+        "count_distinct_array_elements",
+        "count_distinct_documents",
         "distinct_count",
         "sum",
         "avg",
@@ -116,6 +120,14 @@ class MQLCompiler:
         sort = cls._compile_sort(plan["sort"], fields)
         metric = cls._validate_metric(plan["metric"], fields)
         cls._validate_filter_metric_roles(plan["filters"], metric)
+        if metric["operation"] == "count_distinct_array_elements":
+            element_filter_query, element_parameters = cls._compile_filters(
+                metric["element_filters"],
+                fields,
+                existing_parameter_names={item["name"] for item in parameters},
+            )
+            metric["_element_filter_query"] = element_filter_query
+            parameters.extend(element_parameters)
         limit = plan["limit"]
 
         command = cls._compile_command(collection, filters, select_fields, sort, limit, metric)
@@ -191,10 +203,12 @@ class MQLCompiler:
         cls,
         filters: list[Any],
         fields: dict[str, dict[str, Any]],
+        *,
+        existing_parameter_names: set[str] | None = None,
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         clauses: list[dict[str, Any]] = []
         parameters: list[dict[str, Any]] = []
-        parameter_names: set[str] = set()
+        parameter_names: set[str] = set(existing_parameter_names or set())
         for index, item in enumerate(filters):
             if not isinstance(item, dict):
                 raise MQLPlanError(f"MQL filter[{index}] must be an object")
@@ -209,6 +223,21 @@ class MQLCompiler:
             cls._validate_filter_type(field_name, field, operator)
             value = item["value"]
             cls._validate_filter_value(operator, value)
+            if operator == "not_empty":
+                clauses.append({field_name: {"$exists": True, "$nin": [None, ""]}})
+                continue
+            if operator == "in":
+                operands: list[dict[str, str]] = []
+                for item_value in value:
+                    parameter_name = cls._parameter_name(field_name, parameter_names)
+                    parameter_type = cls._parameter_type(item_value)
+                    if parameter_type is None:
+                        raise MQLPlanError(f"MQL filter parameter value type is unsupported: {parameter_name}")
+                    operands.append({"$param": parameter_name})
+                    parameters.append({"name": parameter_name, "type": parameter_type, "default": item_value})
+                    parameter_names.add(parameter_name)
+                clauses.append({field_name: {"$in": operands}})
+                continue
             parameter_name = cls._parameter_name(field_name, parameter_names)
             parameter_type = cls._parameter_type(value)
             if parameter_type is None:
@@ -233,9 +262,9 @@ class MQLCompiler:
 
     @staticmethod
     def _validate_filter_value(operator: str, value: Any) -> None:
-        if operator == "exists":
+        if operator in {"exists", "not_empty"}:
             if not isinstance(value, bool):
-                raise MQLPlanError("MQL exists filter value must be boolean")
+                raise MQLPlanError(f"MQL {operator} filter value must be boolean")
             return
         if operator == "in":
             if not isinstance(value, list) or not value:
@@ -312,14 +341,19 @@ class MQLCompiler:
 
     @classmethod
     def _validate_metric(cls, metric: dict[str, Any], fields: dict[str, dict[str, Any]]) -> dict[str, Any]:
-        required = {"operation", "field"}
-        if set(metric) != required:
-            raise MQLPlanError("MQL metric fields must be field, operation and result_key")
+        if isinstance(metric, dict) and metric.get("operation") == "count_distinct_documents":
+            return cls._validate_distinct_document_metric(metric, fields)
+        if not isinstance(metric, dict) or "operation" not in metric or "field" not in metric:
+            raise MQLPlanError("MQL metric fields must contain operation and field")
         operation = str(metric["operation"] or "").strip()
         field_name = str(metric["field"] or "").strip()
         result_key = cls._metric_result_key(operation, field_name)
         if operation not in cls.METRIC_OPERATIONS:
             raise MQLPlanError(f"MQL metric operation is unsupported: {operation}")
+        if operation == "count_distinct_array_elements":
+            return cls._validate_distinct_array_metric(metric, fields)
+        if set(metric) != {"operation", "field"}:
+            raise MQLPlanError("MQL metric fields must be operation and field")
         if operation == "none":
             if field_name or result_key:
                 raise MQLPlanError("MQL metric none must not declare field or result_key")
@@ -337,18 +371,139 @@ class MQLCompiler:
             raise MQLPlanError("MQL count_documents must not declare a field")
         return {"operation": operation, "field": field_name, "result_key": result_key}
 
+    @classmethod
+    def _validate_distinct_array_metric(
+        cls,
+        metric: dict[str, Any],
+        fields: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        allowed = {"operation", "field", "group_by", "distinct_by", "element_filters"}
+        unknown = set(metric) - allowed
+        if unknown:
+            raise MQLPlanError(
+                "MQL count_distinct_array_elements metric contains unknown fields: "
+                + ", ".join(sorted(unknown))
+            )
+        array_field = str(metric["field"] or "").strip()
+        array = cls._verified_field(array_field, fields)
+        if str(array.get("type") or "unknown").lower() != "array":
+            raise MQLPlanError(
+                "MQL count_distinct_array_elements requires an array field: " + array_field
+            )
+        group_by = metric.get("group_by")
+        distinct_by = metric.get("distinct_by")
+        element_filters = metric.get("element_filters")
+        if not isinstance(group_by, list) or not group_by:
+            raise MQLPlanError("MQL count_distinct_array_elements group_by must be a non-empty array")
+        if not isinstance(distinct_by, list) or not distinct_by:
+            raise MQLPlanError("MQL count_distinct_array_elements distinct_by must be a non-empty array")
+        if not isinstance(element_filters, list):
+            raise MQLPlanError("MQL count_distinct_array_elements element_filters must be an array")
+
+        for label, paths in (("group_by", group_by), ("distinct_by", distinct_by)):
+            for index, path in enumerate(paths):
+                name = str(path or "").strip()
+                if not name:
+                    raise MQLPlanError(f"MQL {label}[{index}] must be a non-empty field path")
+                field = cls._verified_field(name, fields)
+                field_type = str(field.get("type") or "unknown").lower()
+                if field_type in {"array", "object", "json"}:
+                    raise MQLPlanError(f"MQL {label} field must be scalar: {name}")
+                if label == "group_by" and not name.startswith(array_field + "."):
+                    raise MQLPlanError(
+                        f"MQL count_distinct_array_elements group_by field must belong to {array_field}: {name}"
+                    )
+
+        for index, item in enumerate(element_filters):
+            if not isinstance(item, dict) or set(item) != {"field", "operator", "value"}:
+                raise MQLPlanError(
+                    f"MQL element_filters[{index}] fields must be field, operator and value"
+                )
+            name = str(item["field"] or "").strip()
+            if not name.startswith(array_field + "."):
+                raise MQLPlanError(
+                    f"MQL element filter field must belong to {array_field}: {name}"
+                )
+            field = cls._verified_field(name, fields)
+            operator = str(item["operator"] or "").strip()
+            if operator not in cls.FILTER_OPERATORS:
+                raise MQLPlanError(f"MQL filter operator is unsupported: {operator}")
+            cls._validate_filter_type(name, field, operator)
+            cls._validate_filter_value(operator, item["value"])
+        result_key = cls._metric_result_key(metric["operation"], array_field)
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", result_key):
+            raise MQLPlanError("MQL metric result_key is invalid")
+        return {
+            "operation": metric["operation"],
+            "field": array_field,
+            "group_by": list(dict.fromkeys(str(item).strip() for item in group_by)),
+            "distinct_by": list(dict.fromkeys(str(item).strip() for item in distinct_by)),
+            "group_by_types": [
+                str(fields[str(item).strip()].get("type") or "unknown").lower()
+                for item in dict.fromkeys(str(item).strip() for item in group_by)
+            ],
+            "distinct_by_types": [
+                str(fields[str(item).strip()].get("type") or "unknown").lower()
+                for item in dict.fromkeys(str(item).strip() for item in distinct_by)
+            ],
+            "element_filters": element_filters,
+            "result_key": result_key,
+        }
+
+    @classmethod
+    def _validate_distinct_document_metric(
+        cls,
+        metric: dict[str, Any],
+        fields: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        allowed = {"operation", "field", "group_by", "distinct_by"}
+        unknown = set(metric) - allowed
+        if unknown:
+            raise MQLPlanError(
+                "MQL count_distinct_documents metric contains unknown fields: "
+                + ", ".join(sorted(unknown))
+            )
+        if str(metric.get("field") or "").strip():
+            raise MQLPlanError("MQL count_distinct_documents field must be empty")
+        group_by = metric.get("group_by")
+        distinct_by = metric.get("distinct_by")
+        if not isinstance(group_by, list) or not group_by:
+            raise MQLPlanError("MQL count_distinct_documents group_by must be a non-empty array")
+        if not isinstance(distinct_by, list) or not distinct_by:
+            raise MQLPlanError("MQL count_distinct_documents distinct_by must be a non-empty array")
+        normalized_group_by = list(dict.fromkeys(str(item).strip() for item in group_by))
+        normalized_distinct_by = list(dict.fromkeys(str(item).strip() for item in distinct_by))
+        for label, paths in (("group_by", normalized_group_by), ("distinct_by", normalized_distinct_by)):
+            for index, name in enumerate(paths):
+                if not name:
+                    raise MQLPlanError(f"MQL count_distinct_documents {label}[{index}] must be non-empty")
+                field = cls._verified_field(name, fields)
+                if str(field.get("type") or "unknown").lower() in {"array", "object", "json"}:
+                    raise MQLPlanError(f"MQL count_distinct_documents {label} field must be scalar: {name}")
+        return {
+            "operation": metric["operation"],
+            "field": "",
+            "group_by": normalized_group_by,
+            "distinct_by": normalized_distinct_by,
+            "group_by_types": [str(fields[name].get("type") or "unknown").lower() for name in normalized_group_by],
+            "distinct_by_types": [str(fields[name].get("type") or "unknown").lower() for name in normalized_distinct_by],
+            "result_key": "distinct_document_count",
+        }
+
     @staticmethod
     def _metric_result_key(operation: str, field_name: str) -> str:
         if operation == "none":
             return ""
         if operation == "count_documents":
             return "document_count"
+        if operation == "count_distinct_documents":
+            return "distinct_document_count"
         leaf = re.sub(r"[^A-Za-z0-9_]+", "_", field_name.split(".")[-1]).strip("_").lower() or "value"
         return f"{leaf}_{operation}"
 
     @staticmethod
     def _validate_filter_metric_roles(filters: list[Any], metric: dict[str, Any]) -> None:
-        if metric["operation"] != "count_array_elements":
+        if metric["operation"] not in {"count_array_elements", "count_distinct_array_elements"}:
             return
         array_field = metric["field"]
         for item in filters:
@@ -398,6 +553,102 @@ class MQLCompiler:
                 {"$project": {"_element_count": {"$size": {"$ifNull": [f"${field_name}", []]}}}},
                 {"$group": {"_id": None, result_key: {"$sum": "$_element_count"}}},
                 {"$project": {"_id": 0, result_key: 1}},
+            ])
+        elif operation == "count_distinct_array_elements":
+            array_field = metric["field"]
+            pipeline.append({"$unwind": f"${array_field}"})
+            if metric.get("_element_filter_query"):
+                pipeline.append({"$match": metric["_element_filter_query"]})
+            identity_paths = list(dict.fromkeys(metric["group_by"] + metric["distinct_by"]))
+            identity_types = {
+                path: field_type
+                for path, field_type in zip(
+                    metric["group_by"] + metric["distinct_by"],
+                    metric["group_by_types"] + metric["distinct_by_types"],
+                    strict=True,
+                )
+            }
+            identity_match: dict[str, Any] = {}
+            for path in identity_paths:
+                if identity_types[path] == "string":
+                    condition: dict[str, Any] = {"$exists": True, "$nin": [None, ""]}
+                else:
+                    condition = {"$exists": True, "$ne": None}
+                identity_match[path] = condition
+            pipeline.append({"$match": identity_match})
+            group_id = {
+                f"group_{index}": f"${path}"
+                for index, path in enumerate(metric["group_by"])
+            }
+            distinct_id = {
+                f"distinct_{index}": f"${path}"
+                for index, path in enumerate(metric["distinct_by"])
+            }
+            grouped_id = {**group_id, **distinct_id}
+            second_group_id = {
+                key: f"$_id.{key}" for key in group_id
+            }
+            projection = {"_id": 0}
+            used_aliases: set[str] = set()
+            for index, path in enumerate(metric["group_by"]):
+                leaf = re.sub(r"[^A-Za-z0-9_]+", "_", path.split(".")[-1]).strip("_").lower() or f"group_{index}"
+                alias = leaf
+                suffix = 2
+                while alias in used_aliases:
+                    alias = f"{leaf}_{suffix}"
+                    suffix += 1
+                used_aliases.add(alias)
+                projection[alias] = f"$_id.group_{index}"
+            projection[metric["result_key"]] = "$_distinct_count"
+            pipeline.extend([
+                {"$group": {"_id": grouped_id}},
+                {"$group": {
+                    "_id": second_group_id,
+                    "_distinct_count": {"$sum": 1},
+                }},
+                {"$project": projection},
+            ])
+        elif operation == "count_distinct_documents":
+            identity_paths = list(dict.fromkeys(metric["group_by"] + metric["distinct_by"]))
+            identity_types = {
+                path: field_type
+                for path, field_type in zip(
+                    metric["group_by"] + metric["distinct_by"],
+                    metric["group_by_types"] + metric["distinct_by_types"],
+                    strict=True,
+                )
+            }
+            identity_match: dict[str, Any] = {}
+            for path in identity_paths:
+                if identity_types[path] == "string":
+                    identity_match[path] = {"$exists": True, "$nin": [None, ""]}
+                else:
+                    identity_match[path] = {"$exists": True, "$ne": None}
+            pipeline.append({"$match": identity_match})
+            grouped_id = {
+                **{f"group_{index}": f"${path}" for index, path in enumerate(metric["group_by"])},
+                **{f"distinct_{index}": f"${path}" for index, path in enumerate(metric["distinct_by"])},
+            }
+            second_group_id = {
+                f"group_{index}": f"$_id.group_{index}"
+                for index in range(len(metric["group_by"]))
+            }
+            projection = {"_id": 0}
+            used_aliases: set[str] = set()
+            for index, path in enumerate(metric["group_by"]):
+                leaf = re.sub(r"[^A-Za-z0-9_]+", "_", path.split(".")[-1]).strip("_").lower() or f"group_{index}"
+                alias = leaf
+                suffix = 2
+                while alias in used_aliases:
+                    alias = f"{leaf}_{suffix}"
+                    suffix += 1
+                used_aliases.add(alias)
+                projection[alias] = f"$_id.group_{index}"
+            projection[metric["result_key"]] = "$_distinct_count"
+            pipeline.extend([
+                {"$group": {"_id": grouped_id}},
+                {"$group": {"_id": second_group_id, "_distinct_count": {"$sum": 1}}},
+                {"$project": projection},
             ])
         elif operation == "distinct_count":
             pipeline.extend([

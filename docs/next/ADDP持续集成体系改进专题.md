@@ -1,6 +1,6 @@
 # ADDP 持续集成体系改进专题
 
-> 状态：仓库内 CI 主线已经完成；本文只保留 GitHub 外部治理与专用 T4 Runner 待办（2026-08-23）。
+> 状态：仓库内 CI 主线已经完成；Online T4 workflow 已进入远端，本文只保留 GitHub 外部治理与专用 T4 Runner 首跑待办（2026-08-24）。
 
 ## 一、专题边界
 
@@ -21,7 +21,7 @@
 - [x] 旧专项 workflow、兼容入口、占位 suite 和在 YAML 中重复的 owner 路径表已经删除。
 - [x] Renovate 只管理 GitHub Actions 与 PostgreSQL 15 Service 摘要，要求发布沉淀期、Dependency Dashboard 审批且不自动合并。
 
-## 三、2026-08-23 外部状态快照
+## 三、2026-08-24 外部状态快照
 
 本节是公开 GitHub API 的只读快照，不是长期契约。
 
@@ -30,10 +30,10 @@
 | 项目 | 当前事实 |
 | --- | --- |
 | 仓库 | `pampa0629/addp` 为公开仓库，默认分支为 `main`。 |
-| 远端 workflow | 远端 `main` 当前有三个 active workflow：Platform CI、Quality frontend smoke、Release and T2 gates。 |
-| 本地待推送 workflow | 当前工作区另有 `.github/workflows/online-t4-gates.yml`；它尚未进入远端，因此不能宣称远端已经具备 T4 workflow。 |
+| 远端 workflow | 远端 `main` 当前有四个 active workflow：Platform CI、Quality frontend smoke、Release and T2 gates、Online T4 gates。Online T4 只允许 `workflow_dispatch` 手工触发。 |
+| Online workflow 校验 | `.github/workflows/online-t4-gates.yml` 已进入远端。首次提交曾因在 Job 级 `env` 使用 Step 才可用的 `runner.temp` 而被 GitHub 拒绝解析；提交 `c742215839f2ce84dc272403713370a280f3cbf3` 已将证据目录下移到生命周期 Step，并把该约束纳入 `make test-platform`。 |
 | Ruleset | `main release gates` 处于 active，禁止删除与非快进更新，要求 PR、解决 review thread，并严格要求 `CLI product gate (macOS Keychain)` 与 `System IAM gate (PostgreSQL 15)`。 |
-| 最近一次共同提交 | 三个远端 workflow 在提交 `88fbce1af4e9417fc0bc6976f6994d6ff8b75235` 上均成功；Platform CI 约 8 分 20 秒，Quality 约 36 秒，Release/T2 约 2 分 8 秒。耗时只用于当前成本观察。 |
+| 最近一次共同提交 | 三个自动触发 workflow 在提交 `c742215839f2ce84dc272403713370a280f3cbf3` 上均成功；Online T4 workflow 已被 GitHub 识别为 active，但因专用 Runner 尚未准备而未手工执行。 |
 | Environment | 公开 API 返回 0 个 Environment，`addp-online` 尚未建立。 |
 | Renovate | [Dependency Dashboard #5](https://github.com/pampa0629/addp/issues/5) 由 `renovate[bot]` 维护，2026-08-23 仍有更新，App 与 Dashboard 已确认有效。 |
 
@@ -54,7 +54,7 @@
 
 ### P0：专用 T4 Runner
 
-- [ ] 新机器到位后，按 [Online 专用 Runner 首次验收待办](ADDP统一测试与Online验收体系方案.md) 建立 `addp-online` Environment、注册 Runner、推送手工 workflow 并完成首次真实执行。
+- [ ] 新机器到位后，按 [Online 专用 Runner 首次验收待办](ADDP统一测试与Online验收体系方案.md) 建立 `addp-online` Environment、注册 Runner，并完成两个已上线手工 suite 的首次真实执行。
 
 本文不复制该清单的机器、身份、数据库和 suite 细节。
 

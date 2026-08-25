@@ -190,6 +190,7 @@
       "basic_info": "基本信息",
       "grain_description": "粒度声明",
       "grain_placeholder": "描述每行记录代表什么，如：每行代表一笔支付事务",
+      "grain_required": "事实表必须填写粒度声明",
       "scd_type": "SCD 类型",
       "scd_0": "0 - 静态（不变化）",
       "scd_1": "1 - 覆盖（无历史）",

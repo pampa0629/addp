@@ -58,8 +58,23 @@
                 </el-form-item>
               </el-col>
             </el-row>
+            <el-form-item :label="$t('standard.glossary.domainLabel')">
+              <el-select v-model="metric.domain_id" filterable :placeholder="$t('standard.common.domainOptional')" style="width: 100%">
+                <el-option v-for="domain in domainList" :key="domain.id" :label="domain.name" :value="domain.id" />
+              </el-select>
+            </el-form-item>
             <el-form-item :label="$t('standard.metric.definitionLabel')">
               <el-input v-model="metric.definition" type="textarea" :rows="4" :placeholder="$t('standard.metric.definitionPlaceholder')" />
+            </el-form-item>
+            <el-form-item :label="$t('standard.metric.derivationConfigLabel')">
+              <el-input
+                v-model="derivationConfigText"
+                class="derivation-config-input"
+                type="textarea"
+                :rows="12"
+                resize="vertical"
+                :placeholder="$t('standard.metric.derivationConfigPlaceholder')"
+              />
             </el-form-item>
             <el-form-item :label="$t('standard.metric.formulaLabel')" v-if="metric.type === 'composite'">
               <el-input v-model="metric.formula" type="textarea" :rows="2" :placeholder="$t('standard.metric.formulaPlaceholder')" />
@@ -119,7 +134,7 @@ import { useConsolePageDescriptor } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { elementAPI, metricAPI, metricCategoryAPI } from '../api/standard'
+import { domainAPI, elementAPI, metricAPI, metricCategoryAPI } from '../api/standard'
 import DocumentPanel from '../components/DocumentPanel.vue'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
@@ -127,6 +142,7 @@ import { formatStandardDateTime } from '../utils/dateTime'
 import { useStandardPermissions } from '../composables/useStandardPermissions'
 import { useActionLock } from '../composables/useActionLock'
 import { useUnsavedChanges } from '../composables/useUnsavedChanges'
+import { parseMetricDerivationConfig, stringifyMetricDerivationConfig } from '../utils/metricDerivationConfig'
 
 const { t, locale } = useI18n()
 const { canUpdate, canApprove, canOffline } = useStandardPermissions('metric')
@@ -137,12 +153,14 @@ const loading = ref(false)
 const saving = ref(false)
 const actionKey = computed(() => `metric:${route.params.id}`)
 const metric = ref({})
+const derivationConfigText = ref('')
 useConsolePageDescriptor(router, 'standard', {
   title: computed(() => t('standard.metric.recentVisitTitle')),
   subject: computed(() => metric.value?.name || ''),
   ready: computed(() => Boolean(metric.value?.name))
 })
 const categories = ref([])
+const domainList = ref([])
 const atomicMetrics = ref([])
 const relatedElements = ref([])
 const editableState = computed(() => {
@@ -155,13 +173,25 @@ const editableState = computed(() => {
     updated_by,
     ...editable
   } = metric.value
-  return editable
+  return { ...editable, derivation_config: derivationConfigText.value }
 })
 const { isDirty, markSaved } = useUnsavedChanges({ state: editableState, t })
 
 const categoryTree = computed(() => buildTree(categories.value))
 function buildTree(list, parentId = null) {
   return list.filter(i => (i.parent_id || null) === parentId).map(i => ({ ...i, children: buildTree(list, i.id) }))
+}
+
+const flattenDomains = (nodes) => {
+  const result = []
+  const traverse = (list) => {
+    for (const node of list) {
+      result.push(node)
+      if (node.children) traverse(node.children)
+    }
+  }
+  traverse(nodes)
+  return result
 }
 
 const typeLabel = (type) => ({ atomic: t('standard.metric.atomic'), derived: t('standard.metric.derived'), composite: t('standard.metric.composite') }[type] || type)
@@ -181,6 +211,7 @@ const loadMetric = async () => {
     const res = await metricAPI.get(route.params.id)
     metric.value = res || {}
     if (!metric.value.tags) metric.value.tags = []
+    derivationConfigText.value = stringifyMetricDerivationConfig(metric.value.derivation_config)
     await loadRelatedElements(metric.value.element_ids || [])
     markSaved()
   } catch (e) {
@@ -213,6 +244,15 @@ const loadCategories = async () => {
   }
 }
 
+const loadDomains = async () => {
+  try {
+    const res = await domainAPI.list()
+    domainList.value = flattenDomains(res || [])
+  } catch (e) {
+    domainList.value = []
+  }
+}
+
 const loadAtomicMetrics = async () => {
   try {
     const res = await metricAPI.list({ type: 'atomic', page_size: 500 })
@@ -226,10 +266,15 @@ const saveChanges = async () => {
   if (saving.value) return
   saving.value = true
   try {
+    metric.value.derivation_config = parseMetricDerivationConfig(derivationConfigText.value)
     await metricAPI.update(route.params.id, metric.value)
     ElMessage.success(t('standard.common.saveSuccess'))
     await loadMetric()
   } catch (e) {
+    if (e instanceof SyntaxError || e?.message === 'metric derivation config must be a JSON object') {
+      ElMessage.error(t('standard.metric.derivationConfigInvalid'))
+      return
+    }
     ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.saveFailed'))
   } finally {
     saving.value = false
@@ -277,6 +322,7 @@ watch(() => route.params.id, () => {
 
 onMounted(() => {
   loadCategories()
+  loadDomains()
 })
 </script>
 
@@ -311,6 +357,11 @@ onMounted(() => {
 
 .section-card {
   margin-bottom: 20px;
+}
+
+.derivation-config-input :deep(textarea) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  line-height: 1.5;
 }
 
 .element-list {

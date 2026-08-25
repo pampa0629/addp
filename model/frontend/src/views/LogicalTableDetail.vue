@@ -838,7 +838,7 @@ const loadPage = async () => {
   try {
     await loadTable()
     if (generation !== loadGeneration) return
-    await Promise.all([loadFields(), loadMetrics()])
+    await Promise.all([loadFields(), loadMetrics(), loadAvailableMetrics()])
     const [domainsResult, elementsResult, layersResult] = await Promise.allSettled([
       domainAPI.list(), elementAPI.listAll(), dwLayerAPI.list()
     ])

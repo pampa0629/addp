@@ -46,6 +46,55 @@ def persons_resource():
     }
 
 
+def outdoors_resource():
+    return {
+        "role": "户外活动",
+        "query_names": {"mql": "Outdoors"},
+        "schema_coverage": "sampled",
+        "fields": [
+            {"name": "_id", "path": ["_id"], "type": "string"},
+            {"name": "status", "path": ["status"], "type": "string"},
+            {"name": "title.date", "path": ["title", "date"], "type": "string"},
+            {"name": "members", "path": ["members"], "type": "array", "element_type": "json"},
+            {"name": "members.personid", "path": ["members", "personid"], "type": "string"},
+            {
+                "name": "members.entryInfo.status",
+                "path": ["members", "entryInfo", "status"],
+                "type": "string",
+            },
+            {"name": "leader.personid", "path": ["leader", "personid"], "type": "string"},
+        ],
+    }
+
+
+def actual_participation_plan():
+    return {
+        "collection": "Outdoors",
+        "filters": [
+            {"field": "status", "operator": "ne", "value": "拟定中"},
+            {"field": "status", "operator": "ne", "value": "已取消"},
+            {"field": "title.date", "operator": "not_empty", "value": True},
+        ],
+        "select_fields": [],
+        "sort": [],
+        "limit": None,
+        "metric": {
+            "operation": "count_distinct_array_elements",
+            "field": "members",
+            "group_by": ["members.personid"],
+            "distinct_by": ["_id"],
+            "element_filters": [{
+                "field": "members.entryInfo.status",
+                "operator": "in",
+                "value": ["报名中", "领队", "领队组"],
+            }],
+        },
+        "set_comparison": None,
+        "assumptions": [],
+        "clarification": None,
+    }
+
+
 def participation_plan():
     return {
         "collection": "Persons",
@@ -100,6 +149,137 @@ def test_compile_participation_count_uses_nickname_and_array_size():
         ],
     }
     assert result["query_parameters"] == [{"name": "nickname", "type": "string", "default": "攀爬"}]
+
+
+def test_compile_actual_participation_groups_by_person_and_deduplicates_activity():
+    result = MQLCompiler.compile(actual_participation_plan(), [outdoors_resource()])
+    command = json.loads(result["query"])
+
+    assert command["aggregate"] == "Outdoors"
+    assert command["pipeline"][0] == {
+        "$match": {
+            "$and": [
+                {"status": {"$ne": {"$param": "status"}}},
+                {"status": {"$ne": {"$param": "status_2"}}},
+                {"title.date": {"$exists": True, "$nin": [None, ""]}},
+            ],
+        },
+    }
+    assert command["pipeline"][1] == {"$unwind": "$members"}
+    assert command["pipeline"][2] == {
+        "$match": {
+            "members.entryInfo.status": {
+                "$in": [
+                    {"$param": "status_3"},
+                    {"$param": "status_4"},
+                    {"$param": "status_5"},
+                ],
+            },
+        },
+    }
+    assert command["pipeline"][3] == {
+        "$match": {
+            "members.personid": {"$exists": True, "$nin": [None, ""]},
+            "_id": {"$exists": True, "$nin": [None, ""]},
+        },
+    }
+    assert command["pipeline"][4] == {
+        "$group": {"_id": {"group_0": "$members.personid", "distinct_0": "$_id"}},
+    }
+    assert command["pipeline"][5] == {
+        "$group": {"_id": {"group_0": "$_id.group_0"}, "_distinct_count": {"$sum": 1}},
+    }
+    assert command["pipeline"][6] == {
+        "$project": {
+            "_id": 0,
+            "personid": "$_id.group_0",
+            "members_count_distinct_array_elements": "$_distinct_count",
+        },
+    }
+    assert result["query_parameters"] == [
+        {"name": "status", "type": "string", "default": "拟定中"},
+        {"name": "status_2", "type": "string", "default": "已取消"},
+        {"name": "status_3", "type": "string", "default": "报名中"},
+        {"name": "status_4", "type": "string", "default": "领队"},
+        {"name": "status_5", "type": "string", "default": "领队组"},
+    ]
+
+
+def test_compile_rejects_distinct_array_group_outside_array():
+    plan = actual_participation_plan()
+    plan["metric"]["group_by"] = ["status"]
+
+    with pytest.raises(MQLPlanError, match="group_by field must belong to members"):
+        MQLCompiler.compile(plan, [outdoors_resource()])
+
+
+def test_compile_distinct_documents_groups_by_current_leader_and_deduplicates_activity():
+    plan = {
+        "collection": "Outdoors",
+        "filters": [
+            {"field": "status", "operator": "ne", "value": "拟定中"},
+            {"field": "status", "operator": "ne", "value": "已取消"},
+            {"field": "title.date", "operator": "not_empty", "value": True},
+        ],
+        "select_fields": [],
+        "sort": [],
+        "limit": None,
+        "metric": {
+            "operation": "count_distinct_documents",
+            "field": "",
+            "group_by": ["leader.personid"],
+            "distinct_by": ["_id"],
+        },
+        "set_comparison": None,
+        "assumptions": [],
+        "clarification": None,
+    }
+
+    result = MQLCompiler.compile(plan, [outdoors_resource()])
+    command = json.loads(result["query"])
+
+    assert command["aggregate"] == "Outdoors"
+    assert command["pipeline"][1] == {
+        "$match": {
+            "leader.personid": {"$exists": True, "$nin": [None, ""]},
+            "_id": {"$exists": True, "$nin": [None, ""]},
+        },
+    }
+    assert command["pipeline"][2] == {
+        "$group": {"_id": {"group_0": "$leader.personid", "distinct_0": "$_id"}},
+    }
+    assert command["pipeline"][3] == {
+        "$group": {"_id": {"group_0": "$_id.group_0"}, "_distinct_count": {"$sum": 1}},
+    }
+    assert command["pipeline"][4] == {
+        "$project": {
+            "_id": 0,
+            "personid": "$_id.group_0",
+            "distinct_document_count": "$_distinct_count",
+        },
+    }
+
+
+def test_compile_rejects_distinct_documents_object_group():
+    plan = {
+        "collection": "Outdoors",
+        "filters": [],
+        "select_fields": [],
+        "sort": [],
+        "limit": None,
+        "metric": {
+            "operation": "count_distinct_documents",
+            "field": "",
+            "group_by": ["members"],
+            "distinct_by": ["_id"],
+        },
+        "set_comparison": None,
+        "assumptions": [],
+        "clarification": None,
+    }
+
+    with pytest.raises(MQLPlanError, match="field must be scalar"):
+        MQLCompiler.compile(plan, [outdoors_resource()])
 
 
 def test_compile_rejects_regex_on_array_object():
@@ -274,6 +454,36 @@ def test_generate_mql_uses_single_semantic_plan_call(monkeypatch):
     assert '"userInfo.nickName"' in result["query"]
     assert '"$size"' in result["query"]
     assert "climbing" not in result["query"]
+
+
+def test_generate_mql_compiles_distinct_array_metric_without_model_generated_pipeline(monkeypatch):
+    captured = []
+
+    class FakeLLM:
+        async def ainvoke(self, messages, **_kwargs):
+            captured.append(messages)
+            return type("Response", (), {"content": json.dumps(actual_participation_plan(), ensure_ascii=False)})()
+
+    monkeypatch.setattr(
+        "services.query_service.CopilotInferenceService.chat_model",
+        lambda *_args, **_kwargs: FakeLLM(),
+    )
+    result = asyncio.run(QueryService().generate(
+        query="按人员统计有效活动中的实际参加活动数",
+        engine={"id": 11, "engine_type": "mongodb", "capabilities": {}},
+        query_language="mql",
+        resources=[outdoors_resource()],
+        current_query=None,
+        tenant_id=1,
+        db=None,
+    ))
+
+    command = json.loads(result["query"])
+    assert len(captured) == 1
+    assert command["aggregate"] == "Outdoors"
+    assert "$unwind" in json.dumps(command["pipeline"], ensure_ascii=False)
+    assert "$setUnion" not in json.dumps(command["pipeline"], ensure_ascii=False)
+    assert "members_count_distinct_array_elements" in result["query"]
 
 
 def test_query_service_continues_with_confirmed_generic_calculation_rule(monkeypatch):

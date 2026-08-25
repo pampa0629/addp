@@ -273,6 +273,11 @@ class QueryService:
             "用户值必须原样保留，禁止翻译、增加英文、同义词、正则备选或其他扩展。"
             "用户未明确要求包含、模糊或正则匹配时使用 eq；contains/regex 只能用于 string 字段。"
             "统计某个记录的数组成员数量时使用 count_array_elements，统计匹配文档数时使用 count_documents。"
+            "统计数组元素按分组字段归属、按文档或复合身份去重的数量时使用 count_distinct_array_elements；"
+            "该操作必须同时提供 field、group_by、distinct_by 和 element_filters，先展开数组并过滤元素，"
+            "再按 group_by + distinct_by 去重，最后按 group_by 输出计数。"
+            "统计文档按标量字段分组、按文档身份去重的数量时使用 count_distinct_documents；"
+            "该操作必须同时提供 group_by 和 distinct_by，先过滤有效文档并去重，再按 group_by 输出计数。"
             "比较两个实体各自拥有的去重元素集合时使用 set_comparison；entity_field 是实体标识字段，"
             "entity_values 必须原样保留两个实体值，set_fields 是一个或多个数组元素身份字段。"
             "set_comparison.metric 只能是 intersection_count、jaccard、overlap_coefficient 或 unspecified。"
@@ -280,12 +285,15 @@ class QueryService:
             "只有用户明确要求共同元素数量、Jaccard 或以较少一方为基准的重叠系数时才能选择对应指标。"
             "无法从资源事实唯一确定含义时必须填写 clarification；不得把猜测写成可执行计划。"
             "assumptions 必须为空，否则系统会要求用户澄清。参数名和结果列名由编译器生成，不要输出。"
-            "metric.operation 只能是 none、count_documents、count_array_elements、distinct_count、sum、avg、min、max。"
-            "filter.operator 只能是 eq、ne、gt、gte、lt、lte、in、contains、regex、exists。"
+            "metric.operation 只能是 none、count_documents、count_array_elements、count_distinct_array_elements、count_distinct_documents、"
+            "distinct_count、sum、avg、min、max。"
+            "filter.operator 只能是 eq、ne、gt、gte、lt、lte、in、contains、regex、exists、not_empty；"
             "统计某记录拥有的数组元素数量时，filters 必须标识拥有该数组的记录，禁止选择该数组的子字段。"
             "普通查询的 set_comparison 必须为 null；集合比较时 filters/select_fields/sort 必须为空、limit 必须为 null、"
             "metric.operation 必须为 none。只返回 JSON：collection、filters、metric、set_comparison、assumptions、clarification；"
-            "filters 每项只有 field/operator/value，metric 只有 operation/field。"
+            "filters 和 element_filters 每项只有 field/operator/value；普通 metric 只有 operation/field；"
+            "count_distinct_array_elements 的 metric 还必须提供 group_by、distinct_by、element_filters；"
+            "count_distinct_documents 的 metric 必须提供 group_by、distinct_by。"
         )
 
     @staticmethod
@@ -321,6 +329,9 @@ class QueryService:
             "properties": {
                 "operation": {"type": "string", "enum": sorted(MQLCompiler.METRIC_OPERATIONS)},
                 "field": {"type": "string"},
+                "group_by": {"type": "array", "items": {"type": "string"}},
+                "distinct_by": {"type": "array", "items": {"type": "string"}},
+                "element_filters": {"type": "array", "items": filter_item},
             },
             "required": ["operation", "field"],
         }
