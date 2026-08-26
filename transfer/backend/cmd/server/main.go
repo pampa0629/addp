@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/modulelifecycle"
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/transfer/internal/api"
 	transferauthorization "github.com/addp/transfer/internal/authorization"
@@ -155,12 +157,9 @@ func main() {
 	defer deadLetterTopicCleaner.Close()
 	cleanupService.SetDeadLetterTopicCleaner(deadLetterTopicCleaner)
 	taskService.SetTaskOwnedResourceCleanup(cleanupService)
+	var registration *commonClient.ModuleRegistrationLifecycle
 	boundedScheduler := worker.NewScheduler(transferRepo.NewTaskRepository(db))
 	boundedScheduler.SetExecutionService(executionService)
-	if err := boundedScheduler.Start(context.Background()); err != nil {
-		log.Fatalf("Transfer owner scheduler 启动失败: %v", err)
-	}
-	defer boundedScheduler.Stop()
 
 	// 数据库 CDC capture control plane；数据面由独立 continuous worker 消费登记的 Infra Kafka generation。
 	if systemClient != nil {
@@ -215,20 +214,24 @@ func main() {
 	defer cleanupService.Stop()
 
 	// 设置路由
-	router := api.SetupRouter(taskService, executionService, continuousPolicyService, cfg.SystemServiceURL, cfg.MetaServiceURL, redisClient, systemClient, systemRuntimeClient)
+	lifecycleController := modulelifecycle.NewBusiness("transfer", commonClient.ModuleRuntimeRoleBackend)
+	router := api.SetupRouter(taskService, executionService, continuousPolicyService, cfg.SystemServiceURL, cfg.MetaServiceURL, redisClient, systemClient, systemRuntimeClient, lifecycleController)
+	addr := fmt.Sprintf(":%s", cfg.Port)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("Transfer 监听绑定失败: %v", err)
+	}
 
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
-	var registrationDone <-chan struct{}
-
 	// ========== 模块定义、运行实例与 TaskProvider 声明发布 ==========
 	if systemRuntimeClient != nil {
 		taskProvider, err := service.TransferTaskProviderDeclaration()
 		if err != nil {
 			log.Fatalf("构建 Transfer TaskProvider 声明失败: %v", err)
 		}
-		registrationDone = systemRuntimeClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
-			ModuleName: "transfer", ModuleURL: serviceURL, RoutePrefix: "/transfer", HealthCheckURL: serviceURL + "/health",
+		registration = systemRuntimeClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
+			ModuleName: "transfer", ModuleURL: serviceURL, RoutePrefix: "/transfer", HealthCheckURL: serviceURL + "/health/ready",
 			TaskProvider: taskProvider,
 			Metadata: map[string]interface{}{
 				"module": "transfer",
@@ -244,25 +247,31 @@ func main() {
 				ReadPermission: transferauthorization.PermissionTransferConfigurationRead, UpdatePermission: transferauthorization.PermissionTransferConfigurationUpdate,
 			}}},
 		})
+		lifecycleController.AttachRegistration(registration)
+		modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
 	}
+	boundedScheduler.SetClaimGate(func() bool { return registration != nil && registration.IsRegistered() })
+	if err := boundedScheduler.Start(runtimeContext); err != nil {
+		log.Fatalf("Transfer owner scheduler 启动失败: %v", err)
+	}
+	defer boundedScheduler.Stop()
 
 	// 启动服务器
-	addr := fmt.Sprintf(":%s", cfg.Port)
 	log.Printf("🚀 Transfer service starting on %s", addr)
 	log.Printf("📊 Database: %s@%s:%s/%s (schema: %s)",
 		cfg.DBUser, cfg.DBHost, cfg.DBPort, cfg.DBName, cfg.DBSchema)
 	log.Printf("🔗 System Service: %s", cfg.SystemServiceURL)
-	log.Printf("✅ Health check: http://localhost%s/health", addr)
+	log.Printf("✅ Readiness check: http://localhost%s/health/ready", addr)
 
 	go func() {
-		if err := router.Run(addr); err != nil {
+		if err := router.RunListener(listener); err != nil {
 			log.Printf("Failed to start server: %v", err)
 			stopRuntime()
 		}
 	}()
 	<-runtimeContext.Done()
-	if registrationDone != nil {
-		<-registrationDone
+	if registration != nil {
+		<-registration.Done()
 	}
 }
 

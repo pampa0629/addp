@@ -323,7 +323,7 @@ Gateway 读取配置
 
 **方案**：
 ```
-Gateway → /health (每 10s 检查)
+Gateway → /health/ready (每 10s 检查)
     ↓
   ✅ 可用 → 路由
   ❌ 宕机 → 503 错误

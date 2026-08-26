@@ -93,7 +93,7 @@ export ONLINE_SUITE ADDP_ONLINE_ARTIFACT_DIR
 case "$ONLINE_SUITE" in
   module-registry-recovery)
     START_TARGET=-system
-    REQUIRED_SUITE_ENV=(SYSTEM_URL GATEWAY_URL MANAGER_SERVICE_CLIENT_SECRET)
+    REQUIRED_SUITE_ENV=(SYSTEM_URL GATEWAY_URL MANAGER_URL MANAGER_SERVICE_CLIENT_SECRET)
     ;;
   standard-model-reference-deletion)
     START_TARGET=-model
@@ -121,7 +121,7 @@ cd "$ROOT_DIR"
 [ -z "$(git status --porcelain)" ] ||
   fail "dedicated Online deployment requires a clean repository"
 
-for required_command in bash git python3 make docker go node npm curl; do
+for required_command in bash git python3 make docker go node npm curl lsof nc; do
   command -v "$required_command" >/dev/null 2>&1 ||
     fail "dedicated Online Runner is missing required command: $required_command"
 done
@@ -154,9 +154,30 @@ if [ "$MODE" = "check-only" ]; then
 fi
 
 cleanup_required=0
+process_lifecycle=not-applicable
 
 run_logged() {
   "$@" 2>&1 | tee -a "$GATE_LOG"
+}
+
+observe_module_lifecycle() {
+  local phase=$1
+  local timeout=$2
+  local expected_instance_id=${3:-}
+  local command=(
+    python3 scripts/test/module-lifecycle-process-online.py
+    --phase "$phase"
+    --manager-url "$MANAGER_URL"
+    --system-url "$SYSTEM_URL"
+    --gateway-url "$GATEWAY_URL"
+    --repository "$ROOT_DIR"
+    --timeout "$timeout"
+    --output "$ADDP_ONLINE_ARTIFACT_DIR/module-lifecycle-${phase}.json"
+  )
+  if [ -n "$expected_instance_id" ]; then
+    command+=(--expected-instance-id "$expected_instance_id")
+  fi
+  run_logged "${command[@]}"
 }
 
 finish() {
@@ -185,6 +206,7 @@ finish() {
     printf 'database=%s\n' "$POSTGRES_DB"
     printf 'result=%s\n' "$result"
     printf 'cleanup=%s\n' "$cleanup"
+    printf 'process_lifecycle=%s\n' "$process_lifecycle"
   } > "$SUMMARY"
   exit "$gate_status"
 }
@@ -198,5 +220,41 @@ trap 'exit 143' TERM
 cleanup_required=1
 run_logged bash scripts/dev/stop.sh
 run_logged bash scripts/infra/up.sh
-run_logged bash scripts/dev/start.sh "$START_TARGET"
+
+if [ "$ONLINE_SUITE" = "module-registry-recovery" ]; then
+  process_lifecycle=not-run
+  process_timeout=${ADDP_ONLINE_PROCESS_TIMEOUT_SECONDS:-60}
+  lease_timeout=${ADDP_ONLINE_LEASE_TIMEOUT_SECONDS:-60}
+
+  run_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process --wait-live -manager
+  observe_module_lifecycle business-before-system "$process_timeout"
+  manager_instance_id=$(python3 - "$ADDP_ONLINE_ARTIFACT_DIR/module-lifecycle-business-before-system.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as evidence:
+    print(json.load(evidence)["manager"]["instance_id"])
+PY
+  )
+
+  run_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
+  observe_module_lifecycle manager-registered "$process_timeout" "$manager_instance_id"
+
+  run_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -gateway
+  observe_module_lifecycle gateway-established "$process_timeout" "$manager_instance_id"
+
+  run_logged bash scripts/dev/stop-exact-process.sh -system
+  observe_module_lifecycle system-interrupted "$lease_timeout" "$manager_instance_id"
+
+  run_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
+  observe_module_lifecycle system-recovered "$process_timeout" "$manager_instance_id"
+
+  # Release the real Manager route before the existing two-probe lease and
+  # multi-instance scenario claims the same module route prefix.
+  run_logged bash scripts/dev/stop-exact-process.sh -manager
+  process_lifecycle=passed
+else
+  run_logged bash scripts/dev/start.sh "$START_TARGET"
+fi
+
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"

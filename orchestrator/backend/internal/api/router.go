@@ -4,11 +4,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/addp/common/modulelifecycle"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
+	"github.com/addp/common/modulelifecycle"
 	_ "github.com/addp/orchestrator/docs"
 	orchestratorauthorization "github.com/addp/orchestrator/internal/authorization"
 	"github.com/addp/orchestrator/internal/repository"

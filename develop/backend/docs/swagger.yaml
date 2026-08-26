@@ -403,6 +403,8 @@ definitions:
         type: integer
       engine_specific:
         $ref: '#/definitions/github_com_addp_develop_backend_internal_models.WorkflowEngineSpecificConfigSwagger'
+      materialization_target:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.MaterializationTargetSwagger'
       type:
         example: workflow
         type: string
@@ -654,6 +656,12 @@ definitions:
         type: integer
       total:
         example: 1
+        type: integer
+    type: object
+  github_com_addp_develop_backend_internal_models.MaterializationTargetSwagger:
+    properties:
+      logical_table_id:
+        example: 3
         type: integer
     type: object
   github_com_addp_develop_backend_internal_models.NotebookRuntimeBindingSwaggerRequest:

@@ -274,11 +274,11 @@ func parsePositiveID(value string) (*int64, error) {
 
 // StartWorker starts the single durable execution route inside the independent
 // quality-worker process. Multiple workers coordinate through PostgreSQL leases.
-func (e *CheckExecutor) StartWorker(ctx context.Context) {
+func (e *CheckExecutor) StartWorker(ctx context.Context, canClaim func() bool) {
 	e.workerStartOnce.Do(func() {
 		workerCtx, cancel := context.WithCancel(ctx)
 		e.workerCancel = cancel
-		go e.workerSupervisor(workerCtx)
+		go e.workerSupervisor(workerCtx, canClaim)
 	})
 }
 
@@ -289,7 +289,7 @@ func (e *CheckExecutor) StopWorker() {
 	}
 }
 
-func (e *CheckExecutor) workerSupervisor(ctx context.Context) {
+func (e *CheckExecutor) workerSupervisor(ctx context.Context, canClaim func() bool) {
 	defer close(e.workerDone)
 	var workers sync.WaitGroup
 	workers.Add(1)
@@ -302,7 +302,7 @@ func (e *CheckExecutor) workerSupervisor(ctx context.Context) {
 		workers.Add(1)
 		go func(workerID string) {
 			defer workers.Done()
-			e.executionWorkerLoop(ctx, workerID)
+			e.executionWorkerLoop(ctx, workerID, canClaim)
 		}(workerID)
 	}
 	workers.Wait()
@@ -322,12 +322,20 @@ func (e *CheckExecutor) recoveryLoop(ctx context.Context) {
 	}
 }
 
-func (e *CheckExecutor) executionWorkerLoop(ctx context.Context, workerID string) {
+func (e *CheckExecutor) executionWorkerLoop(ctx context.Context, workerID string, canClaim func() bool) {
 	ticker := time.NewTicker(e.workerPoll)
 	defer ticker.Stop()
 	for {
 		if ctx.Err() != nil {
 			return
+		}
+		if canClaim == nil || !canClaim() {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				continue
+			}
 		}
 		if e.processPending(ctx, workerID) {
 			continue

@@ -48,7 +48,7 @@ asset/
 ```bash
 bash scripts/dev/start.sh -asset
 bash scripts/dev/restart.sh -asset
-curl http://localhost:8183/health
+curl http://localhost:8183/health/ready
 ```
 
 API 或路由变更后运行：

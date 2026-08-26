@@ -12,10 +12,31 @@ from addp_common.client import (
     ModuleRegistryAPIError,
     ModuleRegistryClient,
     OAuthServiceTokenSource,
+    ServiceTokenError,
 )
 
 
 class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
+    def test_retry_classification_is_an_explicit_allowlist(self):
+        request = httpx.Request("POST", "http://system/api/v1/system/runtime/modules")
+        responses = {
+            status: ModuleRegistryAPIError(httpx.Response(status, request=request))
+            for status in (400, 404, 429, 503)
+        }
+        cases = [
+            (TypeError("not JSON serializable"), False, False),
+            (httpx.ConnectError("unavailable", request=request), False, True),
+            (ServiceTokenError("service_token_http_401", status_code=401), False, False),
+            (ServiceTokenError("service_token_http_503", status_code=503, retryable=True), False, True),
+            (responses[400], False, False),
+            (responses[429], False, True),
+            (responses[503], False, True),
+            (responses[404], True, True),
+        ]
+        for error, heartbeat, expected in cases:
+            with self.subTest(error=error, heartbeat=heartbeat):
+                self.assertEqual(ModuleRegistryClient._retryable(error, heartbeat=heartbeat), expected)
+
     async def test_register_uses_platform_service_token_and_typed_declaration(self):
         token_requests = 0
         registered_instance_id = ""
@@ -318,10 +339,11 @@ class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
 
             with self.assertLogs("addp.module_registry", level="WARNING") as captured_logs:
                 registry_task = asyncio.create_task(client.run(registration))
-                await asyncio.sleep(0.05)
-                registry_task.cancel()
-                with self.assertRaises(asyncio.CancelledError):
+                with self.assertRaises(ModuleRegistryAPIError):
                     await registry_task
+            snapshot = client.snapshot(registration)
+            self.assertEqual(snapshot.state, "failed")
+            self.assertEqual(snapshot.error_code, "module_registration_invalid")
             diagnostic_log = "\n".join(captured_logs.output)
             for expected in (
                 "operation=register",

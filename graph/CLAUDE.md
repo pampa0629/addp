@@ -198,7 +198,7 @@ bash scripts/dev/restart.sh -graph
 
 # 访问
 # 前端：http://localhost:5187
-# API：http://localhost:8186/health
+# API：http://localhost:8186/health/ready
 ```
 
 日志文件：`logs/graph-backend.log`、`logs/graph-backend-stderr.log`

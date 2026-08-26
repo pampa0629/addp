@@ -15,6 +15,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/modulelifecycle"
 	commonRepo "github.com/addp/common/repository"
 	commonRuntimeHealth "github.com/addp/common/runtimehealth"
 	"github.com/addp/transfer/internal/config"
@@ -81,6 +82,7 @@ func main() {
 			"capacity":     cfg.BoundedWorkerConcurrency,
 		},
 	})
+	modulelifecycle.CancelRuntimeOnFatal(registrationDone, stop)
 	reporter, err := commonRuntimeHealth.NewReporter(commonRuntimeHealth.NewRepository(db), commonRuntimeHealth.ReporterConfig{
 		InstanceID: workerInstanceID, Module: commonExecution.ModuleTransfer, Role: commonRuntimeHealth.RoleExecutionWorker,
 		RuntimeName: commonExecution.TaskTypeSync, Capacity: cfg.BoundedWorkerConcurrency,
@@ -92,8 +94,8 @@ func main() {
 	}
 	go reporter.Run(ctx)
 	logger.L().Info("transfer bounded worker started", "concurrency", cfg.BoundedWorkerConcurrency, "lease", cfg.BoundedLeaseDuration)
-	runner.Run(ctx)
-	<-registrationDone
+	runner.Run(ctx, registrationDone.IsRegistered)
+	<-registrationDone.Done()
 	logger.L().Info("transfer bounded worker stopped")
 }
 

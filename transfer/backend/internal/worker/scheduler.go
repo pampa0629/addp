@@ -19,10 +19,15 @@ const schedulePollInterval = time.Second
 type Scheduler struct {
 	taskRepo         *repository.TaskRepository
 	executionService *service.ExecutionService
+	claimGate        func() bool
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
 	wg       sync.WaitGroup
+}
+
+func (s *Scheduler) SetClaimGate(claimGate func() bool) {
+	s.claimGate = claimGate
 }
 
 // NewScheduler 创建定时调度器。
@@ -105,6 +110,9 @@ func (s *Scheduler) scheduledLoop(ctx context.Context) {
 }
 
 func (s *Scheduler) runDueScheduledTasks(ctx context.Context) {
+	if s.claimGate != nil && !s.claimGate() {
+		return
+	}
 	if s.executionService == nil {
 		log.Println("⚠️  Transfer 定时调度器缺少 executionService")
 		return

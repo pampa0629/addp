@@ -758,8 +758,68 @@ func validateDevTaskExecutionConfig(devType string, content map[string]interface
 			return fmt.Errorf("content.target_locator 的引擎 ID 必须与 execution_config.engine_id 一致")
 		}
 	}
-	_ = queryType
+	logicalTableID, managed, err := materializationTargetLogicalTableID(executionConfig)
+	if err != nil {
+		return err
+	}
+	if managed {
+		if logicalTableID <= 0 || queryType != "sql" {
+			return fmt.Errorf("execution_config.materialization_target 仅支持 SQL 查询任务")
+		}
+		queryText, _ := content["query"].(string)
+		analysis, analysisErr := AnalyzeQuery("sql", queryText)
+		if analysisErr != nil || analysis.Statement != "SELECT" || analysis.Effect != string(SQLExecutionEffectRead) {
+			return fmt.Errorf("逻辑表托管写入的 content.query 必须是单条只读 SELECT")
+		}
+	}
 	return nil
+}
+
+func materializationTargetLogicalTableID(executionConfig map[string]interface{}) (int64, bool, error) {
+	if executionConfig == nil {
+		return 0, false, nil
+	}
+	raw, exists := executionConfig["materialization_target"]
+	if !exists {
+		return 0, false, nil
+	}
+	var target map[string]interface{}
+	switch value := raw.(type) {
+	case map[string]interface{}:
+		target = value
+	case models.DevTaskContent:
+		target = map[string]interface{}(value)
+	default:
+		return 0, true, fmt.Errorf("execution_config.materialization_target 必须是对象")
+	}
+	if len(target) != 1 {
+		return 0, true, fmt.Errorf("execution_config.materialization_target 只能包含 logical_table_id")
+	}
+	logicalTableID, ok := positiveInt64(target["logical_table_id"])
+	if !ok {
+		return 0, true, fmt.Errorf("execution_config.materialization_target.logical_table_id 必须是正整数")
+	}
+	return logicalTableID, true, nil
+}
+
+func positiveInt64(value interface{}) (int64, bool) {
+	switch typed := value.(type) {
+	case float64:
+		converted := int64(typed)
+		return converted, converted > 0 && float64(converted) == typed
+	case int:
+		return int64(typed), typed > 0
+	case int64:
+		return typed, typed > 0
+	case uint:
+		converted := int64(typed)
+		return converted, converted > 0 && uint(converted) == typed
+	case uint64:
+		converted := int64(typed)
+		return converted, converted > 0 && uint64(converted) == typed
+	default:
+		return 0, false
+	}
 }
 
 func devTaskExecutionConfigEngineID(executionConfig map[string]interface{}) *uint {

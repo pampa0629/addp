@@ -23,10 +23,15 @@ type Scheduler struct {
 	executor         *Executor
 	systemClient     *commonClient.SystemServiceClient
 	log              *slog.Logger
+	claimGate        func() bool
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
 	wg       sync.WaitGroup
+}
+
+func (s *Scheduler) SetClaimGate(claimGate func() bool) {
+	s.claimGate = claimGate
 }
 
 // NewScheduler 创建调度器。
@@ -109,6 +114,9 @@ func (s *Scheduler) scheduledLoop(ctx context.Context) {
 }
 
 func (s *Scheduler) runDue(ctx context.Context) {
+	if s.claimGate != nil && !s.claimGate() {
+		return
+	}
 	now := time.Now()
 	ids, err := s.orchRepo.ListDueIDs(ctx, now, 100)
 	if err != nil {

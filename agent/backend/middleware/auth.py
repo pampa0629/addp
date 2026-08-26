@@ -8,7 +8,7 @@ from config import settings
 
 async def auth_middleware(request: Request, call_next):
     # 健康检查不需要认证
-    if request.url.path in ["/health", "/docs", "/openapi.json"]:
+    if request.url.path in ["/health/live", "/health/ready", "/docs", "/openapi.json"]:
         return await call_next(request)
 
     auth_header = request.headers.get("Authorization")

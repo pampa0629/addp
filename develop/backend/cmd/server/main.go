@@ -6,6 +6,7 @@ import (
 	_ "github.com/addp/common/engine/plugins/postgresql"
 	commonExecution "github.com/addp/common/execution"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -16,6 +17,7 @@ import (
 	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/events"
+	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/develop/backend/internal/api"
 	developauthorization "github.com/addp/develop/backend/internal/authorization"
 	"github.com/addp/develop/backend/internal/config"
@@ -112,6 +114,7 @@ func main() {
 
 	// 6. 联邦查询 Runtime 编排服务
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, serviceTokenSource)
+	modelClient := commonClient.NewModelClient(cfg.ModelServiceURL, serviceTokenSource, nil)
 	federatedQueryService := service.NewFederatedQueryService(systemServiceClient, metaClient)
 	log.Printf("✅ FederatedQueryService 初始化完成")
 
@@ -120,7 +123,7 @@ func main() {
 	log.Printf("✅ OperatorDiscoveryService 初始化完成")
 
 	// 8. DevExecutor 统一执行器（执行前复用正式工作流校验）
-	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, operatorDiscovery, metaClient, sqlEngine, federatedQueryService, notebookExecutionService, cfg.QueryResultLimit)
+	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, operatorDiscovery, metaClient, modelClient, sqlEngine, federatedQueryService, notebookExecutionService, cfg.QueryResultLimit)
 	log.Printf("✅ DevExecutor 初始化完成（使用统一执行表）")
 	toolApprovalService := service.NewToolApprovalService(db, devExecutor)
 
@@ -143,14 +146,20 @@ func main() {
 
 	// ========== 设置路由 ==========
 	queryPolicyHandler := api.NewQueryPolicyHandler(queryPolicyService)
-	router := api.SetupRouter(cfg, db, devTaskHandler, executionHandler, toolApprovalHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, devTaskService, systemServiceClient, queryPolicyHandler)
+	lifecycleController := modulelifecycle.NewBusiness("develop", commonClient.ModuleRuntimeRoleBackend)
+	router := api.SetupRouter(cfg, db, devTaskHandler, executionHandler, toolApprovalHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, devTaskService, systemServiceClient, lifecycleController, queryPolicyHandler)
 	log.Printf("✅ 路由设置完成")
+	addr := cfg.ServerAddr
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("Develop 监听绑定失败: %v", err)
+	}
 
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerAddr)
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
-	var registrationDone <-chan struct{}
+	var registration *commonClient.ModuleRegistrationLifecycle
 
 	// ========== 模块定义、运行实例与 TaskProvider 声明发布 ==========
 	if cfg.SystemServiceURL != "" {
@@ -158,8 +167,8 @@ func main() {
 		if err != nil {
 			log.Fatalf("构建 Develop TaskProvider 声明失败: %v", err)
 		}
-		registrationDone = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
-			ModuleName: "develop", ModuleURL: serviceURL, RoutePrefix: "/develop", HealthCheckURL: serviceURL + "/health",
+		registration = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
+			ModuleName: "develop", ModuleURL: serviceURL, RoutePrefix: "/develop", HealthCheckURL: serviceURL + "/health/ready",
 			TaskProvider: taskProvider,
 			Metadata:     map[string]interface{}{"capabilities": map[string]interface{}{"cleanup_executor": map[string]interface{}{"enabled": true, "causes": []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted}}}},
 			ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{
@@ -167,15 +176,16 @@ func main() {
 				ReadPermission: developauthorization.PermissionDevelopConfigurationRead, UpdatePermission: developauthorization.PermissionDevelopConfigurationUpdate,
 			}}},
 		})
+		lifecycleController.AttachRegistration(registration)
+		modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
 	}
 
 	// 启动服务器（非阻塞）
-	addr := cfg.ServerAddr
 	log.Printf("🎉 Develop Service is running on %s", addr)
-	log.Printf("📋 API文档: http://localhost%s/health", addr)
+	log.Printf("📋 就绪检查: http://localhost%s/health/ready", addr)
 
 	go func() {
-		if err := router.Run(addr); err != nil {
+		if err := router.RunListener(listener); err != nil {
 			log.Printf("❌ Failed to start server: %v", err)
 			stopRuntime()
 		}
@@ -184,8 +194,8 @@ func main() {
 	// 等待终止信号
 	<-runtimeContext.Done()
 	log.Println("🛑 Shutting down Develop Service...")
-	if registrationDone != nil {
-		<-registrationDone
+	if registration != nil {
+		<-registration.Done()
 	}
 	sessionShutdownContext, cancelSessionShutdown := context.WithTimeout(context.Background(), 20*time.Second)
 	notebookHandler.ShutdownSessions(sessionShutdownContext)

@@ -1403,7 +1403,13 @@ func assertTaskExecutionRuntimeConstraints(t *testing.T, db *sql.DB) {
 		FROM system.role_permissions role_permission
 		JOIN system.roles role ON role.id = role_permission.role_id
 		JOIN system.permissions permission ON permission.id = role_permission.permission_id
-		WHERE role.role_key IN ('platform.orchestrator_runtime', 'tenant.orchestrator_runtime')
+		WHERE (role.role_key, permission.permission_key) IN (
+			('platform.orchestrator_runtime', 'system.runtime_registry.read'),
+			('platform.orchestrator_runtime', 'system.runtime_registry.update'),
+			('tenant.orchestrator_runtime', 'develop.task_provider.execute'),
+			('tenant.orchestrator_runtime', 'develop.task_provider.read'),
+			('tenant.orchestrator_runtime', 'system.task_authorization.execute')
+		  )
 	`).Scan(&rolePermissionCount); err != nil {
 		t.Fatalf("count Orchestrator runtime role permissions: %v", err)
 	}
@@ -1469,6 +1475,7 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 			'develop.data_read.execute', 'develop.data_write.execute',
 			'develop.data_ddl.execute', 'develop.data_external_effect.execute',
 			'model.materialization.execute',
+			'model.task_provider.execute', 'model.task_provider.read',
 			'system.execution_authorization.execute'
 		)
 		  AND status = 'active'
@@ -1483,6 +1490,8 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 		WHERE (role.role_key, permission.permission_key) IN (
 			('tenant.data_architect', 'develop.data_ddl.execute'),
 			('tenant.data_architect', 'develop.data_read.execute'),
+			('tenant.data_architect', 'develop.data_write.execute'),
+			('tenant.data_architect', 'develop.task.execute'),
 			('tenant.data_architect', 'model.materialization.execute'),
 			('tenant.data_architect', 'system.execution_authorization.create'),
 			('tenant.data_engineer', 'develop.data_read.execute'),
@@ -1495,6 +1504,8 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 			('tenant.governance_manager', 'system.execution_authorization.create'),
 			('tenant.model_runtime', 'system.engine_descriptor.read'),
 			('tenant.model_runtime', 'system.execution_authorization.execute'),
+			('tenant.orchestrator_runtime', 'model.task_provider.execute'),
+			('tenant.orchestrator_runtime', 'model.task_provider.read'),
 			('tenant.quality_runtime', 'system.execution_authorization.execute')
 		)
 	`).Scan(&rolePermissionCount); err != nil {
@@ -1522,7 +1533,7 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&triggerCount); err != nil {
 		t.Fatalf("count execution authorization triggers: %v", err)
 	}
-	if permissionCount != 6 || rolePermissionCount != 15 || triggerCount != 3 || audienceConstraintCount != 1 {
+	if permissionCount != 8 || rolePermissionCount != 19 || triggerCount != 3 || audienceConstraintCount != 1 {
 		t.Fatalf("execution authorization catalog permissions=%d role_permissions=%d triggers=%d audience_constraints=%d", permissionCount, rolePermissionCount, triggerCount, audienceConstraintCount)
 	}
 }
@@ -1688,7 +1699,7 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 	if managerTenantPermissions != "inference.runtime.execute,meta.catalog.read,meta.scan_task.execute,system.engine_descriptor.read,system.engine.read,transfer.task.create,transfer.task.execute,transfer.task.read" ||
 		metaTenantPermissions != "audit.tenant_event.create,system.engine_descriptor.read,system.engine.read" ||
 		transferTenantPermissions != "meta.catalog.read,meta.inspect.execute,meta.scan_task.execute,system.engine_descriptor.read,system.engine.read" ||
-		developTenantPermissions != "meta.catalog.read,meta.scan_task.execute,system.engine_descriptor.read,system.execution_authorization.execute,system.notebook_session_authorization.execute" ||
+		developTenantPermissions != "meta.catalog.read,meta.scan_task.execute,model.materialization_context.read,system.engine_descriptor.read,system.execution_authorization.execute,system.notebook_session_authorization.execute" ||
 		copilotTenantPermissions != "develop.task.read,inference.runtime.execute,system.engine_descriptor.read" ||
 		qualityTenantPermissions != "meta.catalog.read,standard.element.read,system.engine.read,system.execution_authorization.execute" ||
 		metaPlatformPermissions != "system.runtime_registry.update" ||

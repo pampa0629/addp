@@ -105,7 +105,7 @@ func TestIntegrationPostgresQualityCheckPersistsRuleIdentity(t *testing.T) {
 	)
 	workerCtx, cancelWorker := context.WithCancel(context.Background())
 	defer cancelWorker()
-	executor.StartWorker(workerCtx)
+	executor.StartWorker(workerCtx, func() bool { return true })
 
 	executionID, err := executor.RunCheck(context.Background(), task.ID, tenantID, userID, "addp_at_quality_user")
 	if err != nil {
@@ -159,7 +159,7 @@ func TestIntegrationPostgresQualityCheckPersistsRuleIdentity(t *testing.T) {
 		1,
 	)
 	timeoutWorkerCtx, cancelTimeoutWorker := context.WithCancel(context.Background())
-	timeoutExecutor.StartWorker(timeoutWorkerCtx)
+	timeoutExecutor.StartWorker(timeoutWorkerCtx, func() bool { return true })
 	defer func() {
 		cancelTimeoutWorker()
 		timeoutExecutor.StopWorker()
@@ -282,7 +282,7 @@ func TestIntegrationPostgresQualityWorkerHonorsConcurrencyLimit(t *testing.T) {
 		2,
 	)
 	workerCtx, cancelWorker := context.WithCancel(context.Background())
-	executor.StartWorker(workerCtx)
+	executor.StartWorker(workerCtx, func() bool { return true })
 	defer func() {
 		cancelWorker()
 		executor.StopWorker()

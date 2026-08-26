@@ -140,7 +140,7 @@ bash scripts/dev/start.sh -transfer
 健康检查：
 
 ```bash
-curl http://localhost:8083/health
+curl http://localhost:8083/health/ready
 ```
 
 常用验证：

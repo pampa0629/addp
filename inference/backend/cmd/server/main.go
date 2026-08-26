@@ -14,6 +14,7 @@ import (
 	commonconfig "github.com/addp/common/config"
 	commonconfiguration "github.com/addp/common/configuration"
 	commonmodels "github.com/addp/common/models"
+	"github.com/addp/common/modulelifecycle"
 	_ "github.com/addp/inference/i18n"
 	"github.com/addp/inference/internal/api"
 	inferenceauthorization "github.com/addp/inference/internal/authorization"
@@ -56,12 +57,15 @@ func main() {
 	store := repository.NewStore(db)
 	control := service.NewControlPlane(store, cfg.EncryptionKey)
 	runtime := service.NewRuntime(store, cfg.EncryptionKey)
-	router := api.SetupRouter(cfg, api.NewHandler(control, runtime))
+	lifecycleController := modulelifecycle.NewBusiness("inference", commonclient.ModuleRuntimeRoleBackend)
+	router := api.SetupRouter(cfg, api.NewHandler(control, runtime), lifecycleController)
 	listener, err := net.Listen("tcp", ":"+cfg.Port)
 	if err != nil {
 		log.Fatal(err)
 	}
-	registrationDone := register(runtimeContext, cfg)
+	registration := register(runtimeContext, cfg)
+	lifecycleController.AttachRegistration(registration)
+	modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
 	go func() {
 		if err := router.RunListener(listener); err != nil {
 			log.Printf("inference HTTP service stopped: %v", err)
@@ -69,13 +73,13 @@ func main() {
 		}
 	}()
 	<-runtimeContext.Done()
-	if registrationDone != nil {
-		<-registrationDone
+	if registration != nil {
+		<-registration.Done()
 	}
 	_ = listener.Close()
 }
 
-func register(ctx context.Context, cfg *config.Config) <-chan struct{} {
+func register(ctx context.Context, cfg *config.Config) *commonclient.ModuleRegistrationLifecycle {
 	if len(cfg.ServiceClientSecret) < 32 {
 		return nil
 	}
@@ -87,11 +91,11 @@ func register(ctx context.Context, cfg *config.Config) <-chan struct{} {
 	client := commonclient.NewSystemServiceClient(cfg.SystemURL, tokenSource, nil)
 	host := commonconfig.GetServiceHost()
 	url := commonconfig.BuildServiceURL(host, cfg.Port)
-	registrationDone := client.RegisterAndHeartbeat(ctx, &commonclient.ModuleRegistrationRequest{ModuleName: "inference", ModuleURL: url, RoutePrefix: "/inference", HealthCheckURL: url + "/health", Metadata: map[string]interface{}{"runtime_api": "addp.inference/v1"}, ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{ID: "inference.configuration", OwnerModule: "inference", ScopeTypes: []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride}, FrontendRoute: "/inference/settings/models", ReadPermission: inferenceauthorization.PermissionInferenceProviderRead, UpdatePermission: inferenceauthorization.PermissionInferenceProviderUpdate}}}})
+	registration := client.RegisterAndHeartbeat(ctx, &commonclient.ModuleRegistrationRequest{ModuleName: "inference", ModuleURL: url, RoutePrefix: "/inference", HealthCheckURL: url + "/health/ready", Metadata: map[string]interface{}{"runtime_api": "addp.inference/v1"}, ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{ID: "inference.configuration", OwnerModule: "inference", ScopeTypes: []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride}, FrontendRoute: "/inference/settings/models", ReadPermission: inferenceauthorization.PermissionInferenceProviderRead, UpdatePermission: inferenceauthorization.PermissionInferenceProviderUpdate}}}})
 	port, err := strconv.Atoi(cfg.Port)
 	if err != nil || port <= 0 || port > 65535 {
 		log.Printf("inference runtime engine registration disabled: invalid port %q", cfg.Port)
-		return registrationDone
+		return registration
 	}
 	client.RegisterRuntimeEngineWithRetry(ctx, &commonmodels.CapabilityRegistrationRequest{
 		Name:        "Inference Runtime",
@@ -104,7 +108,7 @@ func register(ctx context.Context, cfg *config.Config) <-chan struct{} {
 			"port":     port,
 		},
 	}, time.Second, 30*time.Second)
-	return registrationDone
+	return registration
 }
 
 func ensureSchemaConstraints(db *gorm.DB) error {

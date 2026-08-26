@@ -199,7 +199,7 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 ```bash
 bash scripts/dev/start.sh -meta
 bash scripts/dev/restart.sh -meta
-curl http://localhost:8082/health
+curl http://localhost:8082/health/ready
 cd meta/frontend && npm test && npm run build
 ```
 

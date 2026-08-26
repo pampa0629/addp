@@ -43,7 +43,7 @@ Orchestrator 是 `orchestrator.workflow.*` 的 Permission owner；定义只存�
 - 编排管理：`POST /orchestrations`、`GET /orchestrations`、`GET /orchestrations/:id`、`PUT /orchestrations/:id`、`DELETE /orchestrations/:id`。
 - 执行管理：`POST /orchestrations/:id/execute`、`GET /orchestrations/:id/executions`、`GET /executions`、`GET /orch-executions/:id`。
 - 能力发现：`GET /task-providers`、`GET /tasks`。
-- 健康检查：`GET /health`。
+- 存活与就绪：`GET /health/live`、`GET /health/ready`。
 
 ## 开发规则
 
@@ -65,7 +65,7 @@ Orchestrator 是 `orchestrator.workflow.*` 的 Permission owner；定义只存�
 ```bash
 bash scripts/dev/start.sh -orchestrator
 bash scripts/dev/restart.sh -orchestrator
-curl http://localhost:8084/health
+curl http://localhost:8084/health/ready
 ```
 
 常用日志：

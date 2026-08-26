@@ -136,7 +136,7 @@ bash scripts/dev/stop.sh
 
 - ✅ **自动依赖启动**: 自动调用 `scripts/infra/up.sh` 启动基础设施
 - ✅ **智能跳过**: 基础设施已运行时自动跳过，避免 pgvector 重新编译
-- ✅ **健康检查**: 等待每个服务的 `/health` 端点返回 200
+- ✅ **就绪检查**: ADDP Backend 等待 `/health/ready` 返回 200；Engine Runtime 使用各自协议的 `/health`
 - ✅ **日志管理**: 所有日志存储在 `logs/*.log`
 - ✅ **PID 追踪**: 存储进程 PID，支持优雅停止
 
@@ -443,6 +443,7 @@ scripts/test/
 ├── online-preflight_test.py # Online 预检确定性回归测试
 ├── online-host-gate.sh # 专用 addp-online Runner 生命周期编排
 ├── online-host-gate_test.py # 专用主机边界、启动映射与清理回归测试
+├── module-lifecycle-process-online.py # 正式 Manager/System/Gateway 乱序观测与证据
 ├── module-registry-recovery-online.py # System 模块租约与 Gateway 路由恢复验收
 ├── module-registry-recovery-online_test.py # 模块注册恢复场景确定性协议测试
 ├── standard-model-reference-deletion-online.py # Standard ↔ Model 正式 API 引用删除验收
@@ -472,15 +473,15 @@ Online 唯一入口为 `make test-online ONLINE_SUITE=<suite>`，并要求环境
 
 首个登记项为 `standard-model-reference-deletion`。它要求 `GATEWAY_URL`、`SYSTEM_URL`、`STANDARD_URL`、`MODEL_URL`、显式测试 Tenant 和 `ADDP_ONLINE_TEST_USER_ACCESS_TOKEN`；Token 对应专用测试 User。套件先通过 System AuthContext 确认 User、Tenant 和 User Access Token 身份，拒绝平台或租户管理员角色，并验证 Standard Domain 和 Model Entity 的 create/read/delete Permission。业务创建、读取和删除请求全部经 Gateway 转发，直连服务地址只用于构建身份预检。场景创建 Standard Domain 和引用它的 Model Entity，断言 Domain 删除返回 `409 standard_resource_referenced`，删除 Entity 后再删除 Domain，最终通过双方 GET 404 证明零残留；任何身份、业务或清理错误均使门禁失败。
 
-`module-registry-recovery` 要求专用部署中的 `GATEWAY_URL`、`SYSTEM_URL` 和现有 `MANAGER_SERVICE_CLIENT_SECRET`。运行前 Gateway 不得已有可路由的 Manager Backend；套件使用 `addp-manager` Platform Service Principal 获取短期 Token，并先通过 System AuthContext 确认 Platform Context、`platform.manager_runtime` 和唯一的 `system.runtime_registry.update` Permission。随后启动两个仅绑定回环地址的临时 Backend 探针，经 System 正式注册、心跳和注销 API 验证幂等注册、租约失效、同 ID 恢复、双实例路由、发布元数据更新、优雅注销和零活跃实例残留。`ADDP_ONLINE_ROUTE_TIMEOUT_SECONDS` 和 `ADDP_ONLINE_LEASE_TIMEOUT_SECONDS` 分别控制路由收敛与 30 秒 System 租约失效的最长等待；它不接管 System/Gateway 进程启停，整机乱序启动仍由专用部署编排验收。
+`module-registry-recovery` 要求专用部署中的 `GATEWAY_URL`、`SYSTEM_URL`、`MANAGER_URL` 和现有 `MANAGER_SERVICE_CLIENT_SECRET`。Host Gate 先通过受保护的正式进程入口依次启动 Manager、System、Gateway，验证 Manager 在 System 前为 Alive/Not Ready 且业务路由返回 `module_not_ready`，System 到达后以同一 `instance_id` Ready，Gateway 首个快照建立路由；随后停止 System，等待 Manager 转为 Not Ready、租约路由消失，再恢复 System 并验证 Manager 和 Gateway 无需重启即恢复。五个阶段分别写入 `module-lifecycle-*.json`。正式 Manager 优雅停止后，owner 套件再使用 `addp-manager` Platform Service Principal 获取短期 Token，经 System 正式注册、心跳和注销 API验证两个回环探针的幂等注册、租约失效、同 ID 恢复、双实例路由、发布元数据更新、优雅注销和零活跃实例残留。`ADDP_ONLINE_PROCESS_TIMEOUT_SECONDS`、`ADDP_ONLINE_ROUTE_TIMEOUT_SECONDS` 和 `ADDP_ONLINE_LEASE_TIMEOUT_SECONDS` 分别控制正式进程、路由和租约收敛上限。
 
-通用预检由分发器向 `scripts/test/online-preflight.py` 传入参与服务的 `module=http://loopback:port`。预检要求显式非默认 Tenant、安全 Run ID、干净工作区和唯一专用数据库 `POSTGRES_DB=addp_online`，并校验所有 `/health` 构建身份与当前 Git commit 一致；任何非回环服务地址都会被拒绝。宿主机 `--check-only` 在生命周期操作前调用同一预检器的 `--environment-only`，因此不存在第二套数据库或 Tenant 判定。分发器与预检器的无外部服务回归测试统一使用 `make test-online-runner`，并已纳入 `make test-platform`。两者不执行未登记的业务断言，不读取或保存 Token，也不接管服务生命周期。
+通用预检由分发器向 `scripts/test/online-preflight.py` 传入参与服务的 `module=http://loopback:port`。预检要求显式非默认 Tenant、安全 Run ID、干净工作区和唯一专用数据库 `POSTGRES_DB=addp_online`，并校验所有 `/health/live` 构建身份与当前 Git commit 一致，再要求 `/health/ready` 已就绪；任何非回环服务地址都会被拒绝。宿主机 `--check-only` 在生命周期操作前调用同一预检器的 `--environment-only`，因此不存在第二套数据库或 Tenant 判定。分发器与预检器的无外部服务回归测试统一使用 `make test-online-runner`，并已纳入 `make test-platform`。两者不执行未登记的业务断言，不读取或保存 Token，也不接管服务生命周期。
 
 分发器对同一 `suite + Run ID` 使用操作系统临时目录进程锁，锁覆盖预检、场景和报告写入。成功或失败均生成 `addp.online-gate/v1` 的 `online-report.json`：专用 Runner 写入仓库外 `ADDP_ONLINE_ARTIFACT_DIR` 并由 workflow 归档，本地直接执行则写入操作系统临时目录。报告包含构建身份、脱敏服务地址、Tenant、`addp_online` 数据库类别、阶段耗时、稳定错误码及 owner suite 的身份/创建/清理/残留证据，不保存 Token、Secret 或完整错误响应正文。
 
 专用部署只允许由 `.github/workflows/online-t4-gates.yml` 的手工 `workflow_dispatch` 在带 `self-hosted`、`macOS`、`addp-online` 标签的 Runner 上触发。workflow 首先调用 `bash scripts/test/online-host-gate.sh --check-only`，在不启停任何服务的前提下验证专用主机标记、macOS、仓库外环境文件与证据目录、显式 Tenant、suite 部署 profile、必要命令和干净工作区，并产出不含密钥的 `readiness.txt`；预检通过后才调用同一脚本的默认生命周期模式。该脚本从 `ADDP_ONLINE_ENV_FILE` 指定的仓库外绝对路径加载 T4 密钥、专用 Tenant 和独占基础设施连接；`ONLINE_SUITE` 与 `ADDP_ONLINE_ARTIFACT_DIR` 只能由 workflow 或直接调用方提供，密钥文件中的同名残留值不会改写实际套件和证据落点。仓库根存在 `.env`、源码不干净或证据目录位于仓库内都会直接失败。生命周期模式只调用现有 Infra/开发启停脚本和 `make test-online`，退出时无条件停止应用，证据写入仓库外 `ADDP_ONLINE_ARTIFACT_DIR`。`scripts/ci/check-online-ci-registration.py` 要求 Online suite 登记、部署启动 profile、Runner 预检和 workflow choices 完全一致，并在首次真实运行通过前禁止增加 `schedule`。
 
-Runner 管理员应以根 `.env.example` 为字段清单，在仓库外创建独立环境文件并替换全部 Secret；不能把该文件复制为仓库根 `.env`。除专用 Infra 连接和所有内置 `*_SERVICE_CLIENT_SECRET` 外，至少显式配置 `ADDP_ONLINE_TEST=1`、`ADDP_ONLINE_TEST_TENANT_ID`、`POSTGRES_DB=addp_online`、`SYSTEM_URL`、`GATEWAY_URL`、`STANDARD_URL`、`MODEL_URL`。`module-registry-recovery` 使用其中的 `MANAGER_SERVICE_CLIENT_SECRET`；`standard-model-reference-deletion` 还要求 `ADDP_ONLINE_TEST_USER_ACCESS_TOKEN`。GitHub Environment `addp-online` 的 Repository Variable `ADDP_ONLINE_ENV_FILE` 只保存该仓库外文件的绝对路径，不保存文件内容。
+Runner 管理员应以根 `.env.example` 为字段清单，在仓库外创建独立环境文件并替换全部 Secret；不能把该文件复制为仓库根 `.env`。除专用 Infra 连接和所有内置 `*_SERVICE_CLIENT_SECRET` 外，至少显式配置 `ADDP_ONLINE_TEST=1`、`ADDP_ONLINE_TEST_TENANT_ID`、`POSTGRES_DB=addp_online`、`SYSTEM_URL`、`GATEWAY_URL`、`MANAGER_URL`、`STANDARD_URL`、`MODEL_URL`。`module-registry-recovery` 使用其中的 `MANAGER_SERVICE_CLIENT_SECRET`；`standard-model-reference-deletion` 还要求 `ADDP_ONLINE_TEST_USER_ACCESS_TOKEN`。GitHub Environment `addp-online` 的 Repository Variable `ADDP_ONLINE_ENV_FILE` 只保存该仓库外文件的绝对路径，不保存文件内容。
 
 `scripts/ci/check-frontend-ci-registration.py` 是前端 CI 登记完整性检查。它从 Git 跟踪的 `*/frontend/package.json` 自动发现前端，要求每个前端同时具有 `scripts.build`、根 `Makefile` 的 `test-<module>-frontend` 标准入口，并在 workflow 中登记目标、标准前端环境 action 和共享模块变更选择器。检查及其反例回归已纳入 `make test-platform`；新增前端时遗漏任一环节会使当次 Platform CI 失败。
 
@@ -561,7 +562,7 @@ make build-images
 bash scripts/local/start.sh
 
 # 3. 测试功能
-curl http://localhost:8180/health
+curl http://localhost:8180/health/ready
 
 # 4. 查看状态
 bash scripts/local/status.sh
@@ -635,7 +636,7 @@ docker logs redis
 tail -f logs/system-backend.log
 
 # 手动测试健康端点
-curl http://localhost:8180/health
+curl http://localhost:8180/health/ready
 ```
 
 ### Q4: Docker 镜像不存在？

@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/metatest"
 	"github.com/addp/meta/internal/service"
@@ -35,6 +36,7 @@ func TestMetaRoutesRejectLegacyInternalAuthenticationWithoutAuthContextLookup(t 
 		nil,
 		nil,
 		nil,
+		modulelifecycle.NewStandalone("meta"),
 	)
 
 	response := httptest.NewRecorder()

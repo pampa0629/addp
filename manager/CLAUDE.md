@@ -128,7 +128,7 @@ manager/
 ```bash
 bash scripts/dev/start.sh -manager
 bash scripts/dev/restart.sh -manager
-curl http://localhost:8081/health
+curl http://localhost:8081/health/ready
 ```
 
 常用日志：

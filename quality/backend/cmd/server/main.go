@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,6 +14,7 @@ import (
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/modulelifecycle"
 	_ "github.com/addp/quality/i18n"
 	"github.com/addp/quality/internal/api"
 	"github.com/addp/quality/internal/config"
@@ -88,6 +90,7 @@ func main() {
 	}
 	defer cleanupService.Stop()
 
+	lifecycleController := modulelifecycle.NewBusiness("quality", commonClient.ModuleRuntimeRoleBackend)
 	router := api.SetupRouter(
 		ruleEngineSvc,
 		checkTaskSvc,
@@ -96,13 +99,18 @@ func main() {
 		db,
 		cfg.SystemURL,
 		redisClient,
+		lifecycleController,
 	)
 
 	addr := ":" + cfg.Port
 	log.Printf("Quality service starting on %s", addr)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("Failed to bind Quality listener: %v", err)
+	}
 
 	go func() {
-		if err := router.Run(addr); err != nil {
+		if err := router.RunListener(listener); err != nil {
 			log.Printf("Failed to start server: %v", err)
 			stopRuntime()
 		}
@@ -114,8 +122,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("构建 Quality TaskProvider 声明失败: %v", err)
 	}
-	registrationDone := systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
-		ModuleName: "quality", ModuleURL: serviceURL, RoutePrefix: "/quality", HealthCheckURL: serviceURL + "/health",
+	registration := systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
+		ModuleName: "quality", ModuleURL: serviceURL, RoutePrefix: "/quality", HealthCheckURL: serviceURL + "/health/ready",
 		TaskProvider: provider,
 		Metadata: map[string]interface{}{
 			"module": "quality",
@@ -127,7 +135,9 @@ func main() {
 			},
 		},
 	})
+	lifecycleController.AttachRegistration(registration)
+	modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
 
 	<-runtimeContext.Done()
-	<-registrationDone
+	<-registration.Done()
 }

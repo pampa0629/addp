@@ -17,11 +17,11 @@
 
 脚本输出中健康检查通过，但命令结束后端口立刻不可用：
 ```bash
-curl http://localhost:8084/health
+curl http://localhost:8084/health/ready
 # 无响应或 HTTP 000
 ```
 
-`logs/*-backend.log` 中能看到服务曾经成功启动并响应过 `/health`。
+`logs/*-backend.log` 中能看到服务曾经成功启动并响应过 `/health/ready`。
 
 #### 根本原因
 
@@ -539,11 +539,11 @@ Port: 17890
 手动测试对比：
 ```bash
 # Python requests - 失败（走代理）
-$ python -c "import requests; print(requests.get('http://localhost:8180/health').status_code)"
+$ python -c "import requests; print(requests.get('http://localhost:8180/health/ready').status_code)"
 502
 
 # curl - 成功（不走代理）
-$ curl http://localhost:8180/health
+$ curl http://localhost:8180/health/ready
 {"status":"ok"}
 ```
 

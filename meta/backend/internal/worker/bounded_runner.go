@@ -42,7 +42,7 @@ func NewBoundedRunner(executions *service.ScanExecutionService, config BoundedRu
 	return &BoundedRunner{executions: executions, config: config, logger: logger}, nil
 }
 
-func (r *BoundedRunner) Run(ctx context.Context) {
+func (r *BoundedRunner) Run(ctx context.Context, canClaim func() bool) {
 	var workers sync.WaitGroup
 	workers.Add(1)
 	go func() {
@@ -54,17 +54,20 @@ func (r *BoundedRunner) Run(ctx context.Context) {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			r.workerLoop(ctx, workerID)
+			r.workerLoop(ctx, workerID, canClaim)
 		}()
 	}
 	workers.Wait()
 }
 
-func (r *BoundedRunner) workerLoop(ctx context.Context, workerID string) {
+func (r *BoundedRunner) workerLoop(ctx context.Context, workerID string, canClaim func() bool) {
 	ticker := time.NewTicker(r.config.ClaimInterval)
 	defer ticker.Stop()
 	for {
-		worked := r.processNext(ctx, workerID)
+		worked := false
+		if canClaim != nil && canClaim() {
+			worked = r.processNext(ctx, workerID)
+		}
 		if ctx.Err() != nil {
 			return
 		}

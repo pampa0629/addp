@@ -14,6 +14,12 @@ import httpx
 class ServiceTokenError(RuntimeError):
     """Raised when a service access token cannot be obtained."""
 
+    def __init__(self, code: str, *, status_code: int = 0, retryable: bool = False) -> None:
+        super().__init__(code)
+        self.code = code
+        self.status_code = status_code
+        self.retryable = retryable
+
 
 @dataclass(frozen=True)
 class _CachedToken:
@@ -77,9 +83,13 @@ class OAuthServiceTokenSource:
                     headers={"Content-Type": "application/x-www-form-urlencoded"},
                 )
             except httpx.HTTPError as exc:
-                raise ServiceTokenError("service_token_unavailable") from exc
+                raise ServiceTokenError("service_token_unavailable", retryable=True) from exc
             if response.status_code != 200:
-                raise ServiceTokenError(f"service_token_http_{response.status_code}")
+                raise ServiceTokenError(
+                    f"service_token_http_{response.status_code}",
+                    status_code=response.status_code,
+                    retryable=response.status_code == 429 or response.status_code >= 500,
+                )
             try:
                 payload = response.json()
                 access_token = payload["access_token"]
@@ -177,9 +187,13 @@ class SyncOAuthServiceTokenSource:
                     headers={"Content-Type": "application/x-www-form-urlencoded"},
                 )
             except httpx.HTTPError as exc:
-                raise ServiceTokenError("service_token_unavailable") from exc
+                raise ServiceTokenError("service_token_unavailable", retryable=True) from exc
             if response.status_code != 200:
-                raise ServiceTokenError(f"service_token_http_{response.status_code}")
+                raise ServiceTokenError(
+                    f"service_token_http_{response.status_code}",
+                    status_code=response.status_code,
+                    retryable=response.status_code == 429 or response.status_code >= 500,
+                )
             try:
                 payload = response.json()
                 access_token = payload["access_token"]

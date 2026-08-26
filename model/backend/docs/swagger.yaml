@@ -936,6 +936,207 @@ definitions:
       version:
         type: integer
     type: object
+  github_com_addp_model_internal_service.MaterializationWriteContext:
+    properties:
+      batch_id:
+        type: string
+      engine_id:
+        type: integer
+      staging_locator:
+        type: string
+      write_columns:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_api.materializationExecuteRequest:
+    properties:
+      parameters:
+        additionalProperties: true
+        type: object
+      parent_execution_id:
+        type: string
+      source:
+        type: string
+      trigger_type:
+        type: string
+    type: object
+  internal_api.materializationExecuteResponse:
+    properties:
+      execution_id:
+        type: string
+      status:
+        enum:
+        - pending
+        example: pending
+        type: string
+    type: object
+  internal_api.materializationExecutionResponse:
+    properties:
+      actor_principal_id:
+        description: |-
+          User-derived execution authorization facts. The raw User/Service tokens
+          and engine connection details are never persisted in task executions.
+        type: integer
+      actor_tenant_membership_id:
+        type: integer
+      attempt:
+        type: integer
+      authorization_effects:
+        items:
+          type: string
+        type: array
+      authorization_expires_at:
+        type: string
+      bytes_read:
+        description: Transfer 读取字节数
+        type: integer
+      bytes_written:
+        description: Transfer 写入字节数
+        type: integer
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      current_step:
+        description: 当前步骤（Orchestrator/Workflow）
+        type: string
+      error_details:
+        allOf:
+        - $ref: '#/definitions/models.JSONMap'
+        description: 错误详情（仅失败时有值）
+      execution_authorization_id:
+        type: integer
+      execution_boundary:
+        description: ExecutionBoundary separates finite queue work from long-running
+          runtime sessions.
+        type: string
+      execution_config:
+        allOf:
+        - $ref: '#/definitions/models.JSONMap'
+        description: JSONB 字段
+      execution_id:
+        description: 执行标识
+        type: string
+      execution_time_ms:
+        description: 性能指标
+        type: integer
+      id:
+        type: integer
+      issued_authorization_version:
+        type: integer
+      max_attempts:
+        type: integer
+      metadata:
+        allOf:
+        - $ref: '#/definitions/models.JSONMap'
+        description: 模块特有扩展数据（结果、断点、步骤结果等）
+      module:
+        description: 模块标识
+        type: string
+      outputs:
+        $ref: '#/definitions/models.JSONMap'
+      parent_execution_id:
+        description: 父执行（Orchestrator 子步骤追踪父编排）
+        type: string
+      progress:
+        description: 0-100
+        type: integer
+      records_read:
+        description: Transfer 读取记录数
+        type: integer
+      records_written:
+        description: Transfer 写入记录数
+        type: integer
+      retry_of_execution_id:
+        type: string
+      rows_affected:
+        description: SQL 影响行数
+        type: integer
+      source:
+        description: 触发来源模块
+        type: string
+      source_task_id:
+        description: 关联原始任务
+        type: string
+      source_task_name:
+        description: 任务名称（冗余，便于查询）
+        type: string
+      started_at:
+        description: 时间戳
+        type: string
+      status:
+        description: 执行状态
+        type: string
+      task_type:
+        description: 稳定执行类型；可来自任务定义或 ad-hoc execution
+        type: string
+      tenant_id:
+        type: integer
+      trigger_type:
+        description: 触发信息
+        type: string
+      triggered_by:
+        description: 触发用户ID
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  internal_api.materializationTaskItem:
+    properties:
+      description:
+        type: string
+      execution_contract:
+        $ref: '#/definitions/taskprovider.ExecutionContract'
+      id:
+        type: integer
+      name:
+        type: string
+      status:
+        type: string
+      task_type:
+        type: string
+      tenant_id:
+        type: integer
+    type: object
+  internal_api.materializationTaskListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/internal_api.materializationTaskItem'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  internal_api.materializationWriteContextRequest:
+    properties:
+      logical_table_id:
+        type: integer
+      parent_execution_id:
+        type: string
+    type: object
+  models.JSONMap:
+    additionalProperties: true
+    type: object
+  taskprovider.ExecutionContract:
+    properties:
+      input_defaults:
+        additionalProperties: true
+        type: object
+      input_schema:
+        additionalProperties: true
+        type: object
+      input_ui_schema:
+        additionalProperties: true
+        type: object
+      output_schema:
+        additionalProperties: true
+        type: object
+    type: object
 host: localhost:8181
 info:
   contact: {}
@@ -2900,6 +3101,61 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - model.logical_model.update
+  /materialization-write-contexts/resolve:
+    post:
+      consumes:
+      - application/json
+      description: 为固定 Develop 服务主体解析同一父编排 execution 下唯一 prepared 批次的最小 staging 写入事实；不返回
+        DDL、凭据或最终目标。| Resolve the minimal staging write facts for the unique prepared
+        batch under the same parent orchestration execution for the fixed Develop
+        service principal; DDL, credentials, and final targets are never returned.
+      parameters:
+      - description: 解析请求 | Resolve request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.materializationWriteContextRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_service.MaterializationWriteContext'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 解析物化写入上下文 | Resolve materialization write context
+      tags:
+      - Materialization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.materialization_context.read
   /standard-reference-guards/{resource_type}/{resource_id}:
     put:
       consumes:
@@ -2963,6 +3219,214 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - model.standard_reference.update
+  /task-provider/executions/{execution_id}:
+    get:
+      parameters:
+      - description: 执行 ID | Execution ID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.materializationExecutionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 Model 物化执行状态 | Get Model materialization execution status
+      tags:
+      - Materialization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.task_provider.read
+  /task-provider/tasks:
+    get:
+      description: 列出由已审批逻辑表派生的物化准备和物化发布任务。| List materialization prepare and publish
+        tasks derived from approved logical tables.
+      parameters:
+      - description: 任务类型 | Task type
+        in: query
+        name: task_type
+        type: string
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.materializationTaskListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出 Model 物化任务 | List Model materialization tasks
+      tags:
+      - Materialization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.task_provider.read
+  /task-provider/tasks/{task_type}/{id}:
+    get:
+      description: 获取由已审批逻辑表派生的物化任务详情。| Get materialization task detail derived from
+        an approved logical table.
+      parameters:
+      - description: 任务类型 | Task type
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 逻辑表 ID | Logical table ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.materializationTaskItem'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 Model 物化任务 | Get Model materialization task
+      tags:
+      - Materialization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.task_provider.read
+  /task-provider/tasks/{task_type}/{id}/execute:
+    post:
+      consumes:
+      - application/json
+      description: 仅接受 Orchestrator 以父 execution 血缘触发；调用方不能提交物理名称或 DDL。| Only accepts
+        Orchestrator execution-lineage invocation; callers cannot submit physical
+        names or DDL.
+      parameters:
+      - description: 任务类型 | Task type
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 逻辑表 ID | Logical table ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 执行请求 | Execution request
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api.materializationExecuteRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_api.materializationExecuteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 执行 Model 物化任务 | Execute Model materialization task
+      tags:
+      - Materialization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.task_provider.execute
 securityDefinitions:
   BearerAuth:
     in: header

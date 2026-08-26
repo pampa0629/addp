@@ -856,6 +856,7 @@ const docTemplate = `{
                     "develop.data_write.execute",
                     "develop.data_ddl.execute",
                     "develop.data_external_effect.execute",
+                    "model.materialization.execute",
                     "quality.check_task.execute",
                     "service.definition.create",
                     "service.data_read.execute"

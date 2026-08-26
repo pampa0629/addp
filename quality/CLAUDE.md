@@ -181,7 +181,8 @@ PUT    /api/v1/quality/issues/:id/status          # 更新状态（resolved / ig
 
 ### 健康检查
 ```
-GET    /health                                 # 服务健康检查
+GET    /health/live                            # 进程存活检查
+GET    /health/ready                           # 模块就绪检查
 ```
 
 ## 核心执行流程

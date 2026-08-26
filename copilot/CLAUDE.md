@@ -65,7 +65,7 @@ PORT=8087 ./venv/bin/python main.py
 
 ```bash
 # 健康检查
-curl http://localhost:8087/health
+curl http://localhost:8087/health/ready
 
 # 测试查询生成
 curl -X POST http://localhost:8087/api/v1/copilot/query/generate \

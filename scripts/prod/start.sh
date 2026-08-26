@@ -57,7 +57,7 @@ docker compose -f docker-compose.yml up -d system-backend
 echo -e "${YELLOW}等待 System Backend 就绪...${NC}"
 timeout=60
 counter=0
-until curl -f http://localhost:8180/health > /dev/null 2>&1; do
+until curl -f http://localhost:8180/health/ready > /dev/null 2>&1; do
   sleep 2
   counter=$((counter + 2))
   if [ $counter -ge $timeout ]; then
@@ -141,9 +141,13 @@ for service_port in "${services[@]}"; do
   timeout=30
   counter=0
   healthy=false
+	probe_path="/health/ready"
+	if [[ "$service" == *-engine ]]; then
+		probe_path="/health"
+	fi
 
   while [ $counter -lt $timeout ]; do
-    if curl -f http://localhost:$port/health > /dev/null 2>&1; then
+    if curl -f "http://localhost:$port$probe_path" > /dev/null 2>&1; then
       echo -e "${GREEN}✓ $service${NC}"
       healthy=true
       break

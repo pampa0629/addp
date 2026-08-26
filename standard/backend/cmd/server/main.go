@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,6 +13,7 @@ import (
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/standard/internal/api"
 	"github.com/addp/standard/internal/config"
 	"github.com/addp/standard/internal/repository"
@@ -134,6 +136,7 @@ func main() {
 	standardReferenceDeletionSvc.Start(runtimeContext)
 	defer standardReferenceDeletionSvc.Stop()
 
+	lifecycleController := modulelifecycle.NewBusiness("standard", commonClient.ModuleRuntimeRoleBackend)
 	router := api.SetupRouter(
 		db,
 		domainSvc,
@@ -146,13 +149,18 @@ func main() {
 		documentSvc,
 		dimHierarchySvc,
 		cfg.SystemURL,
+		lifecycleController,
 	)
 
 	addr := ":" + cfg.Port
 	log.Printf("Standard service starting on %s", addr)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("Failed to bind Standard listener: %v", err)
+	}
 
 	go func() {
-		if err := router.Run(addr); err != nil {
+		if err := router.RunListener(listener); err != nil {
 			log.Printf("Failed to start server: %v", err)
 			stopRuntime()
 		}
@@ -160,7 +168,7 @@ func main() {
 
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
-	registrationDone := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "standard", serviceURL, "/standard", map[string]interface{}{
+	registration := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "standard", serviceURL, "/standard", map[string]interface{}{
 		"module": "standard",
 		"capabilities": map[string]interface{}{
 			"cleanup_executor": map[string]interface{}{
@@ -169,7 +177,9 @@ func main() {
 			},
 		},
 	})
+	lifecycleController.AttachRegistration(registration)
+	modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
 
 	<-runtimeContext.Done()
-	<-registrationDone
+	<-registration.Done()
 }

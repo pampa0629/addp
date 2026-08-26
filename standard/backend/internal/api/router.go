@@ -1,12 +1,11 @@
 package api
 
 import (
-	"net/http"
 	"strings"
 
-	"github.com/addp/common/modulelifecycle"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
+	"github.com/addp/common/modulelifecycle"
 	_ "github.com/addp/standard/docs"
 	_ "github.com/addp/standard/i18n"
 	standardauthorization "github.com/addp/standard/internal/authorization"

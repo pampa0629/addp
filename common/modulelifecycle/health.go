@@ -2,6 +2,7 @@ package modulelifecycle
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -20,6 +21,18 @@ type CheckResult struct {
 	Name      string `json:"name"`
 	Status    string `json:"status"`
 	ErrorCode string `json:"error_code,omitempty"`
+}
+
+func CancelRuntimeOnFatal(registration *commonclient.ModuleRegistrationLifecycle, cancel context.CancelFunc) {
+	if registration == nil || cancel == nil {
+		return
+	}
+	go func() {
+		if err, ok := <-registration.Fatal(); ok && err != nil {
+			log.Printf("module registration lifecycle failed; stopping process: %v", err)
+			cancel()
+		}
+	}()
 }
 
 type CheckFunc func(context.Context) CheckResult

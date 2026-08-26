@@ -79,6 +79,13 @@ func (r *LogicalTableRepository) List(tenantID int64, opts ListLogicalTableOptio
 	return tables, total, commonrepo.WrapDBError(err)
 }
 
+func (r *LogicalTableRepository) ListApproved(tenantID int64) ([]models.LogicalTable, error) {
+	var tables []models.LogicalTable
+	err := r.db.Where("tenant_id = ? AND status = ?", tenantID, "approved").
+		Order("created_at DESC, id DESC").Find(&tables).Error
+	return tables, commonrepo.WrapDBError(err)
+}
+
 func (r *LogicalTableRepository) Update(table *models.LogicalTable) error {
 	result := r.db.Model(&models.LogicalTable{}).
 		Where("id = ? AND tenant_id = ? AND version = ?", table.ID, table.TenantID, table.Version).

@@ -99,6 +99,8 @@ System 的 `platform.configuration.read/update` 只允许管理 System-owned 的
 - `.env` 和任何 Secret 不得提交到 Git；模板中只保留开发默认值、空值或明确的占位值。
 - 只有模块连接 owner 持久化存储之前就必须知道的配置才能保留在环境变量中；普通运行配置不得因为读取失败退回环境变量。
 
+`SYSTEM_URL`、`GATEWAY_URL`、`MANAGER_URL`、`STANDARD_URL` 和 `MODEL_URL` 是部署级模块地址，不是 System 下发配置。本地开发模板使用显式回环地址，容器与生产编排必须覆盖为该部署内的实际地址。T4 专用 Runner 的仓库外环境文件必须显式提供参与套件的地址；进程乱序套件至少需要前三项，且通用预检拒绝非回环目标。专用 Runner 不得把仓库根 `.env` 作为第二条配置路径。
+
 IAM 环境密钥边界：
 
 - ADDP 只签发随机 opaque Token，不签发或解析用户 JWT，因此禁止配置 `JWT_SECRET`。

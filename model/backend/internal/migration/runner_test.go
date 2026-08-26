@@ -74,3 +74,19 @@ func TestMaterializationBatchMigrationDefinesControlledLifecycle(t *testing.T) {
 		}
 	}
 }
+
+func TestMaterializationPhysicalTargetMigrationBindsActiveBatch(t *testing.T) {
+	content, err := fs.ReadFile(migrationFiles, "sql/008_bind_active_materialization_to_physical_target.up.sql")
+	if err != nil {
+		t.Fatalf("read physical-target migration: %v", err)
+	}
+	sql := string(content)
+	for _, fragment := range []string{
+		"DROP INDEX model.uq_model_materialization_active_target",
+		"tenant_id, engine_id, target_parent_locator, target_name",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("physical-target migration missing %s", fragment)
+		}
+	}
+}

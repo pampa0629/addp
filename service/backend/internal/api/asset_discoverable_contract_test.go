@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/authorization/authtest"
+	"github.com/addp/common/modulelifecycle"
 	serviceauthorization "github.com/addp/service/internal/authorization"
 	"github.com/addp/service/internal/config"
 	"gorm.io/driver/sqlite"
@@ -39,7 +40,7 @@ func TestAssetDiscoverableRouteAuthenticationAndTenantContract(t *testing.T) {
 	defer systemServer.Close()
 	cfg := &config.Config{}
 	cfg.SystemServiceURL = systemServer.URL
-	router := SetupRouter(cfg, db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := SetupRouter(cfg, db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, modulelifecycle.NewStandalone("service"))
 
 	authtest.AssertAssetDiscoverableContract(t, router, "/api/v1/service/assets/discoverable", "tenant-seven")
 }

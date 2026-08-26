@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/resourcetree"
 
 	engineselection "github.com/addp/common/engine/selection"
@@ -32,6 +33,7 @@ type DevExecutor struct {
 	workflowEngine           *WorkflowEngineService
 	operatorDiscovery        *OperatorDiscoveryService
 	metaClient               *commonClient.MetaClient
+	modelClient              *commonClient.ModelClient
 	sqlEngine                *SQLEngineService
 	federatedQuery           federatedQueryExecutor
 	notebookExecutionService *NotebookExecutionService
@@ -65,6 +67,7 @@ func NewDevExecutor(
 	workflowEngine *WorkflowEngineService,
 	operatorDiscovery *OperatorDiscoveryService,
 	metaClient *commonClient.MetaClient,
+	modelClient *commonClient.ModelClient,
 	sqlEngine *SQLEngineService,
 	federatedQuery federatedQueryExecutor,
 	notebookExecutionService *NotebookExecutionService,
@@ -76,6 +79,7 @@ func NewDevExecutor(
 		workflowEngine:           workflowEngine,
 		operatorDiscovery:        operatorDiscovery,
 		metaClient:               metaClient,
+		modelClient:              modelClient,
 		sqlEngine:                sqlEngine,
 		federatedQuery:           federatedQuery,
 		notebookExecutionService: notebookExecutionService,
@@ -184,6 +188,11 @@ func (e *DevExecutor) prepareContentExecutionWithConfirmation(
 	}
 	if executionConfig == nil {
 		return nil, fmt.Errorf("临时执行必须提供 execution_config")
+	}
+	if _, managed, targetErr := materializationTargetLogicalTableID(executionConfig); targetErr != nil {
+		return nil, targetErr
+	} else if managed {
+		return nil, fmt.Errorf("逻辑表托管写入只能通过已保存任务的 Orchestrator 执行")
 	}
 	if parameters == nil {
 		parameters = map[string]interface{}{}
@@ -423,7 +432,7 @@ func applySQLExecutionAuthorizationFacts(
 	execution.ActorTenantMembershipID = &authorization.ActorTenantMembershipID
 	execution.IssuedAuthorizationVersion = &authorization.IssuedAuthorizationVersion
 	execution.ExecutionAuthorizationID = &authorization.AuthorizationID
-	execution.AuthorizationEffects = []string{string(authorization.Effect)}
+	execution.AuthorizationEffects = formatSQLExecutionEffects(authorization.Effects)
 	expiresAt := authorization.ExpiresAt.UTC()
 	execution.AuthorizationExpiresAt = &expiresAt
 }
@@ -1699,6 +1708,29 @@ func (e *DevExecutor) ExecuteWithParamsFromParentExecution(
 		sqlContent, ok := preparedTask.task.Content["query"].(string)
 		if !ok || strings.TrimSpace(sqlContent) == "" {
 			err = fmt.Errorf("异步 SQL 执行上下文无效")
+		} else if logicalTableID, managed, targetErr := materializationTargetLogicalTableID(preparedTask.task.ExecutionConfig); targetErr != nil {
+			err = targetErr
+		} else if managed {
+			var writeContext *commonClient.MaterializationWriteContext
+			writeContext, err = e.resolveMaterializationWriteContext(
+				ctx, tenantID, parsedParentExecutionID, preparedTask.task, logicalTableID,
+			)
+			if err == nil {
+				preparedTask.task.Content["query"] = compileMaterializationWriteSQL(
+					writeContext.StagingLocator, writeContext.WriteColumns, sqlContent,
+				)
+				if preparedTask.task.Content["query"] == "" {
+					err = fmt.Errorf("Model 返回的逻辑表写入上下文无效")
+				} else {
+					execution.ExecutionConfig["materialization_target"] = commonModels.JSONMap{
+						"logical_table_id": logicalTableID,
+						"batch_id":         writeContext.BatchID,
+					}
+					sqlAuthorization, err = e.sqlEngine.IssueManagedWriteExecutionAuthorizationFromExecution(
+						ctx, tenantID, parsedParentExecutionID, executionUUID, uint(writeContext.EngineID), preparedTask.task.Timeout,
+					)
+				}
+			}
 		} else if e.isFederatedQuery(ctx, preparedTask.task, tenantID) {
 			var engineIDs []uint
 			engineIDs, err = e.federatedReadEngineIDs(ctx, preparedTask.task, tenantID)
@@ -1773,6 +1805,78 @@ func devTaskExecutionRecordConfig(devTask *models.DevTask, inputs commonModels.J
 	}
 	if devTask != nil {
 		config["engine_id"] = devTask.GetEngineID()
+		if logicalTableID, managed, err := materializationTargetLogicalTableID(devTask.ExecutionConfig); err == nil && managed {
+			config["materialization_target"] = commonModels.JSONMap{"logical_table_id": logicalTableID}
+		}
 	}
 	return config
+}
+
+func (e *DevExecutor) resolveMaterializationWriteContext(
+	ctx context.Context,
+	tenantID uint,
+	parentExecutionID uuid.UUID,
+	devTask *models.DevTask,
+	logicalTableID int64,
+) (*commonClient.MaterializationWriteContext, error) {
+	if e == nil || e.modelClient == nil || e.sqlEngine == nil || devTask == nil || logicalTableID <= 0 {
+		return nil, fmt.Errorf("逻辑表托管写入服务未正确初始化")
+	}
+	if devTask.GetQueryType() != "sql" || e.isFederatedQuery(ctx, devTask, tenantID) {
+		return nil, fmt.Errorf("逻辑表托管写入仅支持单引擎 SQL 查询任务")
+	}
+	engineID := devTask.GetEngineID()
+	if engineID == nil || *engineID == 0 {
+		return nil, fmt.Errorf("逻辑表托管写入缺少执行引擎")
+	}
+	writeContext, err := e.modelClient.WithTenantID(tenantID).ResolveMaterializationWriteContext(
+		ctx,
+		commonClient.MaterializationWriteContextRequest{
+			ParentExecutionID: parentExecutionID.String(),
+			LogicalTableID:    logicalTableID,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("解析逻辑表托管写入上下文失败: %w", err)
+	}
+	if writeContext.EngineID <= 0 || uint64(writeContext.EngineID) != uint64(*engineID) {
+		return nil, fmt.Errorf("逻辑表物化引擎与查询任务引擎不一致")
+	}
+	if _, err := uuid.Parse(writeContext.BatchID); err != nil {
+		return nil, fmt.Errorf("Model 返回的物化批次无效")
+	}
+	stagingLocator, locatorErr := resourcetree.ParseURI(writeContext.StagingLocator)
+	if locatorErr != nil || stagingLocator.EngineID != *engineID || stagingLocator.Type != resourcetree.TypeTable || len(stagingLocator.Path) != 2 ||
+		compileMaterializationWriteSQL(writeContext.StagingLocator, writeContext.WriteColumns, "SELECT 1") == "" {
+		return nil, fmt.Errorf("Model 返回的逻辑表写入上下文无效")
+	}
+	return writeContext, nil
+}
+
+func compileMaterializationWriteSQL(stagingLocator string, columns []string, selectSQL string) string {
+	locator, err := resourcetree.ParseURI(strings.TrimSpace(stagingLocator))
+	if err != nil || locator.EngineID == 0 || locator.Type != resourcetree.TypeTable || len(locator.Path) != 2 || len(columns) == 0 {
+		return ""
+	}
+	analysis, err := commonquery.Analyze(selectSQL)
+	if err != nil || analysis.Statement != "SELECT" || analysis.Effect != commonquery.Read {
+		return ""
+	}
+	dialect := commonquery.ForEngine("postgresql")
+	quotedColumns := make([]string, 0, len(columns))
+	seen := make(map[string]struct{}, len(columns))
+	for _, column := range columns {
+		column = strings.TrimSpace(column)
+		if column == "" {
+			return ""
+		}
+		if _, duplicate := seen[column]; duplicate {
+			return ""
+		}
+		seen[column] = struct{}{}
+		quotedColumns = append(quotedColumns, dialect.QuoteIdentifier(column))
+	}
+	selectSQL = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(selectSQL), ";"))
+	return "INSERT INTO " + dialect.QualifiedTable(locator.Path[0], locator.Path[1]) +
+		" (" + strings.Join(quotedColumns, ", ") + ") " + selectSQL
 }

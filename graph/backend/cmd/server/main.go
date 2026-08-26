@@ -15,6 +15,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -28,6 +29,7 @@ import (
 	"github.com/addp/common/engine/plugins/minio"
 	"github.com/addp/common/events"
 	commonLogger "github.com/addp/common/logger"
+	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/graph/internal/api"
 	"github.com/addp/graph/internal/config"
 	"github.com/addp/graph/internal/repository"
@@ -129,20 +131,27 @@ func main() {
 	serviceHandler := api.NewServiceHandler(knowledgeSvc)
 
 	// 设置路由
-	router := api.SetupRouter(cfg, ontologyHandler, graphHandler, browseHandler, buildHandler, taskProviderHandler, analysisHandler, serviceHandler)
+	lifecycleController := modulelifecycle.NewBusiness("graph", commonClient.ModuleRuntimeRoleBackend)
+	router := api.SetupRouter(cfg, ontologyHandler, graphHandler, browseHandler, buildHandler, taskProviderHandler, analysisHandler, serviceHandler, lifecycleController)
+	addr := ":" + cfg.Port
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		logger.Error("Graph 监听绑定失败", "error", err, "addr", addr)
+		return
+	}
 
 	// 模块注册
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
-	var registrationDone <-chan struct{}
+	var registration *commonClient.ModuleRegistrationLifecycle
 	if cfg.SystemServiceURL != "" {
 		provider, err := service.GraphTaskProviderDeclaration()
 		if err != nil {
 			logger.Error("构建 Graph TaskProvider 声明失败", "error", err)
 			os.Exit(1)
 		}
-		registrationDone = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
-			ModuleName: "graph", ModuleURL: serviceURL, RoutePrefix: "/graph", HealthCheckURL: serviceURL + "/health",
+		registration = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
+			ModuleName: "graph", ModuleURL: serviceURL, RoutePrefix: "/graph", HealthCheckURL: serviceURL + "/health/ready",
 			TaskProvider: provider,
 			Metadata: map[string]interface{}{
 				"module": "graph",
@@ -154,19 +163,20 @@ func main() {
 				},
 			},
 		})
+		lifecycleController.AttachRegistration(registration)
+		modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
 	}
 
-	addr := ":" + cfg.Port
 	logger.Info("Graph 模块启动", "addr", addr, "schema", cfg.DBSchema)
 
 	go func() {
-		if err := router.Run(addr); err != nil {
+		if err := router.RunListener(listener); err != nil {
 			logger.Error("Graph 模块启动失败", "error", err)
 			stopRuntime()
 		}
 	}()
 	<-runtimeContext.Done()
-	if registrationDone != nil {
-		<-registrationDone
+	if registration != nil {
+		<-registration.Done()
 	}
 }

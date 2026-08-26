@@ -46,10 +46,10 @@ func main() {
     defer stop()
     registrationDone := client.RegisterAndHeartbeat(ctx, request)
     <-ctx.Done()
-    <-registrationDone
+    <-registrationDone.Done()
 }
 """,
-            "common/client/system_service.go": "func (c *SystemServiceClient) RegisterAndHeartbeat(ctx context.Context, request *ModuleRegistrationRequest) <-chan struct{} { return nil }\n",
+            "common/client/system_service.go": "func (c *SystemServiceClient) RegisterAndHeartbeat(ctx context.Context, request *ModuleRegistrationRequest) *ModuleRegistrationLifecycle { return nil }\n",
             ".env.example": "POSTGRES_HOST=localhost\n",
         }
         for relative, content in files.items():
@@ -86,7 +86,7 @@ func main() {
         root = self.repository()
         (root / "manager/backend/cmd/server/main.go").write_text(
             """registrationDone := client.RegisterAndHeartbeat(context.Background(), request)
-<-registrationDone
+<-registrationDone.Done()
 """,
             encoding="utf-8",
         )

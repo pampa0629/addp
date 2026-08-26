@@ -31,7 +31,9 @@ Model prepare -> Develop query compute -> Quality check -> Model publish
 - Orchestrator 调用时，prepare、Develop、Quality 和 publish 子 execution 共享同一个 `parent_execution_id`。Model 按 `tenant_id + logical_table_id + parent_execution_id` 解析唯一 prepared 批次。
 - 手动全量重算同样由用户手动启动 Orchestrator 编排，不建立绕过编排的 Model 直执行路径；因此物化 TaskProvider execution 必须携带父编排 execution。
 - `batch_id` 仍是 Model 内部聚合身份、审计事实和 prepare 的稳定 execution 输出，但不是调用方选择物理目标的入口。
-- 执行域解析 API 只面向已有具体消费者的固定 Service Principal，并通过 `common/client` 暴露。没有 Develop/Quality 消费实现前不发布泛化只读“物化契约快照”接口。
+- 执行域写入解析固定使用 `POST /api/v1/model/materialization-write-contexts/resolve`，请求只包含 `parent_execution_id + logical_table_id`。Model 必须按当前 Tenant 验证唯一 `prepared` 批次与 prepare execution 的父血缘，响应只返回 `batch_id + engine_id + staging_locator + write_columns`；不返回 DDL、数据库凭据、最终目标或完整逻辑模型。
+- 该接口仅面向具有明确消费者的固定 Service Principal，通过 `common/client` 的 Model Client 调用。Develop 使用 `addp-develop`，Quality 接入前不得提前授予其权限；不得发布泛化只读“物化契约快照”接口，也不得让 Orchestrator 直接消费写入上下文。
+- `staging_locator` 是执行期内部事实，不进入 Orchestrator Step 参数和任务定义。`write_columns` 严格按已审批 LogicalField 顺序生成，供受控写入编译使用，不构成第二份逻辑模型定义。
 
 ## 二、授权边界
 

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -15,6 +16,7 @@ import (
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/modulelifecycle"
 	commonScheduler "github.com/addp/common/scheduler"
 	"github.com/addp/service/internal/api"
 	serviceauthorization "github.com/addp/service/internal/authorization"
@@ -161,16 +163,23 @@ func main() {
 	graphQueryHandler := api.NewGraphQueryHandler(graphQueryServiceService, graphQueryExecutor)
 
 	// 设置路由（传递 systemClient 用于审计日志）
-	router := api.SetupRouter(cfg, db, dataServiceHandler, queryServiceHandler, ogcFeaturesHandler, registeredServiceHandler, tileServiceHandler, tileEndpointHandler, wmtsHandler, ogcTilesHandler, resourceCapabilityHandler, serviceEndpointHandler, graphQueryHandler, systemClient, systemServiceClient, runtimePolicyService)
+	lifecycleController := modulelifecycle.NewBusiness("service", commonClient.ModuleRuntimeRoleBackend)
+	router := api.SetupRouter(cfg, db, dataServiceHandler, queryServiceHandler, ogcFeaturesHandler, registeredServiceHandler, tileServiceHandler, tileEndpointHandler, wmtsHandler, ogcTilesHandler, resourceCapabilityHandler, serviceEndpointHandler, graphQueryHandler, systemClient, systemServiceClient, runtimePolicyService, lifecycleController)
+	addr := ":" + cfg.Port
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		logger.L().Error("Service 监听绑定失败", "error", err, "addr", addr)
+		return
+	}
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
-	var registrationDone <-chan struct{}
+	var registration *commonClient.ModuleRegistrationLifecycle
 	if cfg.SystemServiceURL != "" {
 		serviceHost := commonConfig.GetServiceHost()
 		serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
-		registrationDone = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{ModuleName: "service", ModuleURL: serviceURL, RoutePrefix: "/service", HealthCheckURL: serviceURL + "/health",
+		registration = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{ModuleName: "service", ModuleURL: serviceURL, RoutePrefix: "/service", HealthCheckURL: serviceURL + "/health/ready",
 			ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{
 				ID: "service.configuration", OwnerModule: "service", ScopeTypes: []string{commonconfiguration.ScopePlatformOnly}, FrontendRoute: "/configuration/service",
 				ReadPermission: serviceauthorization.PermissionServiceConfigurationRead, UpdatePermission: serviceauthorization.PermissionServiceConfigurationUpdate,
@@ -185,6 +194,8 @@ func main() {
 				},
 			},
 		})
+		lifecycleController.AttachRegistration(registration)
+		modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
 	}
 
 	// 初始化调度器
@@ -207,6 +218,9 @@ func main() {
 	// 注册定时任务
 	// 1. 每小时自动健康检查所有活跃服务
 	healthCheckHandler := func(ctx context.Context, taskID string) error {
+		if registration == nil || !registration.IsRegistered() {
+			return nil
+		}
 		logger.L().Info("开始执行定时健康检查")
 
 		// 获取所有租户列表
@@ -284,6 +298,9 @@ func main() {
 
 	// 2. 每天凌晨刷新所有服务元数据
 	metadataRefreshHandler := func(ctx context.Context, taskID string) error {
+		if registration == nil || !registration.IsRegistered() {
+			return nil
+		}
 		logger.L().Info("开始执行定时元数据刷新")
 
 		// 获取所有租户的租户ID
@@ -356,11 +373,10 @@ func main() {
 	}
 
 	// 启动 HTTP 服务（在 goroutine 中运行）
-	addr := ":" + cfg.Port
 	logger.L().Info("Service 模块启动", "addr", addr, "schema", cfg.DBSchema)
 
 	go func() {
-		if err := router.Run(addr); err != nil {
+		if err := router.RunListener(listener); err != nil {
 			logger.L().Error("Service 模块启动失败", "error", err)
 			stopRuntime()
 		}
@@ -370,8 +386,8 @@ func main() {
 	<-runtimeContext.Done()
 
 	logger.L().Info("收到关闭信号，开始优雅关闭...")
-	if registrationDone != nil {
-		<-registrationDone
+	if registration != nil {
+		<-registration.Done()
 	}
 
 	// 停止调度器（等待正在执行的任务完成）

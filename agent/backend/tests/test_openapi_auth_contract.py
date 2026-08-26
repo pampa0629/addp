@@ -32,6 +32,24 @@ def test_agent_openapi_declares_authorization_contracts():
         assert operation["x-addp-auth-mode"] == mode
         assert operation["x-addp-required-permissions"] == permissions
 
-    health = paths["/health"]["get"]
-    assert health["x-addp-auth-mode"] == "public"
-    assert "x-addp-required-permissions" not in health
+    for health_path in ("/health/live", "/health/ready"):
+        health = paths[health_path]["get"]
+        assert health["x-addp-auth-mode"] == "public"
+        assert "x-addp-required-permissions" not in health
+
+
+def test_agent_health_and_business_gate_are_distinct_before_registration():
+    from fastapi.testclient import TestClient
+    from main import app
+
+    client = TestClient(app)
+    live = client.get("/health/live")
+    ready = client.get("/health/ready")
+    business = client.get("/api/v1/agent/sessions")
+
+    assert live.status_code == 200
+    assert live.json()["status"] == "live"
+    assert ready.status_code == 503
+    assert ready.json()["registration_state"] == "starting"
+    assert business.status_code == 503
+    assert business.json()["error_code"] == "module_not_ready"

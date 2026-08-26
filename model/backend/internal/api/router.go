@@ -1,11 +1,10 @@
 package api
 
 import (
-	"net/http"
-
-	"github.com/addp/common/modulelifecycle"
+	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
+	"github.com/addp/common/modulelifecycle"
 	_ "github.com/addp/model/docs"
 	modelauthorization "github.com/addp/model/internal/authorization"
 	"github.com/addp/model/internal/service"
@@ -34,6 +33,8 @@ func SetupRouter(
 	factMetricSvc *service.FactMetricService,
 	tableRelationSvc *service.TableRelationService,
 	standardReferenceGuardSvc *service.StandardReferenceGuardService,
+	materializationSvc *service.MaterializationService,
+	taskExecutionRepo *commonExecution.TaskExecutionRepository,
 	systemURL string,
 	redisClient *redis.Client,
 	lifecycle *modulelifecycle.Controller,
@@ -70,6 +71,8 @@ func SetupRouter(
 	factMetricHandler := NewFactMetricHandler(factMetricSvc)
 	tableRelationHandler := NewTableRelationHandler(tableRelationSvc)
 	standardReferenceGuardHandler := NewStandardReferenceGuardHandler(standardReferenceGuardSvc)
+	materializationHandler := NewMaterializationTaskProviderHandler(materializationSvc, taskExecutionRepo)
+	materializationContextHandler := NewMaterializationContextHandler(materializationSvc)
 
 	// API 路由组
 	api := router.Group("/api/v1/model")
@@ -83,6 +86,19 @@ func SetupRouter(
 	}
 
 	{
+		materializationContexts := api.Group("/materialization-write-contexts")
+		materializationContexts.Use(commonAuth.MustNewServiceClientGuard("addp-develop"))
+		materializationContexts.POST("/resolve", permission(modelauthorization.PermissionModelMaterializationContextRead), materializationContextHandler.ResolveWriteContext)
+
+		taskProvider := api.Group("/task-provider")
+		taskProvider.Use(commonAuth.MustNewServiceClientGuard("addp-orchestrator"))
+		{
+			taskProvider.GET("/tasks", permission(modelauthorization.PermissionModelTaskProviderRead), materializationHandler.ListTasks)
+			taskProvider.GET("/tasks/:task_type/:id", permission(modelauthorization.PermissionModelTaskProviderRead), materializationHandler.TaskDetail)
+			taskProvider.POST("/tasks/:task_type/:id/execute", permission(modelauthorization.PermissionModelTaskProviderExecute), materializationHandler.TaskExecute)
+			taskProvider.GET("/executions/:execution_id", permission(modelauthorization.PermissionModelTaskProviderRead), materializationHandler.ExecutionStatus)
+		}
+
 		standardReferenceGuards := api.Group("/standard-reference-guards")
 		standardReferenceGuards.PUT("/:resource_type/:resource_id", permission(modelauthorization.PermissionModelStandardReferenceUpdate), standardReferenceGuardHandler.SetState)
 

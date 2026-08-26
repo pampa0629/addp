@@ -10,6 +10,7 @@ import (
 
 	"github.com/addp/asset/internal/authorization"
 	"github.com/addp/common/authorization/authtest"
+	"github.com/addp/common/modulelifecycle"
 	"github.com/gin-gonic/gin"
 )
 
@@ -45,7 +46,7 @@ func TestRouterEnforcesDeclaredPermissions(t *testing.T) {
 
 	authServer := authtest.NewTenantUserAuthContextServer(t, "7", tokenPermissions)
 	t.Cleanup(authServer.Close)
-	router := SetupRouter(nil, authServer.URL, nil, nil)
+	router := SetupRouter(nil, authServer.URL, nil, nil, modulelifecycle.NewStandalone("asset"))
 
 	for index, contract := range contracts {
 		contract := contract
@@ -130,7 +131,7 @@ func managementPermissions(keys ...string) []string {
 }
 
 func TestRouterPublishesOnlyImplementedTypeDefinitionOperations(t *testing.T) {
-	router := SetupRouter(nil, "http://system", nil, nil)
+	router := SetupRouter(nil, "http://system", nil, nil, modulelifecycle.NewStandalone("asset"))
 	routes := make(map[string]struct{})
 	for _, route := range router.Routes() {
 		routes[fmt.Sprintf("%s %s", route.Method, route.Path)] = struct{}{}

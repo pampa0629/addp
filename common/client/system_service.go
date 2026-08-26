@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -589,13 +590,21 @@ func moduleRegistryErrorRetryable(err error, heartbeat bool) bool {
 		return false
 	}
 	statusCode, ok := SystemAPIStatusCode(err)
-	if !ok {
+	if ok {
+		if heartbeat && statusCode == http.StatusNotFound {
+			return true
+		}
+		return statusCode == http.StatusTooManyRequests || statusCode >= http.StatusInternalServerError
+	}
+	var tokenError *ServiceTokenError
+	if errors.As(err, &tokenError) {
+		return tokenError.Retryable
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
 		return true
 	}
-	if heartbeat && statusCode == http.StatusNotFound {
-		return true
-	}
-	return statusCode == http.StatusTooManyRequests || statusCode >= http.StatusInternalServerError
+	var networkError net.Error
+	return errors.As(err, &networkError)
 }
 
 func moduleRegistryFailureLog(operation string, registration ModuleRegistrationRequest, err error) string {

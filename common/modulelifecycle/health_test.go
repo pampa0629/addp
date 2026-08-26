@@ -12,6 +12,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type healthTestTokenSource struct{}
+
+func (healthTestTokenSource) Token(context.Context, uint) (string, error)   { return "token", nil }
+func (healthTestTokenSource) PlatformToken(context.Context) (string, error) { return "token", nil }
+
 func TestBusinessHealthAndReadyGateFollowRegistration(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	controller := NewBusiness("meta", commonclient.ModuleRuntimeRoleBackend)
@@ -43,6 +48,45 @@ func TestBusinessHealthAndReadyGateFollowRegistration(t *testing.T) {
 	router.ServeHTTP(business, httptest.NewRequest(http.MethodGet, "/api/v1/meta/items", nil))
 	if business.Code != http.StatusServiceUnavailable || business.Body.String() != "{\"error\":\"module is not ready\",\"error_code\":\"module_not_ready\"}" {
 		t.Fatalf("business response = %d %s", business.Code, business.Body.String())
+	}
+}
+
+func TestBusinessBecomesReadyFromTheRegistrationLifecycle(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		switch request.Method {
+		case http.MethodPost:
+			w.WriteHeader(http.StatusOK)
+		case http.MethodDelete:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, request)
+		}
+	}))
+	defer system.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	client := commonclient.NewSystemServiceClient(system.URL, healthTestTokenSource{}, system.Client())
+	registration := client.RegisterAndHeartbeat(ctx, &commonclient.ModuleRegistrationRequest{
+		ModuleName: "meta", ModuleURL: "http://meta:8082", RoutePrefix: "/meta",
+	})
+	controller := NewBusiness("meta", commonclient.ModuleRuntimeRoleBackend)
+	controller.AttachRegistration(registration)
+	waitContext, waitCancel := context.WithTimeout(context.Background(), time.Second)
+	defer waitCancel()
+	if err := registration.WaitUntilRegistered(waitContext); err != nil {
+		t.Fatalf("wait for registration: %v", err)
+	}
+
+	response, ready := controller.Readiness(context.Background())
+	if !ready || response.Status != "ready" || response.RegistrationState != commonclient.ModuleRegistrationRegistered {
+		t.Fatalf("readiness = %#v ready=%t", response, ready)
+	}
+	cancel()
+	select {
+	case <-registration.Done():
+	case <-time.After(time.Second):
+		t.Fatal("registration lifecycle did not stop")
 	}
 }
 

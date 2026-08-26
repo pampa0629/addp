@@ -107,7 +107,7 @@ Transfer 是 `transfer.task.*` 的 Permission owner；定义只存在于 `author
 ```bash
 bash scripts/dev/start.sh -transfer
 bash scripts/dev/restart.sh -transfer
-curl http://localhost:8083/health
+curl http://localhost:8083/health/ready
 ```
 
 常用日志：

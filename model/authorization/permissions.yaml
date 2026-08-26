@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: model
-manifest_version: 4
+manifest_version: 6
 permissions:
   - key: model.dw_layer.create
     allowed_scope_types: [tenant]
@@ -146,6 +146,14 @@ permissions:
     status: active
     name_i18n_key: permissions.model.materialization.execute.name
     description_i18n_key: permissions.model.materialization.execute.description
+  - key: model.materialization_context.read
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.materialization_context.read.name
+    description_i18n_key: permissions.model.materialization_context.read.description
   - key: model.standard_reference.update
     allowed_scope_types: [tenant]
     risk_level: high
@@ -154,3 +162,19 @@ permissions:
     status: active
     name_i18n_key: permissions.model.standard_reference.update.name
     description_i18n_key: permissions.model.standard_reference.update.description
+  - key: model.task_provider.execute
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.task_provider.execute.name
+    description_i18n_key: permissions.model.task_provider.execute.description
+  - key: model.task_provider.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.task_provider.read.name
+    description_i18n_key: permissions.model.task_provider.read.description

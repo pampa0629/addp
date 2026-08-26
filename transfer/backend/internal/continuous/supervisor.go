@@ -60,9 +60,14 @@ type Supervisor struct {
 	cfg    Config
 	logger *slog.Logger
 
-	mu     sync.Mutex
-	active map[uint]context.CancelFunc
-	wg     sync.WaitGroup
+	mu       sync.Mutex
+	active   map[uint]context.CancelFunc
+	canClaim func() bool
+	wg       sync.WaitGroup
+}
+
+func (s *Supervisor) SetClaimGate(canClaim func() bool) {
+	s.canClaim = canClaim
 }
 
 func NewSupervisor(repo LeaseStore, runner SessionRunner, cfg Config, logger *slog.Logger) (*Supervisor, error) {
@@ -96,6 +101,9 @@ func (s *Supervisor) Run(ctx context.Context) error {
 }
 
 func (s *Supervisor) claimAvailable(ctx context.Context) error {
+	if s.canClaim != nil && !s.canClaim() {
+		return nil
+	}
 	for s.activeCount() < s.cfg.Capacity {
 		claim, err := s.repo.ClaimNext(ctx, s.cfg.OwnerInstanceID, time.Now(), s.cfg.LeaseDuration)
 		if err != nil {

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/authorization/authtest"
+	"github.com/addp/common/modulelifecycle"
 	standardauthorization "github.com/addp/standard/internal/authorization"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
@@ -38,7 +39,7 @@ func TestDimensionHierarchyRoutesEnforceTenantScope(t *testing.T) {
 		references,
 		nil,
 	)
-	router := SetupRouter(db, nil, nil, nil, nil, nil, nil, nil, nil, dimensionService, authServer.URL)
+	router := SetupRouter(db, nil, nil, nil, nil, nil, nil, nil, nil, dimensionService, authServer.URL, modulelifecycle.NewStandalone("standard"))
 
 	t.Run("list only returns current tenant", func(t *testing.T) {
 		response := performTenantRequest(router, http.MethodGet, "/api/v1/standard/dimension-hierarchies", "tenant-one", "")

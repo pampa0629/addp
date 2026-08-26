@@ -164,7 +164,7 @@ ORDER BY accessed_at DESC;
 
 ```bash
 # Gateway 健康检查
-curl http://localhost:8000/health
+curl http://localhost:8000/health/ready
 
 # 响应示例
 {
@@ -265,7 +265,7 @@ cat logs/gateway.log | grep "Rate limit exceeded"
 3. **检查 System 模块是否正常**
    ```bash
    # System 模块负责 opaque Token、Refresh Token Family 和 AuthContext
-   curl http://localhost:8180/health
+   curl http://localhost:8180/health/ready
    ```
 
 **解决方案**：
@@ -289,9 +289,9 @@ cat logs/gateway.log | grep "Rate limit exceeded"
    ps aux | grep "addp"
 
    # 或检查特定服务
-   curl http://localhost:8180/health  # System
-   curl http://localhost:8081/health  # Manager
-   curl http://localhost:8082/health  # Meta
+   curl http://localhost:8180/health/ready  # System
+   curl http://localhost:8081/health/ready  # Manager
+   curl http://localhost:8082/health/ready  # Meta
    ```
 
 2. **检查 System bootstrap 和模块注册表**

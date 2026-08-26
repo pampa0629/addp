@@ -15,6 +15,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/modulelifecycle"
 	commonRepo "github.com/addp/common/repository"
 	commonRuntimeHealth "github.com/addp/common/runtimehealth"
 	"github.com/addp/meta/internal/config"
@@ -79,6 +80,7 @@ func main() {
 			"capacity":     cfg.ConcurrentTasks,
 		},
 	})
+	modulelifecycle.CancelRuntimeOnFatal(registrationDone, stop)
 	reporter, err := commonRuntimeHealth.NewReporter(commonRuntimeHealth.NewRepository(db), commonRuntimeHealth.ReporterConfig{
 		InstanceID: workerInstanceID, Module: commonExecution.ModuleMeta, Role: commonRuntimeHealth.RoleExecutionWorker,
 		RuntimeName: commonExecution.TaskTypeScan, Capacity: cfg.ConcurrentTasks,
@@ -90,8 +92,8 @@ func main() {
 	}
 	go reporter.Run(ctx)
 	logger.L().Info("meta bounded worker started", "concurrency", cfg.ConcurrentTasks, "lease", cfg.BoundedLeaseDuration)
-	runner.Run(ctx)
-	<-registrationDone
+	runner.Run(ctx, registrationDone.IsRegistered)
+	<-registrationDone.Done()
 	logger.L().Info("meta bounded worker stopped")
 }
 

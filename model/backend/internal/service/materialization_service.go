@@ -16,7 +16,8 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
-	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/engine/plugin"
+	_ "github.com/addp/common/engine/plugins/postgresql"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -37,27 +38,32 @@ const (
 )
 
 type MaterializationService struct {
-	systemClient           *commonClient.SystemServiceClient
-	executionAuthorization *commonClient.SystemExecutionAuthorizationClient
-	repo                   *repository.MaterializationBatchRepository
-	logicalTableRepo       *repository.LogicalTableRepository
-	logicalTableSvc        *LogicalTableService
-	workerID               string
-	workerCancel           context.CancelFunc
-	workerDone             chan struct{}
-	startOnce              sync.Once
+	systemClient     *commonClient.SystemServiceClient
+	repo             *repository.MaterializationBatchRepository
+	logicalTableRepo *repository.LogicalTableRepository
+	logicalTableSvc  *LogicalTableService
+	workerID         string
+	workerCancel     context.CancelFunc
+	workerDone       chan struct{}
+	startOnce        sync.Once
+}
+
+type MaterializationWriteContext struct {
+	BatchID        string   `json:"batch_id"`
+	EngineID       int64    `json:"engine_id"`
+	StagingLocator string   `json:"staging_locator"`
+	WriteColumns   []string `json:"write_columns"`
 }
 
 func NewMaterializationService(
 	systemClient *commonClient.SystemServiceClient,
-	executionAuthorization *commonClient.SystemExecutionAuthorizationClient,
 	repo *repository.MaterializationBatchRepository,
 	logicalTableRepo *repository.LogicalTableRepository,
 	logicalTableSvc *LogicalTableService,
 ) *MaterializationService {
 	return &MaterializationService{
-		systemClient: systemClient, executionAuthorization: executionAuthorization,
-		repo: repo, logicalTableRepo: logicalTableRepo, logicalTableSvc: logicalTableSvc,
+		systemClient: systemClient,
+		repo:         repo, logicalTableRepo: logicalTableRepo, logicalTableSvc: logicalTableSvc,
 		workerID: "model-materialization-" + uuid.NewString(), workerDone: make(chan struct{}),
 	}
 }
@@ -80,9 +86,12 @@ func (s *MaterializationService) Stop() {
 func (s *MaterializationService) Prepare(
 	ctx context.Context,
 	logicalTableID, tenantID, userID int64,
-	userAccessToken, triggerType, source string,
+	triggerType, source string,
 	parentExecutionID *string,
 ) (string, string, error) {
+	if parentExecutionID == nil || strings.TrimSpace(*parentExecutionID) == "" {
+		return "", "", apperrors.Validation("materialization_parent_execution_required", modeli18n.MsgMaterializationInvalid)
+	}
 	triggerType, source, err := normalizeMaterializationTrigger(triggerType, source)
 	if err != nil {
 		return "", "", err
@@ -101,7 +110,7 @@ func (s *MaterializationService) Prepare(
 	batch := &models.MaterializationBatch{
 		ID: batchID, TenantID: tenantID, LogicalTableID: logicalTableID,
 		LogicalTableVersion: table.Version, EngineID: int64(locator.EngineID),
-		TargetParentLocator: table.Materialization["target_parent_locator"].(string),
+		TargetParentLocator: locator.ToURI(),
 		TargetName:          targetName, StagingName: stagingName, SchemaFingerprint: fingerprint,
 		Status: models.MaterializationBatchPreparing, PrepareExecutionID: executionID,
 		CreatedAt: now, UpdatedAt: now,
@@ -114,7 +123,7 @@ func (s *MaterializationService) Prepare(
 	if err := s.repo.CreatePrepareExecution(ctx, batch, execution, table.Name); err != nil {
 		return "", "", materializationResourceError(err)
 	}
-	if err := s.authorizeExecution(ctx, tenantID, executionID, locator.EngineID, userAccessToken, parentExecutionID); err != nil {
+	if err := s.authorizeExecution(ctx, tenantID, executionID, locator.EngineID, *parentExecutionID); err != nil {
 		_ = s.repo.FailPendingExecution(ctx, tenantID, executionID, batchID, commonExecution.TaskTypeMaterializationPrepare, "model.materialization.authorization_issue_failed")
 		return "", "", apperrors.Wrap(apperrors.KindUnavailable, "materialization_authorization_failed", modeli18n.MsgMaterializationUnavailable, err)
 	}
@@ -125,9 +134,12 @@ func (s *MaterializationService) Prepare(
 func (s *MaterializationService) Publish(
 	ctx context.Context,
 	logicalTableID, tenantID, userID int64,
-	userAccessToken, triggerType, source string,
+	triggerType, source string,
 	parentExecutionID *string,
 ) (string, error) {
+	if parentExecutionID == nil || strings.TrimSpace(*parentExecutionID) == "" {
+		return "", apperrors.Validation("materialization_parent_execution_required", modeli18n.MsgMaterializationInvalid)
+	}
 	triggerType, source, err := normalizeMaterializationTrigger(triggerType, source)
 	if err != nil {
 		return "", err
@@ -142,19 +154,49 @@ func (s *MaterializationService) Publish(
 	if err != nil {
 		return "", materializationResourceError(err)
 	}
-	if err := s.authorizeExecution(ctx, tenantID, executionID, uint(batch.EngineID), userAccessToken, parentExecutionID); err != nil {
+	if err := s.authorizeExecution(ctx, tenantID, executionID, uint(batch.EngineID), *parentExecutionID); err != nil {
 		_ = s.repo.FailPendingExecution(ctx, tenantID, executionID, batch.ID, commonExecution.TaskTypeMaterializationPublish, "model.materialization.authorization_issue_failed")
 		return "", apperrors.Wrap(apperrors.KindUnavailable, "materialization_authorization_failed", modeli18n.MsgMaterializationUnavailable, err)
 	}
 	return executionID, nil
 }
 
-func (s *MaterializationService) GetBatch(ctx context.Context, id string, tenantID int64) (*models.MaterializationBatch, error) {
-	batch, err := s.repo.GetByID(ctx, id, tenantID)
+func (s *MaterializationService) ResolveWriteContext(
+	ctx context.Context,
+	tenantID, logicalTableID int64,
+	parentExecutionID string,
+) (*MaterializationWriteContext, error) {
+	if tenantID <= 0 || logicalTableID <= 0 {
+		return nil, apperrors.Validation("materialization_context_invalid", modeli18n.MsgMaterializationInvalid)
+	}
+	parsedParent, err := uuid.Parse(strings.TrimSpace(parentExecutionID))
+	if err != nil {
+		return nil, apperrors.Validation("materialization_parent_execution_invalid", modeli18n.MsgMaterializationInvalid)
+	}
+	batch, err := s.repo.ResolvePreparedByParentExecution(ctx, tenantID, logicalTableID, parsedParent.String())
 	if err != nil {
 		return nil, materializationResourceError(err)
 	}
-	return batch, nil
+	table, fields, parentLocator, _, fingerprint, err := s.loadApprovedDefinition(logicalTableID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if table.Version != batch.LogicalTableVersion || fingerprint != batch.SchemaFingerprint ||
+		int64(parentLocator.EngineID) != batch.EngineID || parentLocator.ToURI() != batch.TargetParentLocator {
+		return nil, apperrors.Conflict("materialization_context_stale", modeli18n.MsgMaterializationConflict)
+	}
+	writeColumns := make([]string, 0, len(fields))
+	for _, field := range fields {
+		writeColumns = append(writeColumns, field.ColumnName)
+	}
+	stagingLocator := (&resourcetree.ResourceLocator{
+		EngineID: parentLocator.EngineID,
+		Path:     append(append([]string(nil), parentLocator.Path...), batch.StagingName),
+		Type:     resourcetree.TypeTable,
+	}).ToURI()
+	return &MaterializationWriteContext{
+		BatchID: batch.ID, EngineID: batch.EngineID, StagingLocator: stagingLocator, WriteColumns: writeColumns,
+	}, nil
 }
 
 func newMaterializationExecution(
@@ -200,27 +242,14 @@ func (s *MaterializationService) authorizeExecution(
 	tenantID int64,
 	executionID string,
 	engineID uint,
-	userAccessToken string,
-	parentExecutionID *string,
+	parentExecutionID string,
 ) error {
 	engineIDs := []string{strconv.FormatUint(uint64(engineID), 10)}
 	effects := []string{"read", "ddl"}
-	var issued *commonClient.IssuedExecutionAuthorization
-	var err error
-	if parentExecutionID != nil {
-		issued, err = s.systemClient.WithTenantID(uint(tenantID)).IssueExecutionAuthorizationFromExecution(ctx, commonClient.IssueExecutionAuthorizationFromExecutionRequest{
-			ParentExecutionID: *parentExecutionID, Audience: commonExecution.AudienceModel,
-			ExecutionID: executionID, EngineIDs: engineIDs, Effects: effects, ExpiresIn: materializationAuthorizationTTL,
-		})
-	} else {
-		if s.executionAuthorization == nil {
-			return errors.New("user execution authorization client is not configured")
-		}
-		issued, err = s.executionAuthorization.Issue(ctx, userAccessToken, commonClient.IssueExecutionAuthorizationRequest{
-			Audience: commonExecution.AudienceModel, ExecutionID: executionID,
-			EngineIDs: engineIDs, Effects: effects, ExpiresIn: materializationAuthorizationTTL,
-		})
-	}
+	issued, err := s.systemClient.WithTenantID(uint(tenantID)).IssueExecutionAuthorizationFromExecution(ctx, commonClient.IssueExecutionAuthorizationFromExecutionRequest{
+		ParentExecutionID: parentExecutionID, Audience: commonExecution.AudienceModel,
+		ExecutionID: executionID, EngineIDs: engineIDs, Effects: effects, ExpiresIn: materializationAuthorizationTTL,
+	})
 	if err != nil {
 		return err
 	}
@@ -461,7 +490,7 @@ func (s *MaterializationService) executePrepare(
 	if err != nil {
 		return nil, err
 	}
-	pool, err := dbbridge.GetOrCreatePool(engine, dbbridge.DefaultPoolConfig())
+	pool, err := materializationPool(engine)
 	if err != nil {
 		return nil, err
 	}
@@ -470,14 +499,14 @@ func (s *MaterializationService) executePrepare(
 		if err != nil {
 			return err
 		}
-		if targetExists && materializationMarkerFingerprint(targetComment) != batch.SchemaFingerprint {
+		if targetExists && !materializationMarkerMatchesOwner(targetComment, batch.LogicalTableID, batch.SchemaFingerprint) {
 			return fmt.Errorf("target table is not managed by the same approved logical schema")
 		}
 		stagingComment, stagingExists, err := physicalTableComment(tx, schemaName, batch.StagingName)
 		if err != nil {
 			return err
 		}
-		expectedMarker := materializationMarker(batch.SchemaFingerprint, batch.ID)
+		expectedMarker := materializationMarker(batch.LogicalTableID, batch.SchemaFingerprint, batch.ID)
 		if stagingExists {
 			if stagingComment == expectedMarker {
 				return nil
@@ -519,11 +548,11 @@ func (s *MaterializationService) executePublish(
 	if err != nil {
 		return nil, err
 	}
-	pool, err := dbbridge.GetOrCreatePool(engine, dbbridge.DefaultPoolConfig())
+	pool, err := materializationPool(engine)
 	if err != nil {
 		return nil, err
 	}
-	expectedMarker := materializationMarker(batch.SchemaFingerprint, batch.ID)
+	expectedMarker := materializationMarker(batch.LogicalTableID, batch.SchemaFingerprint, batch.ID)
 	err = pool.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		targetComment, targetExists, err := physicalTableComment(tx, schemaName, batch.TargetName)
 		if err != nil {
@@ -542,7 +571,7 @@ func (s *MaterializationService) executePublish(
 		if stagingComment != expectedMarker {
 			return fmt.Errorf("staging table ownership marker does not match batch")
 		}
-		if targetExists && materializationMarkerFingerprint(targetComment) != batch.SchemaFingerprint {
+		if targetExists && !materializationMarkerMatchesOwner(targetComment, batch.LogicalTableID, batch.SchemaFingerprint) {
 			return fmt.Errorf("target table schema marker does not match approved logical schema")
 		}
 		if targetExists {
@@ -591,6 +620,15 @@ func materializationSchemaName(locatorText string) (string, error) {
 	return locator.Path[len(locator.Path)-1], nil
 }
 
+func materializationPool(engine *commonModels.Engine) (*gorm.DB, error) {
+	if engine == nil {
+		return nil, errors.New("materialization engine is missing")
+	}
+	return plugin.GetOrCreatePoolFromFactory(&plugin.Engine{
+		ID: engine.ID, EngineType: engine.EngineType, ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
+	}, plugin.DefaultPoolConfig())
+}
+
 func physicalTableComment(tx *gorm.DB, schemaName, tableName string) (string, bool, error) {
 	qualified := schemaName + "." + tableName
 	var relation sql.NullString
@@ -607,20 +645,20 @@ func physicalTableComment(tx *gorm.DB, schemaName, tableName string) (string, bo
 	return comment.String, true, nil
 }
 
-func materializationMarker(fingerprint, batchID string) string {
-	return materializationMarkerPrefix + fingerprint + ":" + batchID
+func materializationMarker(logicalTableID int64, fingerprint, batchID string) string {
+	return materializationMarkerPrefix + strconv.FormatInt(logicalTableID, 10) + ":" + fingerprint + ":" + batchID
 }
 
-func materializationMarkerFingerprint(marker string) string {
+func materializationMarkerMatchesOwner(marker string, logicalTableID int64, fingerprint string) bool {
 	if !strings.HasPrefix(marker, materializationMarkerPrefix) {
-		return ""
+		return false
 	}
 	remainder := strings.TrimPrefix(marker, materializationMarkerPrefix)
-	parts := strings.SplitN(remainder, ":", 2)
-	if len(parts) != 2 || len(parts[0]) != 64 {
-		return ""
-	}
-	return parts[0]
+	parts := strings.SplitN(remainder, ":", 3)
+	return len(parts) == 3 &&
+		parts[0] == strconv.FormatInt(logicalTableID, 10) &&
+		len(parts[1]) == 64 && parts[1] == fingerprint &&
+		strings.TrimSpace(parts[2]) != ""
 }
 
 func qualifiedIdentifier(schemaName, tableName string) string {

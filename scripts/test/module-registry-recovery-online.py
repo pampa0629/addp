@@ -44,7 +44,7 @@ class Probe:
             role="backend",
             module_url=self.module_url,
             route_prefix="/api/v1/manager",
-            health_check_url=f"{self.module_url}/health",
+            health_check_url=f"{self.module_url}/health/ready",
             metadata={"online_run_id": run_id, "release": release},
         )
 
@@ -304,7 +304,7 @@ class ProbeHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler contract
         payload = {
-            "status": "healthy" if self.path == "/health" else "ok",
+            "status": "ready" if self.path == "/health/ready" else "live",
             "instance_id": self.server.instance_id,
             "path": self.path,
         }

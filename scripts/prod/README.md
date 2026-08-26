@@ -74,8 +74,8 @@ cd /path/to/addp
 
 ### 健康检查机制
 
-- **System Backend**: 检查 `http://localhost:8180/health`（最多等待 60 秒）
-- **其他后端**: 检查各自的 `/health` 端点（每个服务最多等待 30 秒）
+- **System Backend**: 检查 `http://localhost:8180/health/ready`（最多等待 60 秒）
+- **ADDP Backend**: 检查各自的 `/health/ready` 端点（每个服务最多等待 30 秒）；Engine Runtime 继续使用其协议定义的 `/health`
 - **超时处理**: 任何服务启动超时会输出日志并退出
 
 ### 访问地址
@@ -191,7 +191,7 @@ watch -n 5 ./scripts/prod/health-check.sh
 - ✅ PostgreSQL 连接（端口 5432）
 - ✅ Redis 连接（端口 6379）
 - ✅ MinIO API（端口 9000）
-- ✅ System Backend 健康端点（/health）
+- ✅ System Backend 就绪端点（`/health/ready`）
 - ✅ Manager Backend 健康端点
 - ✅ Meta Backend 健康端点
 - ✅ Transfer Backend 健康端点

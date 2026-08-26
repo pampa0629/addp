@@ -1,15 +1,14 @@
 package api
 
 import (
-	"net/http"
 	"time"
 
-	"github.com/addp/common/modulelifecycle"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/middleware/audit"
 	auth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
+	"github.com/addp/common/modulelifecycle"
 	_ "github.com/addp/meta/docs"
 	_ "github.com/addp/meta/i18n"
 	metaauthorization "github.com/addp/meta/internal/authorization"

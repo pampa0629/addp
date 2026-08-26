@@ -20,6 +20,13 @@ from addp_common.client import (
     ModuleRegistration,
     ModuleRegistryClient,
 )
+from addp_common import (
+    ModuleReadyMiddleware,
+    live_response,
+    register_after_listener,
+    ready_response,
+    terminate_process_on_registration_failure,
+)
 
 # 最先初始化日志（在其他模块 import 之前）
 setup_logging()
@@ -74,16 +81,17 @@ app.include_router(
 
 
 @app.get(
-    "/health",
-    summary="健康检查 | Health Check",
+    "/health/live",
+    summary="存活检查 | Liveness Check",
     openapi_extra={"x-addp-auth-mode": "public"},
 )
-async def health():
-    return {"status": "ok", "module": "agent"}
+async def health_live():
+    return live_response("agent")
 
 
 _registry_client: ModuleRegistryClient | None = None
 _registry_task: asyncio.Task | None = None
+_registry_monitor_task: asyncio.Task | None = None
 
 
 def _module_registration() -> ModuleRegistration:
@@ -92,7 +100,7 @@ def _module_registration() -> ModuleRegistration:
         module_name="agent",
         module_url=service_url,
         route_prefix="/agent",
-        health_check_url=f"{service_url}/health",
+        health_check_url=f"{service_url}/health/ready",
         metadata={"module": "agent", "language": "python"},
         configuration_management=ConfigurationManagementDeclaration(entries=[
             ConfigurationManagementEntry(
@@ -107,18 +115,48 @@ def _module_registration() -> ModuleRegistration:
     )
 
 
+_registration = _module_registration()
+
+
+def _readiness():
+    return ready_response("agent", _registration, _registry_client)
+
+
+app.add_middleware(ModuleReadyMiddleware, readiness=_readiness)
+
+
+@app.get(
+    "/health/ready",
+    summary="就绪检查 | Readiness Check",
+    openapi_extra={"x-addp-auth-mode": "public"},
+)
+async def health_ready():
+    from fastapi.responses import JSONResponse
+    payload, ready = _readiness()
+    return JSONResponse(payload, status_code=200 if ready else 503)
+
+
 @app.on_event("startup")
 async def startup():
-    global _registry_client, _registry_task
+    global _registry_client, _registry_task, _registry_monitor_task
     await init_db()
     AgentInferenceService.initialize()
     _registry_client = ModuleRegistryClient(settings.get_system_url(), AgentInferenceService.token_source())
-    _registry_task = asyncio.create_task(_registry_client.run(_module_registration()))
+    _registry_task = asyncio.create_task(
+        register_after_listener(_registry_client, _registration, settings.AGENT_BACKEND_PORT)
+    )
+    _registry_monitor_task = asyncio.create_task(terminate_process_on_registration_failure(_registry_task))
 
 
 @app.on_event("shutdown")
 async def shutdown():
-    global _registry_client, _registry_task
+    global _registry_client, _registry_task, _registry_monitor_task
+    if _registry_monitor_task is not None:
+        _registry_monitor_task.cancel()
+        try:
+            await _registry_monitor_task
+        except asyncio.CancelledError:
+            pass
     if _registry_task is not None:
         _registry_task.cancel()
         try:
@@ -128,6 +166,7 @@ async def shutdown():
     if _registry_client is not None:
         await _registry_client.close()
     _registry_task = None
+    _registry_monitor_task = None
     _registry_client = None
     await AgentInferenceService.close()
 

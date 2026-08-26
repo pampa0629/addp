@@ -1,11 +1,9 @@
 package api
 
 import (
-	"net/http"
-
-	"github.com/addp/common/modulelifecycle"
 	commonClient "github.com/addp/common/client"
 	commonAuth "github.com/addp/common/middleware/auth"
+	"github.com/addp/common/modulelifecycle"
 	_ "github.com/addp/portal/docs"
 	"github.com/addp/portal/internal/config"
 	"github.com/gin-gonic/gin"

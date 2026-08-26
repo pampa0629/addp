@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,6 +13,7 @@ import (
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/modulelifecycle"
 	_ "github.com/addp/model/i18n"
 	"github.com/addp/model/internal/api"
 	"github.com/addp/model/internal/config"
@@ -81,6 +83,7 @@ func main() {
 	factMetricRepo := repository.NewFactMetricRepository(db)
 	tableRelationRepo := repository.NewTableRelationRepository(db)
 	standardReferenceGuardRepo := repository.NewStandardReferenceGuardRepository(db)
+	materializationRepo := repository.NewMaterializationBatchRepository(db)
 
 	// 创建 Services（仅 Model 相关，传入 standardURL 用于验证 element_id）
 	entitySvc := service.NewEntityService(entityRepo, entityRelationRepo)
@@ -94,6 +97,9 @@ func main() {
 	tableRelationSvc := service.NewTableRelationService(tableRelationRepo, logicalTableRepo)
 	standardReferenceGuardSvc := service.NewStandardReferenceGuardService(standardReferenceGuardRepo)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
+	materializationSvc := service.NewMaterializationService(systemClient, materializationRepo, logicalTableRepo, logicalTableSvc)
+	materializationSvc.Start(runtimeContext)
+	defer materializationSvc.Stop()
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
 	if err := cleanupSvc.Start(runtimeContext); err != nil {
 		log.Printf("Model 资源回收执行方启动失败: %v", err)
@@ -101,6 +107,7 @@ func main() {
 	defer cleanupSvc.Stop()
 
 	// 设置路由
+	lifecycleController := modulelifecycle.NewBusiness("model", commonClient.ModuleRuntimeRoleBackend)
 	router := api.SetupRouter(
 		entitySvc,
 		entityRelationSvc,
@@ -109,17 +116,24 @@ func main() {
 		factMetricSvc,
 		tableRelationSvc,
 		standardReferenceGuardSvc,
+		materializationSvc,
+		taskExecutionRepo,
 		cfg.SystemURL,
 		redisClient,
+		lifecycleController,
 	)
 
 	// 启动服务
 	addr := ":" + cfg.Port
 	log.Printf("Model service starting on %s", addr)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("Failed to bind Model listener: %v", err)
+	}
 
 	// 后台启动服务器
 	go func() {
-		if err := router.Run(addr); err != nil {
+		if err := router.RunListener(listener); err != nil {
 			log.Printf("Failed to start server: %v", err)
 			stopRuntime()
 		}
@@ -128,17 +142,27 @@ func main() {
 	// 启动模块注册和心跳
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
-	registrationDone := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "model", serviceURL, "/model", map[string]interface{}{
-		"module": "model",
-		"capabilities": map[string]interface{}{
-			"cleanup_executor": map[string]interface{}{
-				"enabled": true,
-				"causes":  []string{events.CleanupCauseTenantDeleted},
+	taskProvider, err := service.ModelTaskProviderDeclaration()
+	if err != nil {
+		log.Fatalf("构建 Model TaskProvider 声明失败: %v", err)
+	}
+	registration := systemClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
+		ModuleName: "model", ModuleURL: serviceURL, RoutePrefix: "/model", HealthCheckURL: serviceURL + "/health/ready",
+		TaskProvider: taskProvider,
+		Metadata: map[string]interface{}{
+			"module": "model",
+			"capabilities": map[string]interface{}{
+				"cleanup_executor": map[string]interface{}{
+					"enabled": true,
+					"causes":  []string{events.CleanupCauseTenantDeleted},
+				},
 			},
 		},
 	})
+	lifecycleController.AttachRegistration(registration)
+	modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
 
 	// 阻塞主 goroutine
 	<-runtimeContext.Done()
-	<-registrationDone
+	<-registration.Done()
 }

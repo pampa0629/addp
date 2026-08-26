@@ -53,6 +53,9 @@ func (s *ScanTaskScheduler) scheduledLoop(ctx context.Context) {
 }
 
 func (s *ScanTaskScheduler) runDueScheduledTasks(ctx context.Context) {
+	if s.claimGate != nil && !s.claimGate() {
+		return
+	}
 	now := time.Now()
 	var taskIDs []uint
 	if err := s.taskService.db.WithContext(ctx).

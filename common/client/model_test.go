@@ -80,3 +80,39 @@ func TestModelClientRejectsInvalidStandardReferenceGuardResponse(t *testing.T) {
 		})
 	}
 }
+
+func TestModelClientResolvesMaterializationWriteContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/model/materialization-write-contexts/resolve" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"batch_id":"batch-1","engine_id":9,"staging_locator":"addp://engine/9/schema/public/table/staging","write_columns":["id","value"]}`)
+	}))
+	defer server.Close()
+
+	context, err := newModelTestClient(server).ResolveMaterializationWriteContext(context.Background(), MaterializationWriteContextRequest{
+		ParentExecutionID: "parent-1", LogicalTableID: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if context.EngineID != 9 || len(context.WriteColumns) != 2 || context.WriteColumns[1] != "value" {
+		t.Fatalf("context = %#v", context)
+	}
+}
+
+func TestModelClientRejectsIncompleteMaterializationWriteContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"batch_id":"batch-1","engine_id":9,"staging_locator":"x","write_columns":[]}`)
+	}))
+	defer server.Close()
+
+	_, err := newModelTestClient(server).ResolveMaterializationWriteContext(context.Background(), MaterializationWriteContextRequest{
+		ParentExecutionID: "parent-1", LogicalTableID: 3,
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid materialization write context") {
+		t.Fatalf("error = %v", err)
+	}
+}

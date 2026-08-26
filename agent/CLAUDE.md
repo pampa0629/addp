@@ -57,7 +57,8 @@ cd agent/frontend && npm test && npm run build
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /health | 健康检查 |
+| GET | /health/live | 进程存活检查 |
+| GET | /health/ready | 模块就绪检查 |
 | GET | /api/v1/agent/sessions | 会话列表 |
 | POST | /api/v1/agent/sessions | 创建会话 |
 | GET | /api/v1/agent/sessions/:id | 会话详情 |

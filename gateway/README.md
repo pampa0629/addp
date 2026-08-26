@@ -58,7 +58,8 @@ Gateway 使用 `/api/v1/:module/*path` 提取模块名，并将完整请求路�
 
 ### 健康检查
 
-- `GET /health` - 网关健康状态
+- `GET /health/live` - Gateway 进程存活状态
+- `GET /health/ready` - 至少成功应用一次 System 完整模块路由快照后就绪
 
 ## ⚙️ 环境配置
 

@@ -68,9 +68,9 @@ def parse_service(value: str) -> Service:
     return Service(module=module, base_url=base_url.rstrip("/"))
 
 
-def load_health(service: Service, timeout: float) -> dict[str, object]:
+def load_health(service: Service, endpoint: str, timeout: float) -> dict[str, object]:
     request = urllib.request.Request(
-        service.base_url + "/health",
+        service.base_url + endpoint,
         headers={"Accept": "application/json"},
     )
     try:
@@ -85,9 +85,9 @@ def load_health(service: Service, timeout: float) -> dict[str, object]:
     return payload
 
 
-def validate_health(service: Service, payload: dict[str, object], expected_commit: str) -> None:
+def validate_health(service: Service, payload: dict[str, object], expected_commit: str, expected_status: str) -> None:
     expected = {
-        "status": "ok",
+        "status": expected_status,
         "module": service.module,
         "git_commit": expected_commit,
     }
@@ -145,8 +145,11 @@ def run_preflight(args: argparse.Namespace) -> dict[str, object]:
 
     health = {}
     for service in services:
-        payload = load_health(service, args.timeout)
-        validate_health(service, payload, expected_commit)
+        payload = load_health(service, "/health/live", args.timeout)
+        validate_health(service, payload, expected_commit, "live")
+        ready_payload = load_health(service, "/health/ready", args.timeout)
+        if ready_payload.get("status") != "ready":
+            raise PreflightError(f"{service.module} readiness status is not ready")
         health[service.module] = {
             "build_id": payload["build_id"],
             "git_commit": payload["git_commit"],

@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/addp/common/buildinfo"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/cors"
+	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/gateway/internal"
 	"github.com/addp/gateway/internal/cache"
 	"github.com/addp/gateway/internal/config"
@@ -55,10 +55,14 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		log.Printf("模块注册表初次加载失败，将通过 revision watch 继续重试: %v", err)
 	}
 
-	// 健康检查（无需鉴权）
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, buildinfo.Health("gateway"))
+	lifecycle := modulelifecycle.NewStandalone("gateway", func(context.Context) modulelifecycle.CheckResult {
+		if moduleDiscovery.HasSnapshot() {
+			return modulelifecycle.CheckResult{Name: "system_registry_snapshot", Status: modulelifecycle.CheckReady}
+		}
+		return modulelifecycle.CheckResult{Name: "system_registry_snapshot", Status: modulelifecycle.CheckNotReady, ErrorCode: "system_registry_snapshot_unavailable"}
 	})
+	lifecycle.RegisterHealthRoutes(router)
+	router.Use(lifecycle.RequireReady())
 
 	// 网关首页（无需鉴权）
 	router.GET("/", func(c *gin.Context) {

@@ -141,3 +141,35 @@ func TestPrepareWorkflowExecutionAuthorizationRequiresUserToken(t *testing.T) {
 		t.Fatal("prepareWorkflowExecutionAuthorization() error = nil, want User token requirement")
 	}
 }
+
+func TestIssueManagedWriteExecutionAuthorizationFromExecutionRequestsReadAndWrite(t *testing.T) {
+	var captured commonClient.IssueExecutionAuthorizationFromExecutionRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/v1/system/runtime/execution-authorizations" {
+			http.NotFound(w, request)
+			return
+		}
+		if err := json.NewDecoder(request.Body).Decode(&captured); err != nil {
+			t.Fatal(err)
+		}
+		_ = json.NewEncoder(w).Encode(commonClient.IssuedExecutionAuthorization{
+			ID: "91", ExecutionID: captured.ExecutionID, Audience: captured.Audience,
+			EngineIDs: captured.EngineIDs, Effects: captured.Effects,
+			ExpiresAt: time.Now().Add(10 * time.Minute), ActorPrincipalID: "11", TenantID: "7",
+			TenantMembershipID: "13", IssuedAuthorizationVersion: "17",
+		})
+	}))
+	defer server.Close()
+
+	systemClient := commonClient.NewSystemServiceClient(server.URL, staticServiceTokenSource("addp_at_develop"), server.Client())
+	authorization, err := NewSQLEngineService(&config.Config{}, systemClient, nil).IssueManagedWriteExecutionAuthorizationFromExecution(
+		context.Background(), 7, uuid.New(), uuid.New(), 12, 60,
+	)
+	if err != nil {
+		t.Fatalf("IssueManagedWriteExecutionAuthorizationFromExecution() error = %v", err)
+	}
+	if !reflect.DeepEqual(captured.Effects, []string{"read", "write"}) ||
+		!reflect.DeepEqual(authorization.Effects, []SQLExecutionEffect{SQLExecutionEffectRead, SQLExecutionEffectWrite}) {
+		t.Fatalf("request effects=%#v authorization=%#v", captured.Effects, authorization.Effects)
+	}
+}

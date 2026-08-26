@@ -50,6 +50,41 @@ def load_deployment_profiles(repository: Path) -> dict[str, str]:
     return profiles
 
 
+def validate_module_registry_process_profile(repository: Path, registered: set[str]) -> None:
+    if "module-registry-recovery" not in registered:
+        return
+    host_gate = (repository / "scripts/test/online-host-gate.sh").read_text(encoding="utf-8")
+    required_fragments = (
+        "bash scripts/dev/start.sh --exact-process --wait-live -manager",
+        "observe_module_lifecycle business-before-system",
+        "bash scripts/dev/start.sh --exact-process -system",
+        "observe_module_lifecycle manager-registered",
+        "bash scripts/dev/start.sh --exact-process -gateway",
+        "observe_module_lifecycle gateway-established",
+        "bash scripts/dev/stop-exact-process.sh -system",
+        "observe_module_lifecycle system-interrupted",
+        "observe_module_lifecycle system-recovered",
+        "bash scripts/dev/stop-exact-process.sh -manager",
+    )
+    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
+    if missing:
+        raise RegistrationError(
+            "module-registry-recovery process profile is missing: " + ", ".join(missing)
+        )
+    for relative in (
+        "scripts/dev/stop-exact-process.sh",
+        "scripts/test/module-lifecycle-process-online.py",
+    ):
+        if not (repository / relative).is_file():
+            raise RegistrationError(f"module-registry-recovery process profile requires {relative}")
+    start_script = (repository / "scripts/dev/start.sh").read_text(encoding="utf-8")
+    for fragment in ("--exact-process", "ADDP_ONLINE_HOST", "--wait-live"):
+        if fragment not in start_script:
+            raise RegistrationError(
+                f"module-registry-recovery exact start contract is missing {fragment}"
+            )
+
+
 def load_workflow_suites(repository: Path) -> set[str]:
     path = repository / ".github/workflows/online-t4-gates.yml"
     if not path.is_file():
@@ -108,6 +143,7 @@ def check_registration(repository: Path) -> None:
         raise RegistrationError(
             f"Online workflow choices {sorted(workflow)} do not match registered suites {sorted(registered)}"
         )
+    validate_module_registry_process_profile(repository, registered)
 
 
 def main() -> int:

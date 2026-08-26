@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -14,6 +15,7 @@ import (
 	commonconfiguration "github.com/addp/common/configuration"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/modulelifecycle"
 	commonRuntimeHealth "github.com/addp/common/runtimehealth"
 	_ "github.com/addp/monitor/i18n"
 	"github.com/addp/monitor/internal/api"
@@ -139,6 +141,7 @@ func main() {
 	)
 
 	// 设置路由
+	lifecycleController := modulelifecycle.NewBusiness("monitor", commonClient.ModuleRuntimeRoleBackend)
 	router := api.SetupRouter(
 		queryService,
 		statisticsService,
@@ -152,6 +155,7 @@ func main() {
 		cfg.SystemURL,
 		redisClient,
 		systemServiceClient,
+		lifecycleController,
 		runtimeHealthService,
 	)
 
@@ -207,10 +211,14 @@ func main() {
 	// 启动服务
 	addr := ":" + cfg.ServerPort
 	log.Printf("Monitor service starting on %s", addr)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("Failed to bind Monitor listener: %v", err)
+	}
 
 	// 后台启动服务器
 	go func() {
-		if err := router.Run(addr); err != nil {
+		if err := router.RunListener(listener); err != nil {
 			log.Printf("Failed to start server: %v", err)
 			stopRuntime()
 		}
@@ -219,15 +227,17 @@ func main() {
 	// 启动模块注册和心跳
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerPort)
-	registrationDone := systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
-		ModuleName: "monitor", ModuleURL: serviceURL, RoutePrefix: "/monitor", HealthCheckURL: serviceURL + "/health",
+	registration := systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
+		ModuleName: "monitor", ModuleURL: serviceURL, RoutePrefix: "/monitor", HealthCheckURL: serviceURL + "/health/ready",
 		Metadata: map[string]interface{}{"module": "monitor"},
 		ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{
 			ID: "monitor.configuration", OwnerModule: "monitor", ScopeTypes: []string{commonconfiguration.ScopePlatformOnly}, FrontendRoute: "/configuration/monitor",
 			ReadPermission: monitorauthorization.PermissionMonitorConfigurationRead, UpdatePermission: monitorauthorization.PermissionMonitorConfigurationUpdate,
 		}}},
 	})
+	lifecycleController.AttachRegistration(registration)
+	modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
 
 	<-runtimeContext.Done()
-	<-registrationDone
+	<-registration.Done()
 }

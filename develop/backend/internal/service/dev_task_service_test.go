@@ -47,6 +47,48 @@ func TestValidateDevTaskExecutionConfigAcceptsQueryEngineID(t *testing.T) {
 	}
 }
 
+func TestValidateDevTaskExecutionConfigAcceptsManagedMaterializationSelect(t *testing.T) {
+	err := validateDevTaskExecutionConfig(
+		commonExecution.TaskTypeQuery,
+		map[string]interface{}{"query": "WITH source AS (SELECT 1 AS id) SELECT id FROM source", "query_type": "sql"},
+		map[string]interface{}{
+			"engine_id":              12,
+			"materialization_target": map[string]interface{}{"logical_table_id": 3},
+		},
+	)
+	if err != nil {
+		t.Fatalf("expected managed SELECT to pass, got %v", err)
+	}
+}
+
+func TestValidateDevTaskExecutionConfigRejectsManagedMaterializationWriteSQL(t *testing.T) {
+	err := validateDevTaskExecutionConfig(
+		commonExecution.TaskTypeQuery,
+		map[string]interface{}{"query": "DELETE FROM source", "query_type": "sql"},
+		map[string]interface{}{
+			"engine_id":              12,
+			"materialization_target": map[string]interface{}{"logical_table_id": 3},
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "单条只读 SELECT") {
+		t.Fatalf("expected managed write SQL rejection, got %v", err)
+	}
+}
+
+func TestValidateDevTaskExecutionConfigRejectsManagedMaterializationExtraFields(t *testing.T) {
+	err := validateDevTaskExecutionConfig(
+		commonExecution.TaskTypeQuery,
+		map[string]interface{}{"query": "SELECT 1", "query_type": "sql"},
+		map[string]interface{}{
+			"engine_id":              12,
+			"materialization_target": map[string]interface{}{"logical_table_id": 3, "table": "unsafe"},
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "只能包含 logical_table_id") {
+		t.Fatalf("expected managed target shape rejection, got %v", err)
+	}
+}
+
 func TestValidateDevTaskExecutionConfigRequiresTargetLocatorEngineMatch(t *testing.T) {
 	err := validateDevTaskExecutionConfig(
 		commonExecution.TaskTypeQuery,

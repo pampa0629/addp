@@ -135,7 +135,7 @@ func main() {
 			Role:           models.ModuleRuntimeRoleBackend,
 			ModuleURL:      serviceURL,
 			RoutePrefix:    "/system",
-			HealthCheckURL: serviceURL + "/health",
+			HealthCheckURL: serviceURL + "/health/ready",
 			Metadata: map[string]interface{}{
 				"module": "system",
 			},

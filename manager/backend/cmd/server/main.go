@@ -5,6 +5,7 @@ import (
 	"fmt"
 	commonExecution "github.com/addp/common/execution"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/manager/internal/api"
 	managerauthorization "github.com/addp/manager/internal/authorization"
 	"github.com/addp/manager/internal/config"
@@ -297,10 +299,8 @@ func main() {
 	tileCacheTaskSvc.SetRealtimeTileTargetResolver(mvtService)
 	tileCacheTaskSvc.SetTileCacheRuntimeCacheInvalidator(spatialPreviewService)
 	tileCacheTaskSvc.SetTileCacheCleaner(spatialPreviewService)
+	var registration *commonClient.ModuleRegistrationLifecycle
 	embeddingTaskScheduler := service.NewEmbeddingTaskScheduler(embeddingTaskSvc)
-	if err := embeddingTaskScheduler.Start(context.Background()); err != nil {
-		logger.L().Warn("向量化任务调度器启动失败", "error", err)
-	}
 	cleanupSvc := service.NewCleanupService(
 		redisClient,
 		metaClient,
@@ -376,7 +376,8 @@ func main() {
 	model3DTilesHandler := api.NewModel3DTilesHandler(model3DTilesRepo, minioClient, minioBucket)
 	logger.L().Info("数据导入服务已初始化", "transfer_url", cfg.TransferServiceURL)
 
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, baseMapProviderService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler, model3DTilesHandler, dataProfileHandler)
+	lifecycleController := modulelifecycle.NewBusiness("manager", commonClient.ModuleRuntimeRoleBackend)
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, baseMapProviderService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler, model3DTilesHandler, dataProfileHandler, lifecycleController)
 
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
@@ -472,16 +473,21 @@ func main() {
 	// ========== 模块定义、运行实例与 TaskProvider 声明发布 ==========
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
-	var registrationDone <-chan struct{}
+	addr := ":" + cfg.Port
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		logger.L().Error("Manager 监听绑定失败", "error", err, "addr", addr)
+		return
+	}
 	if systemServiceClient != nil {
 		taskProvider, err := service.ManagerTaskProviderDeclaration()
 		if err != nil {
 			logger.L().Error("构建 Manager TaskProvider 声明失败", "error", err)
 			os.Exit(1)
 		}
-		registrationDone = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
+		registration = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
 			ModuleName: "manager", ModuleURL: serviceURL, RoutePrefix: "/manager",
-			HealthCheckURL: serviceURL + "/health",
+			HealthCheckURL: serviceURL + "/health/ready",
 			TaskProvider:   taskProvider,
 			Metadata: map[string]interface{}{
 				"capabilities": map[string]interface{}{
@@ -500,13 +506,18 @@ func main() {
 				}},
 			},
 		})
+		lifecycleController.AttachRegistration(registration)
+		modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
+	}
+	embeddingTaskScheduler.SetClaimGate(func() bool { return registration != nil && registration.IsRegistered() })
+	if err := embeddingTaskScheduler.Start(runtimeContext); err != nil {
+		logger.L().Warn("向量化任务调度器启动失败", "error", err)
 	}
 
 	// 启动服务并等待进程信号，统一关闭注册租约和本地资源。
-	addr := ":" + cfg.Port
 	logger.L().Info("Manager 服务启动", "addr", addr)
 	go func() {
-		if err := router.Run(addr); err != nil {
+		if err := router.RunListener(listener); err != nil {
 			logger.L().Error("Manager 服务启动失败", "error", err)
 			stopRuntime()
 		}
@@ -514,8 +525,8 @@ func main() {
 	<-runtimeContext.Done()
 	logger.L().Info("收到关闭信号，正在清理资源...")
 
-	if registrationDone != nil {
-		<-registrationDone
+	if registration != nil {
+		<-registration.Done()
 	}
 	if scanEventHandler != nil {
 		scanEventHandler.Stop()

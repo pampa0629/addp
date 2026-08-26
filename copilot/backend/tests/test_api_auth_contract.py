@@ -151,7 +151,8 @@ def test_copilot_openapi_declares_authorization_contracts():
     assert paths["/settings/inference-bindings/{scenario_code}"]["put"]["x-addp-required-permissions"] == [
         "copilot.configuration.update"
     ]
-    assert paths["/health"]["get"]["x-addp-auth-mode"] == "public"
+    assert paths["/health/live"]["get"]["x-addp-auth-mode"] == "public"
+    assert paths["/health/ready"]["get"]["x-addp-auth-mode"] == "public"
     assert paths["/"]["get"]["x-addp-auth-mode"] == "public"
 
     query_schema = specification["components"]["schemas"]["QueryGenerationRequest"]

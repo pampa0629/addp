@@ -10,6 +10,7 @@ import (
 	"github.com/addp/asset/internal/models"
 	assetservice "github.com/addp/asset/internal/service"
 	"github.com/addp/common/authorization/authtest"
+	"github.com/addp/common/modulelifecycle"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -36,7 +37,7 @@ func TestConsumerProjectionFiltersVisibilityAndDerivesCurrentUser(t *testing.T) 
 	authServer := authtest.NewTenantUserAuthContextServer(t, "7", map[string][]string{"Bearer consumer": permissions})
 	defer authServer.Close()
 	assetSvc := assetservice.NewAssetService(db, nil, nil, nil)
-	router := SetupRouter(db, authServer.URL, nil, assetSvc)
+	router := SetupRouter(db, authServer.URL, nil, assetSvc, modulelifecycle.NewStandalone("asset"))
 
 	list := consumerRequest(t, router, http.MethodGet, "/api/v1/asset/consumer/assets", "")
 	if list.Code != http.StatusOK || strings.Contains(list.Body.String(), "draft") || strings.Contains(list.Body.String(), "other") || !strings.Contains(list.Body.String(), "published") {

@@ -382,7 +382,7 @@ func (s *HealthCheckService) checkModuleHealth(ctx context.Context, moduleName, 
 
 // checkHealth 单次健康检查
 func (s *HealthCheckService) checkHealth(ctx context.Context, moduleName, baseURL string) (*HealthStatus, error) {
-	healthURL := baseURL + "/health"
+	healthURL := baseURL + "/health/ready"
 
 	start := time.Now()
 	req, err := http.NewRequestWithContext(ctx, "GET", healthURL, nil)

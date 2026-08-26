@@ -55,9 +55,15 @@ type WorkflowTaskDefinitionSwagger struct {
 
 // DevTaskExecutionConfigSwagger 开发任务执行配置 Swagger 摘要。
 type DevTaskExecutionConfigSwagger struct {
-	Type           string                               `json:"type,omitempty" example:"workflow"`
-	EngineID       uint                                 `json:"engine_id,omitempty" example:"12"`
-	EngineSpecific *WorkflowEngineSpecificConfigSwagger `json:"engine_specific,omitempty"`
+	Type                  string                               `json:"type,omitempty" example:"workflow"`
+	EngineID              uint                                 `json:"engine_id,omitempty" example:"12"`
+	EngineSpecific        *WorkflowEngineSpecificConfigSwagger `json:"engine_specific,omitempty"`
+	MaterializationTarget *MaterializationTargetSwagger        `json:"materialization_target,omitempty"`
+}
+
+// MaterializationTargetSwagger 将已保存的 SQL 查询静态绑定到 Model 逻辑表。
+type MaterializationTargetSwagger struct {
+	LogicalTableID int64 `json:"logical_table_id" example:"3"`
 }
 
 // WorkflowEngineSpecificConfigSwagger 工作流引擎特定执行配置。

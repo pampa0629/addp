@@ -10,6 +10,7 @@ import (
 
 	"github.com/addp/common/authorization/authtest"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/portal/internal/config"
 )
 
@@ -49,7 +50,7 @@ func TestPortalForwardsCurrentUserBearerWithoutIdentityFields(t *testing.T) {
 	serviceClient := commonClient.NewServiceClient("http://service.invalid", commonClient.ServiceTokenProviderFunc(
 		func(context.Context, uint) (string, error) { return "service-token", nil },
 	), nil)
-	router := SetupRouter(cfg, nil, assetClient, serviceClient)
+	router := SetupRouter(cfg, nil, assetClient, serviceClient, modulelifecycle.NewStandalone("portal"))
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/portal/assets/12/apply", strings.NewReader(`{"reason":"research","duration_day":7}`))
 	request.Header.Set("Authorization", "Bearer user-token")
@@ -72,7 +73,7 @@ func TestPortalApplyRouteRequiresApplicationCreatePermission(t *testing.T) {
 	cfg := &config.Config{SystemURL: authServer.URL}
 	router := SetupRouter(cfg, nil, commonClient.NewAssetClient("http://asset.invalid"), commonClient.NewServiceClient(
 		"http://service.invalid", commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) { return "token", nil }), nil,
-	))
+	), modulelifecycle.NewStandalone("portal"))
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/portal/assets/12/apply", strings.NewReader(`{"reason":"research"}`))
 	request.Header.Set("Authorization", "Bearer reader")
@@ -110,6 +111,7 @@ func TestPortalEndpointAuthorizationDependencyFailureIsBadGateway(t *testing.T) 
 		commonClient.NewServiceClient(serviceServer.URL, commonClient.ServiceTokenProviderFunc(
 			func(context.Context, uint) (string, error) { return "service-token", nil },
 		), nil),
+		modulelifecycle.NewStandalone("portal"),
 	)
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/portal/assets/12/endpoints", nil)
 	request.Header.Set("Authorization", "Bearer user-token")
@@ -149,6 +151,7 @@ func TestPortalAssetDetailPreservesDownstreamClientStatus(t *testing.T) {
 				commonClient.NewServiceClient("http://service.invalid", commonClient.ServiceTokenProviderFunc(
 					func(context.Context, uint) (string, error) { return "service-token", nil },
 				), nil),
+				modulelifecycle.NewStandalone("portal"),
 			)
 			request := httptest.NewRequest(http.MethodGet, "/api/v1/portal/assets/12", nil)
 			request.Header.Set("Authorization", "Bearer user-token")

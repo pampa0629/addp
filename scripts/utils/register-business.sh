@@ -89,7 +89,7 @@ connect_addp_to_business_network() {
 echo -e "${YELLOW}▶ 检查服务可用性...${NC}"
 
 # 检查 System API
-if ! curl -sf "${SYSTEM_API_URL}/health" >/dev/null 2>&1; then
+if ! curl -sf "${SYSTEM_API_URL}/health/ready" >/dev/null 2>&1; then
   echo -e "${RED}✗ System API 不可用: ${SYSTEM_API_URL}${NC}"
   echo -e "${YELLOW}  请先启动 System 服务: ./scripts/dev/start.sh -system${NC}"
   exit 1

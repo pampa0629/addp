@@ -16,7 +16,7 @@ ADDP 当前模块管理 API 的主路径应统一为：
 
 1. 模块管理 API 使用 `/api/v1/{module}`，不新增 `/api/{module}` 旧路径。
 2. Gateway 的模块透明代理按 `/api/v1/:module/*path` 识别模块。
-3. 模块根健康检查继续使用 `/health`，不放在 `/api/{module}/health`。
+3. 模块根健康检查使用 `/health/live` 与 `/health/ready`，不放在 `/api/{module}/health`。
 4. 已确认是旧兼容别名的路由应直接删除，不保留双轨。
 5. Service 发布的数据访问端点可能具有用户侧公开 URL 语义，不能和普通模块管理 API 机械等同，需要单独确认。
 
@@ -59,7 +59,7 @@ Service 前端存在一个实际调用风险：`service/frontend/src/api/client.
 
 | 类别 | 处理结果 |
 | --- | --- |
-| Develop 旧健康别名 | 已删除 `GET /api/develop/health`，保留 `GET /health` |
+| Develop 旧健康别名 | 已删除 `GET /api/develop/health`，统一使用 `GET /health/live` 与 `GET /health/ready` |
 | TaskProvider 标准 endpoint | 已收敛为 `/api/v1/{module}/tasks...` 内的标准相对路径 `/tasks...` |
 | API 规范文档 | 已补充 `/api/v1/{module}` 主线和 TaskProvider 分页例外 |
 | 部分模块说明文档 | 已将明确旧的 `/api/system`、`/api/develop`、`/api/graph`、`/api/quality` 示例改为 `/api/v1/...` |

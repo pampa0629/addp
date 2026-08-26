@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,6 +12,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/modulelifecycle"
 	_ "github.com/addp/orchestrator/i18n"
 	"github.com/addp/orchestrator/internal/api"
 	"github.com/addp/orchestrator/internal/config"
@@ -99,49 +101,55 @@ func main() {
 	executor := service.NewExecutor(executionService, orchRepo, taskProviderResolver, serviceTokenSource)
 
 	// 初始化 Scheduler（使用统一执行服务）
+	var registration *commonClient.ModuleRegistrationLifecycle
 	scheduler := service.NewScheduler(orchRepo, executionService, executor, systemServiceClient)
-	if err := scheduler.Start(); err != nil {
-		log.Fatalf("调度器启动失败: %v", err)
-	}
-	defer scheduler.Stop()
-
-	log.Println("✅ 调度器启动成功")
 	log.Println("✅ TaskProvider 动态解析器已初始化")
 
 	// 设置路由（传递 taskProviderResolver、systemURL、redisClient 和 systemClient）
+	lifecycleController := modulelifecycle.NewBusiness("orchestrator", commonClient.ModuleRuntimeRoleBackend)
 	router := api.SetupRouter(
 		orchRepo, executionService, executor, taskProviderResolver,
-		cfg.SystemServiceURL, redisClient, systemServiceClient, taskAuthorizationClient, serviceTokenSource,
+		cfg.SystemServiceURL, redisClient, systemServiceClient, taskAuthorizationClient, serviceTokenSource, lifecycleController,
 	)
+	addr := fmt.Sprintf(":%s", cfg.ServerPort)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("Orchestrator 监听绑定失败: %v", err)
+	}
 
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerPort)
-	var registrationDone <-chan struct{}
-
 	// ========== 模块定义、运行实例与 TaskProvider 声明发布 ==========
 	if cfg.SystemServiceURL != "" {
 		provider, err := service.OrchestratorTaskProviderDeclaration()
 		if err != nil {
 			log.Fatalf("构建 Orchestrator TaskProvider 声明失败: %v", err)
 		}
-		registrationDone = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
+		registration = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
 			ModuleName: "orchestrator", ModuleURL: serviceURL, RoutePrefix: "/orchestrator",
-			HealthCheckURL: serviceURL + "/health", Metadata: map[string]interface{}{"module": "orchestrator"},
+			HealthCheckURL: serviceURL + "/health/ready", Metadata: map[string]interface{}{"module": "orchestrator"},
 			TaskProvider: provider,
 		})
+		lifecycleController.AttachRegistration(registration)
+		modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
 	}
+	scheduler.SetClaimGate(func() bool { return registration != nil && registration.IsRegistered() })
+	if err := scheduler.Start(); err != nil {
+		log.Fatalf("调度器启动失败: %v", err)
+	}
+	defer scheduler.Stop()
+	log.Println("✅ 调度器启动成功")
 
 	// 启动服务器
-	addr := fmt.Sprintf(":%s", cfg.ServerPort)
 	log.Printf("🚀 Orchestrator 服务启动: %s", addr)
 	go func() {
-		if err := router.Run(addr); err != nil {
+		if err := router.RunListener(listener); err != nil {
 			log.Printf("服务器启动失败: %v", err)
 			stopRuntime()
 		}
 	}()
 	<-runtimeContext.Done()
-	if registrationDone != nil {
-		<-registrationDone
+	if registration != nil {
+		<-registration.Done()
 	}
 }

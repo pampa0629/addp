@@ -18,10 +18,15 @@ type EmbeddingTaskScheduler struct {
 	taskService *EmbeddingTaskService
 	exprBuilder *commonScheduler.ExpressionBuilder
 	log         *slog.Logger
+	claimGate   func() bool
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
 	wg       sync.WaitGroup
+}
+
+func (s *EmbeddingTaskScheduler) SetClaimGate(claimGate func() bool) {
+	s.claimGate = claimGate
 }
 
 func NewEmbeddingTaskScheduler(taskService *EmbeddingTaskService) *EmbeddingTaskScheduler {
@@ -96,6 +101,9 @@ func (s *EmbeddingTaskScheduler) scheduledLoop(ctx context.Context) {
 }
 
 func (s *EmbeddingTaskScheduler) runDueScheduledTasks(ctx context.Context) {
+	if s.claimGate != nil && !s.claimGate() {
+		return
+	}
 	now := embeddingScheduleNow()
 	taskIDs, err := s.taskService.embeddingRepo.ListDueEmbeddingTaskIDs(ctx, now, 100)
 	if err != nil {

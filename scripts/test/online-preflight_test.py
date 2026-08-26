@@ -24,8 +24,9 @@ class HealthHandler(BaseHTTPRequestHandler):
     commit = ""
 
     def do_GET(self):
+        status = "ready" if self.path == "/health/ready" else "live"
         payload = {
-            "status": "ok",
+            "status": status,
             "module": "system",
             "build_id": "build-1",
             "git_commit": self.commit,

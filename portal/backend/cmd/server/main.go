@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/portal/internal/api"
 	"github.com/addp/portal/internal/config"
 	"github.com/redis/go-redis/v9"
@@ -46,20 +48,27 @@ func main() {
 		})
 	}
 
-	router := api.SetupRouter(cfg, redisClient, assetClient, serviceClient)
+	lifecycleController := modulelifecycle.NewBusiness("portal", commonClient.ModuleRuntimeRoleBackend)
+	router := api.SetupRouter(cfg, redisClient, assetClient, serviceClient, lifecycleController)
 
 	addr := ":" + cfg.Port
 	log.Printf("Portal BFF service starting on %s", addr)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("Failed to bind Portal listener: %v", err)
+	}
 
 	go func() {
-		if err := router.Run(addr); err != nil {
+		if err := router.RunListener(listener); err != nil {
 			log.Printf("Failed to start server: %v", err)
 			stopRuntime()
 		}
 	}()
 
 	serviceURL := commonConfig.BuildServiceURL(commonConfig.GetServiceHost(), cfg.Port)
-	registrationDone := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "portal", serviceURL, "/portal", nil)
+	registration := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "portal", serviceURL, "/portal", nil)
+	lifecycleController.AttachRegistration(registration)
+	modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
 	<-runtimeContext.Done()
-	<-registrationDone
+	<-registration.Done()
 }

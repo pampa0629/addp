@@ -5,9 +5,9 @@ import (
 
 	assetauthorization "github.com/addp/asset/internal/authorization"
 	"github.com/addp/asset/internal/service"
-	"github.com/addp/common/modulelifecycle"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
+	"github.com/addp/common/modulelifecycle"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"

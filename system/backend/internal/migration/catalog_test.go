@@ -14,8 +14,8 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 75 {
-		t.Fatalf("LatestVersion = %d, want 75", catalog.LatestVersion)
+	if catalog.LatestVersion != 78 {
+		t.Fatalf("LatestVersion = %d, want 78", catalog.LatestVersion)
 	}
 }
 
@@ -36,6 +36,49 @@ func TestExecutionAudienceAndModelMaterializationMigration(t *testing.T) {
 	} {
 		if !strings.Contains(sql, fragment) {
 			t.Fatalf("migration 75 missing %q", fragment)
+		}
+	}
+}
+
+func TestModelTaskProviderMigration(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000076_iam_model_task_provider.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 76: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'model.task_provider.execute'",
+		"'model.task_provider.read'",
+		"'tenant.orchestrator_runtime'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 76 missing %q", fragment)
+		}
+	}
+}
+
+func TestModelMaterializationContextMigration(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000077_iam_model_materialization_context.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 77: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{"'model.materialization_context.read'", "'tenant.develop_runtime'"} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 77 missing %q", fragment)
+		}
+	}
+}
+
+func TestDataArchitectManagedMaterializationWriteMigration(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000078_iam_data_architect_managed_materialization_write.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 78: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{"'tenant.data_architect'", "'develop.task.execute'", "'develop.data_write.execute'"} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 78 missing %q", fragment)
 		}
 	}
 }

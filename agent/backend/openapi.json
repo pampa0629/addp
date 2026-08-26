@@ -2076,9 +2076,9 @@
         ]
       }
     },
-    "/health": {
+    "/health/live": {
       "get": {
-        "operationId": "health_health_get",
+        "operationId": "health_live_health_live_get",
         "responses": {
           "200": {
             "content": {
@@ -2089,7 +2089,24 @@
             "description": "Successful Response"
           }
         },
-        "summary": "健康检查 | Health Check",
+        "summary": "存活检查 | Liveness Check",
+        "x-addp-auth-mode": "public"
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "health_ready_health_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "就绪检查 | Readiness Check",
         "x-addp-auth-mode": "public"
       }
     }

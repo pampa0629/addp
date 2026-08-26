@@ -1,11 +1,9 @@
 package api
 
 import (
-	"net/http"
-
-	"github.com/addp/common/modulelifecycle"
 	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
+	"github.com/addp/common/modulelifecycle"
 	graphauthorization "github.com/addp/graph/internal/authorization"
 	"github.com/addp/graph/internal/config"
 	"github.com/gin-gonic/gin"

@@ -47,7 +47,8 @@ class AGUIProtocolTests(unittest.TestCase):
             specification["components"]["securitySchemes"]["BearerAuth"]["scheme"],
             "bearer",
         )
-        self.assertNotIn("security", specification["paths"]["/health"]["get"])
+        self.assertNotIn("security", specification["paths"]["/health/live"]["get"])
+        self.assertNotIn("security", specification["paths"]["/health/ready"]["get"])
 
     def test_agent_run_openapi_exposes_owned_run_detail(self):
         from main import app

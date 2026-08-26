@@ -49,7 +49,7 @@ portal/
 ```bash
 bash scripts/dev/start.sh -portal
 bash scripts/dev/restart.sh -portal
-curl http://localhost:8184/health
+curl http://localhost:8184/health/ready
 cd portal/frontend && npm test && npm run build
 ```
 

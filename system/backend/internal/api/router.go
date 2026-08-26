@@ -3,14 +3,13 @@ package api
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"time"
 
-	"github.com/addp/common/buildinfo"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	requestidmiddleware "github.com/addp/common/middleware/requestid"
+	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/middleware"
@@ -106,11 +105,18 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	router.Use(middleware.LoggerMiddleware(auditWriter))
 	router.Use(i18nmiddleware.I18nMiddleware())
 
+	lifecycle := modulelifecycle.NewStandalone(
+		"system",
+		modulelifecycle.StaticCheck("local_dependencies", true, ""),
+		modulelifecycle.StaticCheck("iam_bootstrap", true, ""),
+	)
+	lifecycle.RegisterHealthRoutes(router)
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	router.Use(lifecycle.RequireReady())
+
 	router.GET("/", func(c *gin.Context) {
 		c.JSON(200, gin.H{"message": cfg.ProjectName, "name_en": "All Domain Data Platform"})
 	})
-	router.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, buildinfo.Health("system")) })
-	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	api := router.Group("/api/v1/system")
 	if err := RegisterIAMRoutes(api, runtime, redisClient); err != nil {

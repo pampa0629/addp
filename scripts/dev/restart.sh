@@ -661,7 +661,7 @@ restart_copilot_service() {
         export DATABASE_URL="postgresql://addp:addp_password@localhost:${POSTGRES_PORT:-15432}/addp"
         start_background_process "." ".dev-pids/copilot-backend.pid" "logs/copilot-backend.log" "logs/copilot-backend-stderr.log" ./venv/bin/python main.py
     )
-    wait_http_ready "Copilot Backend" "http://localhost:${port}/health"
+    wait_http_ready "Copilot Backend" "http://localhost:${port}/health/ready"
     verify_pidfile_process_alive ".dev-pids/copilot-backend.pid" "Copilot Backend" "logs/copilot-backend.log" "logs/copilot-backend-stderr.log"
 }
 
@@ -676,7 +676,7 @@ restart_agent_service() {
         export PORT="$port"
         start_background_process "." ".dev-pids/agent-backend.pid" "logs/agent-backend.log" "logs/agent-backend-stderr.log" ./venv/bin/python "${ROOT_DIR}/agent/backend/main.py"
     )
-    wait_http_ready "Agent Backend" "http://localhost:${port}/health"
+    wait_http_ready "Agent Backend" "http://localhost:${port}/health/ready"
     verify_pidfile_process_alive ".dev-pids/agent-backend.pid" "Agent Backend" "logs/agent-backend.log" "logs/agent-backend-stderr.log"
 }
 

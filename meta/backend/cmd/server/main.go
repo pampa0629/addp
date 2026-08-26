@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,6 +13,7 @@ import (
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/meta/internal/api"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/repository"
@@ -82,6 +84,7 @@ func main() {
 	systemClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
+	var registration *commonClient.ModuleRegistrationLifecycle
 
 	// 初始化 Redis 客户端（可选，仅用于事件与扫描范围锁，不承担有界执行队列职责）
 	var redisClient *redis.Client
@@ -122,11 +125,6 @@ func main() {
 	go lineageService.RunCollector(lineageContext, time.Minute)
 
 	scheduler := service.NewScanTaskScheduler(taskService, executionService)
-	if err := scheduler.Start(runtimeContext); err != nil {
-		logger.L().Error("扫描任务调度器启动失败", "error", err)
-		os.Exit(1)
-	}
-	defer scheduler.Stop(context.Background())
 
 	// ========== 启动 Meta 资源回收服务 ==========
 	cleanupService := service.NewCleanupService(db, redisClient, systemClient, searchIndexer, service.CleanupConfig{
@@ -156,7 +154,14 @@ func main() {
 	defer engineSyncService.Stop()
 
 	// 设置路由
-	router := api.SetupRouter(cfg, db, engineService, scanService, taskService, executionService, redisClient, systemClient, lineageService)
+	lifecycleController := modulelifecycle.NewBusiness("meta", commonClient.ModuleRuntimeRoleBackend)
+	router := api.SetupRouter(cfg, db, engineService, scanService, taskService, executionService, redisClient, systemClient, lifecycleController, lineageService)
+	addr := fmt.Sprintf(":%s", cfg.ServerPort)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		logger.L().Error("Meta HTTP 监听绑定失败", "error", err, "addr", addr)
+		return
+	}
 
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerPort)
@@ -167,8 +172,8 @@ func main() {
 		logger.L().Error("构建 TaskProvider 声明失败", "error", err)
 		os.Exit(1)
 	}
-	registrationDone := systemClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
-		ModuleName: "meta", ModuleURL: serviceURL, RoutePrefix: "/meta", HealthCheckURL: serviceURL + "/health",
+	registration = systemClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
+		ModuleName: "meta", ModuleURL: serviceURL, RoutePrefix: "/meta", HealthCheckURL: serviceURL + "/health/ready",
 		TaskProvider: taskProvider,
 		Metadata: map[string]interface{}{
 			"module": "meta",
@@ -180,17 +185,24 @@ func main() {
 			},
 		},
 	})
+	lifecycleController.AttachRegistration(registration)
+	modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
+	scheduler.SetClaimGate(registration.IsRegistered)
+	if err := scheduler.Start(runtimeContext); err != nil {
+		logger.L().Error("扫描任务调度器启动失败", "error", err)
+		os.Exit(1)
+	}
+	defer scheduler.Stop(context.Background())
 
 	// 启动服务器
-	addr := fmt.Sprintf(":%s", cfg.ServerPort)
 	logger.L().Info("Meta 服务启动", "addr", addr)
 
 	go func() {
-		if err := router.Run(addr); err != nil {
+		if err := router.RunListener(listener); err != nil {
 			logger.L().Error("HTTP 服务启动失败", "error", err)
 			stopRuntime()
 		}
 	}()
 	<-runtimeContext.Done()
-	<-registrationDone
+	<-registration.Done()
 }

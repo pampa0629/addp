@@ -38,11 +38,11 @@ Go 二进制不得直接编译到 `.dev-bins/addp-*` 正式路径。统一流程
 
 ## 四、健康响应
 
-所有 Go HTTP 服务的公开 `/health` 使用 `common/buildinfo` 生成统一响应，至少包含：
+所有 ADDP HTTP Backend 的公开 `/health/live` 使用 `common/buildinfo` 生成统一构建身份；`/health/ready` 复用同一身份并增加模块就绪事实。完整响应与状态码契约以 `addp-API设计规范.md` 为准。`/health/live` 至少包含：
 
 ```json
 {
-  "status": "ok",
+  "status": "live",
   "module": "model",
   "build_id": "20260813T152509Z-model-39417-21871",
   "git_commit": "a81f3c...",
@@ -52,7 +52,7 @@ Go 二进制不得直接编译到 `.dev-bins/addp-*` 正式路径。统一流程
 }
 ```
 
-`status` 和 `module` 必须存在。构建身份字段在非开发脚本构建场景下允许为 `unknown`，但字段不能缺失。模块可以增加自身健康字段，但不得维护另一套构建身份字段或改变统一字段语义。
+`status` 和 `module` 必须存在。构建身份字段在非开发脚本构建场景下允许为 `unknown`，但字段不能缺失。模块不得维护另一套构建身份字段或改变统一字段语义；旧 `/health` 不保留。
 
 健康检查不纳入 Swagger 公开业务路由覆盖，不要求认证，也不得返回密钥、环境变量或主机敏感信息。
 
@@ -64,5 +64,5 @@ Go 二进制不得直接编译到 `.dev-bins/addp-*` 正式路径。统一流程
 - `restart -> stop -> start` 能继承同一锁；
 - 构建失败不会覆盖现有正式二进制；
 - 构建期间源码变化会拒绝发布产物；
-- Go 服务 `/health` 返回运行中进程的构建身份；
+- Go 服务 `/health/live` 返回运行中进程的构建身份，`/health/ready` 反映真实就绪状态；
 - `started_at` 来自进程启动，不由脚本或文件时间推断。

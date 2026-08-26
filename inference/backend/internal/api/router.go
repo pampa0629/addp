@@ -3,10 +3,10 @@ package api
 import (
 	"net/http"
 
-	"github.com/addp/common/modulelifecycle"
 	commoninference "github.com/addp/common/inference"
 	commonauth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
+	"github.com/addp/common/modulelifecycle"
 	_ "github.com/addp/inference/docs"
 	inferencei18n "github.com/addp/inference/i18n"
 	inferenceauthorization "github.com/addp/inference/internal/authorization"

@@ -165,6 +165,31 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         with self.assertRaisesRegex(CHECK.RegistrationError, "environment-only"):
             CHECK.check_registration(self.repository)
 
+    def test_rejects_module_registry_suite_without_formal_process_profile(self) -> None:
+        gate = self.repository / "scripts/test/online-gate.py"
+        gate.write_text(
+            gate.read_text(encoding="utf-8").replace(
+                '"first-suite"', '"module-registry-recovery"'
+            ),
+            encoding="utf-8",
+        )
+        host = self.repository / "scripts/test/online-host-gate.sh"
+        host.write_text(
+            host.read_text(encoding="utf-8").replace(
+                "first-suite", "module-registry-recovery"
+            ),
+            encoding="utf-8",
+        )
+        self.workflow.write_text(
+            self.workflow.read_text(encoding="utf-8").replace(
+                "first-suite", "module-registry-recovery"
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(CHECK.RegistrationError, "process profile is missing"):
+            CHECK.check_registration(self.repository)
+
 
 if __name__ == "__main__":
     unittest.main()

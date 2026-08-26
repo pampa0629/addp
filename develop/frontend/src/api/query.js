@@ -29,13 +29,6 @@ export const preflightQuery = (payload) => {
 }
 
 /**
- * 获取健康状态
- */
-export const getHealth = () => {
-  return client.get('/develop/health')
-}
-
-/**
  * 保存 SQL 为任务
  * @param {object} taskData - 任务数据
  */

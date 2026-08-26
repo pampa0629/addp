@@ -227,7 +227,7 @@ sequenceDiagram
 - 最近 24 小时任务执行统计
 - 按模块分组的成功率/失败率
 - 按任务类型分组的平均耗时
-- TaskProvider provider health：注册状态、模块 `/health`、capabilities 基础结构，以及标准 `GET /tasks?task_type=` 任务发现响应体是否符合 `{items,total,page,page_size}`
+- TaskProvider provider health：注册状态、模块 `/health/ready`、capabilities 基础结构，以及标准 `GET /tasks?task_type=` 任务发现响应体是否符合 `{items,total,page,page_size}`
 - 后台运行实例健康：分别展示 bounded execution worker、continuous worker 和 dispatcher 的存活实例、容量、当前占用、最近心跳与过期时间
 - 执行运行指标：按模块、任务类型和执行边界展示当前积压、吞吐、平均/P95 排队时长、平均/P95 运行时长、失败率、自动 attempt 重试、用户 retry 和恢复次数
 

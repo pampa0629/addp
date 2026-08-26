@@ -10,6 +10,13 @@ from addp_common.client import (
     ModuleRegistration,
     ModuleRegistryClient,
 )
+from addp_common import (
+    ModuleReadyMiddleware,
+    live_response,
+    register_after_listener,
+    ready_response,
+    terminate_process_on_registration_failure,
+)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
@@ -17,6 +24,30 @@ from fastapi.openapi.utils import get_openapi
 from config import settings
 
 logger = logging.getLogger("copilot.main")
+
+_public_base_url = f"http://{settings.service_host}:{settings.port}"
+_registration = ModuleRegistration(
+    module_name="copilot",
+    module_url=_public_base_url,
+    route_prefix="/copilot",
+    health_check_url=f"{_public_base_url}/health/ready",
+    metadata={"module": "copilot", "language": "python"},
+    configuration_management=ConfigurationManagementDeclaration(entries=[
+        ConfigurationManagementEntry(
+            id="copilot.configuration",
+            owner_module="copilot",
+            scope_types=["platform_default_with_tenant_override"],
+            frontend_route="/configuration/copilot",
+            read_permission="copilot.configuration.read",
+            update_permission="copilot.configuration.update",
+        ),
+    ]),
+)
+_registry_client: ModuleRegistryClient | None = None
+
+
+def _readiness():
+    return ready_response("copilot", _registration, _registry_client)
 
 # 应用生命周期管理
 @asynccontextmanager
@@ -29,26 +60,13 @@ async def lifespan(app: FastAPI):
     await init_db()
     CopilotInferenceService.initialize()
 
-    public_base_url = f"http://{settings.service_host}:{settings.port}"
+    global _registry_client
     registry_client = ModuleRegistryClient(settings.get_system_url(), CopilotInferenceService.token_source())
-    registration = ModuleRegistration(
-        module_name="copilot",
-        module_url=public_base_url,
-        route_prefix="/copilot",
-        health_check_url=f"{public_base_url}/health",
-        metadata={"module": "copilot", "language": "python"},
-        configuration_management=ConfigurationManagementDeclaration(entries=[
-            ConfigurationManagementEntry(
-                id="copilot.configuration",
-                owner_module="copilot",
-                scope_types=["platform_default_with_tenant_override"],
-                frontend_route="/configuration/copilot",
-                read_permission="copilot.configuration.read",
-                update_permission="copilot.configuration.update",
-            ),
-        ]),
+    _registry_client = registry_client
+    registry_task = asyncio.create_task(
+        register_after_listener(registry_client, _registration, settings.port)
     )
-    registry_task = asyncio.create_task(registry_client.run(registration))
+    registry_monitor_task = asyncio.create_task(terminate_process_on_registration_failure(registry_task))
 
     logger.info("Copilot Backend 启动完成")
 
@@ -57,11 +75,17 @@ async def lifespan(app: FastAPI):
     # 关闭时：停止心跳
     logger.info("Copilot Backend 关闭中")
     registry_task.cancel()
+    registry_monitor_task.cancel()
+    try:
+        await registry_monitor_task
+    except asyncio.CancelledError:
+        pass
     try:
         await registry_task
     except asyncio.CancelledError:
         pass
     await registry_client.close()
+    _registry_client = None
     await CopilotInferenceService.close()
     logger.info("Copilot Backend 已关闭")
 
@@ -73,6 +97,7 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+app.add_middleware(ModuleReadyMiddleware, readiness=_readiness)
 
 _API_PREFIX = "/api/v1/copilot"
 
@@ -130,17 +155,23 @@ app.openapi = custom_openapi
 
 
 @app.get(
-    "/health",
-    summary="健康检查 | Health Check",
+    "/health/live",
+    summary="存活检查 | Liveness Check",
     openapi_extra={"x-addp-auth-mode": "public"},
 )
-async def health_check():
-    """健康检查"""
-    return {
-        "status": "healthy",
-        "service": "copilot",
-        "version": "1.0.0"
-    }
+async def health_live():
+    return live_response("copilot")
+
+
+@app.get(
+    "/health/ready",
+    summary="就绪检查 | Readiness Check",
+    openapi_extra={"x-addp-auth-mode": "public"},
+)
+async def health_ready():
+    from fastapi.responses import JSONResponse
+    payload, ready = _readiness()
+    return JSONResponse(payload, status_code=200 if ready else 503)
 
 
 @app.get(

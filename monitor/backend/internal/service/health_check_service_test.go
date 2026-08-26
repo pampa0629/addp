@@ -15,7 +15,7 @@ func TestCheckAllProviderHealthChecksModuleAndTaskDiscovery(t *testing.T) {
 	var gotAuthorization string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/health":
+		case "/health/ready":
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"status":"ok"}`))
 		case "/api/v1/meta/tasks":
@@ -67,7 +67,7 @@ func TestCheckAllProviderHealthChecksModuleAndTaskDiscovery(t *testing.T) {
 func TestCheckAllProviderHealthChecksEveryBackendAndAggregatesDegraded(t *testing.T) {
 	healthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/health":
+		case "/health/ready":
 			w.WriteHeader(http.StatusOK)
 		case "/api/v1/meta/tasks":
 			w.WriteHeader(http.StatusOK)
@@ -79,8 +79,8 @@ func TestCheckAllProviderHealthChecksEveryBackendAndAggregatesDegraded(t *testin
 	defer healthy.Close()
 
 	unhealthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/health" {
-			t.Fatalf("unhealthy Backend should only receive /health, got %s", r.URL.Path)
+		if r.URL.Path != "/health/ready" {
+			t.Fatalf("unhealthy Backend should only receive /health/ready, got %s", r.URL.Path)
 		}
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
@@ -132,7 +132,7 @@ func TestCheckAllProviderHealthKeepsOfflineDeclarationWithoutProbing(t *testing.
 func TestCheckAllProviderHealthReportsLegacyTaskDiscoveryShape(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/health":
+		case "/health/ready":
 			w.WriteHeader(http.StatusOK)
 		case "/api/v1/meta/tasks":
 			w.WriteHeader(http.StatusOK)
@@ -170,7 +170,7 @@ func TestCheckAllProviderHealthReportsLegacyTaskDiscoveryShape(t *testing.T) {
 func TestCheckAllProviderHealthReportsTaskDiscoveryExtraFields(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/health":
+		case "/health/ready":
 			w.WriteHeader(http.StatusOK)
 		case "/api/v1/meta/tasks":
 			w.WriteHeader(http.StatusOK)
@@ -204,7 +204,7 @@ func TestCheckAllProviderHealthReportsTaskDiscoveryExtraFields(t *testing.T) {
 
 func TestCheckAllProviderHealthReportsInvalidCapabilities(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/health" {
+		if r.URL.Path != "/health/ready" {
 			t.Fatalf("unexpected task discovery call for invalid capabilities: %s", r.URL.Path)
 		}
 		w.WriteHeader(http.StatusOK)
@@ -233,7 +233,7 @@ func TestCheckAllProviderHealthReportsInvalidCapabilities(t *testing.T) {
 
 func TestCheckAllProviderHealthReportsUnknownCapabilityFields(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/health" {
+		if r.URL.Path != "/health/ready" {
 			t.Fatalf("unexpected task discovery call for invalid capabilities: %s", r.URL.Path)
 		}
 		w.WriteHeader(http.StatusOK)
@@ -277,7 +277,7 @@ func TestCheckAllProviderHealthReportsUnknownCapabilityFields(t *testing.T) {
 
 func TestCheckAllProviderHealthReportsNonBooleanDeprecated(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/health" {
+		if r.URL.Path != "/health/ready" {
 			t.Fatalf("unexpected task discovery call for invalid capabilities: %s", r.URL.Path)
 		}
 		w.WriteHeader(http.StatusOK)

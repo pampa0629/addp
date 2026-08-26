@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/addp/common/authorization/authtest"
+	"github.com/addp/common/modulelifecycle"
 	metaauthorization "github.com/addp/meta/internal/authorization"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/metatest"
@@ -30,7 +31,7 @@ func TestAssetDiscoverableRouteAuthenticationAndTenantContract(t *testing.T) {
 	scanService := service.NewScanService(db, engineService)
 	cfg := &config.Config{}
 	cfg.SystemServiceURL = systemServer.URL
-	router := SetupRouter(cfg, db, engineService, scanService, nil, nil, nil, nil)
+	router := SetupRouter(cfg, db, engineService, scanService, nil, nil, nil, nil, modulelifecycle.NewStandalone("meta"))
 
 	authtest.AssertAssetDiscoverableContract(t, router, "/api/v1/meta/assets/discoverable", "tenant-seven")
 }

@@ -43,7 +43,7 @@ for service in system:8180 manager:8081 meta:8082 transfer:8083 orchestrator:808
   name=$(echo $service | cut -d: -f1)
   port=$(echo $service | cut -d: -f2)
 
-  if curl -f http://localhost:$port/health > /dev/null 2>&1; then
+  if curl -f http://localhost:$port/health/ready > /dev/null 2>&1; then
     echo -e "${GREEN}✓ ${name}-backend${NC}"
   else
     echo -e "${RED}✗ ${name}-backend${NC}"
@@ -100,7 +100,7 @@ else
 fi
 
 # Gateway
-if curl -f http://localhost:8000/health > /dev/null 2>&1; then
+if curl -f http://localhost:8000/health/ready > /dev/null 2>&1; then
   echo -e "${GREEN}✓ gateway${NC}"
 else
   echo -e "${RED}✗ gateway${NC}"

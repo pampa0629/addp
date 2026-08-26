@@ -184,12 +184,12 @@ echo -e "${YELLOW}⏳ Waiting for key services to be healthy...${NC}"
 
 # Wait for System Backend (critical)
 if docker compose -f docker-compose.yml ps system-backend | grep -q "Up"; then
-    wait_for_health "http://localhost:8180/health" "System Backend" 120
+    wait_for_health "http://localhost:8180/health/ready" "System Backend" 120
 fi
 
 # Wait for Gateway
 if docker compose -f docker-compose.yml ps gateway | grep -q "Up"; then
-    wait_for_health "http://localhost:8000/health" "Gateway" 60
+    wait_for_health "http://localhost:8000/health/ready" "Gateway" 60
 fi
 
 # Wait for Nginx

@@ -1241,7 +1241,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "从 System 读取启用 TaskProvider 及其当前有效 Backend 实例池，逐实例探测模块 /health 与标准 GET /tasks?task_type= endpoint，并聚合 Provider 状态。| Read enabled TaskProviders and their currently valid Backend instance pools from System, probe module /health plus standard GET /tasks?task_type= endpoints per instance, and aggregate Provider status.",
+                "description": "从 System 读取启用 TaskProvider 及其当前有效 Backend 实例池，逐实例探测模块 /health/ready 与标准 GET /tasks?task_type= endpoint，并聚合 Provider 状态。| Read enabled TaskProviders and their currently valid Backend instance pools from System, probe module /health/ready plus standard GET /tasks?task_type= endpoints per instance, and aggregate Provider status.",
                 "produces": [
                     "application/json"
                 ],
@@ -1279,7 +1279,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "从 System 读取指定 TaskProvider 及其当前有效 Backend 实例池，逐实例探测模块 /health 与标准 GET /tasks?task_type= endpoint，并聚合 Provider 状态。| Read the TaskProvider and its currently valid Backend instance pool from System, probe module /health plus standard GET /tasks?task_type= endpoints per instance, and aggregate Provider status.",
+                "description": "从 System 读取指定 TaskProvider 及其当前有效 Backend 实例池，逐实例探测模块 /health/ready 与标准 GET /tasks?task_type= endpoint，并聚合 Provider 状态。| Read the TaskProvider and its currently valid Backend instance pool from System, probe module /health/ready plus standard GET /tasks?task_type= endpoints per instance, and aggregate Provider status.",
                 "produces": [
                     "application/json"
                 ],

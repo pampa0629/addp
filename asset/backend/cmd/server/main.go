@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -20,6 +21,7 @@ import (
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/modulelifecycle"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -134,13 +136,18 @@ func main() {
 	}
 	defer cleanupSvc.Stop()
 
-	router := api.SetupRouter(db, cfg.SystemURL, redisClient, assetSvc)
+	lifecycleController := modulelifecycle.NewBusiness("asset", commonClient.ModuleRuntimeRoleBackend)
+	router := api.SetupRouter(db, cfg.SystemURL, redisClient, assetSvc, lifecycleController)
 
 	addr := ":" + cfg.Port
 	log.Printf("Asset service starting on %s", addr)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("Failed to bind Asset listener: %v", err)
+	}
 
 	go func() {
-		if err := router.Run(addr); err != nil {
+		if err := router.RunListener(listener); err != nil {
 			log.Printf("Failed to start server: %v", err)
 			stopRuntime()
 		}
@@ -173,7 +180,7 @@ func main() {
 	// 模块注册 + 心跳
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
-	registrationDone := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "asset", serviceURL, "/asset", map[string]interface{}{
+	registration := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "asset", serviceURL, "/asset", map[string]interface{}{
 		"module": "asset",
 		"capabilities": map[string]interface{}{
 			"cleanup_executor": map[string]interface{}{
@@ -182,7 +189,9 @@ func main() {
 			},
 		},
 	})
+	lifecycleController.AttachRegistration(registration)
+	modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
 
 	<-runtimeContext.Done()
-	<-registrationDone
+	<-registration.Done()
 }

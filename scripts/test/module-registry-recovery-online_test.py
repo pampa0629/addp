@@ -15,6 +15,94 @@ assert SPEC.loader is not None
 sys.modules[SPEC.name] = ONLINE
 SPEC.loader.exec_module(ONLINE)
 
+PROCESS_SCRIPT = Path(__file__).with_name("module-lifecycle-process-online.py")
+PROCESS_SPEC = importlib.util.spec_from_file_location(
+    "module_lifecycle_process_online", PROCESS_SCRIPT
+)
+PROCESS_ONLINE = importlib.util.module_from_spec(PROCESS_SPEC)
+assert PROCESS_SPEC.loader is not None
+sys.modules[PROCESS_SPEC.name] = PROCESS_ONLINE
+PROCESS_SPEC.loader.exec_module(PROCESS_ONLINE)
+
+MANAGER_PROCESS_URL = "http://127.0.0.1:8081"
+SYSTEM_PROCESS_URL = "http://127.0.0.1:8180"
+GATEWAY_PROCESS_URL = "http://127.0.0.1:8000"
+PROCESS_INSTANCE_ID = "manager-runtime-42"
+PROCESS_GIT_COMMIT = "0123456789abcdef"
+
+
+def process_live_payload(module: str) -> dict[str, object]:
+    return {
+        "status": "live",
+        "module": module,
+        "git_commit": PROCESS_GIT_COMMIT,
+        "build_id": f"build-{module}",
+        "source_fingerprint": f"sha256:{module}",
+        "built_at": "2026-08-26T00:00:00Z",
+        "started_at": "2026-08-26T00:01:00Z",
+    }
+
+
+class ProcessFakeClient:
+    def __init__(
+        self,
+        *,
+        manager_ready: bool,
+        system_available: bool,
+        gateway_available: bool,
+        gateway_manager_present: bool = False,
+        instance_id: str = PROCESS_INSTANCE_ID,
+    ) -> None:
+        self.manager_ready = manager_ready
+        self.system_available = system_available
+        self.gateway_available = gateway_available
+        self.gateway_manager_present = gateway_manager_present
+        self.instance_id = instance_id
+
+    def get(self, base_url: str, path: str):
+        if base_url == MANAGER_PROCESS_URL:
+            if path == "/health/live":
+                return PROCESS_ONLINE.Response(200, process_live_payload("manager"))
+            if path == "/health/ready":
+                return PROCESS_ONLINE.Response(
+                    200 if self.manager_ready else 503,
+                    {
+                        "status": "ready" if self.manager_ready else "not_ready",
+                        "module": "manager",
+                        "instance_id": self.instance_id,
+                        "registration_state": (
+                            "registered" if self.manager_ready else "recovering"
+                        ),
+                    },
+                )
+            if path == "/":
+                if self.manager_ready:
+                    return PROCESS_ONLINE.Response(
+                        200, {"message": "Manager 数据管理服务"}
+                    )
+                return PROCESS_ONLINE.Response(
+                    503,
+                    {"error": "module is not ready", "error_code": "module_not_ready"},
+                )
+        if base_url == SYSTEM_PROCESS_URL:
+            if not self.system_available:
+                raise PROCESS_ONLINE.TransportUnavailable("connection refused")
+            if path == "/health/live":
+                return PROCESS_ONLINE.Response(200, process_live_payload("system"))
+            return PROCESS_ONLINE.Response(200, {"status": "ready", "module": "system"})
+        if base_url == GATEWAY_PROCESS_URL:
+            if not self.gateway_available:
+                raise PROCESS_ONLINE.TransportUnavailable("connection refused")
+            if path == "/health/live":
+                return PROCESS_ONLINE.Response(200, process_live_payload("gateway"))
+            if path == "/health/ready":
+                return PROCESS_ONLINE.Response(200, {"status": "ready", "module": "gateway"})
+            modules = {"system": SYSTEM_PROCESS_URL}
+            if self.gateway_manager_present:
+                modules["manager"] = MANAGER_PROCESS_URL
+            return PROCESS_ONLINE.Response(200, {"modules": modules})
+        raise AssertionError(f"unexpected request: {base_url}{path}")
+
 
 class RegistryContractHandler(BaseHTTPRequestHandler):
     records = []
@@ -253,8 +341,134 @@ class ModuleRegistryRecoveryOnlineTest(unittest.TestCase):
         self.assertEqual(registration.module_name, "manager")
         self.assertEqual(registration.role, "backend")
         self.assertEqual(registration.route_prefix, "/api/v1/manager")
-        self.assertEqual(registration.health_check_url, "http://127.0.0.1:19081/health")
+        self.assertEqual(registration.health_check_url, "http://127.0.0.1:19081/health/ready")
         self.assertEqual(registration.metadata["online_run_id"], "run-42")
+
+
+class ModuleLifecycleProcessOnlineTest(unittest.TestCase):
+    def _observe(
+        self,
+        phase: str,
+        client: ProcessFakeClient,
+        expected_instance_id: str | None = None,
+        expected_git_commit: str | None = None,
+    ):
+        return PROCESS_ONLINE.observe_once(
+            phase,
+            client,
+            manager_url=MANAGER_PROCESS_URL,
+            system_url=SYSTEM_PROCESS_URL,
+            gateway_url=GATEWAY_PROCESS_URL,
+            expected_instance_id=expected_instance_id,
+            expected_git_commit=expected_git_commit,
+        )
+
+    def test_accepts_all_formal_process_lifecycle_phases(self) -> None:
+        phases = (
+            (
+                "business-before-system",
+                ProcessFakeClient(
+                    manager_ready=False,
+                    system_available=False,
+                    gateway_available=False,
+                ),
+                None,
+            ),
+            (
+                "manager-registered",
+                ProcessFakeClient(
+                    manager_ready=True,
+                    system_available=True,
+                    gateway_available=False,
+                ),
+                PROCESS_INSTANCE_ID,
+            ),
+            (
+                "gateway-established",
+                ProcessFakeClient(
+                    manager_ready=True,
+                    system_available=True,
+                    gateway_available=True,
+                    gateway_manager_present=True,
+                ),
+                PROCESS_INSTANCE_ID,
+            ),
+            (
+                "system-interrupted",
+                ProcessFakeClient(
+                    manager_ready=False,
+                    system_available=False,
+                    gateway_available=True,
+                    gateway_manager_present=False,
+                ),
+                PROCESS_INSTANCE_ID,
+            ),
+            (
+                "system-recovered",
+                ProcessFakeClient(
+                    manager_ready=True,
+                    system_available=True,
+                    gateway_available=True,
+                    gateway_manager_present=True,
+                ),
+                PROCESS_INSTANCE_ID,
+            ),
+        )
+        for phase, client, instance_id in phases:
+            with self.subTest(phase=phase):
+                report = self._observe(phase, client, instance_id)
+                self.assertEqual(report["phase"], phase)
+                self.assertEqual(
+                    report["manager"]["instance_id"], PROCESS_INSTANCE_ID
+                )
+
+    def test_rejects_instance_change_and_stale_gateway_route(self) -> None:
+        with self.assertRaisesRegex(PROCESS_ONLINE.ObservationError, "instance_id changed"):
+            self._observe(
+                "system-recovered",
+                ProcessFakeClient(
+                    manager_ready=True,
+                    system_available=True,
+                    gateway_available=True,
+                    gateway_manager_present=True,
+                    instance_id="manager-runtime-replaced",
+                ),
+                PROCESS_INSTANCE_ID,
+            )
+        with self.assertRaisesRegex(PROCESS_ONLINE.ObservationError, "still exposes"):
+            self._observe(
+                "system-interrupted",
+                ProcessFakeClient(
+                    manager_ready=False,
+                    system_available=False,
+                    gateway_available=True,
+                    gateway_manager_present=True,
+                ),
+                PROCESS_INSTANCE_ID,
+            )
+
+    def test_requires_current_checkout_build_identity(self) -> None:
+        client = ProcessFakeClient(
+            manager_ready=True,
+            system_available=True,
+            gateway_available=True,
+            gateway_manager_present=True,
+        )
+        report = self._observe(
+            "system-recovered",
+            client,
+            PROCESS_INSTANCE_ID,
+            PROCESS_GIT_COMMIT,
+        )
+        self.assertEqual(report["git_commit"], PROCESS_GIT_COMMIT)
+
+        with self.assertRaisesRegex(PROCESS_ONLINE.ObservationError, "git_commit"):
+            self._observe(
+                "system-recovered",
+                client,
+                PROCESS_INSTANCE_ID,
+                "different-checkout",
+            )
 
 
 if __name__ == "__main__":

@@ -2,8 +2,10 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 // ModelClient is the Bearer-only client for tenant-owned Model APIs.
@@ -11,6 +13,35 @@ type ModelClient struct{ tenantHTTPClient }
 
 func NewModelClient(baseURL string, tokenSource ServiceTokenProvider, httpClient *http.Client) *ModelClient {
 	return &ModelClient{tenantHTTPClient: newTenantHTTPClient(baseURL, tokenSource, httpClient)}
+}
+
+type MaterializationWriteContextRequest struct {
+	ParentExecutionID string `json:"parent_execution_id"`
+	LogicalTableID    int64  `json:"logical_table_id"`
+}
+
+type MaterializationWriteContext struct {
+	BatchID        string   `json:"batch_id"`
+	EngineID       int64    `json:"engine_id"`
+	StagingLocator string   `json:"staging_locator"`
+	WriteColumns   []string `json:"write_columns"`
+}
+
+func (c *ModelClient) ResolveMaterializationWriteContext(
+	ctx context.Context,
+	request MaterializationWriteContextRequest,
+) (*MaterializationWriteContext, error) {
+	if request.LogicalTableID <= 0 || strings.TrimSpace(request.ParentExecutionID) == "" {
+		return nil, errors.New("model materialization write context requires logical table and parent execution")
+	}
+	var response MaterializationWriteContext
+	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/model/materialization-write-contexts/resolve", request, &response); err != nil {
+		return nil, fmt.Errorf("model resolve materialization write context: %w", err)
+	}
+	if response.BatchID == "" || response.EngineID <= 0 || response.StagingLocator == "" || len(response.WriteColumns) == 0 {
+		return nil, errors.New("model returned invalid materialization write context")
+	}
+	return &response, nil
 }
 
 func (c *ModelClient) WithTenantID(tenantID uint) *ModelClient {

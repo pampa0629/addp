@@ -113,7 +113,8 @@ monitor/
 
 | 端点 | 方法 | 功能 | 状态 |
 |------|------|------|------|
-| `/health` | GET | 健康检查 | ✅ |
+| `/health/live` | GET | 进程存活检查 | ✅ |
+| `/health/ready` | GET | 模块就绪检查 | ✅ |
 | `/api/v1/executions` | GET | 分页查询执行记录 | ✅ |
 | `/api/v1/executions/:id` | GET | 获取单条执行详情 | ✅ |
 | `/api/v1/executions/stats` | GET | 获取统计数据 | ✅ |

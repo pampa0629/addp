@@ -13,7 +13,7 @@ from uuid import uuid4
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
-from .service_token import OAuthServiceTokenSource
+from .service_token import OAuthServiceTokenSource, ServiceTokenError
 
 
 MANAGEMENT_SCHEMA_VERSION = "addp.configuration-management/v1"
@@ -62,6 +62,17 @@ class ModuleRegistration(_ContractModel):
     health_check_url: str = ""
     metadata: dict[str, object] = Field(default_factory=dict)
     configuration_management: ConfigurationManagementDeclaration | None = None
+
+
+ModuleRegistrationState = Literal["starting", "registered", "recovering", "failed", "stopped"]
+
+
+class ModuleRegistrationSnapshot(_ContractModel):
+    module_name: str
+    instance_id: str
+    role: Literal["backend", "worker", "scheduler"]
+    state: ModuleRegistrationState
+    error_code: str = ""
 
 
 class ModuleRegistryAPIError(httpx.HTTPStatusError):
@@ -116,6 +127,33 @@ class ModuleRegistryClient:
             headers={"Content-Type": "application/json"},
         )
         self._active_instances: dict[tuple[str, str], str] = {}
+        self._snapshots: dict[tuple[str, str], ModuleRegistrationSnapshot] = {}
+
+    def snapshot(self, registration: ModuleRegistration) -> ModuleRegistrationSnapshot:
+        key = (registration.module_name, registration.instance_id)
+        snapshot = self._snapshots.get(key)
+        if snapshot is not None:
+            return snapshot.model_copy()
+        return ModuleRegistrationSnapshot(
+            module_name=registration.module_name,
+            instance_id=registration.instance_id,
+            role=registration.role,
+            state="starting",
+        )
+
+    def _transition(
+        self,
+        registration: ModuleRegistration,
+        state: ModuleRegistrationState,
+        error_code: str = "",
+    ) -> None:
+        self._snapshots[(registration.module_name, registration.instance_id)] = ModuleRegistrationSnapshot(
+            module_name=registration.module_name,
+            instance_id=registration.instance_id,
+            role=registration.role,
+            state=state,
+            error_code=error_code,
+        )
 
     async def register(self, registration: ModuleRegistration) -> None:
         await self._request(
@@ -146,6 +184,7 @@ class ModuleRegistryClient:
     async def run(self, registration: ModuleRegistration, *, interval: float = 10.0) -> None:
         registered = False
         failures = 0
+        self._transition(registration, "starting")
         try:
             while True:
                 operation = "register" if not registered else "heartbeat"
@@ -154,6 +193,7 @@ class ModuleRegistryClient:
                         await self.register(registration)
                         registered = True
                         failures = 0
+                        self._transition(registration, "registered")
                         logger.info(
                             "模块注册成功: module=%s instance_id=%s role=%s",
                             registration.module_name,
@@ -169,13 +209,34 @@ class ModuleRegistryClient:
                 except Exception as exc:
                     failures += 1
                     self._log_failure(operation, registration, exc)
+                    if not self._retryable(exc, heartbeat=operation == "heartbeat"):
+                        error_code = exc.error_code if isinstance(exc, ModuleRegistryAPIError) else ""
+                        self._transition(
+                            registration,
+                            "failed",
+                            error_code or ("module_heartbeat_failed" if operation == "heartbeat" else "module_registration_failed"),
+                        )
+                        raise
                     if operation == "heartbeat":
+                        self._transition(registration, "recovering", "system_registration_unavailable")
                         registered = False
                         failures = 0
                         continue
-                    await asyncio.sleep(min(float(failures * 5), 20.0))
+                    await asyncio.sleep(min(float(2 ** (failures - 1)), 10.0))
         finally:
             await self._deregister_safely(registration.module_name, registration.instance_id)
+            if self.snapshot(registration).state != "failed":
+                self._transition(registration, "stopped")
+
+    @staticmethod
+    def _retryable(exc: Exception, *, heartbeat: bool) -> bool:
+        if isinstance(exc, ModuleRegistryAPIError):
+            if heartbeat and exc.status_code == 404:
+                return True
+            return exc.status_code == 429 or exc.status_code >= 500
+        if isinstance(exc, ServiceTokenError):
+            return exc.retryable
+        return isinstance(exc, (httpx.TransportError, TimeoutError))
 
     async def _request(
         self,

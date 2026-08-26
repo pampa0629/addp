@@ -270,6 +270,8 @@ Transfer 的内部任务语义统一收敛为同步执行。阶段 1 对外只�
 
 Model 的 `materialization_prepare` 与 `materialization_publish` 以已审批 LogicalTable 作为来源驱动任务定义，task ID 均为 LogicalTable ID。两者都不接受动态 `batch_id` 作为必填执行参数：prepare 创建批次；publish 按当前 execution 的 Tenant、Actor、`parent_execution_id` 和 LogicalTable ID 解析唯一 prepared 批次。Orchestrator 编排中的 Develop、Quality 和 publish 必须通过同一父 execution 血缘解析批次，不得用空默认值绕过 `execution_contract`，不得把 Schema、表名或 DDL 作为 Step 参数。prepare 可以在稳定 execution outputs 中返回 `batch_id` 供审计和诊断，但下游业务步骤不能据此绕过 Model 的执行域校验。
 
+Develop 为 Model 物化 staging 计算数据时，保存的 `query` 任务必须在 `execution_config.materialization_target.logical_table_id` 静态绑定唯一 LogicalTable；该字段不进入 TaskProvider input contract，Orchestrator 不能覆盖。此类任务的 `content.query` 必须是单条只读 `SELECT`，Develop 通过 Model Client 以当前父 execution 解析 staging，并在服务端编译为 `INSERT INTO <quoted staging> (<approved columns>) <select>`。不得提供标识符模板、表名参数或允许用户提交完整 `INSERT` 的第二路线。第一阶段只支持 staging 与查询 Engine 相同；Develop 必须校验 `execution_config.engine_id` 与上下文 `engine_id` 相等，并从父 execution 派生 `read + write` effects，DDL effect 仍只由 Model 使用。
+
 Transfer `sync` 的稳定语义由以下正交维度表达：
 
 | 维度 | 字段 | 稳定取值 |
@@ -580,7 +582,7 @@ Graph 的 `kg_build` 任务定义由 `graph.build_tasks` 保存。`graph.build_t
 
 Develop 的任务类型按开发方式划分为 `query`、`workflow`、`script`。`script` 表示命令式代码开发任务，当前可由 Jupyter Notebook runtime 承载；`notebook` 只是脚本开发的实现形态和 UI 入口，不作为独立 `task_type` 声明，不进入 TaskProvider capabilities。
 
-Develop 的 `develop.dev_tasks.content` 必须使用规范字段：`query` 使用 `content.query` 和 `content.query_type`，执行目标统一写入 `execution_config.engine_id` 并指向 System 中具备 query 能力的真实 Engine；DuckDB 联邦查询绑定平台内置 DuckDB Runtime Engine，不使用独立模式字段或虚拟 Engine。`workflow` 使用 `content.workflow_definition` 和可选 `content.inputs`，执行目标只写 `execution_config.engine_id` 指向具体工作流运行时实例，不写 `execution_config.engine_type`，运行时类型必须由后端按该实例 ID 从 System 查询；`script` 的 Notebook 形态使用 `content.notebook_path`。Develop 的 ad-hoc 临时执行同样必须提交 `execution_config`，不得使用顶层 `engine_id` 表达查询目标。`/develop/engines` 统一返回 System 中具备 query 能力的真实 Engine Instance，不提供 Develop 私有查询模式或 `id=0` 虚拟 Engine。不得再新增或消费 `content.sql`、`content.workflow_def`、`content.input_data`、`execution_config.data_source_id` 等旧字段。
+Develop 的 `develop.dev_tasks.content` 必须使用规范字段：`query` 使用 `content.query` 和 `content.query_type`，执行目标统一写入 `execution_config.engine_id` 并指向 System 中具备 query 能力的真实 Engine；Model staging 托管写入可以额外保存 `execution_config.materialization_target.logical_table_id`，但不得保存 staging、Schema 或物理表名。DuckDB 联邦查询绑定平台内置 DuckDB Runtime Engine，不使用独立模式字段或虚拟 Engine。`workflow` 使用 `content.workflow_definition` 和可选 `content.inputs`，执行目标只写 `execution_config.engine_id` 指向具体工作流运行时实例，不写 `execution_config.engine_type`，运行时类型必须由后端按该实例 ID 从 System 查询；`script` 的 Notebook 形态使用 `content.notebook_path`。Develop 的 ad-hoc 临时执行同样必须提交 `execution_config`，不得使用顶层 `engine_id` 表达查询目标，且不得声明 Model staging 托管写入。`/develop/engines` 统一返回 System 中具备 query 能力的真实 Engine Instance，不提供 Develop 私有查询模式或 `id=0` 虚拟 Engine。不得再新增或消费 `content.sql`、`content.workflow_def`、`content.input_data`、`execution_config.data_source_id` 等旧字段。
 
 查询工作台的即时执行固定使用 `POST /api/v1/develop/executions` 创建 ad-hoc execution，写入 `module=develop`、`task_type=query`、`source=develop`、`source_task_id=null`，并在 `execution_config` 保存 `content`、目标 `engine_id`、语言和 timeout 快照。前端通过 `GET /api/v1/develop/executions/{execution_id}` 回查状态和结果。不得保留直接执行并同步返回结果的 `/develop/execute` 或其他旁路。查询结果只能保存受限预览，并明确记录 `result_limit`、`truncated` 和 capability 驱动的 `result_kind`；完整无界结果不得写入 execution metadata。
 
@@ -929,7 +931,7 @@ Monitor 不拥有任务定义。Monitor 聚合观察：
 | artifact state | owner 模块状态 API | 产物是否 ready、缓存位置、版本、失败原因 |
 | provider health | System TaskProvider / module health / 标准任务列表 endpoint | 模块是否声明 TaskProvider 角色、当前是否可调用、无副作用任务发现 endpoint 是否可访问 |
 
-Monitor 可以查询 owner 模块公开的只读状态 API，但不得直接依赖 owner 私有表结构。provider health 不新增 TaskProvider 专用 health endpoint，应复用模块 `/health` 与标准 `GET /tasks?task_type=` 这类无副作用 endpoint 做探活。
+Monitor 可以查询 owner 模块公开的只读状态 API，但不得直接依赖 owner 私有表结构。provider health 不新增 TaskProvider 专用 health endpoint，应复用模块 `/health/ready` 与标准 `GET /tasks?task_type=` 这类无副作用 endpoint 做探活。
 
 provider health 至少检查以下内容：
 
@@ -937,7 +939,7 @@ provider health 至少检查以下内容：
 | --- | --- | --- |
 | registration | System `module_definitions.task_provider` | 模块是否声明 provider 并具备基础 endpoint。 |
 | capabilities | System `module_definitions.task_provider.capabilities` | JSON 是否可解析、`schema_version` 是否为 `task.capabilities/v2`、`task_capabilities[]` 是否非空。 |
-| backend_health | 每个 `provider.backends[].base_url + /health` | 当前有效端点池中的每个 Backend 实例是否可访问。 |
+| backend_health | 每个 `provider.backends[].base_url + /health/ready` | 当前有效端点池中的每个 Backend 实例是否可接受平台工作。 |
 | task_discovery | 每个 `provider.backends[].base_url + task_list_endpoint + ?task_type=` | 每个 Backend 实例上、每个未 deprecated task type 的标准任务发现 endpoint 是否可访问，且响应体必须是标准任务列表对象，包含 `items`、`total`、`page`、`page_size`。 |
 
 System 返回 `available=false` 或空 `backends[]` 时，Monitor 直接判定 Provider `down`，不对空地址发起探测；`available=true` 时逐个检查当前端点池，再聚合 Provider 状态。provider health 状态只使用：

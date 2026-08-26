@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/authorization/authtest"
+	"github.com/addp/common/modulelifecycle"
 	developauthorization "github.com/addp/develop/backend/internal/authorization"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/repository"
@@ -45,7 +46,7 @@ func TestAssetDiscoverableRouteAuthenticationAndTenantContract(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.SystemServiceURL = systemServer.URL
 	devTaskService := developservice.NewDevTaskService(repository.NewDevTaskRepository(db), nil)
-	router := SetupRouter(cfg, db, nil, nil, nil, nil, nil, nil, nil, devTaskService, nil)
+	router := SetupRouter(cfg, db, nil, nil, nil, nil, nil, nil, nil, devTaskService, nil, modulelifecycle.NewStandalone("develop"))
 
 	authtest.AssertAssetDiscoverableContract(t, router, "/api/v1/develop/assets/discoverable", "tenant-seven")
 }

@@ -18,6 +18,7 @@ type ModuleDiscovery struct {
 	backendPools map[string][]moduleBackend
 	nextBackend  map[string]uint64
 	revision     int64
+	hasSnapshot  bool
 	mu           sync.RWMutex
 	ctx          context.Context
 	cancel       context.CancelFunc
@@ -142,9 +143,16 @@ func (md *ModuleDiscovery) refreshModules(wait time.Duration) error {
 	md.modules = newModules
 	md.backendPools = newBackendPools
 	md.revision = snapshot.Revision
+	md.hasSnapshot = true
 
 	fmt.Printf("模块路由快照已应用: revision=%d, active_modules=%d\n", md.revision, len(md.modules))
 	return nil
+}
+
+func (md *ModuleDiscovery) HasSnapshot() bool {
+	md.mu.RLock()
+	defer md.mu.RUnlock()
+	return md.hasSnapshot
 }
 
 func selectRoutableBackends(module *client.ModuleInfo, now time.Time) []client.ModuleRuntimeInstanceInfo {

@@ -1,6 +1,6 @@
 # ADDP 模块启动、就绪与注册治理待办
 
-> 状态：启动与就绪契约已于 2026-08-25 收口，待完成公共生命周期实现、全模块切换与进程乱序 T4 验收
+> 状态：启动与就绪契约、公共生命周期、全模块切换和专用 Runner 进程乱序编排已于 2026-08-26 完成，剩余首次真实 T4 验收
 
 ## 一、保留边界
 
@@ -26,13 +26,16 @@
 
 ## 三、实现待办
 
-- [ ] 在 `common/` 建立唯一模块生命周期能力，统一 `starting|registered|recovering|failed|stopped` 状态、快照、完成信号、Ready 门禁和健康 DTO。
-- [ ] 在 `common-python` 实现等价契约，Agent/Copilot 不保留私有状态机或不同的重试分类。
-- [ ] 将全部 HTTP Backend 一次性切换为 `/health/live` 与 `/health/ready`，删除 `/health`，并在健康路由之后、业务路由之前安装 Ready 门禁。
-- [ ] Backend 先绑定 Listener 再注册；更新全部 `health_check_url`、Monitor 探测、Gateway 健康语义、Compose/镜像探针、开发启停脚本和 T4 预检。
-- [ ] Worker/Scheduler 未 `registered` 时停止领取新工作；已执行工作仍按 owner execution lease 和授权契约收敛。
-- [ ] 公共客户端只重试连接失败、超时、`429`、`5xx` 和心跳实例缺失；确定性注册拒绝进入 `failed` 并终止进程。
-- [ ] 补齐 T1 状态机、Ready 路由、未就绪业务门禁和 Worker 停止领取测试，并让 `make test-changed` 按共享依赖扩散覆盖全部消费方。
+- [x] 在 `common/` 建立唯一模块生命周期能力，统一 `starting|registered|recovering|failed|stopped` 状态、快照、完成信号、Ready 门禁和健康 DTO。
+- [x] 在 `common-python` 实现等价契约，Agent/Copilot 不保留私有状态机或不同的重试分类。
+- [x] 将全部 HTTP Backend 一次性切换为 `/health/live` 与 `/health/ready`，删除 `/health`，并在健康路由之后、业务路由之前安装 Ready 门禁。
+- [x] Backend 先绑定 Listener 再注册；更新全部 `health_check_url`、Monitor 探测、Gateway 健康语义、Compose/镜像探针、开发启停脚本和 T4 预检。
+- [x] Worker/Scheduler 未 `registered` 时停止领取新工作；已执行工作仍按 owner execution lease 和授权契约收敛。
+- [x] 公共客户端只重试连接失败、超时、`429`、`5xx` 和心跳实例缺失；确定性注册拒绝进入 `failed` 并终止进程。
+- [x] 补齐 T1 状态机、Ready 路由、未就绪业务门禁和 Worker/Scheduler 停止领取测试，并让 `make test-changed` 按共享依赖扩散覆盖全部消费方。
+- [x] 专用 Runner 使用受 `ADDP_ONLINE_HOST=1` 保护的正式进程入口，依次验证 Manager 先 Alive/Not Ready、System 后启动、Gateway 后启动、System 中断与同 `instance_id` 自动恢复；各阶段向仓库外证据目录写入独立 JSON。
+
+2026-08-26 本地验证已通过 `make test-platform`、包含全部 22 个受影响模块和 PostgreSQL T2 的 `make test-changed`，以及包含正式进程编排、安全拒绝和失败清理的 `make test-online-runner`。System IAM 中原先按 Orchestrator 角色全部权限统计的脆弱断言已收窄为五个精确角色权限绑定，不再与后续 Model TaskProvider 权限迁移耦合。本地确定性证据不能替代下方专用 Runner T4。
 
 ## 四、剩余 T4 验收
 
@@ -43,6 +46,8 @@
 - [ ] 自动验证模块租约失效与重新注册、Engine Instance 离线与恢复均不要求重启消费方。
 
 进程乱序场景必须由专用部署真实控制进程生命周期；不得以本地人工操作、Mock 或仅调用注册 API 冒充部署恢复证据。首次 Online 通过后再开放夜间触发。
+
+`module-registry-recovery` 的 Host Gate 已实现唯一进程顺序：Manager 正式 Backend → System → Gateway → 停止 System → 恢复 System。观测器验证 Manager 的 Liveness、Readiness、业务门禁和 `instance_id`，并验证 Gateway 路由随租约出现、消失和恢复；随后优雅停止正式 Manager，再运行原有幂等、双实例、发布元数据、注销和零残留套件。前三项中的模块进程乱序与中断恢复已经具备编排代码，只缺 `addp-online` 专用 Runner 的首次真实报告；全量页面首次访问和 Engine Instance 离线恢复仍是独立的后续 T4 场景，不能由本套件代替。
 
 ## 五、最小门禁
 

@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 48
+manifest_version: 51
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -403,6 +403,8 @@ roles:
     permissions:
       - develop.data_ddl.execute
       - develop.data_read.execute
+      - develop.data_write.execute
+      - develop.task.execute
       - model.dw_layer.create
       - model.dw_layer.delete
       - model.dw_layer.read
@@ -509,6 +511,7 @@ roles:
     permissions:
       - meta.catalog.read
       - meta.scan_task.execute
+      - model.materialization_context.read
       - system.engine_descriptor.read
       - system.execution_authorization.execute
       - system.notebook_session_authorization.execute
@@ -730,6 +733,8 @@ roles:
     permissions:
       - develop.task_provider.execute
       - develop.task_provider.read
+      - model.task_provider.execute
+      - model.task_provider.read
       - system.task_authorization.execute
   - key: tenant.pointcloud_runtime
     role_type: tenant_builtin

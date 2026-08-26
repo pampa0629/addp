@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +16,31 @@ import (
 
 	"github.com/addp/common/models"
 )
+
+func TestModuleRegistryRetryClassificationIsAnExplicitAllowlist(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		err       error
+		heartbeat bool
+		want      bool
+	}{
+		{name: "local contract error", err: errors.New("encode registration"), want: false},
+		{name: "network error", err: &url.Error{Op: "Post", URL: "http://system", Err: context.DeadlineExceeded}, want: true},
+		{name: "retryable token error", err: &ServiceTokenError{Code: "unavailable", Retryable: true}, want: true},
+		{name: "deterministic token error", err: &ServiceTokenError{Code: "rejected"}, want: false},
+		{name: "registration 429", err: &SystemAPIError{StatusCode: http.StatusTooManyRequests}, want: true},
+		{name: "registration 400", err: &SystemAPIError{StatusCode: http.StatusBadRequest}, want: false},
+		{name: "heartbeat 404", err: &SystemAPIError{StatusCode: http.StatusNotFound}, heartbeat: true, want: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := moduleRegistryErrorRetryable(test.err, test.heartbeat); got != test.want {
+				t.Fatalf("moduleRegistryErrorRetryable() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
 
 func TestRegisterRuntimeEngineUsesPlatformBearer(t *testing.T) {
 	t.Parallel()

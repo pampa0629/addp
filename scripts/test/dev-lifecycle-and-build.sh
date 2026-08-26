@@ -249,10 +249,10 @@ EOF
   [ "$(cat "$workspace/.dev-bins/addp-service")" = "old-binary" ] || fail "source-changing build replaced existing binary"
 }
 
-test_all_go_health_routes_use_buildinfo() {
+test_all_go_health_routes_use_module_lifecycle() {
   local health_route_count buildinfo_route_count
-  health_route_count=$(rg -l 'router\.GET\("/health"' "$ROOT_DIR" --glob '*.go' --glob '!**/*_test.go' | wc -l | tr -d ' ')
-  buildinfo_route_count=$(rg -l 'router\.GET\("/health"' "$ROOT_DIR" --glob '*.go' --glob '!**/*_test.go' | xargs rg -l 'buildinfo\.Health' | wc -l | tr -d ' ')
+  health_route_count=$(rg -l 'RegisterHealthRoutes\(router\)' "$ROOT_DIR" --glob '*.go' --glob '!**/*_test.go' | wc -l | tr -d ' ')
+  buildinfo_route_count=$(rg -l 'RegisterHealthRoutes\(router\)' "$ROOT_DIR" --glob '*.go' --glob '!**/*_test.go' | xargs rg -l 'modulelifecycle' | wc -l | tr -d ' ')
   [ "$health_route_count" -gt 0 ] || fail "no Go health routes found"
   [ "$buildinfo_route_count" = "$health_route_count" ] || fail "health routes using buildinfo = $buildinfo_route_count, want $health_route_count"
 }
@@ -267,6 +267,6 @@ test_atomic_build_does_not_replace_binary_on_failure
 test_atomic_build_embeds_identity_and_replaces_binary
 test_interrupted_build_removes_temporary_binary
 test_atomic_build_rejects_source_change
-test_all_go_health_routes_use_buildinfo
+test_all_go_health_routes_use_module_lifecycle
 
 echo "PASS: dev lifecycle lock and atomic build tests"

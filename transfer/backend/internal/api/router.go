@@ -1,9 +1,6 @@
 package api
 
 import (
-	"net/http"
-
-	"github.com/addp/common/modulelifecycle"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
 	commonAuth "github.com/addp/common/middleware/auth"
@@ -11,6 +8,7 @@ import (
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/middleware/logging"
 	"github.com/addp/common/middleware/requestid"
+	"github.com/addp/common/modulelifecycle"
 	_ "github.com/addp/transfer/docs"
 	_ "github.com/addp/transfer/i18n"
 	transferauthorization "github.com/addp/transfer/internal/authorization"

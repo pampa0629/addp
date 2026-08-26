@@ -214,6 +214,42 @@ func (r *MaterializationBatchRepository) GetByID(ctx context.Context, id string,
 	return &batch, err
 }
 
+func (r *MaterializationBatchRepository) ResolvePreparedByParentExecution(
+	ctx context.Context,
+	tenantID, logicalTableID int64,
+	parentExecutionID string,
+) (*models.MaterializationBatch, error) {
+	var batches []models.MaterializationBatch
+	err := r.db.WithContext(ctx).
+		Table("model.materialization_batches AS batch").
+		Select("batch.*").
+		Joins("JOIN common.task_executions AS prepare_execution ON prepare_execution.execution_id = batch.prepare_execution_id").
+		Joins("JOIN common.task_executions AS parent_execution ON parent_execution.execution_id = prepare_execution.parent_execution_id").
+		Where(`batch.tenant_id = ? AND batch.logical_table_id = ? AND batch.status = ?
+			AND prepare_execution.tenant_id = batch.tenant_id
+			AND prepare_execution.parent_execution_id = ?
+			AND prepare_execution.status = ?
+			AND parent_execution.tenant_id = batch.tenant_id
+			AND parent_execution.module = ?
+			AND parent_execution.status = ?
+			AND prepare_execution.actor_principal_id = parent_execution.actor_principal_id
+			AND prepare_execution.actor_tenant_membership_id = parent_execution.actor_tenant_membership_id`,
+			tenantID, logicalTableID, models.MaterializationBatchPrepared,
+			parentExecutionID, commonExecution.ExecutionStatusSuccess,
+			commonExecution.ModuleOrchestrator, commonExecution.ExecutionStatusRunning).
+		Order("batch.created_at DESC").Limit(2).Find(&batches).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(batches) == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	if len(batches) != 1 {
+		return nil, fmt.Errorf("%w: multiple prepared materialization batches match execution lineage", commonAPI.ErrConflict)
+	}
+	return &batches[0], nil
+}
+
 func (r *MaterializationBatchRepository) RecoverExpiredExecutions(ctx context.Context, taskType string, now time.Time) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		items, err := commonExecution.FindExpiredForUpdate(ctx, tx, commonExecution.ExpiredOptions{

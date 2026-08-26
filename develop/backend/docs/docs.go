@@ -3582,6 +3582,9 @@ const docTemplate = `{
                 "engine_specific": {
                     "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.WorkflowEngineSpecificConfigSwagger"
                 },
+                "materialization_target": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.MaterializationTargetSwagger"
+                },
                 "type": {
                     "type": "string",
                     "example": "workflow"
@@ -3931,6 +3934,15 @@ const docTemplate = `{
                 "total": {
                     "type": "integer",
                     "example": 1
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.MaterializationTargetSwagger": {
+            "type": "object",
+            "properties": {
+                "logical_table_id": {
+                    "type": "integer",
+                    "example": 3
                 }
             }
         },

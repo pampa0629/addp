@@ -3,6 +3,7 @@ package continuous
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -10,6 +11,43 @@ import (
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/repository"
 )
+
+func TestSupervisorDoesNotClaimUntilRegistrationGateRecovers(t *testing.T) {
+	store := &fakeLeaseStore{
+		claim: &repository.RuntimeLeaseClaim{
+			Task:      models.TransferTask{ID: 46, DesiredState: models.TaskDesiredStateRunning},
+			Execution: commonExecution.TaskExecution{ExecutionID: "exec-46", Status: commonExecution.ExecutionStatusRunning},
+			Lease:     models.RuntimeLease{TaskID: 46, OwnerInstanceID: "worker-a", FencingToken: 11},
+		},
+		claimCalled: make(chan struct{}, 1),
+		finished:    make(chan finishCall, 1),
+	}
+	var registered atomic.Bool
+	supervisor, err := NewSupervisor(store, SessionRunnerFunc(func(context.Context, repository.RuntimeLeaseClaim) error {
+		return nil
+	}), Config{
+		OwnerInstanceID: "worker-a", Capacity: 1, LeaseDuration: time.Second,
+		HeartbeatInterval: 100 * time.Millisecond, ClaimInterval: 5 * time.Millisecond,
+	}, nil)
+	if err != nil {
+		t.Fatalf("NewSupervisor() error = %v", err)
+	}
+	supervisor.SetClaimGate(registered.Load)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = supervisor.Run(ctx) }()
+	select {
+	case <-store.claimCalled:
+		t.Fatal("supervisor claimed work while registration was unavailable")
+	case <-time.After(30 * time.Millisecond):
+	}
+	registered.Store(true)
+	select {
+	case <-store.claimCalled:
+	case <-time.After(time.Second):
+		t.Fatal("supervisor did not resume claims after registration recovered")
+	}
+}
 
 func TestSupervisorCancelsSessionWhenDesiredStateStopsRenewal(t *testing.T) {
 	store := &fakeLeaseStore{
@@ -173,9 +211,16 @@ type fakeLeaseStore struct {
 	claim        *repository.RuntimeLeaseClaim
 	desiredState models.TaskDesiredState
 	finished     chan finishCall
+	claimCalled  chan struct{}
 }
 
 func (f *fakeLeaseStore) ClaimNext(context.Context, string, time.Time, time.Duration) (*repository.RuntimeLeaseClaim, error) {
+	if f.claimCalled != nil {
+		select {
+		case f.claimCalled <- struct{}{}:
+		default:
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	claim := f.claim

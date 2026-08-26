@@ -21,6 +21,7 @@ scripts/dev/
 ├── README.md          # 本文件
 ├── start.sh           # 启动完整开发环境(后台运行)
 ├── stop.sh            # 停止所有开发服务
+├── stop-exact-process.sh # 仅供 addp-online T4 精确停止正式进程
 ├── restart.sh         # 智能重启服务；纯扩展服务参数支持局部重启
 ├── keepalive.sh       # 托管命令环境前台保活入口
 ├── modtidy.sh         # 清理 Go 模块依赖
@@ -82,6 +83,8 @@ bash scripts/dev/modtidy.sh
 
 指定单个模块启动时，脚本仍会统一启动公共依赖：System Backend、Meta Backend、Meta Worker、Gateway 和 Console。模块自己的前端和真实模块依赖在此基础上按需启动，例如 `-manager` 会额外启动 Transfer Backend / Worker。Engine Runtime 不属于模块启动依赖：`-manager`、`-develop`、`-service`、`-agent`、`-copilot`、`-gateway`、`-console` 都不会隐式拉起 DuckDB、Inference、Workflow 或 Jupyter Runtime；需要本地运行某个 Runtime 时使用其显式参数。无参数全量启动仍包含默认部署的 Runtime。SuperMap Workflow Engine 依赖预先构建的 iObjects C++ 基础镜像和许可，当前通过 System 引擎管理手动登记。
 
+`--exact-process` 与 `--wait-live` 不是日常开发参数，只允许 `ADDP_ONLINE_HOST=1` 的专用 Runner 使用。它们复用同一构建和正式二进制入口，只为 T4 控制 Manager → System → Gateway 的真实乱序；`stop-exact-process.sh` 同样受专用主机开关保护，并在发信号前验证 PID 对应目标 ADDP 二进制。普通模块启动仍只有上述自动依赖路径。
+
 **执行步骤**:
 1. **Step 0**: Go 依赖检查(`go mod tidy`,可跳过)
 2. **Step 1**: 启动基础设施(调用 `scripts/infra/up.sh`)
@@ -95,7 +98,7 @@ bash scripts/dev/modtidy.sh
    - Transfer bounded Worker + Transfer continuous Worker + Meta Worker
    - Orchestrator Backend (8084)
    - Gateway (8000) - API 路由
-4. **健康检查**: 等待所有 /health 返回 200
+4. **就绪检查**: ADDP Backend 等待 `/health/ready` 返回 200；Engine Runtime 使用各自协议的 `/health`
 5. **Step 8**: 启动前端服务(Console, System, Manager, Meta, Transfer, Orchestrator)
 6. **输出**: 显示所有访问地址和 PID
 
@@ -269,7 +272,7 @@ go run cmd/server/main.go
 ps aux | grep "go run"
 
 # 2. 手动测试健康检查
-curl http://localhost:8180/health
+curl http://localhost:8180/health/ready
 
 # 3. 查看服务日志
 cat logs/system-backend.log

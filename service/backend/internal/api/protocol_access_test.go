@@ -11,6 +11,7 @@ import (
 	"time"
 
 	commonAuth "github.com/addp/common/authorization"
+	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/service/internal/config"
 	"github.com/addp/service/internal/models"
 	serviceInternal "github.com/addp/service/internal/service"
@@ -77,6 +78,7 @@ func TestProtocolRoutesEnforcePrivateServiceTenant(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		modulelifecycle.NewStandalone("service"),
 	)
 
 	tests := []struct {

@@ -22,6 +22,19 @@ type PlatformServiceTokenProvider interface {
 	PlatformToken(ctx context.Context) (string, error)
 }
 
+type ServiceTokenError struct {
+	Code       string
+	StatusCode int
+	Retryable  bool
+}
+
+func (e *ServiceTokenError) Error() string {
+	if e.StatusCode > 0 {
+		return fmt.Sprintf("service token endpoint returned HTTP %d: %s", e.StatusCode, e.Code)
+	}
+	return e.Code
+}
+
 // ServiceTokenInvalidator removes a rejected tenant token from a provider's
 // cache. The rejected token is part of the contract so concurrent callers do
 // not evict a newer token obtained by another request.
@@ -151,36 +164,40 @@ func (s *OAuthServiceTokenSource) token(ctx context.Context, cacheKey string, co
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response, err := s.httpClient.Do(request)
 	if err != nil {
-		return "", fmt.Errorf("request service token: %w", err)
+		return "", &ServiceTokenError{Code: "service_token_unavailable", Retryable: true}
 	}
 	defer response.Body.Close()
 	responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, 8192))
 	if readErr != nil {
-		return "", fmt.Errorf("read service token response: %w", readErr)
+		return "", &ServiceTokenError{Code: "service_token_unavailable", Retryable: true}
 	}
 	if response.StatusCode != http.StatusOK {
+		code := "service_token_rejected"
 		var failure serviceTokenErrorResponse
 		if err := json.Unmarshal(responseBody, &failure); err == nil {
-			code := strings.TrimSpace(failure.ErrorCode)
+			code = strings.TrimSpace(failure.ErrorCode)
 			if code == "" {
 				code = strings.TrimSpace(failure.Error)
 			}
-			if code != "" {
-				return "", fmt.Errorf("service token endpoint returned HTTP %d: %s", response.StatusCode, code)
+			if code == "" {
+				code = "service_token_rejected"
 			}
 		}
-		return "", fmt.Errorf("service token endpoint returned HTTP %d", response.StatusCode)
+		return "", &ServiceTokenError{
+			Code: code, StatusCode: response.StatusCode,
+			Retryable: response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= http.StatusInternalServerError,
+		}
 	}
 	var payload serviceTokenResponse
 	decoder := json.NewDecoder(strings.NewReader(string(responseBody)))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&payload); err != nil {
-		return "", fmt.Errorf("decode service token response: %w", err)
+		return "", &ServiceTokenError{Code: "service token endpoint returned an invalid token response"}
 	}
 	if !strings.HasPrefix(payload.AccessToken, "addp_at_") ||
 		!strings.EqualFold(payload.TokenType, "Bearer") || payload.ExpiresIn <= 0 || payload.ExpiresIn > 300 ||
 		(payload.Scope != "" && payload.Scope != "addp.api") {
-		return "", errors.New("service token endpoint returned an invalid token response")
+		return "", &ServiceTokenError{Code: "service token endpoint returned an invalid token response"}
 	}
 	s.cache[cacheKey] = cachedServiceToken{value: payload.AccessToken, expiresAt: now.Add(time.Duration(payload.ExpiresIn) * time.Second)}
 	return payload.AccessToken, nil

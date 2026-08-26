@@ -15,6 +15,7 @@ import (
 	_ "github.com/addp/common/engine/plugins/builtin/general"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/modulelifecycle"
 	commonRepo "github.com/addp/common/repository"
 	commonRuntimeHealth "github.com/addp/common/runtimehealth"
 	"github.com/addp/transfer/internal/config"
@@ -148,6 +149,8 @@ func main() {
 			"capacity":     cfg.ContinuousWorkerCapacity,
 		},
 	})
+	modulelifecycle.CancelRuntimeOnFatal(registrationDone, stop)
+	supervisor.SetClaimGate(registrationDone.IsRegistered)
 	reporter, err := commonRuntimeHealth.NewReporter(commonRuntimeHealth.NewRepository(db), commonRuntimeHealth.ReporterConfig{
 		InstanceID: owner, Module: commonExecution.ModuleTransfer, Role: commonRuntimeHealth.RoleContinuousWorker,
 		RuntimeName: "continuous_sync", Capacity: cfg.ContinuousWorkerCapacity,
@@ -166,7 +169,7 @@ func main() {
 	logger.L().Info("transfer continuous worker starting", "owner_instance_id", owner, "capacity", cfg.ContinuousWorkerCapacity, "data_plane", "kafka_or_postgresql_cdc_to_postgresql")
 	runErr := supervisor.Run(ctx)
 	stop()
-	<-registrationDone
+	<-registrationDone.Done()
 	if runErr != nil && runErr != context.Canceled {
 		log.Fatalf("continuous supervisor 退出: %v", runErr)
 	}

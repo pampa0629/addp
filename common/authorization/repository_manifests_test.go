@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 350 {
-		t.Fatalf("descriptor count = %d, want 350", len(descriptors))
+	if len(descriptors) != 353 {
+		t.Fatalf("descriptor count = %d, want 353", len(descriptors))
 	}
 	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "transfer.task.update" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
@@ -34,6 +34,10 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.data_architect", []string{"user"})
 	assertRepositoryRoleScopes(t, roles, "tenant.data_architect", []string{"tenant"})
 	assertRepositoryRolePermissions(t, roles, "tenant.data_architect", []string{
+		"develop.data_ddl.execute",
+		"develop.data_read.execute",
+		"develop.data_write.execute",
+		"develop.task.execute",
 		"model.dw_layer.create",
 		"model.dw_layer.delete",
 		"model.dw_layer.read",
@@ -51,10 +55,12 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"model.logical_model.delete",
 		"model.logical_model.read",
 		"model.logical_model.update",
+		"model.materialization.execute",
 		"standard.dimension_hierarchy.read",
 		"standard.domain.read",
 		"standard.element.read",
 		"standard.metric.read",
+		"system.execution_authorization.create",
 	})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.manager_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "tenant.manager_runtime", []string{
@@ -78,6 +84,15 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"standard.domain.read",
 		"standard.element.read",
 		"standard.metric.read",
+		"system.engine_descriptor.read",
+		"system.execution_authorization.execute",
+	})
+	assertRepositoryRolePermissions(t, roles, "tenant.orchestrator_runtime", []string{
+		"develop.task_provider.execute",
+		"develop.task_provider.read",
+		"model.task_provider.execute",
+		"model.task_provider.read",
+		"system.task_authorization.execute",
 	})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.standard_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "tenant.standard_runtime", []string{
@@ -230,6 +245,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "tenant.develop_runtime", []string{
 		"meta.catalog.read",
 		"meta.scan_task.execute",
+		"model.materialization_context.read",
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
 		"system.notebook_session_authorization.execute",

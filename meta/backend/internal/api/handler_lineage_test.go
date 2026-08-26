@@ -11,6 +11,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/modulelifecycle"
 	metaauthorization "github.com/addp/meta/internal/authorization"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/metatest"
@@ -43,7 +44,7 @@ func TestCollectExecutionLineageRouteRequiresDevelopServiceAndIsIdempotent(t *te
 	lineageService := service.NewLineageService(db, engineService)
 	cfg := &config.Config{}
 	cfg.SystemServiceURL = systemServer.URL
-	router := SetupRouter(cfg, db, engineService, scanService, nil, nil, nil, nil, lineageService)
+	router := SetupRouter(cfg, db, engineService, scanService, nil, nil, nil, nil, modulelifecycle.NewStandalone("meta"), lineageService)
 
 	first := performLineageCollectionRequest(router, "execution-1", "develop-token")
 	if first.Code != http.StatusOK {

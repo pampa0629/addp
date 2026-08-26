@@ -73,7 +73,7 @@ Service 是 `service.definition.*`、`service.endpoint.read` 和 `service.extern
 ```bash
 bash scripts/dev/start.sh -service
 bash scripts/dev/restart.sh -service
-curl http://localhost:8086/health
+curl http://localhost:8086/health/ready
 ```
 
 常用日志：

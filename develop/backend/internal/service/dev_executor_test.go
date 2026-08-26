@@ -154,7 +154,7 @@ func TestApplySQLExecutionAuthorizationFactsPersistsOnlyReferencesAndSummary(t *
 	expiresAt := time.Date(2026, 7, 29, 10, 15, 0, 0, time.UTC)
 	execution := &commonExecution.TaskExecution{ExecutionID: "execution-1"}
 	applySQLExecutionAuthorizationFacts(execution, &IssuedSQLExecutionAuthorization{
-		AuthorizationID: 71, Effect: SQLExecutionEffectRead, ActorPrincipalID: 11,
+		AuthorizationID: 71, Effects: []SQLExecutionEffect{SQLExecutionEffectRead}, ActorPrincipalID: 11,
 		ActorTenantMembershipID: 13, IssuedAuthorizationVersion: 17, ExpiresAt: expiresAt,
 	})
 	if execution.ExecutionAuthorizationID == nil || *execution.ExecutionAuthorizationID != 71 ||
@@ -173,6 +173,68 @@ func TestApplySQLExecutionAuthorizationFactsPersistsOnlyReferencesAndSummary(t *
 		if strings.Contains(string(encoded), secretMarker) {
 			t.Fatalf("execution serialization leaked %q: %s", secretMarker, encoded)
 		}
+	}
+}
+
+func TestPrepareContentExecutionRejectsManagedMaterialization(t *testing.T) {
+	executor := &DevExecutor{}
+	_, err := executor.prepareContentExecution(
+		context.Background(), commonExecution.TaskTypeQuery,
+		map[string]interface{}{"query": "SELECT 1", "query_type": "sql"},
+		map[string]interface{}{
+			"engine_id":              12,
+			"materialization_target": map[string]interface{}{"logical_table_id": 3},
+		},
+		nil, 7, 11, "addp_at_user", commonExecution.TriggerTypeManual, 60,
+	)
+	if err == nil || !strings.Contains(err.Error(), "只能通过已保存任务的 Orchestrator 执行") {
+		t.Fatalf("expected ad-hoc managed materialization rejection, got %v", err)
+	}
+}
+
+func TestResolveMaterializationWriteContextAndCompileSQL(t *testing.T) {
+	parentExecutionID := uuid.New()
+	batchID := uuid.New().String()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != "/api/v1/model/materialization-write-contexts/resolve" ||
+			request.Header.Get("Authorization") != "Bearer addp_at_develop" || request.Header.Get("X-Tenant-ID") != "" {
+			t.Fatalf("invalid Model request: method=%s path=%s headers=%#v", request.Method, request.URL.Path, request.Header)
+		}
+		var payload commonClient.MaterializationWriteContextRequest
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.ParentExecutionID != parentExecutionID.String() || payload.LogicalTableID != 3 {
+			t.Fatalf("payload = %#v", payload)
+		}
+		_ = json.NewEncoder(w).Encode(commonClient.MaterializationWriteContext{
+			BatchID: batchID, EngineID: 12,
+			StagingLocator: "addp://engine/12/path/analytics/result%22stage?type=table",
+			WriteColumns:   []string{"person_id", "display\"name"},
+		})
+	}))
+	defer server.Close()
+
+	executor := &DevExecutor{
+		modelClient: commonClient.NewModelClient(server.URL, staticServiceTokenSource("addp_at_develop"), server.Client()),
+		sqlEngine:   NewSQLEngineService(&config.Config{}, nil, nil),
+	}
+	writeContext, err := executor.resolveMaterializationWriteContext(
+		context.Background(), 7, parentExecutionID,
+		&models.DevTask{
+			DevType:         commonExecution.TaskTypeQuery,
+			Content:         models.DevTaskContent{"query": "SELECT person_id, display_name FROM source", "query_type": "sql"},
+			ExecutionConfig: models.DevTaskContent{"engine_id": 12},
+		},
+		3,
+	)
+	if err != nil {
+		t.Fatalf("resolveMaterializationWriteContext() error = %v", err)
+	}
+	compiled := compileMaterializationWriteSQL(writeContext.StagingLocator, writeContext.WriteColumns, "SELECT person_id, display_name FROM source;")
+	want := `INSERT INTO "analytics"."result""stage" ("person_id", "display""name") SELECT person_id, display_name FROM source`
+	if compiled != want {
+		t.Fatalf("compiled SQL = %q, want %q", compiled, want)
 	}
 }
 

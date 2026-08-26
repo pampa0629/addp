@@ -36,7 +36,6 @@ EXPLICIT_RUNTIME_CASES = {
 
 RUNTIME_COMPOSE_SERVICES = {
     "duckdb-engine",
-    "inference-backend",
     "jupyter-engine",
     "geopython-workflow-engine",
     "math-workflow-engine",
@@ -115,7 +114,7 @@ def validate_module_registration_lifecycle(repository: Path) -> list[str]:
             continue
         for match in matches:
             lifecycle = match.group("lifecycle")
-            if not re.search(rf"<-\s*{re.escape(lifecycle)}\b", source):
+            if not re.search(rf"<-\s*{re.escape(lifecycle)}\.Done\(\)", source):
                 errors.append(f"{relative} does not wait for {lifecycle} before exiting")
 
     if call_count == 0:
@@ -124,7 +123,7 @@ def validate_module_registration_lifecycle(repository: Path) -> list[str]:
     client_path = repository / "common/client/system_service.go"
     client_source = client_path.read_text(encoding="utf-8")
     if not re.search(
-        r"func \(c \*SystemServiceClient\) RegisterAndHeartbeat\([^)]*\) <-chan struct\{\}",
+        r"func \(c \*SystemServiceClient\) RegisterAndHeartbeat\([^)]*\) \*ModuleRegistrationLifecycle",
         client_source,
     ):
         errors.append("common/client/system_service.go does not expose lifecycle completion")

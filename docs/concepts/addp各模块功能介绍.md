@@ -69,7 +69,7 @@
 - 基于路径前缀的请求路由（`/api/v1/system/*` → System Backend）
 - CORS 跨域支持
 - 请求头、正文、查询参数透明转发
-- 健康检查端点（`/health`）
+- 存活与就绪端点（`/health/live`、`/health/ready`）
 
 **端口**：
 - Gateway：8000

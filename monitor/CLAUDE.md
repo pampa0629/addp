@@ -33,7 +33,7 @@ monitor/
 - Monitor 是 `monitor.execution.*`、`monitor.health.read` 和 `monitor.statistics.*` 的 Permission owner；定义只存在于 `authorization/permissions.yaml`，通过 `common/authorization` 发布期聚合，不在服务启动时动态注册。
 - 路由前缀：`/api/v1/monitor`。
 - 主要接口：`GET /executions`、`GET /executions/:id`、`GET /executions/stats`、`GET /executions/trend`、`GET /executions/runtime-metrics`、`GET /runtime-instances/health`、`GET /alerts`、`GET /alert-rule-targets`、`GET/POST/PATCH/DELETE /alert-rules`、`GET/POST/PATCH/DELETE /webhook-destinations`、`GET /webhook-deliveries`、`GET/POST/PATCH/DELETE /email-destinations`、`GET /email-deliveries`、`GET /providers/health`、`GET /providers/:module/health`。
-- provider health 从 System 读取模块定义中的 TaskProvider 声明及当前有效 Backend 实例池，逐实例复用模块 `/health` 与标准 `GET /tasks?task_type=` 做无副作用探活，再聚合 Provider 状态；Monitor 不挑选单一固定地址、不复制 capabilities、不修复模块声明、不读取 owner 私有表。
+- provider health 从 System 读取模块定义中的 TaskProvider 声明及当前有效 Backend 实例池，逐实例复用模块 `/health/ready` 与标准 `GET /tasks?task_type=` 做无副作用探活，再聚合 Provider 状态；Monitor 不挑选单一固定地址、不复制 capabilities、不修复模块声明、不读取 owner 私有表。
 - Transfer continuous 的 lag、retention health 与 checkpoint health 来自 `common.task_executions.metadata.continuous.diagnostics`；数据库 CDC 的源恢复窗口和事务观测来自 `metadata.continuous.capture`。Monitor 列表和详情只展示 owner 已写入的安全事实，并可无状态派生 recovery/retention/checkpoint/source recovery/source transaction availability 观测信号，不直连业务 Kafka 或源数据库，不读取 `transfer.sync_states`、`transfer.runtime_leases` 或 `transfer.capture_resources`。事务活跃数、持续时间和 Undo 用量没有平台阈值，不自行派生告警。观测信号不是持久化告警事件或通知状态。
 - Monitor 拥有 `monitor.alert_incidents` 告警生命周期；每个 continuous 任务只消费最新根 execution 的公共 metadata。最新 execution 为 `pending|running` 时派生运行观测信号；仅当这个最新 execution 自身为 `failed` 且 `metadata.continuous.schema_change.status=pending` 时派生数据库 CDC schema blocked 信号。更晚的 execution 会覆盖历史失败事实，使旧告警自动恢复。确认和抑制不得改写 owner 事实，同一告警身份同时最多一个未恢复事件。Monitor 不读取 `transfer.schema_change_requests`。
 - Webhook v1 使用 `monitor.alert_events` 保存不可变 `opened|escalated|resolved` 生命周期事件，使用 `monitor.webhook_deliveries` 作为 per-destination outbox。incident/event/delivery 同事务写入，dispatcher 在事务外按至少一次语义发送；签名 secret 使用平台 `ENCRYPTION_KEY` 加密且不通过 API 返回。
@@ -58,7 +58,7 @@ monitor/
 ```bash
 bash scripts/dev/start.sh -monitor
 bash scripts/dev/restart.sh -monitor
-curl http://localhost:8100/health
+curl http://localhost:8100/health/ready
 ```
 
 API 或路由变更后运行：

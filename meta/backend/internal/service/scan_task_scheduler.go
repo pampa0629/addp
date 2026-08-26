@@ -11,10 +11,15 @@ const schedulePollInterval = time.Minute
 type ScanTaskScheduler struct {
 	taskService      *ScanTaskService
 	executionService *ScanExecutionService
+	claimGate        func() bool
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
 	wg       sync.WaitGroup
+}
+
+func (s *ScanTaskScheduler) SetClaimGate(claimGate func() bool) {
+	s.claimGate = claimGate
 }
 
 // NewScanTaskScheduler 创建调度器

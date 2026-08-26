@@ -34,6 +34,8 @@ show_usage() {
   echo "  -duckdb       启动 DuckDB Federated Query Runtime (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -gateway      启动 Gateway (依赖: 所有后端模块)"
   echo "  -console      启动 Console (依赖: 所有模块)"
+  echo "  --exact-process  仅供 addp-online 专用 Runner 启动单个正式进程"
+  echo "  --wait-live      与 --exact-process 配合，允许业务进程以 Alive/Not Ready 返回"
   echo ""
   echo "说明:"
   echo "  - 指定模块时,会自动启动其依赖的模块"
@@ -230,7 +232,10 @@ detect_spark_workflow_shared_host() {
 
 # 解析命令行参数
 SELECTED_MODULE=""
+SELECTED_MODULE_COUNT=0
 START_ALL=true
+EXACT_PROCESS=false
+WAIT_LIVE=false
 
 for arg in "$@"; do
   case $arg in
@@ -239,7 +244,14 @@ for arg in "$@"; do
       ;;
     -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-inference|-standard|-model|-quality|-asset|-portal|-graph|-geopython-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-spark-workflow|-jupyter|-duckdb|-gateway|-console)
       SELECTED_MODULE="${arg#-}"
+      SELECTED_MODULE_COUNT=$((SELECTED_MODULE_COUNT + 1))
       START_ALL=false
+      ;;
+    --exact-process)
+      EXACT_PROCESS=true
+      ;;
+    --wait-live)
+      WAIT_LIVE=true
       ;;
     *)
       echo -e "${RED}❌ 未知参数: $arg${NC}"
@@ -247,6 +259,28 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+if [ "$EXACT_PROCESS" = true ]; then
+  [ "${ADDP_ONLINE_HOST:-}" = "1" ] || {
+    echo "❌ --exact-process 只允许 addp-online 专用 Runner 使用" >&2
+    exit 1
+  }
+  [ "$SELECTED_MODULE_COUNT" -eq 1 ] || {
+    echo "❌ --exact-process 必须且只能选择一个正式进程" >&2
+    exit 1
+  }
+  case "$SELECTED_MODULE" in
+    system|manager|gateway) ;;
+    *)
+      echo "❌ --exact-process 必须且只能选择 -system、-manager 或 -gateway" >&2
+      exit 1
+      ;;
+  esac
+fi
+if [ "$WAIT_LIVE" = true ] && { [ "$EXACT_PROCESS" != true ] || [ "$SELECTED_MODULE" != "manager" ]; }; then
+  echo "❌ --wait-live 只允许与 --exact-process -manager 配合使用" >&2
+  exit 1
+fi
 
 # 定义模块启动标志(默认不启动)
 START_SYSTEM_BACKEND=false
@@ -356,8 +390,21 @@ if [ "$START_ALL" = true ]; then
   START_JUPYTER=true
   START_DUCKDB=true
 else
-  # 根据选择的模块设置依赖
-  case $SELECTED_MODULE in
+  if [ "$EXACT_PROCESS" = true ]; then
+    case "$SELECTED_MODULE" in
+      system)
+        START_SYSTEM_BACKEND=true
+        ;;
+      manager)
+        START_MANAGER_BACKEND=true
+        ;;
+      gateway)
+        START_GATEWAY=true
+        ;;
+    esac
+  else
+    # 根据选择的模块设置依赖
+    case $SELECTED_MODULE in
     system)
       START_SYSTEM_FRONTEND=true
       ;;
@@ -502,11 +549,12 @@ else
       START_GATEWAY=true
       START_CONSOLE=true
       ;;
-  esac
+    esac
 
-  # 单模块开发也统一保留 ADDP 基础服务和 Console 入口。
-  # 各模块前端和 Console 的 /api 代理都经由 Gateway；资源、任务和审计等通用能力依赖 System/Meta。
-  enable_single_module_common_dependencies
+    # 单模块开发也统一保留 ADDP 基础服务和 Console 入口。
+    # 各模块前端和 Console 的 /api 代理都经由 Gateway；资源、任务和审计等通用能力依赖 System/Meta。
+    enable_single_module_common_dependencies
+  fi
 fi
 
 # 显示启动计划
@@ -829,7 +877,7 @@ if [ "$START_SYSTEM_BACKEND" = true ]; then
     echo "等待 System Backend 就绪..."
     MAX_WAIT=60
     WAIT_COUNT=0
-    until curl -f http://localhost:${SYSTEM_PORT}/health > /dev/null 2>&1; do
+    until curl -f http://localhost:${SYSTEM_PORT}/health/ready > /dev/null 2>&1; do
       echo -n "."
       sleep 1
       WAIT_COUNT=$((WAIT_COUNT + 1))
@@ -1173,7 +1221,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   echo "  ${GREEN}✓ 所有服务已启动，等待健康检查...${NC}"
 fi
 
-if [ "$START_MANAGER_BACKEND" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] && [ "$EXACT_PROCESS" != true ]; then
   echo "启动 Raster Mosaic Runtime..."
   RASTER_MOSAIC_RUNTIME_DIR="manager/raster-mosaic-runtime"
   RASTER_MOSAIC_RUNTIME_VENV="${RASTER_MOSAIC_RUNTIME_DIR}/venv"
@@ -1250,7 +1298,11 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   if [ "$START_MANAGER_BACKEND" = true ]; then
     (
       WAIT_COUNT=0
-      until curl -f http://localhost:${MANAGER_BACKEND_PORT}/health > /dev/null 2>&1; do
+      MANAGER_HEALTH_PATH=ready
+      if [ "$WAIT_LIVE" = true ]; then
+        MANAGER_HEALTH_PATH=live
+      fi
+      until curl -f "http://localhost:${MANAGER_BACKEND_PORT}/health/${MANAGER_HEALTH_PATH}" > /dev/null 2>&1; do
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
@@ -1282,7 +1334,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   if [ "$START_META_BACKEND" = true ]; then
     (
       WAIT_COUNT=0
-      until curl -f http://localhost:${META_BACKEND_PORT}/health > /dev/null 2>&1; do
+      until curl -f http://localhost:${META_BACKEND_PORT}/health/ready > /dev/null 2>&1; do
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
@@ -1299,7 +1351,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   if [ "$START_TRANSFER_BACKEND" = true ]; then
     (
       WAIT_COUNT=0
-      until curl -f http://localhost:${TRANSFER_BACKEND_PORT}/health > /dev/null 2>&1; do
+      until curl -f http://localhost:${TRANSFER_BACKEND_PORT}/health/ready > /dev/null 2>&1; do
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
@@ -1316,7 +1368,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   if [ "$START_ORCHESTRATOR_BACKEND" = true ]; then
     (
       WAIT_COUNT=0
-      until curl -f http://localhost:${ORCHESTRATOR_BACKEND_PORT}/health > /dev/null 2>&1; do
+      until curl -f http://localhost:${ORCHESTRATOR_BACKEND_PORT}/health/ready > /dev/null 2>&1; do
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
@@ -1333,7 +1385,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   if [ "$START_DEVELOP_BACKEND" = true ]; then
     (
       WAIT_COUNT=0
-      until curl -f http://localhost:${DEVELOP_BACKEND_PORT}/health > /dev/null 2>&1; do
+      until curl -f http://localhost:${DEVELOP_BACKEND_PORT}/health/ready > /dev/null 2>&1; do
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
@@ -1350,7 +1402,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   if [ "$START_SERVICE_BACKEND" = true ]; then
     (
       WAIT_COUNT=0
-      until curl -f http://localhost:${SERVICE_BACKEND_PORT}/health > /dev/null 2>&1; do
+      until curl -f http://localhost:${SERVICE_BACKEND_PORT}/health/ready > /dev/null 2>&1; do
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
@@ -1366,7 +1418,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   if [ "$START_INFERENCE_BACKEND" = true ]; then
     (
       WAIT_COUNT=0
-      until curl -f "http://localhost:${INFERENCE_BACKEND_PORT:-8191}/health" > /dev/null 2>&1; do
+      until curl -f "http://localhost:${INFERENCE_BACKEND_PORT:-8191}/health/ready" > /dev/null 2>&1; do
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
@@ -1379,10 +1431,17 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     HEALTH_CHECK_PIDS+=($!)
   fi
 
-  # 等待所有并发的 health check 完成
+  # 等待所有并发的 health check 完成；任何目标失败都必须使启动失败。
+  HEALTH_CHECK_FAILED=false
   for pid in "${HEALTH_CHECK_PIDS[@]}"; do
-    wait "$pid" || true
+    if ! wait "$pid"; then
+      HEALTH_CHECK_FAILED=true
+    fi
   done
+  if [ "$HEALTH_CHECK_FAILED" = true ]; then
+    echo -e "${RED}✗ 一个或多个后端未达到目标健康状态${NC}"
+    exit 1
+  fi
 
   echo ""
   echo -e "${GREEN}✓ 后端服务和选定 Worker 全部就绪${NC}"
@@ -2259,7 +2318,7 @@ if check_service_running "copilot-backend" "$COPILOT_BACKEND_PORT"; then
   echo -n "等待 Copilot Backend 就绪..."
   WAIT_COUNT=0
   MAX_WAIT=60
-  until curl -f http://localhost:${COPILOT_BACKEND_PORT}/health > /dev/null 2>&1; do
+  until curl -f http://localhost:${COPILOT_BACKEND_PORT}/health/ready > /dev/null 2>&1; do
     echo -n "."
     sleep 1
     WAIT_COUNT=$((WAIT_COUNT + 1))
@@ -2345,7 +2404,7 @@ if [ "$START_AGENT_BACKEND" = true ]; then
     echo -n "等待 Agent Backend 就绪..."
     WAIT_COUNT=0
     MAX_WAIT=60
-    until curl -f http://localhost:${AGENT_BACKEND_PORT}/health > /dev/null 2>&1; do
+    until curl -f http://localhost:${AGENT_BACKEND_PORT}/health/ready > /dev/null 2>&1; do
       echo -n "."
       sleep 1
       WAIT_COUNT=$((WAIT_COUNT + 1))
@@ -2384,7 +2443,7 @@ if [ "$START_GATEWAY" = true ]; then
   # 等待 Gateway 就绪
   echo "等待 Gateway 就绪..."
   WAIT_COUNT=0
-  until curl -f http://localhost:${GATEWAY_PORT}/health > /dev/null 2>&1; do
+  until curl -f http://localhost:${GATEWAY_PORT}/health/ready > /dev/null 2>&1; do
     echo -n "."
     sleep 1
     WAIT_COUNT=$((WAIT_COUNT + 1))
@@ -2403,6 +2462,11 @@ fi
 else
   echo -e "${YELLOW}Step 6/7: 跳过 Gateway${NC}"
   echo ""
+fi
+
+if [ "$EXACT_PROCESS" = true ]; then
+  echo -e "${GREEN}✓ Online T4 正式进程已达到目标健康状态: ${SELECTED_MODULE}${NC}"
+  exit 0
 fi
 
 # 7. 启动前端服务（保持原有并行逻辑）
