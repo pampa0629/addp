@@ -19,6 +19,7 @@ from pathlib import Path
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 ONLINE_DATABASE = "addp_online"
+LOOPBACK_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 class PreflightError(RuntimeError):
@@ -74,7 +75,7 @@ def load_health(service: Service, endpoint: str, timeout: float) -> dict[str, ob
         headers={"Accept": "application/json"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with LOOPBACK_OPENER.open(request, timeout=timeout) as response:
             if response.status != 200:
                 raise PreflightError(f"{service.module} health returned HTTP {response.status}")
             payload = json.load(response)
