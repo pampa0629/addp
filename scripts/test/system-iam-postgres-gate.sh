@@ -16,7 +16,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         *)
-            echo "usage: $0 [--package iam|oauth|api|migration] [--test tenant-invitation|catalog-reference-candidates|invitation-enrollment-removal|execution-audience|execution-authorization-lease-boundary|portal-runtime-removal|service-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|quality-catalog-read|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider]" >&2
+            echo "usage: $0 [--package iam|oauth|api|migration] [--test tenant-invitation|catalog-reference-candidates|catalog-integrity|invitation-enrollment-removal|execution-audience|execution-authorization-lease-boundary|portal-runtime-removal|service-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|quality-catalog-read|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider]" >&2
             exit 2
             ;;
     esac
@@ -78,6 +78,13 @@ case "$TEST_FILTER" in
             exit 2
         fi
         test_pattern='^TestCatalogReferenceCandidatesAgainstPostgres$'
+        ;;
+    catalog-integrity)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "catalog-integrity test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestRunnerAgainstPostgres$'
         ;;
     execution-audience)
         if [ "$PACKAGE_FILTER" != "migration" ]; then

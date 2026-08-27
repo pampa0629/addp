@@ -18,6 +18,8 @@ from addp_common import oauth
 
 
 LOOPBACK_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+# macOS falls back to System Configuration proxies when proxy variables are absent.
+LOOPBACK_NO_PROXY = "127.0.0.1,localhost,::1"
 PROXY_ENVIRONMENT_NAMES = frozenset({
     "http_proxy",
     "https_proxy",
@@ -49,6 +51,8 @@ def loopback_subprocess_environment(**values: str) -> dict[str, str]:
         if name.lower() not in PROXY_ENVIRONMENT_NAMES
     }
     environment.update(values)
+    environment["NO_PROXY"] = LOOPBACK_NO_PROXY
+    environment["no_proxy"] = LOOPBACK_NO_PROXY
     return environment
 
 
@@ -751,7 +755,9 @@ print(asyncio.run(oauth.refresh_access_token(os.environ["ADDP_TEST_BASE_URL"])))
         server.shutdown()
         server.server_close()
 
-    assert [process.returncode for process in processes] == [0, 0]
+    assert [process.returncode for process in processes] == [0, 0], [
+        stderr for _stdout, stderr in results
+    ]
     assert {stdout.strip() for stdout, _stderr in results} == {"addp_at_one", "addp_at_two"}
     assert [stderr for _stdout, stderr in results] == ["", ""]
     assert submitted_tokens == ["addp_rt_old", "addp_rt_one"]

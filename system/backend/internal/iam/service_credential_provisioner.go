@@ -53,7 +53,6 @@ var builtinTenantRuntimeServiceClientIDs = []string{
 	"addp-monitor",
 	"addp-model3d",
 	"addp-orchestrator",
-	"addp-portal",
 	"addp-quality",
 	"addp-pointcloud",
 	"addp-service",

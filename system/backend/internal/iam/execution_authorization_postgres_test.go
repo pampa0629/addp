@@ -407,7 +407,7 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		Count(&leakedSecretCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if issuedAuditCount != 2 || consumedAuditCount != 2 || leakedSecretCount != 0 {
+	if issuedAuditCount != 2 || consumedAuditCount != 4 || leakedSecretCount != 0 {
 		t.Fatalf("audit issued=%d consumed=%d leaked=%d", issuedAuditCount, consumedAuditCount, leakedSecretCount)
 	}
 }

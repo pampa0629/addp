@@ -1804,7 +1804,7 @@ func TestNotebookSessionAuthorizationRepairAgainstPostgres(t *testing.T) {
 	}
 	latestVersion := latestMigrationVersion(t)
 	if version != latestVersion || dirty || !canonicalTable || legacyTable || !sourceColumn ||
-		!sourceConstraint || canonicalTriggerCount != 4 || checksumCount != latestVersion ||
+		sourceConstraint || canonicalTriggerCount != 4 || checksumCount != latestVersion ||
 		canonicalPermissionCount != 1 || legacyActivePermissionCount != 0 || legacyDisabledPermissionCount != 1 ||
 		canonicalRoleBindingCount != 1 || legacyRoleBindingCount != 0 {
 		t.Fatalf(
@@ -1890,7 +1890,7 @@ func TestNotebookSessionAuthorizationRepairCreatesMissingSchemaAgainstPostgres(t
 		t.Fatalf("count created Notebook authorization role binding: %v", err)
 	}
 	latestVersion := latestMigrationVersion(t)
-	if version != latestVersion || dirty || !canonicalTable || !sourceColumn || !sourceConstraint ||
+	if version != latestVersion || dirty || !canonicalTable || !sourceColumn || sourceConstraint ||
 		triggerCount != 4 || checksumCount != latestVersion || roleBindingCount != 1 {
 		t.Fatalf(
 			"missing-schema repair state version=(%d,%t) table=%t source=(%t,%t) triggers=%d checksums=%d role_binding=%d",
@@ -1997,7 +1997,7 @@ func TestWorkbenchRuntimeForwardMigrationAgainstPostgres(t *testing.T) {
 	if version != 92 || dirty {
 		t.Fatalf("migration 92 state=(%d,%t), want (92,false)", version, dirty)
 	}
-	assertWorkbenchRuntimeCatalog(t, db, 4)
+	assertWorkbenchRuntimeCatalog(t, db, 4, 4)
 }
 
 func TestWorkbenchDataApplicationForwardMigrationAgainstPostgres(t *testing.T) {
@@ -2034,7 +2034,7 @@ func TestWorkbenchDataApplicationForwardMigrationAgainstPostgres(t *testing.T) {
 	if version != 104 || dirty {
 		t.Fatalf("migration 104 state=(%d,%t), want (104,false)", version, dirty)
 	}
-	assertWorkbenchRuntimeCatalog(t, db, 10)
+	assertWorkbenchRuntimeCatalog(t, db, 10, 10)
 }
 
 func TestWorkbenchCatalogReadForwardMigrationAgainstPostgres(t *testing.T) {
@@ -2401,7 +2401,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	}
 
 	assertIAMCatalogSeed(t, db)
-	assertWorkbenchRuntimeCatalog(t, db, 13)
+	assertWorkbenchRuntimeCatalog(t, db, 13, 10)
 	assertStandardDocumentCatalog(t, db)
 	assertMonitorAuthorizationCatalog(t, db)
 	assertModelAuthorizationCatalog(t, db)
@@ -2463,7 +2463,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	}
 }
 
-func assertWorkbenchRuntimeCatalog(t *testing.T, db *sql.DB, expectedWorkbenchPermissions int) {
+func assertWorkbenchRuntimeCatalog(t *testing.T, db *sql.DB, expectedWorkbenchPermissions, expectedTenantPermissions int) {
 	t.Helper()
 	var permissionCount, runtimeRolePermissionCount, principalCount, clientCount, assignmentCount int
 	var administratorPermissionCount, dataViewerPermissionCount int
@@ -2528,8 +2528,8 @@ func assertWorkbenchRuntimeCatalog(t *testing.T, db *sql.DB, expectedWorkbenchPe
 		t.Fatalf("count Workbench data viewer permissions: %v", err)
 	}
 	if permissionCount != expectedWorkbenchPermissions || runtimeRolePermissionCount != 1 || principalCount != 1 ||
-		clientCount != 1 || assignmentCount != 1 || administratorPermissionCount != expectedWorkbenchPermissions ||
-		dataViewerPermissionCount != expectedWorkbenchPermissions+1 {
+		clientCount != 1 || assignmentCount != 1 || administratorPermissionCount != expectedTenantPermissions ||
+		dataViewerPermissionCount != expectedTenantPermissions+1 {
 		t.Fatalf(
 			"Workbench catalog permissions=%d runtime_permission=%d principal=%d client=%d assignment=%d administrator=%d data_viewer=%d",
 			permissionCount, runtimeRolePermissionCount, principalCount, clientCount,
@@ -2670,7 +2670,7 @@ func assertAssetPortalBoundaryConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&principalCount); err != nil {
 		t.Fatalf("count Portal service principal: %v", err)
 	}
-	if managementPermissionCount != 1 || endpointPermissionCount != 1 || rolePermissionCount != 2 || principalCount != 1 {
+	if managementPermissionCount != 1 || endpointPermissionCount != 0 || rolePermissionCount != 1 || principalCount != 1 {
 		t.Fatalf(
 			"Asset/Portal boundary management_permission=%d endpoint_permission=%d role_permissions=%d principals=%d",
 			managementPermissionCount, endpointPermissionCount, rolePermissionCount, principalCount,
@@ -2873,7 +2873,7 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&triggerCount); err != nil {
 		t.Fatalf("count execution authorization triggers: %v", err)
 	}
-	if permissionCount != 8 || rolePermissionCount != 19 || triggerCount != 3 || audienceConstraintCount != 1 || attemptBoundaryCount != 2 {
+	if permissionCount != 8 || rolePermissionCount != 20 || triggerCount != 3 || audienceConstraintCount != 1 || attemptBoundaryCount != 2 {
 		t.Fatalf("execution authorization catalog permissions=%d role_permissions=%d triggers=%d audience_constraints=%d attempt_columns=%d", permissionCount, rolePermissionCount, triggerCount, audienceConstraintCount, attemptBoundaryCount)
 	}
 }
@@ -3063,14 +3063,14 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&managerPlatformPermissions); err != nil {
 		t.Fatalf("read platform.manager_runtime permissions: %v", err)
 	}
-	if catalogTenantPermissions != "iam.department.read,iam.tenant_membership.read,meta.catalog.read,standard.domain.read,standard.element.read,standard.glossary.read,system.engine_descriptor.read" ||
+	if catalogTenantPermissions != "develop.catalog.read,iam.department.read,iam.project_group.read,iam.tenant_membership.read,meta.catalog.read,model.catalog.read,quality.catalog.read,service.catalog.read,standard.catalog.read,standard.domain.read,standard.element.read,standard.glossary.read,system.engine_descriptor.read,workbench.catalog.read" ||
 		managerTenantPermissions != "inference.runtime.execute,meta.catalog.read,meta.scan_task.execute,system.engine_descriptor.read,system.engine.read,transfer.task.create,transfer.task.execute,transfer.task.read" ||
-		metaTenantPermissions != "audit.tenant_event.create,system.engine_descriptor.read,system.engine.read" ||
+		metaTenantPermissions != "audit.tenant_event.create,manager.content_index.update,system.engine_descriptor.read,system.engine.read" ||
 		serviceTenantPermissions != "audit.tenant_event.create,meta.catalog.read,meta.lineage.create,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute" ||
-		transferTenantPermissions != "meta.catalog.read,meta.inspect.execute,meta.scan_task.execute,model.materialization_write.execute,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute" ||
-		developTenantPermissions != "meta.catalog.read,meta.scan_task.execute,model.materialization_write.execute,system.engine_descriptor.read,system.execution_authorization.execute,system.notebook_session_authorization.execute" ||
+		transferTenantPermissions != "meta.catalog.read,meta.inspect.execute,meta.scan_task.execute,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute" ||
+		developTenantPermissions != "meta.catalog.read,meta.scan_task.execute,system.engine_descriptor.read,system.execution_authorization.execute,system.notebook_session_authorization.execute" ||
 		copilotTenantPermissions != "develop.task.read,inference.runtime.execute,system.engine_descriptor.read" ||
-		qualityTenantPermissions != "meta.catalog.read,standard.element.read,system.engine.read,system.execution_authorization.execute" ||
+		qualityTenantPermissions != "meta.catalog.read,model.materialization_group.read,model.materialization_read.execute,standard.element.read,system.engine.read,system.execution_authorization.execute" ||
 		catalogPlatformPermissions != "platform.tenant.read,system.runtime_registry.update" ||
 		metaPlatformPermissions != "system.runtime_registry.update" ||
 		developPlatformPermissions != "system.runtime_registry.update" ||
@@ -3103,9 +3103,9 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&tenantAdministratorCatalogPermissions); err != nil {
 		t.Fatalf("count tenant administrator Catalog permissions: %v", err)
 	}
-	if platformAdministratorCatalogPermissions != 0 || tenantAdministratorCatalogPermissions != 8 {
+	if platformAdministratorCatalogPermissions != 0 || tenantAdministratorCatalogPermissions != 10 {
 		t.Fatalf(
-			"Catalog administrator permissions platform=%d tenant=%d, want 0 and 8",
+			"Catalog administrator permissions platform=%d tenant=%d, want 0 and 10",
 			platformAdministratorCatalogPermissions,
 			tenantAdministratorCatalogPermissions,
 		)
@@ -3200,10 +3200,7 @@ func assertAssetServiceRuntimeConstraints(t *testing.T, db *sql.DB) {
 		JOIN system.permissions permission ON permission.id = role_permission.permission_id
 		WHERE (role.role_key, permission.permission_key) IN (
 			('platform.asset_runtime', 'system.runtime_registry.update'),
-			('tenant.asset_runtime', 'develop.task.read'),
-			('tenant.asset_runtime', 'meta.catalog.read'),
-			('tenant.asset_runtime', 'service.definition.read'),
-			('tenant.asset_runtime', 'standard.metric.read'),
+			('tenant.asset_runtime', 'catalog.reference.read'),
 			('tenant.asset_runtime', 'workbench.resource_grant.create'),
 			('tenant.asset_runtime', 'workbench.resource_grant.revoke')
 		)
@@ -3223,7 +3220,7 @@ func assertAssetServiceRuntimeConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&platformAssignmentCount); err != nil {
 		t.Fatalf("count Asset platform runtime assignment: %v", err)
 	}
-	if principalCount != 1 || roleCount != 2 || rolePermissionCount != 7 || platformAssignmentCount != 1 {
+	if principalCount != 1 || roleCount != 2 || rolePermissionCount != 4 || platformAssignmentCount != 1 {
 		t.Fatalf(
 			"Asset runtime catalog principals=%d roles=%d role_permissions=%d platform_assignments=%d",
 			principalCount, roleCount, rolePermissionCount, platformAssignmentCount,
@@ -3487,8 +3484,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount < 271 || disabledPermissionCount != 66 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 271 and exactly 66", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount < 344 || disabledPermissionCount != 53 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 344 and exactly 53", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string
@@ -3499,7 +3496,7 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&disabledRoles); err != nil {
 		t.Fatalf("read disabled builtin Roles: %v", err)
 	}
-	wantDisabledRoles := "platform.statistics_viewer,tenant.department_coordinator,tenant.project_group_coordinator"
+	wantDisabledRoles := "platform.statistics_viewer,tenant.department_coordinator,tenant.portal_runtime,tenant.project_group_coordinator"
 	if disabledRoles != wantDisabledRoles {
 		t.Fatalf("disabled builtin Roles = %q, want %q", disabledRoles, wantDisabledRoles)
 	}

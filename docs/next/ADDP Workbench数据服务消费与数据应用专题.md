@@ -1190,7 +1190,7 @@ ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?sslmode=disable' \
 python3 scripts/ci/check-t2-ci-registration.py
 ```
 
-Workbench、Asset、Portal Swagger 已重新生成并通过各自路由覆盖校验。System 全量 IAM PostgreSQL 套件另有与本段无关的既有 migration 106/陈旧权限快照断言失败；本段新增 migration 107 已由独立标准测试命中并通过，不能把全量套件的既有红灯写成本段通过。
+Workbench、Asset、Portal Swagger 已重新生成并通过各自路由覆盖校验。System migration 107 先由独立标准测试命中；其后跨模块收口审查又修复了全量 IAM PostgreSQL 门禁中的陈旧总账断言和 Portal Runtime 残留，最终状态统一见 14.10。
 
 Phase 4B 的目录、资产、申请、审批、履约、Portal 打开、真实 Service 查询和撤销生命周期已经在全量重启后完成浏览器验收。普通用户的三段式权限证据也已闭环：Grant 生效前不能运行，生效后可以通过 Portal 打开并执行真实 Service 查询，撤销后再次被 Workbench owner 拒绝。人工验收只可清理本轮临时申请、Authorization、Grant、成员关系和临时 Asset，不得删除或下线 14.5、14.7 已确认长期保留的 Workbench 示例。
 
@@ -1215,6 +1215,31 @@ Catalog 正式编目要求唯一主业务域、责任部门、业务责任人和
 该轮邀请还暴露出 Console 原先没有承接 System 生成的 `/invitations/accept?invitation=...`，邀请链接会落入需认证的通配路由。现已补齐唯一公开接受页：匿名用户通过 System 正式 registration API 注册并接受，已有会话通过 acceptance API 接受，切换账号先执行正式 Logout 再带原路径登录；System 返回的新 Tenant Session 直接接入共享内存 Browser AuthSession，不把 Access Token、邀请 Secret 或密码写入浏览器持久存储。登录认证规范、Console 单元测试与生产构建已同步。
 
 同一轮日志复核还发现 Catalog 搜索投影 worker 在空队列时使用 `First`，每次轮询都会产生 `record not found` trace；根因和 Asset 履约 reconciler 的空队列日志相同。Catalog 现保留事务、稳定排序、`LIMIT 1` 与 PostgreSQL `FOR UPDATE SKIP LOCKED`，只把领取方式收敛为 `Find + RowsAffected`；新增 logger 捕获测试先稳定复现一次 trace，修复后为 0，`catalog/backend go test ./...` 全量通过。该运行态修复需在下一次标准 Catalog 重启后反映到日志。
+
+### 14.10 Phase 4 跨模块收口审查（2026-08-27）
+
+Phase 4 完成浏览器验收后又执行了一次 System、Workbench、Asset、Portal 与 Console 合同总审查，修复了三项会影响正式主路径的问题，没有进入 Phase 5：
+
+1. 登录认证规范只允许“匿名注册并接受邀请”和“当前会话接受邀请”两条路径，但 System 仍保留公开 Enrollment Ticket 签发接口、可选接受字段、数据库表及安全策略字段，形成第三条认证旁路。旧路由、DTO、Service、Repository、模型和前端策略字段已全部删除；migration `000108_iam_remove_invitation_enrollment_ticket` 前向删除旧表、函数和策略列，同时为 Tenant Invitation 重建独立不可删除触发器。Console 继续只调用 `registrations` 与 `acceptances`，Swagger 和登录认证规范保持一致；
+2. Workbench Resource Grant 的幂等履约原为“先查后插”，多个 Asset reconciler 同时处理同一 Authorization 时会产生唯一键错误。Repository 已收敛为以 `(tenant_id, source_module, source_identity)` 为冲突目标的原子插入；12 路并发 PostgreSQL 回归先稳定复现重复键失败，修复后全部返回同一规则 ID。冲突载荷仍返回业务冲突，撤销 tombstone 和运行时判定不变；
+3. Portal Tenant Runtime 已被正式迁移禁用，但新 Tenant 初始化仍把 `addp-portal` 当作必须绑定的运行身份，导致所有新租户创建失败。内置 Tenant Runtime 清单和绑定查询已删除 Portal，未恢复旧角色或服务旁路。该修复同时恢复 Tenant 管理、邀请注册和组织闭环的 PostgreSQL 测试。
+
+审查还把 System migration 总账断言同步到当前唯一权限路线：Catalog Runtime 已接入各专业 owner 的窄读权限，Asset Runtime 只保留 Catalog 动态解析与 Workbench Resource Grant，Portal Runtime 保持禁用，Model Writer 旧耦合保持删除；Notebook Session 的旧列级约束在 Engine Access Scope 迁移后由当前触发器与明细表边界取代。这里仅修正陈旧测试事实，没有恢复旧权限或兼容分支。
+
+收口验证覆盖：
+
+```bash
+cd system/backend && go test ./...
+cd workbench/backend && go test ./...
+make test-system-frontend
+make test-workbench-frontend
+make test-console-frontend
+make test-authorization
+WORKBENCH_POSTGRES_TEST_DSN='postgres://.../addp_test?sslmode=disable' make test-workbench-postgres
+ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?sslmode=disable' make test-system-iam-postgres
+```
+
+两个长期 Workbench 示例 `1714dcf7-f34e-4996-a8dc-3b88998ebe55`、`d6c30859-15c8-4b88-964b-f2dd315fb923` 未删除、未下线。本轮没有创建新的浏览器临时 Asset 或 Data Application。Phase 4 至此进入可接力状态；下一步应先确认 Phase 5 的最小范围，再决定优先做 BI 深化还是大屏展示，不应把两者同时展开。
 
 ## 十五、概念设计状态
 

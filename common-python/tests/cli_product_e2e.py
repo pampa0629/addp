@@ -29,6 +29,8 @@ KEYRING_SERVICE = "addp-cli"
 DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
 RELEASE_KEYRING_BACKEND = "keyring.backends.macOS"
 LOOPBACK_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+# macOS falls back to System Configuration proxies when proxy variables are absent.
+LOOPBACK_NO_PROXY = "127.0.0.1,localhost,::1"
 PROXY_ENVIRONMENT_NAMES = frozenset({
     "http_proxy",
     "https_proxy",
@@ -461,6 +463,8 @@ def main(addp: Path) -> int:
             for name, value in os.environ.items()
             if name.lower() not in PROXY_ENVIRONMENT_NAMES
         },
+        "NO_PROXY": LOOPBACK_NO_PROXY,
+        "no_proxy": LOOPBACK_NO_PROXY,
         "ADDP_BASE_URL": fixture.base_url,
         "ADDP_CONSOLE_URL": fixture.base_url,
         "BROWSER": f"{shlex.quote(sys.executable)} {shlex.quote(str(Path(__file__).resolve()))} --browser %s",
