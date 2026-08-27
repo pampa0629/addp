@@ -602,6 +602,77 @@
                 ]
             }
         },
+        "/entries/resolve-sources": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "只查询 Catalog 当前来源绑定与目录可见性，不代理或复制 owner 专业关系 | Query only current Catalog source bindings and catalog visibility without proxying or copying owner professional relations",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog"
+                ],
+                "summary": "解析专业来源对应的目录条目 | Resolve professional sources to catalog entries",
+                "parameters": [
+                    {
+                        "description": "1 到 200 个精确来源引用 | 1 to 200 exact source references",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.resolveSourceEntriesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "按请求顺序返回目录解析结果 | Catalog resolutions in request order",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.SourceEntryResolutionResult"
+                        }
+                    },
+                    "400": {
+                        "description": "来源引用无效 | Invalid source reference",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read"
+                ]
+            }
+        },
         "/entries/{id}": {
             "get": {
                 "security": [
@@ -927,6 +998,57 @@
                 ]
             }
         },
+        "/governance/coverage": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "直接聚合 Catalog 当前权威事实并按适用对象计算分母，不读取持久化覆盖率投影 | Aggregate current authoritative Catalog facts with applicability-aware denominators and no persisted coverage projection",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Governance"
+                ],
+                "summary": "查询目录治理覆盖率 | Get catalog governance coverage",
+                "responses": {
+                    "200": {
+                        "description": "资源盘点治理覆盖率 | Inventory governance coverage",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.GovernanceCoverage"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "缺少资源盘点权限 | Inventory permission required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read",
+                    "catalog.inventory.read"
+                ]
+            }
+        },
         "/governance/tasks": {
             "get": {
                 "security": [
@@ -1010,6 +1132,7 @@
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "catalog.entry.read",
                     "catalog.entry.update"
                 ]
             }
@@ -1227,6 +1350,148 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "catalog.entry.read"
+                ]
+            }
+        },
+        "/me/project-groups": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "只组合当前 AuthContext 中有效 Project Group membership 与 Catalog Collection Scope，并由 System 动态解析名称；不枚举租户全部项目组 | Combine only effective Project Group memberships from the current AuthContext with Catalog Collection scopes, and resolve names dynamically from System; does not enumerate every project group in the tenant",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Personal"
+                ],
+                "summary": "查询我的目录集合项目组 | List my catalog collection project groups",
+                "responses": {
+                    "200": {
+                        "description": "当前可访问项目组 | Currently accessible project groups",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.CollectionProjectGroupList"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "当前主体不是 User 或权限不足 | User principal or permission required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "System 当前不可达 | System currently unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read",
+                    "catalog.collection.read"
+                ]
+            }
+        },
+        "/reference-candidates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Catalog 使用运行身份动态查询 Standard 或 System 当前可引用对象；不复制 owner 完整列表，owner 不可达只影响本次请求 | Catalog dynamically queries currently referenceable Standard or System objects using its runtime identity; owner lists are not copied, and owner unavailability affects only this request",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog"
+                ],
+                "summary": "查询企业目录引用候选 | List enterprise catalog reference candidates",
+                "parameters": [
+                    {
+                        "enum": [
+                            "domain",
+                            "glossary",
+                            "element",
+                            "department",
+                            "user"
+                        ],
+                        "type": "string",
+                        "description": "引用类型 | Reference type",
+                        "name": "reference_type",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "名称或编码，最多 100 字符 | Name or code, maximum 100 characters",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认 1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认 20，最大 50 | Page size, default 20 and maximum 50",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "引用候选分页结果 | Paginated reference candidates",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.ReferenceCandidateList"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Standard 或 System 候选查询不可达 | Standard or System candidate query unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.update"
                 ]
             }
         },
@@ -1579,6 +1844,35 @@
                 }
             }
         },
+        "github_com_addp_catalog_internal_service.CatalogSourceReference": {
+            "type": "object",
+            "properties": {
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_module": {
+                    "type": "string",
+                    "enum": [
+                        "meta",
+                        "model",
+                        "standard",
+                        "service",
+                        "develop"
+                    ]
+                },
+                "source_type": {
+                    "type": "string",
+                    "enum": [
+                        "data_item",
+                        "entity",
+                        "logical_table",
+                        "metric",
+                        "query_service",
+                        "dev_task"
+                    ]
+                }
+            }
+        },
         "github_com_addp_catalog_internal_service.CollectionDetail": {
             "type": "object",
             "properties": {
@@ -1636,6 +1930,44 @@
                 },
                 "total_pages": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.CollectionProjectGroupList": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.CollectionProjectGroupOption"
+                    }
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.CollectionProjectGroupOption": {
+            "type": "object",
+            "properties": {
+                "can_read": {
+                    "type": "boolean"
+                },
+                "can_update": {
+                    "type": "boolean"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "project_group_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "relation_role": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
                 }
             }
         },
@@ -1892,6 +2224,79 @@
                 }
             }
         },
+        "github_com_addp_catalog_internal_service.GovernanceCoverage": {
+            "type": "object",
+            "properties": {
+                "dimensions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.GovernanceCoverageDimension"
+                    }
+                },
+                "governance_statuses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.GovernanceStatusCoverage"
+                    }
+                },
+                "total_entries": {
+                    "type": "integer"
+                },
+                "view": {
+                    "type": "string",
+                    "enum": [
+                        "inventory"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.GovernanceCoverageDimension": {
+            "type": "object",
+            "properties": {
+                "applicable": {
+                    "type": "integer"
+                },
+                "coverage_rate": {
+                    "type": "number"
+                },
+                "covered": {
+                    "type": "integer"
+                },
+                "key": {
+                    "type": "string",
+                    "enum": [
+                        "business_definition",
+                        "primary_domain",
+                        "accountability",
+                        "glossary",
+                        "component_element"
+                    ]
+                },
+                "not_applicable": {
+                    "type": "integer"
+                },
+                "not_covered": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.GovernanceStatusCoverage": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "discovered",
+                        "curated",
+                        "certified",
+                        "deprecated"
+                    ]
+                }
+            }
+        },
         "github_com_addp_catalog_internal_service.GovernanceTaskListResult": {
             "type": "object",
             "properties": {
@@ -1998,6 +2403,102 @@
                 },
                 "status": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.ReferenceCandidate": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "reference_type": {
+                    "type": "string",
+                    "enum": [
+                        "domain",
+                        "glossary",
+                        "element",
+                        "department",
+                        "user"
+                    ]
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.ReferenceCandidateList": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.ReferenceCandidate"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.SourceEntryResolution": {
+            "type": "object",
+            "properties": {
+                "entry": {
+                    "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntrySummary"
+                },
+                "found": {
+                    "type": "boolean"
+                },
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_module": {
+                    "type": "string",
+                    "enum": [
+                        "meta",
+                        "model",
+                        "standard",
+                        "service",
+                        "develop"
+                    ]
+                },
+                "source_type": {
+                    "type": "string",
+                    "enum": [
+                        "data_item",
+                        "entity",
+                        "logical_table",
+                        "metric",
+                        "query_service",
+                        "dev_task"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.SourceEntryResolutionResult": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.SourceEntryResolution"
+                    }
                 }
             }
         },
@@ -2111,6 +2612,17 @@
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/github_com_addp_catalog_internal_service.CatalogReferenceResolution"
+                    }
+                }
+            }
+        },
+        "internal_api.resolveSourceEntriesRequest": {
+            "type": "object",
+            "properties": {
+                "references": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.CatalogSourceReference"
                     }
                 }
             }

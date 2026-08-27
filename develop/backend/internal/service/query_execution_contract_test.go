@@ -51,9 +51,13 @@ func TestBuildQueryExecutionContractRequiresExactDefinitions(t *testing.T) {
 func TestBuildQueryExecutionContractRequiresRelationLocatorsAtRuntime(t *testing.T) {
 	content := map[string]interface{}{
 		"query_type":      "sql",
-		"query":           "SELECT member_id FROM addp_input.members",
-		"relation_inputs": []interface{}{"members"},
+		"query":           "SELECT m.member_id FROM addp_input.members AS m JOIN addp_input.activities AS a ON a.member_id = m.member_id",
+		"relation_inputs": []interface{}{"members", "activities"},
+		"query_parameters": []interface{}{
+			map[string]interface{}{"name": "status", "type": "string", "default": "active"},
+		},
 	}
+	content["query"] = content["query"].(string) + " WHERE m.status = :status"
 	contract, err := BuildQueryExecutionContract(content)
 	if err != nil {
 		t.Fatal(err)
@@ -70,22 +74,35 @@ func TestBuildQueryExecutionContractRequiresRelationLocatorsAtRuntime(t *testing
 	if !reflect.DeepEqual(required, []interface{}{"input_locators", "target_locator"}) {
 		t.Fatalf("required = %#v", required)
 	}
-	if len(contract.InputDefaults) != 0 {
+	if contract.InputDefaults["status"] != "active" || len(contract.InputDefaults) != 1 {
 		t.Fatalf("runtime locators must not have defaults: %#v", contract.InputDefaults)
+	}
+	inputLocatorUI, ok := contract.InputUISchema["input_locators"].(map[string]interface{})
+	if !ok || inputLocatorUI["control"] != "group" || inputLocatorUI["order"] != 1 {
+		t.Fatalf("input_locators UI schema = %#v", contract.InputUISchema["input_locators"])
+	}
+	fields, ok := inputLocatorUI["fields"].(map[string]interface{})
+	if !ok || fields["members"].(map[string]interface{})["order"] != 0 ||
+		fields["activities"].(map[string]interface{})["order"] != 1 {
+		t.Fatalf("input_locators UI fields = %#v", inputLocatorUI["fields"])
+	}
+	if contract.InputUISchema["target_locator"].(map[string]interface{})["order"] != 2 {
+		t.Fatalf("target_locator UI schema = %#v", contract.InputUISchema["target_locator"])
 	}
 	if _, _, err := resolveQueryExecutionParameters(content, map[string]interface{}{}); err == nil {
 		t.Fatal("expected missing runtime locators to fail")
 	}
 	_, effective, err := resolveQueryExecutionParameters(content, map[string]interface{}{
 		"input_locators": map[string]interface{}{
-			"members": "addp://engine/12/path/public/members?type=table",
+			"members":    "addp://engine/12/path/public/members?type=table",
+			"activities": "addp://engine/12/path/public/activities?type=table",
 		},
 		"target_locator": "addp://engine/12/path/public/member_result?type=table",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if effective != nil {
+	if !reflect.DeepEqual(effective, map[string]interface{}{"status": "active"}) {
 		t.Fatalf("runtime locators must not become SQL value parameters: %#v", effective)
 	}
 }

@@ -13,7 +13,8 @@
       </div>
     </div>
 
-    <el-alert v-if="readGroupOptions.length === 0" type="info" :closable="false" show-icon :title="t('catalog.collections.noMembership')" class="membership-hint" />
+    <el-alert v-if="projectGroupsUnavailable" type="warning" :closable="false" show-icon :title="t('catalog.collections.projectGroupsUnavailable')" class="membership-hint" />
+    <el-alert v-else-if="!projectGroupsLoading && readGroupOptions.length === 0" type="info" :closable="false" show-icon :title="t('catalog.collections.noMembership')" class="membership-hint" />
 
     <el-card shadow="never" class="filter-card">
       <el-form :inline="true">
@@ -63,10 +64,9 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { navigateConsoleModuleRoute } from '@common-ui'
-import { createCollection, listCollections } from '../api/catalog'
+import { createCollection, listCollections, listMyProjectGroups } from '../api/catalog'
 import { useAuthStore } from '../store/auth'
 import { buildCollectionQuery, isCanonicalCollectionQuery, parseCollectionRoute } from '../utils/collectionRouteState'
-import { projectGroupsForPermission } from '../utils/projectGroupScope'
 
 const route = useRoute()
 const router = useRouter()
@@ -77,20 +77,38 @@ const result = reactive({ data: [], total: 0, page: 1, page_size: 20, total_page
 const loading = ref(false)
 const createVisible = ref(false)
 const creating = ref(false)
+const projectGroupsLoading = ref(false)
+const projectGroupsUnavailable = ref(false)
+const projectGroupOptions = ref([])
 const createForm = reactive({ project_group_id: '', name: '', description: '' })
 let requestVersion = 0
 const canUpdate = computed(() => authStore.hasPermission('catalog.collection.update'))
-const allGroupOptions = computed(() => authStore.authContext?.organization?.project_groups || [])
-const readGroupOptions = computed(() => projectGroupsForPermission(authStore.authContext, 'catalog.collection.read'))
-const updateGroupOptions = computed(() => projectGroupsForPermission(authStore.authContext, 'catalog.collection.update'))
+const allGroupOptions = computed(() => projectGroupOptions.value)
+const readGroupOptions = computed(() => allGroupOptions.value.filter(group => group.can_read))
+const updateGroupOptions = computed(() => allGroupOptions.value.filter(group => group.can_update))
 
 function groupLabel(group) {
-  return `${t('catalog.collections.projectGroup')} #${group.project_group_id} · ${t(`catalog.collections.groupRole.${group.relation_role}`)}`
+  const code = group.code ? ` · ${group.code}` : ''
+  return `${group.name}${code} · ${t(`catalog.collections.groupRole.${group.relation_role}`)}`
 }
 
 function projectGroupLabel(id) {
   const group = allGroupOptions.value.find(item => item.project_group_id === String(id))
-  return group ? groupLabel(group) : `${t('catalog.collections.projectGroup')} #${id}`
+  return group ? groupLabel(group) : t('catalog.collections.projectGroupNameUnavailable')
+}
+
+async function loadProjectGroups() {
+  projectGroupsLoading.value = true
+  projectGroupsUnavailable.value = false
+  try {
+    const response = await listMyProjectGroups()
+    projectGroupOptions.value = response.data || []
+  } catch {
+    projectGroupOptions.value = []
+    projectGroupsUnavailable.value = true
+  } finally {
+    projectGroupsLoading.value = false
+  }
 }
 
 async function loadCollections() {
@@ -148,7 +166,7 @@ watch(() => route.query, async query => {
   Object.assign(filters, parseCollectionRoute(query))
   const canonical = buildCollectionQuery(filters)
   if (!isCanonicalCollectionQuery(query, canonical)) { await navigateList('replace'); return }
-  await loadCollections()
+  await Promise.all([loadCollections(), loadProjectGroups()])
 }, { immediate: true })
 </script>
 

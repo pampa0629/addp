@@ -44,6 +44,10 @@
             <el-icon><WarningFilled /></el-icon>
             <span>{{ t('catalog.layout.governanceTasks') }}</span>
           </el-menu-item>
+          <el-menu-item v-if="canViewCoverage" index="/governance/coverage">
+            <el-icon><DataAnalysis /></el-icon>
+            <span>{{ t('catalog.layout.governanceCoverage') }}</span>
+          </el-menu-item>
         </el-menu>
       </el-aside>
       <el-main class="content">
@@ -57,7 +61,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ArrowDown, Collection, FolderOpened, List, SwitchButton, User, UserFilled, WarningFilled } from '@element-plus/icons-vue'
+import { ArrowDown, Collection, DataAnalysis, FolderOpened, List, SwitchButton, User, UserFilled, WarningFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '../store/auth'
 
 const route = useRoute()
@@ -68,6 +72,7 @@ const isInIframe = window.self !== window.top
 const activeMenu = computed(() => route.path.startsWith('/entries') ? '/entries' : route.path)
 const canManageGovernance = computed(() => authStore.hasPermission('catalog.entry.update'))
 const canReadCollections = computed(() => authStore.hasPermission('catalog.collection.read'))
+const canViewCoverage = computed(() => authStore.hasPermission('catalog.entry.read') && authStore.hasPermission('catalog.inventory.read'))
 
 async function handleCommand(command) {
   if (command !== 'logout') return

@@ -4,15 +4,16 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/addp/common/datatype"
 	pathpkg "path"
 	"path/filepath"
 	"strings"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/resourcetree"
 	commonSpatial "github.com/addp/common/spatial"
 	"github.com/addp/transfer/internal/executor"
@@ -1162,6 +1163,13 @@ func validateQuerySource(source EndpointSpec, transforms []TransformSpec) error 
 	}
 	if strings.TrimSpace(source.Query.Language) == "" || strings.TrimSpace(source.Query.Statement) == "" {
 		return fmt.Errorf("query source language and statement are required")
+	}
+	references, err := commonquery.References(source.Query.Language, source.Query.Statement)
+	if err != nil {
+		return fmt.Errorf("invalid query source statement: %w", err)
+	}
+	if err := commonquery.ValidateDefinitions(references, source.Query.Parameters); err != nil {
+		return fmt.Errorf("invalid query source parameters: %w", err)
 	}
 	var mapping *TransformSpec
 	for i := range transforms {

@@ -168,6 +168,22 @@ type standardReferenceResolutionResponse struct {
 	Results []StandardReferenceResolution `json:"results"`
 }
 
+type StandardReferenceCandidate struct {
+	ObjectType string `json:"object_type"`
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	Code       string `json:"code,omitempty"`
+	Status     string `json:"status"`
+}
+
+type StandardReferenceCandidateList struct {
+	Data       []StandardReferenceCandidate `json:"data"`
+	Total      int64                        `json:"total"`
+	Page       int                          `json:"page"`
+	PageSize   int                          `json:"page_size"`
+	TotalPages int                          `json:"total_pages"`
+}
+
 func (c *StandardClient) ResolveReferences(
 	ctx context.Context,
 	references []StandardReference,
@@ -199,6 +215,39 @@ func (c *StandardClient) ResolveReferences(
 		}
 	}
 	return response.Results, nil
+}
+
+func (c *StandardClient) ListReferenceCandidates(
+	ctx context.Context,
+	objectType, search string,
+	page, pageSize int,
+) (*StandardReferenceCandidateList, error) {
+	if c == nil || c.tenantID == nil || *c.tenantID == 0 ||
+		(objectType != "domain" && objectType != "glossary" && objectType != "element") ||
+		page < 1 || pageSize < 1 || pageSize > 50 || len([]rune(strings.TrimSpace(search))) > 100 {
+		return nil, errors.New("standard list reference candidates contains invalid parameters")
+	}
+	query := url.Values{
+		"object_type": []string{objectType},
+		"page":        []string{strconv.Itoa(page)},
+		"page_size":   []string{strconv.Itoa(pageSize)},
+	}
+	if search = strings.TrimSpace(search); search != "" {
+		query.Set("search", search)
+	}
+	var response StandardReferenceCandidateList
+	if err := c.doJSON(ctx, http.MethodGet, "/api/v1/standard/references/candidates?"+query.Encode(), nil, &response); err != nil {
+		return nil, fmt.Errorf("standard list reference candidates: %w", err)
+	}
+	if response.Page != page || response.PageSize != pageSize || response.Total < 0 || response.TotalPages < 0 {
+		return nil, errors.New("standard list reference candidates returned invalid pagination")
+	}
+	for _, item := range response.Data {
+		if item.ObjectType != objectType || item.ID <= 0 || strings.TrimSpace(item.Name) == "" {
+			return nil, errors.New("standard list reference candidates returned an invalid candidate")
+		}
+	}
+	return &response, nil
 }
 
 type ElementResponse struct {

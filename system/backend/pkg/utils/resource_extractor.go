@@ -47,7 +47,8 @@ func extractFromURL(path string) (string, string) {
 		{regexp.MustCompile(`^/api/v1/meta/tables/(\d+)`), "table"},
 
 		// Transfer 模块
-		{regexp.MustCompile(`^/api/v1/transfer/tasks/[^/]+/(\d+)`), "task"},
+		{regexp.MustCompile(`^/api/v1/transfer/task-provider/tasks/[^/]+/(\d+)`), "task"},
+		{regexp.MustCompile(`^/api/v1/transfer/task-definitions/(\d+)`), "task"},
 		{regexp.MustCompile(`^/api/v1/transfer/jobs/(\d+)`), "job"},
 
 		// Orchestrator 模块

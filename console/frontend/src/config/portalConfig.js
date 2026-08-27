@@ -63,7 +63,7 @@ export const MODULE_URLS = {
   orchestrator: _url(5177, 'orchestrator'),
   develop:      _url(5178, 'develop'),
   service:      _url(5180, 'service'),
-  workbench:    _url(5190, 'workbench'),
+  workbench:    _dev ? `${_protocol}//${_host}:5190/workbench` : _url(5190, 'workbench'),
   monitor:      _url(5179, 'monitor'),
   standard:     _url(5181, 'standard'),
   modeling:     _url(5182, 'model'),
@@ -129,6 +129,8 @@ export const PAGE_MAPS = {
     '': 'query-services',
   },
   workbench: {
+    'views': 'views',
+    'applications': 'applications',
     '': 'views',
   },
   monitor: {
@@ -299,6 +301,7 @@ export const SIDEBAR_MENUS = {
     label: 'console.menus.workbench.label', icon: DataBoard,
     items: [
       { index: '/workbench/views', icon: View, label: 'console.menus.workbench.views' },
+      { index: '/workbench/applications', icon: Grid, label: 'console.menus.workbench.dataApplications' },
     ],
   },
   orchestrator: {
@@ -321,6 +324,7 @@ export const SIDEBAR_MENUS = {
     label: 'console.menus.catalog.label', icon: Collection,
     items: [
       { index: '/catalog/entries', icon: List, label: 'console.menus.catalog.entries' },
+      { index: '/catalog/governance/coverage', icon: DataAnalysis, label: 'console.menus.catalog.coverage', permissions: ['catalog.inventory.read'] },
     ],
   },
   asset: {

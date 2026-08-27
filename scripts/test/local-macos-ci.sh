@@ -101,9 +101,14 @@ PY
 }
 
 validate_node() {
-  local major
+  local required major
+  [ -f "$ROOT_DIR/.node-version" ] || fail "Node.js version file is missing: $ROOT_DIR/.node-version"
+  required=$(sed -n '1p' "$ROOT_DIR/.node-version")
+  case "$required" in
+    ''|*[!0-9]*) fail "invalid Node.js major version in $ROOT_DIR/.node-version: ${required:-empty}" ;;
+  esac
   major=$(node --version | sed 's/^v//' | cut -d. -f1)
-  [ "$major" = "22" ] || fail "Node.js 22 is required, found $(node --version)"
+  [ "$major" = "$required" ] || fail "Node.js $required is required, found $(node --version)"
 }
 
 validate_go() {

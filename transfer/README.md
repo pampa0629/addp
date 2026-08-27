@@ -93,9 +93,11 @@ continuous 当前有两类实现路径：业务 Kafka keyed JSON record -> Postg
 - `GET /ping`
 - 资源选择、资源树和表字段读取统一走 Meta resource-tree / item API，Transfer 不提供私有数据源树代理。
 - `GET /capabilities`
-- `GET /tasks`
-- `GET /tasks/:task_type/:id`
-- `POST /tasks/:task_type/:id/execute`
+- `GET /task-provider/tasks`
+- `GET /task-provider/tasks/:task_type/:id`
+- `POST /task-provider/tasks/:task_type/:id/execute`
+- `GET /task-provider/executions/:execution_id`
+- `GET /task-definitions`
 - `POST /task-definitions`
 - `GET /task-definitions/statistics`
 - `GET /task-definitions/:id`
@@ -117,7 +119,7 @@ continuous 当前有两类实现路径：业务 Kafka keyed JSON record -> Postg
 - `GET /executions/:execution_id/progress`
 - `GET /executions/:execution_id/logs`
 
-`GET /executions/:execution_id` 是 TaskProvider 标准执行详情入口，按统一 `common.task_executions.execution_id` 查询。重试、进度和日志入口也按 `execution_id` 定位执行记录。私有 task-definition `stop` 只控制 continuous runtime；bounded worker 仍不支持真实中断，因此 TaskProvider 保持 `supports_cancel=false`，不注册标准 execution cancel endpoint。
+`GET /task-provider/executions/:execution_id` 是只允许 Orchestrator Runtime 使用的 TaskProvider 标准执行状态入口；用户执行详情继续使用 `GET /executions/:execution_id`。两者都按统一 `common.task_executions.execution_id` 查询，但权限和调用主体不共用。重试、进度和日志入口也按 `execution_id` 定位执行记录。私有 task-definition `stop` 只控制 continuous runtime；bounded worker 仍不支持真实中断，因此 TaskProvider 保持 `supports_cancel=false`，不注册标准 execution cancel endpoint。
 
 continuous worker 是独立进程角色 `cmd/continuous-worker`，用 Infra PostgreSQL 管理任务状态，通过 System Engine Resolver 连接业务 Engine；CDC 内部 Kafka 使用部署配置和独立 `transfer` principal，不注册为 System Engine。除 continuous runtime 配置外，CDC consumer 还使用 `INFRA_KAFKA_BOOTSTRAP_SERVERS`、`INFRA_KAFKA_TRANSFER_PASSWORD`、`INFRA_KAFKA_SECURITY_PROTOCOL` 和 TLS 配置。worker 要求 `SYSTEM_URL` 与 `TRANSFER_SERVICE_CLIENT_SECRET` 可用，并按任务 Tenant 获取短期 Service Access Token。
 

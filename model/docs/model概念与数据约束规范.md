@@ -34,7 +34,8 @@ Model prepare -> generic writer -> Model seal -> Quality materialization gate ->
 - `seal` 接受 prepare 的 `batch_id`、writer 输出的 `execution_id` 和 `target_locator`。Model 必须校验 writer execution 为 `success`，与 prepare/seal 同 Tenant、同父 Orchestrator execution、同 Actor Principal/Tenant Membership/授权版本，且 locator 精确匹配批次 staging；随后校验字段顺序、物理类型、结构指纹和 Model 管理标记，成功后置为 `sealed`。Model 不校验 writer module 名称。
 - Quality 如需读取 staging，必须以同一父 Orchestrator execution 和当前 reader execution 向 Model 申请 Materialization Read Context；只能返回 sealed 批次的 staging locator、字段、批次和结构指纹。reader 仍使用自身从父 execution 派生的精确只读授权，不得读取 Model 私有表或借用 Model 的引擎授权。
 - `publish` 在同一目标数据库事务内完成旧目标暂存、staging 改名、旧目标删除和管理标记保留。事务失败必须保持原目标可用；重复执行按批次管理标记幂等收敛。
-- 同一 Tenant 的同一物理目标同时最多一个 `preparing|prepared|sealed|publishing` 批次。并发重算返回冲突，不建立多批次竞争或“最后完成者覆盖”语义。失败或过期且未 sealed 的批次由 Model 标记 `aborted` 并回收 staging，后续全量重算从新 prepare 开始。
+- 同一 Tenant 的同一物理目标同时最多一个 `preparing|prepared|sealed|publishing` 批次。并发重算返回冲突，不建立多批次竞争或“最后完成者覆盖”语义。新 prepare 只能接管父 Orchestrator execution 已为 `failed|timeout|cancelled`、且该父 execution 已无 `pending|running` 子 execution 的旧 `preparing|prepared|sealed` 批次；旧父仍运行、已成功或旧批次处于 `publishing` 时必须继续返回冲突。接管事务将旧批次标记为 `aborted`，新 prepare worker 使用本次精确 DDL 授权，在同一目标数据库事务中先回收该目标历史 `aborted|failed` staging，再创建新 staging。
+- 历史 staging 只有在表注释精确匹配该批次的 Model ownership marker 时才能删除；表已不存在按幂等成功处理，marker 不匹配则整个 prepare 失败且不得删除任何历史 staging。回收与新 staging 创建共用一个物理数据库事务；任一步失败必须整体回滚。不新增公开 abort TaskProvider、Orchestrator 专属补偿节点或 writer 回调。
 - 批次状态固定为 `preparing|prepared|sealed|publishing|published|failed|aborted`。prepare 失败进入 `failed`；seal 失败不提升批次；publish 失败恢复为 `sealed`，允许在同一 sealed 批次上重新发布；只有物理发布成功后才进入 `published`。
 
 ### 物化读上下文

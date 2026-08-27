@@ -15,6 +15,7 @@
       "myCatalog": "My Catalog",
       "collections": "Project Group Collections",
       "governanceTasks": "Responsibility Governance",
+      "governanceCoverage": "Governance Coverage",
       "user": "User",
       "logout": "Sign out"
     },
@@ -78,7 +79,8 @@
       "statusOpen": "Open",
       "statusResolved": "Resolved",
       "entryId": "Catalog entry ID",
-      "entryIdPlaceholder": "CatalogEntry UUID",
+      "entryPlaceholder": "Search by catalog entry name",
+      "entrySearchFailed": "Failed to search catalog entries",
       "entry": "Catalog entry",
       "role": "Responsibility role",
       "subject": "Invalid subject",
@@ -89,6 +91,43 @@
       "reasonValue": {
         "subject_not_found": "Subject not found",
         "subject_not_referenceable": "Subject is not currently referenceable"
+      }
+    },
+    "coverage": {
+      "title": "Catalog Governance Coverage",
+      "recentSubject": "Enterprise resource governance completeness",
+      "description": "Dynamically measure the completeness of catalog-owned business definitions, semantics, and accountability across the resource inventory.",
+      "dynamicHint": "This page aggregates current authoritative Catalog facts without a second coverage projection. Coverage does not imply data quality, underlying access, or asset publishability.",
+      "loadFailed": "Failed to load catalog governance coverage",
+      "totalEntries": "Active catalog entries",
+      "dimensionTitle": "Governance dimensions",
+      "dimension": "Dimension and criteria",
+      "rate": "Coverage",
+      "covered": "Covered",
+      "notCovered": "Not covered",
+      "applicable": "Applicable",
+      "notApplicable": "Not applicable",
+      "dimensions": {
+        "business_definition": {
+          "name": "Business definition",
+          "description": "Both business name and business description are present"
+        },
+        "primary_domain": {
+          "name": "Primary domain",
+          "description": "A Catalog association or the latest observed owner declaration provides the primary domain"
+        },
+        "accountability": {
+          "name": "Accountability",
+          "description": "Accountable department, business owner, and data steward are all active"
+        },
+        "glossary": {
+          "name": "Enterprise glossary",
+          "description": "At least one glossary term is linked; this is not a mandatory curated-state criterion"
+        },
+        "component_element": {
+          "name": "Component elements",
+          "description": "For entries with components, every active component is linked to an Element"
+        }
       }
     },
     "myCatalog": {
@@ -126,7 +165,8 @@
       "name": "Collection name",
       "collectionDescription": "Description",
       "projectGroup": "Project group",
-      "createdBy": "Created by",
+      "projectGroupNameUnavailable": "Project group name unavailable",
+      "projectGroupsUnavailable": "System is currently unavailable. Project group names and creation options are unavailable, while existing collections remain browsable.",
       "entries": "Catalog entries",
       "searchEntries": "Search and select currently visible catalog entries",
       "replaceHint": "Saving completely replaces the collection membership with the current selection; no parallel per-item write route exists.",
@@ -210,6 +250,15 @@
       "observedAt": "Last observed",
       "openDetail": "Open in Quality"
     },
+    "impact": {
+      "governanceTitle": "Federated Impact · Governance succession",
+      "professionalTitle": "Federated Impact · Professional relations",
+      "lineageTitle": "Federated Impact · Data lineage",
+      "federatedHint": "Relations are queried directly from their fact owners as the current user. Catalog only resolves stable source identities to visible catalog entries and does not copy professional edges.",
+      "catalogMappingUnavailable": "Catalog identity navigation is currently unavailable; owner-sourced relation facts remain visible.",
+      "openCatalogEntry": "Open catalog entry",
+      "lineageCatalogEntries": "Other catalog entries in this lineage graph"
+    },
     "lineage": {
       "title": "Data lineage",
       "refresh": "Refresh lineage",
@@ -231,7 +280,7 @@
       "unavailable": "The owner module is unavailable; catalog facts and business curation remain available",
       "idle": "No queryable professional relation subject is available",
       "truncated": "The relation count exceeds the display limit; only the first 100 are shown",
-      "resourceLabel": "{type} #{id}",
+      "resourceUnavailable": "{type} (name unavailable)",
       "sourceComponent": "Source field: {value}",
       "targetComponent": "Target field: {value}",
       "coefficient": "Coefficient: {value}",
@@ -280,18 +329,23 @@
       "responsibilityRole": "Responsibility role",
       "responsibilityStatus": "Link status",
       "componentElements": "Component element links",
-      "componentElementHint": "Enter a Standard element ID for an active component; leave it empty for no element link.",
-      "exactIdHint": "The first release uses stable owner IDs and validates them exactly in the current tenant on submission.",
+      "componentElementHint": "Select a Standard element by name for an active component; leave it empty for no element link.",
+      "dynamicCandidateHint": "Candidates are provided live by the fact owner, searched by name, and resolved again on submission.",
       "ownerDomainHint": "The primary domain is owned by {module} and can only be changed there. Catalog maintains secondary domains only.",
-      "ownerPrimaryDomain": "Primary domain declared by {module}: {id}",
-      "responsibilityHint": "Department and User both use stable System IDs; a User must have an active membership in the current tenant.",
+      "ownerPrimaryDomain": "{module} declares the primary domain; change it in the professional module.",
+      "ownerPrimaryDomainMissing": "{module} has not declared a primary domain; define it in the professional module first.",
+      "responsibilityHint": "Select an active System department or current tenant member by name.",
       "addDomain": "Add domain",
       "addGlossary": "Add glossary",
       "addResponsibility": "Add responsibility",
-      "domainId": "Standard domain ID",
-      "glossaryId": "Standard glossary ID",
-      "elementId": "Standard element ID",
-      "subjectId": "System subject ID",
+      "domainPlaceholder": "Search domain name or code",
+      "glossaryPlaceholder": "Search glossary name",
+      "element": "Standard element",
+      "elementPlaceholder": "Search element name or code",
+      "departmentPlaceholder": "Search department name or code",
+      "userPlaceholder": "Search display name or username",
+      "candidateSearchFailed": "Reference candidates are currently unavailable from the fact owner",
+      "referenceUnavailable": "Saved reference (current name unavailable)",
       "primary": "Primary domain",
       "secondary": "Secondary domain",
       "remove": "Remove",
@@ -301,7 +355,7 @@
       "saveFailed": "Failed to save business curation",
       "conflict": "Another operation has updated this entry. This form will not overwrite the newer version automatically.",
       "reloadLatest": "Discard form and load latest",
-      "invalidId": "Every reference ID must be a positive decimal integer without leading zeros",
+      "invalidId": "Select valid business semantic and responsibility candidates",
       "duplicateReference": "The same semantic reference cannot be repeated",
       "multiplePrimaryDomains": "A catalog entry can have at most one primary domain",
       "curationIncomplete": "Curated and later states require a business name and description, an effective primary domain declared by the owner, one accountable department, one business owner, and at least one data steward",

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   buildRuntimeTableTarget,
   querySourceValid,
+  queryStatementValid,
   withQuerySource
 } from '../src/views/TaskWizard/runtimeTarget.mjs'
 
@@ -23,22 +24,30 @@ test('query source is valid only for bounded native tables with a complete query
     dataType: 'table',
     representation: 'native',
     language: 'mql',
-    statement: '[{"$project":{"id":1}}]',
+    statement: '{"aggregate":"entries","pipeline":[{"$project":{"id":1}}]}',
     parametersValid: true
   }
   assert.equal(querySourceValid(valid), true)
   assert.equal(querySourceValid({ ...valid, boundary: 'continuous' }), false)
   assert.equal(querySourceValid({ ...valid, parametersValid: false }), false)
+  assert.equal(querySourceValid({ ...valid, statement: '[{"$project":{"id":1}}]' }), false)
+})
+
+test('MQL query statement must be one JSON command object', () => {
+  assert.equal(queryStatementValid('mql', '{"aggregate":"entries","pipeline":[]}'), true)
+  assert.equal(queryStatementValid('mql', '[{"$project":{"id":1}}]'), false)
+  assert.equal(queryStatementValid('mql', '{invalid'), false)
+  assert.equal(queryStatementValid('sql', 'select * from entries'), true)
 })
 
 test('query source keeps typed parameters without introducing target identity', () => {
   const endpoint = withQuerySource(
     { locator: 'addp://engine/1/path/outdoor/entries?type=table', data_type: 'table', representation: 'native' },
-    { enabled: true, language: 'MQL', statement: ' [] ', parameters: { status: 'active' } }
+    { enabled: true, language: 'MQL', statement: ' {"find":"entries"} ', parameters: { status: 'active' } }
   )
   assert.deepEqual(endpoint.query, {
     language: 'mql',
-    statement: '[]',
+    statement: '{"find":"entries"}',
     parameters: { status: 'active' }
   })
   assert.equal('target' in endpoint, false)

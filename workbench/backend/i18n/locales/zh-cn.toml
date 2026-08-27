@@ -19,6 +19,49 @@ other = "工作台视图操作失败"
 [workbench.message.delete_succeeded]
 other = "工作台视图已删除"
 
+[workbench.error.invalid_data_application]
+other = "数据应用配置无效"
+
+[workbench.error.data_application_not_found]
+other = "数据应用不存在"
+
+[workbench.error.data_application_version_conflict]
+other = "数据应用已被其他操作更新，请刷新后重试"
+
+[workbench.error.data_application_already_published]
+other = "已发布的数据应用不能删除，请改为下线"
+
+[workbench.error.data_application_not_published]
+other = "数据应用尚未发布或当前已下线"
+
+[workbench.message.data_application_delete_succeeded]
+other = "数据应用已删除"
+
+[permissions.workbench.data_application.create.name]
+other = "创建数据应用"
+[permissions.workbench.data_application.create.description]
+other = "从当前用户的工作台视图创建数据应用"
+[permissions.workbench.data_application.delete.name]
+other = "删除数据应用"
+[permissions.workbench.data_application.delete.description]
+other = "删除当前用户从未发布的数据应用"
+[permissions.workbench.data_application.execute.name]
+other = "运行数据应用"
+[permissions.workbench.data_application.execute.description]
+other = "运行当前用户已发布的数据应用"
+[permissions.workbench.data_application.publish.name]
+other = "发布数据应用"
+[permissions.workbench.data_application.publish.description]
+other = "发布或下线当前用户的数据应用"
+[permissions.workbench.data_application.read.name]
+other = "查看数据应用"
+[permissions.workbench.data_application.read.description]
+other = "查看当前用户的数据应用配置"
+[permissions.workbench.data_application.update.name]
+other = "更新数据应用"
+[permissions.workbench.data_application.update.description]
+other = "更新当前用户的数据应用草稿"
+
 [permissions.workbench.view.create.name]
 other = "创建工作台视图"
 [permissions.workbench.view.create.description]

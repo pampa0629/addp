@@ -36,6 +36,12 @@ const routes = [
         meta: { requiresAuth: true, requiredPermission: 'catalog.entry.update' }
       },
       {
+        path: 'governance/coverage',
+        name: 'GovernanceCoverage',
+        component: () => import('../views/GovernanceCoverage.vue'),
+        meta: { requiresAuth: true, requiredPermission: 'catalog.inventory.read' }
+      },
+      {
         path: 'me/entries',
         name: 'MyCatalog',
         component: () => import('../views/MyCatalog.vue'),

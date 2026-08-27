@@ -1,5 +1,10 @@
 <template>
-  <div class="page-container">
+  <div
+    class="page-container"
+    data-testid="catalog-entry-detail"
+    :data-load-state="loading ? 'loading' : error ? 'error' : entry ? 'loaded' : 'idle'"
+    :data-entry-id="entry?.id || ''"
+  >
     <div class="page-header">
       <el-button text :icon="ArrowLeft" @click="goBack">{{ t('catalog.common.back') }}</el-button>
       <div class="header-actions">
@@ -41,7 +46,7 @@
       <el-card v-if="entry.recommended_successor_entry_id" shadow="never" class="successor-card">
         <template #header>
           <div class="card-title-row">
-            <strong>{{ t('catalog.successor.title') }}</strong>
+            <strong>{{ t('catalog.impact.governanceTitle') }}</strong>
             <el-button v-if="entry.recommended_successor" text type="primary" @click="goRecommendedSuccessor">
               {{ t('catalog.successor.open') }}
             </el-button>
@@ -50,7 +55,7 @@
         <el-alert type="warning" :closable="false" show-icon :title="t('catalog.successor.description')" class="owner-alert" />
         <el-descriptions :column="1" border>
           <el-descriptions-item :label="t('catalog.successor.entry')">
-            {{ entry.recommended_successor?.display_name || entry.recommended_successor_entry_id }}
+            {{ entry.recommended_successor?.display_name || t('catalog.edit.referenceUnavailable') }}
           </el-descriptions-item>
           <el-descriptions-item v-if="entry.recommended_successor" :label="t('catalog.entries.governanceStatus')">
             {{ t(`catalog.status.governance.${entry.recommended_successor.governance_status}`) }}
@@ -148,12 +153,21 @@
       <el-card v-if="professionalRelationSubject" shadow="never" class="professional-relation-card">
         <template #header>
           <div class="card-title-row">
-            <strong>{{ t('catalog.professionalRelations.title') }}</strong>
+            <strong>{{ t('catalog.impact.professionalTitle') }}</strong>
             <el-button v-if="canReadProfessionalRelations" text type="primary" :loading="professionalRelationLoading" @click="loadProfessionalRelations">
               {{ t('catalog.professionalRelations.refresh') }}
             </el-button>
           </div>
         </template>
+        <el-alert type="info" :closable="false" show-icon :title="t('catalog.impact.federatedHint')" class="owner-alert" />
+        <el-alert
+          v-if="professionalCatalogEntryState === 'unavailable'"
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="t('catalog.impact.catalogMappingUnavailable')"
+          class="owner-alert"
+        />
         <div v-if="professionalRelationLoading" v-loading="true" class="professional-relation-loading" />
         <template v-else-if="professionalRelationState === 'ready'">
           <el-alert
@@ -169,10 +183,24 @@
               <template #default="{ row }">{{ professionalRelationKindLabel(row.relation_kind) }}</template>
             </el-table-column>
             <el-table-column :label="t('catalog.professionalRelations.source')" min-width="220">
-              <template #default="{ row }">{{ professionalRelationNodeLabel(row.source) }}</template>
+              <template #default="{ row }">
+                <div class="relation-node">
+                  <span>{{ professionalRelationNodeLabel(row.source) }}</span>
+                  <el-button v-if="professionalCatalogEntry(row.source)" text type="primary" @click="openProfessionalCatalogEntry(row.source)">
+                    {{ t('catalog.impact.openCatalogEntry') }}
+                  </el-button>
+                </div>
+              </template>
             </el-table-column>
             <el-table-column :label="t('catalog.professionalRelations.target')" min-width="220">
-              <template #default="{ row }">{{ professionalRelationNodeLabel(row.target) }}</template>
+              <template #default="{ row }">
+                <div class="relation-node">
+                  <span>{{ professionalRelationNodeLabel(row.target) }}</span>
+                  <el-button v-if="professionalCatalogEntry(row.target)" text type="primary" @click="openProfessionalCatalogEntry(row.target)">
+                    {{ t('catalog.impact.openCatalogEntry') }}
+                  </el-button>
+                </div>
+              </template>
             </el-table-column>
             <el-table-column :label="t('catalog.professionalRelations.details')" min-width="240">
               <template #default="{ row }"><span class="break-all">{{ professionalRelationDetails(row) }}</span></template>
@@ -212,14 +240,41 @@
       <el-card v-if="lineageSubject" shadow="never" class="lineage-card">
         <template #header>
           <div class="card-title-row">
-            <strong>{{ t('catalog.lineage.title') }}</strong>
+            <strong>{{ t('catalog.impact.lineageTitle') }}</strong>
             <el-button v-if="canReadLineage" text type="primary" :loading="lineageLoading" @click="loadLineage">
               {{ t('catalog.lineage.refresh') }}
             </el-button>
           </div>
         </template>
         <div v-if="lineageLoading" v-loading="true" class="lineage-loading" />
-        <LineageViewer v-else-if="lineageState === 'ready'" :graph="lineageGraph" :height="420" />
+        <template v-else-if="lineageState === 'ready'">
+          <LineageViewer :graph="lineageGraph" :height="420" />
+          <el-alert
+            v-if="lineageCatalogEntryState === 'unavailable'"
+            type="warning"
+            :closable="false"
+            show-icon
+            :title="t('catalog.impact.catalogMappingUnavailable')"
+            class="owner-alert lineage-mapping-alert"
+          />
+          <div v-if="lineageCatalogEntries.length" class="lineage-catalog-entries">
+            <h3>{{ t('catalog.impact.lineageCatalogEntries') }}</h3>
+            <el-table :data="lineageCatalogEntries">
+              <el-table-column prop="display_name" :label="t('catalog.entries.name')" min-width="240" />
+              <el-table-column :label="t('catalog.entries.type')" min-width="150">
+                <template #default="{ row }">{{ entryTypeLabel(row.entry_type) }}</template>
+              </el-table-column>
+              <el-table-column :label="t('catalog.entries.sourceStatus')" width="130">
+                <template #default="{ row }">{{ catalogStatusLabel(t, 'catalog.status.source', row.source_status) }}</template>
+              </el-table-column>
+              <el-table-column width="150">
+                <template #default="{ row }">
+                  <el-button text type="primary" @click="openCatalogEntry(row)">{{ t('catalog.impact.openCatalogEntry') }}</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </template>
         <el-alert
           v-else
           :type="lineageState === 'subject_missing' ? 'warning' : 'info'"
@@ -243,8 +298,8 @@
           <el-table-column prop="component_status" :label="t('catalog.entry.componentStatus')" width="140">
             <template #default="{ row }">{{ catalogStatusLabel(t, 'catalog.status.source', row.component_status) }}</template>
           </el-table-column>
-          <el-table-column :label="t('catalog.edit.elementId')" min-width="180">
-            <template #default="{ row }">{{ componentElementByID.get(row.id)?.element_id || '-' }}</template>
+          <el-table-column :label="t('catalog.edit.element')" min-width="180">
+            <template #default="{ row }">{{ componentElementByID.get(row.id)?.observed_snapshot?.name || (componentElementByID.has(row.id) ? t('catalog.edit.referenceUnavailable') : '-') }}</template>
           </el-table-column>
         </el-table>
         <el-empty v-if="!entry.components?.length" :description="t('catalog.entry.noComponents')" />
@@ -258,7 +313,7 @@
               <el-table-column prop="semantic_type" :label="t('catalog.edit.semanticType')" width="120" />
               <el-table-column prop="relation_role" :label="t('catalog.edit.relationRole')" width="120" />
               <el-table-column :label="t('catalog.edit.referenceName')" min-width="180">
-                <template #default="{ row }">{{ row.observed_snapshot?.name || row.semantic_id }}</template>
+                <template #default="{ row }">{{ row.observed_snapshot?.name || t('catalog.edit.referenceUnavailable') }}</template>
               </el-table-column>
             </el-table>
             <el-empty v-if="!entry.semantic_links?.length" :image-size="60" :description="t('catalog.edit.noSemanticLinks')" />
@@ -272,7 +327,7 @@
                 <template #default="{ row }">{{ catalogStatusLabel(t, 'catalog.edit.role', row.role) }}</template>
               </el-table-column>
               <el-table-column :label="t('catalog.edit.referenceName')" min-width="180">
-                <template #default="{ row }">{{ row.observed_snapshot?.name || row.subject_id }}</template>
+                <template #default="{ row }">{{ row.observed_snapshot?.name || t('catalog.edit.referenceUnavailable') }}</template>
               </el-table-column>
               <el-table-column prop="status" :label="t('catalog.edit.responsibilityStatus')" width="120" />
             </el-table>
@@ -350,17 +405,19 @@ import { ArrowLeft, Bell, Edit, Refresh, Star } from '@element-plus/icons-vue'
 import { navigateConsoleModuleRoute, openConsoleRoute, useConsolePageDescriptor } from '@common-ui'
 import { createLineageApi, normalizeLineageGraph } from '@addp/common-frontend/graph/lineageApi.js'
 import EntryEditor from '../components/EntryEditor.vue'
-import { getEntry, getEntryHistory, getMyEntryMarks, rebindSource, replaceMyEntryMarks, updateEntry } from '../api/catalog'
+import { getEntry, getEntryHistory, getMyEntryMarks, rebindSource, replaceMyEntryMarks, resolveSourceEntries, updateEntry } from '../api/catalog'
 import client from '../api/client'
 import { useAuthStore } from '../store/auth'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
 import { buildEntryListQuery, parseEntryListRoute } from '../utils/entryRouteState'
-import { lineageFailureState, resolveLineageSubject } from '../utils/lineageView'
+import { lineageFailureState, lineageNodesToSourceReferences, resolveLineageSubject } from '../utils/lineageView'
 import {
   normalizeProfessionalRelations,
   professionalRelationFailureState,
+  professionalNodesToSourceReferences,
   professionalResourceKey,
-  resolveProfessionalRelationSubject
+  resolveProfessionalRelationSubject,
+  sourceEntryResolutionMap
 } from '../utils/professionalRelationView'
 
 const route = useRoute()
@@ -445,6 +502,9 @@ const lineageLoading = ref(false)
 const lineageStatusText = computed(() => t(`catalog.lineage.${lineageState.value === 'loading' ? 'unavailable' : lineageState.value}`))
 const lineageApi = createLineageApi({ request: client, baseUrl: '/meta' })
 let lineageRequestVersion = 0
+const lineageCatalogEntries = ref([])
+const lineageCatalogEntryState = ref('idle')
+let lineageCatalogEntryRequestVersion = 0
 const professionalRelationSubject = computed(() => resolveProfessionalRelationSubject(entry.value))
 const canReadProfessionalRelations = computed(() => (
   professionalRelationSubject.value?.permissions.every(permission => authStore.hasPermission(permission)) || false
@@ -456,7 +516,11 @@ const professionalRelationStatusText = computed(() => t(`catalog.professionalRel
 const professionalRelationNodeByKey = computed(() => new Map(
   professionalRelationGraph.value.nodes.map(node => [professionalResourceKey(node), node])
 ))
+const canResolveCatalogEntries = computed(() => authStore.hasPermission('catalog.entry.read'))
+const professionalCatalogEntryByKey = ref(new Map())
+const professionalCatalogEntryState = ref('idle')
 let professionalRelationRequestVersion = 0
+let professionalCatalogEntryRequestVersion = 0
 
 useConsolePageDescriptor(router, 'catalog', {
   title: computed(() => t('catalog.entry.recentVisitTitle')),
@@ -507,12 +571,49 @@ async function loadLineage() {
     if (version !== lineageRequestVersion) return
     lineageGraph.value = normalizeLineageGraph(response)
     lineageState.value = 'ready'
+    await loadLineageCatalogEntries(lineageGraph.value.nodes)
   } catch (requestError) {
     if (version !== lineageRequestVersion) return
     lineageState.value = lineageFailureState(requestError)
   } finally {
     if (version === lineageRequestVersion) lineageLoading.value = false
   }
+}
+
+async function loadLineageCatalogEntries(nodes) {
+  const version = ++lineageCatalogEntryRequestVersion
+  lineageCatalogEntries.value = []
+  if (!canResolveCatalogEntries.value) {
+    lineageCatalogEntryState.value = 'forbidden'
+    return
+  }
+  const references = lineageNodesToSourceReferences(nodes)
+  if (!references.length) {
+    lineageCatalogEntryState.value = 'ready'
+    return
+  }
+  lineageCatalogEntryState.value = 'loading'
+  try {
+    const response = await resolveSourceEntries(references)
+    if (version !== lineageCatalogEntryRequestVersion) return
+    const seen = new Set()
+    const relatedEntries = []
+    for (const result of response?.results || []) {
+      const relatedEntry = result?.entry
+      if (!result?.found || !relatedEntry?.id || relatedEntry.id === entry.value?.id || seen.has(relatedEntry.id)) continue
+      seen.add(relatedEntry.id)
+      relatedEntries.push(relatedEntry)
+    }
+    lineageCatalogEntries.value = relatedEntries
+    lineageCatalogEntryState.value = 'ready'
+  } catch {
+    if (version === lineageCatalogEntryRequestVersion) lineageCatalogEntryState.value = 'unavailable'
+  }
+}
+
+async function openCatalogEntry(catalogEntry) {
+  if (!catalogEntry?.id) return
+  await router.push({ name: 'EntryDetail', params: { id: catalogEntry.id }, query: route.query })
 }
 
 async function loadProfessionalRelations() {
@@ -535,6 +636,7 @@ async function loadProfessionalRelations() {
     if (version !== professionalRelationRequestVersion) return
     professionalRelationGraph.value = normalizeProfessionalRelations(response)
     professionalRelationState.value = 'ready'
+    await loadProfessionalCatalogEntries(professionalRelationGraph.value.nodes)
   } catch (requestError) {
     if (version !== professionalRelationRequestVersion) return
     professionalRelationState.value = professionalRelationFailureState(requestError)
@@ -543,11 +645,43 @@ async function loadProfessionalRelations() {
   }
 }
 
+async function loadProfessionalCatalogEntries(nodes) {
+  const version = ++professionalCatalogEntryRequestVersion
+  professionalCatalogEntryByKey.value = new Map()
+  if (!canResolveCatalogEntries.value) {
+    professionalCatalogEntryState.value = 'forbidden'
+    return
+  }
+  const references = professionalNodesToSourceReferences(nodes)
+  if (!references.length) {
+    professionalCatalogEntryState.value = 'ready'
+    return
+  }
+  professionalCatalogEntryState.value = 'loading'
+  try {
+    const response = await resolveSourceEntries(references)
+    if (version !== professionalCatalogEntryRequestVersion) return
+    professionalCatalogEntryByKey.value = sourceEntryResolutionMap(response?.results)
+    professionalCatalogEntryState.value = 'ready'
+  } catch {
+    if (version === professionalCatalogEntryRequestVersion) professionalCatalogEntryState.value = 'unavailable'
+  }
+}
+
+function professionalCatalogEntry(resource) {
+  return professionalCatalogEntryByKey.value.get(professionalResourceKey(resource)) || null
+}
+
+async function openProfessionalCatalogEntry(resource) {
+  const catalogEntry = professionalCatalogEntry(resource)
+  await openCatalogEntry(catalogEntry)
+}
+
 function professionalRelationNodeLabel(resource) {
   const node = professionalRelationNodeByKey.value.get(professionalResourceKey(resource))
   if (node?.name) return node.code ? `${node.name} (${node.code})` : node.name
   const type = t(`catalog.professionalRelations.resourceType.${resource?.resource_type || 'unknown'}`)
-  return t('catalog.professionalRelations.resourceLabel', { type, id: resource?.resource_id || '-' })
+  return t('catalog.professionalRelations.resourceUnavailable', { type })
 }
 
 function professionalRelationKindLabel(kind) {
@@ -756,9 +890,12 @@ watch(
 .owner-card { margin-bottom: 16px; }
 .professional-relation-card { margin-bottom: 16px; }
 .professional-relation-loading { min-height: 160px; }
+.relation-node { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .quality-card { margin-bottom: 16px; }
 .lineage-card { margin-bottom: 16px; }
 .lineage-loading { min-height: 180px; }
+.lineage-mapping-alert { margin-top: 16px; }
+.lineage-catalog-entries h3 { color: var(--addp-text-primary); font-size: 15px; margin: 18px 0 10px; }
 .owner-alert { margin-bottom: 16px; }
 .history-card { margin-bottom: 16px; }
 .history-card h3 { color: var(--addp-text-primary); font-size: 15px; margin: 18px 0 10px; }

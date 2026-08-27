@@ -24,9 +24,9 @@ func TestTaskHandlerListTasksRejectsUnsupportedTaskType(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	handler := NewTaskHandler(nil)
-	router.GET("/tasks", handler.ListTasks)
+	router.GET("/task-provider/tasks", handler.ProviderListTasks)
 
-	req := httptest.NewRequest(http.MethodGet, "/tasks?task_type=export", nil)
+	req := httptest.NewRequest(http.MethodGet, "/task-provider/tasks?task_type=export", nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -262,9 +262,10 @@ func TestTaskHandlerListTasksUsesStandardItemsShape(t *testing.T) {
 		c.Next()
 	})
 	handler := NewTaskHandler(taskSvc)
-	router.GET("/tasks", handler.ListTasks)
+	router.GET("/task-provider/tasks", handler.ProviderListTasks)
+	router.GET("/task-definitions", handler.ListTasks)
 
-	req := httptest.NewRequest(http.MethodGet, "/tasks?task_type=sync", nil)
+	req := httptest.NewRequest(http.MethodGet, "/task-provider/tasks?task_type=sync", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -294,7 +295,7 @@ func TestTaskHandlerListTasksUsesStandardItemsShape(t *testing.T) {
 		t.Fatalf("total_pages = %d, want omitted in TaskProvider standard response; body=%s", *resp.TotalPages, w.Body.String())
 	}
 
-	allReq := httptest.NewRequest(http.MethodGet, "/tasks", nil)
+	allReq := httptest.NewRequest(http.MethodGet, "/task-definitions", nil)
 	all := httptest.NewRecorder()
 	router.ServeHTTP(all, allReq)
 	var allResp struct {

@@ -261,7 +261,7 @@ Catalog 的平台后台同步通过 `addp-catalog` Platform Service Access Token
 
 - Meta：按 fingerprint 批量解析当前 DataItem 摘要；
 - Standard：按 `{object_type, id}` 批量解析 Domain、Glossary、Element 的存在性、状态、版本和显示摘要；
-- System：按 `{subject_type, id}` 批量解析 Department、User 的存在性、状态和显示摘要。`user.id` 使用全局稳定 User ID，不保存 Tenant Membership ID；只有该 User 的 Principal 和当前 Tenant Membership 均有效时才允许建立新责任关系。
+- System：按 `{subject_type, id}` 批量解析 Department、User、Project Group 的存在性、状态和显示摘要。`user.id` 使用全局稳定 User ID，不保存 Tenant Membership ID；只有该 User 的 Principal 和当前 Tenant Membership 均有效时才允许建立新责任关系。Project Group 只用于目录集合协作范围的当前名称解析，不进入责任候选。
 
 精确 ID 集合使用单个请求体，不接受 Tenant ID。所有接口只信任 Bearer 中的 Tenant Context，并固定校验 `addp-catalog` OAuth Client 与 owner Permission。响应按请求顺序返回，并为每个引用给出 `found`、`referenceable`、owner 状态、版本和最小显示摘要；跨 Tenant 对象与不存在对象都只返回 `found=false`，不得泄露其真实状态。`found=true, referenceable=false` 表示同 Tenant 对象仍存在但已不允许建立新关联，Catalog 可以据此展示和触发责任移交。批量解析用于用户写入时校验、展示修复和失效对账，不替代 DataItem 变化源。
 
@@ -405,6 +405,35 @@ GET /api/v1/standard/metrics/{id}/relations?limit=100
 
 这些路由只接受当前 User Access Token，并分别校验 Model Entity / EntityRelation / LogicalModel 或 Standard Metric 的读取权限。Catalog Frontend 直接调用 owner；Catalog Backend 不代理，不使用 `model.catalog.read`、`standard.catalog.read` 等机器权限替代用户权限，也不持久化响应。Owner 不可达、无权限或主体不存在只改变当前关系卡片状态，不影响 Catalog 启动、Ready、条目详情及其他 owner 卡片。
 
+### 5.11 联邦影响分析与来源身份解析
+
+企业目录详情把影响关系组合为一个联邦视图，但不建立统一关系事实表，也不把不同 owner 的边改写成 Catalog 关系：
+
+- Meta 血缘继续由当前 User Token 直接查询 Meta，并保留方向、深度和时态证据；
+- Model / Standard 专业关系继续由当前 User Token 直接查询事实 owner，并保留 namespaced `relation_kind`；
+- 推荐继任继续直接读取 CatalogEntry 聚合，是 Catalog 当前唯一自有跨条目关系；
+- Quality 摘要、Domain、责任等没有明确影响边语义的事实不得为凑图而伪造关系。
+
+Catalog 只为联邦导航提供自己拥有的来源绑定解析：前端把 owner 已返回的 `{owner_module, resource_type, resource_id}` 转成 `{source_module, source_type, source_identity}`，调用 `POST /entries/resolve-sources` 批量解析到当前调用者可见的 CatalogEntry。该接口最多接受 200 个精确来源引用，只查询当前 `SourceBinding` 与 CatalogEntry，不调用 owner、不保存专业节点或边、不根据名称猜测匹配。请求使用 `catalog.entry.read` 并复用条目详情的目录可见性规则；具有 `catalog.inventory.read` 时可以解析盘点条目，否则 `inventory` 条目自然不可见。跨 Tenant、不存在或当前不可见统一返回 `found=false`。
+
+联邦视图必须按 owner 分区表达来源状态。任一 owner 无权限、不可达或主体缺失只使对应分区不可用，其他分区和 Catalog 详情继续工作；不能使用 `addp-catalog` Service Token 扩权代查，也不能把动态响应写入 Catalog 数据库或搜索索引。
+
+### 5.12 治理覆盖率动态聚合
+
+治理覆盖率是 Catalog 自有治理事实的权限感知读模型，不是持久化投影。`GET /governance/coverage` 固定覆盖当前 Tenant 的资源盘点视图，因此同时要求 `catalog.entry.read` 与 `catalog.inventory.read`，并只统计 `entry_status=active` 的 CatalogEntry。聚合必须直接读取当前权威表，不创建覆盖率表、缓存副本或后台同步任务。
+
+第一阶段固定返回治理状态分布与以下五个条目级维度；每个维度都返回 `covered`、`applicable`、`not_covered`、`not_applicable` 和百分比 `coverage_rate`，其中百分比等于 `covered / applicable * 100`，无适用对象时为 `0`：
+
+| 维度 | 适用分母 | 覆盖判定 |
+| --- | --- | --- |
+| `business_definition` | 全部 active 条目 | 业务名称和业务说明均非空 |
+| `primary_domain` | 全部 active 条目 | Catalog 自有 primary Domain 存在，或 Model / Standard 最近一次最小观察摘要具有 owner `domain_id` |
+| `accountability` | 全部 active 条目 | 有效责任部门、业务责任人和至少一个数据管理员三项同时存在 |
+| `glossary` | 全部 active 条目 | 至少关联一个 Catalog 自有 Glossary Term |
+| `component_element` | 至少有一个 active CatalogComponent 的条目 | 该条目的全部 active CatalogComponent 都有 Element 关联 |
+
+`glossary` 是观察维度，不作为 `curated` 的必备状态条件；`component_element` 对没有 CatalogComponent 的专业条目标记为不适用，不能用全体条目作为分母制造虚假低覆盖率。覆盖率只说明企业目录治理完整度，不说明底层数据质量、内容授权、Owner 专业模型完整度或资产发布资格。
+
 ## 六、Catalog API 契约
 
 BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
@@ -413,15 +442,18 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 | --- | --- | --- |
 | GET | `/entries` | 权限感知的分页搜索与分面筛选 |
 | GET | `/entries/facets` | 返回当前目录视图可见条目中出现的 Domain、Department 和 Engine Instance 候选引用 |
+| POST | `/entries/resolve-sources` | 把专业关系节点的精确来源身份批量解析为当前可见 CatalogEntry，不复制 owner 关系 |
 | GET | `/reference-candidates` | 按名称分页查询当前可建立语义或责任关联的 owner 候选 |
 | GET | `/entries/:id` | 读取聚合详情、来源、语义和责任 |
 | PUT | `/entries/:id` | 使用聚合根 `version` 原子更新编目、语义、责任、可见性和治理状态 |
 | POST | `/entries/:id/rebind-source` | 显式把新 DataItem 来源重绑到既有条目 |
 | GET | `/entries/:id/history` | 读取该条目的治理和重绑审计 |
 | GET | `/governance/tasks` | 分页读取责任失效治理队列；默认只返回 open 任务 |
+| GET | `/governance/coverage` | 动态聚合资源盘点范围内 Catalog 自有治理覆盖率 |
 | GET | `/me/entries` | 按当前 User 的责任、收藏或关注关系分页读取“我的目录” |
 | GET | `/me/entries/:id/marks` | 读取当前 User 对条目的收藏与关注状态 |
 | PUT | `/me/entries/:id/marks` | 原子替换当前 User 对条目的收藏与关注状态 |
+| GET | `/me/project-groups` | 动态返回当前 User 可读取或维护目录集合的 Project Group 显示摘要与成员角色 |
 | GET | `/collections` | 分页读取当前 User 可参与的 Project Group 目录集合 |
 | POST | `/collections` | 在当前有效 Project Group Scope 创建目录集合 |
 | GET | `/collections/:id` | 读取集合及当前仍可见的目录条目 |
@@ -447,11 +479,13 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 
 所有用户可见错误使用 Catalog i18n；Swagger 使用中文在前、英文在后的双语注解，并为每个公开 Operation 声明 `x-addp-auth-mode` 和精确 Permission。
 
-`GET /governance/tasks` 第一阶段只接受 `status=open|resolved`、可选 `entry_id`、`page` 和 `page_size`，使用 `catalog.entry.update` Permission。返回任务、CatalogEntry 当前显示名和版本，治理人员从任务进入现有条目编目页修复责任；任务列表不新增责任写入或任务关单权限。
+`GET /governance/tasks` 第一阶段只接受 `status=open|resolved`、可选 `entry_id`、`page` 和 `page_size`，同时使用 `catalog.entry.read` 与 `catalog.entry.update` Permission。返回任务、CatalogEntry 当前显示名和版本，治理人员从任务进入现有条目编目页修复责任；任务列表不新增责任写入或任务关单权限。前端按 CatalogEntry 名称远程搜索并提交 `entry_id`，不提供 UUID 手工输入。
 
 `GET /me/entries` 必须显式提交 `relation=responsible|favorite|following`，只接受 `page` 和 `page_size`，使用标准目录分页结构并再次应用当前调用者可见性。个人 marks 读写使用 `catalog.entry.read`，目标条目不可见时统一返回 `404`。
 
-集合列表只返回当前 AuthContext 有效 Project Group membership 覆盖的集合；集合更新正文固定携带 `version`、`name`、`description` 和完整 `entry_ids`。创建正文携带当前 membership 中的 `project_group_id` 及同样的业务字段；服务端必须执行精确 Scope Permission、成员资格、条目同 Tenant 与可见性校验。版本冲突返回 `409`，删除正文只携带 `version`，不存在不带版本的旁路写法。
+集合列表只返回当前 AuthContext 有效 Project Group membership 覆盖的集合；集合更新正文固定携带 `version`、`name`、`description` 和完整 `entry_ids`。创建正文携带当前 membership 中的 `project_group_id` 及同样的业务字段；服务端必须执行精确 Scope Permission、成员资格、条目同 Tenant 与可见性校验。集合创建、更新和删除必须在同一个 Project Group 上同时满足 `catalog.collection.read` 与 `catalog.collection.update`，不能把不同 Scope 上分别命中的 Permission 拼接成写权限。版本冲突返回 `409`，删除正文只携带 `version`，不存在不带版本的旁路写法。
+
+`GET /me/project-groups` 以 AuthContext 中的有效 Project Group membership 和 Catalog Collection Scope Permission 作为唯一 ID 集，再由 Catalog 使用 `addp-catalog` Tenant Service Token 调用 System `POST /api/v1/system/runtime/catalog-references/resolve` 动态解析名称、编码和状态。响应只包含当前 User 可访问的项目组、成员角色及 `can_read`、`can_update`，不得枚举 Tenant 全部 Project Group。Project Group 名称不写入 AuthContext、Access Token、Catalog 表或搜索索引；System 不可达时该请求返回 `503 catalog_reference_validation_unavailable`，Catalog Ready、集合权威事实和其他 API 不受影响。前端不得把稳定 ID 作为名称回退。
 
 ### 6.1 Asset 精确引用解析
 
@@ -574,6 +608,6 @@ Asset 的正式组合模型固定为 `asset.asset_components`：`catalog_entry_i
 - 搜索索引可从 PostgreSQL 重建，索引不可用不改变权威事实；
 - Swagger 路由覆盖和授权覆盖报告通过；
 - 旧发现、旧索引和旧来源字段删除后不存在兼容路由、字段或 fallback query。
-- T4 `enterprise-catalog-publishing` 在真实 System、Gateway 和各 owner 中验证 Meta 扫描、CatalogEntry 自动建档与编目、AssetComponent 组合与发布、Portal 消费是唯一路线，并通过正式 API 完成临时 Asset 和资产目录零残留清理。
+- T4 `enterprise-catalog-publishing` 在真实 System、Gateway 和各 owner 中重复执行 Meta 扫描，验证 fingerprint / CatalogEntry 身份幂等、资源盘点与治理目录视图、治理覆盖率、精确来源身份解析、CatalogEntry 自动建档与编目、AssetComponent 组合与发布、Portal 消费是唯一路线；同一专用 User 还必须通过真实浏览器验收 Console 覆盖率、目录详情和人类可读筛选器，最终通过正式 API 完成临时 Asset 和资产目录零残留清理。
 
 Asset 的删除生命周期固定为：`draft` 或 `offline` 可删除，`published` 必须先下架；不允许跳过下架直接删除已发布资产。

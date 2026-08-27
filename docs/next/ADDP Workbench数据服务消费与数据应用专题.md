@@ -324,7 +324,28 @@ Data Application 可以只有一个 Component。是否成为应用取决于显�
 
 Data Application 不授予底层数据访问权。运行时每个 Component 都使用当前访问者身份调用其 Service，由 Service 实时执行 Permission、Resource Grant / Policy 和契约校验；Application 发布、CatalogEntry 或 Asset 授权都不能替代 Service 最终授权。
 
-Data Application 尚不进入第一阶段数据库和 API。第一阶段不得建立空壳表、占位接口或与 View 并行的保存路径。
+Phase 4A 的最小创作范围固定为单页 `desktop`：一个页面、十二列栅格和一个或多个 Component。`mobile | wallboard`、多页面、联动和轮播仍在 Phase 5；数据库快照不得预埋未实现的第二套页面或展示模式字段。
+
+Data Application 使用独立于 Workbench View 的唯一 API：
+
+```text
+GET    /api/v1/workbench/data_applications
+POST   /api/v1/workbench/data_applications
+GET    /api/v1/workbench/data_applications/:id
+PUT    /api/v1/workbench/data_applications/:id
+DELETE /api/v1/workbench/data_applications/:id
+POST   /api/v1/workbench/data_applications/:id/publish
+POST   /api/v1/workbench/data_applications/:id/offline
+GET    /api/v1/workbench/data_applications/:id/runtime
+```
+
+创建请求只提交名称、说明和一个或多个 `source_view_ids`。Workbench 在当前 Tenant 与当前 owner User 范围内读取来源 View、重新读取各 Service Consumer Descriptor 校验契约，然后复制为 Component 快照；`source_view_ids` 不进入 Data Application 表、Revision 或运行响应。
+
+聚合根保存当前草稿快照、正整数并发 `version`、`unpublished | published | offline` 发布状态和当前 Revision 编号。`PUT` 原子完整替换草稿；发布在一个事务中校验 `version`、写入新的不可变 Application Revision、切换当前 Revision 并递增聚合版本；下线只切换发布状态并递增聚合版本，不删除最后发布修订。只有从未发布的应用允许携带当前 `version` 删除，已产生 Revision 的应用只能下线。
+
+应用发布版次使用 `revision_number`，不得复用资源并发字段 `version`。应用更新、删除、发布和下线都必须在请求体携带当前正整数 `version`；冲突统一返回 `409 + workbench_data_application_version_conflict`，不得自动重试或服务端兜底当前版本。
+
+Phase 4A 的稳定运行响应只向创建者开放，并要求 `workbench.data_application.execute`。这不是临时兼容路径：创建者始终可以运行自己发布的应用；其他用户必须等 Phase 4B 接入 owner Resource Grant、Asset 履约和 Portal 打开链路后才可运行。当前不得用“同 Tenant 即可读”、公开链接、API Key、专属 Token 或 Catalog 可见性代替资源授权。
 
 发布后的 Data Application 先由 Catalog 建立企业 CatalogEntry，再由 Asset 通过 `AssetComponent.catalog_entry_id` 组合为 `application` 类型资产。Asset 只保存资产组合、发布和授权履约事实，不保存应用页面、组件树或运行配置。
 
@@ -718,6 +739,19 @@ workbench.view.update
 workbench.view.delete
 ```
 
+Phase 4A 增加 Data Application 自身权限：
+
+```text
+workbench.data_application.create
+workbench.data_application.read
+workbench.data_application.update
+workbench.data_application.delete
+workbench.data_application.publish
+workbench.data_application.execute
+```
+
+`read | update | delete | publish | execute` 在 Phase 4A 都同时匹配当前 Tenant 与 `owner_user_id`；`offline` 复用 `publish`，不增加第二个生命周期 Permission。Data Application Permission 只控制应用配置和运行入口，任何 Component 的真实查询仍由 Service 使用当前 User Bearer 执行最终授权。
+
 | 操作 | Workbench Permission | owner 条件 | Service 校验 |
 | --- | --- | --- | --- |
 | 创建 View | `workbench.view.create` | `owner_user_id` 由当前 User 生成 | 当前 User 可读 Descriptor |
@@ -850,14 +884,19 @@ Outdoor 验收通过不等于通用能力通过。Phase 3 至少需要第二个�
 
 ### Phase 4：Data Application、Catalog、Asset 与 Portal
 
-- [ ] 实现 Data Application 聚合根、Component 配置快照、页面和布局；
-- [ ] 实现应用级参数与 Component 参数的显式绑定；
-- [ ] 实现草稿、不可变发布 Revision、下线和稳定运行入口；
-- [ ] 增加同 origin `/data-apps/:application_id` 顶层运行端，不保留第二条 iframe 运行 URL；
+Phase 4A 先完成 Workbench owner 内的独立闭环：
+
+- [x] 实现 Data Application 聚合根、Component 配置快照、单页 desktop 布局；
+- [x] 实现应用级参数与 Component 参数的显式绑定；
+- [x] 实现草稿、不可变发布 Revision、下线和创建者稳定运行入口；
+- [x] 增加同 origin `/data-apps/:application_id` 顶层运行端，不保留第二条 iframe 运行 URL；
+- [x] 验证个人 View 修改或删除不会改变已创建或已发布的 Data Application；
+
+Phase 4B 再接企业目录和资产授权主线：
+
 - [ ] 将 Workbench Data Application 作为专业资源接入 CatalogEntry；
 - [ ] 一次性启用并收敛 Asset `application` 类型的 CatalogEntry 组合路线；
 - [ ] 接入 owner Resource Grant、Asset 履约和 Portal 打开入口；
-- [ ] 验证个人 View 修改或删除不会改变已创建或已发布的 Data Application；
 - [ ] 删除旧的手工应用链接、软授权和专属 Token 设想。
 
 ### Phase 5：BI 深化与大屏
@@ -984,8 +1023,85 @@ Service 按正式入口重启后，已在 Console iframe 主路径完成浏览�
 
 1. `make test-online-runner` 已在当前工作树通过 84 项确定性测试，证明 Online 分发、预检、Host Gate、Fixture 安全边界、失败清理和 Workbench suite 协议可执行；这不等于真实 T4 通过。若目标是完成 Phase 3 验收，仍须在已登记的专用 Online Runner 执行 `workbench-service-consumption` T4 suite，取得 Business MySQL 的真实动态参数、Chart canvas、CSV、契约变化阻断和执行审计证据；成功前不勾选其余 Phase 3 验收项。
 2. 若只在当前本地环境继续人工体验，`f2` 和 `p3` 均没有发布筛选字段且结果超过单页上限，只能验证 Table 与 cursor；Chart、Map 和有限导出被完整性规则阻断是正确行为。需要动态参数或完整 Chart/Map 时，应通过 Service 正式发布一个有 `filterable_fields`、可收敛为完整有界结果的服务，不能直接改数据库制造契约。
+
+### 14.5 Phase 4A 实现与接力状态（2026-08-27）
+
+Phase 4A 已按“创建者私有闭环”实现，未提前进入 Catalog、Asset 或 Portal 授权路线：
+
+- Workbench 新增独立 `DataApplication` 聚合根和 `DataApplicationRevision` 不可变修订；应用从一个或多个当前 owner 的 View 创建时复制 Component、ServiceReference、契约指纹、查询模板、renderer 和默认参数，数据库、API 与运行时均不保存 `source_view_ids`；
+- 草稿使用正整数 `version` 做乐观并发，发布事务写入新 Revision 并切换当前修订，下线只从 `published` 切换为 `offline`；重复下线不递增版本，已产生 Revision 的应用不能删除；
+- Phase 4A 固定为一个 desktop 页面、十二列栅格和最多 24 个 Component；应用参数通过显式 Binding 映射到每个 Component 参数，运行时不按字段名猜测绑定；
+- 创建者运行端固定为同 origin `/data-apps/:application_id`，不显示 Console 管理导航，不存在第二条 iframe 运行 URL；运行端读取当前不可变 Revision，重新读取每个 Service Consumer Descriptor、校验契约指纹，再使用当前 User Bearer 直接执行 Service；
+- 运行端复用 `common-frontend/basic | chart | map` renderer；Table 保留正式 cursor 前后翻页，Chart 和 Map 继续拒绝把 `has_more=true` 的第一页当作完整结果；
+- Workbench 权限清单新增 `workbench.data_application.create | delete | execute | publish | read | update`；System migration `000104_iam_workbench_data_application` 将其纳入内置租户角色并刷新授权版本。应用配置权限不替代底层 Service 的最终数据授权；
+- Console 搜索和模块导航使用中英文 i18n；开发代理和 nginx 均将 `/data-apps/` 唯一转发到 Workbench frontend。Workbench Vite 统一使用 `/workbench/` base，修复顶层运行端曾错误加载 Console `/src/main.js` 的问题。
+
+本轮最新代码已通过：
+
+```bash
+cd workbench/backend && go test ./...
+make test-workbench-frontend
+make test-console-frontend
+make test-authorization
+WORKBENCH_POSTGRES_TEST_DSN='postgres://.../addp_test?sslmode=disable' make test-workbench-postgres
+ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?sslmode=disable' \
+  bash scripts/test/system-iam-postgres-gate.sh --package migration --test workbench-data-application
+python3 scripts/ci/check-build-registration.py --repository .
+python3 scripts/ci/check-frontend-ci-registration.py --repository .
+python3 scripts/ci/check-t2-ci-registration.py --repository .
+```
+
+Workbench 与 System 重启后，Phase 4A 已完成创建者真实浏览器闭环。为便于人工查看，保留下列正式示例，不得作为临时数据删除或下线：
+
+| 项目 | 当前值 |
+| --- | --- |
+| Data Application 名称 | `workbench-p4-demo` |
+| Data Application ID | `1714dcf7-f34e-4996-a8dc-3b88998ebe55` |
+| 创作入口 | `/workbench/applications/1714dcf7-f34e-4996-a8dc-3b88998ebe55` |
+| 稳定运行入口 | `/data-apps/1714dcf7-f34e-4996-a8dc-3b88998ebe55` |
+| 来源 View | `workbench-p3-demo` |
+| ServiceReference | Query Service `21` |
+| 当前状态 | `published` |
+| 当前 Revision | `2` |
+
+真实浏览器证据包括：创作端从现有 View 创建独立草稿并保存；首次发布产生 Revision 1；顶层运行端使用当前 AuthSession 读取不可变快照并执行真实 Service 查询，Table 返回 50 行且 `has_more=true`；cursor 前进到第 2 页后首行变化，返回第 1 页后首行恢复；保存 Revision 2 草稿后运行端仍显示 Revision 1 与旧说明；发布 Revision 2 后运行端切换到新说明。数据库复核当前聚合版本为 6、当前修订为 2，且 Revision 1、2 的说明分别保持原值。整个最终链路没有新增 console `error` 或 `warn`。
+
+浏览器回归同时暴露并修复三项此前单元测试未覆盖的边界：
+
+1. 没有动态参数时，Go nil slice 曾把 `parameters` 和 `parameter_bindings` 编码为 `null`，使编辑器读取 `.length` 崩溃；后端现统一把快照集合规范化为 JSON 数组，并加入无参数 View 回归测试；
+2. 编辑器曾对 Vue reactive Proxy 直接调用 `structuredClone`，点击保存会在发出 `PUT` 前抛 `DataCloneError`；现以 JSON 契约纯函数复制和裁剪快照，并使用 Proxy 输入测试覆盖；
+3. 发布或下线确认框取消时，Element Plus 的正常 Promise rejection 曾形成未处理 Vue 错误；现只把 `cancel | close` 解释为无操作，真正异常继续抛出，并加入取消行为测试。
+
+下线与重复下线冲突已由后端单元测试和 PostgreSQL 门禁覆盖。为保留可查看的唯一正式示例，本轮在浏览器确认框中主动取消下线，没有把“浏览器下线后运行阻断”记作手工通过。Phase 4B 的 CatalogEntry、Asset `application` 组合、owner Resource Grant 和 Portal 打开入口仍全部未实现，不应在 Phase 4A 代码中增加软授权、API Key 或专属 Token。
+
+本轮重启 Workbench Backend 时，整套环境的生命周期锁由既有 `keepalive restart -all` 持有，不能走会停止整套环境的局部 `restart.sh`。按用户授权，先使用 `scripts/dev/build-identity.sh` 的同一原子构建函数生成最新二进制，再只替换 8193 的精确 Workbench 进程；后续既有整套生命周期会继续管理 `.dev-pids/workbench.pid`，不应在锁仍被持有时手工并行启动第二个 Workbench Backend。交付检查以“PID 文件与 8193 监听进程一致、原子构建 fingerprint 为最新、`/health/ready` 成功”为准，不依赖临时 launchd 标签。
 3. Phase 1 的 Service owner Resource Grant / Policy 不能在 Workbench 专题内局部补齐。当前正式权限文档确认 owner Resource Grant / Policy、Scope Binding 和 Explicit Deny 的统一运行时尚未形成，企业目录主路径又明确禁止恢复旧的通用 Owner ResourceRef/ACL；因此 Service 继续使用 6.4 节规定的 fail-closed 租户级策略，待统一 owner 授权事实模型落地后接入同一 Repository 过滤与详情判断入口。该外部前置条件未满足前保持未勾选，不得在 Service 增加专属授权表或第二套 ACL。
 4. 当前最小充分门禁为 `go test ./...`（Service、Workbench Backend）、`make test-workbench-frontend`、对应 PostgreSQL 标准门禁和 `git diff --check`；涉及 Console、共享 renderer、CI 或 Swagger 时必须同步运行本专题十四章列出的扩展门禁。
+
+### 14.6 Phase 3 首次真实 T4 调度状态（2026-08-27）
+
+远端 `main` 提交 `754492c8958055efd28378833c19414a5f2a5236` 已包含本专题当前实现，并通过手工 `workflow_dispatch` 触发 [Online T4 run 33036113139](https://github.com/pampa0629/addp/actions/runs/33036113139)，输入为 `workbench-service-consumption`。GitHub 已正确创建 Job `98399046724`，名称为 `Online T4 (workbench-service-consumption)`；截至本节记录时，Workflow 与 Job 均持续为 `queued`，没有任何 step 开始执行，因此不能作为 Host Gate、Business MySQL、浏览器 E2E 或清理通过的证据。
+
+当前阻塞与统一 Online 验收专题记录的部署前置条件一致：具有 `self-hosted`、`macOS`、`addp-online` 三个标签的专用 Runner 尚未接单。当前个人开发 Mac 未发现 Actions Runner 进程、launchd 服务或 Runner 安装目录，并且个人 checkout 存在根 `.env`，不符合 Host Gate 的独立部署边界。不得删除 `addp-online` 标签、改用 GitHub-hosted Runner、放宽根 `.env`/独立数据库/仓库外 Secret 约束，或在旧运行仍排队时重复触发。
+
+接力动作固定为：先在仓库 `Settings → Actions → Runners` 恢复或准备符合规范的专用 macOS Runner；现有 queued 运行会在 Runner 上线后自动接单。运行结束后必须核对 `readiness.txt`、`summary.txt`、`online-report.json`、`workbench-service-consumption-browser.json`、Service 执行审计证据、应用日志及 `cleanup=passed`，再决定是否勾选 Phase 3 的 Business MySQL 验收项。
+
+### 14.7 Phase 4A 参数联动人工验收设计（2026-08-27）
+
+Phase 4A 的单组件、无参数发布闭环已经通过，但尚未用真实服务证明“一个应用参数同时驱动多个 Component”。本地人工验收固定使用正式发布链路补齐该证据，不修改现有 Query Service `f2`、`p3`，不直接更新数据库契约，也不在 Workbench 生产代码中加入 Outdoor 字段判断。
+
+验收资源与拓扑固定如下：
+
+| 层级 | 设计 |
+| --- | --- |
+| Query Service | 基于 `f2` 已使用的正式 Meta table locator 独立发布 `workbench_parameter_demo`，由 Service 重新冻结来源快照；默认字段为 `SmID`、`NAME`、`City`、`SHAPE_Area`，只开放 `City` 作为 `filterable_fields`，稳定键继续由源表主键 `SmID` 生成 |
+| Table View | `workbench-parameter-table`，声明 `city` 文本参数并以 `eq` 显式绑定 Query Service 字段 `City`，展示城市内的地块明细 |
+| Chart View | `workbench-parameter-chart`，使用同一服务和同一字段筛选参数，以 `NAME` 为维度、`SHAPE_Area` 为数值展示城市内分布 |
+| Data Application | 草稿名 `workbench-parameter-linkage-demo`，从上述两个 View 复制为两个独立 Component；只保留一个应用级 `city` 参数，并将其显式绑定到两个 Component 的 `city` 参数 |
+
+选择 `City` 是验收数据事实，不是产品模型：当前正式来源共 130 行，各城市约 7–12 行，输入不同城市后两个组件都能在单页内得到完整且肉眼可区分的结果，Chart 不会因 `page.has_more=true` 被完整性规则阻断。该场景只证明真实动态参数、显式共享绑定、双组件渲染和 cursor/完整性边界；Workbench 的领域无关性仍由生产代码扫描、Consumer Descriptor 契约测试和待执行的 Business MySQL T4 共同证明。
+
+人工验收顺序固定为：先分别运行两个 View，验证参数值变化会改变真实结果；再创建 Data Application 草稿，把两个 Component 映射到唯一应用参数；保存后验证一次输入触发两次正式 Service 查询、两组件使用同一类型化参数且结果同步变化；再次保存以验证草稿乐观并发；发布前确认示例名称与是否长期保留；发布后验证不可变 Revision 运行端。任何失败都回到 Service Descriptor、Workbench 编译或应用 Binding 的单一主路径修复，不增加旁路请求或测试专用运行端。
 
 ## 十五、概念设计状态
 

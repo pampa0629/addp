@@ -227,7 +227,7 @@ graph TB
 | **Manager** | 数据管理:数据存储目录展示、数据预览、空间快显和瓦片缓存 | 8081 / 8081 | Go, Gin, OpenLayers |
 | **Meta** | 元数据服务:扫描、索引、搜索 | 8082 / 8082 | Go, Gin, Meilisearch, Cron |
 | **Catalog** | 企业数据目录：稳定目录身份、来源绑定、业务语义关联、责任、治理和企业元数据搜索 | 8192 / 8192 | Go, Gin, GORM, Meilisearch |
-| **Workbench** | 服务消费工作台：动态参数、结构化查询、可视化和个人 Workbench View | 8193 / 8193 | Go, Gin, GORM, Vue 3 |
+| **Workbench** | 服务消费工作台：动态参数、结构化查询、个人 Workbench View，以及 Data Application 创作、不可变发布修订和运行 | 8193 / 8193 | Go, Gin, GORM, Vue 3 |
 | **Meta Worker** | Meta 扫描任务处理器 | - | Go, PostgreSQL claim/lease |
 | **Transfer** | 数据传输:同步、搬运、格式转换任务 | 8083 / 8083 | Go, Gin, GORM |
 | **Transfer Bounded Worker** | Transfer 有界任务处理器 | - | Go, PostgreSQL claim/lease |

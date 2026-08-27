@@ -59,7 +59,11 @@ func RegisterIAMServiceRuntimeRoutes(
 	if err != nil {
 		return err
 	}
-	catalogReferenceRead, err := middleware.NewIAMPermissionGuard("iam.department.read", "iam.tenant_membership.read")
+	catalogReferenceResolveRead, err := middleware.NewIAMPermissionGuard("iam.department.read", "iam.project_group.read", "iam.tenant_membership.read")
+	if err != nil {
+		return err
+	}
+	catalogReferenceCandidateRead, err := middleware.NewIAMPermissionGuard("iam.department.read", "iam.tenant_membership.read")
 	if err != nil {
 		return err
 	}
@@ -97,7 +101,8 @@ func RegisterIAMServiceRuntimeRoutes(
 	runtimeRoutes.POST("/execution-authorizations", tenantContext, executionAuthorizationIssue, runtime.ExecutionAuthorizationHandler.IssueFromExecution)
 	runtimeRoutes.POST("/execution-authorizations/service-definitions", tenantContext, executionAuthorizationIssue, runtime.ExecutionAuthorizationHandler.IssueFromServiceDefinition)
 	runtimeRoutes.POST("/task-authorization-subjects/:id/resolve", tenantContext, taskAuthorizationResolve, runtime.TaskAuthorizationSubjectHandler.Resolve)
-	runtimeRoutes.POST("/catalog-references/resolve", tenantContext, catalogReferenceRead, runtime.CatalogReferenceHandler.Resolve)
+	runtimeRoutes.POST("/catalog-references/resolve", tenantContext, catalogReferenceResolveRead, runtime.CatalogReferenceHandler.Resolve)
+	runtimeRoutes.GET("/catalog-references/candidates", tenantContext, catalogReferenceCandidateRead, runtime.CatalogReferenceHandler.ListCandidates)
 
 	api.POST("/tenant/audit/events", runtime.Authentication, runtime.ServiceCredential, tenantContext, tenantAuditCreate, runtime.InternalAuditHandler.CreateService)
 	return nil

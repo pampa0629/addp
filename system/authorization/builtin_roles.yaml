@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 68
+manifest_version: 70
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -335,6 +335,12 @@ roles:
       - inference.provider_credential.update
       - manager.configuration.read
       - manager.configuration.update
+      - workbench.data_application.create
+      - workbench.data_application.delete
+      - workbench.data_application.execute
+      - workbench.data_application.publish
+      - workbench.data_application.read
+      - workbench.data_application.update
       - workbench.view.create
       - workbench.view.delete
       - workbench.view.read
@@ -568,6 +574,12 @@ roles:
       - meta.catalog.read
       - meta.lineage.read
       - service.data_read.execute
+      - workbench.data_application.create
+      - workbench.data_application.delete
+      - workbench.data_application.execute
+      - workbench.data_application.publish
+      - workbench.data_application.read
+      - workbench.data_application.update
       - workbench.view.create
       - workbench.view.delete
       - workbench.view.read
@@ -812,6 +824,8 @@ roles:
       - quality.task_provider.execute
       - quality.task_provider.read
       - system.task_authorization.execute
+      - transfer.task_provider.execute
+      - transfer.task_provider.read
   - key: tenant.pointcloud_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.pointcloud_runtime.name

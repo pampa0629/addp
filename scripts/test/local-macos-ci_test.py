@@ -68,6 +68,7 @@ class LocalMacOSCiTest(unittest.TestCase):
         shutil.copy2(SCRIPT, target)
         files = {
             ".gitignore": "**/.venv/\n**/venv/\n",
+            ".node-version": "24\n",
             "Makefile": "help:\n\t@true\n",
             "common-python/pyproject.toml": "[project]\nname='fixture'\n",
             "agent/backend/requirements.txt": "# fixture\n",
@@ -115,7 +116,7 @@ class LocalMacOSCiTest(unittest.TestCase):
             "node",
             """
             #!/bin/bash
-            printf 'v22.14.0\n'
+            printf '%s\n' "${NODE_VERSION:-v24.20.0}"
             """,
         )
         self._executable("npm", "#!/bin/bash\nexit 0\n")
@@ -159,12 +160,14 @@ class LocalMacOSCiTest(unittest.TestCase):
         *arguments: str,
         fail_target: str = "",
         active_infra: bool = False,
+        node_version: str = "v24.20.0",
     ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment["PATH"] = f"{self.fake_bin}:{environment['PATH']}"
         environment["MAKE_LOG"] = str(self.make_log)
         environment["FAIL_MAKE_TARGET"] = fail_target
         environment["ACTIVE_INFRA"] = "1" if active_infra else "0"
+        environment["NODE_VERSION"] = node_version
         return subprocess.run(
             ["bash", "scripts/test/local-macos-ci.sh", *arguments],
             cwd=self.repository,
@@ -265,6 +268,13 @@ class LocalMacOSCiTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("running ADDP Infra belongs to another session", result.stderr)
+        self.assertEqual([], self._make_commands())
+
+    def test_check_only_rejects_nonstandard_node_major(self) -> None:
+        result = self._run("--check-only", node_version="v22.22.0")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Node.js 24 is required, found v22.22.0", result.stderr)
         self.assertEqual([], self._make_commands())
 
 

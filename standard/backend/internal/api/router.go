@@ -92,6 +92,16 @@ func SetupRouter(
 			),
 			referenceResolutionHandler.Resolve,
 		)
+		api.GET(
+			"/references/candidates",
+			commonAuth.MustNewServiceClientGuard("addp-catalog"),
+			permission(
+				standardauthorization.PermissionStandardDomainRead,
+				standardauthorization.PermissionStandardGlossaryRead,
+				standardauthorization.PermissionStandardElementRead,
+			),
+			referenceResolutionHandler.ListCandidates,
+		)
 
 		domains := api.Group("/domains")
 		{

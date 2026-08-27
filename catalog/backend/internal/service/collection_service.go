@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/addp/catalog/internal/models"
+	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -50,14 +51,83 @@ type CollectionInput struct {
 	EntryIDs       []uuid.UUID
 }
 
+type CollectionProjectGroupAccess struct {
+	ProjectGroupID int64
+	RelationRole   string
+	CanRead        bool
+	CanUpdate      bool
+}
+
+type CollectionProjectGroupOption struct {
+	ProjectGroupID int64  `json:"project_group_id,string" swaggertype:"string"`
+	Name           string `json:"name"`
+	Code           string `json:"code,omitempty"`
+	Status         string `json:"status"`
+	RelationRole   string `json:"relation_role"`
+	CanRead        bool   `json:"can_read"`
+	CanUpdate      bool   `json:"can_update"`
+}
+
+type CollectionProjectGroupList struct {
+	Data []CollectionProjectGroupOption `json:"data"`
+}
+
 type CollectionService struct {
-	db      *gorm.DB
-	entries *EntryService
-	now     func() time.Time
+	db       *gorm.DB
+	entries  *EntryService
+	resolver SystemReferenceResolver
+	now      func() time.Time
 }
 
 func NewCollectionService(db *gorm.DB, entries *EntryService) *CollectionService {
 	return &CollectionService{db: db, entries: entries, now: time.Now}
+}
+
+func (s *CollectionService) WithSystemReferenceResolver(resolver SystemReferenceResolver) *CollectionService {
+	s.resolver = resolver
+	return s
+}
+
+func (s *CollectionService) ListProjectGroups(
+	ctx context.Context,
+	tenantID int64,
+	accesses []CollectionProjectGroupAccess,
+) (*CollectionProjectGroupList, error) {
+	if s == nil || s.resolver == nil || tenantID <= 0 {
+		return nil, ErrReferenceValidationUnavailable
+	}
+	if len(accesses) == 0 {
+		return &CollectionProjectGroupList{Data: []CollectionProjectGroupOption{}}, nil
+	}
+	references := make([]commonClient.SystemCatalogReference, 0, len(accesses))
+	for _, access := range accesses {
+		if access.ProjectGroupID <= 0 || strings.TrimSpace(access.RelationRole) == "" || (!access.CanRead && !access.CanUpdate) {
+			return nil, ErrReferenceValidationUnavailable
+		}
+		references = append(references, commonClient.SystemCatalogReference{SubjectType: "project_group", ID: access.ProjectGroupID})
+	}
+	resolved, err := s.resolver.ResolveSystemReferences(ctx, tenantID, references)
+	if err != nil || len(resolved) != len(references) {
+		return nil, fmt.Errorf("%w: resolve Project Group references", ErrReferenceValidationUnavailable)
+	}
+	data := make([]CollectionProjectGroupOption, 0, len(accesses))
+	for index, result := range resolved {
+		if result.SubjectType != "project_group" || result.ID != accesses[index].ProjectGroupID {
+			return nil, ErrReferenceValidationUnavailable
+		}
+		if !result.Found || !result.Referenceable {
+			continue
+		}
+		name := strings.TrimSpace(result.Name)
+		if name == "" {
+			return nil, ErrReferenceValidationUnavailable
+		}
+		data = append(data, CollectionProjectGroupOption{
+			ProjectGroupID: result.ID, Name: name, Code: strings.TrimSpace(result.Code), Status: result.Status,
+			RelationRole: accesses[index].RelationRole, CanRead: accesses[index].CanRead, CanUpdate: accesses[index].CanUpdate,
+		})
+	}
+	return &CollectionProjectGroupList{Data: data}, nil
 }
 
 func (s *CollectionService) List(ctx context.Context, tenantID int64, access CollectionAccess, filter CollectionListFilter) (*CollectionListResult, error) {
@@ -100,7 +170,8 @@ func (s *CollectionService) Get(ctx context.Context, tenantID int64, access Coll
 
 func (s *CollectionService) Create(ctx context.Context, tenantID int64, access CollectionAccess, input CollectionInput) (*CollectionDetail, error) {
 	name, description, entryIDs, err := normalizeCollectionInput(input)
-	if err != nil || tenantID <= 0 || access.UserID <= 0 || input.ProjectGroupID <= 0 || !containsInt64(access.UpdateGroupIDs, input.ProjectGroupID) {
+	if err != nil || tenantID <= 0 || access.UserID <= 0 || input.ProjectGroupID <= 0 ||
+		!containsInt64(access.ReadGroupIDs, input.ProjectGroupID) || !containsInt64(access.UpdateGroupIDs, input.ProjectGroupID) {
 		return nil, ErrInvalidCollection
 	}
 	if err := s.validateVisibleEntries(ctx, tenantID, access.EntryAccess, entryIDs); err != nil {
@@ -132,7 +203,7 @@ func (s *CollectionService) Update(ctx context.Context, tenantID int64, access C
 	if err != nil || tenantID <= 0 || access.UserID <= 0 || id == uuid.Nil || input.Version <= 0 {
 		return nil, ErrInvalidCollection
 	}
-	current, err := s.getAccessibleCollection(ctx, tenantID, id, access.UpdateGroupIDs)
+	current, err := s.getAccessibleCollection(ctx, tenantID, id, writableCollectionGroupIDs(access))
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +246,7 @@ func (s *CollectionService) Delete(ctx context.Context, tenantID int64, access C
 	if tenantID <= 0 || access.UserID <= 0 || id == uuid.Nil || version <= 0 {
 		return ErrInvalidCollection
 	}
-	if _, err := s.getAccessibleCollection(ctx, tenantID, id, access.UpdateGroupIDs); err != nil {
+	if _, err := s.getAccessibleCollection(ctx, tenantID, id, writableCollectionGroupIDs(access)); err != nil {
 		return err
 	}
 	now := s.now().UTC()
@@ -283,6 +354,20 @@ func normalizeCollectionInput(input CollectionInput) (string, string, []uuid.UUI
 		entryIDs = append(entryIDs, entryID)
 	}
 	return name, description, entryIDs, nil
+}
+
+func writableCollectionGroupIDs(access CollectionAccess) []int64 {
+	readable := make(map[int64]struct{})
+	for _, id := range canonicalPositiveIDs(access.ReadGroupIDs) {
+		readable[id] = struct{}{}
+	}
+	result := make([]int64, 0, len(access.UpdateGroupIDs))
+	for _, id := range canonicalPositiveIDs(access.UpdateGroupIDs) {
+		if _, ok := readable[id]; ok {
+			result = append(result, id)
+		}
+	}
+	return result
 }
 
 func replaceCollectionEntries(tx *gorm.DB, collection models.Collection, actorID int64, entryIDs []uuid.UUID, now time.Time) error {

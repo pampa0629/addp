@@ -71,6 +71,11 @@ func TestCollectionServiceRequiresGroupScopeAndEntryVisibility(t *testing.T) {
 		t.Fatalf("foreign group Get() error = %v", err)
 	}
 	if _, err := collections.Create(context.Background(), 7, CollectionAccess{UserID: 40, UpdateGroupIDs: []int64{9}}, CollectionInput{
+		ProjectGroupID: 9, Name: "Write only group", EntryIDs: []uuid.UUID{entry.ID},
+	}); !errors.Is(err, ErrInvalidCollection) {
+		t.Fatalf("write-only group Create() error = %v", err)
+	}
+	if _, err := collections.Create(context.Background(), 7, CollectionAccess{UserID: 40, ReadGroupIDs: []int64{9}, UpdateGroupIDs: []int64{9}}, CollectionInput{
 		ProjectGroupID: 9, Name: "Hidden entry", EntryIDs: []uuid.UUID{entry.ID},
 	}); !errors.Is(err, ErrEntryNotFound) {
 		t.Fatalf("invisible entry Create() error = %v", err)
@@ -78,5 +83,20 @@ func TestCollectionServiceRequiresGroupScopeAndEntryVisibility(t *testing.T) {
 	filtered, err := collections.List(context.Background(), 7, allowed, CollectionListFilter{ProjectGroupID: 10, Page: 1, PageSize: 20})
 	if err != nil || filtered.Total != 0 || len(filtered.Data) != 0 {
 		t.Fatalf("foreign group List() = %#v, %v", filtered, err)
+	}
+}
+
+func TestCollectionServiceDynamicallyResolvesAccessibleProjectGroups(t *testing.T) {
+	resolver := &fakeSystemReferenceResolver{}
+	collections := NewCollectionService(nil, nil).WithSystemReferenceResolver(resolver)
+	result, err := collections.ListProjectGroups(context.Background(), 7, []CollectionProjectGroupAccess{
+		{ProjectGroupID: 9, RelationRole: "leader", CanRead: true, CanUpdate: true},
+		{ProjectGroupID: 10, RelationRole: "member", CanRead: true},
+	})
+	if err != nil {
+		t.Fatalf("ListProjectGroups() error = %v", err)
+	}
+	if resolver.calls != 1 || len(result.Data) != 2 || result.Data[0].ProjectGroupID != 9 || result.Data[0].Name != "project_group name" || !result.Data[0].CanUpdate || result.Data[1].CanUpdate {
+		t.Fatalf("result = %#v, calls=%d", result, resolver.calls)
 	}
 }

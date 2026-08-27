@@ -26,8 +26,17 @@
             <el-option :label="t('catalog.governanceTasks.statusResolved')" value="resolved" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="t('catalog.governanceTasks.entryId')">
-          <el-input v-model.trim="filters.entry_id" clearable :placeholder="t('catalog.governanceTasks.entryIdPlaceholder')" @keyup.enter="applyFilters" />
+        <el-form-item :label="t('catalog.governanceTasks.entry')">
+          <el-select
+            v-model="filters.entry_id"
+            clearable filterable remote reserve-keyword
+            :loading="entryOptionsLoading"
+            :remote-method="searchEntryOptions"
+            :placeholder="t('catalog.governanceTasks.entryPlaceholder')"
+            @visible-change="visible => visible && searchEntryOptions('')"
+          >
+            <el-option v-for="option in entryOptions" :key="option.id" :label="option.display_name || t('catalog.entries.unnamed')" :value="option.id" />
+          </el-select>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :icon="Search" @click="applyFilters">{{ t('catalog.common.search') }}</el-button>
@@ -87,9 +96,10 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Refresh, Search } from '@element-plus/icons-vue'
 import { navigateConsoleModuleRoute } from '@common-ui'
-import { listGovernanceTasks } from '../api/catalog'
+import { listEntries, listGovernanceTasks } from '../api/catalog'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
 import {
+  buildGovernanceEntryCandidateQuery,
   buildGovernanceTaskQuery,
   isCanonicalGovernanceTaskQuery,
   parseGovernanceTaskRoute
@@ -101,7 +111,14 @@ const { t, locale } = useI18n()
 const filters = reactive(parseGovernanceTaskRoute(route.query))
 const result = reactive({ data: [], total: 0, page: 1, page_size: 20, total_pages: 0 })
 const loading = ref(false)
+const entryOptions = ref([])
+const entryOptionsLoading = ref(false)
 let requestVersion = 0
+let entryOptionsRequestVersion = 0
+
+if (filters.entry_id) {
+  entryOptions.value = [{ id: filters.entry_id, display_name: t('catalog.edit.referenceUnavailable') }]
+}
 
 async function loadTasks() {
   const version = ++requestVersion
@@ -110,11 +127,36 @@ async function loadTasks() {
     const response = await listGovernanceTasks(filters)
     if (version !== requestVersion) return
     Object.assign(result, response, { data: response.data || [] })
+    const selected = result.data.find(item => item.catalog_entry_id === filters.entry_id)
+    if (selected) mergeEntryOption({ id: selected.catalog_entry_id, display_name: selected.entry_display_name })
   } catch (error) {
     if (version === requestVersion) ElMessage.error(error?.response?.data?.error || t('catalog.governanceTasks.loadFailed'))
   } finally {
     if (version === requestVersion) loading.value = false
   }
+}
+
+async function searchEntryOptions(search = '') {
+  const version = ++entryOptionsRequestVersion
+  entryOptionsLoading.value = true
+  try {
+    const response = await listEntries(buildGovernanceEntryCandidateQuery(search))
+    if (version !== entryOptionsRequestVersion) return
+    const selected = entryOptions.value.filter(item => item.id === filters.entry_id)
+    const options = new Map(selected.map(item => [item.id, item]))
+    for (const item of response.data || []) options.set(item.id, item)
+    entryOptions.value = [...options.values()]
+  } catch (error) {
+    if (version === entryOptionsRequestVersion) ElMessage.error(error?.response?.data?.error || t('catalog.governanceTasks.entrySearchFailed'))
+  } finally {
+    if (version === entryOptionsRequestVersion) entryOptionsLoading.value = false
+  }
+}
+
+function mergeEntryOption(option) {
+  const options = new Map(entryOptions.value.map(item => [item.id, item]))
+  options.set(option.id, option)
+  entryOptions.value = [...options.values()]
 }
 
 async function navigateList(history = 'push') {
@@ -152,7 +194,7 @@ async function openEntry(row) {
 function subjectLabel(row) {
   const snapshot = row.observed_snapshot || {}
   const name = snapshot.name || snapshot.code
-  return name ? `${name} (${row.subject_id})` : String(row.subject_id || '-')
+  return name || t('catalog.edit.referenceUnavailable')
 }
 
 function formatDate(value) {
@@ -162,6 +204,9 @@ function formatDate(value) {
 
 watch(() => route.query, async query => {
   Object.assign(filters, parseGovernanceTaskRoute(query))
+  if (filters.entry_id && !entryOptions.value.some(item => item.id === filters.entry_id)) {
+    mergeEntryOption({ id: filters.entry_id, display_name: t('catalog.edit.referenceUnavailable') })
+  }
   const canonical = buildGovernanceTaskQuery(filters)
   if (!isCanonicalGovernanceTaskQuery(query, canonical)) {
     await navigateList('replace')

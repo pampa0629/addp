@@ -50,6 +50,25 @@ func TestReferenceResolutionServiceRejectsInvalidBatch(t *testing.T) {
 	}
 }
 
+func TestReferenceResolutionServiceListsReferenceableCandidates(t *testing.T) {
+	repository := &fakeReferenceResolutionRepository{
+		elements: []models.Element{{ID: 4, Name: "Customer ID", Code: "customer_id", Status: "approved", LifecycleState: "active"}},
+	}
+	result, err := NewReferenceResolutionService(repository).ListCandidates(context.Background(), 7, ReferenceTypeElement, " customer ", 1, 20)
+	if err != nil {
+		t.Fatalf("ListCandidates() error = %v", err)
+	}
+	if result.Total != 1 || len(result.Data) != 1 || result.Data[0].ID != 4 || result.Data[0].ObjectType != ReferenceTypeElement {
+		t.Fatalf("result = %#v", result)
+	}
+	if _, err := NewReferenceResolutionService(repository).ListCandidates(context.Background(), 7, "metric", "", 1, 20); !errors.Is(err, ErrInvalidReferenceResolutionRequest) {
+		t.Fatalf("invalid type error = %v", err)
+	}
+	if _, err := NewReferenceResolutionService(repository).ListCandidates(context.Background(), 7, ReferenceTypeDomain, "", 1, 51); !errors.Is(err, ErrInvalidReferenceResolutionRequest) {
+		t.Fatalf("oversized page error = %v", err)
+	}
+}
+
 type fakeReferenceResolutionRepository struct {
 	domains     []models.Domain
 	glossaries  []models.Glossary
@@ -57,6 +76,18 @@ type fakeReferenceResolutionRepository struct {
 	domainIDs   []int64
 	glossaryIDs []int64
 	elementIDs  []int64
+}
+
+func (r *fakeReferenceResolutionRepository) ListDomainCandidates(context.Context, int64, string, int, int) ([]models.Domain, int64, error) {
+	return r.domains, int64(len(r.domains)), nil
+}
+
+func (r *fakeReferenceResolutionRepository) ListGlossaryCandidates(context.Context, int64, string, int, int) ([]models.Glossary, int64, error) {
+	return r.glossaries, int64(len(r.glossaries)), nil
+}
+
+func (r *fakeReferenceResolutionRepository) ListElementCandidates(context.Context, int64, string, int, int) ([]models.Element, int64, error) {
+	return r.elements, int64(len(r.elements)), nil
 }
 
 func (r *fakeReferenceResolutionRepository) ResolveDomains(_ context.Context, _ int64, ids []int64) ([]models.Domain, error) {

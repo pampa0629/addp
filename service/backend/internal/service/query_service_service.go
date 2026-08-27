@@ -209,6 +209,9 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 		return nil, fmt.Errorf("create service failed: %w", err)
 	}
 	if err := s.recordLineagePublication(service); err != nil {
+		if cleanupErr := s.repo.Delete(service.ID); cleanupErr != nil {
+			return nil, fmt.Errorf("record service lineage publication failed: %v; remove failed service %d: %w", err, service.ID, cleanupErr)
+		}
 		return nil, fmt.Errorf("record service lineage publication failed: %w", err)
 	}
 

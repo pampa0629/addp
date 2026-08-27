@@ -115,6 +115,9 @@ func (r *MaterializationBatchRepository) CreatePrepareExecution(
 		if table.Status != "approved" || table.Version != batch.LogicalTableVersion {
 			return fmt.Errorf("%w: logical table approval or version changed", commonAPI.ErrConflict)
 		}
+		if err := abortSupersededMaterializationBatch(tx, batch); err != nil {
+			return err
+		}
 		if err := tx.Create(batch).Error; err != nil {
 			return err
 		}
@@ -126,6 +129,102 @@ func (r *MaterializationBatchRepository) CreatePrepareExecution(
 		execution.IssuedAuthorizationVersion = parent.IssuedAuthorizationVersion
 		return tx.Create(execution).Error
 	})
+}
+
+func abortSupersededMaterializationBatch(tx *gorm.DB, next *models.MaterializationBatch) error {
+	var current models.MaterializationBatch
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where(`tenant_id = ? AND engine_id = ? AND target_parent_locator = ? AND target_name = ?
+			AND status IN ?`, next.TenantID, next.EngineID, next.TargetParentLocator, next.TargetName,
+			[]string{
+				models.MaterializationBatchPreparing,
+				models.MaterializationBatchPrepared,
+				models.MaterializationBatchSealed,
+				models.MaterializationBatchPublishing,
+			}).
+		Order("created_at DESC").First(&current).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if current.Status == models.MaterializationBatchPublishing {
+		return fmt.Errorf("%w: publishing materialization batch cannot be superseded", commonAPI.ErrConflict)
+	}
+
+	var prepare commonExecution.TaskExecution
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+		Where("tenant_id = ? AND execution_id = ? AND module = ? AND task_type = ?",
+			current.TenantID, current.PrepareExecutionID, commonExecution.ModuleModel, commonExecution.TaskTypeMaterializationPrepare).
+		First(&prepare).Error; err != nil {
+		return fmt.Errorf("%w: current materialization prepare execution is unavailable", commonAPI.ErrConflict)
+	}
+	if prepare.ParentExecutionID == nil || strings.TrimSpace(*prepare.ParentExecutionID) == "" {
+		return fmt.Errorf("%w: current materialization batch has no orchestration parent", commonAPI.ErrConflict)
+	}
+
+	var parent commonExecution.TaskExecution
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+		Where("tenant_id = ? AND execution_id = ? AND module = ?",
+			current.TenantID, strings.TrimSpace(*prepare.ParentExecutionID), commonExecution.ModuleOrchestrator).
+		First(&parent).Error; err != nil {
+		return fmt.Errorf("%w: current materialization parent execution is unavailable", commonAPI.ErrConflict)
+	}
+	if !isFailedOrCancelledExecutionStatus(parent.Status) {
+		return fmt.Errorf("%w: current materialization parent execution is not reclaimable", commonAPI.ErrConflict)
+	}
+
+	var activeChildren int64
+	if err := tx.Model(&commonExecution.TaskExecution{}).
+		Where("tenant_id = ? AND parent_execution_id = ? AND status IN ?",
+			current.TenantID, parent.ExecutionID,
+			[]string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning}).
+		Count(&activeChildren).Error; err != nil {
+		return err
+	}
+	if activeChildren != 0 {
+		return fmt.Errorf("%w: current materialization parent still has active child executions", commonAPI.ErrConflict)
+	}
+
+	result := tx.Model(&models.MaterializationBatch{}).
+		Where("id = ? AND tenant_id = ? AND status = ?", current.ID, current.TenantID, current.Status).
+		Updates(map[string]interface{}{
+			"status":     models.MaterializationBatchAborted,
+			"updated_at": time.Now().UTC(),
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("%w: current materialization batch state changed", commonAPI.ErrConflict)
+	}
+	return nil
+}
+
+func isFailedOrCancelledExecutionStatus(status string) bool {
+	switch status {
+	case commonExecution.ExecutionStatusFailed,
+		commonExecution.ExecutionStatusTimeout,
+		commonExecution.ExecutionStatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+func (r *MaterializationBatchRepository) ListReclaimableStagingBatches(
+	ctx context.Context,
+	current models.MaterializationBatch,
+) ([]models.MaterializationBatch, error) {
+	var batches []models.MaterializationBatch
+	err := r.db.WithContext(ctx).
+		Where(`tenant_id = ? AND engine_id = ? AND target_parent_locator = ? AND target_name = ?
+			AND id <> ? AND status IN ?`,
+			current.TenantID, current.EngineID, current.TargetParentLocator, current.TargetName, current.ID,
+			[]string{models.MaterializationBatchAborted, models.MaterializationBatchFailed}).
+		Order("created_at ASC, id ASC").Find(&batches).Error
+	return batches, err
 }
 
 func (r *MaterializationBatchRepository) CreatePublishExecution(

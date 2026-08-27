@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 )
 
 type SystemCatalogReference struct {
@@ -42,6 +44,22 @@ type systemCatalogReferenceResolutionWire struct {
 	MembershipStatus string `json:"membership_status,omitempty"`
 }
 
+type SystemCatalogReferenceCandidate struct {
+	SubjectType string `json:"subject_type"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Code        string `json:"code,omitempty"`
+	Status      string `json:"status"`
+}
+
+type SystemCatalogReferenceCandidateList struct {
+	Data       []SystemCatalogReferenceCandidate `json:"data"`
+	Total      int64                             `json:"total"`
+	Page       int                               `json:"page"`
+	PageSize   int                               `json:"page_size"`
+	TotalPages int                               `json:"total_pages"`
+}
+
 func (c *SystemServiceClient) ResolveCatalogReferences(
 	ctx context.Context,
 	references []SystemCatalogReference,
@@ -51,7 +69,7 @@ func (c *SystemServiceClient) ResolveCatalogReferences(
 	}
 	wireReferences := make([]systemCatalogReferenceWire, 0, len(references))
 	for _, reference := range references {
-		if reference.ID <= 0 || (reference.SubjectType != "department" && reference.SubjectType != "user") {
+		if reference.ID <= 0 || (reference.SubjectType != "department" && reference.SubjectType != "user" && reference.SubjectType != "project_group") {
 			return nil, errors.New("System resolve catalog references contains an invalid reference")
 		}
 		wireReferences = append(wireReferences, systemCatalogReferenceWire{
@@ -89,4 +107,40 @@ func (c *SystemServiceClient) ResolveCatalogReferences(
 		})
 	}
 	return results, nil
+}
+
+func (c *SystemServiceClient) ListCatalogReferenceCandidates(
+	ctx context.Context,
+	subjectType, search string,
+	page, pageSize int,
+) (*SystemCatalogReferenceCandidateList, error) {
+	if c == nil || c.tenantID == nil || *c.tenantID == 0 ||
+		(subjectType != "department" && subjectType != "user") ||
+		page < 1 || pageSize < 1 || pageSize > 50 || len([]rune(strings.TrimSpace(search))) > 100 {
+		return nil, errors.New("System list catalog reference candidates contains invalid parameters")
+	}
+	query := url.Values{
+		"subject_type": []string{subjectType},
+		"page":         []string{strconv.Itoa(page)},
+		"page_size":    []string{strconv.Itoa(pageSize)},
+	}
+	if search = strings.TrimSpace(search); search != "" {
+		query.Set("search", search)
+	}
+	var response SystemCatalogReferenceCandidateList
+	if err := c.doTenantJSON(
+		ctx, http.MethodGet, "/api/v1/system/runtime/catalog-references/candidates?"+query.Encode(), nil, &response,
+	); err != nil {
+		return nil, fmt.Errorf("System list catalog reference candidates: %w", err)
+	}
+	if response.Page != page || response.PageSize != pageSize || response.Total < 0 || response.TotalPages < 0 {
+		return nil, errors.New("System list catalog reference candidates returned invalid pagination")
+	}
+	for _, item := range response.Data {
+		id, err := strconv.ParseInt(item.ID, 10, 64)
+		if err != nil || id <= 0 || strconv.FormatInt(id, 10) != item.ID || item.SubjectType != subjectType || strings.TrimSpace(item.Name) == "" {
+			return nil, errors.New("System list catalog reference candidates returned an invalid candidate")
+		}
+	}
+	return &response, nil
 }

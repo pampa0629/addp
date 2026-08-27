@@ -94,6 +94,7 @@
 
 ### 前端
 
+- **运行时**: Node.js 24（根目录 `.node-version` 是工具链版本的唯一事实源）
 - **框架**: Vue 3 + Composition API
 - **构建工具**: Vite
 - **UI 库**: Element Plus

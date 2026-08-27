@@ -4,17 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 const MaxCatalogReferenceBatchSize = 200
+const MaxCatalogReferenceCandidatePageSize = 50
 
 var ErrInvalidCatalogReferenceRequest = errors.New("invalid catalog reference request")
 
 type CatalogSubjectType string
 
 const (
-	CatalogSubjectTypeDepartment CatalogSubjectType = "department"
-	CatalogSubjectTypeUser       CatalogSubjectType = "user"
+	CatalogSubjectTypeDepartment   CatalogSubjectType = "department"
+	CatalogSubjectTypeUser         CatalogSubjectType = "user"
+	CatalogSubjectTypeProjectGroup CatalogSubjectType = "project_group"
 )
 
 type CatalogReference struct {
@@ -34,6 +37,14 @@ type CatalogReferenceResolution struct {
 	MembershipStatus string
 }
 
+type CatalogReferenceCandidate struct {
+	SubjectType CatalogSubjectType
+	ID          int64
+	Name        string
+	Code        string
+	Status      string
+}
+
 type CatalogDepartmentProjection struct {
 	ID     int64
 	Name   string
@@ -49,9 +60,19 @@ type CatalogUserProjection struct {
 	Referenceable    bool
 }
 
+type CatalogProjectGroupProjection struct {
+	ID     int64
+	Name   string
+	Code   string
+	Status string
+}
+
 type catalogReferenceRepository interface {
 	ResolveCatalogDepartments(context.Context, int64, []int64) ([]CatalogDepartmentProjection, error)
 	ResolveCatalogUsers(context.Context, int64, []int64) ([]CatalogUserProjection, error)
+	ResolveCatalogProjectGroups(context.Context, int64, []int64) ([]CatalogProjectGroupProjection, error)
+	ListCatalogDepartmentCandidates(context.Context, int64, string, int, int) ([]CatalogReferenceCandidate, int64, error)
+	ListCatalogUserCandidates(context.Context, int64, string, int, int) ([]CatalogReferenceCandidate, int64, error)
 }
 
 type CatalogReferenceService struct {
@@ -77,8 +98,9 @@ func (s *CatalogReferenceService) Resolve(
 	}
 
 	idsByType := map[CatalogSubjectType][]int64{
-		CatalogSubjectTypeDepartment: {},
-		CatalogSubjectTypeUser:       {},
+		CatalogSubjectTypeDepartment:   {},
+		CatalogSubjectTypeUser:         {},
+		CatalogSubjectTypeProjectGroup: {},
 	}
 	for _, reference := range references {
 		if reference.ID <= 0 {
@@ -98,8 +120,12 @@ func (s *CatalogReferenceService) Resolve(
 	if err != nil {
 		return nil, err
 	}
+	projectGroups, err := s.repository.ResolveCatalogProjectGroups(ctx, tenantID, uniqueCatalogReferenceIDs(idsByType[CatalogSubjectTypeProjectGroup]))
+	if err != nil {
+		return nil, err
+	}
 
-	resolved := make(map[string]CatalogReferenceResolution, len(departments)+len(users))
+	resolved := make(map[string]CatalogReferenceResolution, len(departments)+len(users)+len(projectGroups))
 	for _, department := range departments {
 		resolved[catalogReferenceKey(CatalogSubjectTypeDepartment, department.ID)] = CatalogReferenceResolution{
 			SubjectType: CatalogSubjectTypeDepartment, ID: department.ID, Found: true,
@@ -120,6 +146,13 @@ func (s *CatalogReferenceService) Resolve(
 			MembershipStatus: user.MembershipStatus,
 		}
 	}
+	for _, projectGroup := range projectGroups {
+		resolved[catalogReferenceKey(CatalogSubjectTypeProjectGroup, projectGroup.ID)] = CatalogReferenceResolution{
+			SubjectType: CatalogSubjectTypeProjectGroup, ID: projectGroup.ID, Found: true,
+			Referenceable: projectGroup.Status != string(ProjectGroupStatusClosed), Name: projectGroup.Name,
+			Code: projectGroup.Code, Status: projectGroup.Status,
+		}
+	}
 
 	results := make([]CatalogReferenceResolution, 0, len(references))
 	for _, reference := range references {
@@ -130,6 +163,29 @@ func (s *CatalogReferenceService) Resolve(
 		results = append(results, CatalogReferenceResolution{SubjectType: reference.SubjectType, ID: reference.ID})
 	}
 	return results, nil
+}
+
+func (s *CatalogReferenceService) ListCandidates(
+	ctx context.Context,
+	tenantID int64,
+	serviceClientID string,
+	subjectType CatalogSubjectType,
+	search string,
+	page, pageSize int,
+) ([]CatalogReferenceCandidate, int64, error) {
+	search = strings.TrimSpace(search)
+	if s == nil || s.repository == nil || tenantID <= 0 || serviceClientID != "addp-catalog" ||
+		page < 1 || pageSize < 1 || pageSize > MaxCatalogReferenceCandidatePageSize || len([]rune(search)) > 100 {
+		return nil, 0, ErrInvalidCatalogReferenceRequest
+	}
+	switch subjectType {
+	case CatalogSubjectTypeDepartment:
+		return s.repository.ListCatalogDepartmentCandidates(ctx, tenantID, search, page, pageSize)
+	case CatalogSubjectTypeUser:
+		return s.repository.ListCatalogUserCandidates(ctx, tenantID, search, page, pageSize)
+	default:
+		return nil, 0, ErrInvalidCatalogReferenceRequest
+	}
 }
 
 func uniqueCatalogReferenceIDs(ids []int64) []int64 {

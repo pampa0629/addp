@@ -21,6 +21,7 @@ var (
 	ErrSourceRebindConflict            = errors.New("catalog source rebind conflict")
 	ErrSearchUnavailable               = errors.New("catalog search projection unavailable")
 	ErrInventoryPermissionRequired     = errors.New("catalog inventory permission required")
+	ErrInvalidSourceReference          = errors.New("invalid catalog source reference")
 	ErrUserPrincipalRequired           = errors.New("catalog user principal required")
 	ErrInvalidPersonalRelation         = errors.New("invalid catalog personal relation")
 	ErrCollectionNotFound              = errors.New("catalog collection not found")

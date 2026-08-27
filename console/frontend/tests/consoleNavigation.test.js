@@ -7,6 +7,7 @@ import {
   navigateConsoleModuleRoute
 } from '../../../common-frontend/basic/src/utils/moduleRouteNavigation'
 import { isSynchronizedIframeRoute, splitConsoleRoute } from '../src/utils/consoleNavigation'
+import { searchIndex } from '../src/config/searchIndex'
 
 describe('Console navigation bridge', () => {
   it('builds explicit push and synchronized replace requests', () => {
@@ -83,9 +84,11 @@ describe('Console navigation bridge', () => {
     expect(configSource).toContain("modules: ['catalog', 'asset']")
     expect(configSource).toContain("catalog:      '/catalog/entries'")
     expect(configSource).toContain("index: '/catalog/entries'")
+    expect(configSource).toContain("index: '/catalog/governance/coverage'")
 
     const searchSource = readFileSync(new URL('../src/config/searchIndex.js', import.meta.url), 'utf8')
     expect(searchSource).toContain("module: 'catalog', route: '/catalog/entries'")
+    expect(searchSource).toContain("module: 'catalog', route: '/catalog/governance/coverage'")
 
     const apiDocsSource = readFileSync(new URL('../src/views/ApiDocs.vue', import.meta.url), 'utf8')
     expect(apiDocsSource).toContain("name: 'catalog'")
@@ -94,6 +97,10 @@ describe('Console navigation bridge', () => {
     const viteSource = readFileSync(new URL('../vite.config.js', import.meta.url), 'utf8')
     expect(viteSource).toContain("'/module-health/catalog'")
     expect(viteSource).toContain("'/swagger-spec/catalog'")
+
+    expect(searchIndex('治理覆盖率', key => key, [])).toEqual([])
+    expect(searchIndex('治理覆盖率', key => key, ['catalog.inventory.read']).map(item => item.route))
+      .toContain('/catalog/governance/coverage')
   })
 
   it('keeps Workbench reachable as the general data-service consumer', () => {
@@ -101,9 +108,11 @@ describe('Console navigation bridge', () => {
     expect(configSource).toContain("modules: ['develop', 'service', 'workbench', 'orchestrator', 'monitor']")
     expect(configSource).toContain("workbench:    '/workbench/views'")
     expect(configSource).toContain("index: '/workbench/views'")
+    expect(configSource).toContain("index: '/workbench/applications'")
 
     const searchSource = readFileSync(new URL('../src/config/searchIndex.js', import.meta.url), 'utf8')
     expect(searchSource).toContain("module: 'workbench', route: '/workbench/views'")
+    expect(searchSource).toContain("module: 'workbench', route: '/workbench/applications'")
 
     const apiDocsSource = readFileSync(new URL('../src/views/ApiDocs.vue', import.meta.url), 'utf8')
     expect(apiDocsSource).toContain("name: 'workbench'")
@@ -112,6 +121,7 @@ describe('Console navigation bridge', () => {
     const viteSource = readFileSync(new URL('../vite.config.js', import.meta.url), 'utf8')
     expect(viteSource).toContain("'/module-health/workbench'")
     expect(viteSource).toContain("'/swagger-spec/workbench'")
+    expect(viteSource).toContain("'/data-apps'")
   })
 
   it('localizes the Workbench module name for every Console discovery surface', () => {
@@ -120,8 +130,10 @@ describe('Console navigation bridge', () => {
 
     expect(zhCn.console.modules.workbench.label).toBe('工作台')
     expect(zhCn.console.menus.workbench.label).toBe('工作台')
+    expect(zhCn.console.menus.workbench.dataApplications).toBe('数据应用')
     expect(en.console.modules.workbench.label).toBe('Workbench')
     expect(en.console.menus.workbench.label).toBe('Workbench')
+    expect(en.console.menus.workbench.dataApplications).toBe('Data Applications')
   })
 
   it('builds a Console route from one module-local fullPath', () => {

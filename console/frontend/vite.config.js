@@ -25,6 +25,17 @@ export default defineConfig({
       clientPort: 5170
     },
     proxy: {
+      '/data-apps': {
+        target: 'http://localhost:5190',
+        changeOrigin: true,
+        ws: true,
+        rewrite: (path) => `/workbench${path}`
+      },
+      '/workbench': {
+        target: 'http://localhost:5190',
+        changeOrigin: true,
+        ws: true
+      },
       '/portal': {
         target: 'http://localhost:5185',
         changeOrigin: true,

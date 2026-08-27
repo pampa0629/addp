@@ -603,6 +603,88 @@ const docTemplate = `{
             }
         },
         "/task-definitions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "分页获取当前租户的全部 Transfer 任务定义，支持按状态和执行边界过滤。| Get all Transfer task definitions in the current tenant with status and runtime-boundary filters.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "任务管理 | Task Management"
+                ],
+                "summary": "获取任务列表 | List tasks",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页大小 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "任务类型，当前固定为 sync | Task type, currently fixed to sync",
+                        "name": "task_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "任务定义状态: idle, running, blocked | Task definition status: idle, running, blocked",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "执行边界: bounded, continuous | Runtime boundary: bounded, continuous",
+                        "name": "runtime_boundary",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "获取成功 | Retrieved successfully",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.ListProviderTasksResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "不支持的任务类型 | Unsupported task type",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误 | Server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "transfer.task.read"
+                ]
+            },
             "post": {
                 "security": [
                     {
@@ -794,7 +876,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "任务管理 | Task Management"
+                    "TaskProvider"
                 ],
                 "summary": "更新任务 | Update task",
                 "parameters": [
@@ -1699,24 +1781,68 @@ const docTemplate = `{
                 ]
             }
         },
-        "/tasks": {
+        "/task-provider/executions/{execution_id}": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "分页获取任务列表，支持按类型、状态过滤 | Get paginated task list with type and status filtering",
-                "consumes": [
-                    "application/json"
-                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "任务管理 | Task Management"
+                    "TaskProvider"
                 ],
-                "summary": "获取任务列表 | List tasks",
+                "summary": "获取 TaskProvider 执行状态 | Get TaskProvider execution status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行ID | Execution ID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "transfer.task_provider.read"
+                ]
+            }
+        },
+        "/task-provider/tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅向 Orchestrator Runtime 返回可编排的 bounded sync 任务。| Return only orchestratable bounded sync tasks to the Orchestrator Runtime.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TaskProvider"
+                ],
+                "summary": "获取 TaskProvider 任务列表 | List TaskProvider tasks",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1734,32 +1860,20 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "任务类型，当前固定为 sync | Task type, currently fixed to sync",
+                        "description": "任务类型，固定为 sync | Task type, fixed to sync",
                         "name": "task_type",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "任务定义状态: idle, running, blocked | Task definition status: idle, running, blocked",
-                        "name": "status",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "执行边界: bounded, continuous | Runtime boundary: bounded, continuous",
-                        "name": "runtime_boundary",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "获取成功 | Retrieved successfully",
+                        "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_transfer_internal_models.ListProviderTasksResponse"
                         }
                     },
                     "400": {
-                        "description": "不支持的任务类型 | Unsupported task type",
+                        "description": "Bad Request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1768,7 +1882,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "服务器错误 | Server error",
+                        "description": "Internal Server Error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1779,11 +1893,11 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "transfer.task.read"
+                    "transfer.task_provider.read"
                 ]
             }
         },
-        "/tasks/{task_type}/{id}": {
+        "/task-provider/tasks/{task_type}/{id}": {
             "get": {
                 "security": [
                     {
@@ -1795,7 +1909,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "任务管理 | Task Management"
+                    "TaskProvider"
                 ],
                 "summary": "获取 TaskProvider 任务详情 | Get TaskProvider task detail",
                 "parameters": [
@@ -1842,11 +1956,11 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "transfer.task.read"
+                    "transfer.task_provider.read"
                 ]
             }
         },
-        "/tasks/{task_type}/{id}/execute": {
+        "/task-provider/tasks/{task_type}/{id}/execute": {
             "post": {
                 "security": [
                     {
@@ -1861,7 +1975,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "任务管理 | Task Management"
+                    "TaskProvider"
                 ],
                 "summary": "执行 TaskProvider Transfer 任务 | Execute TaskProvider Transfer task",
                 "parameters": [
@@ -1916,7 +2030,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "transfer.task.execute"
+                    "transfer.task_provider.execute"
                 ]
             }
         }

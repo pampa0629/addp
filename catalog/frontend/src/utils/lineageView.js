@@ -23,3 +23,16 @@ export function lineageFailureState(error) {
   if (error?.response?.status === 404) return 'subject_missing'
   return 'unavailable'
 }
+
+export function lineageNodesToSourceReferences(nodes, limit = 200) {
+  const seen = new Set()
+  const references = []
+  for (const node of Array.isArray(nodes) ? nodes : []) {
+    const fingerprint = String(node?.item_fingerprint || '').trim()
+    if (node?.kind !== 'data_item' || !fingerprint || seen.has(fingerprint)) continue
+    seen.add(fingerprint)
+    references.push({ source_module: 'meta', source_type: 'data_item', source_identity: fingerprint })
+    if (references.length >= limit) break
+  }
+  return references
+}

@@ -1,10 +1,22 @@
+export function queryStatementValid(language, statement) {
+  const normalizedStatement = String(statement || '').trim()
+  if (!normalizedStatement) return false
+  if (String(language || '').trim().toLowerCase() !== 'mql') return true
+  try {
+    const command = JSON.parse(normalizedStatement)
+    return command !== null && typeof command === 'object' && !Array.isArray(command)
+  } catch {
+    return false
+  }
+}
+
 export function querySourceValid({ enabled, boundary, dataType, representation, language, statement, parametersValid }) {
   if (!enabled) return true
   return boundary === 'bounded' &&
     dataType === 'table' &&
     representation === 'native' &&
     String(language || '').trim() !== '' &&
-    String(statement || '').trim() !== '' &&
+    queryStatementValid(language, statement) &&
     parametersValid === true
 }
 

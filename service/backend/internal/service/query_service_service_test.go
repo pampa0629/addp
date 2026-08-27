@@ -1,13 +1,110 @@
 package service
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	commonModels "github.com/addp/common/models"
 	serviceModels "github.com/addp/service/internal/models"
+	"github.com/addp/service/internal/repository"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
+
+func TestCreateServiceRemovesRecordWhenLineagePublicationFails(t *testing.T) {
+	db := openQueryServiceCreateTestDB(t)
+	metaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/meta/items/33":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(commonModels.MetaItem{
+				ID: 33, TenantID: 7, EngineID: 9, ItemType: "table", Name: "sales", FullName: "public.sales", Fingerprint: "sales-fingerprint",
+				Attributes: map[string]interface{}{
+					"item": map[string]interface{}{"data_type": "table"},
+					"type_info": map[string]interface{}{"table": map[string]interface{}{
+						"fields": []interface{}{
+							map[string]interface{}{"name": "id", "type": "bigint", "native_type": "int8", "nullable": false, "primary_key": true},
+							map[string]interface{}{"name": "name", "type": "string", "native_type": "text", "nullable": true},
+						},
+						"primary_key": []interface{}{"id"},
+					}},
+				},
+			})
+		case "/api/v1/meta/lineage/services":
+			http.Error(w, "lineage unavailable", http.StatusServiceUnavailable)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer metaServer.Close()
+
+	metaClient := commonClient.NewMetaClient(metaServer.URL, commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "test-token", nil
+	}))
+	svc := NewQueryServiceService(repository.NewQueryServiceRepository(db), nil, metaClient, "")
+	engineID := uint(9)
+	_, err := svc.CreateService(&serviceModels.CreateQueryServiceRequest{
+		ServiceName: "lineage_failure", Title: "Lineage failure", ConfigType: "table", EngineID: &engineID,
+		DataConfig: map[string]interface{}{
+			"locator":           "addp://engine/9/path/public/sales?type=table&item_id=33",
+			"default_fields":    []string{"id", "name"},
+			"filterable_fields": []string{"name"},
+		},
+	}, 7, 11)
+	if err == nil {
+		t.Fatal("CreateService() error = nil, want lineage publication failure")
+	}
+	var count int64
+	if err := db.Model(&serviceModels.QueryService{}).Where("service_name = ?", "lineage_failure").Count(&count).Error; err != nil {
+		t.Fatalf("count query services: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("persisted query services = %d, want 0 after lineage publication failure", count)
+	}
+}
+
+func openQueryServiceCreateTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open("file:query-service-create-lineage?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS service").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TABLE service.query_services (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		service_name TEXT NOT NULL UNIQUE,
+		title TEXT NOT NULL,
+		description TEXT,
+		keywords TEXT,
+		config_type TEXT NOT NULL,
+		engine_id INTEGER,
+		runtime_engine_id INTEGER,
+		schema_name TEXT,
+		table_name TEXT,
+		sql_query TEXT,
+		data_config JSON NOT NULL,
+		protocols JSON NOT NULL,
+		public_access BOOLEAN,
+		max_features INTEGER,
+		status TEXT,
+		error_message TEXT,
+		created_by INTEGER NOT NULL,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	return db
+}
 
 func TestBuildTableDependencySnapshotUsesCommonFacts(t *testing.T) {
 	t.Parallel()

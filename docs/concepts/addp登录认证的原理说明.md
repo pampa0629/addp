@@ -105,11 +105,12 @@ Access Token expires_in=900
 
 同一个页面内的并发 API 请求共享一个刷新 Promise；同 origin 的多个页面通过 Web Locks 和 BroadcastChannel 协调。
 
-Portal 是独立顶层界面，但不建立独立认证 origin。生产和开发的正式入口都位于 Console 当前
-origin 的 `/portal/`：生产由 Nginx 提供，开发由 Console Vite 代理到 Portal 前端。若 Console 与
-Portal 分处不同端口并各自轮换同一个 Cookie 中的 Refresh Token，两边的 Web Lock 和
-BroadcastChannel 无法互相协调，后一次轮换会使另一窗口的内存 Access Token 失效。因此 Portal
-开发端口只承载前端服务，不是 Console 打开的产品入口。
+Portal 与 Workbench Data Application 都是独立顶层界面，但不建立独立认证 origin。生产和开发的
+正式入口分别位于 Console 当前 origin 的 `/portal/...` 与 `/data-apps/:application_id`：生产由 Nginx
+提供，开发由 Console Vite 代理到对应 owner 前端。若 Console 与这些界面分处不同端口并各自轮换
+同一个 Cookie 中的 Refresh Token，各 origin 的 Web Lock 和 BroadcastChannel 无法互相协调，后一次
+轮换会使另一窗口的内存 Access Token 失效。因此 owner 前端开发端口只承载前端服务，不是 Console
+打开的产品入口。
 
 页面因 API 401 进入强制刷新时，其他标签页内存中“时间上尚未过期”的 Access Token 不能证明 Token Family 仍然有效，因此不得作为恢复结果。强制刷新必须在全局刷新锁内访问 System Refresh API；只有等待锁时由另一刷新者产生的更新 Token 才可以复用。
 
@@ -169,6 +170,7 @@ Tab B -> refresh(R1) -> R1 已使用，System 撤销整个 Family
 | 切换平台/租户模式 | 重新建立互斥上下文，平台角色与 Tenant Role 不同时激活。 |
 | 独立打开模块 | 模块使用同一 Cookie 静默恢复。 |
 | 从 Console 打开 Portal | 在当前 origin 的 `/portal/...` 新窗口中复用内存 Token，不触发第二次 Refresh。 |
+| 打开数据应用 | 在当前 origin 的 `/data-apps/:application_id` 顶层入口运行，不打开 Workbench 开发端口。 |
 | 浏览器重启 | 持久 Refresh Cookie 和 Family 有效时静默恢复。 |
 | 网络暂时中断 | 保留未知状态并允许重试，不立即当作退出。 |
 | 用户退出或会话撤销 | 所有标签页和 iframe 同步退出。 |

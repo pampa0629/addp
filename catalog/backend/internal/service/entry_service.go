@@ -239,13 +239,15 @@ type EntryListResult struct {
 }
 
 type EntryService struct {
-	db       *gorm.DB
-	standard StandardReferenceResolver
-	system   SystemReferenceResolver
-	engine   EngineReferenceResolver
-	search   CatalogSearchResolver
-	sources  map[string]ProfessionalSourceResolver
-	quality  QualitySummaryResolver
+	db                 *gorm.DB
+	standard           StandardReferenceResolver
+	system             SystemReferenceResolver
+	standardCandidates ReferenceCandidateResolver
+	systemCandidates   ReferenceCandidateResolver
+	engine             EngineReferenceResolver
+	search             CatalogSearchResolver
+	sources            map[string]ProfessionalSourceResolver
+	quality            QualitySummaryResolver
 }
 
 func (s *EntryService) WithQualitySummaryResolver(resolver QualitySummaryResolver) *EntryService {

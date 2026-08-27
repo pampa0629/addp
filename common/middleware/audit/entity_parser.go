@@ -40,7 +40,8 @@ var pathPatterns = []PathRule{
 	{Pattern: "/api/v1/meta/object-storage/", EntityType: "object_storage", IDPosition: 4},
 
 	// Transfer 模块
-	{Pattern: "/api/v1/transfer/tasks/", EntityType: "transfer_task", IDPosition: 5},
+	{Pattern: "/api/v1/transfer/task-provider/tasks/", EntityType: "transfer_task", IDPosition: 6},
+	{Pattern: "/api/v1/transfer/task-definitions/", EntityType: "transfer_task", IDPosition: 4},
 	{Pattern: "/api/v1/transfer/jobs/", EntityType: "transfer_job", IDPosition: 4},
 
 	// Orchestrator 模块
@@ -61,7 +62,7 @@ var pathPatterns = []PathRule{
 //   - POST /api/v1/system/users/123 → {Type: "user", ID: "123"}
 //   - PUT /api/v1/system/engines/456/scan → {Type: "engine", ID: "456"}
 //   - DELETE /api/v1/meta/scan-tasks/789 → {Type: "scan_task", ID: "789"}
-//   - GET /api/v1/transfer/tasks/sync/123 → {Type: "transfer_task", ID: "123"}
+//   - GET /api/v1/transfer/task-provider/tasks/sync/123 → {Type: "transfer_task", ID: "123"}
 func ParseEntityFromPath(method, path string) *EntityInfo {
 	// 遍历所有规则
 	for _, rule := range pathPatterns {

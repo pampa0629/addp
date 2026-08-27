@@ -259,7 +259,7 @@
       },
       "workbench": {
         "label": "Workbench",
-        "desc": "Query, visualize, and save reusable data service views"
+        "desc": "Query and visualize data services, save views, and publish data applications"
       },
       "orchestrator": {
         "label": "Task Orchestration",
@@ -382,7 +382,8 @@
       },
       "workbench": {
         "label": "Workbench",
-        "views": "Workbench Views"
+        "views": "Workbench Views",
+        "dataApplications": "Data Applications"
       },
       "orchestrator": {
         "label": "Task Orchestration",
@@ -403,7 +404,8 @@
       },
       "catalog": {
         "label": "Enterprise Data Catalog",
-        "entries": "Catalog Browse"
+        "entries": "Catalog Browse",
+        "coverage": "Governance Coverage"
       },
       "asset": {
         "label": "Asset Management",

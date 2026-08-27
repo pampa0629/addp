@@ -89,6 +89,16 @@ func TestCatalogCollectionSystemIDsMarshalAsStrings(t *testing.T) {
 	}
 }
 
+func TestCatalogCollectionProjectGroupOptionIDMarshalsAsString(t *testing.T) {
+	payload, err := json.Marshal(service.CollectionProjectGroupOption{ProjectGroupID: 9007199254740993, Name: "Delivery"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := string(payload); !contains(text, `"project_group_id":"9007199254740993"`) {
+		t.Fatalf("payload %s does not preserve project_group_id exactly", text)
+	}
+}
+
 func TestCatalogEntrySummaryEngineIDMarshalsAsString(t *testing.T) {
 	payload, err := json.Marshal(service.EntrySummary{SourceEngineID: 9007199254740993})
 	if err != nil {

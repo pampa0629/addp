@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lineageFailureState, resolveLineageSubject } from '../src/utils/lineageView'
+import { lineageFailureState, lineageNodesToSourceReferences, resolveLineageSubject } from '../src/utils/lineageView'
 
 describe('catalog lineage federated view', () => {
   it('uses only an active Meta DataItem structured item identity', () => {
@@ -39,5 +39,17 @@ describe('catalog lineage federated view', () => {
     expect(lineageFailureState({ response: { status: 403 } })).toBe('forbidden')
     expect(lineageFailureState({ response: { status: 404 } })).toBe('subject_missing')
     expect(lineageFailureState({ response: { status: 503 } })).toBe('unavailable')
+  })
+
+  it('maps only DataItem fingerprints to exact Catalog source references', () => {
+    expect(lineageNodesToSourceReferences([
+      { kind: 'data_item', item_fingerprint: 'fp-1' },
+      { kind: 'data_item', item_fingerprint: 'fp-1' },
+      { kind: 'published_service', item_fingerprint: 'fp-2' },
+      { kind: 'data_item', item_fingerprint: ' fp-3 ' }
+    ])).toEqual([
+      { source_module: 'meta', source_type: 'data_item', source_identity: 'fp-1' },
+      { source_module: 'meta', source_type: 'data_item', source_identity: 'fp-3' }
+    ])
   })
 })

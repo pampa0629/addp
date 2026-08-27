@@ -116,6 +116,13 @@ func TestRecordServicePublicationIsIdempotentAndReturnsEvidence(t *testing.T) {
 	if observationCount != 1 {
 		t.Fatalf("observation count = %d, want 1", observationCount)
 	}
+	var observation models.LineageObservation
+	if err := db.Where("relation_kind = 'serve'").First(&observation).Error; err != nil {
+		t.Fatalf("load service publication observation: %v", err)
+	}
+	if observation.CaptureMethod != "declared" {
+		t.Fatalf("capture method = %q, want declared", observation.CaptureMethod)
+	}
 	graph, err := svc.GetGraph(context.Background(), 7, models.LineageGraphRequest{
 		SubjectKind: "published_service", ServiceID: &request.ServiceID, Revision: request.PublishedRevision,
 		Direction: "upstream", Depth: 1, Limit: 20,
@@ -150,7 +157,8 @@ func openLineageTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE meta.lineage_observations (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, relation_kind TEXT NOT NULL,
 			granularity TEXT NOT NULL, source_item_id INTEGER, target_item_id INTEGER, service_id INTEGER,
-			published_revision TEXT, execution_id TEXT, producer_module TEXT NOT NULL, capture_method TEXT NOT NULL,
+			published_revision TEXT, execution_id TEXT, producer_module TEXT NOT NULL,
+			capture_method TEXT NOT NULL CHECK (capture_method IN ('declared', 'runtime', 'parsed')),
 			source_snapshot JSON NOT NULL, target_snapshot JSON, evidence JSON NOT NULL,
 			observed_at DATETIME NOT NULL, created_at DATETIME)`,
 	}

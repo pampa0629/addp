@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 382 {
-		t.Fatalf("descriptor count = %d, want 382", len(descriptors))
+	if len(descriptors) != 390 {
+		t.Fatalf("descriptor count = %d, want 390", len(descriptors))
 	}
 	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "workbench.view.update" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
@@ -102,6 +102,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"quality.task_provider.execute",
 		"quality.task_provider.read",
 		"system.task_authorization.execute",
+		"transfer.task_provider.execute",
+		"transfer.task_provider.read",
 	})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.standard_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "tenant.standard_runtime", []string{
@@ -186,6 +188,12 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"meta.catalog.read",
 		"meta.lineage.read",
 		"service.data_read.execute",
+		"workbench.data_application.create",
+		"workbench.data_application.delete",
+		"workbench.data_application.execute",
+		"workbench.data_application.publish",
+		"workbench.data_application.read",
+		"workbench.data_application.update",
 		"workbench.view.create",
 		"workbench.view.delete",
 		"workbench.view.read",

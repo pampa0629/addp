@@ -2,6 +2,54 @@ schema_version: addp.permission_manifest/v1
 owner_module: workbench
 manifest_version: 1
 permissions:
+  - key: workbench.data_application.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.workbench.data_application.create.name
+    description_i18n_key: permissions.workbench.data_application.create.description
+  - key: workbench.data_application.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.workbench.data_application.delete.name
+    description_i18n_key: permissions.workbench.data_application.delete.description
+  - key: workbench.data_application.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: true
+    status: active
+    name_i18n_key: permissions.workbench.data_application.execute.name
+    description_i18n_key: permissions.workbench.data_application.execute.description
+  - key: workbench.data_application.publish
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.workbench.data_application.publish.name
+    description_i18n_key: permissions.workbench.data_application.publish.description
+  - key: workbench.data_application.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: true
+    status: active
+    name_i18n_key: permissions.workbench.data_application.read.name
+    description_i18n_key: permissions.workbench.data_application.read.description
+  - key: workbench.data_application.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.workbench.data_application.update.name
+    description_i18n_key: permissions.workbench.data_application.update.description
   - key: workbench.view.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: low

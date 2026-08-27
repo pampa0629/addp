@@ -136,7 +136,7 @@ Department 表达长期组织责任，Project Group 表达阶段性协作，User
 - “我的目录”由当前 User 的责任、任务、收藏、关注和最近访问动态形成；
 - 第一阶段不新增统一 Workspace 实体。
 
-第一阶段实际落地时，“我的目录”由责任、收藏和关注三种 Catalog 关系查询组成；治理任务沿用责任治理队列，最近访问沿用 Console 最近访问，Catalog 不复制这两类 owner 事实。收藏和关注是当前 User 的个人标记，不改变 CatalogEntry；Project Group 目录集合是独立协作聚合，集合成员关系也不改变 CatalogEntry。集合访问必须同时满足有效项目组成员关系、精确 Scope Permission 和条目自身目录可见性。
+第一阶段实际落地时，“我的目录”由责任、收藏和关注三种 Catalog 关系查询组成；治理任务沿用责任治理队列，最近访问沿用 Console 最近访问，Catalog 不复制这两类 owner 事实。收藏和关注是当前 User 的个人标记，不改变 CatalogEntry；Project Group 目录集合是独立协作聚合，集合成员关系也不改变 CatalogEntry。集合访问必须同时满足有效项目组成员关系、精确 Scope Permission 和条目自身目录可见性。Project Group 名称是 System 的可变组织事实，Catalog 只按 AuthContext 中已授权的 membership ID 动态精确解析；名称既不进入 Token，也不复制到 Catalog。
 
 只有当 Catalog、Develop、Model、Quality 等多个模块确实需要共享同一个工作空间身份、成员、生命周期、工具环境和产物集合时，才重新评估独立 Workspace 能力。
 
@@ -164,6 +164,10 @@ Catalog 列表中的 Domain、Department 和 Engine Instance 都是稳定引用�
 Catalog 编目编辑器同样不要求用户识别稳定 ID。Domain、Glossary、Element、Department 和 User 通过 Catalog 的统一远程候选入口选择，Catalog 再以 `addp-catalog` 运行身份向事实 owner 查询当前可引用候选；候选按搜索分页返回且不在 Catalog 落库。推荐继任项和治理任务条目筛选直接复用 CatalogEntry 名称搜索。动态查询失败必须明确提示当前候选不可用，不能退回裸 ID 输入或 owner 全量副本。
 
 资源盘点仍使用 Catalog 的分面与分页列表，不在 Catalog 重建 Engine—Node—DataItem 技术资源树；技术路径树继续归 Meta / Manager。
+
+治理覆盖率也是资源盘点的动态读模型：Catalog 直接聚合当前 CatalogEntry、语义关联、责任和组件 Element 关联，按适用对象计算分母，不保存第二份覆盖率投影。它回答“企业目录治理完成到什么程度”，不替代 Quality 数据质量评分，也不推断 owner 专业模型是否完整。
+
+目录详情中的影响分析采用联邦组合：Meta 提供血缘，Model / Standard 提供专业关系，Catalog 提供推荐继任和来源绑定解析。前端始终使用当前 User Token 查询事实 owner；Catalog 只把 owner 节点的稳定来源身份解析到当前可见 CatalogEntry，便于继续目录导航。三类关系保留各自 owner、方向、类型和证据，不合并为无来源的通用边，也不在 Catalog 复制专业关系。
 
 ## 七、端到端主线
 

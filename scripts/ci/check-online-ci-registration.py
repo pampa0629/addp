@@ -126,11 +126,14 @@ def validate_enterprise_catalog_publishing_profile(repository: Path, registered:
     required_fragments = (
         "enterprise-catalog-publishing)",
         "START_TARGET=-all",
-        "META_URL CATALOG_URL ASSET_URL PORTAL_URL",
+        "META_URL CATALOG_URL ASSET_URL PORTAL_URL CONSOLE_URL",
+        "ADDP_ONLINE_TEST_USER_USERNAME",
+        "ADDP_ONLINE_TEST_USER_PASSWORD",
         "ADDP_ONLINE_TEST_CATALOG_DOMAIN_ID",
         "ADDP_ONLINE_TEST_CATALOG_DEPARTMENT_ID",
         "bash business/scripts/online-engine-fixture.sh start",
         'bash scripts/dev/start.sh "$START_TARGET"',
+        "playwright install chromium",
     )
     missing = [fragment for fragment in required_fragments if fragment not in host_gate]
     if missing:
@@ -140,6 +143,8 @@ def validate_enterprise_catalog_publishing_profile(repository: Path, registered:
     for relative in (
         "business/scripts/online-engine-fixture.sh",
         "scripts/test/enterprise-catalog-publishing-online.py",
+        "console/frontend/playwright.online.config.js",
+        "console/frontend/e2e/online/enterprise-catalog-publishing.spec.js",
     ):
         if not (repository / relative).is_file():
             raise RegistrationError(f"enterprise-catalog-publishing requires {relative}")

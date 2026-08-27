@@ -1,5 +1,9 @@
 <template>
-  <div class="page-container">
+  <div
+    class="page-container"
+    data-testid="catalog-entry-list"
+    :data-load-state="loading || facetsLoading ? 'loading' : 'loaded'"
+  >
     <div class="page-header">
       <div>
         <h1>{{ pageTitle }}</h1>
@@ -59,6 +63,7 @@
         <el-form-item :label="t('catalog.entries.primaryDomain')">
           <el-select
             v-model="filters.primary_domain_id"
+            data-testid="catalog-primary-domain-filter"
             clearable
             filterable
             :loading="facetsLoading"
@@ -71,6 +76,7 @@
         <el-form-item :label="t('catalog.entries.accountableDepartment')">
           <el-select
             v-model="filters.accountable_department_id"
+            data-testid="catalog-department-filter"
             clearable
             filterable
             :loading="facetsLoading"
@@ -83,6 +89,7 @@
         <el-form-item :label="t('catalog.entries.sourceEngine')">
           <el-select
             v-model="filters.source_engine_id"
+            data-testid="catalog-engine-filter"
             clearable
             filterable
             :loading="facetsLoading"

@@ -99,9 +99,9 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 	c.JSON(http.StatusOK, task)
 }
 
-// ListTasks 获取任务列表
+// ListTasks 获取用户任务定义列表。
 // @Summary 获取任务列表 | List tasks
-// @Description 分页获取任务列表，支持按类型、状态过滤 | Get paginated task list with type and status filtering
+// @Description 分页获取当前租户的全部 Transfer 任务定义，支持按状态和执行边界过滤。| Get all Transfer task definitions in the current tenant with status and runtime-boundary filters.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
@@ -115,9 +115,32 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["transfer.task.read"]
-// @Router /tasks [get]
+// @Router /task-definitions [get]
 // @Security BearerAuth
 func (h *TaskHandler) ListTasks(c *gin.Context) {
+	h.listTasks(c, false)
+}
+
+// ProviderListTasks 获取 Orchestrator 可编排的 bounded Transfer 任务。
+// @Summary 获取 TaskProvider 任务列表 | List TaskProvider tasks
+// @Description 仅向 Orchestrator Runtime 返回可编排的 bounded sync 任务。| Return only orchestratable bounded sync tasks to the Orchestrator Runtime.
+// @Tags         TaskProvider
+// @Produce json
+// @Param page query int false "页码 | Page number" default(1)
+// @Param page_size query int false "每页大小 | Page size" default(20)
+// @Param task_type query string false "任务类型，固定为 sync | Task type, fixed to sync"
+// @Success 200 {object} models.ListProviderTasksResponse
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task_provider.read"]
+// @Router /task-provider/tasks [get]
+// @Security BearerAuth
+func (h *TaskHandler) ProviderListTasks(c *gin.Context) {
+	h.listTasks(c, true)
+}
+
+func (h *TaskHandler) listTasks(c *gin.Context, providerOnly bool) {
 	tenantID := commonAuth.GetTenantID(c)
 
 	// 构建请求参数
@@ -133,8 +156,7 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 		commonAPI.BadRequestError(c, "unsupported task_type: "+req.TaskType)
 		return
 	}
-	// 带 task_type 的调用遵循标准 TaskProvider 发现语义，只暴露 Orchestrator v1 可编排的 bounded task。
-	if req.TaskType == commonExecution.TaskTypeSync {
+	if providerOnly {
 		req.RuntimeBoundary = "bounded"
 	}
 
@@ -151,7 +173,7 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 		respondTaskServiceError(c, err)
 		return
 	}
-	if req.TaskType == commonExecution.TaskTypeSync {
+	if providerOnly {
 		for index := range tasks {
 			tasks[index].ExecutionContract = service.TransferTaskExecutionContract(tasks[index].Config)
 		}
@@ -168,7 +190,7 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 // UpdateTask 更新任务
 // @Summary 更新任务 | Update task
 // @Description 更新任务的配置信息。source 指向已入库 Meta item 时使用 config.source.locator 的 item_id；target 使用 parent_locator + name；不支持在任务配置中直接传递 endpoint attributes。| Update task configuration. Use config.source.locator item_id for persisted Meta items; target uses parent_locator + name; endpoint attributes are not accepted in task config.
-// @Tags         任务管理 | Task Management
+// @Tags         TaskProvider
 // @Accept json
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
@@ -468,7 +490,7 @@ type ProviderExecuteResponse struct {
 // ProviderGetTask 获取标准 TaskProvider 任务详情。
 // @Summary 获取 TaskProvider 任务详情 | Get TaskProvider task detail
 // @Description 按标准 TaskProvider 路径获取 Transfer 任务详情；task_type 仅支持 sync。| Get Transfer task detail through the standard TaskProvider path; task_type only supports sync.
-// @Tags         任务管理 | Task Management
+// @Tags         TaskProvider
 // @Produce json
 // @Param task_type path string true "任务类型，固定为 sync | Task type, fixed to sync"
 // @Param id path int true "任务ID | Task ID"
@@ -476,8 +498,8 @@ type ProviderExecuteResponse struct {
 // @Failure 400 {object} map[string]string "参数错误 | Bad request"
 // @Failure 404 {object} map[string]string "任务不存在 | Task not found"
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["transfer.task.read"]
-// @Router /tasks/{task_type}/{id} [get]
+// @x-addp-required-permissions ["transfer.task_provider.read"]
+// @Router /task-provider/tasks/{task_type}/{id} [get]
 // @Security BearerAuth
 func (h *TaskHandler) ProviderGetTask(c *gin.Context) {
 	taskType := c.Param("task_type")
@@ -491,7 +513,7 @@ func (h *TaskHandler) ProviderGetTask(c *gin.Context) {
 // ProviderExecuteTask 使用 TaskProvider 标准协议启动 Transfer 任务。
 // @Summary 执行 TaskProvider Transfer 任务 | Execute TaskProvider Transfer task
 // @Description 按标准 TaskProvider 协议启动 Transfer 任务；runtime target 任务要求由 Orchestrator 绑定 target_locator。| Start a Transfer task through the standard TaskProvider protocol; runtime-target tasks require Orchestrator to bind target_locator.
-// @Tags         任务管理 | Task Management
+// @Tags         TaskProvider
 // @Accept json
 // @Produce json
 // @Param task_type path string true "任务类型，固定为 sync | Task type, fixed to sync"
@@ -501,8 +523,8 @@ func (h *TaskHandler) ProviderGetTask(c *gin.Context) {
 // @Failure 400 {object} map[string]string "参数错误 | Bad request"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["transfer.task.execute"]
-// @Router /tasks/{task_type}/{id}/execute [post]
+// @x-addp-required-permissions ["transfer.task_provider.execute"]
+// @Router /task-provider/tasks/{task_type}/{id}/execute [post]
 // @Security BearerAuth
 func (h *TaskHandler) ProviderExecuteTask(c *gin.Context) {
 	taskType := c.Param("task_type")

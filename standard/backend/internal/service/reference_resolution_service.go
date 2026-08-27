@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/addp/standard/internal/models"
 )
 
 const MaxReferenceResolutionBatchSize = 200
+const MaxReferenceCandidatePageSize = 50
 
 var ErrInvalidReferenceResolutionRequest = errors.New("invalid standard reference resolution request")
 
@@ -37,10 +39,29 @@ type ReferenceResolution struct {
 	Version        int64         `json:"version,omitempty"`
 }
 
+type ReferenceCandidate struct {
+	ObjectType ReferenceType `json:"object_type"`
+	ID         int64         `json:"id"`
+	Name       string        `json:"name"`
+	Code       string        `json:"code,omitempty"`
+	Status     string        `json:"status"`
+}
+
+type ReferenceCandidateList struct {
+	Data       []ReferenceCandidate `json:"data"`
+	Total      int64                `json:"total"`
+	Page       int                  `json:"page"`
+	PageSize   int                  `json:"page_size"`
+	TotalPages int                  `json:"total_pages"`
+}
+
 type ReferenceResolutionRepository interface {
 	ResolveDomains(ctx context.Context, tenantID int64, ids []int64) ([]models.Domain, error)
 	ResolveGlossaries(ctx context.Context, tenantID int64, ids []int64) ([]models.Glossary, error)
 	ResolveElements(ctx context.Context, tenantID int64, ids []int64) ([]models.Element, error)
+	ListDomainCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.Domain, int64, error)
+	ListGlossaryCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.Glossary, int64, error)
+	ListElementCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.Element, int64, error)
 }
 
 type ReferenceResolutionService struct {
@@ -119,6 +140,53 @@ func (s *ReferenceResolutionService) Resolve(
 		results = append(results, ReferenceResolution{ObjectType: reference.ObjectType, ID: reference.ID})
 	}
 	return results, nil
+}
+
+func (s *ReferenceResolutionService) ListCandidates(
+	ctx context.Context,
+	tenantID int64,
+	objectType ReferenceType,
+	search string,
+	page, pageSize int,
+) (*ReferenceCandidateList, error) {
+	search = strings.TrimSpace(search)
+	if s == nil || s.repository == nil || tenantID <= 0 || page < 1 || pageSize < 1 || pageSize > MaxReferenceCandidatePageSize || len([]rune(search)) > 100 {
+		return nil, ErrInvalidReferenceResolutionRequest
+	}
+	result := &ReferenceCandidateList{Data: []ReferenceCandidate{}, Page: page, PageSize: pageSize}
+	switch objectType {
+	case ReferenceTypeDomain:
+		items, total, err := s.repository.ListDomainCandidates(ctx, tenantID, search, page, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		result.Total = total
+		for _, item := range items {
+			result.Data = append(result.Data, ReferenceCandidate{ObjectType: objectType, ID: item.ID, Name: item.Name, Code: item.Code, Status: item.LifecycleState})
+		}
+	case ReferenceTypeGlossary:
+		items, total, err := s.repository.ListGlossaryCandidates(ctx, tenantID, search, page, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		result.Total = total
+		for _, item := range items {
+			result.Data = append(result.Data, ReferenceCandidate{ObjectType: objectType, ID: item.ID, Name: item.Name, Status: item.Status})
+		}
+	case ReferenceTypeElement:
+		items, total, err := s.repository.ListElementCandidates(ctx, tenantID, search, page, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		result.Total = total
+		for _, item := range items {
+			result.Data = append(result.Data, ReferenceCandidate{ObjectType: objectType, ID: item.ID, Name: item.Name, Code: item.Code, Status: item.Status})
+		}
+	default:
+		return nil, ErrInvalidReferenceResolutionRequest
+	}
+	result.TotalPages = int((result.Total + int64(pageSize) - 1) / int64(pageSize))
+	return result, nil
 }
 
 func uniqueReferenceIDs(ids []int64) []int64 {

@@ -53,3 +53,10 @@ export function buildDataExplorerConsoleRoute(locator, tab = DATA_EXPLORER_DEFAU
     ? `/manager/data-explorer?${queryString}`
     : '/manager/data-explorer'
 }
+
+export function buildCatalogEntryConsoleRoute(entryId) {
+  const normalizedEntryId = String(entryId || '').trim()
+  return normalizedEntryId
+    ? `/catalog/entries/${encodeURIComponent(normalizedEntryId)}`
+    : '/catalog/entries'
+}

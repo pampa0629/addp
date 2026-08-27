@@ -50,3 +50,33 @@ export function professionalRelationFailureState(error) {
 export function professionalResourceKey(resource) {
   return `${resource?.owner_module || ''}:${resource?.resource_type || ''}:${resource?.resource_id || ''}`
 }
+
+export function professionalNodesToSourceReferences(nodes, limit = 200) {
+  const supported = new Set(['model:entity', 'model:logical_table', 'standard:metric'])
+  const seen = new Set()
+  const references = []
+  for (const node of Array.isArray(nodes) ? nodes : []) {
+    const ownerModule = String(node?.owner_module || '')
+    const resourceType = String(node?.resource_type || '')
+    const resourceID = String(node?.resource_id || '')
+    const key = `${ownerModule}:${resourceType}:${resourceID}`
+    if (!supported.has(`${ownerModule}:${resourceType}`) || !POSITIVE_DECIMAL_ID.test(resourceID) || seen.has(key)) continue
+    seen.add(key)
+    references.push({ source_module: ownerModule, source_type: resourceType, source_identity: resourceID })
+    if (references.length >= limit) break
+  }
+  return references
+}
+
+export function sourceEntryResolutionMap(results) {
+  const mapping = new Map()
+  for (const result of Array.isArray(results) ? results : []) {
+    if (!result?.found || !result.entry?.id) continue
+    mapping.set(professionalResourceKey({
+      owner_module: result.source_module,
+      resource_type: result.source_type,
+      resource_id: result.source_identity
+    }), result.entry)
+  }
+  return mapping
+}

@@ -4764,6 +4764,105 @@ const docTemplate = `{
                 ]
             }
         },
+        "/references/candidates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-catalog Tenant Service Principal 可按名称或编码分页查询当前可引用的 Domain、Glossary 或 Element；只返回最小显示摘要 | Only the addp-catalog tenant service principal may search currently referenceable domains, glossaries, or elements by name or code; only minimal display summaries are returned",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "CatalogReferences"
+                ],
+                "summary": "查询 Catalog 的 Standard 引用候选 | List Standard reference candidates for Catalog",
+                "parameters": [
+                    {
+                        "enum": [
+                            "domain",
+                            "glossary",
+                            "element"
+                        ],
+                        "type": "string",
+                        "description": "引用类型 | Reference type",
+                        "name": "object_type",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "名称或编码，最多 100 字符 | Name or code, maximum 100 characters",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认 1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认 20，最大 50 | Page size, default 20 and maximum 50",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_service.ReferenceCandidateList"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "需要认证 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "仅允许 addp-catalog 且需三个读取权限 | addp-catalog and all three read permissions required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.domain.read",
+                    "standard.glossary.read",
+                    "standard.element.read"
+                ]
+            }
+        },
         "/references/resolve": {
             "post": {
                 "security": [
@@ -6814,6 +6913,49 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_service.ReferenceCandidate": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "object_type": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_service.ReferenceType"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_service.ReferenceCandidateList": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_service.ReferenceCandidate"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
                     "type": "integer"
                 }
             }

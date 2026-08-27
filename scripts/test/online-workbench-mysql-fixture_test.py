@@ -1,4 +1,5 @@
 import os
+import signal
 import shutil
 import subprocess
 import tempfile
@@ -46,7 +47,11 @@ case "$1" in
     ;;
   exec)
     [ -f "$ADDP_TEST_CONTAINER_STATE" ] || exit 1
-    input=$(cat)
+    input=""
+    case " $* " in
+      *" --batch --skip-column-names -e "*) ;;
+      *) input=$(cat) ;;
+    esac
     printf 'stdin:%s\n' "$input" >> "$ADDP_TEST_DOCKER_LOG"
     case " $* " in
       *"COUNT(*)"*) echo 4 ;;
@@ -108,6 +113,36 @@ esac
         self.assertIn("GRANT SELECT ON `commerce_fixture`.*", commands)
         self.assertNotIn("GRANT INSERT", commands)
         self.assertFalse((self.business / ".env").exists())
+
+    def test_start_does_not_consume_open_parent_stdin_for_e_queries(self) -> None:
+        process = subprocess.Popen(
+            ["bash", "business/scripts/online-workbench-mysql-fixture.sh", "start"],
+            cwd=self.root,
+            env=self.environment,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
+        timed_out = False
+        try:
+            returncode = process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+        finally:
+            process.stdin.close()
+
+        stdout = process.stdout.read()
+        stderr = process.stderr.read()
+        process.stdout.close()
+        process.stderr.close()
+        if timed_out:
+            self.fail("mysql -e fixture checks consumed the still-open parent stdin")
+        self.assertEqual(returncode, 0, stderr)
+        self.assertIn("Online Workbench MySQL fixture is ready", stdout)
 
     def test_rejects_unsafe_reader_password_before_docker(self) -> None:
         result = self.run_fixture("start", ADDP_ONLINE_WORKBENCH_MYSQL_PASSWORD="bad quote'")

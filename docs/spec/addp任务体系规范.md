@@ -277,9 +277,9 @@ Model 的 `materialization_prepare|materialization_seal|materialization_publish`
 
 Transfer 的 bounded query-source 写入是通用“写入已存在表”能力。任务定义只保存 source、字段映射和严格类型转换，执行契约把 `target_locator` 声明为必填运行时输入。Worker 通过通用 Engine capability 读取目标实际结构，只使用 `TableWriteSessionProvider` 向既有表 append 本 execution 结果，不得在此模式下删除、清空、建表或改表。稳定输出至少包含 `execution_id + target_locator + row_count`。Transfer 不得保存 LogicalTable ID、调用 Model API 或持有 Model Permission。
 
-Develop 保存的 `query` 可以声明通用“关系输入 -> 已存在表结果”模式。任务定义只保存小写 alias 集合和单条只读 `SELECT`，SQL 只能以保留伪 schema `addp_input.<alias>` 引用已声明关系；执行契约按 alias 在 `input_locators` 对象中声明必填 ResourceLocator，并把 `target_locator` 声明为必填运行时输入。Worker 校验所有 locator 与查询 Runtime 位于同一 PostgreSQL Engine，通过 AST 只改写已声明的关系节点，并在事务中执行 `INSERT INTO <target> SELECT ...`。未声明 alias、未使用声明、真实物理关系、表函数数据源、非 PostgreSQL 查询或跨 Engine 输入必须拒绝。稳定输出至少包含 `execution_id + target_locator + row_count`。Develop 不得保存 LogicalTable ID、调用 Model API 或持有 Model Permission。
+Develop 保存的 `query` 可以声明通用“关系输入 -> 已存在表结果”模式。任务定义只保存小写 alias 集合和单条只读 `SELECT`，SQL 只能以保留伪 schema `addp_input.<alias>` 引用已声明关系；执行契约按 alias 在 `input_locators` 对象中声明必填 ResourceLocator，并把 `target_locator` 声明为必填运行时输入。`input_ui_schema.input_locators` 必须把该对象声明为 `control=group`，并按 `relation_inputs[]` 顺序为每个 alias 声明从 `0` 开始的字段 `order`，使 Orchestrator 能把不同直接上游的稳定 ResourceLocator 输出分别绑定到 `input_locators.<alias>`；不得要求用户手写绑定模板，也不得把整个对象伪装成单一上游输出。Worker 校验所有 locator 与查询 Runtime 位于同一 PostgreSQL Engine，通过 AST 只改写已声明的关系节点，并在事务中执行 `INSERT INTO <target> SELECT ...`。未声明 alias、未使用声明、真实物理关系、表函数数据源、非 PostgreSQL 查询或跨 Engine 输入必须拒绝。稳定输出至少包含 `execution_id + target_locator + row_count`。Develop 不得保存 LogicalTable ID、调用 Model API 或持有 Model Permission。
 
-上述动态目标 writer 不允许在 worker lease 过期后单独重试；写入失败使整个父编排失败，重算必须从 Model prepare 开始新批次。Model 负责回收未 sealed 的失败或过期批次，不为 writer 增设跨 lease 的 staging 接管协议。
+上述动态目标 writer 不允许在 worker lease 过期后单独重试；写入失败使整个父编排失败，重算必须从 Model prepare 开始新批次。后续新 prepare 只能在旧父 Orchestrator execution 已为 `failed|timeout|cancelled` 且无 `pending|running` 子 execution 时，接管同一物理目标的旧 `preparing|prepared|sealed` 批次；旧父仍运行或已成功、以及批次处于 `publishing` 时必须拒绝。旧批次转为 `aborted` 后，新 prepare worker 使用本次精确 DDL 授权，先按批次 ownership marker 幂等回收同目标的历史 `aborted|failed` staging，再创建新 staging；回收和新建必须在同一目标数据库事务中完成。不新增公开 abort TaskProvider、Orchestrator 专属补偿节点或 writer 回调。
 
 Quality `materialization_gate` 仅由 Orchestrator 触发，任务绑定唯一 `materialization_group_id`，并静态保存与该组成员集合完全一致的逻辑表 alias 和类型化断言。Quality 通过 Common Model Client 读取现有 MaterializationGroup 并冻结组版本，不新增泛化只读物化契约；执行前组版本或成员变化必须拒绝。worker 必须在 claim 后以当前 reader execution 向 Model 获取完整 Materialization Read Context，再从父 execution 派生返回 Engine 集合的精确 `read` 授权。断言只允许 `not_null|unique_key|foreign_key|predicate_implication|row_count`，不接受自定义 SQL。任一 `severity=error` 断言不通过时 Quality execution 写 `failed`，Orchestrator 不得继续发布；成功后的 Model publish Step 必须引用同一个 MaterializationGroup，并将门禁输出的组 ID/版本绑定到 `expected_group_id + expected_group_version`。Model 在入队和发布时双重校验，但该交接不表示全局禁止不含 Quality 门禁的其他物化组编排。
 
@@ -595,7 +595,7 @@ Graph 的 `kg_build` 任务定义由 `graph.build_tasks` 保存。`graph.build_t
 
 Develop 的任务类型按开发方式划分为 `query`、`workflow`、`script`。`script` 表示命令式代码开发任务，当前可由 Jupyter Notebook runtime 承载；`notebook` 只是脚本开发的实现形态和 UI 入口，不作为独立 `task_type` 声明，不进入 TaskProvider capabilities。
 
-Develop 的 `develop.dev_tasks.content` 必须使用规范字段：`query` 使用 `content.query` 和 `content.query_type`，执行目标统一写入 `execution_config.engine_id` 并指向 System 中具备 query 能力的真实 Engine。需要把查询结果写入执行期指定的已存在表时，保存任务仅用 `content.relation_inputs[]` 声明关系别名，SQL 仅引用 `addp_input.<alias>`；TaskProvider 契约要求调用方提供精确的 `input_locators` 和 `target_locator`，ResourceLocator 不得写入任务定义。该能力是 Develop 自身的通用关系计算契约，不保存或解析 Model 资源 ID，也不调用 Model。DuckDB 联邦查询绑定平台内置 DuckDB Runtime Engine，不使用独立模式字段或虚拟 Engine。`workflow` 使用 `content.workflow_definition` 和可选 `content.inputs`，执行目标只写 `execution_config.engine_id` 指向具体工作流运行时实例，不写 `execution_config.engine_type`，运行时类型必须由后端按该实例 ID 从 System 查询；`script` 的 Notebook 形态使用 `content.notebook_path`。Develop 的 ad-hoc 临时执行同样必须提交 `execution_config`，不得使用顶层 `engine_id` 表达查询目标，也不得使用关系结果写入；关系结果写入只允许由 Orchestrator 父执行调用保存任务。`/develop/engines` 统一返回 System 中具备 query 能力的真实 Engine Instance，不提供 Develop 私有查询模式或 `id=0` 虚拟 Engine。不得再新增或消费 `content.sql`、`content.workflow_def`、`content.input_data`、`execution_config.data_source_id` 等未声明字段。
+Develop 的 `develop.dev_tasks.content` 必须使用规范字段：`query` 使用 `content.query` 和 `content.query_type`，执行目标统一写入 `execution_config.engine_id` 并指向 System 中具备 query 能力的真实 Engine。需要把查询结果写入执行期指定的已存在表时，保存任务仅用 `content.relation_inputs[]` 声明关系别名，SQL 仅引用 `addp_input.<alias>`；TaskProvider 契约要求调用方提供精确的 `input_locators` 和 `target_locator`，并通过 `input_ui_schema.input_locators.control=group` 把每个 alias 暴露为可独立绑定的字符串输入端口，ResourceLocator 不得写入任务定义。该能力是 Develop 自身的通用关系计算契约，不保存或解析 Model 资源 ID，也不调用 Model。DuckDB 联邦查询绑定平台内置 DuckDB Runtime Engine，不使用独立模式字段或虚拟 Engine。`workflow` 使用 `content.workflow_definition` 和可选 `content.inputs`，执行目标只写 `execution_config.engine_id` 指向具体工作流运行时实例，不写 `execution_config.engine_type`，运行时类型必须由后端按该实例 ID 从 System 查询；`script` 的 Notebook 形态使用 `content.notebook_path`。Develop 的 ad-hoc 临时执行同样必须提交 `execution_config`，不得使用顶层 `engine_id` 表达查询目标，也不得使用关系结果写入；关系结果写入只允许由 Orchestrator 父执行调用保存任务。`/develop/engines` 统一返回 System 中具备 query 能力的真实 Engine Instance，不提供 Develop 私有查询模式或 `id=0` 虚拟 Engine。不得再新增或消费 `content.sql`、`content.workflow_def`、`content.input_data`、`execution_config.data_source_id` 等未声明字段。
 
 查询工作台的即时执行固定使用 `POST /api/v1/develop/executions` 创建 ad-hoc execution，写入 `module=develop`、`task_type=query`、`source=develop`、`source_task_id=null`，并在 `execution_config` 保存 `content`、目标 `engine_id`、语言和 timeout 快照。前端通过 `GET /api/v1/develop/executions/{execution_id}` 回查状态和结果。不得保留直接执行并同步返回结果的 `/develop/execute` 或其他旁路。查询结果只能保存受限预览，并明确记录 `result_limit`、`truncated` 和 capability 驱动的 `result_kind`；完整无界结果不得写入 execution metadata。
 
@@ -639,7 +639,7 @@ Provider 不维护独立 `is_enabled`。管理员意图只来自模块定义 `en
 
 ### 标准 endpoint
 
-第一阶段应收敛到以下 endpoint 语义：
+第一阶段应收敛到以下 endpoint 后缀语义：
 
 | 能力 | Endpoint |
 | --- | --- |
@@ -649,9 +649,11 @@ Provider 不维护独立 `is_enabled`。管理员意图只来自模块定义 `en
 | 查执行 | `GET /executions/{execution_id}` |
 | 取消执行 | `POST /executions/{execution_id}/cancel`，仅当对应 `task_type.supports_cancel=true` |
 
-后续实现应收敛到以上 endpoint 语义。取消接口不是必选能力；未声明支持取消的任务类型不得注册或展示取消入口。确需处理现有路径时，只能作为入口层迁移工作，不得形成长期双轨命名。
+owner 应将整组 TaskProvider 端点挂载在独立路由空间，并以专用 Runtime Permission 和固定 Service Client Guard 与用户任务管理 API 隔离；例如 Transfer 使用 `/api/v1/transfer/task-provider/tasks`，用户任务定义只使用 `/api/v1/transfer/task-definitions`。不得让机器编排复用用户的宽泛任务读写权限，也不得让用户任务列表复用 TaskProvider 发现路由。
 
-System 的模块注册入口接收 TaskProvider 声明时必须校验标准 endpoint：任务详情和执行 endpoint 必须包含 `{task_type}` 与 `{id}`，执行状态 endpoint 必须包含 `{execution_id}`，并且必须分别使用 `/tasks`、`/tasks/{task_type}/{id}`、`/tasks/{task_type}/{id}/execute`、`/executions/{execution_id}` 和 `/executions/{execution_id}/cancel` 标准后缀，不得使用 `/provider/tasks`、`/scan/runs/{execution_id}`、`/tasks/{id}/run` 等私有或旧路径。Orchestrator 调用 provider 时只替换 `{task_type}`、`{id}`、`{execution_id}` 三类标准占位符；模块私有 UI 或 CRUD 路径可以继续使用 `:id`、`:task_id` 等前端或 Gin 写法，但不得进入 TaskProvider endpoint 契约。
+后续实现应收敛到以上 endpoint 后缀语义。取消接口不是必选能力；未声明支持取消的任务类型不得注册或展示取消入口。确需处理现有路径时，只能作为入口层迁移工作，不得形成长期双轨命名。
+
+System 的模块注册入口接收 TaskProvider 声明时必须校验标准 endpoint：任务详情和执行 endpoint 必须包含 `{task_type}` 与 `{id}`，执行状态 endpoint 必须包含 `{execution_id}`，并且必须分别使用 `/tasks`、`/tasks/{task_type}/{id}`、`/tasks/{task_type}/{id}/execute`、`/executions/{execution_id}` 和 `/executions/{execution_id}/cancel` 标准后缀；前缀只用于 owner 模块和独立 TaskProvider 路由空间，不得发明 `/scan/runs/{execution_id}`、`/tasks/{id}/run` 等私有或旧后缀。Orchestrator 调用 provider 时只替换 `{task_type}`、`{id}`、`{execution_id}` 三类标准占位符；模块私有 UI 或 CRUD 路径可以继续使用 `:id`、`:task_id` 等前端或 Gin 写法，但不得进入 TaskProvider endpoint 契约。
 
 ### 标准响应体
 

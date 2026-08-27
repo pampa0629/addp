@@ -81,6 +81,9 @@ func main() {
 		db,
 		service.NewStandardClientReferenceResolver(standardClient),
 		systemReferenceResolver,
+	).WithReferenceCandidateResolvers(
+		service.NewStandardClientCandidateResolver(standardClient),
+		service.NewSystemClientCandidateResolver(systemClient),
 	).WithEngineReferenceResolver(service.NewSystemClientEngineReferenceResolver(systemClient)).WithSearch(searchIndex).WithProfessionalSourceResolvers(
 		service.NewModelClientSourceResolver(modelClient),
 		service.NewStandardClientSourceResolver(standardClient),
@@ -88,7 +91,7 @@ func main() {
 		service.NewDevelopClientSourceResolver(developClient),
 	).WithQualitySummaryResolver(service.NewQualityClientSummaryResolver(qualityClient))
 	personalCatalogService := service.NewPersonalCatalogService(db, entryService)
-	collectionService := service.NewCollectionService(db, entryService)
+	collectionService := service.NewCollectionService(db, entryService).WithSystemReferenceResolver(systemReferenceResolver)
 	router := api.SetupRouter(cfg.SystemURL, lifecycle, entryService, governanceTaskService, personalCatalogService, collectionService, syncRunner)
 	listener, err := net.Listen("tcp", ":"+cfg.Port)
 	if err != nil {

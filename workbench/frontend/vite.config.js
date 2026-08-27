@@ -11,5 +11,5 @@ export default defineConfig({
     'element-plus': resolve(__dirname, 'node_modules/element-plus'), 'vue-i18n': resolve(__dirname, 'node_modules/vue-i18n')
   }, dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios', 'echarts', 'ol', 'proj4'] },
   server: { port: 5190, strictPort: true, fs: { allow: [resolve(__dirname, '..'), resolve(__dirname, '../..'), resolve(__dirname, '../../common-frontend')] }, proxy: { '/api': { target: 'http://localhost:8000', changeOrigin: true } } },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/workbench/'
+  base: '/workbench/'
 })

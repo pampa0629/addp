@@ -27,6 +27,10 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, entrie
 		commonAuth.MustNewContextGuard("tenant"),
 	)
 	readPermission := commonAuth.MustNewPermissionGuard(catalogauthorization.PermissionCatalogEntryRead)
+	inventoryReadPermission := commonAuth.MustNewPermissionGuard(
+		catalogauthorization.PermissionCatalogEntryRead,
+		catalogauthorization.PermissionCatalogInventoryRead,
+	)
 	updatePermission := commonAuth.MustNewPermissionGuard(catalogauthorization.PermissionCatalogEntryUpdate)
 	rebindPermission := commonAuth.MustNewPermissionGuard(catalogauthorization.PermissionCatalogSourceRebind)
 	historyPermission := commonAuth.MustNewPermissionGuard(
@@ -45,14 +49,18 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, entrie
 	)
 	api.GET("/entries", readPermission, handler.ListEntries)
 	api.GET("/entries/facets", readPermission, handler.ListEntryFacets)
+	api.POST("/entries/resolve-sources", readPermission, handler.ResolveSourceEntries)
+	api.GET("/reference-candidates", updatePermission, handler.ListReferenceCandidates)
 	api.GET("/entries/:id", readPermission, handler.GetEntry)
 	api.PUT("/entries/:id", updatePermission, handler.UpdateEntry)
 	api.POST("/entries/:id/rebind-source", rebindPermission, handler.RebindSource)
 	api.GET("/entries/:id/history", historyPermission, handler.GetEntryHistory)
-	api.GET("/governance/tasks", updatePermission, handler.ListGovernanceTasks)
+	api.GET("/governance/tasks", readPermission, updatePermission, handler.ListGovernanceTasks)
+	api.GET("/governance/coverage", inventoryReadPermission, handler.GetGovernanceCoverage)
 	api.GET("/me/entries", readPermission, handler.ListMyEntries)
 	api.GET("/me/entries/:id/marks", readPermission, handler.GetMyEntryMarks)
 	api.PUT("/me/entries/:id/marks", readPermission, handler.ReplaceMyEntryMarks)
+	api.GET("/me/project-groups", collectionReadPermission, handler.ListMyProjectGroups)
 	api.GET("/collections", collectionReadPermission, handler.ListCollections)
 	api.POST("/collections", collectionUpdatePermission, handler.CreateCollection)
 	api.GET("/collections/:id", collectionReadPermission, handler.GetCollection)

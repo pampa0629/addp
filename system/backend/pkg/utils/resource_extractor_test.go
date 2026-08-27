@@ -23,7 +23,7 @@ func TestExtractResourceInfoVersionedRoutes(t *testing.T) {
 		},
 		{
 			name:       "transfer task provider route",
-			path:       "/api/v1/transfer/tasks/sync/56",
+			path:       "/api/v1/transfer/task-provider/tasks/sync/56",
 			wantType:   "task",
 			wantEntity: "56",
 		},

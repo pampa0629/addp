@@ -17,9 +17,14 @@ import (
 	"github.com/google/uuid"
 )
 
-type Handler struct{ views *service.ViewService }
+type Handler struct {
+	views        *service.ViewService
+	applications *service.DataApplicationService
+}
 
-func NewHandler(views *service.ViewService) *Handler { return &Handler{views: views} }
+func NewHandler(views *service.ViewService, applications *service.DataApplicationService) *Handler {
+	return &Handler{views: views, applications: applications}
+}
 
 // ListViews 列出当前用户私有的工作台视图。
 // @Summary 列出工作台视图 | List Workbench views
@@ -218,6 +223,15 @@ func viewID(c *gin.Context) (string, bool) {
 	return id.String(), true
 }
 
+func dataApplicationID(c *gin.Context) (string, bool) {
+	id, err := uuid.Parse(strings.TrimSpace(c.Param("id")))
+	if err != nil || id == uuid.Nil {
+		respondError(c, service.ErrInvalidDataApplication)
+		return "", false
+	}
+	return id.String(), true
+}
+
 func descriptorRequest(c *gin.Context) service.DescriptorRequest {
 	authorization := strings.TrimSpace(c.GetHeader("Authorization"))
 	bearer := strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
@@ -242,6 +256,16 @@ func respondError(c *gin.Context, err error) {
 		status, messageKey = http.StatusForbidden, workbenchi18n.MsgServiceAccessDenied
 	case errors.Is(err, service.ErrServiceUnavailable):
 		status, messageKey = http.StatusServiceUnavailable, workbenchi18n.MsgServiceUnavailable
+	case errors.Is(err, service.ErrInvalidDataApplication):
+		status, messageKey = http.StatusBadRequest, workbenchi18n.MsgInvalidDataApplication
+	case errors.Is(err, service.ErrDataApplicationNotFound):
+		status, messageKey = http.StatusNotFound, workbenchi18n.MsgDataApplicationNotFound
+	case errors.Is(err, service.ErrDataApplicationVersionConflict):
+		status, messageKey, errorCode = http.StatusConflict, workbenchi18n.MsgDataApplicationVersionConflict, "workbench_data_application_version_conflict"
+	case errors.Is(err, service.ErrDataApplicationAlreadyPublished):
+		status, messageKey, errorCode = http.StatusConflict, workbenchi18n.MsgDataApplicationAlreadyPublished, "workbench_data_application_already_published"
+	case errors.Is(err, service.ErrDataApplicationNotPublished):
+		status, messageKey, errorCode = http.StatusConflict, workbenchi18n.MsgDataApplicationNotPublished, "workbench_data_application_not_published"
 	}
 	body := gin.H{"error": commoni18n.T(c, messageKey)}
 	if errorCode != "" {

@@ -69,6 +69,41 @@ func TestBuildTableTransferPlanForMongoQuerySource(t *testing.T) {
 	}
 }
 
+func TestBuildTableTransferPlanRejectsBareMongoPipeline(t *testing.T) {
+	spec := TableExportTaskSpec{
+		Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},
+		Load:    LoadSpec{Mode: loadModeSnapshot},
+		Source: EndpointSpec{
+			Locator:        "addp://engine/11/path/Outdoor/Persons?type=collection",
+			DataType:       dataTypeTable,
+			Representation: representationNative,
+			Query: &QuerySourceSpec{
+				Language:  "mql",
+				Statement: `[{"$project":{"person_id":"$_id"}}]`,
+			},
+		},
+		Target: EndpointSpec{
+			ParentLocator:  schemaLocator(12, "public"),
+			Name:           "dim_outdoor_person_staging",
+			DataType:       dataTypeTable,
+			Representation: representationNative,
+			Policy:         map[string]interface{}{"apply_mode": "replace"},
+		},
+		Transforms: []TransformSpec{{
+			Type: "field_mapping", Mode: "project",
+			Fields: []FieldMappingSpec{{Source: "person_id", Target: "person_id", TargetType: "string"}},
+		}},
+	}
+
+	_, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		11: {Type: "mongodb", EngineID: 11},
+		12: {Type: "postgresql", EngineID: 12},
+	})
+	if err == nil || !strings.Contains(err.Error(), "MQL query must be a JSON object") {
+		t.Fatalf("BuildTableTransferPlan() error = %v, want MQL command object error", err)
+	}
+}
+
 func TestQuerySourceRequiresExplicitTypedProjectMapping(t *testing.T) {
 	spec := minimalEncodedToNativeSpec()
 	spec.Source = EndpointSpec{

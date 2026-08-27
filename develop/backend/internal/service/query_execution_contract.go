@@ -88,14 +88,24 @@ func BuildQueryExecutionContract(content map[string]interface{}) (*taskprovider.
 		}
 		locatorProperties := make(map[string]interface{}, len(bindings))
 		locatorRequired := make([]interface{}, 0, len(bindings))
-		for _, binding := range bindings {
+		locatorUIFields := make(map[string]interface{}, len(bindings))
+		for index, binding := range bindings {
 			locatorProperties[binding.Name] = map[string]interface{}{"type": "string", "minLength": float64(1)}
 			locatorRequired = append(locatorRequired, binding.Name)
+			locatorUIFields[binding.Name] = map[string]interface{}{"order": index}
 		}
 		properties["input_locators"] = map[string]interface{}{
 			"type": "object", "properties": locatorProperties, "required": locatorRequired, "additionalProperties": false,
 		}
 		properties["target_locator"] = map[string]interface{}{"type": "string", "minLength": float64(1)}
+		contract.InputUISchema["input_locators"] = map[string]interface{}{
+			"control": "group",
+			"order":   len(definitions),
+			"fields":  locatorUIFields,
+		}
+		contract.InputUISchema["target_locator"] = map[string]interface{}{
+			"order": len(definitions) + 1,
+		}
 		contract.InputSchema["required"] = []interface{}{"input_locators", "target_locator"}
 		contract.OutputSchema = map[string]interface{}{
 			"type": "object",

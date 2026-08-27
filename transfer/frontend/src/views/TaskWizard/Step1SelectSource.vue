@@ -104,6 +104,7 @@
               :placeholder="t('transfer.taskWizard.queryStatementPlaceholder')"
               @input="syncQuerySource"
             />
+            <div v-if="queryStatementError" class="query-error">{{ queryStatementError }}</div>
             <el-input
               v-model="queryParametersText"
               type="textarea"
@@ -140,6 +141,7 @@ import {
   isTransferableTableContainer,
   resolveContainerTableChild
 } from './containerSource.mjs'
+import { queryStatementValid } from './runtimeTarget.mjs'
 
 const { t } = useI18n()
 
@@ -161,6 +163,7 @@ const querySourceEnabled = ref(props.wizardState.sourceQueryEnabled.value)
 const queryLanguage = ref(props.wizardState.sourceQueryLanguage.value || 'mql')
 const queryStatement = ref(props.wizardState.sourceQueryStatement.value || '')
 const queryParametersText = ref(JSON.stringify(props.wizardState.sourceQueryParameters.value || {}, null, 2))
+const queryStatementError = ref('')
 const queryParametersError = ref('')
 
 const supportedEncodedSourceFormats = ref(new Set())
@@ -223,7 +226,13 @@ watch(selectedNode, async (node) => {
 
 function syncQuerySource() {
   let parameters = {}
+  queryStatementError.value = ''
   queryParametersError.value = ''
+  if (querySourceEnabled.value && !queryStatementValid(queryLanguage.value, queryStatement.value)) {
+    queryStatementError.value = queryLanguage.value === 'mql'
+      ? t('transfer.taskWizard.queryMqlCommandObjectRequired')
+      : t('transfer.taskWizard.queryStatementRequired')
+  }
   try {
     parameters = JSON.parse(queryParametersText.value.trim() || '{}')
     if (!parameters || Array.isArray(parameters) || typeof parameters !== 'object') {
@@ -238,7 +247,7 @@ function syncQuerySource() {
     language: queryLanguage.value,
     statement: queryStatement.value,
     parameters,
-    valid: !queryParametersError.value
+    valid: !queryStatementError.value && !queryParametersError.value
   })
 }
 

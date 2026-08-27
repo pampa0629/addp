@@ -105,6 +105,12 @@ mindmap
         Query → 查询工作台
         Workflow → 工作流编辑器
         Notebook 开发 → Notebook编辑器
+    数据服务消费
+      Service Consumer Descriptor
+      Workbench View 个人消费配置
+      Data Application 独立聚合根
+      Application Revision 不可变发布快照
+      当前访问者身份执行 Service
     任务编排
       TaskProvider 模块角色声明与动态发现
       任务编排流 vs 算子工作流

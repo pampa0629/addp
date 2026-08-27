@@ -282,7 +282,7 @@ cat logs/system-backend.log
 ### 前端启动失败
 
 ```bash
-# 1. 检查 Node.js 版本(需要 16+)
+# 1. 检查 Node.js 版本（必须与根目录 .node-version 声明的 Node.js 24 一致）
 node -v
 
 # 2. 重新安装依赖

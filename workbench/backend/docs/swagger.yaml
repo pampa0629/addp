@@ -12,6 +12,214 @@ definitions:
       total_pages:
         type: integer
     type: object
+  github_com_addp_workbench_internal_models.DataApplicationComponent:
+    properties:
+      contract_fingerprint:
+        type: string
+      default_parameter_values:
+        additionalProperties:
+          items:
+            type: integer
+          type: array
+        type: object
+      description:
+        type: string
+      id:
+        type: string
+      parameter_definitions:
+        items:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.ViewParameterDefinition'
+        type: array
+      query_template:
+        $ref: '#/definitions/github_com_addp_workbench_internal_models.ViewQueryTemplate'
+      renderer_config:
+        type: object
+      renderer_type:
+        enum:
+        - table
+        - chart
+        - map
+        type: string
+      service_ref:
+        $ref: '#/definitions/github_com_addp_workbench_internal_models.ServiceReference'
+      title:
+        type: string
+    required:
+    - contract_fingerprint
+    - id
+    - query_template
+    - renderer_config
+    - renderer_type
+    - service_ref
+    - title
+    type: object
+  github_com_addp_workbench_internal_models.DataApplicationComponentLayout:
+    properties:
+      component_id:
+        type: string
+      height:
+        type: integer
+      width:
+        type: integer
+      x:
+        type: integer
+      "y":
+        type: integer
+    required:
+    - component_id
+    - height
+    - width
+    type: object
+  github_com_addp_workbench_internal_models.DataApplicationCreateRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      source_view_ids:
+        items:
+          type: string
+        type: array
+    required:
+    - name
+    - source_view_ids
+    type: object
+  github_com_addp_workbench_internal_models.DataApplicationPage:
+    properties:
+      id:
+        type: string
+      placements:
+        items:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationComponentLayout'
+        type: array
+      title:
+        type: string
+    required:
+    - id
+    - placements
+    - title
+    type: object
+  github_com_addp_workbench_internal_models.DataApplicationParameter:
+    properties:
+      control_type:
+        type: string
+      default_value:
+        type: object
+      key:
+        type: string
+      label:
+        type: string
+      required:
+        type: boolean
+    required:
+    - control_type
+    - key
+    - label
+    type: object
+  github_com_addp_workbench_internal_models.DataApplicationParameterBinding:
+    properties:
+      application_parameter_key:
+        type: string
+      component_id:
+        type: string
+      component_parameter_key:
+        type: string
+    required:
+    - application_parameter_key
+    - component_id
+    - component_parameter_key
+    type: object
+  github_com_addp_workbench_internal_models.DataApplicationResponse:
+    properties:
+      created_at:
+        type: string
+      current_revision_number:
+        type: integer
+      description:
+        type: string
+      has_unpublished_changes:
+        type: boolean
+      id:
+        type: string
+      name:
+        type: string
+      owner_user_id:
+        type: integer
+      publication_status:
+        enum:
+        - unpublished
+        - published
+        - offline
+        type: string
+      snapshot:
+        $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationSnapshot'
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
+  github_com_addp_workbench_internal_models.DataApplicationRuntimeResponse:
+    properties:
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      published_at:
+        type: string
+      revision_number:
+        type: integer
+      snapshot:
+        $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationSnapshot'
+    type: object
+  github_com_addp_workbench_internal_models.DataApplicationSnapshot:
+    properties:
+      components:
+        items:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationComponent'
+        type: array
+      page:
+        $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationPage'
+      parameter_bindings:
+        items:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationParameterBinding'
+        type: array
+      parameters:
+        items:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationParameter'
+        type: array
+      schema_version:
+        type: string
+    required:
+    - components
+    - page
+    - schema_version
+    type: object
+  github_com_addp_workbench_internal_models.DataApplicationUpdateRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      snapshot:
+        $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationSnapshot'
+      version:
+        type: integer
+    required:
+    - name
+    - snapshot
+    - version
+    type: object
+  github_com_addp_workbench_internal_models.DataApplicationVersionRequest:
+    properties:
+      version:
+        type: integer
+    required:
+    - version
+    type: object
   github_com_addp_workbench_internal_models.QueryFilter:
     properties:
       and:
@@ -171,6 +379,439 @@ info:
   title: ADDP Workbench API
   version: "1.0"
 paths:
+  /data_applications:
+    get:
+      description: 只返回当前 Tenant 和当前 User 拥有的数据应用草稿摘要 | Return only data application
+        draft summaries owned by the current User in the current Tenant
+      parameters:
+      - description: 页码，默认 1 | Page number, default 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认 20，最大 100 | Page size, default 20 and maximum 100
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 数据应用分页结果 | Paginated data applications
+          schema:
+            $ref: '#/definitions/api.PaginatedResponse'
+        "400":
+          description: 请求参数无效 | Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 权限不足 | Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出数据应用 | List data applications
+      tags:
+      - Workbench Data Applications
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - workbench.data_application.read
+    post:
+      consumes:
+      - application/json
+      description: 重新校验来源 View 的 Service 契约并复制为 Component 快照；不保存 source_view_ids |
+        Revalidate source View Service contracts and copy them into Component snapshots;
+        source_view_ids are not persisted
+      parameters:
+      - description: 数据应用名称和来源 View | Data application name and source Views
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 新建数据应用 | Created data application
+          schema:
+            $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationResponse'
+        "400":
+          description: 配置无效 | Invalid configuration
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Workbench 或 Service 权限不足 | Insufficient Workbench or Service
+            permission
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 来源 View 不存在 | Source View not found
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service 不可用 | Service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建数据应用 | Create a data application
+      tags:
+      - Workbench Data Applications
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - workbench.data_application.create
+  /data_applications/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 只有从未产生 Application Revision 的应用可删除；请求必须携带当前 version | Only applications
+        that never produced an Application Revision can be deleted; the current version
+        is required
+      parameters:
+      - description: Data Application UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 当前 version | Current version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationVersionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功 | Deleted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: 请求无效 | Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 权限不足 | Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 数据应用不存在 | Data application not found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 版本冲突或应用已发布 | Version conflict or application already published
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除未发布数据应用 | Delete an unpublished data application
+      tags:
+      - Workbench Data Applications
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - workbench.data_application.delete
+    get:
+      parameters:
+      - description: Data Application UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 数据应用草稿 | Data application draft
+          schema:
+            $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationResponse'
+        "400":
+          description: ID 无效 | Invalid ID
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 权限不足 | Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 数据应用不存在 | Data application not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取数据应用 | Get a data application
+      tags:
+      - Workbench Data Applications
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - workbench.data_application.read
+    put:
+      consumes:
+      - application/json
+      description: Component ID 和 ServiceReference 不可改变；使用正整数 version 乐观并发并重新校验所有
+        Service 契约 | Component IDs and ServiceReferences are immutable; use positive
+        version optimistic concurrency and revalidate every Service contract
+      parameters:
+      - description: Data Application UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 完整草稿和当前 version | Complete draft and current version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新后的数据应用 | Updated data application
+          schema:
+            $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationResponse'
+        "400":
+          description: 配置无效 | Invalid configuration
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Workbench 或 Service 权限不足 | Insufficient Workbench or Service
+            permission
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 数据应用不存在 | Data application not found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 版本冲突 | Version conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service 不可用 | Service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新数据应用草稿 | Update a data application draft
+      tags:
+      - Workbench Data Applications
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - workbench.data_application.update
+  /data_applications/{id}/offline:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Data Application UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 当前 version | Current version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationVersionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已下线数据应用 | Offline data application
+          schema:
+            $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationResponse'
+        "400":
+          description: 请求无效 | Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 权限不足 | Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 数据应用不存在 | Data application not found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 版本冲突或尚未发布 | Version conflict or unpublished application
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 下线数据应用 | Take a data application offline
+      tags:
+      - Workbench Data Applications
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - workbench.data_application.publish
+  /data_applications/{id}/publish:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Data Application UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 当前 version | Current version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationVersionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已发布数据应用 | Published data application
+          schema:
+            $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationResponse'
+        "400":
+          description: 请求无效 | Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Workbench 或 Service 权限不足 | Insufficient Workbench or Service
+            permission
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 数据应用不存在 | Data application not found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 版本冲突 | Version conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service 不可用 | Service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 发布数据应用 | Publish a data application
+      tags:
+      - Workbench Data Applications
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - workbench.data_application.publish
+  /data_applications/{id}/runtime:
+    get:
+      description: Phase 4A 只允许创建者读取当前 published Revision；真实数据仍由浏览器以当前 User Bearer
+        调用各 Service | Phase 4A allows only the owner to read the current published
+        Revision; the browser still calls every Service with the current User Bearer
+      parameters:
+      - description: Data Application UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 不可变运行快照 | Immutable runtime snapshot
+          schema:
+            $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationRuntimeResponse'
+        "400":
+          description: ID 无效 | Invalid ID
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 权限不足 | Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 尚未发布或已下线 | Unpublished or offline
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取数据应用运行快照 | Get a data application runtime snapshot
+      tags:
+      - Workbench Data Applications
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - workbench.data_application.execute
   /views:
     get:
       description: 只返回当前 Tenant 和当前 User 拥有的工作台视图；不访问 Service | Return only Workbench

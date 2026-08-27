@@ -635,7 +635,7 @@ Quality 类型化 `materialization_gate`、MaterializationGroup 发布交接和�
 
 2026-08-27 已建立待统一编排的正式任务与门禁：Transfer 任务 `74/75/76` 分别生成人员维度、活动维度和参与事实；Develop 任务 `49/50` 分别计算人员指标和 Top 10 人员对指标；Model 物化组 `outdoor_governed_refresh` 的 ID 为 `1`、版本为 `1`，成员为逻辑表 `3/4/5/6/7`；Quality 门禁 `outdoor_governed_materialization_gate` 已配置 9 项断言。旧 Develop 任务 `47/48` 只能在新编排真实重算验证通过后删除，不保留双轨生产路线。
 
-Model 另已修复“空 `partition_by` 被误判为分区表”的配置语义分裂：未分区物化在前端请求与后端持久化中都同时省略 `partition_by/partition_type`，TaskProvider 和 prepare 只按非空 `partition_by` 识别分区设计，`015_normalize_empty_partition_materialization` migration 负责清理已有空值配置。Model Go 全量测试、前端单测/E2E/构建及 PostgreSQL 标准门禁已通过；待 Model 服务重启应用 migration 后，继续创建 `outdoor_governance_full_refresh` 唯一 DAG 并执行真实全量回归。
+Model 另已修复“空 `partition_by` 被误判为分区表”的配置语义分裂：未分区物化在前端请求与后端持久化中都同时省略 `partition_by/partition_type`，TaskProvider 和 prepare 只按非空 `partition_by` 识别分区设计，`015_normalize_empty_partition_materialization` migration 负责清理已有空值配置。Model Go 全量测试、前端单测/E2E/构建及 PostgreSQL 标准门禁已通过；2026-08-27 重启后 migration 和五张逻辑表持久化配置均已验证，下一步是创建 `outdoor_governance_full_refresh` 唯一 DAG 并执行真实全量回归。
 
 ### 13.15 会话接力清单（2026-08-27）
 
@@ -662,21 +662,21 @@ Model 另已修复“空 `partition_by` 被误判为分区表”的配置语义�
 
 Quality 当前 9 项断言是：人员主键唯一、活动主键唯一、参与事实的人员/活动标识非空、参与复合键唯一、参与到人员/活动的两项外键、人员指标粒度唯一、人员对指标粒度唯一。当前未配置 `predicate_implication` 或 Top 10 结果 45 行的 `row_count` 断言；Quality 模块已具备这些通用能力，但是否加入本门禁应在首轮运行证据出来后明确决定，不由接力会话自行扩展。
 
-#### 当前运行态（接力前必须重新核验）
+#### 当前运行态（2026-08-27 重启后已复核）
 
-- 代码已新增 Model migration `015_normalize_empty_partition_materialization.up.sql`，但当前运行库的最新 migration 仍是 `014_replace_write_attempt_with_seal.up.sql`。
-- 逻辑表 `3/4/5/6/7` 的当前运行库记录仍带有空 `partition_by` 和 `partition_type=range`，因而旧 Model 进程不会把它们发布为 prepare/seal 任务。
-- System 中 Model TaskProvider 声明已正常持久（`module_definitions.version=3`），包含 prepare/seal/single publish/group publish 四类能力。
-- `outdoor_governance_full_refresh` 还没有持久化，当前 Orchestrator 同名记录数为 `0`。
-- 工作区包含多模块未提交改动，均视为用户和前续会话的有效成果；接力时不得 reset、checkout 或覆盖无关改动，也不得未经授权提交。
+- Model migration 最新版本已是 `015_normalize_empty_partition_materialization.up.sql`。
+- 逻辑表 `3/4/5/6/7` 的 `materialization` 均已省略 `partition_by/partition_type`。
+- System 中 Model TaskProvider 声明已正常持久（`module_definitions.version=5`），包含 prepare、seal、single publish、group publish 四类能力；Transfer、Develop、Quality、Orchestrator 的 TaskProvider 声明也都已重新注册。
+- Gateway、Transfer、Orchestrator、Develop、Model、Quality 的 `/health/ready` 均返回 `200`。
+- `outdoor_governance_full_refresh` 已通过 Orchestrator 正式页面持久化，编排 ID 为 `10`，保存为未启用、无 Cron 的手动重算任务，共 `17` 个步骤。
+- 已在登录后的 Orchestrator 任务库确认 Model prepare/seal 各 `5` 个任务和 group publish 组 `1`；逻辑表 `2` 没有完整物化目标，未出现。
+- Transfer TaskProvider 的 `403` 根因已完成代码收敛：新增专用 `/api/v1/transfer/task-provider/*` 路由、固定 `addp-orchestrator` Service Client Guard 与 `transfer.task_provider.read|execute`；`tenant.orchestrator_runtime` 通过 103 号 System 向前 migration 获得且只获得这两项权限。旧 `/api/v1/transfer/tasks` 混合入口已删除，用户任务列表和前端统一迁到 `GET /api/v1/transfer/task-definitions`，用户执行详情与 Provider 执行状态也已拆分。2026-08-27 整套重启后已复核 `system.schema_migrations=103,false`、两项 Permission 与角色授权落库、Transfer 模块声明只暴露新 TaskProvider 路由，Orchestrator 任务库已能读取 `74/75/76` 三个 Outdoor 同步任务。
+- 本轮离线门禁证据：Transfer backend `go test ./...` 全部通过；`make test-authorization` 与全仓 Swagger 路由覆盖通过，Transfer 当前覆盖 32 个公开路由方法；Transfer frontend 生产构建通过，新任务 API 路径专项测试通过；103 号 migration 的 `addp_iam_test` 专项 PostgreSQL 门禁通过，确认发布两项最小权限、绑定 Runtime Role 并推进 `addp-orchestrator` 授权版本。Transfer frontend 全量测试仍有一个既有 `auto_scan_metadata: true` 文本快照断言与当前 runtime target 条件逻辑不一致，本轮未越界修改。完整 System IAM PostgreSQL 套件还受到同一共享测试库中其他并行工作和既有权限快照不一致影响，但 103 专项目标已独立通过。
+- Develop `49/50` 的 `input_ui_schema.input_locators.control=group` 已在线生效；编排页已分别绑定 `person/participation` 和 `person_metric/participation` 子端口，不修改 Orchestrator 业务逻辑，不引入 Develop 对 Model 的依赖。
+- 首次执行 `8e550869-b094-416d-a639-e18c675e5a28` 在 Transfer 任务 `74` 失败；根因是 `74/75/76` 保存了裸 MQL pipeline 数组，而 MongoDB QueryReadSession 的稳定契约是单个 JSON command object。三个任务已通过 Transfer 正式编辑流程迁移为 `aggregate + pipeline`，数据库复核分别为 `Persons/3`、`Outdoors/3`、`Outdoors/9`。Transfer 规范、前端提示和任务保存校验已同步收紧，裸 pipeline 不再能保存。
+- 第二次执行 `9e93e57f-513e-4432-bb98-5af1a5eafbf1` 在新 prepare 入队前被 `materialization_state_conflict` 拒绝。首次失败后的五个批次仍处于 `prepared`，其父编排已是 `failed`。经确认，Model 已补齐单一路线的安全接管闭环：同一物理目标的新 prepare 只可接管父编排为 `failed/timeout/cancelled` 且不存在 `pending/running` 子执行的旧 `preparing/prepared/sealed` 批次；旧 `publishing`、运行中或成功父执行继续拒绝。元数据事务先把旧批次置为 `aborted` 并创建新批次，prepare worker 再在目标 PostgreSQL 的同一事务中逐个核验旧 staging 的精确 Model 所有权标记、幂等删除旧 staging 并创建新 staging；任一标记不匹配时全部删除回滚。该能力不增加公开 abort API，不要求 Orchestrator 编排 Model 补偿，也不向 Transfer/Develop 泄露 Model 语义。代码和离线门禁已完成，等待重启 Model 后重新执行唯一 DAG。
 
-Model 重启后先执行三项只读验证：
-
-1. `model.schema_migrations` 最新版本为 `015_normalize_empty_partition_materialization.up.sql`；
-2. 逻辑表 `3/4/5/6/7` 的 `materialization` 均已省略两个分区键；
-3. Orchestrator 任务库中 Model prepare 和 seal 各出现 `5` 个可用任务，group publish 出现物化组 `1`。逻辑表 `2` 没有完整物化目标，不应出现在 prepare/seal 列表中。
-
-#### 待创建的唯一 DAG
+#### 已创建的唯一 DAG
 
 Orchestrator 内部绑定必须使用完整字符串 `{{step_id.outputs.path}}`，且被引用步骤必须同时出现在当前步骤的直接 `depends_on` 中。按下表创建：
 
@@ -705,6 +705,7 @@ Orchestrator 内部绑定必须使用完整字符串 `{{step_id.outputs.path}}`�
 #### 验证与收尾
 
 - Model 空分区修复已通过：`cd model/backend && go test ./... -count=1`、`make test-model-frontend`、`ADDP_TEST_MODEL_POSTGRES_DSN='postgres://addp:addp_password@localhost:15432/addp_test?sslmode=disable' make test-model-postgres`、`make test-platform`。
+- Model 失败批次接管与 staging 回收已通过：`cd model/backend && go test ./... -count=1`；`ADDP_TEST_MODEL_POSTGRES_DSN='postgres://addp:addp_password@localhost:15432/addp_test?sslmode=disable' make test-model-postgres`。PostgreSQL 门禁覆盖终态父执行接管、运行中/成功父执行拒绝、活跃子执行拒绝、`publishing` 拒绝、错误所有权标记导致整事务回滚、修复后回收及重复清理幂等。
 - 真实 DAG 成功后，必须查验五张正式表的行数、结构指纹、Model 管理标记、指标粒度和 45 对 Top 10 结果，并记录 execution ID 作为回归证据。
 - 只有新路线端到端通过后才删除 Develop `47/48`；删除前再根据当时数据状态向用户确认精确目标，删除后重跑受影响的 Develop/Orchestrator 门禁。
 - 最后把编排 ID、首次成功 execution ID、实际行数、Quality 结果、旧任务删除结果和是否启用 Cron 补回本节，再将本专题标记为完成。

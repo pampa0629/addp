@@ -4739,6 +4739,105 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/catalog-references/candidates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-catalog Tenant Service Principal 可按名称或编码分页查询当前可引用的 Department 或 User；只返回最小显示摘要 | Only the addp-catalog tenant service principal may search currently referenceable departments or users by name or code; only minimal display summaries are returned",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtime Catalog References"
+                ],
+                "summary": "查询 Catalog 责任主体候选 | List Catalog responsibility candidates",
+                "parameters": [
+                    {
+                        "enum": [
+                            "department",
+                            "user"
+                        ],
+                        "type": "string",
+                        "description": "主体类型 | Subject type",
+                        "name": "subject_type",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "名称或编码，最多 100 字符 | Name or code, maximum 100 characters",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认 1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认 20，最大 50 | Page size, default 20 and maximum 50",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/internal_api.IAMCatalogReferenceCandidateResponse"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.department.read",
+                    "iam.tenant_membership.read"
+                ]
+            }
+        },
         "/runtime/catalog-references/resolve": {
             "post": {
                 "security": [
@@ -4746,7 +4845,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅 addp-catalog Tenant Service Principal 可按当前 Tenant 解析 Department 与 User；User ID 是全局稳定身份，但必须有当前 Tenant Membership；跨 Tenant 与不存在统一返回 found=false | Only the addp-catalog tenant service principal may resolve departments and users in the current tenant; a user ID is globally stable but requires a current tenant membership; cross-tenant and missing subjects both return found=false",
+                "description": "仅 addp-catalog Tenant Service Principal 可按当前 Tenant 解析 Department、User 与 Project Group；User ID 是全局稳定身份但必须有当前 Tenant Membership；Project Group 只供协作集合显示；跨 Tenant 与不存在统一返回 found=false | Only the addp-catalog tenant service principal may resolve departments, users, and project groups in the current tenant; a user ID is globally stable but requires a current tenant membership; project groups are only used to display collaboration collections; cross-tenant and missing subjects both return found=false",
                 "consumes": [
                     "application/json"
                 ],
@@ -4756,7 +4855,7 @@ const docTemplate = `{
                 "tags": [
                     "Runtime Catalog References"
                 ],
-                "summary": "精确批量解析 Catalog 责任主体 | Resolve Catalog responsibility subjects in batch",
+                "summary": "精确批量解析 Catalog 组织引用 | Resolve Catalog organization references in batch",
                 "parameters": [
                     {
                         "description": "主体引用集合，最多 200 个 | Subject references, up to 200",
@@ -4797,6 +4896,7 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "iam.department.read",
+                    "iam.project_group.read",
                     "iam.tenant_membership.read"
                 ]
             }
@@ -10551,6 +10651,26 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.IAMCatalogReferenceCandidateResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "subject_type": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.IAMCatalogReferenceRequest": {
             "type": "object",
             "properties": {
@@ -10561,7 +10681,8 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "department",
-                        "user"
+                        "user",
+                        "project_group"
                     ]
                 }
             }

@@ -38,6 +38,25 @@ func NewExecutionHandler(executionService *service.ExecutionService) *ExecutionH
 // @Router /executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecution(c *gin.Context) {
+	h.getExecution(c)
+}
+
+// ProviderGetExecution 获取 TaskProvider 执行状态。
+// @Summary 获取 TaskProvider 执行状态 | Get TaskProvider execution status
+// @Tags TaskProvider
+// @Produce json
+// @Param execution_id path string true "执行ID | Execution ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task_provider.read"]
+// @Router /task-provider/executions/{execution_id} [get]
+// @Security BearerAuth
+func (h *ExecutionHandler) ProviderGetExecution(c *gin.Context) {
+	h.getExecution(c)
+}
+
+func (h *ExecutionHandler) getExecution(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 	executionID := c.Param("execution_id")
 

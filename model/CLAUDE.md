@@ -20,7 +20,7 @@ Model Entity / LogicalTable 是企业 Catalog 的专业资源来源。Model 权�
 
 Model Entity 与 LogicalTable 的专业关系通过当前 User Token 读取 `/:id/relations` 一跳图；它与只供 `addp-catalog` 机器同步使用的变化流、批量摘要解析严格分离。该查询只读 Model 本地事实，不调用 Catalog 或 Standard，不保存 CatalogEntry 反向引用。
 
-Model prepare 为每个 MaterializationBatch 创建唯一 staging，通过 TaskProvider 稳定输出把 `batch_id + staging_locator` 交给 Orchestrator。任意通用 writer 只按 ResourceLocator 向已存在表写入，不调用 Model。写入成功后，Model `materialization_seal` 使用 `batch_id + writer_execution_id + target_locator` 验证同父编排、同授权主体、writer 终态、目标身份和结构，再将批次提升为 `sealed`。Model 不保存 write-attempt 实体，不识别 writer 模块，不向 Transfer/Develop 提供写入回调或专用 Permission。失败的完整编排从新 prepare 重算，旧 staging 的 DDL 生命周期仍完全由 Model 管理。
+Model prepare 为每个 MaterializationBatch 创建唯一 staging，通过 TaskProvider 稳定输出把 `batch_id + staging_locator` 交给 Orchestrator。任意通用 writer 只按 ResourceLocator 向已存在表写入，不调用 Model。写入成功后，Model `materialization_seal` 使用 `batch_id + writer_execution_id + target_locator` 验证同父编排、同授权主体、writer 终态、目标身份和结构，再将批次提升为 `sealed`。Model 不保存 write-attempt 实体，不识别 writer 模块，不向 Transfer/Develop 提供写入回调或专用 Permission。失败的完整编排从新 prepare 重算；新 prepare 仅在旧父编排已为失败终态且无活跃子 execution 时接管旧 `preparing|prepared|sealed` 批次，并由新 prepare worker 核验精确 ownership marker 后幂等回收历史 staging。旧父成功、仍运行或旧批次已进入 `publishing` 时禁止自动接管。不建立公开 abort 任务、Orchestrator 补偿节点或 writer 回调。
 
 `materialization_group_publish` 的 TaskProvider 输入必须显式提交 `expected_group_id + expected_group_version`。Model 在创建 execution 的事务内和 worker 实际物理发布前都校验该期望；Quality 门禁编排必须从门禁稳定输出绑定这两个字段。该参数只表达一致性交接，Model 不因此反向依赖 Quality。
 

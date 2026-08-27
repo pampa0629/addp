@@ -259,7 +259,7 @@
       },
       "workbench": {
         "label": "工作台",
-        "desc": "动态查询、可视化并保存数据服务消费视图"
+        "desc": "动态查询、可视化、工作台视图与数据应用发布"
       },
       "orchestrator": {
         "label": "任务编排",
@@ -382,7 +382,8 @@
       },
       "workbench": {
         "label": "工作台",
-        "views": "工作台视图"
+        "views": "工作台视图",
+        "dataApplications": "数据应用"
       },
       "orchestrator": {
         "label": "任务编排",
@@ -403,7 +404,8 @@
       },
       "catalog": {
         "label": "企业数据目录",
-        "entries": "目录浏览"
+        "entries": "目录浏览",
+        "coverage": "治理覆盖率"
       },
       "asset": {
         "label": "资产管理",

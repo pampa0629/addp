@@ -633,7 +633,7 @@ func validRuntimeTargetTransferTaskConfig() map[string]interface{} {
 		"load":    map[string]interface{}{"mode": "snapshot"},
 		"source": map[string]interface{}{
 			"locator": "addp://engine/1/path/outdoor/entries?type=table", "data_type": "table", "representation": "native",
-			"query": map[string]interface{}{"language": "mql", "statement": `[{"$project":{"person_id":"$person.id"}}]`},
+			"query": map[string]interface{}{"language": "mql", "statement": `{"aggregate":"entries","pipeline":[{"$project":{"person_id":"$person.id"}}]}`},
 		},
 		"target": map[string]interface{}{
 			"binding": "runtime", "data_type": "table", "representation": "native",

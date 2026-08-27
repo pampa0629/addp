@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestViewRepositoryAgainstPostgres(t *testing.T) {
+func TestWorkbenchRepositoryAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("WORKBENCH_POSTGRES_TEST_DSN")
 	if dsn == "" {
 		t.Skip("set WORKBENCH_POSTGRES_TEST_DSN to addp_test or an isolated disposable database")
@@ -76,6 +76,46 @@ func TestViewRepositoryAgainstPostgres(t *testing.T) {
 	if _, err := repository.Get(7, 11, viewA.ID); !errors.Is(err, ErrViewNotFound) {
 		t.Fatalf("deleted Get() error = %v", err)
 	}
+
+	applications := NewDataApplicationRepository(db)
+	application := postgresDataApplication(7, 11)
+	if err := applications.Create(application); err != nil {
+		t.Fatalf("Create(data application) error = %v", err)
+	}
+	if _, err := applications.Get(7, 12, application.ID); !errors.Is(err, ErrDataApplicationNotFound) {
+		t.Fatalf("cross-owner data application Get() error = %v", err)
+	}
+	revision, err := applications.Publish(7, 11, application.ID, 1, 11)
+	if err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
+	if revision.RevisionNumber != 1 || revision.Name != application.Name {
+		t.Fatalf("published revision = %#v", revision)
+	}
+	application.Name = "Edited draft"
+	application.DraftContentHash = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	if err := applications.Update(application, 2); err != nil {
+		t.Fatalf("Update(data application) error = %v", err)
+	}
+	runtime, err := applications.GetRuntime(7, 11, application.ID)
+	if err != nil {
+		t.Fatalf("GetRuntime() error = %v", err)
+	}
+	if runtime.Name != "Postgres application" || runtime.ContentHash == application.DraftContentHash {
+		t.Fatalf("runtime revision changed with draft = %#v", runtime)
+	}
+	if err := applications.Delete(7, 11, application.ID, 3); !errors.Is(err, ErrDataApplicationAlreadyPublished) {
+		t.Fatalf("published application Delete() error = %v", err)
+	}
+	if err := applications.Offline(7, 11, application.ID, 3); err != nil {
+		t.Fatalf("Offline() error = %v", err)
+	}
+	if _, err := applications.GetRuntime(7, 11, application.ID); !errors.Is(err, ErrDataApplicationNotPublished) {
+		t.Fatalf("offline GetRuntime() error = %v", err)
+	}
+	if err := applications.Offline(7, 11, application.ID, 4); !errors.Is(err, ErrDataApplicationNotPublished) {
+		t.Fatalf("repeated Offline() error = %v", err)
+	}
 }
 
 func postgresView(tenantID, ownerUserID int64, name string) *models.View {
@@ -85,5 +125,15 @@ func postgresView(tenantID, ownerUserID int64, name string) *models.View {
 		ContractFingerprint:  "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		ParameterDefinitions: datatypes.JSON(`[]`), QueryTemplate: datatypes.JSON(`{"select":["id"],"fixed_filter":null,"parameter_filters":[],"order_by":[],"page_limit":50,"format":"json"}`),
 		DefaultParameterValues: datatypes.JSON(`{}`), RendererType: "table", RendererConfig: datatypes.JSON(`{"columns":["id"]}`), Version: 1,
+	}
+}
+
+func postgresDataApplication(tenantID, ownerUserID int64) *models.DataApplication {
+	return &models.DataApplication{
+		ID: uuid.NewString(), TenantID: tenantID, OwnerUserID: ownerUserID,
+		Name: "Postgres application", Description: "",
+		DraftSnapshot:     datatypes.JSON(`{"schema_version":"addp.workbench_data_application/v1","page":{"id":"69e435ef-5f56-456e-b495-791b42e74247","title":"Page","placements":[]},"components":[],"parameters":[],"parameter_bindings":[]}`),
+		DraftContentHash:  "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		PublicationStatus: models.PublicationStatusUnpublished, CurrentRevisionHash: "", Version: 1,
 	}
 }

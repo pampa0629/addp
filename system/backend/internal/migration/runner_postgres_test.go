@@ -665,6 +665,119 @@ func TestCatalogEngineDescriptorReadForwardMigrationAgainstPostgres(t *testing.T
 	}
 }
 
+func TestCatalogProjectGroupReadForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset Catalog project group migration schemas: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	through101, through102 := migrationFilesBeforeAndThrough(t, "000102_iam_catalog_project_group_read.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through101, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 101: %v", err)
+	}
+
+	countGrant := func() int {
+		t.Helper()
+		var count int
+		if err := db.QueryRow(`SELECT count(*) FROM system.role_permissions role_permission
+			JOIN system.roles role ON role.id = role_permission.role_id
+			JOIN system.permissions permission ON permission.id = role_permission.permission_id
+			WHERE role.tenant_id IS NULL AND role.role_key = 'tenant.catalog_runtime'
+			AND permission.permission_key = 'iam.project_group.read'
+			AND role_permission.source_type = 'product'`).Scan(&count); err != nil {
+			t.Fatalf("count Catalog runtime project group permission: %v", err)
+		}
+		return count
+	}
+	if count := countGrant(); count != 0 {
+		t.Fatalf("Catalog project group grant before migration 102 = %d, want 0", count)
+	}
+	if err := (&Runner{DSN: dsn, FS: through102, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply Catalog project group migration 102: %v", err)
+	}
+	var version int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatal(err)
+	}
+	if grantCount := countGrant(); version != 102 || dirty || grantCount != 1 {
+		t.Fatalf("migration 102 state=(%d,%t) grant=%d", version, dirty, grantCount)
+	}
+}
+
+func TestTransferTaskProviderForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset Transfer TaskProvider migration schemas: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	through102, through103 := migrationFilesBeforeAndThrough(t, "000103_iam_transfer_task_provider.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through102, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 102: %v", err)
+	}
+
+	countGrant := func() int {
+		t.Helper()
+		var count int
+		if err := db.QueryRow(`SELECT count(*) FROM system.role_permissions role_permission
+			JOIN system.roles role ON role.id = role_permission.role_id
+			JOIN system.permissions permission ON permission.id = role_permission.permission_id
+			WHERE role.tenant_id IS NULL AND role.role_key = 'tenant.orchestrator_runtime'
+			AND permission.permission_key IN ('transfer.task_provider.read', 'transfer.task_provider.execute')
+			AND role_permission.source_type = 'product'`).Scan(&count); err != nil {
+			t.Fatalf("count Transfer TaskProvider runtime permissions: %v", err)
+		}
+		return count
+	}
+	readAuthorizationVersion := func() int64 {
+		t.Helper()
+		var version int64
+		if err := db.QueryRow(`SELECT principal.authorization_version
+			FROM system.principals principal
+			JOIN system.service_principals service_principal ON service_principal.id = principal.id
+			WHERE service_principal.name = 'addp-orchestrator'`).Scan(&version); err != nil {
+			t.Fatalf("read Orchestrator authorization version: %v", err)
+		}
+		return version
+	}
+	if count := countGrant(); count != 0 {
+		t.Fatalf("Transfer TaskProvider grants before migration 103 = %d, want 0", count)
+	}
+	beforeVersion := readAuthorizationVersion()
+	if err := (&Runner{DSN: dsn, FS: through103, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply Transfer TaskProvider migration 103: %v", err)
+	}
+	var version int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatal(err)
+	}
+	afterVersion := readAuthorizationVersion()
+	if grantCount := countGrant(); version != 103 || dirty || grantCount != 2 || afterVersion != beforeVersion+1 {
+		t.Fatalf("migration 103 state=(%d,%t) grants=%d authorization_version=%d->%d", version, dirty, grantCount, beforeVersion, afterVersion)
+	}
+}
+
 func TestExecutionAudienceForwardMigrationAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
@@ -1884,7 +1997,44 @@ func TestWorkbenchRuntimeForwardMigrationAgainstPostgres(t *testing.T) {
 	if version != 92 || dirty {
 		t.Fatalf("migration 92 state=(%d,%t), want (92,false)", version, dirty)
 	}
-	assertWorkbenchRuntimeCatalog(t, db)
+	assertWorkbenchRuntimeCatalog(t, db, 4)
+}
+
+func TestWorkbenchDataApplicationForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset Workbench Data Application migration schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	through103, through104 := migrationFilesBeforeAndThrough(t, "000104_iam_workbench_data_application.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through103, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 103: %v", err)
+	}
+	if err := (&Runner{DSN: dsn, FS: through104, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply Workbench Data Application migration 104: %v", err)
+	}
+
+	var version int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read migration 104 version: %v", err)
+	}
+	if version != 104 || dirty {
+		t.Fatalf("migration 104 state=(%d,%t), want (104,false)", version, dirty)
+	}
+	assertWorkbenchRuntimeCatalog(t, db, 10)
 }
 
 func TestRunnerAgainstPostgres(t *testing.T) {
@@ -1924,7 +2074,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	}
 
 	assertIAMCatalogSeed(t, db)
-	assertWorkbenchRuntimeCatalog(t, db)
+	assertWorkbenchRuntimeCatalog(t, db, 10)
 	assertStandardDocumentCatalog(t, db)
 	assertMonitorAuthorizationCatalog(t, db)
 	assertModelAuthorizationCatalog(t, db)
@@ -1986,7 +2136,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	}
 }
 
-func assertWorkbenchRuntimeCatalog(t *testing.T, db *sql.DB) {
+func assertWorkbenchRuntimeCatalog(t *testing.T, db *sql.DB, expectedWorkbenchPermissions int) {
 	t.Helper()
 	var permissionCount, runtimeRolePermissionCount, principalCount, clientCount, assignmentCount int
 	var administratorPermissionCount, dataViewerPermissionCount int
@@ -2050,9 +2200,9 @@ func assertWorkbenchRuntimeCatalog(t *testing.T, db *sql.DB) {
 	`).Scan(&dataViewerPermissionCount); err != nil {
 		t.Fatalf("count Workbench data viewer permissions: %v", err)
 	}
-	if permissionCount != 4 || runtimeRolePermissionCount != 1 || principalCount != 1 ||
-		clientCount != 1 || assignmentCount != 1 || administratorPermissionCount != 4 ||
-		dataViewerPermissionCount != 5 {
+	if permissionCount != expectedWorkbenchPermissions || runtimeRolePermissionCount != 1 || principalCount != 1 ||
+		clientCount != 1 || assignmentCount != 1 || administratorPermissionCount != expectedWorkbenchPermissions ||
+		dataViewerPermissionCount != expectedWorkbenchPermissions+1 {
 		t.Fatalf(
 			"Workbench catalog permissions=%d runtime_permission=%d principal=%d client=%d assignment=%d administrator=%d data_viewer=%d",
 			permissionCount, runtimeRolePermissionCount, principalCount, clientCount,

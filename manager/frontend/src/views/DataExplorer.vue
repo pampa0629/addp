@@ -100,9 +100,10 @@ import EnginePanel from '@/components/explorer/EnginePanel.vue'
 import NodePanel from '@/components/explorer/NodePanel.vue'
 import ItemPanel from '@/components/explorer/ItemPanel.vue'
 import Splitter from '@/components/explorer/Splitter.vue'
-import { navigateConsoleModuleRoute, useResizable } from '@common-ui'
+import { openConsoleRoute, useResizable } from '@common-ui'
 import { useExplorerStore } from '@/stores/explorer'
 import {
+  buildCatalogEntryConsoleRoute,
   buildDataExplorerQuery,
   normalizeDataExplorerTab,
   resolveDataExplorerRouteState
@@ -321,7 +322,7 @@ const handleTabChange = async (tab) => {
 
 const handleOpenCatalog = async (entryId) => {
   if (!entryId) return
-  await navigateConsoleModuleRoute(router, 'catalog', { path: `/entries/${entryId}` })
+  await openConsoleRoute(buildCatalogEntryConsoleRoute(entryId))
 }
 
 const handleOpenNode = async (locator) => {

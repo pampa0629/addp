@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildGovernanceEntryCandidateQuery,
   buildGovernanceTaskQuery,
   isCanonicalGovernanceTaskQuery,
   parseGovernanceTaskRoute
@@ -22,6 +23,20 @@ describe('Catalog governance task route state', () => {
       status: 'resolved',
       page: '2',
       page_size: '50'
+    })
+  })
+
+  it('searches governance task entry candidates across the inventory view', () => {
+    expect(buildGovernanceEntryCandidateQuery('  Outdoor  ')).toEqual({
+      view: 'inventory',
+      search: 'Outdoor',
+      page: 1,
+      page_size: 20
+    })
+    expect(buildGovernanceEntryCandidateQuery()).toEqual({
+      view: 'inventory',
+      page: 1,
+      page_size: 20
     })
   })
 

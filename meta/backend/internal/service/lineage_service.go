@@ -113,7 +113,7 @@ func (s *LineageService) RecordServicePublication(ctx context.Context, tenantID 
 				TenantID: tenantID, RelationKind: "serve", Granularity: granularity,
 				SourceItemID: uintPtr(dependency.SourceItemID), ServiceID: uintPtr(request.ServiceID),
 				PublishedRevision: stringPtr(request.PublishedRevision), ProducerModule: commonExecution.ModuleService,
-				CaptureMethod: "published", SourceSnapshot: commonModels.JSONMap{"item_id": dependency.SourceItemID},
+				CaptureMethod: "declared", SourceSnapshot: commonModels.JSONMap{"item_id": dependency.SourceItemID},
 				Evidence: commonModels.JSONMap{"service_id": request.ServiceID, "published_revision": request.PublishedRevision, "dependency_hash": request.DependencyHash}, ObservedAt: now,
 			}
 			if len(dependency.DependencyFields) > 0 {

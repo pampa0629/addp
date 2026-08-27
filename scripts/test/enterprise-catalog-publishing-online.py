@@ -5,17 +5,27 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Iterable
+from pathlib import Path
+from typing import Any, Callable, Iterable
 
 
 FIXTURE_TABLE = "addp_online_catalog_fixture"
 TERMINAL_EXECUTION_STATUSES = {"success", "failed", "timeout", "cancelled"}
+GOVERNANCE_STATUSES = {"discovered", "curated", "certified", "deprecated"}
+COVERAGE_DIMENSIONS = {
+    "business_definition",
+    "primary_domain",
+    "accountability",
+    "glossary",
+    "component_element",
+}
 
 
 class SuiteError(RuntimeError):
@@ -117,6 +127,18 @@ def positive_int(value: object, field: str) -> int:
     return parsed
 
 
+def non_negative_int(value: object, field: str) -> int:
+    if isinstance(value, bool):
+        raise SuiteError(f"{field} must be a non-negative integer")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as error:
+        raise SuiteError(f"{field} must be a non-negative integer") from error
+    if parsed < 0 or str(parsed) != str(value):
+        raise SuiteError(f"{field} must be a canonical non-negative integer")
+    return parsed
+
+
 def validate_user_identity(system: GatewayClient, tenant_id: int) -> dict[str, object]:
     payload = _object(system.request("GET", "/api/v1/system/auth/context", (200,)).payload, "AuthContext")
     principal = _object(payload.get("principal"), "AuthContext principal")
@@ -214,6 +236,123 @@ def wait_for_catalog_entry(client: GatewayClient, fingerprint: str, deadline: fl
     raise SuiteError("CatalogEntry did not appear before the convergence timeout")
 
 
+def validate_catalog_source_resolution(
+    client: GatewayClient, fingerprint: str, entry_id: str
+) -> dict[str, object]:
+    result = _object(
+        client.request(
+            "POST",
+            "/api/v1/catalog/entries/resolve-sources",
+            (200,),
+            {
+                "references": [
+                    {
+                        "source_module": "meta",
+                        "source_type": "data_item",
+                        "source_identity": fingerprint,
+                    }
+                ]
+            },
+        ).payload,
+        "Catalog source resolution",
+    )
+    resolutions = result.get("results")
+    if not isinstance(resolutions, list) or len(resolutions) != 1:
+        raise SuiteError("Catalog source resolution must return exactly one result")
+    resolution = _object(resolutions[0], "Catalog source resolution result")
+    resolved_entry = _object(resolution.get("entry"), "resolved CatalogEntry")
+    expected = {
+        "source_module": "meta",
+        "source_type": "data_item",
+        "source_identity": fingerprint,
+        "found": True,
+    }
+    if any(resolution.get(key) != value for key, value in expected.items()):
+        raise SuiteError("Catalog source resolution did not preserve the exact Meta source identity")
+    if resolved_entry.get("id") != entry_id or resolved_entry.get("source_status") != "active":
+        raise SuiteError("Catalog source resolution did not return the active canonical CatalogEntry")
+    return {
+        "source_module": "meta",
+        "source_type": "data_item",
+        "source_identity": fingerprint,
+        "catalog_entry_id": entry_id,
+        "found": True,
+    }
+
+
+def validate_governance_coverage(client: GatewayClient) -> dict[str, object]:
+    coverage = _object(
+        client.request("GET", "/api/v1/catalog/governance/coverage", (200,)).payload,
+        "Catalog governance coverage",
+    )
+    if coverage.get("view") != "inventory":
+        raise SuiteError("Catalog governance coverage must use the inventory view")
+    total = positive_int(coverage.get("total_entries"), "governance coverage total_entries")
+
+    statuses = coverage.get("governance_statuses")
+    if not isinstance(statuses, list) or len(statuses) != len(GOVERNANCE_STATUSES):
+        raise SuiteError("Catalog governance coverage must return all governance statuses")
+    status_counts: dict[str, int] = {}
+    for raw_status in statuses:
+        status = _object(raw_status, "governance status coverage")
+        key = status.get("status")
+        if not isinstance(key, str) or key in status_counts:
+            raise SuiteError("Catalog governance coverage contains an invalid governance status")
+        status_counts[key] = non_negative_int(status.get("count"), f"governance status {key} count")
+    if set(status_counts) != GOVERNANCE_STATUSES or sum(status_counts.values()) != total:
+        raise SuiteError("Catalog governance status distribution does not match total_entries")
+
+    dimensions = coverage.get("dimensions")
+    if not isinstance(dimensions, list) or len(dimensions) != len(COVERAGE_DIMENSIONS):
+        raise SuiteError("Catalog governance coverage must return all fixed dimensions")
+    dimension_summary: dict[str, dict[str, object]] = {}
+    for raw_dimension in dimensions:
+        dimension = _object(raw_dimension, "governance coverage dimension")
+        key = dimension.get("key")
+        if not isinstance(key, str) or key in dimension_summary:
+            raise SuiteError("Catalog governance coverage contains an invalid dimension key")
+        covered = non_negative_int(dimension.get("covered"), f"{key} covered")
+        applicable = non_negative_int(dimension.get("applicable"), f"{key} applicable")
+        not_covered = non_negative_int(dimension.get("not_covered"), f"{key} not_covered")
+        not_applicable = non_negative_int(dimension.get("not_applicable"), f"{key} not_applicable")
+        rate = dimension.get("coverage_rate")
+        if not isinstance(rate, (int, float)) or isinstance(rate, bool) or rate < 0 or rate > 100:
+            raise SuiteError(f"{key} coverage_rate must be between 0 and 100")
+        if covered + not_covered != applicable or applicable + not_applicable != total:
+            raise SuiteError(f"{key} governance coverage denominator is inconsistent")
+        dimension_summary[key] = {
+            "covered": covered,
+            "applicable": applicable,
+            "not_covered": not_covered,
+            "not_applicable": not_applicable,
+            "coverage_rate": rate,
+        }
+    if set(dimension_summary) != COVERAGE_DIMENSIONS:
+        raise SuiteError("Catalog governance coverage dimension set is incomplete")
+    return {
+        "total_entries": total,
+        "governance_statuses": status_counts,
+        "dimensions": dimension_summary,
+    }
+
+
+def assert_catalog_entry_in_view(
+    client: GatewayClient, view: str, fingerprint: str, entry_id: str
+) -> None:
+    query = urllib.parse.urlencode(
+        {"view": view, "source_identity": fingerprint, "page": 1, "page_size": 2}
+    )
+    result = _object(
+        client.request("GET", f"/api/v1/catalog/entries?{query}", (200,)).payload,
+        f"Catalog {view} view",
+    )
+    data = result.get("data")
+    if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
+        raise SuiteError(f"Catalog {view} view must return exactly one fixture entry")
+    if data[0].get("id") != entry_id:
+        raise SuiteError(f"Catalog {view} view changed the fixture CatalogEntry identity")
+
+
 def editable_catalog_payload(entry: dict[str, object]) -> dict[str, object]:
     semantic_links = entry.get("semantic_links") or []
     responsibilities = entry.get("responsibilities") or []
@@ -307,6 +446,7 @@ def run_suite(
     department_id: int,
     principal_id: int,
     convergence_timeout: float,
+    browser_runner: Callable[[str, str, str, int], dict[str, object]] | None = None,
 ) -> dict[str, object]:
     deadline = time.monotonic() + convergence_timeout
     asset_id: int | None = None
@@ -317,13 +457,25 @@ def run_suite(
     cleanup_errors: list[str] = []
     fixture_initialized = False
     try:
-        execution = wait_for_scan(client, engine_id, deadline)
+        first_execution = wait_for_scan(client, engine_id, deadline)
         item = find_fixture_item(client, engine_id)
         fingerprint = str(item["fingerprint"])
         entry = wait_for_catalog_entry(client, fingerprint, deadline)
         entry_id = str(entry["id"])
         if not isinstance(entry.get("source"), dict) or entry["source"].get("source_identity") != fingerprint:
             raise SuiteError("CatalogEntry current source does not match the Meta fingerprint")
+        first_entry_id = entry_id
+        second_execution = wait_for_scan(client, engine_id, deadline)
+        second_item = find_fixture_item(client, engine_id)
+        if second_item.get("fingerprint") != fingerprint:
+            raise SuiteError("repeated Meta scan changed the stable DataItem fingerprint")
+        entry = wait_for_catalog_entry(client, fingerprint, deadline)
+        entry_id = str(entry["id"])
+        if entry_id != first_entry_id:
+            raise SuiteError("repeated Meta scan created a second CatalogEntry")
+        assert_catalog_entry_in_view(client, "inventory", fingerprint, entry_id)
+        source_resolution = validate_catalog_source_resolution(client, fingerprint, entry_id)
+        coverage_before = validate_governance_coverage(client)
         initial_editable = editable_catalog_payload(entry)
         if initial_editable.get("governance_status") != "discovered":
             restore_payload = initial_editable
@@ -332,6 +484,19 @@ def run_suite(
         )
         if returned_restore is not None:
             restore_payload = returned_restore
+        assert_catalog_entry_in_view(client, "governance", fingerprint, entry_id)
+        coverage_after = validate_governance_coverage(client)
+        if coverage_after["total_entries"] != coverage_before["total_entries"]:
+            raise SuiteError("Catalog curation unexpectedly changed the active entry denominator")
+
+        browser_evidence: dict[str, object] = {}
+        if browser_runner is not None:
+            browser_evidence = browser_runner(
+                entry_id,
+                fingerprint,
+                str(curated.get("business_name") or curated.get("display_name") or ""),
+                int(coverage_after["total_entries"]),
+            )
 
         types = _array(client.request("GET", "/api/v1/asset/type-definitions", (200,)).payload, "Asset type definitions")
         enabled_types = [item for item in types if isinstance(item, dict) and item.get("enabled") is True]
@@ -380,18 +545,36 @@ def run_suite(
             raise SuiteError("Portal Asset does not preserve the CatalogEntry identity")
 
         return {
-            "schema_version": "addp.enterprise-catalog-publishing/v1",
+            "schema_version": "addp.enterprise-catalog-publishing/v2",
             "suite": "enterprise-catalog-publishing",
             "run_id": run_id,
             "tenant_id": str(tenant_id),
             "engine_id": str(engine_id),
-            "meta_execution_id": execution.get("execution_id"),
+            "meta_execution_ids": [
+                first_execution.get("execution_id"),
+                second_execution.get("execution_id"),
+            ],
             "meta_data_item_id": str(item.get("id")),
             "source_identity": fingerprint,
             "catalog_entry_id": entry_id,
             "asset_id": str(asset_id),
             "fixture_initialized": fixture_initialized,
             "route": ["meta", "catalog", "asset", "portal"],
+            "cases": {
+                "scan_idempotency": "passed",
+                "inventory_and_governance_views": "passed",
+                "source_identity_resolution": "passed",
+                "governance_coverage": "passed",
+                "browser": "passed" if browser_runner is not None else "not-run",
+                "asset_portal_publishing": "passed",
+                "cleanup": "passed",
+            },
+            "source_resolution": source_resolution,
+            "governance_coverage": {
+                "before": coverage_before,
+                "after": coverage_after,
+            },
+            "browser": browser_evidence,
             "temporary_resources_created": 2,
             "residual_resources": 0,
             "cleanup": "passed",
@@ -433,27 +616,119 @@ def run_suite(
             raise SuiteError("cleanup failed: " + "; ".join(cleanup_errors))
 
 
+def required_environment(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise SuiteError(f"{name} is required")
+    return value
+
+
+def validate_browser_report(
+    report: object,
+    run_id: str,
+    tenant_id: str,
+    entry_id: str,
+    fingerprint: str,
+    total_entries: int,
+) -> dict[str, object]:
+    payload = _object(report, "Enterprise Catalog browser report")
+    expected = {
+        "schema_version": "addp.enterprise-catalog-publishing-browser/v1",
+        "suite": "enterprise-catalog-publishing",
+        "run_id": run_id,
+        "result": "passed",
+        "tenant_id": tenant_id,
+        "catalog_entry_id": entry_id,
+        "source_identity": fingerprint,
+        "coverage_total_entries": total_entries,
+        "coverage_dimensions": len(COVERAGE_DIMENSIONS),
+        "human_readable_filter_selectors": 3,
+        "browser_warning_errors": 0,
+    }
+    mismatches = [key for key, value in expected.items() if payload.get(key) != value]
+    if mismatches:
+        raise SuiteError("Enterprise Catalog browser report contract mismatch: " + ", ".join(mismatches))
+    return payload
+
+
+def run_browser(
+    repository: Path,
+    environment: dict[str, str],
+    entry_id: str,
+    fingerprint: str,
+    business_name: str,
+    total_entries: int,
+) -> dict[str, object]:
+    artifact_dir = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
+    report_path = artifact_dir / "enterprise-catalog-publishing-browser.json"
+    report_path.unlink(missing_ok=True)
+    browser_environment = dict(environment)
+    browser_environment.update(
+        {
+            "ADDP_ONLINE_REPOSITORY": str(repository),
+            "ADDP_ONLINE_CATALOG_ENTRY_ID": entry_id,
+            "ADDP_ONLINE_CATALOG_SOURCE_IDENTITY": fingerprint,
+            "ADDP_ONLINE_CATALOG_BUSINESS_NAME": business_name,
+            "ADDP_ONLINE_CATALOG_COVERAGE_TOTAL": str(total_entries),
+        }
+    )
+    result = subprocess.run(
+        [
+            "npm",
+            "run",
+            "test:e2e",
+            "--",
+            "--config=playwright.online.config.js",
+            "e2e/online/enterprise-catalog-publishing.spec.js",
+        ],
+        cwd=repository / "console/frontend",
+        env=browser_environment,
+        text=True,
+        capture_output=True,
+    )
+    if result.stdout:
+        print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+    if result.stderr:
+        print(result.stderr, end="" if result.stderr.endswith("\n") else "\n", file=sys.stderr)
+    if result.returncode != 0:
+        raise SuiteError(f"Playwright exited with status {result.returncode}")
+    if not report_path.is_file():
+        raise SuiteError("Playwright did not write enterprise-catalog-publishing-browser.json")
+    return validate_browser_report(
+        json.loads(report_path.read_text(encoding="utf-8")),
+        environment["ADDP_ONLINE_TEST_RUN_ID"],
+        environment["ADDP_ONLINE_TEST_TENANT_ID"],
+        entry_id,
+        fingerprint,
+        total_entries,
+    )
+
+
 def main() -> int:
     try:
         if os.environ.get("ADDP_ONLINE_TEST") != "1":
             raise SuiteError("ADDP_ONLINE_TEST must be exactly 1")
-        tenant_id = positive_int(os.environ["ADDP_ONLINE_TEST_TENANT_ID"], "ADDP_ONLINE_TEST_TENANT_ID")
-        engine_id = positive_int(os.environ["ADDP_ONLINE_TEST_ENGINE_ID"], "ADDP_ONLINE_TEST_ENGINE_ID")
-        domain_id = positive_int(os.environ["ADDP_ONLINE_TEST_CATALOG_DOMAIN_ID"], "ADDP_ONLINE_TEST_CATALOG_DOMAIN_ID")
-        department_id = positive_int(os.environ["ADDP_ONLINE_TEST_CATALOG_DEPARTMENT_ID"], "ADDP_ONLINE_TEST_CATALOG_DEPARTMENT_ID")
-        run_id = os.environ["ADDP_ONLINE_TEST_RUN_ID"]
-        token = os.environ.get("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN", "")
-        if not token:
-            raise SuiteError("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN is required")
+        tenant_id = positive_int(required_environment("ADDP_ONLINE_TEST_TENANT_ID"), "ADDP_ONLINE_TEST_TENANT_ID")
+        engine_id = positive_int(required_environment("ADDP_ONLINE_TEST_ENGINE_ID"), "ADDP_ONLINE_TEST_ENGINE_ID")
+        domain_id = positive_int(required_environment("ADDP_ONLINE_TEST_CATALOG_DOMAIN_ID"), "ADDP_ONLINE_TEST_CATALOG_DOMAIN_ID")
+        department_id = positive_int(required_environment("ADDP_ONLINE_TEST_CATALOG_DEPARTMENT_ID"), "ADDP_ONLINE_TEST_CATALOG_DEPARTMENT_ID")
+        run_id = required_environment("ADDP_ONLINE_TEST_RUN_ID")
+        token = required_environment("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN")
+        required_environment("CONSOLE_URL")
+        required_environment("ADDP_ONLINE_TEST_USER_USERNAME")
+        required_environment("ADDP_ONLINE_TEST_USER_PASSWORD")
+        required_environment("ADDP_ONLINE_ARTIFACT_DIR")
         http_timeout = float(os.environ.get("ADDP_ONLINE_TEST_HTTP_TIMEOUT_SECONDS", "10"))
         convergence_timeout = float(os.environ.get("ADDP_ONLINE_CATALOG_CONVERGENCE_TIMEOUT_SECONDS", "180"))
         if http_timeout <= 0 or convergence_timeout <= 0:
             raise SuiteError("Online HTTP and convergence timeouts must be greater than zero")
+        environment = dict(os.environ)
+        repository = Path(environment.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
         identity = validate_user_identity(
-            GatewayClient(os.environ["SYSTEM_URL"], token, http_timeout, "SYSTEM_URL"), tenant_id
+            GatewayClient(required_environment("SYSTEM_URL"), token, http_timeout, "SYSTEM_URL"), tenant_id
         )
         report = run_suite(
-            GatewayClient(os.environ["GATEWAY_URL"], token, http_timeout),
+            GatewayClient(required_environment("GATEWAY_URL"), token, http_timeout),
             tenant_id,
             engine_id,
             run_id,
@@ -461,9 +736,17 @@ def main() -> int:
             department_id,
             positive_int(identity["principal_id"], "Online principal id"),
             convergence_timeout,
+            lambda entry_id, fingerprint, business_name, total_entries: run_browser(
+                repository,
+                environment,
+                entry_id,
+                fingerprint,
+                business_name,
+                total_entries,
+            ),
         )
         report["identity"] = identity
-    except (KeyError, ValueError, SuiteError) as error:
+    except (KeyError, OSError, ValueError, json.JSONDecodeError, SuiteError) as error:
         print(f"Enterprise Catalog Online suite failed: {error}", file=sys.stderr)
         return 1
     json.dump(report, sys.stdout, ensure_ascii=False, sort_keys=True)

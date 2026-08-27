@@ -113,7 +113,7 @@ graph TB
 | 模块 | 任务名称 | 任务 API | 参数示例 |
 |------|---------|---------|---------|
 | **Meta** | 扫描元数据 | `POST /api/v1/meta/tasks/{task_type}/{id}/execute` | `task_type=scan` |
-| **Transfer** | Transfer 任务 | `POST /api/v1/transfer/tasks/{task_type}/{id}/execute` | `task_type=sync` |
+| **Transfer** | Transfer 任务 | `POST /api/v1/transfer/task-provider/tasks/{task_type}/{id}/execute` | `task_type=sync` |
 | **Develop** | 执行查询 | `POST /api/v1/develop/task-provider/tasks/{task_type}/{id}/execute` | `task_type=query` |
 | **Develop** | 执行工作流 | `POST /api/v1/develop/task-provider/tasks/{task_type}/{id}/execute` | `task_type=workflow` |
 | **Develop** | 执行脚本 | `POST /api/v1/develop/task-provider/tasks/{task_type}/{id}/execute` | `task_type=script`，接入父 Execution Authorization 前拒绝编排 |

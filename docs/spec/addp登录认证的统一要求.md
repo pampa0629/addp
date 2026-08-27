@@ -187,11 +187,12 @@ Console Browser AuthSession
 - iframe 等待认证期间保持初始化状态，不跳转到模块登录页；
 - 模块作为顶层页面独立运行时，由自身 Browser AuthSession 通过 Cookie 恢复会话。
 
-Portal 虽然是独立顶层产品界面，但正式入口必须与 Console 保持同 origin：生产环境由 Nginx 提供
-`/portal/`，开发环境由 Console Vite 将同一路径反向代理到 Portal 前端。Console 只能打开当前 origin
-下的 `/portal/...`，不得打开 Portal 开发端口形成第二个顶层认证 origin。这样 Console 与 Portal 继续
-使用同一个 Web Lock、BroadcastChannel 和 Refresh Token Family 协调域，不需要在新窗口 URL、
-`window.opener` 或持久化存储中传递 Access Token。
+独立顶层产品界面的正式入口必须与 Console 保持同 origin。当前包括 Portal 的 `/portal/...` 和
+Workbench Data Application 的 `/data-apps/:application_id`：生产环境由 Nginx 提供，开发环境由
+Console Vite 将同一路径反向代理到对应 owner 前端。Console 只能打开当前 origin 下的正式路径，
+不得打开 owner 前端开发端口形成第二个顶层认证 origin。这样所有顶层入口继续使用同一个 Web Lock、
+BroadcastChannel 和 Refresh Token Family 协调域，不需要在新窗口 URL、`window.opener` 或持久化
+存储中传递 Access Token。
 
 旧的 `?token=` iframe 参数和路由守卫 query Token 解析必须删除。
 
@@ -453,13 +454,13 @@ Console 与 iframe 之间的 `addp-auth/v1` 协议必须保留刷新结果语义
 - 在 URL 中拼接用户 Access Token；
 - 在 URL 中拼接 Browser Resource Access Ticket；
 - 在 iframe 中自行调用 Refresh API，与父 Console 争用 Refresh Token；
-- 从 Console 打开 Portal 前端开发端口，形成无法协调的第二个顶层认证 origin；
+- 从 Console 打开 Portal 或 Workbench 前端开发端口，形成无法协调的第二个顶层认证 origin；
 - 在生产环境直连 `localhost:8180` 或 `{hostname}:8180`。
 
 ## 八、部署与 Cookie 边界
 
 - 生产环境推荐统一 origin，通过 Nginx/Gateway 访问 Console、模块前端和 `/api`。
-- 开发环境普通 iframe 模块使用各自端口；Portal 正式入口仍由 Console origin 的 `/portal/` 代理提供，避免一个 Browser Family 被两个顶层 origin 同时轮换。
+- 开发环境普通 iframe 模块使用各自端口；Portal `/portal/...` 与 Workbench Data Application `/data-apps/...` 正式入口仍由 Console origin 代理提供，避免一个 Browser Family 被多个顶层 origin 同时轮换。
 - System CORS 必须允许已分配的开发 origin，并允许 credentials，供模块独立调试使用。
 - Cookie 不按端口隔离，但按 hostname 隔离；`localhost` 与 `127.0.0.1` 不共享会话。
 - 不同域名、浏览器 Profile、设备和无痕会话默认独立登录。

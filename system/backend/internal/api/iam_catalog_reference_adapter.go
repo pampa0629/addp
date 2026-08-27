@@ -14,7 +14,7 @@ import (
 )
 
 type IAMCatalogReferenceRequest struct {
-	SubjectType string `json:"subject_type" enums:"department,user"`
+	SubjectType string `json:"subject_type" enums:"department,user,project_group"`
 	ID          string `json:"id"`
 }
 
@@ -40,6 +40,7 @@ type IAMCatalogReferenceBatchResponse struct {
 
 type catalogReferenceService interface {
 	Resolve(context.Context, int64, string, []iam.CatalogReference) ([]iam.CatalogReferenceResolution, error)
+	ListCandidates(context.Context, int64, string, iam.CatalogSubjectType, string, int, int) ([]iam.CatalogReferenceCandidate, int64, error)
 }
 
 type IAMCatalogReferenceHandler struct {
@@ -54,8 +55,8 @@ func NewIAMCatalogReferenceHandler(service catalogReferenceService) (*IAMCatalog
 }
 
 // Resolve godoc
-// @Summary      精确批量解析 Catalog 责任主体 | Resolve Catalog responsibility subjects in batch
-// @Description  仅 addp-catalog Tenant Service Principal 可按当前 Tenant 解析 Department 与 User；User ID 是全局稳定身份，但必须有当前 Tenant Membership；跨 Tenant 与不存在统一返回 found=false | Only the addp-catalog tenant service principal may resolve departments and users in the current tenant; a user ID is globally stable but requires a current tenant membership; cross-tenant and missing subjects both return found=false
+// @Summary      精确批量解析 Catalog 组织引用 | Resolve Catalog organization references in batch
+// @Description  仅 addp-catalog Tenant Service Principal 可按当前 Tenant 解析 Department、User 与 Project Group；User ID 是全局稳定身份但必须有当前 Tenant Membership；Project Group 只供协作集合显示；跨 Tenant 与不存在统一返回 found=false | Only the addp-catalog tenant service principal may resolve departments, users, and project groups in the current tenant; a user ID is globally stable but requires a current tenant membership; project groups are only used to display collaboration collections; cross-tenant and missing subjects both return found=false
 // @Tags         Runtime Catalog References
 // @Accept       json
 // @Produce      json
@@ -66,7 +67,7 @@ func NewIAMCatalogReferenceHandler(service catalogReferenceService) (*IAMCatalog
 // @Failure      401 {object} IAMErrorResponse
 // @Failure      403 {object} IAMErrorResponse
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["iam.department.read","iam.tenant_membership.read"]
+// @x-addp-required-permissions ["iam.department.read","iam.project_group.read","iam.tenant_membership.read"]
 // @Router       /runtime/catalog-references/resolve [post]
 func (h *IAMCatalogReferenceHandler) Resolve(c *gin.Context) {
 	if err := iamServiceOwnsModule(c, "catalog"); err != nil {
@@ -81,7 +82,7 @@ func (h *IAMCatalogReferenceHandler) Resolve(c *gin.Context) {
 	references := make([]iam.CatalogReference, 0, len(request.References))
 	for _, reference := range request.References {
 		id, err := parseCanonicalIAMInt64(reference.ID)
-		if err != nil || (reference.SubjectType != string(iam.CatalogSubjectTypeDepartment) && reference.SubjectType != string(iam.CatalogSubjectTypeUser)) {
+		if err != nil || (reference.SubjectType != string(iam.CatalogSubjectTypeDepartment) && reference.SubjectType != string(iam.CatalogSubjectTypeUser) && reference.SubjectType != string(iam.CatalogSubjectTypeProjectGroup)) {
 			respondIAMError(c, fmt.Errorf("%w: invalid catalog reference", commonapi.ErrBadRequest))
 			return
 		}
@@ -115,4 +116,71 @@ func (h *IAMCatalogReferenceHandler) Resolve(c *gin.Context) {
 		})
 	}
 	c.JSON(http.StatusOK, response)
+}
+
+type IAMCatalogReferenceCandidateResponse struct {
+	SubjectType string `json:"subject_type"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Code        string `json:"code,omitempty"`
+	Status      string `json:"status"`
+}
+
+// ListCandidates godoc
+// @Summary      查询 Catalog 责任主体候选 | List Catalog responsibility candidates
+// @Description  仅 addp-catalog Tenant Service Principal 可按名称或编码分页查询当前可引用的 Department 或 User；只返回最小显示摘要 | Only the addp-catalog tenant service principal may search currently referenceable departments or users by name or code; only minimal display summaries are returned
+// @Tags         Runtime Catalog References
+// @Produce      json
+// @Security     BearerAuth
+// @Param        subject_type query string true "主体类型 | Subject type" Enums(department,user)
+// @Param        search query string false "名称或编码，最多 100 字符 | Name or code, maximum 100 characters"
+// @Param        page query int false "页码，默认 1 | Page number, default 1"
+// @Param        page_size query int false "每页数量，默认 20，最大 50 | Page size, default 20 and maximum 50"
+// @Success      200 {object} object{data=[]IAMCatalogReferenceCandidateResponse,total=int64,page=int,page_size=int,total_pages=int}
+// @Failure      400 {object} IAMErrorResponse
+// @Failure      401 {object} IAMErrorResponse
+// @Failure      403 {object} IAMErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["iam.department.read","iam.tenant_membership.read"]
+// @Router       /runtime/catalog-references/candidates [get]
+func (h *IAMCatalogReferenceHandler) ListCandidates(c *gin.Context) {
+	if err := iamServiceOwnsModule(c, "catalog"); err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	page, pageErr := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, pageSizeErr := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	_, tenantID, _, err := iamTenantActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	authContext, exists := middleware.IAMAuthContextFromGin(c)
+	if !exists || authContext.Client.ClientID == nil {
+		respondIAMError(c, commonapi.ErrUnauthorized)
+		return
+	}
+	if pageErr != nil || pageSizeErr != nil {
+		respondIAMError(c, fmt.Errorf("%w: invalid catalog reference candidate request", commonapi.ErrBadRequest))
+		return
+	}
+	items, total, err := h.service.ListCandidates(
+		c.Request.Context(), int64(tenantID), *authContext.Client.ClientID,
+		iam.CatalogSubjectType(c.Query("subject_type")), c.Query("search"), page, pageSize,
+	)
+	if err != nil {
+		if errors.Is(err, iam.ErrInvalidCatalogReferenceRequest) {
+			err = fmt.Errorf("%w: invalid catalog reference candidate request", commonapi.ErrBadRequest)
+		}
+		respondIAMError(c, err)
+		return
+	}
+	data := make([]IAMCatalogReferenceCandidateResponse, 0, len(items))
+	for _, item := range items {
+		data = append(data, IAMCatalogReferenceCandidateResponse{
+			SubjectType: string(item.SubjectType), ID: strconv.FormatInt(item.ID, 10),
+			Name: item.Name, Code: item.Code, Status: item.Status,
+		})
+	}
+	commonapi.RespondPaginated(c, data, total, page, pageSize)
 }

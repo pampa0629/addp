@@ -16,7 +16,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         *)
-            echo "usage: $0 [--package iam|oauth|api|migration] [--test execution-audience|portal-runtime-removal|service-execution-audit|workbench-runtime|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|quality-catalog-read|model-writer-decoupling|catalog-engine-descriptor-read]" >&2
+            echo "usage: $0 [--package iam|oauth|api|migration] [--test catalog-reference-candidates|execution-audience|portal-runtime-removal|service-execution-audit|workbench-runtime|workbench-data-application|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|quality-catalog-read|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider]" >&2
             exit 2
             ;;
     esac
@@ -65,6 +65,13 @@ esac
 test_pattern='AgainstPostgres$'
 case "$TEST_FILTER" in
     "") ;;
+    catalog-reference-candidates)
+        if [ "$PACKAGE_FILTER" != "iam" ]; then
+            echo "catalog-reference-candidates test requires --package iam" >&2
+            exit 2
+        fi
+        test_pattern='^TestCatalogReferenceCandidatesAgainstPostgres$'
+        ;;
     execution-audience)
         if [ "$PACKAGE_FILTER" != "migration" ]; then
             echo "execution-audience test requires --package migration" >&2
@@ -92,6 +99,13 @@ case "$TEST_FILTER" in
             exit 2
         fi
         test_pattern='^TestWorkbenchRuntimeForwardMigrationAgainstPostgres$'
+        ;;
+    workbench-data-application)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "workbench-data-application test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestWorkbenchDataApplicationForwardMigrationAgainstPostgres$'
         ;;
     model-catalog-read)
         if [ "$PACKAGE_FILTER" != "migration" ]; then
@@ -141,6 +155,20 @@ case "$TEST_FILTER" in
             exit 2
         fi
         test_pattern='^TestCatalogEngineDescriptorReadForwardMigrationAgainstPostgres$'
+        ;;
+    catalog-project-group-read)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "catalog-project-group-read test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestCatalogProjectGroupReadForwardMigrationAgainstPostgres$'
+        ;;
+    transfer-task-provider)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "transfer-task-provider test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestTransferTaskProviderForwardMigrationAgainstPostgres$'
         ;;
     *)
         echo "unsupported System IAM PostgreSQL gate test: $TEST_FILTER" >&2

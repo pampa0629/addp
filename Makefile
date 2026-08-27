@@ -164,7 +164,7 @@ test-service-postgres: ## 使用一次性 PostgreSQL 数据库运行 Service Con
 test-standard-postgres: ## 使用一次性 PostgreSQL 数据库运行 Standard 集成门禁
 	@bash scripts/test/standard-postgres-gate.sh
 
-test-workbench-postgres: ## 使用一次性 PostgreSQL 数据库运行 Workbench View 集成门禁
+test-workbench-postgres: ## 使用一次性 PostgreSQL 数据库运行 Workbench View 与 Data Application 集成门禁
 	@bash scripts/test/workbench-postgres-gate.sh
 
 test-arcgis-open-formats: ## 使用真实 Access/PGeo 样本和 Oracle Spatial 运行集成门禁

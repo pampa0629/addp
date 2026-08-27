@@ -470,7 +470,7 @@ scripts/test/
 
 根 `make test` 是 T0-T1 全部无外部服务确定性门禁的唯一聚合入口，包含 `make test-platform`、全部 Go 模块、Common Python、Agent 离线评测、Copilot 后端，以及所有已登记前端的测试和生产构建。前端与 Python CI 登记检查同时要求每个自动发现的组件进入该聚合入口，新增测试组件不能只登记 CI 而遗漏本地总门禁。需要专用 PostgreSQL、真实运行服务、在线证据或发布环境的 T2-T5 门禁不并入 `make test`，必须使用各自显式入口。
 
-日常使用的 macOS 可以在独立、干净的 `main` checkout 中定时运行 `make local-ci`。脚本会 fast-forward 到 `origin/main`，首次运行 `make test` 和全部已登记 PostgreSQL 门禁，之后以上次成功 SHA 运行 `make test-changed`；每个新 SHA 还会通过 `make build BUILD_ARGS=--force` 复验全部 Linux 产品二进制。失败不更新基线，后续调度会重试；无新提交时直接跳过。使用 `make local-ci LOCAL_CI_ARGS=--full` 可强制全量复验，使用 `make local-ci LOCAL_CI_ARGS=--check-only` 只检查 macOS、Git、Go 1.24+、Python 3.11+、Node.js 22、Docker 和工作区边界。
+日常使用的 macOS 可以在独立、干净的 `main` checkout 中定时运行 `make local-ci`。脚本会 fast-forward 到 `origin/main`，首次运行 `make test` 和全部已登记 PostgreSQL 门禁，之后以上次成功 SHA 运行 `make test-changed`；每个新 SHA 还会通过 `make build BUILD_ARGS=--force` 复验全部 Linux 产品二进制。失败不更新基线，后续调度会重试；无新提交时直接跳过。使用 `make local-ci LOCAL_CI_ARGS=--full` 可强制全量复验，使用 `make local-ci LOCAL_CI_ARGS=--check-only` 只检查 macOS、Git、Go 1.24+、Python 3.11+、`.node-version` 声明的 Node.js 24、Docker 和工作区边界。
 
 该入口只启停 `addp-infra` Compose 项目并保留数据卷，不执行 Docker 全局清理。如果发现正在运行的 ADDP Infra，它会拒绝接管。日志、成功 SHA 和运行锁位于 `.git/addp-local-ci/`，不进入工作树。该辅助巡检不替代 GitHub Actions，也不运行 T4/T5。
 
@@ -494,7 +494,42 @@ Online 唯一入口为 `make test-online ONLINE_SUITE=<suite>`，并要求环境
 
 `consumer-engine-recovery` 要求全量 ADDP 服务、Console、Manager、Service 和一个专用 PostgreSQL Engine Fixture。Host Gate 通过 `business/scripts/online-engine-fixture.sh` 管理物理端点，该入口只允许 `ADDP_ONLINE_HOST=1` 的 macOS 专用 Runner，使用独立 `ADDP_ONLINE_TEST_ENGINE_*` 变量并拒绝接管非 `business/postgres` Compose 容器；它不读取或创建 `business/.env`。suite 使用真实测试 User 用户名和密码登录 Console，并以同一 User 的 Access Token 校验 Tenant AuthContext 与最小权限。Configuration、Manager Data Explorer、Service Query Services 在同一 Browser Context 中各首次导航一次并等待自身首个请求成功；随后保持同一 Manager iframe，停止/恢复物理 Fixture，并通过 `POST /api/v1/system/engines/{id}/test` 记录 `offline → online`，页面必须通过既有轮询自动收敛。Manager、Service Backend 与 Console、Manager、Service Frontend 的 PID 前后必须一致。Engine Instance 由专用环境长期预置，suite 不创建、删除或修改其身份；退出路径恢复 `online` 后再停止 Fixture 与应用。
 
-`enterprise-catalog-publishing` 要求全量 System、Gateway、Meta、Catalog、Asset 和 Portal，并复用专用 PostgreSQL Engine Fixture。Fixture owner 在物理库启动时幂等建立 `public.addp_online_catalog_fixture`；suite 只经 Gateway 使用真实 User Token 发起 Meta 扫描，等待 fingerprint 对应的 CatalogEntry 自动建档，完成一次业务编目，以 `AssetComponent.catalog_entry_id` 创建并发布资产，再从 Portal 校验同一 CatalogEntry 身份。临时 Asset 按 `published → offline → deleted` 清理，Asset-owned 目录同步删除；已初始化的永久 Catalog fixture 会恢复运行前编目聚合。环境另需 `ADDP_ONLINE_TEST_CATALOG_DOMAIN_ID` 和 `ADDP_ONLINE_TEST_CATALOG_DEPARTMENT_ID`。
+`enterprise-catalog-publishing` 要求全量 System、Gateway、Meta、Catalog、Asset、Portal 和 Console，并复用专用 PostgreSQL Engine Fixture。Fixture owner 在物理库启动时幂等建立 `public.addp_online_catalog_fixture`；suite 只经 Gateway 使用真实 User Token 连续发起两次 Meta 扫描，证明 fingerprint 与 CatalogEntry UUID 幂等，再验收资源盘点/治理目录视图、五维治理覆盖率、精确来源身份解析和业务编目。随后以 `AssetComponent.catalog_entry_id` 创建并发布资产，从 Portal 校验同一 CatalogEntry 身份；真实浏览器使用同一专用 User 登录 Console，验证覆盖率页、CatalogEntry 详情、Domain / Department / Engine 三个名称选择器及零 warning/error。临时 Asset 按 `published → offline → deleted` 清理，Asset-owned 目录同步删除；已初始化的永久 Catalog fixture 会恢复运行前编目聚合。环境另需 `ADDP_ONLINE_TEST_USER_USERNAME`、`ADDP_ONLINE_TEST_USER_PASSWORD`、`ADDP_ONLINE_TEST_CATALOG_DOMAIN_ID` 和 `ADDP_ONLINE_TEST_CATALOG_DEPARTMENT_ID`。
+
+#### 企业数据目录专用 macOS 完整验证
+
+复用现有两类标准入口，不建立 `test-all` 或另一套目录脚本。T0-T3 与 T4 的身份和基础设施边界不同，应使用同一台专用 macOS 上的两个独立干净 checkout，或分别由 Local CI checkout 与 `addp-online` GitHub Runner checkout 执行：
+
+| 案例 | 层级 | 标准入口 | 通过证据 |
+| --- | --- | --- | --- |
+| `ECV-00` 验证机准入 | T0/T4 preflight | `make local-ci LOCAL_CI_ARGS=--check-only`；`online-host-gate.sh --check-only` | 工具链、干净 checkout、外部环境文件、独立证据目录、`addp_online` 与 loopback 边界通过 |
+| `ECV-01` 全量确定性门禁 | T0-T3 | `make local-ci LOCAL_CI_ARGS=--full` | 全仓 T0-T1、全部已登记 PostgreSQL T2、前端 T3、全部 Linux 产品构建通过 |
+| `ECV-02` 构建与身份 | T4 | `enterprise-catalog-publishing` | System/Gateway/Meta/Catalog/Asset/Portal Build Identity 与 checkout 一致；User/Tenant/Permission 验证通过 |
+| `ECV-03` 自动建档幂等 | T4 | 同上 | 两次真实 Meta scan 返回成功，fingerprint 与 CatalogEntry UUID 均不变化 |
+| `ECV-04` 目录读模型 | T4 | 同上 | 同一条目进入 `inventory` 与编目后的 `governance` 视图；治理状态总数与五个覆盖率维度分母自洽 |
+| `ECV-05` 动态来源解析 | T4 | 同上 | Meta fingerprint 经 `POST /catalog/entries/resolve-sources` 精确解析到当前 active CatalogEntry |
+| `ECV-06` Console 交互 | T4 browser | 同上 | 覆盖率五维、CatalogEntry 详情、三个名称下拉可用，页面不出现 `undefined`，浏览器 warning/error 与失败业务响应均为 0 |
+| `ECV-07` 发布消费唯一路线 | T4 | 同上 | `Meta → Catalog → AssetComponent → Portal` 保持同一 CatalogEntry UUID |
+| `ECV-08` 清理 | T4 | 同上 | 临时 Asset 下架后删除、Asset-owned 目录删除、Portal 404，`residual_resources=0`，永久 fixture 编目聚合恢复 |
+
+T0-T3 checkout 执行：
+
+```bash
+make local-ci LOCAL_CI_ARGS=--check-only
+make local-ci LOCAL_CI_ARGS=--full
+```
+
+T4 推荐从 GitHub Actions 手工选择 `Online T4 gates / enterprise-catalog-publishing`。需要在 Runner 上直接预检时，只从调用方提供 suite 和仓库外证据目录，Secret 仍全部来自仓库外环境文件：
+
+```bash
+ADDP_ONLINE_HOST=1 \
+ADDP_ONLINE_ENV_FILE=/absolute/path/to/addp-online.env \
+ADDP_ONLINE_ARTIFACT_DIR=/absolute/path/to/evidence \
+ONLINE_SUITE=enterprise-catalog-publishing \
+bash scripts/test/online-host-gate.sh --check-only
+```
+
+预检通过后去掉 `--check-only` 即执行正式生命周期和唯一 `make test-online` 入口。验收必须同时保留 `readiness.txt`、`summary.txt`、`online-report.json`、`enterprise-catalog-publishing-browser.json`、`online-gate.log`、Playwright 失败截图（如有）和服务日志；任何缺失、Skip、清理失败或证据中的构建身份不一致都按失败处理。
 
 `workbench-service-consumption` 要求全量 System、Gateway、Service、Workbench 和 Console，并使用 `business/scripts/online-workbench-mysql-fixture.sh` 管理独立 Business MySQL。Fixture 只接受仓库外 `ADDP_ONLINE_WORKBENCH_MYSQL_*` 变量，不读取或创建 `business/.env`；它重建仓库已有确定性样例并把 Engine 使用的账号收敛为仅有 `SELECT` 的读取账号。suite 使用永久 MySQL Engine Instance，经 Gateway 调用 Service 输出契约检测，临时发布固定 PII-safe SQL 服务 `commerce-order-analysis`，再经 Consumer Descriptor 创建个人 Workbench View；API 层真实验证 cursor、动态筛选、标量类型、有限 CSV、无空间输出和契约指纹变化，浏览器层以同一 User 登录 Console，验证 Table、Chart、Map 能力约束及契约变化后的查询阻断。Host Gate 安装专用 Chromium；View 与 Query Service 只按本轮创建 ID 在 `finally` 删除，不使用名称前缀或数据库清理。
 
@@ -504,7 +539,7 @@ Online 唯一入口为 `make test-online ONLINE_SUITE=<suite>`，并要求环境
 
 专用部署只允许由 `.github/workflows/online-t4-gates.yml` 的手工 `workflow_dispatch` 在带 `self-hosted`、`macOS`、`addp-online` 标签的 Runner 上触发。workflow 首先调用 `bash scripts/test/online-host-gate.sh --check-only`，在不启停任何服务的前提下验证专用主机标记、macOS、仓库外环境文件与证据目录、显式 Tenant、suite 部署 profile、必要命令和干净工作区，并产出不含密钥的 `readiness.txt`；预检通过后才调用同一脚本的默认生命周期模式。该脚本从 `ADDP_ONLINE_ENV_FILE` 指定的仓库外绝对路径加载 T4 密钥、专用 Tenant 和独占基础设施连接；`ONLINE_SUITE` 与 `ADDP_ONLINE_ARTIFACT_DIR` 只能由 workflow 或直接调用方提供，密钥文件中的同名残留值不会改写实际套件和证据落点。仓库根存在 `.env`、源码不干净或证据目录位于仓库内都会直接失败。生命周期模式只调用现有 Infra/开发启停脚本和 `make test-online`，退出时无条件停止应用，证据写入仓库外 `ADDP_ONLINE_ARTIFACT_DIR`。`scripts/ci/check-online-ci-registration.py` 要求 Online suite 登记、部署启动 profile、Runner 预检和 workflow choices 完全一致，并在首次真实运行通过前禁止增加 `schedule`。
 
-Runner 管理员应以根 `.env.example` 为字段清单，在仓库外创建独立环境文件并替换全部 Secret；不能把该文件复制为仓库根 `.env`。除专用 Infra 连接和所有内置 `*_SERVICE_CLIENT_SECRET` 外，至少显式配置 `ADDP_ONLINE_TEST=1`、`ADDP_ONLINE_TEST_TENANT_ID`、`POSTGRES_DB=addp_online`、`SYSTEM_URL`、`GATEWAY_URL`、`MANAGER_URL`、`META_URL`、`CATALOG_URL`、`ASSET_URL`、`PORTAL_URL`、`SERVICE_URL`、`WORKBENCH_URL`、`CONSOLE_URL`、`STANDARD_URL`、`MODEL_URL`。`module-registry-recovery` 使用其中的 `MANAGER_SERVICE_CLIENT_SECRET`；`standard-model-reference-deletion` 使用 `ADDP_ONLINE_TEST_USER_ACCESS_TOKEN`；`consumer-engine-recovery` 另外要求同一专用 User 的 `ADDP_ONLINE_TEST_USER_USERNAME`、`ADDP_ONLINE_TEST_USER_PASSWORD`，以及稳定 `ADDP_ONLINE_TEST_ENGINE_ID`、名称、端口、用户、密码和数据库；`enterprise-catalog-publishing` 还需预置永久 Domain 和 Department ID；`workbench-service-consumption` 另需永久 `ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID`，以及端口、数据库、只读用户、只读密码和 root fixture 密码，其浏览器阶段也使用同一专用 User 的用户名和密码。GitHub Environment `addp-online` 的 Repository Variable `ADDP_ONLINE_ENV_FILE` 只保存该仓库外文件的绝对路径，不保存文件内容。
+Runner 管理员应以根 `.env.example` 为字段清单，在仓库外创建独立环境文件并替换全部 Secret；不能把该文件复制为仓库根 `.env`。除专用 Infra 连接和所有内置 `*_SERVICE_CLIENT_SECRET` 外，至少显式配置 `ADDP_ONLINE_TEST=1`、`ADDP_ONLINE_TEST_TENANT_ID`、`POSTGRES_DB=addp_online`、`SYSTEM_URL`、`GATEWAY_URL`、`MANAGER_URL`、`META_URL`、`CATALOG_URL`、`ASSET_URL`、`PORTAL_URL`、`SERVICE_URL`、`WORKBENCH_URL`、`CONSOLE_URL`、`STANDARD_URL`、`MODEL_URL`。`module-registry-recovery` 使用其中的 `MANAGER_SERVICE_CLIENT_SECRET`；`standard-model-reference-deletion` 使用 `ADDP_ONLINE_TEST_USER_ACCESS_TOKEN`；`consumer-engine-recovery` 另外要求同一专用 User 的 `ADDP_ONLINE_TEST_USER_USERNAME`、`ADDP_ONLINE_TEST_USER_PASSWORD`，以及稳定 `ADDP_ONLINE_TEST_ENGINE_ID`、名称、端口、用户、密码和数据库；`enterprise-catalog-publishing` 同样使用该专用 User 的用户名和密码，并需预置永久 Domain 和 Department ID；`workbench-service-consumption` 另需永久 `ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID`，以及端口、数据库、只读用户、只读密码和 root fixture 密码，其浏览器阶段也使用同一专用 User 的用户名和密码。GitHub Environment `addp-online` 的 Repository Variable `ADDP_ONLINE_ENV_FILE` 只保存该仓库外文件的绝对路径，不保存文件内容。
 
 `scripts/ci/check-frontend-ci-registration.py` 是前端 CI 登记完整性检查。它从 Git 跟踪的 `*/frontend/package.json` 自动发现前端，要求每个前端同时具有 `scripts.build`、根 `Makefile` 的 `test-<module>-frontend` 标准入口，并在 workflow 中登记目标、标准前端环境 action 和共享模块变更选择器。检查及其反例回归已纳入 `make test-platform`；新增前端时遗漏任一环节会使当次 Platform CI 失败。
 

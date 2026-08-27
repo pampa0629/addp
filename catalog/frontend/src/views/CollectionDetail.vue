@@ -18,9 +18,8 @@
         <h1>{{ collection.name }}</h1>
         <p v-if="collection.description">{{ collection.description }}</p>
         <el-descriptions :column="2" border>
-          <el-descriptions-item :label="t('catalog.collections.projectGroup')">#{{ collection.project_group_id }}</el-descriptions-item>
+          <el-descriptions-item :label="t('catalog.collections.projectGroup')">{{ projectGroupLabel }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.entry.version')">{{ collection.version }}</el-descriptions-item>
-          <el-descriptions-item :label="t('catalog.collections.createdBy')">#{{ collection.created_by }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.entries.updatedAt')">{{ formatDate(collection.updated_at) }}</el-descriptions-item>
         </el-descriptions>
       </el-card>
@@ -45,7 +44,7 @@
         <el-form-item :label="t('catalog.collections.collectionDescription')"><el-input v-model="editForm.description" type="textarea" :rows="3" maxlength="2000" show-word-limit /></el-form-item>
         <el-form-item :label="t('catalog.collections.entries')">
           <el-select v-model="editForm.entry_ids" multiple filterable remote reserve-keyword :remote-method="searchEntries" :loading="entrySearching" style="width: 100%" :placeholder="t('catalog.collections.searchEntries')">
-            <el-option v-for="entry in entryOptions" :key="entry.id" :label="entry.display_name || entry.id" :value="entry.id" />
+            <el-option v-for="entry in entryOptions" :key="entry.id" :label="entry.display_name || t('catalog.entries.unnamed')" :value="entry.id" />
           </el-select>
         </el-form-item>
         <p class="form-hint">{{ t('catalog.collections.replaceHint') }}</p>
@@ -65,7 +64,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Delete, Edit, Refresh } from '@element-plus/icons-vue'
 import { navigateConsoleModuleRoute, useConsolePageDescriptor } from '@common-ui'
-import { deleteCollection, getCollection, listEntries, updateCollection } from '../api/catalog'
+import { deleteCollection, getCollection, listEntries, listMyProjectGroups, updateCollection } from '../api/catalog'
 import { useAuthStore } from '../store/auth'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
 import { canAccessProjectGroup } from '../utils/projectGroupScope'
@@ -82,10 +81,17 @@ const saving = ref(false)
 const versionConflict = ref(false)
 const entrySearching = ref(false)
 const entryOptions = ref([])
+const projectGroupOptions = ref([])
 const editForm = reactive({ name: '', description: '', entry_ids: [] })
 let requestVersion = 0
 let searchVersion = 0
 const canUpdate = computed(() => Boolean(collection.value) && canAccessProjectGroup(authStore.authContext, 'catalog.collection.update', collection.value.project_group_id))
+const projectGroupLabel = computed(() => {
+  const group = projectGroupOptions.value.find(item => item.project_group_id === String(collection.value?.project_group_id || ''))
+  if (!group) return t('catalog.collections.projectGroupNameUnavailable')
+  const code = group.code ? ` · ${group.code}` : ''
+  return `${group.name}${code} · ${t(`catalog.collections.groupRole.${group.relation_role}`)}`
+})
 
 useConsolePageDescriptor(router, 'catalog', {
   title: computed(() => t('catalog.collections.recentVisitTitle')),
@@ -107,6 +113,15 @@ async function loadCollection() {
     }
   } finally {
     if (version === requestVersion) loading.value = false
+  }
+}
+
+async function loadProjectGroups() {
+  try {
+    const response = await listMyProjectGroups()
+    projectGroupOptions.value = response.data || []
+  } catch {
+    projectGroupOptions.value = []
   }
 }
 
@@ -184,7 +199,7 @@ function formatDate(value) {
   return new Intl.DateTimeFormat(locale.value === 'en' ? 'en-US' : 'zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 }
 
-watch(() => route.params.id, loadCollection, { immediate: true })
+watch(() => route.params.id, () => Promise.all([loadCollection(), loadProjectGroups()]), { immediate: true })
 </script>
 
 <style scoped>

@@ -71,6 +71,10 @@ type resolveReferencesResponse struct {
 	Results []service.CatalogReferenceResolution `json:"results"`
 }
 
+type resolveSourceEntriesRequest struct {
+	References []service.CatalogSourceReference `json:"references"`
+}
+
 type replaceEntryMarksRequest struct {
 	Favorite  bool `json:"favorite"`
 	Following bool `json:"following"`
@@ -96,6 +100,33 @@ type deleteCollectionRequest struct {
 
 func NewHandler(entries *service.EntryService, governanceTasks *service.GovernanceTaskService, personal *service.PersonalCatalogService, collections *service.CollectionService, syncRunner *service.SourceSyncRunner) *Handler {
 	return &Handler{entries: entries, governanceTasks: governanceTasks, personal: personal, collections: collections, sync: syncRunner}
+}
+
+// ListMyProjectGroups 动态解析当前 User 可访问的目录集合项目组。
+// @Summary 查询我的目录集合项目组 | List my catalog collection project groups
+// @Description 只组合当前 AuthContext 中有效 Project Group membership 与 Catalog Collection Scope，并由 System 动态解析名称；不枚举租户全部项目组 | Combine only effective Project Group memberships from the current AuthContext with Catalog Collection scopes, and resolve names dynamically from System; does not enumerate every project group in the tenant
+// @Tags Catalog Personal
+// @Produce json
+// @Success 200 {object} service.CollectionProjectGroupList "当前可访问项目组 | Currently accessible project groups"
+// @Failure 401 {object} map[string]interface{} "未认证 | Unauthorized"
+// @Failure 403 {object} map[string]interface{} "当前主体不是 User 或权限不足 | User principal or permission required"
+// @Failure 503 {object} map[string]interface{} "System 当前不可达 | System currently unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["catalog.entry.read","catalog.collection.read"]
+// @Router /me/project-groups [get]
+// @Security BearerAuth
+func (h *Handler) ListMyProjectGroups(c *gin.Context) {
+	tenantID, _, ok := currentUserContext(c)
+	if !ok || h.collections == nil {
+		respondError(c, http.StatusForbidden, service.ErrUserPrincipalRequired)
+		return
+	}
+	result, err := h.collections.ListProjectGroups(c.Request.Context(), tenantID, collectionProjectGroupAccesses(c))
+	if err != nil {
+		respondError(c, http.StatusServiceUnavailable, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 // ListCollections 列出当前项目组目录集合。
@@ -412,7 +443,7 @@ func (h *Handler) ReplaceMyEntryMarks(c *gin.Context) {
 // @Failure 403 {object} map[string]interface{} "权限不足 | Forbidden"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["catalog.entry.update"]
+// @x-addp-required-permissions ["catalog.entry.read","catalog.entry.update"]
 // @Router /governance/tasks [get]
 // @Security BearerAuth
 func (h *Handler) ListGovernanceTasks(c *gin.Context) {
@@ -513,6 +544,65 @@ func (h *Handler) ListEntries(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// ResolveSourceEntries 把专业关系节点的精确来源身份解析为当前可见 CatalogEntry。
+// @Summary 解析专业来源对应的目录条目 | Resolve professional sources to catalog entries
+// @Description 只查询 Catalog 当前来源绑定与目录可见性，不代理或复制 owner 专业关系 | Query only current Catalog source bindings and catalog visibility without proxying or copying owner professional relations
+// @Tags Catalog
+// @Accept json
+// @Produce json
+// @Param request body resolveSourceEntriesRequest true "1 到 200 个精确来源引用 | 1 to 200 exact source references"
+// @Success 200 {object} service.SourceEntryResolutionResult "按请求顺序返回目录解析结果 | Catalog resolutions in request order"
+// @Failure 400 {object} map[string]interface{} "来源引用无效 | Invalid source reference"
+// @Failure 401 {object} map[string]interface{} "未认证 | Unauthorized"
+// @Failure 403 {object} map[string]interface{} "权限不足 | Forbidden"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["catalog.entry.read"]
+// @Router /entries/resolve-sources [post]
+// @Security BearerAuth
+func (h *Handler) ResolveSourceEntries(c *gin.Context) {
+	tenantID, ok := commonAuth.TenantIDFromGin(c)
+	var request resolveSourceEntriesRequest
+	if !ok || c.ShouldBindJSON(&request) != nil {
+		respondError(c, http.StatusBadRequest, service.ErrInvalidSourceReference)
+		return
+	}
+	result, err := h.entries.ResolveSourceEntries(c.Request.Context(), tenantID, entryAccess(c), request.References)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// GetGovernanceCoverage 动态聚合资源盘点范围内的目录治理覆盖率。
+// @Summary 查询目录治理覆盖率 | Get catalog governance coverage
+// @Description 直接聚合 Catalog 当前权威事实并按适用对象计算分母，不读取持久化覆盖率投影 | Aggregate current authoritative Catalog facts with applicability-aware denominators and no persisted coverage projection
+// @Tags Catalog Governance
+// @Produce json
+// @Success 200 {object} service.GovernanceCoverage "资源盘点治理覆盖率 | Inventory governance coverage"
+// @Failure 401 {object} map[string]interface{} "未认证 | Unauthorized"
+// @Failure 403 {object} map[string]interface{} "缺少资源盘点权限 | Inventory permission required"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["catalog.entry.read","catalog.inventory.read"]
+// @Router /governance/coverage [get]
+// @Security BearerAuth
+func (h *Handler) GetGovernanceCoverage(c *gin.Context) {
+	tenantID, ok := commonAuth.TenantIDFromGin(c)
+	if !ok {
+		respondError(c, http.StatusBadRequest, service.ErrInvalidPage)
+		return
+	}
+	h.sync.ObserveTenant(tenantID)
+	result, err := h.entries.GetGovernanceCoverage(c.Request.Context(), tenantID, entryAccess(c))
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
 // ListEntryFacets 列出当前目录视图中实际出现的人类可读引用分面。
 // @Summary 列出企业目录引用分面 | List enterprise catalog reference facets
 // @Description Catalog 计算当前调用方可见条目中的引用集，Standard / System 动态解析显示信息；分面解析不影响目录列表和 Ready | Catalog computes references from entries visible to the caller while Standard and System dynamically resolve display facts; facet resolution does not affect entry listing or readiness
@@ -537,6 +627,42 @@ func (h *Handler) ListEntryFacets(c *gin.Context) {
 	}
 	h.sync.ObserveTenant(tenantID)
 	result, err := h.entries.ListFacets(c.Request.Context(), tenantID, entryAccess(c), c.Query("view"))
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// ListReferenceCandidates 按名称分页查询可建立关联的 owner 候选。
+// @Summary 查询企业目录引用候选 | List enterprise catalog reference candidates
+// @Description Catalog 使用运行身份动态查询 Standard 或 System 当前可引用对象；不复制 owner 完整列表，owner 不可达只影响本次请求 | Catalog dynamically queries currently referenceable Standard or System objects using its runtime identity; owner lists are not copied, and owner unavailability affects only this request
+// @Tags Catalog
+// @Produce json
+// @Param reference_type query string true "引用类型 | Reference type" Enums(domain,glossary,element,department,user)
+// @Param search query string false "名称或编码，最多 100 字符 | Name or code, maximum 100 characters"
+// @Param page query int false "页码，默认 1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认 20，最大 50 | Page size, default 20 and maximum 50"
+// @Success 200 {object} service.ReferenceCandidateList "引用候选分页结果 | Paginated reference candidates"
+// @Failure 400 {object} map[string]interface{} "请求参数无效 | Invalid request"
+// @Failure 401 {object} map[string]interface{} "未认证 | Unauthorized"
+// @Failure 403 {object} map[string]interface{} "权限不足 | Forbidden"
+// @Failure 503 {object} map[string]interface{} "Standard 或 System 候选查询不可达 | Standard or System candidate query unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["catalog.entry.update"]
+// @Router /reference-candidates [get]
+// @Security BearerAuth
+func (h *Handler) ListReferenceCandidates(c *gin.Context) {
+	tenantID, ok := commonAuth.TenantIDFromGin(c)
+	page, pageErr := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, pageSizeErr := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	if !ok || h.entries == nil || pageErr != nil || pageSizeErr != nil {
+		respondError(c, http.StatusBadRequest, service.ErrInvalidPage)
+		return
+	}
+	result, err := h.entries.ListReferenceCandidates(
+		c.Request.Context(), tenantID, c.Query("reference_type"), c.Query("search"), page, pageSize,
+	)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
@@ -944,6 +1070,37 @@ func permissionProjectGroupIDs(c *gin.Context, permission string) []int64 {
 	return result
 }
 
+func collectionProjectGroupAccesses(c *gin.Context) []service.CollectionProjectGroupAccess {
+	authContext, ok := commonAuth.AuthContextFromGin(c)
+	if !ok {
+		return nil
+	}
+	readIDs := make(map[int64]struct{})
+	for _, id := range permissionProjectGroupIDs(c, catalogauthorization.PermissionCatalogCollectionRead) {
+		readIDs[id] = struct{}{}
+	}
+	updateIDs := make(map[int64]struct{})
+	for _, id := range permissionProjectGroupIDs(c, catalogauthorization.PermissionCatalogCollectionUpdate) {
+		updateIDs[id] = struct{}{}
+	}
+	result := make([]service.CollectionProjectGroupAccess, 0, len(authContext.Organization.ProjectGroups))
+	for _, membership := range authContext.Organization.ProjectGroups {
+		id, err := strconv.ParseInt(membership.ProjectGroupID, 10, 64)
+		if err != nil || id <= 0 {
+			continue
+		}
+		_, canRead := readIDs[id]
+		_, hasUpdate := updateIDs[id]
+		if !canRead {
+			continue
+		}
+		result = append(result, service.CollectionProjectGroupAccess{
+			ProjectGroupID: id, RelationRole: membership.RelationRole, CanRead: true, CanUpdate: hasUpdate,
+		})
+	}
+	return result
+}
+
 func respondError(c *gin.Context, status int, err error) {
 	message := commoni18n.T(c, catalogi18n.MsgOperationFailed)
 	errorCode := "catalog_operation_failed"
@@ -953,6 +1110,10 @@ func respondError(c *gin.Context, status int, err error) {
 		message = commoni18n.T(c, catalogi18n.MsgEntryNotFound)
 		errorCode = "catalog_entry_not_found"
 	case errors.Is(err, service.ErrInvalidPage):
+		status = http.StatusBadRequest
+		message = commoni18n.T(c, catalogi18n.MsgInvalidParams)
+		errorCode = "invalid_request"
+	case errors.Is(err, service.ErrInvalidSourceReference):
 		status = http.StatusBadRequest
 		message = commoni18n.T(c, catalogi18n.MsgInvalidParams)
 		errorCode = "invalid_request"

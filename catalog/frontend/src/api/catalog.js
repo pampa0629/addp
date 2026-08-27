@@ -8,6 +8,14 @@ export async function listEntryFacets(params) {
 	return client.get('/catalog/entries/facets', { params })
 }
 
+export async function resolveSourceEntries(references) {
+	return client.post('/catalog/entries/resolve-sources', { references })
+}
+
+export async function listReferenceCandidates(params) {
+	return client.get('/catalog/reference-candidates', { params })
+}
+
 export async function getEntry(id) {
 	return client.get(`/catalog/entries/${encodeURIComponent(id)}`)
 }
@@ -28,6 +36,10 @@ export async function listGovernanceTasks(params) {
 	return client.get('/catalog/governance/tasks', { params })
 }
 
+export async function getGovernanceCoverage() {
+	return client.get('/catalog/governance/coverage')
+}
+
 export async function listMyEntries(params) {
 	return client.get('/catalog/me/entries', { params })
 }
@@ -38,6 +50,10 @@ export async function getMyEntryMarks(id) {
 
 export async function replaceMyEntryMarks(id, payload) {
 	return client.put(`/catalog/me/entries/${encodeURIComponent(id)}/marks`, payload)
+}
+
+export async function listMyProjectGroups() {
+	return client.get('/catalog/me/project-groups')
 }
 
 export async function listCollections(params) {

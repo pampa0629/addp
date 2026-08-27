@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   normalizeProfessionalRelations,
   professionalRelationFailureState,
+  professionalNodesToSourceReferences,
   professionalResourceKey,
-  resolveProfessionalRelationSubject
+  resolveProfessionalRelationSubject,
+  sourceEntryResolutionMap
 } from '../src/utils/professionalRelationView'
 
 describe('professional relation federated view', () => {
@@ -53,5 +55,24 @@ describe('professional relation federated view', () => {
     expect(professionalRelationFailureState({ response: { status: 403 } })).toBe('forbidden')
     expect(professionalRelationFailureState({ response: { status: 404 } })).toBe('subject_missing')
     expect(professionalRelationFailureState(new Error('offline'))).toBe('unavailable')
+  })
+
+  it('maps only supported stable owner nodes to Catalog source references', () => {
+    expect(professionalNodesToSourceReferences([
+      { owner_module: 'model', resource_type: 'entity', resource_id: '12' },
+      { owner_module: 'model', resource_type: 'entity', resource_id: '12' },
+      { owner_module: 'standard', resource_type: 'metric', resource_id: '8' },
+      { owner_module: 'standard', resource_type: 'domain', resource_id: '3' },
+      { owner_module: 'model', resource_type: 'entity', resource_id: '01' }
+    ])).toEqual([
+      { source_module: 'model', source_type: 'entity', source_identity: '12' },
+      { source_module: 'standard', source_type: 'metric', source_identity: '8' }
+    ])
+    const mapping = sourceEntryResolutionMap([
+      { source_module: 'model', source_type: 'entity', source_identity: '12', found: true, entry: { id: 'catalog-12' } },
+      { source_module: 'standard', source_type: 'metric', source_identity: '8', found: false }
+    ])
+    expect(mapping.get('model:entity:12')).toEqual({ id: 'catalog-12' })
+    expect(mapping.has('standard:metric:8')).toBe(false)
   })
 })

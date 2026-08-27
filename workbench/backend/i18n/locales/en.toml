@@ -19,6 +19,49 @@ other = "The Workbench view operation failed"
 [workbench.message.delete_succeeded]
 other = "The Workbench view was deleted"
 
+[workbench.error.invalid_data_application]
+other = "The data application configuration is invalid"
+
+[workbench.error.data_application_not_found]
+other = "The data application does not exist"
+
+[workbench.error.data_application_version_conflict]
+other = "The data application was updated by another operation; refresh and try again"
+
+[workbench.error.data_application_already_published]
+other = "A published data application cannot be deleted; take it offline instead"
+
+[workbench.error.data_application_not_published]
+other = "The data application is unpublished or currently offline"
+
+[workbench.message.data_application_delete_succeeded]
+other = "The data application was deleted"
+
+[permissions.workbench.data_application.create.name]
+other = "Create data applications"
+[permissions.workbench.data_application.create.description]
+other = "Create data applications from Workbench views owned by the current user"
+[permissions.workbench.data_application.delete.name]
+other = "Delete data applications"
+[permissions.workbench.data_application.delete.description]
+other = "Delete unpublished data applications owned by the current user"
+[permissions.workbench.data_application.execute.name]
+other = "Run data applications"
+[permissions.workbench.data_application.execute.description]
+other = "Run published data applications owned by the current user"
+[permissions.workbench.data_application.publish.name]
+other = "Publish data applications"
+[permissions.workbench.data_application.publish.description]
+other = "Publish or take data applications owned by the current user offline"
+[permissions.workbench.data_application.read.name]
+other = "Read data applications"
+[permissions.workbench.data_application.read.description]
+other = "Read data application configurations owned by the current user"
+[permissions.workbench.data_application.update.name]
+other = "Update data applications"
+[permissions.workbench.data_application.update.description]
+other = "Update data application drafts owned by the current user"
+
 [permissions.workbench.view.create.name]
 other = "Create Workbench views"
 [permissions.workbench.view.create.description]

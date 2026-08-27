@@ -4,13 +4,25 @@
 package authorization
 
 const (
-	PermissionWorkbenchViewCreate = "workbench.view.create"
-	PermissionWorkbenchViewDelete = "workbench.view.delete"
-	PermissionWorkbenchViewRead   = "workbench.view.read"
-	PermissionWorkbenchViewUpdate = "workbench.view.update"
+	PermissionWorkbenchDataApplicationCreate  = "workbench.data_application.create"
+	PermissionWorkbenchDataApplicationDelete  = "workbench.data_application.delete"
+	PermissionWorkbenchDataApplicationExecute = "workbench.data_application.execute"
+	PermissionWorkbenchDataApplicationPublish = "workbench.data_application.publish"
+	PermissionWorkbenchDataApplicationRead    = "workbench.data_application.read"
+	PermissionWorkbenchDataApplicationUpdate  = "workbench.data_application.update"
+	PermissionWorkbenchViewCreate             = "workbench.view.create"
+	PermissionWorkbenchViewDelete             = "workbench.view.delete"
+	PermissionWorkbenchViewRead               = "workbench.view.read"
+	PermissionWorkbenchViewUpdate             = "workbench.view.update"
 )
 
 var permissionKeys = [...]string{
+	"workbench.data_application.create",
+	"workbench.data_application.delete",
+	"workbench.data_application.execute",
+	"workbench.data_application.publish",
+	"workbench.data_application.read",
+	"workbench.data_application.update",
 	"workbench.view.create",
 	"workbench.view.delete",
 	"workbench.view.read",

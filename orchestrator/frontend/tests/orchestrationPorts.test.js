@@ -99,6 +99,42 @@ test('execution ports use logical resource fields and stable outputs', () => {
   assert.equal(arePortTypesCompatible(outputs[1], inputs[1]), false)
 })
 
+test('relation locator groups expose each alias as an independently bindable input', () => {
+  const inputs = executionInputPorts({
+    input_schema: {
+      type: 'object',
+      properties: {
+        input_locators: {
+          type: 'object',
+          properties: {
+            person: { type: 'string' },
+            participation: { type: 'string' }
+          }
+        },
+        target_locator: { type: 'string' }
+      }
+    },
+    input_defaults: {},
+    input_ui_schema: {
+      input_locators: {
+        control: 'group',
+        order: 0,
+        fields: {
+          person: { order: 0 },
+          participation: { order: 1 }
+        }
+      },
+      target_locator: { order: 1 }
+    }
+  })
+
+  assert.deepEqual(inputs.map(port => [port.name, port.type, port.bindingPath]), [
+    ['input_locators.person', 'string', ['input_locators', 'person']],
+    ['input_locators.participation', 'string', ['input_locators', 'participation']],
+    ['target_locator', 'string', ['target_locator']]
+  ])
+})
+
 test('parameter bindings preserve resource defaults and revert the whole logical field', () => {
   const input = executionInputPorts(contract)[0]
   const template = '{{produce.outputs.saved.resource.locator}}'

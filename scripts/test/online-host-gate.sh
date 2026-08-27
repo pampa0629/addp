@@ -113,8 +113,9 @@ case "$ONLINE_SUITE" in
   enterprise-catalog-publishing)
     START_TARGET=-all
     REQUIRED_SUITE_ENV=(
-      SYSTEM_URL GATEWAY_URL META_URL CATALOG_URL ASSET_URL PORTAL_URL
-      ADDP_ONLINE_TEST_USER_ACCESS_TOKEN ADDP_ONLINE_TEST_TENANT_ID
+      SYSTEM_URL GATEWAY_URL META_URL CATALOG_URL ASSET_URL PORTAL_URL CONSOLE_URL
+      ADDP_ONLINE_TEST_USER_ACCESS_TOKEN ADDP_ONLINE_TEST_USER_USERNAME
+      ADDP_ONLINE_TEST_USER_PASSWORD ADDP_ONLINE_TEST_TENANT_ID
       ADDP_ONLINE_TEST_ENGINE_ID ADDP_ONLINE_TEST_ENGINE_PORT
       ADDP_ONLINE_TEST_ENGINE_USER ADDP_ONLINE_TEST_ENGINE_PASSWORD
       ADDP_ONLINE_TEST_ENGINE_DATABASE ADDP_ONLINE_TEST_CATALOG_DOMAIN_ID
@@ -329,6 +330,7 @@ elif [ "$ONLINE_SUITE" = "enterprise-catalog-publishing" ]; then
   run_logged bash business/scripts/online-engine-fixture.sh stop
   run_logged bash business/scripts/online-engine-fixture.sh start
   run_logged bash scripts/dev/start.sh "$START_TARGET"
+  run_logged npm --prefix console/frontend exec -- playwright install chromium
 elif [ "$ONLINE_SUITE" = "workbench-service-consumption" ]; then
   workbench_mysql_cleanup_required=1
   run_logged bash business/scripts/online-workbench-mysql-fixture.sh stop

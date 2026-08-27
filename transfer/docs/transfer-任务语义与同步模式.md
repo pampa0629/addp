@@ -26,7 +26,7 @@ Transfer 负责：
 
 具体引擎的 catalog、native table 读写和 change stream 读取属于 `common/engine` Provider；encoded 格式读写属于 `common/format` Provider。Transfer 组合这些能力，不按具体源目标组合建立专用通道。
 
-bounded query source 是源引擎下推后的连续读取边界：任务保存 capability 已声明支持的只读查询语言和查询文本，Transfer 通过 `QueryReadSessionProvider` 分批消费结果。MongoDB MQL 可以在源端使用 `$project` 将对象子字段投影为扁平列，使用 `$unwind` 展开数组，并以 `$group` / `$unionWith` 完成确定性关系整形；最终输出必须是一条文档对应一行。Transfer 不递归摊平 BSON/JSON，也不解释数组的业务粒度。`$out`、`$merge` 和所有写查询禁止进入该路径。
+bounded query source 是源引擎下推后的连续读取边界：任务保存 capability 已声明支持的只读查询语言和查询文本，Transfer 通过 `QueryReadSessionProvider` 分批消费结果。MongoDB MQL 必须是单个 JSON command object，不接受裸 pipeline 数组；聚合查询使用 `{"aggregate":"<collection>","pipeline":[...]}`。pipeline 可以在源端使用 `$project` 将对象子字段投影为扁平列，使用 `$unwind` 展开数组，并以 `$group` / `$unionWith` 完成确定性关系整形；最终输出必须是一条文档对应一行。Transfer 不递归摊平 BSON/JSON，也不解释数组的业务粒度。`$out`、`$merge` 和所有写查询禁止进入该路径。
 
 当 bounded query source 需要向上游步骤创建的既有表写入数据时，任务定义启用通用动态目标模式，不保存物理 `target`；TaskProvider 将 `target_locator` 声明为必填运行时输入，由 Orchestrator 从任意显式依赖的稳定 ResourceLocator 输出绑定。worker 使用通用 Engine capability 校验目标已存在且字段映射的名称、顺序和类型一致，仅通过 table write session append 本 execution 结果，不执行删除、清空、建表或改表。Transfer 不得保存其他业务 owner 的 ID 或调用其 API 解析目标。
 

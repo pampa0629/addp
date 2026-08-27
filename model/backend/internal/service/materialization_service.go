@@ -700,7 +700,14 @@ func (s *MaterializationService) executePrepare(
 	if err != nil {
 		return nil, err
 	}
+	reclaimable, err := s.repo.ListReclaimableStagingBatches(ctx, *batch)
+	if err != nil {
+		return nil, err
+	}
 	err = pool.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := reclaimMaterializationStaging(tx, schemaName, reclaimable); err != nil {
+			return err
+		}
 		targetComment, targetExists, err := physicalTableComment(tx, schemaName, batch.TargetName)
 		if err != nil {
 			return err
@@ -743,6 +750,34 @@ func (s *MaterializationService) executePrepare(
 			}).ToURI(),
 		},
 	}, nil
+}
+
+func reclaimMaterializationStaging(
+	tx *gorm.DB,
+	schemaName string,
+	batches []models.MaterializationBatch,
+) error {
+	for index := range batches {
+		batch := batches[index]
+		if strings.TrimSpace(batch.StagingName) == "" {
+			return errors.New("reclaimable materialization batch has no staging table")
+		}
+		comment, exists, err := physicalTableComment(tx, schemaName, batch.StagingName)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			continue
+		}
+		expectedMarker := materializationMarker(batch.LogicalTableID, batch.SchemaFingerprint, batch.ID)
+		if comment != expectedMarker {
+			return errors.New("reclaimable materialization staging ownership marker is invalid")
+		}
+		if err := tx.Exec("DROP TABLE " + qualifiedIdentifier(schemaName, batch.StagingName)).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type materializationPhysicalColumn struct {

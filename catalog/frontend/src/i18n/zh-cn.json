@@ -15,6 +15,7 @@
       "myCatalog": "我的目录",
       "collections": "项目组目录集合",
       "governanceTasks": "责任治理队列",
+      "governanceCoverage": "治理覆盖率",
       "user": "用户",
       "logout": "退出登录"
     },
@@ -78,7 +79,8 @@
       "statusOpen": "待处理",
       "statusResolved": "已解决",
       "entryId": "目录条目 ID",
-      "entryIdPlaceholder": "CatalogEntry UUID",
+      "entryPlaceholder": "按目录名称搜索",
+      "entrySearchFailed": "搜索目录条目失败",
       "entry": "目录条目",
       "role": "责任角色",
       "subject": "失效主体",
@@ -89,6 +91,43 @@
       "reasonValue": {
         "subject_not_found": "主体不存在",
         "subject_not_referenceable": "主体当前不可引用"
+      }
+    },
+    "coverage": {
+      "title": "目录治理覆盖率",
+      "recentSubject": "企业资源治理完整度",
+      "description": "按资源盘点范围动态衡量业务定义、语义和责任等目录治理事实的完整度。",
+      "dynamicHint": "本页直接聚合 Catalog 当前权威事实，不保存第二份覆盖率投影；覆盖率不代表数据质量、底层访问授权或资产发布资格。",
+      "loadFailed": "加载目录治理覆盖率失败",
+      "totalEntries": "有效目录条目",
+      "dimensionTitle": "治理维度",
+      "dimension": "维度与口径",
+      "rate": "覆盖率",
+      "covered": "已覆盖",
+      "notCovered": "未覆盖",
+      "applicable": "适用",
+      "notApplicable": "不适用",
+      "dimensions": {
+        "business_definition": {
+          "name": "业务定义",
+          "description": "业务名称和业务说明均已填写"
+        },
+        "primary_domain": {
+          "name": "主业务域",
+          "description": "具有 Catalog 关联或最近观察到的 owner 主业务域声明"
+        },
+        "accountability": {
+          "name": "治理责任",
+          "description": "责任部门、业务责任人和数据管理员均有效"
+        },
+        "glossary": {
+          "name": "企业术语",
+          "description": "至少关联一个企业术语；该维度不作为 curated 的强制条件"
+        },
+        "component_element": {
+          "name": "组件数据元",
+          "description": "有组件的条目中，全部有效组件均已关联数据元"
+        }
       }
     },
     "myCatalog": {
@@ -126,7 +165,8 @@
       "name": "集合名称",
       "collectionDescription": "集合说明",
       "projectGroup": "项目组",
-      "createdBy": "创建人",
+      "projectGroupNameUnavailable": "项目组名称暂不可用",
+      "projectGroupsUnavailable": "System 当前不可达，项目组名称与创建选项暂不可用；已有集合仍可浏览。",
       "entries": "目录条目",
       "searchEntries": "搜索并选择当前可见的目录条目",
       "replaceHint": "保存时会以当前选择完整替换集合成员，不存在并行的逐条增删路线。",
@@ -210,6 +250,15 @@
       "observedAt": "最近观察时间",
       "openDetail": "在 Quality 中查看"
     },
+    "impact": {
+      "governanceTitle": "联邦影响分析 · 治理继任",
+      "professionalTitle": "联邦影响分析 · 专业关系",
+      "lineageTitle": "联邦影响分析 · 数据血缘",
+      "federatedHint": "关系由当前用户直接查询事实所有者；Catalog 只按稳定来源身份解析可见目录条目，不复制专业关系边。",
+      "catalogMappingUnavailable": "目录身份导航当前不可用，关系事实仍来自其所有者并可继续查看。",
+      "openCatalogEntry": "打开目录条目",
+      "lineageCatalogEntries": "血缘图中的其他目录条目"
+    },
     "lineage": {
       "title": "数据血缘",
       "refresh": "刷新血缘",
@@ -231,7 +280,7 @@
       "unavailable": "专业模块暂不可达，目录事实和业务编目信息不受影响",
       "idle": "暂无可查询的专业关系主体",
       "truncated": "关系数量超过当前展示上限，仅显示前 100 条",
-      "resourceLabel": "{type} #{id}",
+      "resourceUnavailable": "{type}（名称暂不可用）",
       "sourceComponent": "来源字段：{value}",
       "targetComponent": "目标字段：{value}",
       "coefficient": "权重：{value}",
@@ -280,18 +329,23 @@
       "responsibilityRole": "责任角色",
       "responsibilityStatus": "关系状态",
       "componentElements": "组件数据元关联",
-      "componentElementHint": "为有效组件填写 Standard 数据元 ID；留空表示该组件不关联数据元。",
-      "exactIdHint": "第一阶段使用事实所有者提供的稳定 ID，提交时执行同租户精确校验。",
+      "componentElementHint": "按名称为有效组件选择 Standard 数据元；留空表示该组件不关联数据元。",
+      "dynamicCandidateHint": "候选由事实所有者实时提供，按名称搜索并在提交时再次精确校验。",
       "ownerDomainHint": "主业务域归 {module} 所有，只能在 {module} 中修改；Catalog 仅维护辅助业务域。",
-      "ownerPrimaryDomain": "{module} 声明的主业务域：{id}",
-      "responsibilityHint": "Department 和 User 均使用 System 稳定 ID；User 必须是当前租户有效成员。",
+      "ownerPrimaryDomain": "{module} 已声明主业务域；如需修改请前往专业模块。",
+      "ownerPrimaryDomainMissing": "{module} 尚未声明主业务域；请先在专业模块完成定义。",
+      "responsibilityHint": "按名称选择 System 中的有效部门或当前租户成员。",
       "addDomain": "添加业务域",
       "addGlossary": "添加术语",
       "addResponsibility": "添加责任",
-      "domainId": "Standard 业务域 ID",
-      "glossaryId": "Standard 术语 ID",
-      "elementId": "Standard 数据元 ID",
-      "subjectId": "System 主体 ID",
+      "domainPlaceholder": "搜索业务域名称或编码",
+      "glossaryPlaceholder": "搜索业务术语名称",
+      "element": "Standard 数据元",
+      "elementPlaceholder": "搜索数据元名称或编码",
+      "departmentPlaceholder": "搜索部门名称或编码",
+      "userPlaceholder": "搜索用户姓名或用户名",
+      "candidateSearchFailed": "事实所有者的候选查询当前不可用",
+      "referenceUnavailable": "已保存引用（当前名称不可用）",
       "primary": "主业务域",
       "secondary": "辅助业务域",
       "remove": "移除",
@@ -301,7 +355,7 @@
       "saveFailed": "保存业务编目失败",
       "conflict": "该条目已经被其他操作更新。当前表单不会自动覆盖新版本。",
       "reloadLatest": "放弃表单并加载最新版本",
-      "invalidId": "所有引用 ID 必须是大于 0 且无前导零的十进制整数",
+      "invalidId": "请选择有效的业务语义或责任候选",
       "duplicateReference": "同一种语义引用不能重复",
       "multiplePrimaryDomains": "一个目录条目最多只能有一个主业务域",
       "curationIncomplete": "已编目及以上状态必须填写业务名称、业务说明，且来源必须声明有效主业务域，并配置一个责任部门、一个业务责任人和至少一个数据管理员",

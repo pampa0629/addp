@@ -574,7 +574,7 @@ Catalog 是自身目录事实和目录操作权限的 owner；底层资源内容
 - [x] 实现 DataItem 自动建档和幂等 reconciliation；
 - [x] 实现生命周期、来源详情、显式重绑、历史和基础目录搜索；
 - [x] 同步根 Makefile、模块自动发现、Gateway、Console、开发脚本和 GitHub Actions；
-- [ ] 运行新模块开发指南要求的最小充分 T0-T3 门禁，并确认 main push 后的 CI 能自动命中。
+- [x] 运行新模块开发指南要求的最小充分 T0-T3 门禁，并确认 main push 后的 CI 能自动命中；本地完整 `make test-module MODULE=catalog` 已通过，Catalog 的 Backend、Frontend、PostgreSQL、Swagger、授权、模块自动发现与 CI 注册均由标准入口覆盖。
 
 完成门槛：扫描入库的 DataItem 有且只有一个 CatalogEntry，重复同步不产生重复对象。
 
@@ -609,9 +609,11 @@ Catalog 是自身目录事实和目录操作权限的 owner；底层资源内容
 - [x] 接入经过筛选且具备稳定 owner 身份的 Develop 成果；
 - [x] 以动态引用接入 Quality 当前摘要，不复制评分、Issue 或 execution 历史；
 - [x] 以当前 User Token 和共享图组件接入 Meta DataItem 血缘视图，不复制血缘事实；
-- [ ] 等待 Model、Standard 等 owner 形成权限感知关系查询契约后接入其他专业关系；
-- [ ] 在明确人工企业关系用例和关系类型后评估 Catalog 自有业务关系；
-- [ ] 建立认证、治理覆盖率和影响分析；
+- [x] 接入 Model、Standard owner 的权限感知专业关系查询契约；Catalog 只做当前 User Token 下的联邦展示，不复制专业关系边；
+- [x] 在明确弃用迁移用例后建立 Catalog 唯一自有业务关系“推荐继任项”；不扩展为通用关系表或可配置关系类型；
+- [x] 建立 `curated → certified` 独立权限、状态约束和聚合审计主路径；
+- [x] 实现已固化口径的 Catalog 自有治理覆盖率动态聚合 API、Console 页面和门禁；
+- [x] 实现已固化契约的联邦影响分析与来源身份导航，不复制 owner 关系边；
 - [ ] 根据真实跨模块协作需求评估统一 Workspace。
 
 完成门槛：每类对象都有明确 owner、稳定引用、同步契约和权限边界。
@@ -910,12 +912,59 @@ Catalog 新模块实现必须同时覆盖：
 - Domain、Glossary、Element、Department 和 User 收敛到 Catalog `GET /reference-candidates` 单一前端入口，Standard / System 分别提供只允许 `addp-catalog` 的分页搜索路由；候选始终动态查询，不在 Catalog 保存全表副本或搜索投影；
 - 候选接口只返回当前可建立新关联的对象，名称/编码用于交互，字符串稳定 ID 只作为提交值；owner 不可达返回明确 `503`，不回退为手工 ID 输入；
 - 推荐继任项与治理任务条目筛选复用 CatalogEntry 名称搜索；既有关联显示使用已观察摘要，不把裸 ID 伪装为业务名称；
-- 本轮实现清单：补齐 Standard/System owner 候选 API 与公共 Client、Catalog 聚合候选 API、Swagger/路由门禁、编辑器五类选择器、治理任务条目选择器、双语文本与前后端测试。
-- `source_engine_id` 在 Catalog 列表协议中固定以十进制字符串输出，并有超过 JavaScript 安全整数范围的回归测试，避免前端选错引擎；Swagger 已重新生成，Catalog 16 个公开路由方法覆盖一致；
-- 已通过 Catalog Backend `go test ./...`、Catalog Frontend 10 个文件 35 项测试与生产构建、Manager Frontend 49 个文件 215 项测试与生产构建、Console Frontend 11 个文件 54 项测试与生产构建、Catalog PostgreSQL 门禁、migration 101 独立 PostgreSQL 前向门禁和在线套件确定性单测；
+- Standard `GET /references/candidates`、System `GET /runtime/catalog-references/candidates`、公共 Go Client 与 Catalog `GET /reference-candidates` 已完成；三层均使用当前 Tenant、分页搜索和最小显示摘要，不接受客户端 Tenant ID；
+- Catalog 编辑器已将 Domain、Glossary、Element、Department、User 全部改为名称候选选择；推荐继任项继续使用 CatalogEntry 名称搜索，治理任务条目筛选也已删除 UUID 输入；详情和任务列表在名称不可用时显示明确占位，不把稳定 ID 当作业务文案；
+- 候选 SQL 已登记进 Standard 与 System 一次性 PostgreSQL 门禁。Common Client、Standard、System、Catalog 全量 Go 定向测试，Catalog Frontend 10 个文件 35 项测试与生产构建，Standard PostgreSQL 门禁、System 候选专项 PostgreSQL 门禁、三模块 Swagger 生成与路由覆盖，以及全仓授权覆盖门禁均已通过；带规定测试 DSN 的 `make test-module MODULE=catalog` 与 `MODULE=standard` 也已完整通过 T0-T3；
+- 实现轮未重启服务；后续统一重启已完成五类选择器与治理任务名称筛选验收，详见下方运行态验收记录。Standard 或 System 单点不可达的 `503` 继续由定向测试覆盖；不得为验收恢复手工 ID 输入或本地候选副本。
+
+### 2026-08-27：Project Group 集合名称的动态解析契约
+
+- Project Group membership 与 Catalog Collection Scope 判断继续只使用 AuthContext 授权事实；Project Group 名称是 System 的可变组织事实，不加入 `addp.auth_context/v1`，避免名称随 Access Token 生命周期陈旧；
+- Catalog 不保存 Project Group 名称副本，也不把 Project Group 混入 Domain、Glossary、Element、Department、User 的编目候选；System 精确批量解析扩展 `project_group` 类型，仅供当前有效成员集合的显示组合；
+- Catalog `GET /me/project-groups` 只组合当前 User 已有 membership 与 `catalog.collection.read|update` Scope，动态返回名称、成员角色和读写能力；System 不可达只令该请求返回明确 `503`，不影响 Catalog Ready 或集合权威事实；
+- Collection 列表、创建选择器和详情必须消费该组合视图，不显示或回退为裸 Project Group ID。
+- System 精确解析已支持 `project_group`，migration 102 只向内置 `tenant.catalog_runtime` 增加 `iam.project_group.read`；Catalog 集合写路径同时要求同一 Project Group 上的 read 与 update，禁止跨 Scope 拼接 Permission；
+- Catalog `GET /me/project-groups`、Collection 列表/创建/详情名称显示和无裸 ID 回退均已实现；System 不可达时前端保留集合事实浏览并明确提示名称与创建选项不可用；
+- Common Client、System IAM/API/migration、Catalog Backend 全量 Go 测试、Catalog Frontend 10 个文件 35 项测试与生产构建、System 155 / Catalog 18 个公开路由覆盖、Catalog PostgreSQL 门禁、migration 102 独立前向 PostgreSQL 门禁及 System Catalog 引用 PostgreSQL 门禁均已通过；本轮未重启服务；
+- 实现时全仓 `make test-authorization` 曾被并行 Transfer 授权清单漂移阻断；并行改造完成后已重新执行并通过，当前 System 155、Catalog 18 等公开路由及授权声明一致，不再保留该阻断项。
+- `source_engine_id` 在 Catalog 列表协议中固定以十进制字符串输出，并有超过 JavaScript 安全整数范围的回归测试，避免前端选错引擎；Swagger 已重新生成，Catalog 18 个公开路由方法覆盖一致；
+- 已通过 Catalog Backend `go test ./...`、Catalog Frontend 10 个文件 36 项测试与生产构建、Manager Frontend 49 个文件 216 项测试与生产构建、Console Frontend 11 个文件 54 项测试与生产构建、Catalog PostgreSQL 门禁、migration 101 独立 PostgreSQL 前向门禁和在线套件确定性单测；
 - 根 `make test-module MODULE=catalog` 已完成平台 T0、Catalog Go、前端和 Swagger 门禁，最后仅因该次命令没有向子门禁传入 `CATALOG_POSTGRES_TEST_DSN` 而退出；同一标准 `make test-catalog-postgres` 已使用本地允许的 `addp_test` 单独通过，不是 Catalog 数据库测试失败；
 - System 全量 IAM PostgreSQL 门禁仍有并行改造产生的既有失败，包括 `tenant.data_viewer` 权限期望漂移、execution audit 计数和测试 Tenant 重复事实；本轮 migration 101 的静态测试与独立前向 PostgreSQL 门禁均通过，不以修改无关 IAM 断言旁路全量问题；
-- 运行态重启未由本轮接管：工作区已有用户侧 `keepalive restart -all` 前台保活进程持续持有生命周期锁，用户随后明确要求不再由 Codex 重启。后续会话不得终止或并发接管该进程，除非用户重新授权。
+- 实现轮未接管用户侧 `keepalive restart -all`；用户随后完成统一重启，运行态结果已在下一节回填。后续会话不需要为已验收项目重复重启。
+
+### 2026-08-27：统一重启后的目录交互运行态验收
+
+- 用户完成统一重启后，System、Catalog、Gateway 的 Ready 均返回 `200`；System 当前 `schema_migrations=103, dirty=false`，其中 migration 102 的 Catalog Project Group 读取授权已经实际生效；
+- Console `/catalog/entries` 默认省略 `view` 并展示治理目录，当前治理条目为 0；切换 `view=inventory` 后展示 998 条资源。业务域分面显示“名称 · 编码”，来源引擎分面与列表显示“名称 · 类型”，不再显示或要求输入引擎 ID；
+- Catalog 编辑器运行态验证了 Domain、Glossary、Element、User 的真实名称候选；Department 同样走 System 动态下拉且请求返回 `200`，当前 Tenant 没有可选部门，所以为空。所有候选仅把稳定 ID 作为选项值，没有手工 ID 回退；
+- 责任治理队列验收时发现候选请求遗漏 `view=inventory`，在默认治理目录为空时会错误地没有候选。已将治理任务目录候选固定为资源盘点查询，补充回归测试；浏览器复验返回 20 个名称候选，Catalog Frontend 10 个测试文件 36 项测试和生产构建通过；
+- 项目组目录集合的 `/me/project-groups` 运行态返回 `200`；当前登录用户没有有效 Project Group membership，页面正确显示无成员空状态且未回退为裸 ID。实际成员名称组合仍需在具有有效 membership 的验收身份下补证，不为验收临时修改组织数据；
+- Manager Data Explorer 使用带 `item_id` 的规范 Locator 精确定位 `public_test.gdb` 成功，并按 fingerprint 动态展示 Catalog 摘要。首次点击“打开企业目录”暴露出跨模块跳转误用同模块 Router 同步的问题：Manager iframe 被错误改写为 Catalog 本地路径，而 Console 拒绝 synchronized 跨模块请求；现已改为直接走 Console 导航桥，不再修改 Manager Router。Manager Frontend 49 个测试文件 216 项测试与生产构建通过；浏览器复验后顶层 URL、Catalog iframe 和条目内容均准确切换到 CatalogEntry `30b94349-9434-407d-8577-b3f1472cd7ea`；
+- 五类候选与项目组请求在 Gateway 日志中均为 `200`；跨模块跳转修复后的复验没有新增浏览器 warning/error（日志中保留了修复前的 Router warning 与同步拒绝错误作为根因证据）。Standard/System 单点不可达的 `503` 语义继续由定向测试覆盖；本轮不通过停止共享服务做破坏性运行态演练。
+- 使用规定的本地 `addp_test` DSN 重新执行完整 `make test-module MODULE=catalog`，平台 T0、Catalog Go/Frontend、Swagger 与 PostgreSQL T2 全部通过；`make test-authorization` 也已通过。首次以 PTY 执行时发现 Online Workbench MySQL 测试假 Docker 对所有 `exec` 无条件读取 stdin，导致 `mysql -e` 在开放终端上永久等待；已增加开放 stdin 回归测试，并仅在 SQL heredoc 场景读取输入，Online Runner 85 项测试及完整模块门禁复验通过；
+- 当前数据库没有任何 Project Group 或 Project Group membership，无法在不制造组织数据的前提下补验真实名称组合；`enterprise-catalog-publishing` 所需的 User Token、Tenant、Fixture Engine、Domain、Department 等 9 项环境变量也全部未配置，因此继续保留为专用 Runner 外部前置条件，而不是本地实现缺口。
+
+### 2026-08-27：治理覆盖率与联邦影响分析实现
+
+- `GET /api/v1/catalog/governance/coverage` 固定使用资源盘点权限，单条数据库聚合语句直接统计 active CatalogEntry 的治理状态和五个治理维度，不新增覆盖率表、缓存投影或后台同步；组件数据元只以具有 active CatalogComponent 的条目为分母，无组件的专业条目明确计为不适用；
+- 业务定义要求业务名称与说明同时存在，责任覆盖要求责任部门、业务责任人和数据管理员三项同时有效；主业务域允许 Catalog 自有 primary Domain 或 Model / Standard 最近观察摘要中的 owner `domain_id`，页面明确该口径不代表数据质量、底层授权或资产发布资格；
+- Console 新增 `/catalog/governance/coverage`，只向具有 `catalog.inventory.read` 的用户展示菜单与全局搜索结果；页面显示有效条目、治理状态分布、适用分母、未覆盖数和覆盖率，不把 998 个盘点数据项再次平铺成另一个列表；
+- 新增 `POST /api/v1/catalog/entries/resolve-sources`，最多按 200 个 `{source_module,source_type,source_identity}` 精确查询 Catalog 当前来源绑定。接口只复用当前 User 的目录可见性，具有盘点权限时可解析 `inventory` 条目，否则盘点条目自然不可见；跨 Tenant、不存在和不可见统一 `found=false`；
+- Catalog 详情把推荐继任、Model / Standard 专业关系和 Meta 血缘分别标注为联邦影响分析的治理、专业和血缘分区。专业节点使用 owner 正整数稳定身份、Meta 节点使用 owner 返回的 fingerprint 动态解析 CatalogEntry 导航；owner 图仍由当前 User Token 直连查询，Catalog Backend 不代理、不复制边，也没有新增通用关系表；
+- 定向审查后将治理覆盖率从多次计数收敛为同一条数据库聚合，避免并发更新造成分母和分子来自不同快照；专业关系缺少显示名时使用明确占位，不把资源 ID 回退为业务文案；
+- Catalog Backend 全量 Go 测试、Catalog PostgreSQL 迁移/推荐继任/治理覆盖率与来源解析门禁、Catalog Frontend、Console Frontend、Catalog 20 个公开路由 Swagger 覆盖及全仓授权门禁均已通过；完整 `make test-module MODULE=catalog` 使用规定的本地 `addp_test` DSN 通过；
+- 用户统一重启后，System、Catalog、Gateway Ready 均为 `200`。`GET /api/v1/catalog/governance/coverage` 返回 `200`，页面动态展示 998 个 active 条目：主业务域覆盖 19 个（1.9%），组件数据元适用 189 个、不适用 809 个，其余三个治理维度当前覆盖均为 0；页面没有产生第二份条目清单或覆盖率投影；
+- Model Entity“订单”当前关系动态返回“订单—客户”一对多关系，两个 owner 稳定 ID 均解析到可见 CatalogEntry，并成功跳转到“客户”；Meta DataItem `test` 通过 fingerprint 解析出血缘图中的三个其他目录条目，4 个节点、3 条关系保持由 Meta 当前 User Token 查询，点击成功跳转到 `public_test.parquet`。Gateway 中治理覆盖率和四次来源解析请求均为 `200`；
+- 运行态复验发现 Element Plus 表格切换时会调用占位行插槽，新页面直接拼接占位值曾产生 `dimensions.undefined`、`source.undefined` i18n warning。现已在渲染边界使用空值安全标签函数并新增回归测试；Catalog Frontend 11 个测试文件 40 项测试与生产构建通过，全新浏览器页重复覆盖率、血缘加载和跨条目跳转后 warning/error 均为 0。
+
+### 2026-08-27：专用 macOS 完整验证交付
+
+- 没有新增第二套 Online suite、workflow 或 Make 目标；继续使用既有 `make local-ci`、`make test-online ONLINE_SUITE=enterprise-catalog-publishing`、`online-host-gate.sh`、`online-preflight.py`、专用 PostgreSQL Engine Fixture 和 `online-t4-gates.yml`；
+- 现有 `enterprise-catalog-publishing` 已扩展为完整目录主链路：连续两次真实 Meta 扫描验证 fingerprint / CatalogEntry UUID 幂等，验证 `inventory` / `governance` 视图、五维治理覆盖率、Meta fingerprint 精确来源解析、编目、AssetComponent 发布、Portal 同身份消费及零临时资源残留；
+- 同一 suite 新增真实浏览器阶段：以同一专用 User 正常登录 Console，验证治理覆盖率页、CatalogEntry 详情、Domain / Department / Engine 三个名称选择器，并拒绝 `undefined` 文案、浏览器 warning/error 和失败业务响应；浏览器报告写入仓库外 `enterprise-catalog-publishing-browser.json`；
+- 专用 macOS 验证矩阵固定为 `ECV-00` 至 `ECV-08`，完整命令、环境边界、通过证据和 Artifact 清单已写入 `scripts/README.md`。T0-T3 使用独立 Local CI checkout 执行 `make local-ci LOCAL_CI_ARGS=--full`；T4 使用 `addp-online` Runner checkout 手工触发现有 Online workflow，二者不合并为不安全的 `test-all`；
+- 确定性脚本协议、Host Gate 生命周期和 Online CI 登记检查已纳入现有 `make test-online-runner` / `make test-platform`；另一台 macOS 只负责真实环境首跑和回传证据，不需要临时补脚本或修改仓库内 `.env`。
 
 ## 二十二、当前推进状态
 
@@ -942,19 +991,24 @@ Catalog 新模块实现必须同时覆盖：
 | Meta DataItem 血缘联邦视图 | 已通过运行态验收 | 当前 User Token 直连 Meta、共享图组件按需加载、不复制边；抽验详情成功展示 4 个节点、3 条关系 |
 | Model / Standard 专业关系联邦视图 | 已通过运行态验收 | Standard 关系空状态正常；Model Entity 抽验成功动态返回 2 条一对多专业关系，均由当前 User Token 直连 owner |
 | Catalog 推荐继任关系 | 已完成，待运行态验收 | 唯一 Catalog 自有跨条目关系；Catalog 定向门禁已通过，全量变更门禁被 System IAM 现有失败阻断；不建立空泛通用关系表，不与 owner 专业关系类型重叠 |
-| 治理目录 / 资源盘点视图 | 代码与定向门禁已完成，待新二进制运行态验收 | 默认治理目录只展示已编目条目；资源盘点在独立权限视图中展示全量 DataItem，不改变全量自动建档决策 |
-| Catalog 列表人类可读分面选择器 | 代码与定向门禁已完成，待新二进制运行态验收 | Domain、Department、Engine Instance 由 Catalog 计算可见引用集，Standard / System 动态解析名称；列表筛选不再保留裸 ID 输入和引擎 ID 列 |
+| Catalog 治理覆盖率 | 已通过运行态验收 | 998 个 active 条目按五个适用性口径动态聚合；主业务域 19/998，组件数据元分母 189，不保存覆盖率投影 |
+| 联邦影响分析与目录导航 | 已通过运行态验收 | Model 稳定 ID 和 Meta fingerprint 均已动态解析并完成可见 CatalogEntry 跳转；不代理、不复制 owner 关系边 |
+| 治理目录 / 资源盘点视图 | 已通过运行态验收 | 默认治理目录当前 0 条；显式资源盘点展示 998 条且仍使用同一批自动建档 CatalogEntry |
+| Catalog 列表人类可读分面选择器 | 已通过运行态验收 | Domain 与 Engine Instance 已展示真实名称；Department 动态解析请求成功但当前无候选，列表不再保留裸 ID 输入和引擎 ID 列 |
+| Catalog 编目与治理队列名称选择器 | 已通过运行态验收 | 五类 owner 动态选择器、真实名称候选及治理队列 20 个 CatalogEntry 名称候选已验证；治理队列遗漏 inventory 视图的问题已修复并加回归测试 |
+| Project Group 集合名称解析 | 接口与空状态已通过运行态验收 | `/me/project-groups` 返回 200 且无裸 ID 回退；当前身份没有有效 membership，实际成员名称组合待具备成员关系的验收身份补证 |
 
-阶段 5 的专业来源接入、动态当前事实、联邦关系视图、默认治理目录、权限资源盘点和列表人类可读分面均已完成代码与定向门禁。当前第一优先级是等待用户允许的新一轮全量重启后，对 migration 101、Catalog Ready、`governance|inventory` 切换、三个动态下拉、无裸引擎 ID 显示以及 Manager 精确定位进行运行态验收。第二优先级是把“ID 留在协议、不进入主要交互”继续落实到 Catalog 编辑器和治理队列：Domain、Glossary、Department/User、Element、推荐继任项及治理任务条目筛选仍需基于事实 owner 的权限感知候选接口改为名称选择；技术来源详情中的 fingerprint、Item ID 等可保留在明确的技术溯源区，但不得作为主要操作输入。专用 Runner 的 `enterprise-catalog-publishing` 首跑与来源 missing、停机追赶、显式重绑、System 恢复专项 T4 继续作为验收证据回填。统一 Workspace 继续保持暂缓，只有多个专业模块出现同一组可验证的成员、生命周期、环境和产物聚合需求时才重新评估。
+阶段 5 的专业来源接入、动态当前事实、基础联邦关系视图、默认治理目录、权限资源盘点、治理覆盖率、联邦来源身份导航、列表分面、编目/治理队列名称选择器和 Manager 精确定位已经完成运行态验收。Project Group 组合接口与无成员空状态已通过，真实成员名称只缺有 membership 的验收身份证据。其后优先级是专用 Runner 的 `enterprise-catalog-publishing` 首跑，以及来源 missing、停机追赶、显式重绑、System 恢复专项 T4；这些场景需要专用 User Token、Tenant、Fixture Engine、Domain、Department 或服务停机窗口，不从当前浏览器身份和共享数据猜测。技术来源详情中的 fingerprint、Item ID 等继续只保留在明确的技术溯源区。统一 Workspace 继续保持暂缓，只有多个专业模块出现同一组可验证的成员、生命周期、环境和产物聚合需求时才重新评估。
 
 ## 二十三、后续会话接力清单
 
 新会话应以本专题和 [企业数据目录实现规范](../spec/addp企业数据目录实现规范.md) 为事实基线，不重新讨论已确认的模块边界，也不要恢复 Meta / Standard 反向投影、Catalog owner 全量副本或默认平铺全部 DataItem 的旧方向。
 
-1. 先检查工作区与生命周期锁；用户本轮已明确“不用你重启”，不得停止或替换现有 keepalive。只有用户重新授权重启后，才执行 `bash scripts/dev/keepalive.sh restart -all`。
-2. 新二进制运行后，确认 System `schema_migrations` 为 `version=101, dirty=false`，Catalog Backend Ready 为 200，Catalog Service Token 在 Tenant 上调用 Engine Runtime Descriptor 不再返回 403。
-3. 使用 Console `/catalog/entries` 验收：默认 URL 省略 `view` 且只显示治理目录；有 `catalog.inventory.read` 时可切换资源盘点；三个分面只显示人类可读名称；owner 单点不可达只禁用对应分面；来源引擎列不显示数字 ID。
-4. 验证 Manager Data Explorer 对 discovered DataItem 的 Catalog 精确定位仍可用，并确认无盘点权限的用户不会通过该跳转获得额外目录可见性。
-5. 如需重跑完整 Catalog 模块门禁，显式使用 `CATALOG_POSTGRES_TEST_DSN='postgres://addp:addp_password@127.0.0.1:15432/addp_test?sslmode=disable' make test-module MODULE=catalog`；不得新建本地测试 database。
-6. 继续 Catalog 编辑器的人类可读候选接口前，先分别确认 Standard、System 与 Catalog 的候选所有权、权限和分页/搜索契约；文档先行，一次删除所有对应裸 ID 输入，不建立兼容双轨。
-7. System 全量 IAM PostgreSQL 门禁的既有失败应按各自 owner 根因独立修复；不得为了让 migration 101 显绿而放宽计数、跳过测试或修改无关权限期望。
+1. 先检查工作区和运行态，保留其他并行改造；本轮统一重启与主要目录交互验收已经完成，不要重复重启或重做已通过项。
+2. 治理覆盖率、Meta 血缘邻居和 Model 专业节点的来源身份导航已完成运行态验收；后续会话不要重复重启或重复制造样例，只有相关契约再次变更时才重跑这些路径。
+3. 若能提供具有有效 Project Group membership 的验收身份，只补验集合筛选、创建选择器和详情中的项目组名称；不为验收临时修改组织数据，也不把名称加入 AuthContext 或 Catalog 副本。
+4. 在专用 Runner 配置 User Token、Tenant、Fixture Engine、Domain、Department 后执行 `enterprise-catalog-publishing`，回填自动建档、完整编目、失效引用治理与清理证据。
+5. 在明确的停机窗口执行来源 missing、停机追赶、显式重绑、System 恢复和 owner `503` 专项 T4；不得在共享开发服务上擅自停止 System、Standard、Meta 或 Catalog。
+6. 推荐继任项的名称选择器已有定向门禁；当前 Tenant 只有 998 条 `discovered` 条目，没有可进入弃用流程的 `curated|certified` 样本。后续只在自然产生合适治理状态样本后补运行态证据，不为验收篡改 CatalogEntry。
+7. 如需重跑完整 Catalog 模块门禁，显式使用 `CATALOG_POSTGRES_TEST_DSN='postgres://addp:addp_password@127.0.0.1:15432/addp_test?sslmode=disable' make test-module MODULE=catalog`；不得新建本地测试 database。
+8. System 全量 IAM PostgreSQL 门禁与全仓授权门禁的既有失败应按各自 owner 根因独立修复；不得为了让 migration 101/102 显绿而放宽计数、跳过测试或修改无关权限期望。

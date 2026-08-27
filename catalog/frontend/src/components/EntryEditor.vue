@@ -77,7 +77,7 @@
           <el-option
             v-for="option in successorOptions"
             :key="option.id"
-            :label="`${option.display_name || option.id} · ${t(`catalog.status.governance.${option.governance_status}`)}`"
+            :label="successorLabel(option)"
             :value="option.id"
           />
         </el-select>
@@ -88,7 +88,7 @@
         <div class="section-title">
           <div>
             <strong>{{ t('catalog.edit.domains') }}</strong>
-            <p>{{ form.ownerManagedSemantics ? t('catalog.edit.ownerDomainHint', { module: ownerModuleName }) : t('catalog.edit.exactIdHint') }}</p>
+            <p>{{ form.ownerManagedSemantics ? t('catalog.edit.ownerDomainHint', { module: ownerModuleName }) : t('catalog.edit.dynamicCandidateHint') }}</p>
           </div>
           <el-button size="small" @click="addDomain">{{ t('catalog.edit.addDomain') }}</el-button>
         </div>
@@ -98,10 +98,19 @@
           :closable="false"
           show-icon
           class="owner-domain-alert"
-          :title="t('catalog.edit.ownerPrimaryDomain', { module: ownerModuleName, id: form.ownerPrimaryDomainId || t('catalog.common.none') })"
+          :title="form.ownerPrimaryDomainId ? t('catalog.edit.ownerPrimaryDomain', { module: ownerModuleName }) : t('catalog.edit.ownerPrimaryDomainMissing', { module: ownerModuleName })"
         />
         <div v-for="(domain, index) in form.domains" :key="`domain-${index}`" class="edit-row domain-row">
-          <el-input v-model="domain.id" :placeholder="t('catalog.edit.domainId')" />
+          <el-select
+            v-model="domain.id"
+            filterable remote reserve-keyword
+            :loading="candidateState.domain.loading"
+            :remote-method="search => searchCandidates('domain', search)"
+            :placeholder="t('catalog.edit.domainPlaceholder')"
+            @visible-change="visible => visible && searchCandidates('domain', '')"
+          >
+            <el-option v-for="option in candidateState.domain.options" :key="option.id" :label="candidateLabel(option)" :value="option.id" />
+          </el-select>
           <el-select v-model="domain.role" :disabled="form.ownerManagedSemantics">
             <el-option :label="t('catalog.edit.primary')" value="primary" />
             <el-option :label="t('catalog.edit.secondary')" value="secondary" />
@@ -115,12 +124,21 @@
         <div class="section-title">
           <div>
             <strong>{{ t('catalog.edit.glossaries') }}</strong>
-            <p>{{ t('catalog.edit.exactIdHint') }}</p>
+            <p>{{ t('catalog.edit.dynamicCandidateHint') }}</p>
           </div>
           <el-button size="small" @click="form.glossaryIDs.push('')">{{ t('catalog.edit.addGlossary') }}</el-button>
         </div>
         <div v-for="(_, index) in form.glossaryIDs" :key="`glossary-${index}`" class="edit-row id-row">
-          <el-input v-model="form.glossaryIDs[index]" :placeholder="t('catalog.edit.glossaryId')" />
+          <el-select
+            v-model="form.glossaryIDs[index]"
+            filterable remote reserve-keyword
+            :loading="candidateState.glossary.loading"
+            :remote-method="search => searchCandidates('glossary', search)"
+            :placeholder="t('catalog.edit.glossaryPlaceholder')"
+            @visible-change="visible => visible && searchCandidates('glossary', '')"
+          >
+            <el-option v-for="option in candidateState.glossary.options" :key="option.id" :label="candidateLabel(option)" :value="option.id" />
+          </el-select>
           <el-button type="danger" text @click="form.glossaryIDs.splice(index, 1)">{{ t('catalog.edit.remove') }}</el-button>
         </div>
         <el-empty v-if="form.glossaryIDs.length === 0" :image-size="60" :description="t('catalog.edit.noGlossaries')" />
@@ -135,11 +153,23 @@
           <el-button size="small" @click="addResponsibility">{{ t('catalog.edit.addResponsibility') }}</el-button>
         </div>
         <div v-for="(item, index) in form.responsibilities" :key="`responsibility-${index}`" class="edit-row responsibility-row">
-          <el-select v-model="item.role">
+          <el-select v-model="item.role" @change="changeResponsibilityRole(item)">
             <el-option v-for="role in responsibilityRoles" :key="role" :label="t(`catalog.edit.role.${role}`)" :value="role" />
           </el-select>
           <el-tag>{{ t(`catalog.edit.subject.${responsibilitySubjectType(item.role)}`) }}</el-tag>
-          <el-input v-model="item.subjectId" :placeholder="t('catalog.edit.subjectId')" />
+          <el-select
+            v-model="item.subjectId"
+            filterable remote reserve-keyword
+            :loading="candidateState[responsibilitySubjectType(item.role)].loading"
+            :remote-method="search => searchCandidates(responsibilitySubjectType(item.role), search)"
+            :placeholder="responsibilitySubjectType(item.role) === 'department' ? t('catalog.edit.departmentPlaceholder') : t('catalog.edit.userPlaceholder')"
+            @visible-change="visible => visible && searchCandidates(responsibilitySubjectType(item.role), '')"
+          >
+            <el-option
+              v-for="option in candidateState[responsibilitySubjectType(item.role)].options"
+              :key="option.id" :label="candidateLabel(option)" :value="option.id"
+            />
+          </el-select>
           <el-button type="danger" text @click="form.responsibilities.splice(index, 1)">{{ t('catalog.edit.remove') }}</el-button>
         </div>
         <el-empty v-if="form.responsibilities.length === 0" :image-size="60" :description="t('catalog.edit.noResponsibilities')" />
@@ -157,9 +187,19 @@
           <el-table-column prop="componentStatus" :label="t('catalog.entry.componentStatus')" width="140">
             <template #default="{ row }">{{ catalogStatusLabel(t, 'catalog.status.source', row.componentStatus) }}</template>
           </el-table-column>
-          <el-table-column :label="t('catalog.edit.elementId')" min-width="220">
+          <el-table-column :label="t('catalog.edit.element')" min-width="260">
             <template #default="{ row }">
-              <el-input v-model="row.elementId" clearable :disabled="row.componentStatus !== 'active'" />
+              <el-select
+                v-model="row.elementId"
+                clearable filterable remote reserve-keyword
+                :disabled="row.componentStatus !== 'active'"
+                :loading="candidateState.element.loading"
+                :remote-method="search => searchCandidates('element', search)"
+                :placeholder="t('catalog.edit.elementPlaceholder')"
+                @visible-change="visible => visible && searchCandidates('element', '')"
+              >
+                <el-option v-for="option in candidateState.element.options" :key="option.id" :label="candidateLabel(option)" :value="option.id" />
+              </el-select>
             </template>
           </el-table-column>
         </el-table>
@@ -177,7 +217,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { listEntries } from '../api/catalog'
+import { listEntries, listReferenceCandidates } from '../api/catalog'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
 import {
   buildEntryEditForm,
@@ -202,13 +242,18 @@ const form = reactive(buildEntryEditForm(props.entry))
 const successorOptions = ref(initialSuccessorOptions(props.entry))
 const successorLoading = ref(false)
 let successorRequestVersion = 0
+const candidateTypes = ['domain', 'glossary', 'element', 'department', 'user']
+const candidateState = reactive(Object.fromEntries(candidateTypes.map(type => [type, { options: [], loading: false, version: 0 }])))
 const responsibilityRoles = ['accountable_department', 'business_owner', 'data_steward', 'technical_owner']
 const ownerModuleName = computed(() => ({ model: 'Model', standard: 'Standard', service: 'Service', develop: 'Develop' }[form.ownerModule] || ''))
 
 watch(() => props.entry, entry => {
   Object.assign(form, buildEntryEditForm(entry))
   successorOptions.value = initialSuccessorOptions(entry)
+  resetCandidateOptions(entry)
 }, { deep: true })
+
+resetCandidateOptions(props.entry)
 
 const governanceStatusOptions = computed(() => governanceOptions(
   props.entry.governance_status,
@@ -227,7 +272,87 @@ function normalizeVisibility() {
 }
 
 function initialSuccessorOptions(entry) {
-  return entry?.recommended_successor ? [entry.recommended_successor] : []
+  if (entry?.recommended_successor) return [entry.recommended_successor]
+  if (entry?.recommended_successor_entry_id) {
+    return [{ id: entry.recommended_successor_entry_id, display_name: t('catalog.edit.referenceUnavailable') }]
+  }
+  return []
+}
+
+function successorLabel(option) {
+  const name = option.display_name || t('catalog.entries.unnamed')
+  return option.governance_status ? `${name} · ${t(`catalog.status.governance.${option.governance_status}`)}` : name
+}
+
+function resetCandidateOptions(entry) {
+  for (const type of candidateTypes) candidateState[type].options = []
+  for (const link of entry?.semantic_links || []) {
+    if (link.semantic_type === 'domain' || link.semantic_type === 'glossary') {
+      mergeCandidate(link.semantic_type, historicalCandidate(link.semantic_type, link.semantic_id, link.observed_snapshot))
+    }
+  }
+  for (const item of entry?.responsibilities || []) {
+    if (item.status === 'active' && (item.subject_type === 'department' || item.subject_type === 'user')) {
+      mergeCandidate(item.subject_type, historicalCandidate(item.subject_type, item.subject_id, item.observed_snapshot))
+    }
+  }
+  for (const item of entry?.component_elements || []) {
+    mergeCandidate('element', historicalCandidate('element', item.element_id, item.observed_snapshot))
+  }
+}
+
+function historicalCandidate(referenceType, id, snapshot = {}) {
+  return {
+    reference_type: referenceType,
+    id: String(id),
+    name: snapshot?.name || t('catalog.edit.referenceUnavailable'),
+    code: snapshot?.code || '',
+    status: snapshot?.status || ''
+  }
+}
+
+function mergeCandidate(type, candidate) {
+  const options = new Map(candidateState[type].options.map(item => [item.id, item]))
+  options.set(String(candidate.id), { ...candidate, id: String(candidate.id) })
+  candidateState[type].options = [...options.values()]
+}
+
+async function searchCandidates(type, search = '') {
+  if (!candidateState[type]) return
+  const state = candidateState[type]
+  const version = ++state.version
+  state.loading = true
+  try {
+    const response = await listReferenceCandidates({
+      reference_type: type,
+      ...(String(search || '').trim() ? { search: String(search).trim() } : {}),
+      page: 1,
+      page_size: 20
+    })
+    if (version !== state.version) return
+    const selected = new Set(selectedCandidateIDs(type))
+    const preserved = state.options.filter(item => selected.has(item.id))
+    const options = new Map(preserved.map(item => [item.id, item]))
+    for (const item of response.data || []) options.set(String(item.id), { ...item, id: String(item.id) })
+    state.options = [...options.values()]
+  } catch (error) {
+    if (version === state.version) ElMessage.error(error?.response?.data?.error || t('catalog.edit.candidateSearchFailed'))
+  } finally {
+    if (version === state.version) state.loading = false
+  }
+}
+
+function selectedCandidateIDs(type) {
+  if (type === 'domain') return form.domains.map(item => String(item.id || '')).filter(Boolean)
+  if (type === 'glossary') return form.glossaryIDs.map(item => String(item || '')).filter(Boolean)
+  if (type === 'element') return form.componentElements.map(item => String(item.elementId || '')).filter(Boolean)
+  return form.responsibilities
+    .filter(item => responsibilitySubjectType(item.role) === type)
+    .map(item => String(item.subjectId || '')).filter(Boolean)
+}
+
+function candidateLabel(option) {
+  return option.code ? `${option.name} · ${option.code}` : option.name
 }
 
 async function searchSuccessors(search = '') {
@@ -269,6 +394,10 @@ function addDomain() {
 
 function addResponsibility() {
   form.responsibilities.push({ role: 'data_steward', subjectId: '' })
+}
+
+function changeResponsibilityRole(item) {
+  item.subjectId = ''
 }
 
 function submit() {

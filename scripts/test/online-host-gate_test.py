@@ -292,6 +292,7 @@ class OnlineHostGateTest(unittest.TestCase):
                 "fixture:stop",
                 "fixture:start",
                 "start:-all",
+                "npm:--prefix console/frontend exec -- playwright install chromium",
                 "make:test-online:ONLINE_SUITE=enterprise-catalog-publishing",
                 "fixture:stop",
                 "stop",

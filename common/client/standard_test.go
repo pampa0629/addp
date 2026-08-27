@@ -265,3 +265,23 @@ func TestStandardClientListsElementCandidates(t *testing.T) {
 		t.Fatalf("element candidates = %#v, total=%d", elements, total)
 	}
 }
+
+func TestStandardClientListsReferenceCandidates(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/standard/references/candidates" ||
+			r.URL.Query().Get("object_type") != "domain" || r.URL.Query().Get("search") != "sales" ||
+			r.URL.Query().Get("page") != "2" || r.URL.Query().Get("page_size") != "20" {
+			t.Fatalf("unexpected Standard request: %s %s", r.Method, r.URL.String())
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"object_type":"domain","id":7,"name":"Sales","code":"sales","status":"active"}],"total":21,"page":2,"page_size":20,"total_pages":2}`))
+	}))
+	defer server.Close()
+	client := NewStandardClient(server.URL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "tenant-token", nil
+	}), server.Client()).WithTenantID(7)
+	result, err := client.ListReferenceCandidates(context.Background(), "domain", " sales ", 2, 20)
+	if err != nil || result.Total != 21 || len(result.Data) != 1 || result.Data[0].Code != "sales" {
+		t.Fatalf("result = %#v, err=%v", result, err)
+	}
+}

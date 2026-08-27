@@ -14,8 +14,42 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 101 {
-		t.Fatalf("LatestVersion = %d, want 101", catalog.LatestVersion)
+	if catalog.LatestVersion != 104 {
+		t.Fatalf("LatestVersion = %d, want 104", catalog.LatestVersion)
+	}
+}
+
+func TestWorkbenchDataApplicationMigrationPublishesPermissions(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000104_iam_workbench_data_application.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 104: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'workbench.data_application.create'", "'workbench.data_application.delete'",
+		"'workbench.data_application.execute'", "'workbench.data_application.publish'",
+		"'workbench.data_application.read'", "'workbench.data_application.update'",
+		"'tenant.administrator'", "'tenant.data_viewer'", "authorization_version = principal.authorization_version + 1",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 104 missing %q", fragment)
+		}
+	}
+}
+
+func TestTransferTaskProviderRuntimeMigrationPublishesNarrowPermissions(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000103_iam_transfer_task_provider.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 103: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'transfer.task_provider.execute'", "'transfer.task_provider.read'",
+		"'tenant.orchestrator_runtime'", "authorization_version = principal.authorization_version + 1",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 103 missing %q", fragment)
+		}
 	}
 }
 
@@ -267,6 +301,19 @@ func TestCatalogEngineDescriptorReadMigrationGrantsCatalogRuntime(t *testing.T) 
 	for _, fragment := range []string{"'system.engine_descriptor.read'", "'tenant.catalog_runtime'", "ON CONFLICT (role_id, permission_id) DO NOTHING"} {
 		if !strings.Contains(sql, fragment) {
 			t.Fatalf("migration 101 missing %q", fragment)
+		}
+	}
+}
+
+func TestCatalogProjectGroupReadMigrationGrantsCatalogRuntime(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000102_iam_catalog_project_group_read.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 102: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{"'iam.project_group.read'", "'tenant.catalog_runtime'", "ON CONFLICT (role_id, permission_id) DO NOTHING"} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 102 missing %q", fragment)
 		}
 	}
 }

@@ -93,16 +93,19 @@ func SetupRouter(
 	protected.GET("/system-engines", permission(transferauthorization.PermissionTransferTaskRead), systemEngineHandler.List)
 	protected.GET("/capabilities", permission(transferauthorization.PermissionTransferTaskRead), capabilityHandler.Get)
 	protected.POST("/field-definition-recommendations", permission(transferauthorization.PermissionTransferTaskCreate), fieldDefinitionRecommendationHandler.Create)
-	// 任务管理路由
-	tasks := protected.Group("/tasks")
+	// TaskProvider 只允许 Orchestrator Runtime 使用专用最小权限访问。
+	taskProvider := protected.Group("/task-provider")
+	taskProvider.Use(commonAuth.MustNewServiceClientGuard("addp-orchestrator"))
 	{
-		tasks.GET("", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.ListTasks)                      // TaskProvider 列表和任务列表
-		tasks.GET("/:task_type/:id", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.ProviderGetTask) // TaskProvider 获取任务详情
-		tasks.POST("/:task_type/:id/execute", permission(transferauthorization.PermissionTransferTaskExecute), taskHandler.ProviderExecuteTask)
+		taskProvider.GET("/tasks", permission(transferauthorization.PermissionTransferTaskProviderRead), taskHandler.ProviderListTasks)
+		taskProvider.GET("/tasks/:task_type/:id", permission(transferauthorization.PermissionTransferTaskProviderRead), taskHandler.ProviderGetTask)
+		taskProvider.POST("/tasks/:task_type/:id/execute", permission(transferauthorization.PermissionTransferTaskProviderExecute), taskHandler.ProviderExecuteTask)
+		taskProvider.GET("/executions/:execution_id", permission(transferauthorization.PermissionTransferTaskProviderRead), executionHandler.ProviderGetExecution)
 	}
 
 	taskDefinitions := protected.Group("/task-definitions")
 	{
+		taskDefinitions.GET("", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.ListTasks)                                        // 获取任务列表
 		taskDefinitions.POST("", permission(transferauthorization.PermissionTransferTaskCreate), taskHandler.CreateTask)                                    // 创建任务
 		taskDefinitions.GET("/statistics", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.GetTaskStatistics)                     // 获取任务统计
 		taskDefinitions.GET("/:id", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.GetTask)                                      // 获取任务详情

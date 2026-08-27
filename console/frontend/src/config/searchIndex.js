@@ -49,6 +49,7 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.service.catalog',       module: 'service', route: '/service/catalog',        keywords: ['服务目录', '服务列表', 'catalog'] },
   // 数据服务消费
   { labelKey: 'console.menus.workbench.views', module: 'workbench', route: '/workbench/views', keywords: ['工作台视图', '数据服务消费', '动态查询', '可视化', 'workbench', 'service consumer', 'view'] },
+  { labelKey: 'console.menus.workbench.dataApplications', module: 'workbench', route: '/workbench/applications', keywords: ['数据应用', '应用发布', '组合展示', 'data application', 'application revision'] },
   // 任务编排
   { labelKey: 'console.menus.orchestrator.orchestrations', module: 'orchestrator', route: '/orchestrator/orchestrations', keywords: ['编排任务', '工作流编排', 'orchestration', 'dag'] },
   { labelKey: 'console.menus.orchestrator.executions',     module: 'orchestrator', route: '/orchestrator/executions',    keywords: ['编排执行', '执行记录', 'orchestrator execution'] },
@@ -59,6 +60,7 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.monitor.notifications', module: 'monitor', route: '/monitor/notifications', keywords: ['Webhook', '邮件', '通知', '投递', 'email', 'notification', 'delivery'] },
   // 企业数据目录
   { labelKey: 'console.menus.catalog.entries', module: 'catalog', route: '/catalog/entries', keywords: ['企业数据目录', '企业资源', '业务元数据', 'catalog', 'enterprise data catalog', 'inventory'] },
+  { labelKey: 'console.menus.catalog.coverage', module: 'catalog', route: '/catalog/governance/coverage', permissions: ['catalog.inventory.read'], keywords: ['治理覆盖率', '治理完整度', 'catalog governance coverage', 'completeness'] },
   // 资产管理
   { labelKey: 'console.menus.asset.assets',          module: 'asset', route: '/asset/assets',          keywords: ['资产', '数据资产', 'asset'] },
   { labelKey: 'console.menus.asset.categories',      module: 'asset', route: '/asset/categories',      keywords: ['资产目录', '分类', 'category'] },

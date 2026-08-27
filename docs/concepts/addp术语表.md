@@ -51,7 +51,8 @@
 | Service Consumer Descriptor | 服务消费描述 | Service owner 面向消费者发布的、版本化且不包含管理事实的服务输入、输出、分页、格式和执行 operation 契约。 | 稳定协议从 `addp.service_consumer/v1` 开始；不暴露 SQL、Engine 凭据、表名或 Workbench renderer。 |
 | ServiceReference | 服务引用 | 消费者对一个已发布 Service 的强类型稳定引用，由 `service_type + service_id` 组成。 | Workbench View 保存该引用并通过 Service Consumer Catalog 解析，不能保存或猜测执行 URL。 |
 | Workbench View | 工作台视图 | Workbench 中由当前 User 私有持有、绑定一个 ServiceReference、结构化查询模板、参数配置和一种 renderer 配置的可变聚合根。 | 使用正整数 `version` 乐观并发；不保存查询结果、cursor、Token、SQL 或 Service 管理 DTO。 |
-| Data Application | 数据应用 | Workbench 后续阶段将一个或多个视图配置快照组合成页面、布局和交互，并通过不可变发布 Revision 运行的独立聚合根。 | 不等同于 System Application；第一阶段不创建占位实体、路由或兼容字段。 |
+| Data Application | 数据应用 | Workbench 将一个或多个 Workbench View 的已校验配置复制为自身 Component 快照，并拥有草稿、页面布局、参数绑定、发布、下线和稳定运行入口的独立聚合根。 | 不等同于 System Application；运行时不回读来源 View，不保存查询结果、凭据或 Service URL。 |
+| Application Revision | 应用发布修订 | Data Application 每次发布产生的不可变运行快照，包含当次名称、说明、Component、页面布局和参数绑定。 | 使用独立 `revision_number` 表达业务发布版次，不复用聚合根并发字段 `version`；CatalogEntry 标识 Data Application，不标识单个 Revision。 |
 | content | 内容 | 可被按流读取、写入或 range 读取的底层内容对象。 | 例如文件、对象存储 object、容器 entry；由 `contentio.Ref` 定位。 |
 | CAD data item | CAD 数据项 | 保留图层、块、布局、标注等 CAD 原生组织语义的设计图纸数据项。 | 当前内置二维 `dwg`、`dxf`，统一使用 `data_type=cad`；entity-as-row 不改变源 item 类型，CAD→GIS 输出是新的 table item。 |
 | data item | 数据项 | ADDP 管理、扫描、预览、检索、授权和传输的核心数据对象。 | 概念层统一称为数据项。 |

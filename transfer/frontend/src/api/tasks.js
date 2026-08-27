@@ -4,7 +4,7 @@ import client from './client'
 export const taskAPI = {
   // 获取任务列表
   list(params) {
-    return client.get('/transfer/tasks', { params })
+    return client.get('/transfer/task-definitions', { params })
   },
 
   // 获取任务详情

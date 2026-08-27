@@ -20,6 +20,7 @@ test('uses full Axios responses with the same-origin root for canonical API and 
   const client = readSource('../src/api/client.js')
   const views = readSource('../src/api/views.js')
   const services = readSource('../src/api/services.js')
+  const applications = readSource('../src/api/dataApplications.js')
 
   assert.match(client, /baseURL:\s*['"]['"]/, 'Workbench API client must not prefix canonical paths')
   assert.match(
@@ -38,6 +39,8 @@ test('uses full Axios responses with the same-origin root for canonical API and 
     'Service Consumer APIs must keep the canonical route'
   )
   assert.match(services, /client\.post\(queryOperation\.path/)
+  assert.match(applications, /['"]\/api\/v1\/workbench\/data_applications['"]/)
+  assert.match(applications, /\/runtime`/)
 })
 
 test('localizes the standalone module name instead of using one language for every locale', () => {
@@ -48,6 +51,8 @@ test('localizes the standalone module name instead of using one language for eve
   assert.equal(zhCn.workbench.login.title, '登录工作台')
   assert.equal(en.workbench.title, 'Workbench')
   assert.equal(en.workbench.login.title, 'Sign in to Workbench')
+  assert.equal(zhCn.workbench.dataApplications, '数据应用')
+  assert.equal(en.workbench.dataApplications, 'Data Applications')
   assert.equal(zhCn.workbench.chartTypes.bar, '柱状图')
   assert.equal(en.workbench.chartTypes.bar, 'Bar')
 })

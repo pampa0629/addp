@@ -188,6 +188,28 @@ definitions:
         example: ""
         type: string
     type: object
+  github_com_addp_catalog_internal_service.CatalogSourceReference:
+    properties:
+      source_identity:
+        type: string
+      source_module:
+        enum:
+        - meta
+        - model
+        - standard
+        - service
+        - develop
+        type: string
+      source_type:
+        enum:
+        - data_item
+        - entity
+        - logical_table
+        - metric
+        - query_service
+        - dev_task
+        type: string
+    type: object
   github_com_addp_catalog_internal_service.CollectionDetail:
     properties:
       created_at:
@@ -227,6 +249,31 @@ definitions:
         type: integer
       total_pages:
         type: integer
+    type: object
+  github_com_addp_catalog_internal_service.CollectionProjectGroupList:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_catalog_internal_service.CollectionProjectGroupOption'
+        type: array
+    type: object
+  github_com_addp_catalog_internal_service.CollectionProjectGroupOption:
+    properties:
+      can_read:
+        type: boolean
+      can_update:
+        type: boolean
+      code:
+        type: string
+      name:
+        type: string
+      project_group_id:
+        example: ""
+        type: string
+      relation_role:
+        type: string
+      status:
+        type: string
     type: object
   github_com_addp_catalog_internal_service.EntryDetail:
     properties:
@@ -395,6 +442,56 @@ definitions:
       visibility:
         type: string
     type: object
+  github_com_addp_catalog_internal_service.GovernanceCoverage:
+    properties:
+      dimensions:
+        items:
+          $ref: '#/definitions/github_com_addp_catalog_internal_service.GovernanceCoverageDimension'
+        type: array
+      governance_statuses:
+        items:
+          $ref: '#/definitions/github_com_addp_catalog_internal_service.GovernanceStatusCoverage'
+        type: array
+      total_entries:
+        type: integer
+      view:
+        enum:
+        - inventory
+        type: string
+    type: object
+  github_com_addp_catalog_internal_service.GovernanceCoverageDimension:
+    properties:
+      applicable:
+        type: integer
+      coverage_rate:
+        type: number
+      covered:
+        type: integer
+      key:
+        enum:
+        - business_definition
+        - primary_domain
+        - accountability
+        - glossary
+        - component_element
+        type: string
+      not_applicable:
+        type: integer
+      not_covered:
+        type: integer
+    type: object
+  github_com_addp_catalog_internal_service.GovernanceStatusCoverage:
+    properties:
+      count:
+        type: integer
+      status:
+        enum:
+        - discovered
+        - curated
+        - certified
+        - deprecated
+        type: string
+    type: object
   github_com_addp_catalog_internal_service.GovernanceTaskListResult:
     properties:
       data:
@@ -466,6 +563,73 @@ definitions:
         type: number
       status:
         type: string
+    type: object
+  github_com_addp_catalog_internal_service.ReferenceCandidate:
+    properties:
+      code:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      reference_type:
+        enum:
+        - domain
+        - glossary
+        - element
+        - department
+        - user
+        type: string
+      status:
+        type: string
+    type: object
+  github_com_addp_catalog_internal_service.ReferenceCandidateList:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_catalog_internal_service.ReferenceCandidate'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  github_com_addp_catalog_internal_service.SourceEntryResolution:
+    properties:
+      entry:
+        $ref: '#/definitions/github_com_addp_catalog_internal_service.EntrySummary'
+      found:
+        type: boolean
+      source_identity:
+        type: string
+      source_module:
+        enum:
+        - meta
+        - model
+        - standard
+        - service
+        - develop
+        type: string
+      source_type:
+        enum:
+        - data_item
+        - entity
+        - logical_table
+        - metric
+        - query_service
+        - dev_task
+        type: string
+    type: object
+  github_com_addp_catalog_internal_service.SourceEntryResolutionResult:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/github_com_addp_catalog_internal_service.SourceEntryResolution'
+        type: array
     type: object
   github_com_addp_catalog_internal_service.SourceResolution:
     properties:
@@ -540,6 +704,13 @@ definitions:
       results:
         items:
           $ref: '#/definitions/github_com_addp_catalog_internal_service.CatalogReferenceResolution'
+        type: array
+    type: object
+  internal_api.resolveSourceEntriesRequest:
+    properties:
+      references:
+        items:
+          $ref: '#/definitions/github_com_addp_catalog_internal_service.CatalogSourceReference'
         type: array
     type: object
   internal_api.updateCollectionRequest:
@@ -1284,6 +1455,91 @@ paths:
       - catalog.inventory.read
       x-addp-required-permissions:
       - catalog.entry.read
+  /entries/resolve-sources:
+    post:
+      consumes:
+      - application/json
+      description: 只查询 Catalog 当前来源绑定与目录可见性，不代理或复制 owner 专业关系 | Query only current
+        Catalog source bindings and catalog visibility without proxying or copying
+        owner professional relations
+      parameters:
+      - description: 1 到 200 个精确来源引用 | 1 to 200 exact source references
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.resolveSourceEntriesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 按请求顺序返回目录解析结果 | Catalog resolutions in request order
+          schema:
+            $ref: '#/definitions/github_com_addp_catalog_internal_service.SourceEntryResolutionResult'
+        "400":
+          description: 来源引用无效 | Invalid source reference
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 权限不足 | Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 解析专业来源对应的目录条目 | Resolve professional sources to catalog entries
+      tags:
+      - Catalog
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - catalog.entry.read
+  /governance/coverage:
+    get:
+      description: 直接聚合 Catalog 当前权威事实并按适用对象计算分母，不读取持久化覆盖率投影 | Aggregate current authoritative
+        Catalog facts with applicability-aware denominators and no persisted coverage
+        projection
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 资源盘点治理覆盖率 | Inventory governance coverage
+          schema:
+            $ref: '#/definitions/github_com_addp_catalog_internal_service.GovernanceCoverage'
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 缺少资源盘点权限 | Inventory permission required
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询目录治理覆盖率 | Get catalog governance coverage
+      tags:
+      - Catalog Governance
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - catalog.entry.read
+      - catalog.inventory.read
   /governance/tasks:
     get:
       description: 返回由 System 责任引用失效对账产生的任务；责任修复仍通过 CatalogEntry 完整聚合更新完成 | Return
@@ -1343,6 +1599,7 @@ paths:
       - Catalog Governance
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - catalog.entry.read
       - catalog.entry.update
   /me/entries:
     get:
@@ -1489,6 +1746,109 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - catalog.entry.read
+  /me/project-groups:
+    get:
+      description: 只组合当前 AuthContext 中有效 Project Group membership 与 Catalog Collection
+        Scope，并由 System 动态解析名称；不枚举租户全部项目组 | Combine only effective Project Group memberships
+        from the current AuthContext with Catalog Collection scopes, and resolve names
+        dynamically from System; does not enumerate every project group in the tenant
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 当前可访问项目组 | Currently accessible project groups
+          schema:
+            $ref: '#/definitions/github_com_addp_catalog_internal_service.CollectionProjectGroupList'
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 当前主体不是 User 或权限不足 | User principal or permission required
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: System 当前不可达 | System currently unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询我的目录集合项目组 | List my catalog collection project groups
+      tags:
+      - Catalog Personal
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - catalog.entry.read
+      - catalog.collection.read
+  /reference-candidates:
+    get:
+      description: Catalog 使用运行身份动态查询 Standard 或 System 当前可引用对象；不复制 owner 完整列表，owner
+        不可达只影响本次请求 | Catalog dynamically queries currently referenceable Standard
+        or System objects using its runtime identity; owner lists are not copied,
+        and owner unavailability affects only this request
+      parameters:
+      - description: 引用类型 | Reference type
+        enum:
+        - domain
+        - glossary
+        - element
+        - department
+        - user
+        in: query
+        name: reference_type
+        required: true
+        type: string
+      - description: 名称或编码，最多 100 字符 | Name or code, maximum 100 characters
+        in: query
+        name: search
+        type: string
+      - description: 页码，默认 1 | Page number, default 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认 20，最大 50 | Page size, default 20 and maximum 50
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 引用候选分页结果 | Paginated reference candidates
+          schema:
+            $ref: '#/definitions/github_com_addp_catalog_internal_service.ReferenceCandidateList'
+        "400":
+          description: 请求参数无效 | Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 权限不足 | Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Standard 或 System 候选查询不可达 | Standard or System candidate query
+            unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询企业目录引用候选 | List enterprise catalog reference candidates
+      tags:
+      - Catalog
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - catalog.entry.update
   /runtime/references/resolve:
     post:
       consumes:

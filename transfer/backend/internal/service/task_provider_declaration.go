@@ -44,10 +44,10 @@ func TransferTaskProviderDeclaration() (*commonModels.TaskProviderDeclaration, e
 		Description: "数据同步任务",
 
 		// API 端点配置
-		TaskListEndpoint:    "/api/v1/transfer/tasks",                          // 标准 TaskProvider 列表；task_type 查询只返回 bounded
-		TaskDetailEndpoint:  "/api/v1/transfer/tasks/{task_type}/{id}",         // 传输任务详情
-		TaskExecuteEndpoint: "/api/v1/transfer/tasks/{task_type}/{id}/execute", // 启动传输任务
-		TaskStatusEndpoint:  "/api/v1/transfer/executions/{execution_id}",      // 传输执行状态
+		TaskListEndpoint:    "/api/v1/transfer/task-provider/tasks",
+		TaskDetailEndpoint:  "/api/v1/transfer/task-provider/tasks/{task_type}/{id}",
+		TaskExecuteEndpoint: "/api/v1/transfer/task-provider/tasks/{task_type}/{id}/execute",
+		TaskStatusEndpoint:  "/api/v1/transfer/task-provider/executions/{execution_id}",
 
 		// 能力描述（JSON 字符串，含前端集成 URL）
 		Capabilities: &capabilitiesStr,

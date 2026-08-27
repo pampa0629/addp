@@ -32,6 +32,16 @@ export function buildGovernanceTaskQuery(state = {}) {
   return query
 }
 
+export function buildGovernanceEntryCandidateQuery(search = '') {
+  const normalizedSearch = String(search || '').trim()
+  return {
+    view: 'inventory',
+    ...(normalizedSearch ? { search: normalizedSearch } : {}),
+    page: 1,
+    page_size: 20
+  }
+}
+
 export function isCanonicalGovernanceTaskQuery(current = {}, canonical = {}) {
   const normalize = value => Object.fromEntries(Object.entries(value).map(([key, item]) => [key, String(firstValue(item))]).sort())
   return JSON.stringify(normalize(current)) === JSON.stringify(normalize(canonical))

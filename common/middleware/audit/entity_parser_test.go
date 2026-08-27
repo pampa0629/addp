@@ -85,7 +85,7 @@ func TestParseEntityFromPathVersionedModuleRoutes(t *testing.T) {
 		{
 			name:       "transfer task",
 			method:     "GET",
-			path:       "/api/v1/transfer/tasks/sync/789",
+			path:       "/api/v1/transfer/task-provider/tasks/sync/789",
 			wantType:   "transfer_task",
 			wantEntity: "789",
 		},
