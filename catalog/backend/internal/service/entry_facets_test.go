@@ -95,7 +95,7 @@ func TestEntryFacetsResolveOnlyReferencesUsedByVisibleView(t *testing.T) {
 
 	service := NewEntryService(db, &fakeStandardReferenceResolver{}, &fakeSystemReferenceResolver{}).
 		WithEngineReferenceResolver(&fakeEngineReferenceResolver{})
-	result, err := service.ListFacets(context.Background(), 7, EntryAccess{Inventory: true}, EntryViewGovernance)
+	result, err := service.ListFacets(context.Background(), 7, EntryAccess{Inventory: true}, EntryFacetFilter{View: EntryViewGovernance})
 	if err != nil {
 		t.Fatalf("list facets: %v", err)
 	}
@@ -107,6 +107,9 @@ func TestEntryFacetsResolveOnlyReferencesUsedByVisibleView(t *testing.T) {
 	}
 	if len(result.SourceEngines.Options) != 1 || result.SourceEngines.Options[0].ID != "14" || result.SourceEngines.Options[0].Name != "Production PostgreSQL" || result.SourceEngines.Options[0].EngineType != "postgresql" {
 		t.Fatalf("engine facet = %#v", result.SourceEngines)
+	}
+	if len(result.EntryTypes) != 1 || result.EntryTypes[0].EntryType != models.EntryTypeDataItem || result.EntryTypes[0].Count != 1 {
+		t.Fatalf("entry type facets = %#v", result.EntryTypes)
 	}
 }
 
@@ -126,12 +129,74 @@ func TestEntryFacetsKeepOtherFacetsWhenEngineOwnerIsUnavailable(t *testing.T) {
 	}
 	service := NewEntryService(db, &fakeStandardReferenceResolver{}, &fakeSystemReferenceResolver{}).
 		WithEngineReferenceResolver(&fakeEngineReferenceResolver{err: errors.New("System unavailable")})
-	result, err := service.ListFacets(context.Background(), 7, EntryAccess{Inventory: true}, EntryViewGovernance)
+	result, err := service.ListFacets(context.Background(), 7, EntryAccess{Inventory: true}, EntryFacetFilter{View: EntryViewGovernance})
 	if err != nil {
 		t.Fatalf("list partial facets: %v", err)
 	}
 	if result.SourceEngines.Status != FacetStatusUnavailable || len(result.SourceEngines.Options) != 0 ||
 		result.PrimaryDomains.Status != FacetStatusCurrent || result.AccountableDepartments.Status != FacetStatusCurrent {
 		t.Fatalf("facets = %#v", result)
+	}
+}
+
+func TestEntryFacetsProvideContextualDomainDepartmentAndTypeNavigation(t *testing.T) {
+	db := openCatalogServiceTestDB(t)
+	first, _ := createEditableCatalogEntry(t, db, 7)
+	second, _ := createEditableCatalogEntry(t, db, 7)
+	third, _ := createEditableCatalogEntry(t, db, 7)
+	for _, item := range []struct {
+		entry      models.Entry
+		domainID   int64
+		department int64
+		entryType  string
+	}{
+		{entry: first, domainID: 10, department: 30, entryType: models.EntryTypeDataItem},
+		{entry: second, domainID: 20, department: 40, entryType: models.EntryTypeLogicalModel},
+		{entry: third, domainID: 10, department: 40, entryType: models.EntryTypeMetric},
+	} {
+		if err := db.Model(&models.Entry{}).Where("id = ?", item.entry.ID).Updates(map[string]any{
+			"governance_status": models.GovernanceStatusCurated,
+			"visibility":        models.VisibilityTenant,
+			"entry_type":        item.entryType,
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+		now := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
+		if err := db.Create(&models.SemanticAssociation{
+			ID: uuid.New(), TenantID: 7, CatalogEntryID: item.entry.ID,
+			SemanticType: models.SemanticTypeDomain, SemanticID: item.domainID,
+			RelationRole: models.SemanticRolePrimary, ObservedVersion: 1,
+			ObservedSnapshot: commonModels.JSONMap{"name": "Domain"}, VerifiedAt: now,
+			CreatedAt: now, UpdatedAt: now,
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&models.Responsibility{
+			ID: uuid.New(), TenantID: 7, CatalogEntryID: item.entry.ID,
+			Role:        models.ResponsibilityRoleAccountableDepartment,
+			SubjectType: models.ResponsibilitySubjectDepartment, SubjectID: item.department,
+			Status:           models.ResponsibilityStatusActive,
+			ObservedSnapshot: commonModels.JSONMap{"name": "Department"}, VerifiedAt: now,
+			CreatedAt: now, UpdatedAt: now,
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	service := NewEntryService(db, &fakeStandardReferenceResolver{}, &fakeSystemReferenceResolver{})
+	result, err := service.ListFacets(context.Background(), 7, EntryAccess{Inventory: true}, EntryFacetFilter{
+		View: EntryViewGovernance, PrimaryDomainID: 10, DepartmentID: 40,
+	})
+	if err != nil {
+		t.Fatalf("list contextual facets: %v", err)
+	}
+	if len(result.PrimaryDomains.Options) != 2 {
+		t.Fatalf("primary Domain facets = %#v", result.PrimaryDomains)
+	}
+	if len(result.AccountableDepartments.Options) != 2 || result.AccountableDepartments.Options[0].Count+result.AccountableDepartments.Options[1].Count != 2 {
+		t.Fatalf("contextual Department facets = %#v", result.AccountableDepartments)
+	}
+	if len(result.EntryTypes) != 1 || result.EntryTypes[0].EntryType != models.EntryTypeMetric || result.EntryTypes[0].Count != 1 {
+		t.Fatalf("contextual entry type facets = %#v", result.EntryTypes)
 	}
 }

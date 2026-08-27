@@ -846,7 +846,7 @@ async function openQualityDetail() {
 }
 
 function entryTypeLabel(entryType) {
-  const key = { data_item: 'dataItem', business_entity: 'businessEntity', logical_model: 'logicalModel', metric: 'metric', data_service: 'dataService', development_artifact: 'developmentArtifact' }[entryType] || 'dataItem'
+  const key = { data_item: 'dataItem', business_entity: 'businessEntity', logical_model: 'logicalModel', metric: 'metric', data_service: 'dataService', development_artifact: 'developmentArtifact', data_application: 'dataApplication' }[entryType] || 'dataItem'
   return t(`catalog.entryType.${key}`)
 }
 

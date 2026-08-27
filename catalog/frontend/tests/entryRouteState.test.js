@@ -24,6 +24,8 @@ describe('Catalog entry list route state', () => {
       primary_domain_id: '',
       accountable_department_id: '9007199254740993',
       source_engine_id: '',
+      coverage_dimension: '',
+      coverage_state: '',
       page: 1,
       page_size: 200
     })
@@ -46,6 +48,25 @@ describe('Catalog entry list route state', () => {
     expect(parseEntryListRoute({ view: 'unknown' }).view).toBe('governance')
   })
 
+  it('preserves only a canonical inventory governance gap and removes text search', () => {
+    expect(parseEntryListRoute({
+      view: 'inventory', search: 'orders', coverage_dimension: 'accountability', coverage_state: 'missing'
+    })).toMatchObject({
+      view: 'inventory', search: '', coverage_dimension: 'accountability', coverage_state: 'missing'
+    })
+    expect(buildEntryListQuery({
+      view: 'inventory', coverage_dimension: 'accountability', coverage_state: 'missing', page: 1, page_size: 20
+    })).toEqual({
+      view: 'inventory', coverage_dimension: 'accountability', coverage_state: 'missing'
+    })
+    expect(parseEntryListRoute({
+      view: 'governance', coverage_dimension: 'accountability', coverage_state: 'missing'
+    })).toMatchObject({ coverage_dimension: '', coverage_state: '' })
+    expect(parseEntryListRoute({
+      view: 'inventory', coverage_dimension: 'accountability'
+    })).toMatchObject({ coverage_dimension: '', coverage_state: '' })
+  })
+
   it('accepts Metric as a first-class entry type', () => {
     expect(parseEntryListRoute({ entry_type: 'metric' }).entry_type).toBe('metric')
   })
@@ -53,6 +74,7 @@ describe('Catalog entry list route state', () => {
   it('accepts service and development artifact entry types', () => {
     expect(parseEntryListRoute({ entry_type: 'data_service' }).entry_type).toBe('data_service')
     expect(parseEntryListRoute({ entry_type: 'development_artifact' }).entry_type).toBe('development_artifact')
+    expect(parseEntryListRoute({ entry_type: 'data_application' }).entry_type).toBe('data_application')
   })
 
   it('compares canonical queries independently of key order', () => {

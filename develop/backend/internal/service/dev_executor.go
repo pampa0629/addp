@@ -520,6 +520,7 @@ func (e *DevExecutor) executeAsync(
 	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 10, "开始执行")
 
 	var result commonModels.JSONMap
+	var stableOutputs commonModels.JSONMap
 	var errorMessage string
 	var errorCode string
 	var rowsAffected *int64
@@ -528,7 +529,7 @@ func (e *DevExecutor) executeAsync(
 	log.Printf("🟢 [DevExecutor] 开始分发到引擎: execution_id=%s type=%s", executionID, devTask.DevType)
 	switch devTask.DevType {
 	case "workflow":
-		result, errorMessage = e.executeWorkflow(ctx, devTask, executionID, tenantID, workflowAuthorization)
+		result, stableOutputs, errorMessage = e.executeWorkflow(ctx, devTask, executionID, tenantID, workflowAuthorization)
 	case "query":
 		result, errorMessage, rowsAffected, errorCode = e.executeQuery(ctx, devTask, executionID, tenantID, sqlAuthorization)
 	case "script":
@@ -573,9 +574,12 @@ func (e *DevExecutor) executeAsync(
 			metadata["result_size_bytes"] = int64(len(resultBytes))
 		}
 	}
+	if len(stableOutputs) > 0 {
+		metadata["outputs"] = stableOutputs
+	}
 	lineageFactsWritten := false
 	if status == commonExecution.ExecutionStatusSuccess {
-		if facts := developLineageFacts(devTask, result); facts != nil {
+		if facts := developLineageFacts(devTask, stableOutputs); facts != nil {
 			metadata["lineage_facts"] = facts
 			lineageFactsWritten = true
 		}
@@ -647,24 +651,24 @@ func (e *DevExecutor) executeWorkflow(
 	executionID string,
 	tenantID int,
 	authorization *IssuedWorkflowExecutionAuthorization,
-) (commonModels.JSONMap, string) {
+) (commonModels.JSONMap, commonModels.JSONMap, string) {
 	log.Printf("🔵 [DevExecutor] executeWorkflow 开始: execution_id=%s", executionID)
 
 	// 验证执行配置
 	if devTask.ExecutionConfig == nil || len(devTask.ExecutionConfig) == 0 {
-		return nil, "工作流缺少执行配置，请配置工作流引擎"
+		return nil, nil, "工作流缺少执行配置，请配置工作流引擎"
 	}
 
 	// 解析工作流定义
 	workflowDef, ok := devTask.Content["workflow_definition"].(map[string]interface{})
 	if !ok {
-		return nil, "无效的工作流定义"
+		return nil, nil, "无效的工作流定义"
 	}
 	if err := ValidateWorkflowDefinition(workflowDef); err != nil {
-		return nil, err.Error()
+		return nil, nil, err.Error()
 	}
 	if authorization == nil {
-		return nil, "异步工作流执行缺少 Execution Authorization"
+		return nil, nil, "异步工作流执行缺少 Execution Authorization"
 	}
 
 	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 30, "执行工作流")
@@ -688,14 +692,14 @@ func (e *DevExecutor) executeWorkflow(
 	// 调用工作流引擎
 	parsedExecutionID, err := uuid.Parse(executionID)
 	if err != nil {
-		return nil, "工作流执行 ID 无效"
+		return nil, nil, "工作流执行 ID 无效"
 	}
 	resp, err := e.workflowEngine.ExecuteWorkflow(
 		execCtx, uint(tenantID), parsedExecutionID, workflowDef, inputData, configStr, authorization,
 	)
 	if err != nil {
 		log.Printf("❌ [DevExecutor] 工作流引擎调用失败: execution_id=%s err=%v", executionID, err)
-		return nil, fmt.Sprintf("工作流执行失败: %v", err)
+		return nil, nil, fmt.Sprintf("工作流执行失败: %v", err)
 	}
 
 	log.Printf("🔵 [DevExecutor] 工作流引擎返回成功: execution_id=%s", executionID)
@@ -721,14 +725,15 @@ func (e *DevExecutor) executeWorkflow(
 	if resp.RuntimeStatus != nil {
 		result["runtime_status"] = resp.RuntimeStatus
 	}
+	outputs := commonModels.JSONMap{}
 	if len(resp.ProducedTargets) > 0 {
 		result["produced_targets"] = resp.ProducedTargets
-		result["outputs"] = workflowExecutionOutputs(resp.ProducedTargets)
+		outputs = workflowExecutionOutputs(resp.ProducedTargets)
 		result["meta_scan_runs"] = e.createWorkflowProducedTargetScanRuns(ctx, uint(tenantID), resp.ProducedTargets)
 	}
 
 	log.Printf("🔵 [DevExecutor] executeWorkflow 结束: execution_id=%s", executionID)
-	return result, ""
+	return result, outputs, ""
 }
 
 const workflowExecutionResultPreviewLimitBytes = 64 * 1024
@@ -763,7 +768,7 @@ func workflowExecutionOutputs(targets []WorkflowProducedTarget) commonModels.JSO
 	return outputs
 }
 
-func developLineageFacts(devTask *models.DevTask, result commonModels.JSONMap) *commonExecution.LineageFacts {
+func developLineageFacts(devTask *models.DevTask, outputs commonModels.JSONMap) *commonExecution.LineageFacts {
 	if devTask == nil {
 		return nil
 	}
@@ -772,16 +777,16 @@ func developLineageFacts(devTask *models.DevTask, result commonModels.JSONMap) *
 		inputSource = devTask.Content["workflow_definition"]
 	}
 	inputs := collectLineageRefs(inputSource, "input")
-	outputs := collectLineageRefs(result["outputs"], "output")
+	outputRefs := collectLineageRefs(outputs, "output")
 	if targetLocator := devTask.GetTargetLocator(); strings.TrimSpace(targetLocator) != "" {
-		outputs = append(outputs, commonExecution.LineageResourceRef{Port: "output", Locator: targetLocator})
+		outputRefs = append(outputRefs, commonExecution.LineageResourceRef{Port: "output", Locator: targetLocator})
 	}
-	if len(outputs) == 0 || len(inputs) == 0 {
+	if len(outputRefs) == 0 || len(inputs) == 0 {
 		return nil
 	}
 	return &commonExecution.LineageFacts{
 		SchemaVersion: commonExecution.LineageFactsSchemaVersion,
-		Inputs:        inputs, Outputs: outputs,
+		Inputs:        inputs, Outputs: outputRefs,
 		Operations: []commonExecution.LineageOperation{{Kind: "derive", Operator: "develop", InputPorts: []string{"input"}, OutputPorts: []string{"output"}}},
 	}
 }
@@ -1280,14 +1285,14 @@ func (e *DevExecutor) executeScript(ctx context.Context, devTask *models.DevTask
 
 // GetExecution 获取执行详情
 func (e *DevExecutor) GetExecution(executionID string, tenantID uint) (*models.ExecutionWithDevTask, error) {
-	execution, err := e.taskExecutionRepo.GetByExecutionID(context.Background(), executionID, int(tenantID))
+	execution, err := e.GetTaskProviderExecution(executionID, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("执行记录不存在")
+		return nil, err
 	}
 
 	result := &models.ExecutionWithDevTask{
 		TaskExecution: execution,
-		Outputs:       executionOutputs(execution.Metadata),
+		Outputs:       taskprovider.ExecutionOutputs(execution.Metadata),
 	}
 
 	// 加载关联的开发任务
@@ -1303,10 +1308,13 @@ func (e *DevExecutor) GetExecution(executionID string, tenantID uint) (*models.E
 	return result, nil
 }
 
-func executionOutputs(metadata commonModels.JSONMap) commonModels.JSONMap {
-	result, _ := metadata["result"].(map[string]interface{})
-	outputs, _ := result["outputs"].(map[string]interface{})
-	return commonModels.JSONMap(outputs)
+// GetTaskProviderExecution 返回 Develop 的统一执行记录，供 TaskProvider 状态接口使用。
+func (e *DevExecutor) GetTaskProviderExecution(executionID string, tenantID uint) (*commonExecution.TaskExecution, error) {
+	execution, err := e.taskExecutionRepo.GetByExecutionID(context.Background(), executionID, int(tenantID))
+	if err != nil || execution.Module != commonExecution.ModuleDevelop {
+		return nil, fmt.Errorf("执行记录不存在")
+	}
+	return execution, nil
 }
 
 func (e *DevExecutor) GetDevTaskType(taskID, tenantID uint) (string, error) {

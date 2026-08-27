@@ -47,6 +47,20 @@
       },
       "search": "名称",
       "searchPlaceholder": "搜索业务名称或来源名称",
+      "coverageGapActive": "正在处置“{dimension}”未覆盖条目；名称搜索在此视图中不可用，其他结构化筛选仍可继续使用。",
+      "coverageGapEmpty": "当前条件下没有“{dimension}”未覆盖条目",
+      "exitCoverageGap": "退出缺口视图",
+      "navigation": {
+        "title": "企业目录导航",
+        "description": "按业务域、责任部门和资源类型逐步定位同一批企业目录条目",
+        "primaryDomain": "1. 业务域",
+        "accountableDepartment": "2. 责任部门",
+        "entryType": "3. 资源类型",
+        "allDomains": "全部业务域",
+        "allDepartments": "全部责任部门",
+        "allEntryTypes": "全部资源类型",
+        "optionCount": "{count} 项"
+      },
       "sourceStatus": "来源状态",
       "governanceStatus": "治理状态",
       "visibility": "目录可见性",
@@ -107,6 +121,7 @@
       "notCovered": "未覆盖",
       "applicable": "适用",
       "notApplicable": "不适用",
+      "openMissing": "查看{dimension}未覆盖条目，共 {count} 条",
       "dimensions": {
         "business_definition": {
           "name": "业务定义",
@@ -408,7 +423,8 @@
       "logicalModel": "逻辑模型",
       "metric": "指标",
       "dataService": "数据服务",
-      "developmentArtifact": "开发成果"
+      "developmentArtifact": "开发成果",
+      "dataApplication": "数据应用"
     },
     "status": {
       "source": {

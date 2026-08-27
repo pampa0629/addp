@@ -480,6 +480,28 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "business_definition",
+                            "primary_domain",
+                            "accountability",
+                            "glossary",
+                            "component_element"
+                        ],
+                        "type": "string",
+                        "description": "治理缺口维度；必须与 view=inventory、coverage_state=missing 同时使用 | Governance gap dimension; requires view=inventory and coverage_state=missing",
+                        "name": "coverage_dimension",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "missing"
+                        ],
+                        "type": "string",
+                        "description": "治理覆盖状态；第一阶段仅支持 missing | Governance coverage state; only missing is supported in the first release",
+                        "name": "coverage_state",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "description": "页码，默认 1 | Page number, default 1",
                         "name": "page",
@@ -561,6 +583,33 @@ const docTemplate = `{
                         "type": "string",
                         "description": "目录视图，默认 governance | Catalog view, governance by default",
                         "name": "view",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "已选主业务域稳定 ID；约束责任部门、资源类型和来源引擎统计 | Selected primary Domain stable ID; constrains Department, entry type, and source Engine counts",
+                        "name": "primary_domain_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "已选责任部门稳定 ID；约束资源类型和来源引擎统计 | Selected accountable Department stable ID; constrains entry type and source Engine counts",
+                        "name": "accountable_department_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "data_item",
+                            "business_entity",
+                            "logical_model",
+                            "metric",
+                            "data_service",
+                            "development_artifact",
+                            "data_application"
+                        ],
+                        "type": "string",
+                        "description": "已选资源类型；约束来源引擎统计 | Selected entry type; constrains source Engine counts",
+                        "name": "entry_type",
                         "in": "query"
                     }
                 ],
@@ -1864,7 +1913,8 @@ const docTemplate = `{
                         "model",
                         "standard",
                         "service",
-                        "develop"
+                        "develop",
+                        "workbench"
                     ]
                 },
                 "source_type": {
@@ -1875,7 +1925,8 @@ const docTemplate = `{
                         "logical_table",
                         "metric",
                         "query_service",
-                        "dev_task"
+                        "dev_task",
+                        "data_application"
                     ]
                 }
             }
@@ -2090,6 +2141,12 @@ const docTemplate = `{
                 "accountable_departments": {
                     "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntryReferenceFacet"
                 },
+                "entry_types": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntryTypeFacet"
+                    }
+                },
                 "primary_domains": {
                     "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntryReferenceFacet"
                 },
@@ -2228,6 +2285,26 @@ const docTemplate = `{
                 },
                 "visibility": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.EntryTypeFacet": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "entry_type": {
+                    "type": "string",
+                    "enum": [
+                        "data_item",
+                        "business_entity",
+                        "logical_model",
+                        "metric",
+                        "data_service",
+                        "development_artifact",
+                        "data_application"
+                    ]
                 }
             }
         },
@@ -2482,7 +2559,8 @@ const docTemplate = `{
                         "model",
                         "standard",
                         "service",
-                        "develop"
+                        "develop",
+                        "workbench"
                     ]
                 },
                 "source_type": {
@@ -2493,7 +2571,8 @@ const docTemplate = `{
                         "logical_table",
                         "metric",
                         "query_service",
-                        "dev_task"
+                        "dev_task",
+                        "data_application"
                     ]
                 }
             }

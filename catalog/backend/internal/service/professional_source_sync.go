@@ -87,6 +87,33 @@ func NewTenantDevelopChangeSource(client *commonClient.DevelopClient) Profession
 	return &TenantDevelopChangeSource{client: client}
 }
 
+type TenantWorkbenchChangeSource struct{ client *commonClient.WorkbenchClient }
+
+func NewTenantWorkbenchChangeSource(client *commonClient.WorkbenchClient) ProfessionalChangeSource {
+	return &TenantWorkbenchChangeSource{client: client}
+}
+
+func (*TenantWorkbenchChangeSource) SourceModule() string { return models.SourceModuleWorkbench }
+func (*TenantWorkbenchChangeSource) SourceName() string   { return "Workbench" }
+func (*TenantWorkbenchChangeSource) SchemaVersion() string {
+	return commonClient.WorkbenchCatalogResourceChangesSchemaVersion
+}
+
+func (s *TenantWorkbenchChangeSource) ListCatalogResourceChanges(ctx context.Context, tenantID uint, cursor string, limit int) (*ProfessionalChangeBatch, error) {
+	if s == nil || s.client == nil {
+		return nil, errors.New("Workbench change source is unavailable")
+	}
+	batch, err := s.client.WithTenantID(tenantID).ListCatalogResourceChanges(ctx, cursor, limit)
+	if err != nil {
+		return nil, err
+	}
+	changes := make([]ProfessionalResourceChange, 0, len(batch.Changes))
+	for _, item := range batch.Changes {
+		changes = append(changes, ProfessionalResourceChange{SourceType: item.SourceType, SourceIdentity: item.SourceIdentity, Operation: item.Operation, SourceVersion: item.SourceVersion, ObservedAt: item.ObservedAt, Snapshot: item.Snapshot})
+	}
+	return &ProfessionalChangeBatch{SchemaVersion: batch.SchemaVersion, Changes: changes, NextCursor: batch.NextCursor, HasMore: batch.HasMore}, nil
+}
+
 func (*TenantDevelopChangeSource) SourceModule() string { return models.SourceModuleDevelop }
 func (*TenantDevelopChangeSource) SourceName() string   { return "Develop" }
 func (*TenantDevelopChangeSource) SchemaVersion() string {
@@ -261,9 +288,8 @@ func lockSourceCheckpoint(tx *gorm.DB, tenantID int64, sourceModule, feedName st
 
 func applyProfessionalResourceChange(tx *gorm.DB, tenantID int64, sourceModule string, change ProfessionalResourceChange) error {
 	identity := strings.TrimSpace(change.SourceIdentity)
-	identityID, identityErr := strconv.ParseInt(identity, 10, 64)
 	entryType := professionalEntryType(sourceModule, change.SourceType)
-	if identityErr != nil || identityID <= 0 || strconv.FormatInt(identityID, 10) != identity || entryType == "" ||
+	if !validProfessionalSourceIdentity(sourceModule, identity) || entryType == "" ||
 		len(change.SourceVersion) != 20 || (change.Operation != "upsert" && change.Operation != "missing") || change.ObservedAt.IsZero() || len(change.Snapshot) == 0 {
 		return fmt.Errorf("%w: malformed %s catalog resource change", ErrInvalidSourceChange, sourceModule)
 	}
@@ -317,9 +343,20 @@ func professionalEntryType(sourceModule, sourceType string) string {
 		return models.EntryTypeDataService
 	case sourceModule == models.SourceModuleDevelop && sourceType == models.SourceTypeDevTask:
 		return models.EntryTypeDevelopmentArtifact
+	case sourceModule == models.SourceModuleWorkbench && sourceType == models.SourceTypeDataApplication:
+		return models.EntryTypeDataApplication
 	default:
 		return ""
 	}
+}
+
+func validProfessionalSourceIdentity(sourceModule, identity string) bool {
+	if sourceModule == models.SourceModuleWorkbench {
+		id, err := uuid.Parse(identity)
+		return err == nil && id != uuid.Nil && id.String() == identity
+	}
+	id, err := strconv.ParseInt(identity, 10, 64)
+	return err == nil && id > 0 && strconv.FormatInt(id, 10) == identity
 }
 
 func createEntryFromProfessionalChange(tx *gorm.DB, tenantID int64, sourceModule, entryType string, change ProfessionalResourceChange) error {

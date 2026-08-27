@@ -21,18 +21,20 @@ type EntryAccess struct {
 }
 
 type EntryListFilter struct {
-	View             string
-	Search           string
-	EntryType        string
-	SourceStatus     string
-	SourceIdentity   string
-	GovernanceStatus string
-	Visibility       string
-	PrimaryDomainID  int64
-	DepartmentID     int64
-	SourceEngineID   int64
-	Page             int
-	PageSize         int
+	View              string
+	Search            string
+	EntryType         string
+	SourceStatus      string
+	SourceIdentity    string
+	GovernanceStatus  string
+	Visibility        string
+	PrimaryDomainID   int64
+	DepartmentID      int64
+	SourceEngineID    int64
+	CoverageDimension string
+	CoverageState     string
+	Page              int
+	PageSize          int
 }
 
 const (
@@ -167,6 +169,33 @@ func NewDevelopClientSourceResolver(client *commonClient.DevelopClient) Professi
 	return &developClientSourceResolver{client: client}
 }
 
+type workbenchClientSourceResolver struct{ client *commonClient.WorkbenchClient }
+
+func NewWorkbenchClientSourceResolver(client *commonClient.WorkbenchClient) ProfessionalSourceResolver {
+	return &workbenchClientSourceResolver{client: client}
+}
+
+func (*workbenchClientSourceResolver) SourceModule() string { return models.SourceModuleWorkbench }
+
+func (r *workbenchClientSourceResolver) ResolveSources(ctx context.Context, tenantID int64, references []ProfessionalSourceReference) ([]ProfessionalSourceResult, error) {
+	if r == nil || r.client == nil || tenantID <= 0 {
+		return nil, fmt.Errorf("Workbench source resolver is unavailable")
+	}
+	request := make([]commonClient.WorkbenchCatalogReference, 0, len(references))
+	for _, reference := range references {
+		request = append(request, commonClient.WorkbenchCatalogReference{SourceType: reference.SourceType, SourceIdentity: reference.SourceIdentity})
+	}
+	result, err := r.client.WithTenantID(uint(tenantID)).ResolveCatalogReferences(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	resolved := make([]ProfessionalSourceResult, 0, len(result.Results))
+	for _, item := range result.Results {
+		resolved = append(resolved, ProfessionalSourceResult{Found: item.Found, Status: item.Status, Version: item.Version, Summary: item.Summary, DetailPath: item.DetailPath})
+	}
+	return resolved, nil
+}
+
 func (*developClientSourceResolver) SourceModule() string { return models.SourceModuleDevelop }
 
 func (r *developClientSourceResolver) ResolveSources(ctx context.Context, tenantID int64, references []ProfessionalSourceReference) ([]ProfessionalSourceResult, error) {
@@ -277,6 +306,8 @@ func (s *EntryService) List(ctx context.Context, tenantID int64, access EntryAcc
 	filter.View = normalizeEntryView(filter.View)
 	filter.Search = strings.TrimSpace(filter.Search)
 	filter.SourceIdentity = strings.TrimSpace(filter.SourceIdentity)
+	filter.CoverageDimension = strings.TrimSpace(filter.CoverageDimension)
+	filter.CoverageState = strings.TrimSpace(filter.CoverageState)
 	if tenantID <= 0 || filter.Page < 1 || filter.PageSize < 1 || filter.PageSize > 200 || !validEntryListFilter(filter) {
 		return nil, ErrInvalidPage
 	}
@@ -322,19 +353,16 @@ func (s *EntryService) List(ctx context.Context, tenantID int64, access EntryAcc
 		query = query.Where("entries.visibility = ?", filter.Visibility)
 	}
 	if filter.PrimaryDomainID > 0 {
-		query = query.Where(`EXISTS (SELECT 1 FROM catalog.semantic_associations semantic
-			WHERE semantic.tenant_id = entries.tenant_id AND semantic.catalog_entry_id = entries.id
-			AND semantic.semantic_type = 'domain' AND semantic.relation_role = 'primary' AND semantic.semantic_id = ?)
-			OR (source.source_module IN ('model', 'standard') AND source.observed_snapshot ->> 'domain_id' = ?)`, filter.PrimaryDomainID, fmt.Sprintf("%d", filter.PrimaryDomainID))
+		query = applyPrimaryDomainFilter(query, filter.PrimaryDomainID)
 	}
 	if filter.DepartmentID > 0 {
-		query = query.Where(`EXISTS (SELECT 1 FROM catalog.responsibilities responsibility_filter
-			WHERE responsibility_filter.tenant_id = entries.tenant_id AND responsibility_filter.catalog_entry_id = entries.id
-			AND responsibility_filter.role = 'accountable_department' AND responsibility_filter.subject_type = 'department'
-			AND responsibility_filter.status = 'active' AND responsibility_filter.subject_id = ?)`, filter.DepartmentID)
+		query = applyAccountableDepartmentFilter(query, filter.DepartmentID)
 	}
 	if filter.SourceEngineID > 0 {
 		query = query.Where("CAST(source.observed_snapshot ->> 'engine_id' AS BIGINT) = ?", filter.SourceEngineID)
+	}
+	if filter.CoverageDimension != "" {
+		query = applyMissingCoverageFilter(query, filter.CoverageDimension)
 	}
 	var total int64
 	if searchTotal != nil {
@@ -375,12 +403,63 @@ func (s *EntryService) List(ctx context.Context, tenantID int64, access EntryAcc
 }
 
 func validEntryListFilter(filter EntryListFilter) bool {
+	_, validCoverageDimension := coveragePredicateFor(filter.CoverageDimension)
+	validCoverageFilter := (filter.CoverageDimension == "" && filter.CoverageState == "") ||
+		(filter.View == EntryViewInventory && validCoverageDimension && filter.CoverageState == CoverageStateMissing && filter.Search == "")
 	return oneOf(filter.View, EntryViewGovernance, EntryViewInventory) &&
-		(filter.EntryType == "" || oneOf(filter.EntryType, models.EntryTypeDataItem, models.EntryTypeBusinessEntity, models.EntryTypeLogicalModel, models.EntryTypeMetric, models.EntryTypeDataService, models.EntryTypeDevelopmentArtifact)) &&
+		validEntryType(filter.EntryType) &&
 		(filter.SourceStatus == "" || oneOf(filter.SourceStatus, models.SourceStatusActive, models.SourceStatusMissing)) &&
 		(filter.GovernanceStatus == "" || oneOf(filter.GovernanceStatus, models.GovernanceStatusDiscovered, models.GovernanceStatusCurated, models.GovernanceStatusCertified, models.GovernanceStatusDeprecated)) &&
 		(filter.Visibility == "" || oneOf(filter.Visibility, models.VisibilityInventory, models.VisibilityDepartment, models.VisibilityTenant)) &&
-		len(filter.SourceIdentity) <= 255 && filter.PrimaryDomainID >= 0 && filter.DepartmentID >= 0 && filter.SourceEngineID >= 0
+		len(filter.SourceIdentity) <= 255 && filter.PrimaryDomainID >= 0 && filter.DepartmentID >= 0 && filter.SourceEngineID >= 0 && validCoverageFilter
+}
+
+func validEntryType(entryType string) bool {
+	return entryType == "" || oneOf(entryType,
+		models.EntryTypeDataItem,
+		models.EntryTypeBusinessEntity,
+		models.EntryTypeLogicalModel,
+		models.EntryTypeMetric,
+		models.EntryTypeDataService,
+		models.EntryTypeDevelopmentArtifact,
+		models.EntryTypeDataApplication,
+	)
+}
+
+func applyPrimaryDomainFilter(query *gorm.DB, domainID int64) *gorm.DB {
+	if domainID <= 0 {
+		return query
+	}
+	return query.Where(`EXISTS (
+		SELECT 1 FROM catalog.semantic_associations semantic_filter
+		WHERE semantic_filter.tenant_id = entries.tenant_id
+		  AND semantic_filter.catalog_entry_id = entries.id
+		  AND semantic_filter.semantic_type = 'domain'
+		  AND semantic_filter.relation_role = 'primary'
+		  AND semantic_filter.semantic_id = ?
+	) OR EXISTS (
+		SELECT 1 FROM catalog.source_bindings domain_source_filter
+		WHERE domain_source_filter.tenant_id = entries.tenant_id
+		  AND domain_source_filter.catalog_entry_id = entries.id
+		  AND domain_source_filter.is_current = TRUE
+		  AND domain_source_filter.source_module IN ('model', 'standard')
+		  AND domain_source_filter.observed_snapshot ->> 'domain_id' = ?
+	)`, domainID, fmt.Sprintf("%d", domainID))
+}
+
+func applyAccountableDepartmentFilter(query *gorm.DB, departmentID int64) *gorm.DB {
+	if departmentID <= 0 {
+		return query
+	}
+	return query.Where(`EXISTS (
+		SELECT 1 FROM catalog.responsibilities responsibility_filter
+		WHERE responsibility_filter.tenant_id = entries.tenant_id
+		  AND responsibility_filter.catalog_entry_id = entries.id
+		  AND responsibility_filter.role = 'accountable_department'
+		  AND responsibility_filter.subject_type = 'department'
+		  AND responsibility_filter.status = 'active'
+		  AND responsibility_filter.subject_id = ?
+	)`, departmentID)
 }
 
 func normalizeEntryView(view string) string {
@@ -400,6 +479,7 @@ func (s *EntryService) entriesForViewQuery(ctx context.Context, tenantID int64, 
 		return nil, ErrInventoryPermissionRequired
 	}
 	query := s.visibleEntriesQuery(ctx, tenantID, access)
+	query = query.Where("entries.entry_status = ?", models.EntryStatusActive)
 	if view == EntryViewGovernance {
 		query = query.Where("entries.governance_status IN ?", []string{
 			models.GovernanceStatusCurated,

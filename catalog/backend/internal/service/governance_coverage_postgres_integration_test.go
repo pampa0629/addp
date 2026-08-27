@@ -56,6 +56,27 @@ func TestPostgresGovernanceCoverageAndSourceResolution(t *testing.T) {
 	if coverage.TotalEntries != 2 || coverage.Dimensions[1].Key != CoverageDimensionPrimaryDomain || coverage.Dimensions[1].Covered != 1 {
 		t.Fatalf("coverage = %#v", coverage)
 	}
+	for _, dimension := range coverage.Dimensions {
+		listed, listErr := svc.List(context.Background(), 71, EntryAccess{Inventory: true}, EntryListFilter{
+			View: EntryViewInventory, CoverageDimension: dimension.Key, CoverageState: CoverageStateMissing,
+			Page: 1, PageSize: 20,
+		})
+		if listErr != nil {
+			t.Fatalf("List(%s missing) error = %v", dimension.Key, listErr)
+		}
+		if listed.Total != dimension.NotCovered || int64(len(listed.Data)) != dimension.NotCovered {
+			t.Fatalf("List(%s missing) = total %d rows %d, coverage not_covered = %d", dimension.Key, listed.Total, len(listed.Data), dimension.NotCovered)
+		}
+	}
+	facets, err := svc.ListFacets(context.Background(), 71, EntryAccess{Inventory: true}, EntryFacetFilter{
+		View: EntryViewInventory, PrimaryDomainID: 31,
+	})
+	if err != nil {
+		t.Fatalf("ListFacets(domain 31) error = %v", err)
+	}
+	if len(facets.EntryTypes) != 1 || facets.EntryTypes[0].EntryType != models.EntryTypeLogicalModel || facets.EntryTypes[0].Count != 1 {
+		t.Fatalf("domain 31 entry type facets = %#v", facets.EntryTypes)
+	}
 	resolved, err := svc.ResolveSourceEntries(context.Background(), 71, EntryAccess{Inventory: true}, []CatalogSourceReference{
 		{SourceModule: models.SourceModuleModel, SourceType: models.SourceTypeLogicalTable, SourceIdentity: "12"},
 	})

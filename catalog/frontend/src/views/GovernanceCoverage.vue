@@ -47,7 +47,21 @@
             </template>
           </el-table-column>
           <el-table-column prop="covered" :label="t('catalog.coverage.covered')" width="110" />
-          <el-table-column prop="not_covered" :label="t('catalog.coverage.notCovered')" width="120" />
+          <el-table-column :label="t('catalog.coverage.notCovered')" width="120">
+            <template #default="{ row }">
+              <el-button
+                v-if="row.not_covered > 0"
+                link
+                type="primary"
+                data-testid="catalog-coverage-missing-link"
+                :aria-label="t('catalog.coverage.openMissing', { dimension: coverageDimensionLabel(t, row.key, 'name'), count: row.not_covered })"
+                @click="openMissingEntries(row)"
+              >
+                {{ row.not_covered }}
+              </el-button>
+              <span v-else>0</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="applicable" :label="t('catalog.coverage.applicable')" width="110" />
           <el-table-column prop="not_applicable" :label="t('catalog.coverage.notApplicable')" width="120" />
         </el-table>
@@ -61,9 +75,9 @@ import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
-import { useConsolePageDescriptor } from '@common-ui'
+import { navigateConsoleModuleRoute, useConsolePageDescriptor } from '@common-ui'
 import { getGovernanceCoverage } from '../api/catalog'
-import { coverageDimensionLabel } from '../utils/governanceCoverageView'
+import { buildMissingCoverageEntryQuery, coverageDimensionLabel } from '../utils/governanceCoverageView'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -87,6 +101,13 @@ async function loadCoverage() {
   } finally {
     loading.value = false
   }
+}
+
+async function openMissingEntries(dimension) {
+  if (!dimension || dimension.not_covered <= 0) return
+  const query = buildMissingCoverageEntryQuery(dimension.key)
+  if (!query) return
+  await navigateConsoleModuleRoute(router, 'catalog', { path: '/entries', query })
 }
 
 onMounted(loadCoverage)

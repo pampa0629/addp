@@ -66,6 +66,7 @@ flowchart LR
     System["System / IAM\nTenant、组织、主体、AuthContext"]
     Meta["Meta\nDataItem、技术元数据、变化游标"]
     Standard["Standard\nDomain、Glossary、Element 等定义"]
+    Workbench["Workbench\n已发布 Data Application"]
     Catalog["Catalog\n企业目录身份、来源绑定、语义关联、责任、搜索"]
     Manager["Manager\n技术资源树、预览、剖析、内容检索"]
     Asset["Asset\n资产组合、发布、授权、运营"]
@@ -74,6 +75,7 @@ flowchart LR
     System -->|"身份与组织公开契约"| Catalog
     Meta -->|"DataItem 变化与读取契约"| Catalog
     Standard -->|"语义对象读取契约"| Catalog
+    Workbench -->|"已发布应用变化与读取契约"| Catalog
     Catalog -.->|"业务摘要与导航"| Manager
     Catalog -->|"可选择的目录对象"| Asset
     Asset -->|"已发布资产"| Portal
@@ -88,6 +90,7 @@ flowchart LR
 | --- | --- |
 | Meta | DataItem fingerprint、路径、结构、格式、扫描与技术元数据 |
 | Standard | 业务域、术语、数据元、指标、分类分级等语义定义 |
+| Workbench | Data Application 草稿、Component、布局、参数绑定、不可变 Revision、发布状态和运行入口 |
 | Catalog | CatalogEntry、来源绑定、具体资源的语义关联、责任、治理状态和目录可见性 |
 | Manager | 预览、剖析、快显、内容读取和内容检索 |
 | Asset | 资产身份与版本、CatalogEntry 组合、发布、申请、授权、评价和运营 |
@@ -98,6 +101,8 @@ Catalog 可以保存专业资源的最小“已观察摘要”用于列表、搜
 ## 四、自动建档与生命周期
 
 所有被 Meta 正式识别并持久化的 DataItem 都自动获得一个最小 CatalogEntry。自动建档只代表企业资源盘点中存在该身份，不代表已经完成业务编目、获得内容访问权或形成资产。
+
+Workbench Data Application 只有在首次发布不可变 Revision 后才自动获得 CatalogEntry；私人未发布草稿不进入企业资源盘点。CatalogEntry 标识应用聚合根而不是单个 Revision，重新发布和下线沿用同一企业身份。
 
 ```mermaid
 stateDiagram-v2

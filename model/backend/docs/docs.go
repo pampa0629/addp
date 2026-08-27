@@ -3866,7 +3866,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.materializationExecutionResponse"
+                            "$ref": "#/definitions/taskprovider.ExecutionStatusResponse"
                         }
                     },
                     "400": {
@@ -5837,8 +5837,159 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.materializationExecutionResponse": {
+        "internal_api.materializationGroupDeleteRequest": {
             "type": "object",
+            "properties": {
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.materializationGroupListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.MaterializationGroup"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.materializationGroupWriteRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "logical_table_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.materializationReadContextRequest": {
+            "type": "object",
+            "properties": {
+                "logical_table_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                },
+                "reader_attempt": {
+                    "type": "integer"
+                },
+                "reader_execution_id": {
+                    "type": "string"
+                },
+                "reader_lease_token": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.materializationTaskItem": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "execution_contract": {
+                    "$ref": "#/definitions/taskprovider.ExecutionContract"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.materializationTaskListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.materializationTaskItem"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.JSONMap": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "taskprovider.ExecutionContract": {
+            "type": "object",
+            "properties": {
+                "input_defaults": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "input_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "input_ui_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "output_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "taskprovider.ExecutionStatusResponse": {
+            "type": "object",
+            "required": [
+                "outputs"
+            ],
             "properties": {
                 "actor_principal_id": {
                     "description": "User-derived execution authorization facts. The raw User/Service tokens\nand engine connection details are never persisted in task executions.",
@@ -5986,154 +6137,6 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
-                }
-            }
-        },
-        "internal_api.materializationGroupDeleteRequest": {
-            "type": "object",
-            "properties": {
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.materializationGroupListResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_model_internal_models.MaterializationGroup"
-                    }
-                },
-                "page": {
-                    "type": "integer"
-                },
-                "page_size": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                },
-                "total_pages": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.materializationGroupWriteRequest": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "logical_table_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "name": {
-                    "type": "string"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.materializationReadContextRequest": {
-            "type": "object",
-            "properties": {
-                "logical_table_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "parent_execution_id": {
-                    "type": "string"
-                },
-                "reader_attempt": {
-                    "type": "integer"
-                },
-                "reader_execution_id": {
-                    "type": "string"
-                },
-                "reader_lease_token": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.materializationTaskItem": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "execution_contract": {
-                    "$ref": "#/definitions/taskprovider.ExecutionContract"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "task_type": {
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.materializationTaskListResponse": {
-            "type": "object",
-            "properties": {
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_api.materializationTaskItem"
-                    }
-                },
-                "page": {
-                    "type": "integer"
-                },
-                "page_size": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "models.JSONMap": {
-            "type": "object",
-            "additionalProperties": true
-        },
-        "taskprovider.ExecutionContract": {
-            "type": "object",
-            "properties": {
-                "input_defaults": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "input_schema": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "input_ui_schema": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "output_schema": {
-                    "type": "object",
-                    "additionalProperties": true
                 }
             }
         }

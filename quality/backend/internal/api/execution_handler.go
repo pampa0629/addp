@@ -4,7 +4,7 @@ import (
 	"fmt"
 	commonExecution "github.com/addp/common/execution"
 	commoni18n "github.com/addp/common/middleware/i18n"
-	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/taskprovider"
 	qualityi18n "github.com/addp/quality/i18n"
 	"net/http"
 
@@ -37,11 +37,6 @@ func qualityExecutionStatus(value string) (string, error) {
 
 func isQualityExecution(item *commonExecution.TaskExecution) bool {
 	return item != nil && item.Module == commonExecution.ModuleQuality && (item.TaskType == commonExecution.TaskTypeQualityCheck || item.TaskType == commonExecution.TaskTypeMaterializationGate)
-}
-
-type qualityTaskExecutionResponse struct {
-	*commonExecution.TaskExecution
-	Outputs commonModels.JSONMap `json:"outputs"`
 }
 
 func NewExecutionHandler(executionRepo *commonExecution.TaskExecutionRepository) *ExecutionHandler {
@@ -92,7 +87,7 @@ func (h *ExecutionHandler) List(c *gin.Context) {
 // @Tags Execution
 // @Produce json
 // @Param execution_id path string true "执行ID | Execution ID"
-// @Success 200 {object} qualityTaskExecutionResponse
+// @Success 200 {object} taskprovider.ExecutionStatusResponse
 // @Failure 404 {object} qualityErrorResponse
 // @Failure 500 {object} qualityErrorResponse
 // @x-addp-auth-mode "permission"
@@ -113,11 +108,5 @@ func (h *ExecutionHandler) Get(c *gin.Context) {
 		return
 	}
 
-	outputs := commonModels.JSONMap{}
-	if item.Metadata != nil {
-		if raw, ok := item.Metadata["outputs"].(map[string]interface{}); ok {
-			outputs = commonModels.JSONMap(raw)
-		}
-	}
-	c.JSON(http.StatusOK, qualityTaskExecutionResponse{TaskExecution: item, Outputs: outputs})
+	c.JSON(http.StatusOK, taskprovider.NewExecutionStatusResponse(item))
 }

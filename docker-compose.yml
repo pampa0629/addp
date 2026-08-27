@@ -771,6 +771,7 @@ services:
       - STANDARD_URL=http://standard-backend:8110
       - SERVICE_URL=http://service-backend:8086
       - DEVELOP_URL=http://develop-backend:8185
+      - WORKBENCH_URL=http://workbench-backend:8193
       - QUALITY_URL=http://quality-backend:8182
       - CATALOG_SERVICE_CLIENT_SECRET=${CATALOG_SERVICE_CLIENT_SECRET}
       - CATALOG_SOURCE_SYNC_INTERVAL=${CATALOG_SOURCE_SYNC_INTERVAL:-30s}

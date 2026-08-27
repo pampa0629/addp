@@ -12,6 +12,65 @@ definitions:
       total_pages:
         type: integer
     type: object
+  github_com_addp_workbench_internal_models.CatalogReference:
+    properties:
+      source_identity:
+        type: string
+      source_type:
+        type: string
+    required:
+    - source_identity
+    - source_type
+    type: object
+  github_com_addp_workbench_internal_models.CatalogReferenceResolution:
+    properties:
+      detail_path:
+        type: string
+      found:
+        type: boolean
+      source_identity:
+        type: string
+      source_type:
+        type: string
+      status:
+        type: string
+      summary:
+        additionalProperties: {}
+        type: object
+      version:
+        type: integer
+    type: object
+  github_com_addp_workbench_internal_models.CatalogResourceChange:
+    properties:
+      change_id:
+        type: string
+      observed_at:
+        type: string
+      operation:
+        type: string
+      snapshot:
+        additionalProperties: {}
+        type: object
+      source_identity:
+        type: string
+      source_type:
+        type: string
+      source_version:
+        type: string
+    type: object
+  github_com_addp_workbench_internal_models.CatalogResourceChangesResponse:
+    properties:
+      changes:
+        items:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.CatalogResourceChange'
+        type: array
+      has_more:
+        type: boolean
+      next_cursor:
+        type: string
+      schema_version:
+        type: string
+    type: object
   github_com_addp_workbench_internal_models.DataApplicationComponent:
     properties:
       contract_fingerprint:
@@ -246,6 +305,24 @@ definitions:
       field:
         type: string
     type: object
+  github_com_addp_workbench_internal_models.ResolveCatalogReferencesRequest:
+    properties:
+      references:
+        items:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.CatalogReference'
+        maxItems: 200
+        minItems: 1
+        type: array
+    required:
+    - references
+    type: object
+  github_com_addp_workbench_internal_models.ResolveCatalogReferencesResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.CatalogReferenceResolution'
+        type: array
+    type: object
   github_com_addp_workbench_internal_models.ServiceReference:
     properties:
       service_id:
@@ -379,6 +456,56 @@ info:
   title: ADDP Workbench API
   version: "1.0"
 paths:
+  /catalog-resources/changes:
+    get:
+      description: 按不透明游标返回已首次发布 Data Application 的最小检索摘要变化，仅供 Catalog 服务消费 | Return
+        minimal-search-summary changes for Data Applications that have been published
+        at least once, for the Catalog service only
+      parameters:
+      - description: 上次成功提交的不透明游标，空值从历史起点开始 | Opaque cursor committed by the consumer;
+          empty starts from the beginning
+        in: query
+        name: after_cursor
+        type: string
+      - description: 批大小，默认 200，最大 500 | Batch size, default 200 and maximum 500
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_workbench_internal_models.CatalogResourceChangesResponse'
+        "400":
+          description: 无效游标或批大小 | Invalid cursor or batch size
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 需要认证 | Authentication required
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 非 Catalog 服务或权限不足 | Catalog service or permission required
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 读取失败 | Read failed
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 拉取数据应用目录资源变化 | Pull Data Application catalog resource changes
+      tags:
+      - Catalog Integration
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - workbench.catalog.read
   /data_applications:
     get:
       description: 只返回当前 Tenant 和当前 User 拥有的数据应用草稿摘要 | Return only data application
@@ -812,6 +939,56 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - workbench.data_application.execute
+  /runtime/catalog-references/resolve:
+    post:
+      consumes:
+      - application/json
+      description: 按请求顺序动态解析 1 到 200 个已首次发布的数据应用引用；跨 Tenant、不存在和从未发布统一 found=false，仅供
+        Catalog 服务消费 | Dynamically resolve 1 to 200 Data Application references that
+        have been published at least once; cross-tenant, missing, and never-published
+        references all return found=false; Catalog service only
+      parameters:
+      - description: 数据应用目录引用 | Data Application catalog references
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.ResolveCatalogReferencesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_workbench_internal_models.ResolveCatalogReferencesResponse'
+        "400":
+          description: 请求无效 | Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 需要认证 | Authentication required
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 非 Catalog 服务或权限不足 | Catalog service or permission required
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 解析失败 | Resolution failed
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 解析数据应用目录引用 | Resolve Data Application catalog references
+      tags:
+      - Catalog Integration
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - workbench.catalog.read
   /views:
     get:
       description: 只返回当前 Tenant 和当前 User 拥有的工作台视图；不访问 Service | Return only Workbench

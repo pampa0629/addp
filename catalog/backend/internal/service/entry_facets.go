@@ -36,7 +36,20 @@ type EntryFacets struct {
 	View                   string              `json:"view" enums:"governance,inventory"`
 	PrimaryDomains         EntryReferenceFacet `json:"primary_domains"`
 	AccountableDepartments EntryReferenceFacet `json:"accountable_departments"`
+	EntryTypes             []EntryTypeFacet    `json:"entry_types"`
 	SourceEngines          EntryReferenceFacet `json:"source_engines"`
+}
+
+type EntryTypeFacet struct {
+	EntryType string `json:"entry_type" enums:"data_item,business_entity,logical_model,metric,data_service,development_artifact,data_application"`
+	Count     int64  `json:"count"`
+}
+
+type EntryFacetFilter struct {
+	View            string
+	PrimaryDomainID int64
+	DepartmentID    int64
+	EntryType       string
 }
 
 type EngineReferenceResolution struct {
@@ -99,30 +112,36 @@ func (s *EntryService) WithEngineReferenceResolver(resolver EngineReferenceResol
 	return s
 }
 
-func (s *EntryService) ListFacets(ctx context.Context, tenantID int64, access EntryAccess, view string) (*EntryFacets, error) {
-	view = normalizeEntryView(view)
-	if tenantID <= 0 {
+func (s *EntryService) ListFacets(ctx context.Context, tenantID int64, access EntryAccess, filter EntryFacetFilter) (*EntryFacets, error) {
+	filter.View = normalizeEntryView(filter.View)
+	filter.EntryType = strings.TrimSpace(filter.EntryType)
+	if tenantID <= 0 || filter.PrimaryDomainID < 0 || filter.DepartmentID < 0 || !validEntryType(filter.EntryType) {
 		return nil, ErrInvalidPage
 	}
-	if _, err := s.entriesForViewQuery(ctx, tenantID, access, view); err != nil {
+	if _, err := s.entriesForViewQuery(ctx, tenantID, access, filter.View); err != nil {
 		return nil, err
 	}
-	domainCounts, err := s.primaryDomainFacetCounts(ctx, tenantID, access, view)
+	domainCounts, err := s.primaryDomainFacetCounts(ctx, tenantID, access, filter.View)
 	if err != nil {
 		return nil, fmt.Errorf("list Catalog primary Domain facets: %w", err)
 	}
-	departmentCounts, err := s.accountableDepartmentFacetCounts(ctx, tenantID, access, view)
+	departmentCounts, err := s.accountableDepartmentFacetCounts(ctx, tenantID, access, filter)
 	if err != nil {
 		return nil, fmt.Errorf("list Catalog accountable Department facets: %w", err)
 	}
-	engineCounts, err := s.sourceEngineFacetCounts(ctx, tenantID, access, view)
+	entryTypes, err := s.entryTypeFacetCounts(ctx, tenantID, access, filter)
+	if err != nil {
+		return nil, fmt.Errorf("list Catalog entry type facets: %w", err)
+	}
+	engineCounts, err := s.sourceEngineFacetCounts(ctx, tenantID, access, filter)
 	if err != nil {
 		return nil, fmt.Errorf("list Catalog source Engine facets: %w", err)
 	}
 	return &EntryFacets{
-		View:                   view,
+		View:                   filter.View,
 		PrimaryDomains:         s.resolveDomainFacet(ctx, tenantID, domainCounts),
 		AccountableDepartments: s.resolveDepartmentFacet(ctx, tenantID, departmentCounts),
+		EntryTypes:             entryTypes,
 		SourceEngines:          s.resolveEngineFacet(ctx, tenantID, engineCounts),
 	}, nil
 }
@@ -164,11 +183,12 @@ func (s *EntryService) primaryDomainFacetCounts(ctx context.Context, tenantID in
 	return counts, nil
 }
 
-func (s *EntryService) accountableDepartmentFacetCounts(ctx context.Context, tenantID int64, access EntryAccess, view string) (map[int64]int64, error) {
-	base, err := s.entriesForViewQuery(ctx, tenantID, access, view)
+func (s *EntryService) accountableDepartmentFacetCounts(ctx context.Context, tenantID int64, access EntryAccess, filter EntryFacetFilter) (map[int64]int64, error) {
+	base, err := s.entriesForViewQuery(ctx, tenantID, access, filter.View)
 	if err != nil {
 		return nil, err
 	}
+	base = applyPrimaryDomainFilter(base, filter.PrimaryDomainID)
 	var rows []facetCountRow
 	if err := base.
 		Joins("JOIN catalog.responsibilities AS responsibility_facet ON responsibility_facet.catalog_entry_id = entries.id AND responsibility_facet.tenant_id = entries.tenant_id").
@@ -182,10 +202,51 @@ func (s *EntryService) accountableDepartmentFacetCounts(ctx context.Context, ten
 	return counts, nil
 }
 
-func (s *EntryService) sourceEngineFacetCounts(ctx context.Context, tenantID int64, access EntryAccess, view string) (map[int64]int64, error) {
-	base, err := s.entriesForViewQuery(ctx, tenantID, access, view)
+func (s *EntryService) entryTypeFacetCounts(ctx context.Context, tenantID int64, access EntryAccess, filter EntryFacetFilter) ([]EntryTypeFacet, error) {
+	base, err := s.entriesForViewQuery(ctx, tenantID, access, filter.View)
 	if err != nil {
 		return nil, err
+	}
+	base = applyPrimaryDomainFilter(base, filter.PrimaryDomainID)
+	base = applyAccountableDepartmentFilter(base, filter.DepartmentID)
+	type entryTypeCountRow struct {
+		EntryType string
+		Count     int64
+	}
+	var rows []entryTypeCountRow
+	if err := base.
+		Select("entries.entry_type AS entry_type, COUNT(DISTINCT entries.id) AS count").
+		Group("entries.entry_type").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int64, len(rows))
+	for _, row := range rows {
+		if validEntryType(row.EntryType) && row.EntryType != "" && row.Count > 0 {
+			counts[row.EntryType] = row.Count
+		}
+	}
+	order := []string{
+		"data_item", "business_entity", "logical_model", "metric",
+		"data_service", "development_artifact", "data_application",
+	}
+	result := make([]EntryTypeFacet, 0, len(counts))
+	for _, entryType := range order {
+		if count := counts[entryType]; count > 0 {
+			result = append(result, EntryTypeFacet{EntryType: entryType, Count: count})
+		}
+	}
+	return result, nil
+}
+
+func (s *EntryService) sourceEngineFacetCounts(ctx context.Context, tenantID int64, access EntryAccess, filter EntryFacetFilter) (map[int64]int64, error) {
+	base, err := s.entriesForViewQuery(ctx, tenantID, access, filter.View)
+	if err != nil {
+		return nil, err
+	}
+	base = applyPrimaryDomainFilter(base, filter.PrimaryDomainID)
+	base = applyAccountableDepartmentFilter(base, filter.DepartmentID)
+	if filter.EntryType != "" {
+		base = base.Where("entries.entry_type = ?", filter.EntryType)
 	}
 	var rows []facetCountRow
 	if err := base.

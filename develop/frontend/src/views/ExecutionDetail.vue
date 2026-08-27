@@ -278,7 +278,7 @@ const workflowOutputRows = computed(() => {
         write_mode: target.write_mode
       }
     }])
-    : Object.entries(result.outputs || execution.value?.outputs || {})
+    : Object.entries(execution.value?.outputs || {})
 
   return outputEntries.map(([taskId, output]) => {
     const resource = output?.resource || output || {}

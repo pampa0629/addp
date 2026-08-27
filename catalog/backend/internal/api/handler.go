@@ -498,6 +498,8 @@ func (h *Handler) ListGovernanceTasks(c *gin.Context) {
 // @Param primary_domain_id query string false "主业务域稳定 ID | Primary Domain stable ID"
 // @Param accountable_department_id query string false "责任部门稳定 ID | Accountable Department stable ID"
 // @Param source_engine_id query string false "来源引擎稳定 ID | Source engine stable ID"
+// @Param coverage_dimension query string false "治理缺口维度；必须与 view=inventory、coverage_state=missing 同时使用 | Governance gap dimension; requires view=inventory and coverage_state=missing" Enums(business_definition,primary_domain,accountability,glossary,component_element)
+// @Param coverage_state query string false "治理覆盖状态；第一阶段仅支持 missing | Governance coverage state; only missing is supported in the first release" Enums(missing)
 // @Param page query int false "页码，默认 1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认 20，最大 200 | Page size, default 20 and maximum 200"
 // @Success 200 {object} service.EntryListResult "企业目录分页结果 | Paginated catalog entries"
@@ -535,6 +537,7 @@ func (h *Handler) ListEntries(c *gin.Context) {
 		Search: c.Query("search"), EntryType: c.Query("entry_type"), SourceStatus: c.Query("source_status"), SourceIdentity: strings.TrimSpace(c.Query("source_identity")),
 		GovernanceStatus: c.Query("governance_status"), Visibility: c.Query("visibility"),
 		PrimaryDomainID: primaryDomainID, DepartmentID: departmentID, SourceEngineID: sourceEngineID,
+		CoverageDimension: c.Query("coverage_dimension"), CoverageState: c.Query("coverage_state"),
 		Page: page, PageSize: pageSize,
 	})
 	if err != nil {
@@ -609,6 +612,9 @@ func (h *Handler) GetGovernanceCoverage(c *gin.Context) {
 // @Tags Catalog
 // @Produce json
 // @Param view query string false "目录视图，默认 governance | Catalog view, governance by default" Enums(governance,inventory)
+// @Param primary_domain_id query string false "已选主业务域稳定 ID；约束责任部门、资源类型和来源引擎统计 | Selected primary Domain stable ID; constrains Department, entry type, and source Engine counts"
+// @Param accountable_department_id query string false "已选责任部门稳定 ID；约束资源类型和来源引擎统计 | Selected accountable Department stable ID; constrains entry type and source Engine counts"
+// @Param entry_type query string false "已选资源类型；约束来源引擎统计 | Selected entry type; constrains source Engine counts" Enums(data_item,business_entity,logical_model,metric,data_service,development_artifact,data_application)
 // @Success 200 {object} service.EntryFacets "权限感知引用分面 | Permission-aware reference facets"
 // @Failure 400 {object} map[string]interface{} "请求参数无效 | Invalid request"
 // @Failure 401 {object} map[string]interface{} "未认证 | Unauthorized"
@@ -621,12 +627,17 @@ func (h *Handler) GetGovernanceCoverage(c *gin.Context) {
 // @Security BearerAuth
 func (h *Handler) ListEntryFacets(c *gin.Context) {
 	tenantID, ok := commonAuth.TenantIDFromGin(c)
-	if !ok {
+	primaryDomainID, domainErr := parseOptionalCanonicalPositiveInt64(c.Query("primary_domain_id"))
+	departmentID, departmentErr := parseOptionalCanonicalPositiveInt64(c.Query("accountable_department_id"))
+	if !ok || domainErr != nil || departmentErr != nil {
 		respondError(c, http.StatusBadRequest, service.ErrInvalidPage)
 		return
 	}
 	h.sync.ObserveTenant(tenantID)
-	result, err := h.entries.ListFacets(c.Request.Context(), tenantID, entryAccess(c), c.Query("view"))
+	result, err := h.entries.ListFacets(c.Request.Context(), tenantID, entryAccess(c), service.EntryFacetFilter{
+		View: c.Query("view"), PrimaryDomainID: primaryDomainID,
+		DepartmentID: departmentID, EntryType: c.Query("entry_type"),
+	})
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return

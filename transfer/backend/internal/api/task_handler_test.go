@@ -237,6 +237,59 @@ func TestExecutionHandlerRetrySchemaBlockedCDCReturnsConflict(t *testing.T) {
 	}
 }
 
+func TestExecutionHandlerSeparatesTaskProviderOutputsFromUserDTO(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newTransferTaskHandlerTestDB(t)
+	execution := commonExecution.TaskExecution{
+		TenantID: 7, ExecutionID: "transfer-output-execution", Module: commonExecution.ModuleTransfer,
+		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleOrchestrator,
+		Status: commonExecution.ExecutionStatusSuccess, TriggerType: commonExecution.TriggerTypeManual,
+		Metadata: map[string]interface{}{
+			"outputs": map[string]interface{}{"target_locator": "addp://engine/2/path/public/result?type=table"},
+			"result":  map[string]interface{}{"outputs": map[string]interface{}{"legacy": "ignored"}},
+		},
+	}
+	if err := db.Create(&execution).Error; err != nil {
+		t.Fatal(err)
+	}
+	executionSvc := service.NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+	handler := NewExecutionHandler(executionSvc)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		setTransferTestAuthContext(t, c, 7, 9)
+		c.Next()
+	})
+	router.GET("/task-provider/executions/:execution_id", handler.ProviderGetExecution)
+	router.GET("/executions/:execution_id", handler.GetExecution)
+
+	provider := httptest.NewRecorder()
+	router.ServeHTTP(provider, httptest.NewRequest(http.MethodGet, "/task-provider/executions/transfer-output-execution", nil))
+	if provider.Code != http.StatusOK {
+		t.Fatalf("provider status=%d body=%s", provider.Code, provider.Body.String())
+	}
+	var providerBody map[string]interface{}
+	if err := json.Unmarshal(provider.Body.Bytes(), &providerBody); err != nil {
+		t.Fatal(err)
+	}
+	outputs, ok := providerBody["outputs"].(map[string]interface{})
+	if !ok || outputs["target_locator"] == nil || outputs["legacy"] != nil {
+		t.Fatalf("provider outputs=%#v", providerBody["outputs"])
+	}
+
+	user := httptest.NewRecorder()
+	router.ServeHTTP(user, httptest.NewRequest(http.MethodGet, "/executions/transfer-output-execution", nil))
+	if user.Code != http.StatusOK {
+		t.Fatalf("user status=%d body=%s", user.Code, user.Body.String())
+	}
+	var userBody map[string]interface{}
+	if err := json.Unmarshal(user.Body.Bytes(), &userBody); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := userBody["outputs"]; exists {
+		t.Fatalf("user DTO exposed TaskProvider outputs: %s", user.Body.String())
+	}
+}
+
 func TestTaskHandlerListTasksUsesStandardItemsShape(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newTransferTaskHandlerTestDB(t)

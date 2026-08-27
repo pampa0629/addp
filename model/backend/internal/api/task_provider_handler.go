@@ -10,7 +10,6 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
-	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
 	"github.com/addp/model/internal/service"
 	"github.com/gin-gonic/gin"
@@ -53,11 +52,6 @@ type materializationExecuteRequest struct {
 type materializationExecuteResponse struct {
 	ExecutionID string `json:"execution_id"`
 	Status      string `json:"status" enums:"pending" example:"pending"`
-}
-
-type materializationExecutionResponse struct {
-	*commonExecution.TaskExecution
-	Outputs commonModels.JSONMap `json:"outputs"`
 }
 
 // ListTasks godoc
@@ -243,7 +237,7 @@ func materializationGroupExpectation(parameters map[string]interface{}) (int64, 
 // @Tags Materialization
 // @Produce json
 // @Param execution_id path string true "执行 ID | Execution ID"
-// @Success 200 {object} materializationExecutionResponse
+// @Success 200 {object} taskprovider.ExecutionStatusResponse
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 403 {object} map[string]interface{}
@@ -263,15 +257,7 @@ func (h *MaterializationTaskProviderHandler) ExecutionStatus(c *gin.Context) {
 		c.JSON(http.StatusNotFound, localizedErrorResponse(c, "model.materialization.not_found", "materialization_execution_not_found"))
 		return
 	}
-	outputs := commonModels.JSONMap{}
-	if execution.Metadata != nil {
-		if raw, ok := execution.Metadata["outputs"].(map[string]interface{}); ok {
-			outputs = commonModels.JSONMap(raw)
-		} else if raw, ok := execution.Metadata["outputs"].(commonModels.JSONMap); ok {
-			outputs = raw
-		}
-	}
-	c.JSON(http.StatusOK, materializationExecutionResponse{TaskExecution: execution, Outputs: outputs})
+	c.JSON(http.StatusOK, taskprovider.NewExecutionStatusResponse(execution))
 }
 
 func toMaterializationTaskItem(item service.MaterializationTaskDefinition) materializationTaskItem {

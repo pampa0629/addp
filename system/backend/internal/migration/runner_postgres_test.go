@@ -2037,6 +2037,60 @@ func TestWorkbenchDataApplicationForwardMigrationAgainstPostgres(t *testing.T) {
 	assertWorkbenchRuntimeCatalog(t, db, 10)
 }
 
+func TestWorkbenchCatalogReadForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset Workbench Catalog Read migration schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	through104, through105 := migrationFilesBeforeAndThrough(t, "000105_iam_workbench_catalog_read.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through104, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 104: %v", err)
+	}
+	if err := (&Runner{DSN: dsn, FS: through105, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply Workbench Catalog Read migration 105: %v", err)
+	}
+
+	var version int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read migration 105 version: %v", err)
+	}
+	if version != 105 || dirty {
+		t.Fatalf("migration 105 state=(%d,%t), want (105,false)", version, dirty)
+	}
+
+	var permissionCount, rolePermissionCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM system.permissions WHERE permission_key = 'workbench.catalog.read' AND owner_module = 'workbench' AND allowed_scope_types = ARRAY['tenant']::text[] AND tenant_customizable = false`).Scan(&permissionCount); err != nil {
+		t.Fatalf("count Workbench Catalog permission: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT COUNT(*)
+		FROM system.role_permissions AS role_permission
+		JOIN system.roles AS role ON role.id = role_permission.role_id
+		JOIN system.permissions AS permission ON permission.id = role_permission.permission_id
+		WHERE role.role_key = 'tenant.catalog_runtime'
+		  AND permission.permission_key = 'workbench.catalog.read'
+	`).Scan(&rolePermissionCount); err != nil {
+		t.Fatalf("count Workbench Catalog role permission: %v", err)
+	}
+	if permissionCount != 1 || rolePermissionCount != 1 {
+		t.Fatalf("Workbench Catalog migration permission=%d role_permission=%d, want 1/1", permissionCount, rolePermissionCount)
+	}
+}
+
 func TestRunnerAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {

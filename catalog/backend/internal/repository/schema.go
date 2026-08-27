@@ -50,7 +50,7 @@ func applyConstraints(db *gorm.DB) error {
 	}
 	statements := []string{
 		`ALTER TABLE catalog.entries DROP CONSTRAINT IF EXISTS ck_catalog_entries_entry_type`,
-		`ALTER TABLE catalog.entries ADD CONSTRAINT ck_catalog_entries_entry_type CHECK (entry_type IN ('data_item', 'business_entity', 'logical_model', 'metric', 'data_service', 'development_artifact'))`,
+		`ALTER TABLE catalog.entries ADD CONSTRAINT ck_catalog_entries_entry_type CHECK (entry_type IN ('data_item', 'business_entity', 'logical_model', 'metric', 'data_service', 'development_artifact', 'data_application'))`,
 		`ALTER TABLE catalog.entries DROP CONSTRAINT IF EXISTS ck_catalog_entries_entry_status`,
 		`ALTER TABLE catalog.entries ADD CONSTRAINT ck_catalog_entries_entry_status CHECK (entry_status IN ('active', 'merged'))`,
 		`ALTER TABLE catalog.entries DROP CONSTRAINT IF EXISTS ck_catalog_entries_governance_status`,
@@ -86,6 +86,7 @@ func applyConstraints(db *gorm.DB) error {
 			OR (source_module = 'standard' AND source_type = 'metric' AND source_identity ~ '^[1-9][0-9]*$')
 			OR (source_module = 'service' AND source_type = 'query_service' AND source_identity ~ '^[1-9][0-9]*$')
 			OR (source_module = 'develop' AND source_type = 'dev_task' AND source_identity ~ '^[1-9][0-9]*$')
+			OR (source_module = 'workbench' AND source_type = 'data_application' AND source_identity ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_catalog_current_source_identity ON catalog.source_bindings (tenant_id, source_module, source_type, source_identity) WHERE is_current`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_catalog_entry_current_source ON catalog.source_bindings (tenant_id, catalog_entry_id) WHERE is_current`,

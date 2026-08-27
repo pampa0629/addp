@@ -14,8 +14,24 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 104 {
-		t.Fatalf("LatestVersion = %d, want 104", catalog.LatestVersion)
+	if catalog.LatestVersion != 105 {
+		t.Fatalf("LatestVersion = %d, want 105", catalog.LatestVersion)
+	}
+}
+
+func TestWorkbenchCatalogReadMigrationPublishesNarrowPermission(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000105_iam_workbench_catalog_read.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 105: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'workbench.catalog.read'", "ARRAY['tenant']::text[]", "false",
+		"'tenant.catalog_runtime'", "authorization_version = principal.authorization_version + 1",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 105 missing %q", fragment)
+		}
 	}
 }
 

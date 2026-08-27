@@ -27,6 +27,22 @@
     </div>
 
     <el-alert
+      v-if="coverageGapActive"
+      class="coverage-gap-alert"
+      data-testid="catalog-coverage-gap-alert"
+      type="info"
+      :closable="false"
+      show-icon
+    >
+      <template #title>
+        <div class="coverage-gap-title">
+          <span>{{ coverageGapTitle }}</span>
+          <el-button link type="primary" @click="clearCoverageGap">{{ t('catalog.entries.exitCoverageGap') }}</el-button>
+        </div>
+      </template>
+    </el-alert>
+
+    <el-alert
       v-if="unavailableFacetLabels.length > 0"
       class="facet-alert"
       type="warning"
@@ -34,15 +50,101 @@
       :title="t('catalog.entries.facetUnavailable', { facets: formattedUnavailableFacets })"
     />
 
+    <el-card v-loading="facetsLoading" shadow="never" class="navigation-card" data-testid="catalog-entry-navigation">
+      <template #header>
+        <div class="navigation-header">
+          <strong>{{ t('catalog.entries.navigation.title') }}</strong>
+          <span>{{ t('catalog.entries.navigation.description') }}</span>
+        </div>
+      </template>
+      <nav class="navigation-grid" :aria-label="t('catalog.entries.navigation.title')">
+        <section class="navigation-section">
+          <h2>{{ t('catalog.entries.navigation.primaryDomain') }}</h2>
+          <div class="navigation-options" data-testid="catalog-domain-navigation">
+            <button
+              type="button"
+              class="navigation-option"
+              :class="{ active: !filters.primary_domain_id }"
+              :aria-pressed="!filters.primary_domain_id"
+              @click="selectNavigation('primary_domain', '')"
+            >
+              <span>{{ t('catalog.entries.navigation.allDomains') }}</span>
+            </button>
+            <button
+              v-for="option in domainOptions"
+              :key="option.id"
+              type="button"
+              class="navigation-option"
+              :class="{ active: filters.primary_domain_id === String(option.id) }"
+              :aria-pressed="filters.primary_domain_id === String(option.id)"
+              @click="selectNavigation('primary_domain', String(option.id))"
+            >
+              <span class="navigation-option-name">{{ facetOptionIdentity(option) }}</span>
+              <span class="navigation-option-count">{{ t('catalog.entries.navigation.optionCount', { count: option.count || 0 }) }}</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="navigation-section">
+          <h2>{{ t('catalog.entries.navigation.accountableDepartment') }}</h2>
+          <div class="navigation-options" data-testid="catalog-department-navigation">
+            <button
+              type="button"
+              class="navigation-option"
+              :class="{ active: !filters.accountable_department_id }"
+              :aria-pressed="!filters.accountable_department_id"
+              @click="selectNavigation('accountable_department', '')"
+            >
+              <span>{{ t('catalog.entries.navigation.allDepartments') }}</span>
+            </button>
+            <button
+              v-for="option in departmentOptions"
+              :key="option.id"
+              type="button"
+              class="navigation-option"
+              :class="{ active: filters.accountable_department_id === String(option.id) }"
+              :aria-pressed="filters.accountable_department_id === String(option.id)"
+              @click="selectNavigation('accountable_department', String(option.id))"
+            >
+              <span class="navigation-option-name">{{ facetOptionIdentity(option) }}</span>
+              <span class="navigation-option-count">{{ t('catalog.entries.navigation.optionCount', { count: option.count || 0 }) }}</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="navigation-section">
+          <h2>{{ t('catalog.entries.navigation.entryType') }}</h2>
+          <div class="navigation-options" data-testid="catalog-entry-type-navigation">
+            <button
+              type="button"
+              class="navigation-option"
+              :class="{ active: !filters.entry_type }"
+              :aria-pressed="!filters.entry_type"
+              @click="selectNavigation('entry_type', '')"
+            >
+              <span>{{ t('catalog.entries.navigation.allEntryTypes') }}</span>
+            </button>
+            <button
+              v-for="option in entryTypeOptions"
+              :key="option.entry_type"
+              type="button"
+              class="navigation-option"
+              :class="{ active: filters.entry_type === option.entry_type }"
+              :aria-pressed="filters.entry_type === option.entry_type"
+              @click="selectNavigation('entry_type', option.entry_type)"
+            >
+              <span class="navigation-option-name">{{ entryTypeLabel(option.entry_type) }}</span>
+              <span class="navigation-option-count">{{ t('catalog.entries.navigation.optionCount', { count: option.count || 0 }) }}</span>
+            </button>
+          </div>
+        </section>
+      </nav>
+    </el-card>
+
     <el-card shadow="never" class="filter-card">
       <el-form :inline="true" :model="filters" @submit.prevent="applyFilters">
         <el-form-item :label="t('catalog.entries.search')">
-          <el-input v-model="filters.search" clearable :placeholder="t('catalog.entries.searchPlaceholder')" @keyup.enter="applyFilters" />
-        </el-form-item>
-        <el-form-item :label="t('catalog.entries.type')">
-          <el-select v-model="filters.entry_type" clearable :placeholder="t('catalog.common.all')">
-            <el-option v-for="entryType in entryTypes" :key="entryType" :label="entryTypeLabel(entryType)" :value="entryType" />
-          </el-select>
+          <el-input v-model="filters.search" clearable :disabled="coverageGapActive" :placeholder="t('catalog.entries.searchPlaceholder')" @keyup.enter="applyFilters" />
         </el-form-item>
         <el-form-item :label="t('catalog.entries.sourceStatus')">
           <el-select v-model="filters.source_status" clearable :placeholder="t('catalog.common.all')">
@@ -58,32 +160,6 @@
         <el-form-item :label="t('catalog.entries.visibility')">
           <el-select v-model="filters.visibility" clearable :placeholder="t('catalog.common.all')">
             <el-option v-for="visibility in visibilities" :key="visibility" :label="t(`catalog.status.visibility.${visibility}`)" :value="visibility" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('catalog.entries.primaryDomain')">
-          <el-select
-            v-model="filters.primary_domain_id"
-            data-testid="catalog-primary-domain-filter"
-            clearable
-            filterable
-            :loading="facetsLoading"
-            :disabled="facets.primary_domains.status === 'unavailable'"
-            :placeholder="t('catalog.entries.selectPrimaryDomain')"
-          >
-            <el-option v-for="option in domainOptions" :key="option.id" :label="facetOptionLabel(option)" :value="option.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('catalog.entries.accountableDepartment')">
-          <el-select
-            v-model="filters.accountable_department_id"
-            data-testid="catalog-department-filter"
-            clearable
-            filterable
-            :loading="facetsLoading"
-            :disabled="facets.accountable_departments.status === 'unavailable'"
-            :placeholder="t('catalog.entries.selectDepartment')"
-          >
-            <el-option v-for="option in departmentOptions" :key="option.id" :label="facetOptionLabel(option)" :value="option.id" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('catalog.entries.sourceEngine')">
@@ -159,6 +235,8 @@ import { navigateConsoleModuleRoute } from '@common-ui'
 import { listEntries, listEntryFacets } from '../api/catalog'
 import { useAuthStore } from '../store/auth'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
+import { coverageDimensionLabel } from '../utils/governanceCoverageView'
+import { applyEntryNavigationSelection, buildEntryFacetQuery } from '../utils/entryNavigation'
 import { buildEntryListQuery, isCanonicalEntryListQuery, parseEntryListRoute } from '../utils/entryRouteState'
 
 const route = useRoute()
@@ -170,7 +248,6 @@ const canViewInventory = computed(() => authStore.hasPermission('catalog.invento
 const governanceStatuses = ['discovered', 'curated', 'certified', 'deprecated']
 const availableGovernanceStatuses = computed(() => filters.view === 'inventory' ? governanceStatuses : governanceStatuses.filter(status => status !== 'discovered'))
 const visibilities = ['inventory', 'department', 'tenant']
-const entryTypes = ['data_item', 'business_entity', 'logical_model', 'metric', 'data_service', 'development_artifact']
 const filters = reactive(parseEntryListRoute(route.query))
 const result = reactive({ data: [], total: 0, page: 1, page_size: 20, total_pages: 0 })
 const facets = reactive(emptyFacets())
@@ -178,13 +255,20 @@ const loading = ref(false)
 const facetsLoading = ref(false)
 let requestVersion = 0
 let facetRequestVersion = 0
-let loadedFacetView = ''
+let loadedFacetKey = ''
 
 const pageTitle = computed(() => t(`catalog.entries.view.${filters.view}Title`))
 const pageDescription = computed(() => t(`catalog.entries.view.${filters.view}Description`))
-const emptyDescription = computed(() => t(`catalog.entries.view.${filters.view}Empty`))
+const coverageGapActive = computed(() => Boolean(filters.coverage_dimension && filters.coverage_state === 'missing'))
+const coverageGapTitle = computed(() => t('catalog.entries.coverageGapActive', {
+  dimension: coverageDimensionLabel(t, filters.coverage_dimension, 'name')
+}))
+const emptyDescription = computed(() => coverageGapActive.value
+  ? t('catalog.entries.coverageGapEmpty', { dimension: coverageDimensionLabel(t, filters.coverage_dimension, 'name') })
+  : t(`catalog.entries.view.${filters.view}Empty`))
 const domainOptions = computed(() => optionsWithSelected(facets.primary_domains, filters.primary_domain_id))
 const departmentOptions = computed(() => optionsWithSelected(facets.accountable_departments, filters.accountable_department_id))
+const entryTypeOptions = computed(() => optionsWithSelectedEntryType(facets.entry_types, filters.entry_type))
 const engineOptions = computed(() => optionsWithSelected(facets.source_engines, filters.source_engine_id))
 const engineOptionsByID = computed(() => new Map(engineOptions.value.map(option => [String(option.id), option])))
 const unavailableFacetLabels = computed(() => {
@@ -201,7 +285,7 @@ function emptyFacet() {
 }
 
 function emptyFacets() {
-  return { view: 'governance', primary_domains: emptyFacet(), accountable_departments: emptyFacet(), source_engines: emptyFacet() }
+  return { view: 'governance', primary_domains: emptyFacet(), accountable_departments: emptyFacet(), entry_types: [], source_engines: emptyFacet() }
 }
 
 function optionsWithSelected(facet, selectedID) {
@@ -213,14 +297,21 @@ function optionsWithSelected(facet, selectedID) {
   return options
 }
 
+function optionsWithSelectedEntryType(options, selectedEntryType) {
+  const result = [...(options || [])]
+  if (selectedEntryType && !result.some(option => option.entry_type === selectedEntryType)) {
+    result.unshift({ entry_type: selectedEntryType, count: 0 })
+  }
+  return result
+}
+
 function entryTypeLabel(entryType) {
-  const key = { data_item: 'dataItem', business_entity: 'businessEntity', logical_model: 'logicalModel', metric: 'metric', data_service: 'dataService', development_artifact: 'developmentArtifact' }[entryType] || 'dataItem'
+  const key = { data_item: 'dataItem', business_entity: 'businessEntity', logical_model: 'logicalModel', metric: 'metric', data_service: 'dataService', development_artifact: 'developmentArtifact', data_application: 'dataApplication' }[entryType] || 'dataItem'
   return t(`catalog.entryType.${key}`)
 }
 
-function facetOptionLabel(option) {
-  const identity = option.code ? `${option.name} · ${option.code}` : option.name
-  return option.count > 0 ? `${identity} (${option.count})` : identity
+function facetOptionIdentity(option) {
+  return option.code ? `${option.name} · ${option.code}` : option.name
 }
 
 function engineOptionLabel(option) {
@@ -257,23 +348,26 @@ async function loadEntries() {
 }
 
 async function loadFacets(force = false) {
-  if (!force && loadedFacetView === filters.view) return
+  const params = buildEntryFacetQuery(filters)
+  const facetKey = JSON.stringify(params)
+  if (!force && loadedFacetKey === facetKey) return
   const version = ++facetRequestVersion
   facetsLoading.value = true
   try {
-    const response = await listEntryFacets({ view: filters.view })
+    const response = await listEntryFacets(params)
     if (version !== facetRequestVersion) return
     Object.assign(facets, emptyFacets(), response)
-    loadedFacetView = filters.view
+    loadedFacetKey = facetKey
   } catch {
     if (version !== facetRequestVersion) return
     Object.assign(facets, {
       view: filters.view,
       primary_domains: { status: 'unavailable', options: [] },
       accountable_departments: { status: 'unavailable', options: [] },
+      entry_types: [],
       source_engines: { status: 'unavailable', options: [] }
     })
-    loadedFacetView = filters.view
+    loadedFacetKey = facetKey
   } finally {
     if (version === facetRequestVersion) facetsLoading.value = false
   }
@@ -287,7 +381,14 @@ async function navigateList(history = 'push') {
 }
 
 async function applyFilters() {
+  if (coverageGapActive.value) filters.search = ''
   filters.page = 1
+  await navigateList('push')
+}
+
+async function selectNavigation(dimension, value) {
+  Object.assign(filters, applyEntryNavigationSelection(filters, dimension, value))
+  loadedFacetKey = ''
   await navigateList('push')
 }
 
@@ -300,13 +401,24 @@ async function resetFilters() {
 async function changeView(view) {
   filters.view = view
   if (view === 'governance' && filters.governance_status === 'discovered') filters.governance_status = ''
+  if (view === 'governance') {
+    filters.coverage_dimension = ''
+    filters.coverage_state = ''
+  }
   filters.page = 1
-  loadedFacetView = ''
+  loadedFacetKey = ''
   await navigateList('replace')
 }
 
+async function clearCoverageGap() {
+  filters.coverage_dimension = ''
+  filters.coverage_state = ''
+  filters.page = 1
+  await navigateList('push')
+}
+
 async function refreshPage() {
-  loadedFacetView = ''
+  loadedFacetKey = ''
   await Promise.all([loadEntries(), loadFacets(true)])
 }
 
@@ -363,7 +475,21 @@ watch(() => route.query, async query => {
 .page-header p { margin: 8px 0 0; color: var(--addp-text-secondary); }
 .header-actions { display: flex; gap: 8px; }
 .view-switch { margin-bottom: 16px; }
-.facet-alert { margin-bottom: 16px; }
+.facet-alert, .coverage-gap-alert { margin-bottom: 16px; }
+.coverage-gap-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; }
+.navigation-card { margin-bottom: 16px; }
+.navigation-header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.navigation-header span { color: var(--addp-text-secondary); font-size: 12px; }
+.navigation-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.navigation-section { min-width: 0; }
+.navigation-section h2 { margin: 0 0 8px; color: var(--addp-text-primary); font-size: 14px; font-weight: 600; }
+.navigation-options { display: flex; flex-direction: column; gap: 4px; max-height: 184px; overflow-y: auto; }
+.navigation-option { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 8px; color: var(--addp-text-primary); background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; text-align: left; }
+.navigation-option:hover { background: var(--el-fill-color-light); }
+.navigation-option.active { color: var(--el-color-primary); background: var(--el-color-primary-light-9); border-color: var(--el-color-primary-light-5); }
+.navigation-option:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 1px; }
+.navigation-option-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.navigation-option-count { flex-shrink: 0; color: var(--addp-text-secondary); font-size: 12px; }
 .filter-card { margin-bottom: 16px; }
 .filter-card :deep(.el-form-item) { margin-bottom: 12px; }
 .filter-card :deep(.el-select), .filter-card :deep(.el-input) { width: 210px; }
@@ -373,6 +499,8 @@ watch(() => route.query, async query => {
 @media (max-width: 900px) {
   .page-header { flex-direction: column; }
   .header-actions { flex-wrap: wrap; }
+  .navigation-header { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .navigation-grid { grid-template-columns: 1fr; }
   .filter-card :deep(.el-form--inline .el-form-item) { display: flex; margin: 0 0 12px; width: 100%; }
   .filter-card :deep(.el-select), .filter-card :deep(.el-input) { width: 100%; }
 }

@@ -42,8 +42,8 @@ func TestDevelopLineageFactsUsesWorkflowDefinitionResourcesAndOutputs(t *testing
 			},
 		},
 	}
-	result := commonModels.JSONMap{"outputs": commonModels.JSONMap{"save_3": map[string]interface{}{"resource": map[string]interface{}{"locator": "addp://engine/1/path/public/target?type=table", "write_mode": "replace"}}}}
-	facts := developLineageFacts(task, result)
+	outputs := commonModels.JSONMap{"save_3": map[string]interface{}{"resource": map[string]interface{}{"locator": "addp://engine/1/path/public/target?type=table", "write_mode": "replace"}}}
+	facts := developLineageFacts(task, outputs)
 	if facts == nil || len(facts.Inputs) != 1 || len(facts.Outputs) != 1 {
 		t.Fatalf("facts = %#v", facts)
 	}
@@ -219,7 +219,7 @@ func TestApplyWorkflowExecutionAuthorizationFactsPersistsOnlyReferences(t *testi
 
 func TestExecuteWorkflowRejectsInvalidWorkflowDefinitionBeforeRuntime(t *testing.T) {
 	executor := &DevExecutor{}
-	result, errorMessage := executor.executeWorkflow(context.Background(), &models.DevTask{
+	result, outputs, errorMessage := executor.executeWorkflow(context.Background(), &models.DevTask{
 		DevType: commonExecution.TaskTypeWorkflow,
 		Content: models.DevTaskContent{
 			"workflow_definition": map[string]interface{}{
@@ -239,6 +239,9 @@ func TestExecuteWorkflowRejectsInvalidWorkflowDefinitionBeforeRuntime(t *testing
 
 	if result != nil {
 		t.Fatalf("result = %#v, want nil", result)
+	}
+	if outputs != nil {
+		t.Fatalf("outputs = %#v, want nil", outputs)
 	}
 	if !strings.Contains(errorMessage, "depends_on") {
 		t.Fatalf("errorMessage = %q, want depends_on validation error", errorMessage)

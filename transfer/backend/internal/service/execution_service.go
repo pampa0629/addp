@@ -152,6 +152,15 @@ func (s *ExecutionService) GetExecution(ctx context.Context, id, tenantID uint) 
 
 // GetExecutionByExecutionID 按统一 execution_id 查询执行记录。
 func (s *ExecutionService) GetExecutionByExecutionID(ctx context.Context, executionID string, tenantID uint) (*models.TaskExecution, error) {
+	execution, err := s.GetTaskProviderExecutionByExecutionID(ctx, executionID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return s.convertToTransferExecution(execution), nil
+}
+
+// GetTaskProviderExecutionByExecutionID 返回 Transfer 的统一执行记录，供 TaskProvider 状态接口使用。
+func (s *ExecutionService) GetTaskProviderExecutionByExecutionID(ctx context.Context, executionID string, tenantID uint) (*commonExecution.TaskExecution, error) {
 	execution, err := s.taskExecutionRepo.GetByExecutionID(ctx, executionID, int(tenantID))
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -162,7 +171,7 @@ func (s *ExecutionService) GetExecutionByExecutionID(ctx context.Context, execut
 	if execution.Module != commonExecution.ModuleTransfer {
 		return nil, fmt.Errorf("execution not found or access denied")
 	}
-	return s.convertToTransferExecution(execution), nil
+	return execution, nil
 }
 
 // ListExecutions 列出任务的执行记录

@@ -19,6 +19,7 @@ type Config struct {
 	StandardURL                          string
 	ServiceURL                           string
 	DevelopURL                           string
+	WorkbenchURL                         string
 	QualityURL                           string
 	ServiceClientSecret                  string
 	SourceSyncInterval                   time.Duration
@@ -39,6 +40,7 @@ func LoadConfig() (*Config, error) {
 		StandardURL:                          commonConfig.GetEnv("STANDARD_URL", "http://localhost:8110"),
 		ServiceURL:                           commonConfig.GetEnv("SERVICE_URL", "http://localhost:8086"),
 		DevelopURL:                           commonConfig.GetEnv("DEVELOP_URL", "http://localhost:8185"),
+		WorkbenchURL:                         commonConfig.GetEnv("WORKBENCH_URL", "http://localhost:8193"),
 		QualityURL:                           commonConfig.GetEnv("QUALITY_URL", "http://localhost:8182"),
 		ServiceClientSecret:                  os.Getenv("CATALOG_SERVICE_CLIENT_SECRET"),
 		SourceSyncInterval:                   commonConfig.GetEnvDuration("CATALOG_SOURCE_SYNC_INTERVAL", "30s"),

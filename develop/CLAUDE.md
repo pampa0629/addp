@@ -72,6 +72,8 @@ Develop 任务编辑器遵守 `docs/spec/addp前端路由与可恢复状态规�
 
 Worker 使用 PostgreSQL AST 验证关系作用域，只把 `addp_input.<alias>` 关系节点改写为执行期输入 locator，再安全编译为 `INSERT INTO <target> SELECT ...`。CTE、子查询和 JOIN 可以使用，但未声明 alias、未使用声明、真实物理关系、表函数数据源、非 PostgreSQL 查询或跨 Engine 输入必须拒绝。Develop 只使用当前父 execution 派生的精确 Engine `read + write` 授权，不获得 DDL effect；稳定输出为 `execution_id + target_locator + row_count`。Develop 不调用 Model API，不持有 Model Permission。
 
+查询、工作流和脚本的 TaskProvider 稳定输出统一只写入 `common.task_executions.metadata.outputs`；不得保存或读取旧的 `metadata.result.outputs`。`GET /task-provider/executions/:execution_id` 使用 `common/taskprovider` 标准状态响应把同一对象投影为顶层闭合 `outputs`，用户执行详情可以附带任务信息，但不得形成第二套输出提取规则。
+
 独立 `develop-query-worker` 固定领取 `module=develop + task_type=query + source=orchestrator` 的 bounded execution；Backend 不得同时启动这些查询。Worker 只消费 execution 中冻结的解析后 `content`、`engine_id`、timeout 和已解析运行时参数，不在领取后重读可变任务定义。所有 Orchestrator 查询在租约失效后都收敛失败，动态目标不进行跨 lease 重放。查询工作台和 `source=develop` 的手动查询继续由 Backend 即时异步执行，不进入该 Worker 队列。
 
 查询工作台 Copilot 只在当前选中的 Query Runtime 范围内生成候选查询语言。前端必须提交当前 Runtime `engine_id` 和 capability 声明的 `query_language`；已有具体 data item 选择时直接提交其 locator（联邦 Runtime 下 locator 保留 Source Engine ID），已有明确容器范围但尚未确定具体 data item 时通过 `resource_scope_locator` 提交 discovery scope，未选择范围时 Copilot 通过带该 Runtime `engine_id` 的共享 `data.search` 粗筛。范围枚举统一走 `resource.children.list → resource.facts.get`，全局发现统一走 `data.search → resource.ancestors.get → resource.facts.get`。同一输入角色存在多个候选时由用户确认一个。Copilot 不得扫描其他工作台 Runtime、拼接 locator、假定字段名或直接执行生成结果；生成的 `query` 和 `query_parameters[]` 必须作为同一查询草稿原子回填编辑器与参数面板，之后仍走同一 preflight 和 execution 主路径。

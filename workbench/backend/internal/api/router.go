@@ -14,7 +14,7 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
-func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, views *service.ViewService, applications *service.DataApplicationService) *gin.Engine {
+func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, views *service.ViewService, applications *service.DataApplicationService, catalogResources *service.CatalogResourceService) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery(), requestidmiddleware.RequestIDMiddleware(), commoni18n.I18nMiddleware())
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -22,8 +22,13 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, views 
 	router.Use(lifecycle.RequireReady())
 
 	handler := NewHandler(views, applications)
+	catalogResourceHandler := NewCatalogResourceHandler(catalogResources)
 	api := router.Group("/api/v1/workbench")
 	api.Use(commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemURL}), commonAuth.MustNewContextGuard("tenant"))
+	catalogAPI := api.Group("")
+	catalogAPI.Use(commonAuth.MustNewServiceClientGuard("addp-catalog"))
+	catalogAPI.GET("/catalog-resources/changes", commonAuth.MustNewPermissionGuard(workbenchauthorization.PermissionWorkbenchCatalogRead), catalogResourceHandler.ListChanges)
+	catalogAPI.POST("/runtime/catalog-references/resolve", commonAuth.MustNewPermissionGuard(workbenchauthorization.PermissionWorkbenchCatalogRead), catalogResourceHandler.ResolveReferences)
 	api.GET("/views", commonAuth.MustNewPermissionGuard(workbenchauthorization.PermissionWorkbenchViewRead), handler.ListViews)
 	api.POST("/views", commonAuth.MustNewPermissionGuard(workbenchauthorization.PermissionWorkbenchViewCreate), handler.CreateView)
 	api.GET("/views/:id", commonAuth.MustNewPermissionGuard(workbenchauthorization.PermissionWorkbenchViewRead), handler.GetView)

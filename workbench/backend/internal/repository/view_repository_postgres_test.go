@@ -92,6 +92,13 @@ func TestWorkbenchRepositoryAgainstPostgres(t *testing.T) {
 	if revision.RevisionNumber != 1 || revision.Name != application.Name {
 		t.Fatalf("published revision = %#v", revision)
 	}
+	var catalogChanges []models.CatalogResourceChangeRow
+	if err := db.Where("tenant_id = ? AND source_identity = ?", 7, application.ID).Order("id ASC").Find(&catalogChanges).Error; err != nil {
+		t.Fatalf("list published application catalog changes: %v", err)
+	}
+	if len(catalogChanges) != 1 || catalogChanges[0].Operation != "upsert" || catalogChanges[0].Snapshot["name"] != "Postgres application" || catalogChanges[0].Snapshot["publication_status"] != models.PublicationStatusPublished {
+		t.Fatalf("published application catalog changes = %#v", catalogChanges)
+	}
 	application.Name = "Edited draft"
 	application.DraftContentHash = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	if err := applications.Update(application, 2); err != nil {
@@ -104,11 +111,23 @@ func TestWorkbenchRepositoryAgainstPostgres(t *testing.T) {
 	if runtime.Name != "Postgres application" || runtime.ContentHash == application.DraftContentHash {
 		t.Fatalf("runtime revision changed with draft = %#v", runtime)
 	}
+	if err := db.Where("tenant_id = ? AND source_identity = ?", 7, application.ID).Order("id ASC").Find(&catalogChanges).Error; err != nil {
+		t.Fatalf("list draft-edited application catalog changes: %v", err)
+	}
+	if len(catalogChanges) != 1 {
+		t.Fatalf("draft edit emitted catalog changes = %#v", catalogChanges)
+	}
 	if err := applications.Delete(7, 11, application.ID, 3); !errors.Is(err, ErrDataApplicationAlreadyPublished) {
 		t.Fatalf("published application Delete() error = %v", err)
 	}
 	if err := applications.Offline(7, 11, application.ID, 3); err != nil {
 		t.Fatalf("Offline() error = %v", err)
+	}
+	if err := db.Where("tenant_id = ? AND source_identity = ?", 7, application.ID).Order("id ASC").Find(&catalogChanges).Error; err != nil {
+		t.Fatalf("list offline application catalog changes: %v", err)
+	}
+	if len(catalogChanges) != 2 || catalogChanges[1].Snapshot["name"] != "Postgres application" || catalogChanges[1].Snapshot["publication_status"] != models.PublicationStatusOffline {
+		t.Fatalf("offline application catalog changes = %#v", catalogChanges)
 	}
 	if _, err := applications.GetRuntime(7, 11, application.ID); !errors.Is(err, ErrDataApplicationNotPublished) {
 		t.Fatalf("offline GetRuntime() error = %v", err)

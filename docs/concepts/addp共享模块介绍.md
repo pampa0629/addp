@@ -12,7 +12,7 @@
 - `common/buildinfo` - Go 服务统一构建身份，由模块生命周期健康响应复用；构建脚本通过链接参数注入 build ID、Git commit、源码指纹和构建时间，进程启动时间由包初始化记录
 - `common/modulelifecycle` - Go Backend 统一的进程存活、System 注册生命周期状态、就绪门禁和 `/health/live`、`/health/ready` 响应；只保存当前进程瞬时状态，System 仍是模块定义、实例和租约的唯一持久事实源
 - `common/jsonmap` - decoded JSON map 的通用读取工具,不承载 `meta_item.attributes` 业务规范
-- `common/taskprovider` - `task.capabilities/v2`、标准任务列表响应、任务级 `execution_contract` 和执行输入实例校验；校验失败返回包含稳定 rule、path 和约束值的结构化错误。任务类型能力不再保存静态 `execution_schema`，Orchestrator 必须从具体任务详情取得精确输入/输出契约
+- `common/taskprovider` - `task.capabilities/v2`、标准任务列表响应、标准 execution 状态响应、`metadata.outputs` 严格提取、任务级 `execution_contract` 和执行输入实例校验；校验失败返回包含稳定 rule、path 和约束值的结构化错误。任务类型能力不再保存静态 `execution_schema`，Orchestrator 必须从具体任务详情取得精确输入/输出契约；TaskProvider 状态接口不得自行解释模块私有结果为稳定输出
 - `common/runtimehealth` - ADDP 应用层后台运行实例的公共心跳模型、发布器和查询仓库；只发布进程活性、角色、容量与当前占用，不承载 execution/runtime/delivery 的领取权或 fencing token
 - `common/query` - 查询参数绑定、SQL 副作用分析和跨 SQL 引擎的基础方言能力；不承载 Engine Catalog facts 或 PostGIS 空间扩展语义
 - `common/engine/selection` - 基于规范化 Engine capabilities 的 Engine Instance 解析和筛选 helper

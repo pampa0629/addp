@@ -195,8 +195,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.TaskExecution"
                         }
                     },
                     "404": {
@@ -1808,8 +1807,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/taskprovider.ExecutionStatusResponse"
                         }
                     },
                     "404": {
@@ -2036,6 +2034,10 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "github_com_addp_common_models.JSONMap": {
+            "type": "object",
+            "additionalProperties": true
+        },
         "github_com_addp_transfer_internal_models.ApproveSchemaChangeRequest": {
             "type": "object",
             "required": [
@@ -3566,6 +3568,161 @@ const docTemplate = `{
                 "output_schema": {
                     "type": "object",
                     "additionalProperties": true
+                }
+            }
+        },
+        "taskprovider.ExecutionStatusResponse": {
+            "type": "object",
+            "required": [
+                "outputs"
+            ],
+            "properties": {
+                "actor_principal_id": {
+                    "description": "User-derived execution authorization facts. The raw User/Service tokens\nand engine connection details are never persisted in task executions.",
+                    "type": "integer"
+                },
+                "actor_tenant_membership_id": {
+                    "type": "integer"
+                },
+                "attempt": {
+                    "type": "integer"
+                },
+                "authorization_expires_at": {
+                    "type": "string"
+                },
+                "bytes_read": {
+                    "description": "Transfer 读取字节数",
+                    "type": "integer"
+                },
+                "bytes_written": {
+                    "description": "Transfer 写入字节数",
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "description": "当前步骤（Orchestrator/Workflow）",
+                    "type": "string"
+                },
+                "error_details": {
+                    "description": "错误详情（仅失败时有值）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                        }
+                    ]
+                },
+                "execution_authorization_id": {
+                    "type": "integer"
+                },
+                "execution_boundary": {
+                    "description": "ExecutionBoundary separates finite queue work from long-running runtime sessions.",
+                    "type": "string"
+                },
+                "execution_config": {
+                    "description": "JSONB 字段",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                        }
+                    ]
+                },
+                "execution_id": {
+                    "description": "执行标识",
+                    "type": "string"
+                },
+                "execution_time_ms": {
+                    "description": "性能指标",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "issued_authorization_version": {
+                    "type": "integer"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "description": "模块特有扩展数据（结果、断点、步骤结果等）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                        }
+                    ]
+                },
+                "module": {
+                    "description": "模块标识",
+                    "type": "string"
+                },
+                "outputs": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "parent_execution_id": {
+                    "description": "父执行（Orchestrator 子步骤追踪父编排）",
+                    "type": "string"
+                },
+                "progress": {
+                    "description": "0-100",
+                    "type": "integer"
+                },
+                "records_read": {
+                    "description": "Transfer 读取记录数",
+                    "type": "integer"
+                },
+                "records_written": {
+                    "description": "Transfer 写入记录数",
+                    "type": "integer"
+                },
+                "retry_of_execution_id": {
+                    "type": "string"
+                },
+                "rows_affected": {
+                    "description": "SQL 影响行数",
+                    "type": "integer"
+                },
+                "source": {
+                    "description": "触发来源模块",
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "description": "关联原始任务",
+                    "type": "string"
+                },
+                "source_task_name": {
+                    "description": "任务名称（冗余，便于查询）",
+                    "type": "string"
+                },
+                "started_at": {
+                    "description": "时间戳",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "执行状态",
+                    "type": "string"
+                },
+                "task_type": {
+                    "description": "稳定执行类型；可来自任务定义或 ad-hoc execution",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "trigger_type": {
+                    "description": "触发信息",
+                    "type": "string"
+                },
+                "triggered_by": {
+                    "description": "触发用户ID",
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         }

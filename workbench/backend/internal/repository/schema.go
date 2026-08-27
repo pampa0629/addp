@@ -22,7 +22,7 @@ func Migrate(db *gorm.DB) error {
 				return fmt.Errorf("acquire workbench schema lock: %w", err)
 			}
 		}
-		if err := tx.AutoMigrate(&models.View{}, &models.DataApplication{}, &models.DataApplicationRevision{}); err != nil {
+		if err := tx.AutoMigrate(&models.View{}, &models.DataApplication{}, &models.DataApplicationRevision{}, &models.CatalogResourceChangeRow{}); err != nil {
 			return fmt.Errorf("auto migrate workbench schema: %w", err)
 		}
 		if tx.Dialector.Name() != "postgres" {
@@ -49,6 +49,86 @@ func Migrate(db *gorm.DB) error {
 			`ALTER TABLE workbench.data_application_revisions ADD CONSTRAINT fk_workbench_application_revisions_application FOREIGN KEY (application_id, tenant_id) REFERENCES workbench.data_applications(id, tenant_id) ON DELETE RESTRICT`,
 			`CREATE INDEX IF NOT EXISTS idx_workbench_applications_owner_updated ON workbench.data_applications (tenant_id, owner_user_id, updated_at DESC, id)`,
 			`CREATE INDEX IF NOT EXISTS idx_workbench_application_revisions_current ON workbench.data_application_revisions (tenant_id, application_id, revision_number DESC)`,
+			`CREATE TABLE IF NOT EXISTS workbench.data_migrations (
+				version BIGINT PRIMARY KEY,
+				name TEXT NOT NULL,
+				applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_workbench_catalog_changes_tenant_id
+				ON workbench.catalog_resource_changes (tenant_id, id)`,
+			`CREATE INDEX IF NOT EXISTS idx_workbench_catalog_changes_source
+				ON workbench.catalog_resource_changes (tenant_id, source_type, source_identity, id DESC)`,
+			`INSERT INTO workbench.catalog_resource_changes (
+				tenant_id, source_type, source_identity, operation, snapshot, observed_at
+			)
+			SELECT
+				application.tenant_id,
+				'data_application',
+				application.id,
+				'upsert',
+				jsonb_build_object(
+					'name', revision.name,
+					'description', revision.description,
+					'object_kind', 'data_application',
+					'publication_status', application.publication_status,
+					'revision_number', application.current_revision_number,
+					'runtime_path', '/data-apps/' || application.id::text
+				),
+				COALESCE(application.updated_at, revision.published_at, NOW())
+			FROM workbench.data_applications AS application
+			JOIN workbench.data_application_revisions AS revision
+			  ON revision.tenant_id = application.tenant_id
+			 AND revision.application_id = application.id
+			 AND revision.revision_number = application.current_revision_number
+			WHERE application.current_revision_number IS NOT NULL
+			  AND NOT EXISTS (
+				SELECT 1 FROM workbench.data_migrations WHERE version = 2026082701
+			  )
+			ORDER BY application.tenant_id, application.id`,
+			`INSERT INTO workbench.data_migrations (version, name)
+			VALUES (2026082701, 'catalog_data_application_change_feed_v1')
+			ON CONFLICT (version) DO NOTHING`,
+			`CREATE OR REPLACE FUNCTION workbench.capture_data_application_catalog_change()
+			RETURNS TRIGGER
+			LANGUAGE plpgsql
+			AS $function$
+			BEGIN
+				IF NEW.current_revision_number IS NULL
+				   OR (NEW.current_revision_number IS NOT DISTINCT FROM OLD.current_revision_number
+				       AND NEW.publication_status = OLD.publication_status) THEN
+					RETURN NEW;
+				END IF;
+				INSERT INTO workbench.catalog_resource_changes (
+					tenant_id, source_type, source_identity, operation, snapshot, observed_at
+				)
+				SELECT
+					NEW.tenant_id,
+					'data_application',
+					NEW.id,
+					'upsert',
+					jsonb_build_object(
+						'name', revision.name,
+						'description', revision.description,
+						'object_kind', 'data_application',
+						'publication_status', NEW.publication_status,
+						'revision_number', NEW.current_revision_number,
+						'runtime_path', '/data-apps/' || NEW.id::text
+					),
+					NOW()
+				FROM workbench.data_application_revisions AS revision
+				WHERE revision.tenant_id = NEW.tenant_id
+				  AND revision.application_id = NEW.id
+				  AND revision.revision_number = NEW.current_revision_number;
+				IF NOT FOUND THEN
+					RAISE EXCEPTION 'current Workbench application revision is missing';
+				END IF;
+				RETURN NEW;
+			END;
+			$function$`,
+			`DROP TRIGGER IF EXISTS trg_workbench_data_application_catalog_change ON workbench.data_applications`,
+			`CREATE TRIGGER trg_workbench_data_application_catalog_change
+			AFTER UPDATE ON workbench.data_applications
+			FOR EACH ROW EXECUTE FUNCTION workbench.capture_data_application_catalog_change()`,
 		}
 		for _, statement := range statements {
 			if err := tx.Exec(statement).Error; err != nil {

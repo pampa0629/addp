@@ -1,8 +1,9 @@
 const ALLOWED_SOURCE_STATUSES = new Set(['active', 'missing'])
-const ALLOWED_ENTRY_TYPES = new Set(['data_item', 'business_entity', 'logical_model', 'metric', 'data_service', 'development_artifact'])
+const ALLOWED_ENTRY_TYPES = new Set(['data_item', 'business_entity', 'logical_model', 'metric', 'data_service', 'development_artifact', 'data_application'])
 const ALLOWED_VIEWS = new Set(['governance', 'inventory'])
 const ALLOWED_GOVERNANCE_STATUSES = new Set(['discovered', 'curated', 'certified', 'deprecated'])
 const ALLOWED_VISIBILITIES = new Set(['inventory', 'department', 'tenant'])
+const ALLOWED_COVERAGE_DIMENSIONS = new Set(['business_definition', 'primary_domain', 'accountability', 'glossary', 'component_element'])
 const MAX_INT64 = 9223372036854775807n
 
 function positiveInteger(value, fallback) {
@@ -26,9 +27,13 @@ function canonicalPositiveID(value) {
 }
 
 export function parseEntryListRoute(query = {}) {
+  const view = allowedValue(query.view, ALLOWED_VIEWS) || 'governance'
+  const coverageDimension = allowedValue(query.coverage_dimension, ALLOWED_COVERAGE_DIMENSIONS)
+  const coverageState = query.coverage_state === 'missing' ? 'missing' : ''
+  const hasCoverageGap = view === 'inventory' && coverageDimension && coverageState
   return {
-    view: allowedValue(query.view, ALLOWED_VIEWS) || 'governance',
-    search: typeof query.search === 'string' ? query.search.trim() : '',
+    view,
+    search: hasCoverageGap ? '' : (typeof query.search === 'string' ? query.search.trim() : ''),
     entry_type: allowedValue(query.entry_type, ALLOWED_ENTRY_TYPES),
     source_status: allowedValue(query.source_status, ALLOWED_SOURCE_STATUSES),
     governance_status: allowedValue(query.governance_status, ALLOWED_GOVERNANCE_STATUSES),
@@ -36,6 +41,8 @@ export function parseEntryListRoute(query = {}) {
     primary_domain_id: canonicalPositiveID(query.primary_domain_id),
     accountable_department_id: canonicalPositiveID(query.accountable_department_id),
     source_engine_id: canonicalPositiveID(query.source_engine_id),
+    coverage_dimension: hasCoverageGap ? coverageDimension : '',
+    coverage_state: hasCoverageGap ? coverageState : '',
     page: positiveInteger(query.page, 1),
     page_size: Math.min(positiveInteger(query.page_size, 20), 200)
   }
@@ -53,6 +60,8 @@ export function buildEntryListQuery(state) {
   if (parsed.primary_domain_id) query.primary_domain_id = parsed.primary_domain_id
   if (parsed.accountable_department_id) query.accountable_department_id = parsed.accountable_department_id
   if (parsed.source_engine_id) query.source_engine_id = parsed.source_engine_id
+  if (parsed.coverage_dimension) query.coverage_dimension = parsed.coverage_dimension
+  if (parsed.coverage_state) query.coverage_state = parsed.coverage_state
   if (parsed.page !== 1) query.page = String(parsed.page)
   if (parsed.page_size !== 20) query.page_size = String(parsed.page_size)
   return query

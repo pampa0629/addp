@@ -52,6 +52,7 @@ func main() {
 	standardClient := commonClient.NewStandardClient(cfg.StandardURL, tokenSource, nil)
 	serviceClient := commonClient.NewServiceClient(cfg.ServiceURL, tokenSource, nil)
 	developClient := commonClient.NewDevelopClient(cfg.DevelopURL, tokenSource, nil)
+	workbenchClient := commonClient.NewWorkbenchClient(cfg.WorkbenchURL, tokenSource, nil)
 	qualityClient := commonClient.NewQualityClient(cfg.QualityURL, tokenSource, nil)
 	systemReferenceResolver := service.NewSystemClientReferenceResolver(systemClient)
 	metaSyncService := service.NewSourceSyncService(db, service.NewTenantMetaChangeSource(metaClient))
@@ -59,7 +60,8 @@ func main() {
 	standardSyncService := service.NewProfessionalSourceSyncService(db, service.NewTenantStandardChangeSource(standardClient))
 	serviceSyncService := service.NewProfessionalSourceSyncService(db, service.NewTenantServiceChangeSource(serviceClient))
 	developSyncService := service.NewProfessionalSourceSyncService(db, service.NewTenantDevelopChangeSource(developClient))
-	syncRunner := service.NewSourceSyncRunner(db, cfg.SourceSyncInterval, systemClient, metaSyncService, modelSyncService, standardSyncService, serviceSyncService, developSyncService)
+	workbenchSyncService := service.NewProfessionalSourceSyncService(db, service.NewTenantWorkbenchChangeSource(workbenchClient))
+	syncRunner := service.NewSourceSyncRunner(db, cfg.SourceSyncInterval, systemClient, metaSyncService, modelSyncService, standardSyncService, serviceSyncService, developSyncService, workbenchSyncService)
 	syncRunner.Start(runtimeContext)
 	governanceTaskService := service.NewGovernanceTaskService(db, systemReferenceResolver)
 	responsibilityRunner := service.NewResponsibilityReconciliationRunner(
@@ -89,6 +91,7 @@ func main() {
 		service.NewStandardClientSourceResolver(standardClient),
 		service.NewServiceClientSourceResolver(serviceClient),
 		service.NewDevelopClientSourceResolver(developClient),
+		service.NewWorkbenchClientSourceResolver(workbenchClient),
 	).WithQualitySummaryResolver(service.NewQualityClientSummaryResolver(qualityClient))
 	personalCatalogService := service.NewPersonalCatalogService(db, entryService)
 	collectionService := service.NewCollectionService(db, entryService).WithSystemReferenceResolver(systemReferenceResolver)

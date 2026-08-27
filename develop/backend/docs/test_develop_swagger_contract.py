@@ -30,11 +30,11 @@ def test_dev_task_responses_use_explicit_swagger_contracts():
     detail_ref = spec["paths"]["/task-definitions/{id}"]["get"]["responses"]["200"]["schema"]["$ref"]
     update_ref = spec["paths"]["/task-definitions/{id}"]["put"]["responses"]["200"]["schema"]["$ref"]
     list_ref = spec["paths"]["/task-definitions"]["get"]["responses"]["200"]["schema"]["$ref"]
-    provider_detail_ref = spec["paths"]["/tasks/{task_type}/{id}"]["get"]["responses"]["200"]["schema"]["$ref"]
-    provider_list_ref = spec["paths"]["/tasks"]["get"]["responses"]["200"]["schema"]["$ref"]
+    provider_detail_ref = spec["paths"]["/task-provider/tasks/{task_type}/{id}"]["get"]["responses"]["200"]["schema"]["$ref"]
+    provider_list_ref = spec["paths"]["/task-provider/tasks"]["get"]["responses"]["200"]["schema"]["$ref"]
 
     assert ref_name(create_ref) == "DevTaskSwagger"
-    assert ref_name(detail_ref) == "DevTaskSwagger"
+    assert ref_name(detail_ref) == "DevTaskDetailSwagger"
     assert ref_name(update_ref) == "DevTaskSwagger"
     assert ref_name(list_ref) == "ListDevTasksSwaggerResponse"
     assert ref_name(provider_detail_ref) == "ProviderDevTaskSwagger"
@@ -72,6 +72,16 @@ def test_execution_responses_use_explicit_swagger_contracts():
     detail = definition(spec, "ExecutionWithDevTaskSwagger")
     dev_task_ref = detail["properties"]["dev_task"]["$ref"]
     assert ref_name(dev_task_ref) == "DevTaskSwagger"
+
+
+def test_task_provider_execution_uses_common_status_contract():
+    spec = load_spec()
+    provider_ref = spec["paths"]["/task-provider/executions/{execution_id}"]["get"]["responses"]["200"]["schema"]["$ref"]
+
+    assert provider_ref == "#/definitions/taskprovider.ExecutionStatusResponse"
+    response = spec["definitions"]["taskprovider.ExecutionStatusResponse"]
+    assert "outputs" in response["properties"]
+    assert "outputs" in response["required"]
 
 
 def test_workflow_swagger_schema_requires_standard_task_fields():

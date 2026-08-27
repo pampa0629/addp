@@ -9,6 +9,7 @@ import (
 	commonAPI "github.com/addp/common/api"
 	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
+	"github.com/addp/common/taskprovider"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
@@ -31,7 +32,7 @@ func NewExecutionHandler(executionService *service.ExecutionService) *ExecutionH
 // @Tags 执行管理 | Execution Management
 // @Produce json
 // @Param execution_id path string true "执行ID | Execution ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} models.TaskExecution
 // @Failure 404 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["transfer.task.read"]
@@ -46,14 +47,23 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 // @Tags TaskProvider
 // @Produce json
 // @Param execution_id path string true "执行ID | Execution ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} taskprovider.ExecutionStatusResponse
 // @Failure 404 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["transfer.task_provider.read"]
 // @Router /task-provider/executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) ProviderGetExecution(c *gin.Context) {
-	h.getExecution(c)
+	tenantID := commonAuth.GetTenantID(c)
+	executionID := c.Param("execution_id")
+
+	execution, err := h.executionService.GetTaskProviderExecutionByExecutionID(c.Request.Context(), executionID, tenantID)
+	if err != nil {
+		commonAPI.NotFoundError(c, "Execution not found")
+		return
+	}
+
+	c.JSON(http.StatusOK, taskprovider.NewExecutionStatusResponse(execution))
 }
 
 func (h *ExecutionHandler) getExecution(c *gin.Context) {

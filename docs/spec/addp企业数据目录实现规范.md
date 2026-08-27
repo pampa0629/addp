@@ -1,13 +1,13 @@
 # ADDP 企业数据目录实现规范
 
-版本：v1.6-draft  
-更新日期：2026-08-26
+版本：v1.8-draft
+更新日期：2026-08-27
 
 本文定义 Catalog 模块的身份、数据、变化、API、权限、搜索和运行契约。概念边界见 [企业数据目录体系图](../concepts/addp企业数据目录体系图.md)。
 
 ## 一、适用范围与原则
 
-第一阶段以 Meta DataItem 为自动来源，并开放 Standard Domain、Glossary Term、Element 的基础关联；第二阶段接入 Model Entity 与 LogicalTable；第三阶段接入 Standard Metric；第四阶段接入 Service QueryService；第五阶段接入经过筛选的 Develop 可复用开发成果。Quality 摘要和通用 Workspace 后续必须先明确关系与协作边界，不默认扩展为新的 CatalogEntry 类型。
+第一阶段以 Meta DataItem 为自动来源，并开放 Standard Domain、Glossary Term、Element 的基础关联；第二阶段接入 Model Entity 与 LogicalTable；第三阶段接入 Standard Metric；第四阶段接入 Service QueryService；第五阶段接入经过筛选的 Develop 可复用开发成果；第六阶段接入 Workbench 已首次发布的 Data Application。Quality 摘要和通用 Workspace 后续必须先明确关系与协作边界，不默认扩展为新的 CatalogEntry 类型。
 
 实现必须遵守：
 
@@ -29,7 +29,7 @@
 | --- | --- | --- |
 | `id` | UUID PK | 企业目录稳定身份 |
 | `tenant_id` | 非空、索引 | Tenant 隔离事实，不接受调用方提交 |
-| `entry_type` | `data_item` / `business_entity` / `logical_model` / `metric` / `data_service` / `development_artifact` | 企业目录对象类型 |
+| `entry_type` | `data_item` / `business_entity` / `logical_model` / `metric` / `data_service` / `development_artifact` / `data_application` | 企业目录对象类型 |
 | `entry_status` | `active` / `merged` | 目录记录是否仍为规范身份 |
 | `merged_into_entry_id` | nullable UUID | `merged` 墓碑指向的规范条目 |
 | `recommended_successor_entry_id` | nullable UUID | 弃用条目可选指向的推荐继任 CatalogEntry |
@@ -52,9 +52,9 @@
 | --- | --- |
 | `id` | UUID PK |
 | `tenant_id` / `catalog_entry_id` | 非空；只引用 Catalog 自身表 |
-| `source_module` | `meta` / `model` / `standard` / `service` / `develop`；后续由规范显式扩展 |
-| `source_type` | `data_item` / `entity` / `logical_table` / `metric` / `query_service` / `dev_task` |
-| `source_identity` | Meta DataItem fingerprint，或 Model / Standard / Service 公开正整数 ID 的规范十进制字符串 |
+| `source_module` | `meta` / `model` / `standard` / `service` / `develop` / `workbench`；后续由规范显式扩展 |
+| `source_type` | `data_item` / `entity` / `logical_table` / `metric` / `query_service` / `dev_task` / `data_application` |
+| `source_identity` | Meta DataItem fingerprint，Model / Standard / Service / Develop 公开正整数 ID 的规范十进制字符串，或 Workbench Data Application 规范小写 UUID |
 | `source_status` | `active` / `missing` |
 | `source_version` | owner 变化源给出的可排序单调版本字符串 |
 | `bound_at` / `missing_at` | UTC |
@@ -68,7 +68,7 @@
 - 同一 Tenant 的 `{source_module, source_type, source_identity}` 最多一个当前有效绑定；
 - 一个 `active` CatalogEntry 最多一个当前 `active` SourceBinding；
 - 历史绑定可以同 identity 多条，但只能一条当前有效；
-- `observed_snapshot` 只包含列表、搜索、来源失效解释所需的最后观察摘要。Meta 来源可以包含名称、类型、引擎 ID、Meta Item ID、结构摘要、扫描深度和必要展示字段；Model 来源只包含名称、编码、对象种类、专业生命周期、逻辑模型角色、分层和必要的 owner 引用 ID；Standard Metric 来源只包含名称、编码、指标类型、专业状态、生命周期和必要的 Domain、Category、Unit 引用 ID；Service QueryService 来源只包含标题、服务名、服务状态、配置类型、访问模式和必要的 Engine 引用 ID；Develop DevTask 来源只包含名称、说明、开发类型、专业状态和必要的 Engine 引用 ID。不得复制完整 attributes、EntityAttribute、LogicalField、指标定义、公式、派生配置、服务 SQL、协议配置、输出契约、Consumer Descriptor、Develop `content`、查询文本、工作流 DAG、参数、执行配置、关系、物化配置或内容数据；当前专业详情通过 owner 批量解析 API 动态读取。
+- `observed_snapshot` 只包含列表、搜索、来源失效解释所需的最后观察摘要。Meta 来源可以包含名称、类型、引擎 ID、Meta Item ID、结构摘要、扫描深度和必要展示字段；Model 来源只包含名称、编码、对象种类、专业生命周期、逻辑模型角色、分层和必要的 owner 引用 ID；Standard Metric 来源只包含名称、编码、指标类型、专业状态、生命周期和必要的 Domain、Category、Unit 引用 ID；Service QueryService 来源只包含标题、服务名、服务状态、配置类型、访问模式和必要的 Engine 引用 ID；Develop DevTask 来源只包含名称、说明、开发类型、专业状态和必要的 Engine 引用 ID；Workbench Data Application 来源只包含当前发布 Revision 的名称、说明、专业发布状态、Revision Number 和规范运行路径。不得复制完整 attributes、EntityAttribute、LogicalField、指标定义、公式、派生配置、服务 SQL、协议配置、输出契约、Consumer Descriptor、Develop `content`、查询文本、工作流 DAG、参数、执行配置、Data Application Component、页面布局、参数绑定、Revision 快照、关系、物化配置或内容数据；当前专业详情通过 owner 批量解析 API 动态读取。
 
 `observed_snapshot` 是带 `source_version` 与 `observed_at` 的可重建投影，不是专业事实备份：Catalog 不允许编辑其中字段，owner 当前响应永远权威，且该摘要不能用于恢复 owner 数据。owner 不可达或来源已经删除时，Catalog 可以继续展示最后观察摘要并明确其观察时间，但不得把它表述为当前事实。
 
@@ -195,6 +195,8 @@ Catalog 列表只提供两个相互排他的目录视图：
 - `inventory`：企业资源盘点视图，包含 `discovered|curated|certified|deprecated` 条目，必须同时具有 `catalog.entry.read` 和 `catalog.inventory.read`。
 
 视图是同一组 CatalogEntry 的权限感知查询，不新增实体、复制条目或维护双轨索引。DataItem 全量自动建档且可在 `inventory` 查询；完成业务编目后，同一 CatalogEntry 自然进入 `governance` 视图。
+
+目录浏览采用“主业务域 + 上下文分面 + 权威分页列表”，不建立持久化企业目录树。Standard Domain 是主业务分类，Accountable Department 是可交叉的组织责任分面，Entry Type 是资源形态分面；三者不能被固化为 Domain 拥有 Department、Department 拥有资源类型的父子事实。前端在同一 `/entries` 路由中按“业务域 → 责任部门 → 资源类型”逐步缩小当前查询，所有选择写入规范 URL，并继续由 `/entries` 返回同一批 CatalogEntry。
 
 ## 五、Meta DataItem 可恢复变化契约
 
@@ -434,6 +436,32 @@ Catalog 只为联邦导航提供自己拥有的来源绑定解析：前端把 ow
 
 `glossary` 是观察维度，不作为 `curated` 的必备状态条件；`component_element` 对没有 CatalogComponent 的专业条目标记为不适用，不能用全体条目作为分母制造虚假低覆盖率。覆盖率只说明企业目录治理完整度，不说明底层数据质量、内容授权、Owner 专业模型完整度或资产发布资格。
 
+覆盖率页面必须能够沿同一权威口径下钻到待治理条目，但不得为此新增覆盖率明细表、任务实体或搜索投影字段。`GET /entries` 通过成对参数 `coverage_dimension=<固定维度>&coverage_state=missing` 返回该维度当前适用且未覆盖的 active CatalogEntry；这两个参数只允许与 `view=inventory` 同时出现，缺少任一参数、使用其他状态或在治理目录视图提交均返回 `400`。第一阶段只实现 `missing`，不预建未形成处置价值的 `covered`、`not_applicable` 等并行状态。
+
+缺口列表的 SQL 判定必须与本节覆盖率聚合复用同一组适用性和覆盖谓词，使列表 `total` 精确等于当前权限与其他结构化筛选共同约束后的缺口数量。名称全文搜索由 Meilisearch 投影负责，治理缺口由 PostgreSQL 当前事实负责；第一阶段二者互斥，避免按搜索分页候选再做数据库过滤导致漏项或虚假总数。前端从覆盖率页进入缺口列表时不得携带名称搜索，并在缺口视图中禁用名称搜索；退出缺口视图后恢复普通目录搜索。
+
+### 5.13 Workbench Data Application 专业资源变化与动态引用
+
+Workbench Data Application 在首次发布不可变 Application Revision 后才建立 `data_application` CatalogEntry。未发布草稿是创建者私有工作成果，不进入企业资源盘点；CatalogEntry 标识稳定的 Data Application 聚合根，不标识单个 Revision。重新发布只推进同一个来源绑定的观察版本，下线只把 Workbench 专业状态改为 `offline`，两者都不改变 Catalog 治理状态、企业身份或来源 `active` 状态。
+
+Workbench 通过 PostgreSQL trigger 在首次发布、重新发布和下线的同一数据库事务中追加 owner-local、append-only `workbench.catalog_resource_changes`。只修改未发布草稿、且没有改变 `current_revision_number` 或 `publication_status` 时不得产生目录变化；首次迁移只回填已经存在 `current_revision_number` 的 Data Application。变化日志 ID 同时作为单调摘要版本，Catalog 使用独立 `workbench/catalog_resource_changes` checkpoint 拉取：
+
+```http
+GET /api/v1/workbench/catalog-resources/changes?after_cursor={opaque}&limit=200
+```
+
+变化 Schema 固定为 `workbench.catalog_resource_changes/v1`，`source_type=data_application`，`source_identity` 使用 Data Application 规范小写 UUID，`operation` 当前固定为 `upsert`。已经产生 Revision 的 Data Application 不允许物理删除，因此不得预设日常 `missing` 路线；如果未来要引入彻底删除，必须先补齐 Catalog、Asset、Grant 和审计的正式回收状态机。
+
+当前专业摘要通过下列唯一批量接口动态读取：
+
+```http
+POST /api/v1/workbench/runtime/catalog-references/resolve
+```
+
+请求只接受 1 到 200 个 `{source_type=data_application, source_identity=<uuid>}`，响应按请求顺序返回 `found`、当前 `published|offline` 专业状态、最新目录变化版本、当前 Revision Number、最小摘要以及 `/data-apps/{application_id}` 规范运行路径；跨 Tenant、不存在和从未发布统一 `found=false`。两个接口只允许 `addp-catalog` Service Client 和不可委派、不可定制的 `workbench.catalog.read`。
+
+Data Application 的草稿、Component、页面布局、参数、绑定、Revision 快照和内容哈希全部由 Workbench 权威维护，Catalog 不复制为 CatalogComponent 或可编辑专业事实。Catalog 或 Asset 可见性不授予应用执行权；应用运行仍由 Workbench 校验 `workbench.data_application.execute` 与 owner Resource Grant / Policy，组件查询继续由 Service 独立执行最终数据授权。
+
 ## 六、Catalog API 契约
 
 BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
@@ -465,11 +493,11 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 
 `PUT /entries/:id` 必须携带完整可编辑聚合和正整数 `version`，其中 `recommended_successor_entry_id` 使用规范 UUID 或 `null`。成功返回新完整资源并递增版本；版本冲突返回 `409` 和 `catalog_entry_version_conflict`，不能自动重试或覆盖。推荐继任目标不满足同 Tenant、状态或来源约束时返回 `409` 和 `catalog_recommended_successor_invalid`。
 
-列表使用标准 `{data,total,page,page_size,total_pages}` 响应；`view=governance|inventory` 是稳定目录视图，省略时唯一表示 `governance`。`search`、`entry_type`、`source_status`、`governance_status`、`visibility`、`primary_domain_id`、`accountable_department_id`、`source_engine_id` 等过滤参数必须在 Swagger 中逐项声明，排序字段使用白名单。显式请求 `view=inventory` 但缺少 `catalog.inventory.read` 时返回 `403`，不静默降级到治理目录。
+列表使用标准 `{data,total,page,page_size,total_pages}` 响应；`view=governance|inventory` 是稳定目录视图，省略时唯一表示 `governance`。`search`、`entry_type`、`source_status`、`governance_status`、`visibility`、`primary_domain_id`、`accountable_department_id`、`source_engine_id`、`coverage_dimension`、`coverage_state` 等过滤参数必须在 Swagger 中逐项声明，排序字段使用白名单。显式请求 `view=inventory` 但缺少 `catalog.inventory.read` 时返回 `403`，不静默降级到治理目录；治理缺口参数组合不满足 5.12 节约束时返回 `400`。
 
-`GET /entries/facets` 只接受同样的 `view`，并与 `/entries` 共用 Tenant、目录可见性和盘点权限过滤。Catalog 从权威库计算当前可见结果中实际出现的稳定 ID 及数量，再使用 `addp-catalog` Tenant Service Token 向 Standard / System 精确批量解析显示名、编码、类型和状态。它不返回 owner 未在当前可见 CatalogEntry 中被引用的对象，不授予额外 owner 管理权限，也不持久化 owner 完整列表。任一 owner 解析失败时，该分面返回 `unavailable` 状态，其他分面仍正常返回；不把动态解析变成 Catalog 启动或 Ready 依赖。
+`GET /entries/facets` 接受同样的 `view`，以及可选 `primary_domain_id`、`accountable_department_id`、`entry_type` 上下文参数，并与 `/entries` 共用 Tenant、目录可见性和盘点权限过滤。响应是即时聚合的导航读模型，不是目录树事实：主业务域统计始终覆盖当前视图；责任部门统计受已选业务域约束；资源类型统计受已选业务域和责任部门约束；来源引擎统计受三项选择共同约束。Catalog 从权威库计算当前可见结果中实际出现的稳定 ID 及数量，再使用 `addp-catalog` Tenant Service Token 向 Standard / System 精确批量解析显示名、编码、类型和状态。它不返回 owner 未在当前可见 CatalogEntry 中被引用的对象，不授予额外 owner 管理权限，也不持久化 owner 完整列表。任一 owner 解析失败时，该分面返回 `unavailable` 状态，其他分面仍正常返回；不把动态解析变成 Catalog 启动或 Ready 依赖。
 
-前端的 Domain、Department 和 Engine Instance 筛选必须使用可搜索选择器，用显示名交互、用稳定 ID 提交和恢复 URL。裸 ID 输入框与列表中的裸 Engine ID 列都不是正式交互路径。
+前端以可键盘操作的名称与数量选项呈现 Domain、Department 和 Entry Type 导航；Domain 或 Department 数量过多时在各自区域内部滚动，不把全量 DataItem 改造成节点树。Engine Instance 继续使用可搜索选择器。所有稳定 ID 只用于提交和恢复 URL；裸 ID 输入框与列表中的裸 Engine ID 列都不是正式交互路径。
 
 `GET /reference-candidates` 是 Catalog 编目交互的唯一跨 owner 候选入口，使用 `catalog.entry.update` Permission。请求固定包含 `reference_type=domain|glossary|element|department|user`，可选 `search`，并使用 `page`、`page_size` 分页；`page_size` 最大 50。响应使用标准分页结构，候选 `id` 使用字符串，显示字段只包含 `name`、可选 `code` 和 owner 当前 `status`。该接口只返回当前 Tenant 中允许建立新关联的对象，不返回完整专业 DTO。
 

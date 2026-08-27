@@ -1,6 +1,6 @@
 # ADDP Workbench 数据服务消费与数据应用专题
 
-状态：概念设计已确认；Phase 1 的 Service 消费契约与执行权限、Phase 2 的 Workbench 最小模块、共享 renderer、Workbench View 和平台登记已实现；细粒度 Resource Scope Binding 待 owner 资源授权模型形成后收敛，真实跨领域 Online 验收进入 Phase 3。
+状态：概念设计已确认；Phase 1 至 Phase 4A 已实现；Phase 4B 的 Workbench Data Application 首次发布进入 CatalogEntry 已完成代码与门禁，运行态重启验收待完成；Asset 授权履约仍等待统一 owner Resource Grant 模型确认。
 
 本文跟进 ADDP `workbench` 模块的概念、边界、阶段计划与实施状态。Workbench 是平台级、领域无关的数据服务消费模块，不属于 Outdoor 业务专用能力。Outdoor 只作为首个真实验收场景；后续任何满足消费契约的数据服务都应能以同一主路径接入，禁止在 Workbench 核心模型、API、渲染判断或权限逻辑中硬编码 Outdoor 表、字段、指标或页面。
 
@@ -894,7 +894,7 @@ Phase 4A 先完成 Workbench owner 内的独立闭环：
 
 Phase 4B 再接企业目录和资产授权主线：
 
-- [ ] 将 Workbench Data Application 作为专业资源接入 CatalogEntry；
+- [ ] 将 Workbench Data Application 作为专业资源接入 CatalogEntry（代码与门禁已完成，待运行态重启验收后勾选）；
 - [ ] 一次性启用并收敛 Asset `application` 类型的 CatalogEntry 组合路线；
 - [ ] 接入 owner Resource Grant、Asset 履约和 Portal 打开入口；
 - [ ] 删除旧的手工应用链接、软授权和专属 Token 设想。
@@ -1086,7 +1086,7 @@ Workbench 与 System 重启后，Phase 4A 已完成创建者真实浏览器闭�
 
 接力动作固定为：先在仓库 `Settings → Actions → Runners` 恢复或准备符合规范的专用 macOS Runner；现有 queued 运行会在 Runner 上线后自动接单。运行结束后必须核对 `readiness.txt`、`summary.txt`、`online-report.json`、`workbench-service-consumption-browser.json`、Service 执行审计证据、应用日志及 `cleanup=passed`，再决定是否勾选 Phase 3 的 Business MySQL 验收项。
 
-### 14.7 Phase 4A 参数联动人工验收设计（2026-08-27）
+### 14.7 Phase 4A 参数联动人工验收（2026-08-27）
 
 Phase 4A 的单组件、无参数发布闭环已经通过，但尚未用真实服务证明“一个应用参数同时驱动多个 Component”。本地人工验收固定使用正式发布链路补齐该证据，不修改现有 Query Service `f2`、`p3`，不直接更新数据库契约，也不在 Workbench 生产代码中加入 Outdoor 字段判断。
 
@@ -1102,6 +1102,52 @@ Phase 4A 的单组件、无参数发布闭环已经通过，但尚未用真实�
 选择 `City` 是验收数据事实，不是产品模型：当前正式来源共 130 行，各城市约 7–12 行，输入不同城市后两个组件都能在单页内得到完整且肉眼可区分的结果，Chart 不会因 `page.has_more=true` 被完整性规则阻断。该场景只证明真实动态参数、显式共享绑定、双组件渲染和 cursor/完整性边界；Workbench 的领域无关性仍由生产代码扫描、Consumer Descriptor 契约测试和待执行的 Business MySQL T4 共同证明。
 
 人工验收顺序固定为：先分别运行两个 View，验证参数值变化会改变真实结果；再创建 Data Application 草稿，把两个 Component 映射到唯一应用参数；保存后验证一次输入触发两次正式 Service 查询、两组件使用同一类型化参数且结果同步变化；再次保存以验证草稿乐观并发；发布前确认示例名称与是否长期保留；发布后验证不可变 Revision 运行端。任何失败都回到 Service Descriptor、Workbench 编译或应用 Binding 的单一主路径修复，不增加旁路请求或测试专用运行端。
+
+当前已完成发布与运行闭环：
+
+| 资源 | 当前事实 |
+| --- | --- |
+| Query Service | `workbench_parameter_demo`，ID `23`，私有、`active`；`filterable_fields=["City"]`，Meta `serve` observation 的 `capture_method=declared`，当前依赖投影为 `active` |
+| Table View | `workbench-parameter-table`，ID `ca2b8443-693c-42bd-94e2-66b0bc681228`；`长沙市` 返回 10 行，改为 `衡阳市` 返回 12 行且不再出现长沙结果 |
+| Chart View | `workbench-parameter-chart`，ID `c34ba67a-6f17-4859-b9a1-3801fab73368`；柱状图使用 `NAME` 维度和 `SHAPE_Area` 度量，真实查询后生成 ECharts canvas，浏览器无新增 error / warn |
+| Data Application | `workbench-parameter-linkage-demo`，ID `d6c30859-15c8-4b88-964b-f2dd315fb923`；`publication_status=published`、`version=4`、当前 Revision `1`；页面标题为“城市地块联动分析”，已确认长期保留 |
+
+草稿快照当前只有一个应用参数，内部稳定 key 为 `component_1.city`、标签为“城市（共享）”、默认值为“长沙市”；Table 与 Chart 的两个 Component 参数都通过独立 Binding 显式指向该 key。第二次保存已验证乐观版本从 2 增至 3，未使用的 `component_2.city` 已被规范化逻辑裁剪。内部 key 不作为用户可见领域词汇，也不要求与 Service 字段同名；运行时只根据 Binding 编译两个组件请求。
+
+本轮同时发现并修复 Query Service 发布链路缺陷。正式血缘规范和 PostgreSQL migration 只允许 `declared | runtime | parsed`，但 Meta 服务发布实现曾写入未定义的 `published`；SQLite 测试夹具又遗漏生产 CHECK，导致测试假绿。Meta 现将 owner 提供的服务发布事实记录为 `declared`，测试夹具同步生产枚举并断言观测值。Service 创建在同步血缘发布失败后曾保留已提交主记录，使页面显示失败但服务名已占用；现失败时精确删除本次新建记录，并以模拟 Meta 503 的单元测试证明不会遗留服务。首次失败产生的 ID `22` 已通过 Service 正式删除入口清理，重新发布 ID `23` 后血缘 observation 与 projection 均已形成。
+
+Chart 首次加载失败不是 renderer 代码缺陷：运行中的 Workbench Vite 启动于 14:49，另一个并行过程在 15:10–15:13 改写 `node_modules` 并移除 `.vite/deps`，导致组件源码返回 200、四个 ECharts 预构建依赖却返回 504。只重启 5190 Workbench frontend 后依赖重新预构建，同一配置立即生成 canvas。该环境事实不引入产品兼容路径；并行会话修改依赖后必须重启对应 Vite 服务。
+
+用户已确认继续使用 `workbench-parameter-linkage-demo` 并长期保留。2026-08-27 15:38 发布 Revision `1`，应用与修订记录的内容哈希一致，均为 `sha256:882e14502276769e053eb332aa01f2d757ee1d54fe3ae95cfc43197c4e6e7594`。运行端固定读取该不可变修订：默认“长沙市”执行“查询全部组件”后，Table 返回 10 行且 Chart 生成 1 个 ECharts canvas；将唯一共享输入改为“衡阳市”后再次查询，Table 返回 12 行、结果不再包含长沙市，Chart 继续生成 1 个 canvas。两轮查询期间浏览器没有新增 error / warn；运行查询后数据库仍只有 Revision `1`，当前修订号与内容哈希均未变化。运行入口为 `/data-apps/d6c30859-15c8-4b88-964b-f2dd315fb923`。
+
+### 14.8 Phase 4B CatalogEntry 第一段实现与接力状态（2026-08-27）
+
+Phase 4B 先按正式企业目录主路径完成 Workbench owner 到 Catalog 的单向收录，不提前启用 Asset `application` 类型，也不把 Catalog 可见性解释为应用执行授权：
+
+- `DataApplication` 仍是 Workbench 聚合根，`CatalogEntry` 标识应用而不是 Revision；首次发布产生第一条 append-only 目录变化，后续重新发布与下线继续更新同一个来源绑定，不创建平行目录项；
+- Workbench 新增 `workbench.catalog_resource_changes/v1` 变化源与批量动态解析接口，只向 `addp-catalog` 服务身份开放，并要求 tenant-only、不可委托、不可租户自定义的 `workbench.catalog.read`；
+- 私有草稿创建与编辑不产生目录变化；现有已发布应用由一次性 `workbench.data_migrations` 回填，之后由应用聚合状态触发器记录发布 Revision 的最小摘要；普通生命周期没有物理删除路径，因此本版变化操作只允许 `upsert`，下线仍保持可发现身份并在摘要中显示 `offline`；
+- Catalog 新增唯一类型 `data_application` 与来源对 `workbench / data_application / canonical UUID`，复用专业资源 checkpoint、重放、幂等 upsert、动态来源解析和租户边界；Catalog 前端列表、详情、筛选与 canonical route 已加入中英文类型名称；
+- System migration `000105_iam_workbench_catalog_read` 物化新权限、授予 `tenant.catalog_runtime` 并刷新已分配该角色的 principal 授权版本。Docker Catalog 配置增加唯一 `WORKBENCH_URL`，没有增加第二条路由、API Key 或 Data Application 专属注册表。
+
+本段已通过：
+
+```bash
+cd common && go test ./client ./authorization/...
+cd workbench/backend && go test ./...
+cd catalog/backend && go test ./...
+make test-authorization
+make test-catalog-frontend
+make test-workbench-frontend
+WORKBENCH_POSTGRES_TEST_DSN='postgres://.../addp_test?sslmode=disable' make test-workbench-postgres
+CATALOG_POSTGRES_TEST_DSN='postgres://.../addp_test?sslmode=disable' make test-catalog-postgres
+ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?sslmode=disable' \
+  bash scripts/test/system-iam-postgres-gate.sh --package migration --test workbench-catalog-read
+```
+
+当前运行环境仍是修改前启动的 System、Workbench 和 Catalog 进程：业务库 migration 为 `104`，没有 `workbench.catalog.read`；`workbench.catalog_resource_changes` 尚未创建；Catalog 也尚无 Workbench 来源绑定。数据库中两个长期保留的已发布应用仍完整存在，重启后应由 migration 一次性回填并由 Catalog 同步为两个 `data_application` 目录项。接力会话不得把“代码门禁通过”写成运行态验收通过；应在外部终端按正式生命周期完成重启，再验证权限 migration `105`、变化源两条历史记录、Catalog 两个唯一来源绑定、Catalog 中文/英文类型显示以及来源详情跳转，最后才能勾选 Phase 4B 第一项。
+
+下一段不能直接沿用 Asset 现有的审批记录作为软 ACL。正式边界要求 Asset 负责申请、审批与履约状态，Workbench owner 负责最终应用执行判断，Service owner 继续逐组件执行底层数据授权。当前仓库尚未形成统一 owner Resource Grant 运行时，因此接力时先确认 owner-local Grant 事实、Asset 幂等履约/撤销协议和失败重试语义，再启用 Asset `application` 类型；不得先建 Workbench 私有分享表、让 Workbench 在线查询 Asset ACL，或让 Catalog/Portal 可见性绕过 `workbench.data_application.execute`。
 
 ## 十五、概念设计状态
 

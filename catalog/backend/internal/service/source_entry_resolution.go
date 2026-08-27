@@ -8,13 +8,14 @@ import (
 
 	"github.com/addp/catalog/internal/models"
 	commonModels "github.com/addp/common/models"
+	"github.com/google/uuid"
 )
 
 const maxSourceEntryReferences = 200
 
 type CatalogSourceReference struct {
-	SourceModule   string `json:"source_module" enums:"meta,model,standard,service,develop"`
-	SourceType     string `json:"source_type" enums:"data_item,entity,logical_table,metric,query_service,dev_task"`
+	SourceModule   string `json:"source_module" enums:"meta,model,standard,service,develop,workbench"`
+	SourceType     string `json:"source_type" enums:"data_item,entity,logical_table,metric,query_service,dev_task,data_application"`
 	SourceIdentity string `json:"source_identity"`
 }
 
@@ -99,12 +100,17 @@ func validCatalogSourceReference(reference CatalogSourceReference) bool {
 		(reference.SourceModule == models.SourceModuleModel && (reference.SourceType == models.SourceTypeEntity || reference.SourceType == models.SourceTypeLogicalTable)) ||
 		(reference.SourceModule == models.SourceModuleStandard && reference.SourceType == models.SourceTypeMetric) ||
 		(reference.SourceModule == models.SourceModuleService && reference.SourceType == models.SourceTypeQueryService) ||
-		(reference.SourceModule == models.SourceModuleDevelop && reference.SourceType == models.SourceTypeDevTask)
+		(reference.SourceModule == models.SourceModuleDevelop && reference.SourceType == models.SourceTypeDevTask) ||
+		(reference.SourceModule == models.SourceModuleWorkbench && reference.SourceType == models.SourceTypeDataApplication)
 	if !validPair {
 		return false
 	}
 	if reference.SourceModule == models.SourceModuleMeta {
 		return true
+	}
+	if reference.SourceModule == models.SourceModuleWorkbench {
+		id, err := uuid.Parse(reference.SourceIdentity)
+		return err == nil && id != uuid.Nil && id.String() == reference.SourceIdentity
 	}
 	id, err := strconv.ParseInt(reference.SourceIdentity, 10, 64)
 	return err == nil && id > 0 && strconv.FormatInt(id, 10) == reference.SourceIdentity

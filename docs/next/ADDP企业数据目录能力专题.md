@@ -400,7 +400,7 @@ Catalog 可以拥有 Project Group 范围的目录集合、草稿和任务，这
 
 ## 十一、目录组织和用户视图
 
-企业数据目录不采用单一树表示所有维度，使用“业务主分类 + 分面筛选 + 关系图”。
+企业数据目录不采用单一树表示所有维度，使用“业务主分类 + 分面筛选 + 关系图”。目录浏览在同一 `/entries` 路由内以 Standard Domain 为主分类，按“业务域 → 责任部门 → 资源类型”逐步收窄权威分页列表；这只是即时聚合的导航读模型，不建立 Domain—Department—Entry Type 的持久化父子关系，也不复制 CatalogEntry。
 
 主导航优先引用 Standard Domain。候选分面包括对象类型、来源模块、来源系统、责任部门、责任人、协作项目组、来源状态、治理状态、业务域、术语、质量、鲜活度、认证状态、安全等级和时空范围。
 
@@ -614,6 +614,8 @@ Catalog 是自身目录事实和目录操作权限的 owner；底层资源内容
 - [x] 建立 `curated → certified` 独立权限、状态约束和聚合审计主路径；
 - [x] 实现已固化口径的 Catalog 自有治理覆盖率动态聚合 API、Console 页面和门禁；
 - [x] 实现已固化契约的联邦影响分析与来源身份导航，不复制 owner 关系边；
+- [x] 打通治理覆盖率到权威缺口列表和现有编目编辑器的处置闭环；不新增覆盖率明细表、治理任务实体或搜索投影字段；
+- [x] 将企业目录浏览收敛为“主业务域 + 上下文责任部门/资源类型分面 + 权威分页列表”；复用 `/entries/facets`，不新增企业目录树实体或第二页面路线；
 - [ ] 根据真实跨模块协作需求评估统一 Workspace。
 
 完成门槛：每类对象都有明确 owner、稳定引用、同步契约和权限边界。
@@ -958,11 +960,27 @@ Catalog 新模块实现必须同时覆盖：
 - Model Entity“订单”当前关系动态返回“订单—客户”一对多关系，两个 owner 稳定 ID 均解析到可见 CatalogEntry，并成功跳转到“客户”；Meta DataItem `test` 通过 fingerprint 解析出血缘图中的三个其他目录条目，4 个节点、3 条关系保持由 Meta 当前 User Token 查询，点击成功跳转到 `public_test.parquet`。Gateway 中治理覆盖率和四次来源解析请求均为 `200`；
 - 运行态复验发现 Element Plus 表格切换时会调用占位行插槽，新页面直接拼接占位值曾产生 `dimensions.undefined`、`source.undefined` i18n warning。现已在渲染边界使用空值安全标签函数并新增回归测试；Catalog Frontend 11 个测试文件 40 项测试与生产构建通过，全新浏览器页重复覆盖率、血缘加载和跨条目跳转后 warning/error 均为 0。
 
+### 2026-08-27：治理覆盖率到权威缺口处置闭环
+
+- 覆盖率页面的“未覆盖”数字直接下钻到既有企业资源盘点列表，沿用 CatalogEntry 详情和现有编目编辑器；不新增覆盖率明细表、治理任务实体、专业事实副本或 Meilisearch 投影字段；
+- `GET /api/v1/catalog/entries` 增加必须成对使用的 `coverage_dimension=<固定五维之一>` 与 `coverage_state=missing`，并固定要求 `view=inventory`。缺参、未知维度、治理目录视图或与名称全文搜索并用均返回 `400`；
+- 缺口列表和覆盖率聚合复用同一组 PostgreSQL 适用性与覆盖谓词，并只计算 active CatalogEntry。PostgreSQL 门禁逐维断言列表 `total` 与覆盖率 `not_covered` 完全一致；
+- 前端以可恢复 URL 保存缺口维度和状态，缺口视图显示明确提示、禁用名称搜索并可一键退出；其他类型、来源状态、治理状态、可见性、业务域、责任部门和引擎等结构化筛选仍可继续组合；
+- Catalog Swagger 已重新生成，20 个公开路由覆盖一致；带规定 `addp_test` DSN 的完整 `make test-module MODULE=catalog` 已通过平台 T0、Catalog Go、Frontend 测试与生产构建、PostgreSQL T2 门禁。本轮不重启服务，运行态点击链路留待下一次正常统一重启后顺带验收。
+
+### 2026-08-27：企业目录上下文导航
+
+- 企业目录继续使用唯一 `/catalog/entries` 页面和同一批 CatalogEntry，不新增目录树表、树节点身份、第二个目录页面或双轨查询；Standard Domain 是主业务分类，Department 只是可交叉的责任分面，二者不固化为父子关系；
+- 既有 `GET /api/v1/catalog/entries/facets` 扩展可选 `primary_domain_id`、`accountable_department_id`、`entry_type`：业务域统计覆盖当前视图，责任部门随业务域收窄，资源类型随业务域与部门收窄，来源引擎再受三项共同约束；所有统计直接来自 Catalog 权威库；
+- `/entries` 列表和 `/entries/facets` 复用主业务域与责任部门过滤谓词，并统一只查询 active CatalogEntry；同时补齐 `data_application` 作为合法列表与导航资源类型，不保留前端可选而后端拒绝的契约漂移；
+- Console 将重复的业务域、责任部门、资源类型下拉替换为三段可键盘操作、显示名称与数量的导航区，选择写入可恢复 URL；来源状态、治理状态、可见性和来源引擎继续作为高级筛选，权威分页列表仍位于同页下方；
+- 统一 `enterprise-catalog-publishing` T4 浏览器用例已改为校验三段目录导航和引擎名称选择器。Catalog Frontend 12 个测试文件 44 项测试及生产构建、Catalog Backend 全量 Go、PostgreSQL 上下文分面门禁、Online Runner 86 项确定性测试、Catalog 20 个公开路由 Swagger 覆盖和带规定 `addp_test` DSN 的完整 `make test-module MODULE=catalog` 均通过；本轮不单独重启服务。
+
 ### 2026-08-27：专用 macOS 完整验证交付
 
 - 没有新增第二套 Online suite、workflow 或 Make 目标；继续使用既有 `make local-ci`、`make test-online ONLINE_SUITE=enterprise-catalog-publishing`、`online-host-gate.sh`、`online-preflight.py`、专用 PostgreSQL Engine Fixture 和 `online-t4-gates.yml`；
 - 现有 `enterprise-catalog-publishing` 已扩展为完整目录主链路：连续两次真实 Meta 扫描验证 fingerprint / CatalogEntry UUID 幂等，验证 `inventory` / `governance` 视图、五维治理覆盖率、Meta fingerprint 精确来源解析、编目、AssetComponent 发布、Portal 同身份消费及零临时资源残留；
-- 同一 suite 新增真实浏览器阶段：以同一专用 User 正常登录 Console，验证治理覆盖率页、CatalogEntry 详情、Domain / Department / Engine 三个名称选择器，并拒绝 `undefined` 文案、浏览器 warning/error 和失败业务响应；浏览器报告写入仓库外 `enterprise-catalog-publishing-browser.json`；
+- 同一 suite 新增真实浏览器阶段：以同一专用 User 正常登录 Console，验证治理覆盖率页、CatalogEntry 详情、Domain / Department / Entry Type 三段名称导航和 Engine 名称选择器，并拒绝 `undefined` 文案、浏览器 warning/error 和失败业务响应；浏览器报告写入仓库外 `enterprise-catalog-publishing-browser.json`；
 - 专用 macOS 验证矩阵固定为 `ECV-00` 至 `ECV-08`，完整命令、环境边界、通过证据和 Artifact 清单已写入 `scripts/README.md`。T0-T3 使用独立 Local CI checkout 执行 `make local-ci LOCAL_CI_ARGS=--full`；T4 使用 `addp-online` Runner checkout 手工触发现有 Online workflow，二者不合并为不安全的 `test-all`；
 - 确定性脚本协议、Host Gate 生命周期和 Online CI 登记检查已纳入现有 `make test-online-runner` / `make test-platform`；另一台 macOS 只负责真实环境首跑和回传证据，不需要临时补脚本或修改仓库内 `.env`。
 
@@ -992,13 +1010,15 @@ Catalog 新模块实现必须同时覆盖：
 | Model / Standard 专业关系联邦视图 | 已通过运行态验收 | Standard 关系空状态正常；Model Entity 抽验成功动态返回 2 条一对多专业关系，均由当前 User Token 直连 owner |
 | Catalog 推荐继任关系 | 已完成，待运行态验收 | 唯一 Catalog 自有跨条目关系；Catalog 定向门禁已通过，全量变更门禁被 System IAM 现有失败阻断；不建立空泛通用关系表，不与 owner 专业关系类型重叠 |
 | Catalog 治理覆盖率 | 已通过运行态验收 | 998 个 active 条目按五个适用性口径动态聚合；主业务域 19/998，组件数据元分母 189，不保存覆盖率投影 |
+| 治理覆盖率缺口处置闭环 | 实现与完整模块门禁已完成 | 未覆盖数字下钻到同口径权威缺口列表并复用现有编目编辑器；不新增明细表、任务实体或搜索投影，待下一次统一重启后顺带补点击运行态证据 |
 | 联邦影响分析与目录导航 | 已通过运行态验收 | Model 稳定 ID 和 Meta fingerprint 均已动态解析并完成可见 CatalogEntry 跳转；不代理、不复制 owner 关系边 |
 | 治理目录 / 资源盘点视图 | 已通过运行态验收 | 默认治理目录当前 0 条；显式资源盘点展示 998 条且仍使用同一批自动建档 CatalogEntry |
 | Catalog 列表人类可读分面选择器 | 已通过运行态验收 | Domain 与 Engine Instance 已展示真实名称；Department 动态解析请求成功但当前无候选，列表不再保留裸 ID 输入和引擎 ID 列 |
+| 企业目录上下文导航 | 实现与完整模块门禁已完成 | 同一 `/entries` 页面按业务域、责任部门、资源类型逐步收窄权威列表；不建立企业目录树或第二查询路线，待下一次统一重启后顺带补运行态证据 |
 | Catalog 编目与治理队列名称选择器 | 已通过运行态验收 | 五类 owner 动态选择器、真实名称候选及治理队列 20 个 CatalogEntry 名称候选已验证；治理队列遗漏 inventory 视图的问题已修复并加回归测试 |
 | Project Group 集合名称解析 | 接口与空状态已通过运行态验收 | `/me/project-groups` 返回 200 且无裸 ID 回退；当前身份没有有效 membership，实际成员名称组合待具备成员关系的验收身份补证 |
 
-阶段 5 的专业来源接入、动态当前事实、基础联邦关系视图、默认治理目录、权限资源盘点、治理覆盖率、联邦来源身份导航、列表分面、编目/治理队列名称选择器和 Manager 精确定位已经完成运行态验收。Project Group 组合接口与无成员空状态已通过，真实成员名称只缺有 membership 的验收身份证据。其后优先级是专用 Runner 的 `enterprise-catalog-publishing` 首跑，以及来源 missing、停机追赶、显式重绑、System 恢复专项 T4；这些场景需要专用 User Token、Tenant、Fixture Engine、Domain、Department 或服务停机窗口，不从当前浏览器身份和共享数据猜测。技术来源详情中的 fingerprint、Item ID 等继续只保留在明确的技术溯源区。统一 Workspace 继续保持暂缓，只有多个专业模块出现同一组可验证的成员、生命周期、环境和产物聚合需求时才重新评估。
+阶段 5 的专业来源接入、动态当前事实、基础联邦关系视图、默认治理目录、权限资源盘点、企业目录上下文导航、治理覆盖率、治理缺口处置、联邦来源身份导航、列表分面、编目/治理队列名称选择器和 Manager 精确定位已经完成实现与门禁，其中治理缺口点击链路和本次上下文导航只待下一次正常统一重启后顺带补运行态证据。Project Group 组合接口与无成员空状态已通过，真实成员名称只缺有 membership 的验收身份证据。其后优先级是由专用 Runner 首跑 `enterprise-catalog-publishing`，以及在明确停机窗口执行来源 missing、停机追赶、显式重绑、System 恢复专项 T4；这些场景需要专用 User Token、Tenant、Fixture Engine、Domain、Department 或服务停机窗口，不从当前浏览器身份和共享数据猜测。技术来源详情中的 fingerprint、Item ID 等继续只保留在明确的技术溯源区。统一 Workspace 继续保持暂缓，只有多个专业模块出现同一组可验证的成员、生命周期、环境和产物聚合需求时才重新评估。
 
 ## 二十三、后续会话接力清单
 
@@ -1012,3 +1032,5 @@ Catalog 新模块实现必须同时覆盖：
 6. 推荐继任项的名称选择器已有定向门禁；当前 Tenant 只有 998 条 `discovered` 条目，没有可进入弃用流程的 `curated|certified` 样本。后续只在自然产生合适治理状态样本后补运行态证据，不为验收篡改 CatalogEntry。
 7. 如需重跑完整 Catalog 模块门禁，显式使用 `CATALOG_POSTGRES_TEST_DSN='postgres://addp:addp_password@127.0.0.1:15432/addp_test?sslmode=disable' make test-module MODULE=catalog`；不得新建本地测试 database。
 8. System 全量 IAM PostgreSQL 门禁与全仓授权门禁的既有失败应按各自 owner 根因独立修复；不得为了让 migration 101/102 显绿而放宽计数、跳过测试或修改无关权限期望。
+9. 治理缺口处置已完成实现和完整 Catalog 模块门禁；下一次正常统一重启后只需从治理覆盖率页点击任一非零“未覆盖”数字，确认进入带 `view=inventory&coverage_dimension=...&coverage_state=missing` 的权威列表、名称搜索禁用、条目可进入既有编辑器且退出缺口视图后恢复普通搜索。无需为此单独重启。
+10. 企业目录上下文导航已完成实现、Online T4 契约同步和完整 Catalog 模块门禁；下一次正常统一重启后顺带确认业务域、责任部门、资源类型三段计数随选择收窄，URL 可刷新恢复，下面列表与导航选择一致。不要恢复三个重复下拉，也不要新建企业目录树页面。

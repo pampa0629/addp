@@ -37,6 +37,11 @@ other = "The data application is unpublished or currently offline"
 [workbench.message.data_application_delete_succeeded]
 other = "The data application was deleted"
 
+[permissions.workbench.catalog.read.name]
+other = "Read Workbench catalog resources"
+[permissions.workbench.catalog.read.description]
+other = "Allow the enterprise catalog to read published Data Application changes and current summaries"
+
 [permissions.workbench.data_application.create.name]
 other = "Create data applications"
 [permissions.workbench.data_application.create.description]

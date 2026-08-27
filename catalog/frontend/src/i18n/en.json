@@ -47,6 +47,20 @@
       },
       "search": "Name",
       "searchPlaceholder": "Search business or source name",
+      "coverageGapActive": "Resolving entries missing “{dimension}”. Name search is unavailable in this view; other structured filters remain available.",
+      "coverageGapEmpty": "No entries missing “{dimension}” match the current filters",
+      "exitCoverageGap": "Exit gap view",
+      "navigation": {
+        "title": "Enterprise catalog navigation",
+        "description": "Narrow the same enterprise catalog entries by domain, accountable department, and resource type",
+        "primaryDomain": "1. Domain",
+        "accountableDepartment": "2. Accountable department",
+        "entryType": "3. Resource type",
+        "allDomains": "All domains",
+        "allDepartments": "All accountable departments",
+        "allEntryTypes": "All resource types",
+        "optionCount": "{count} items"
+      },
       "sourceStatus": "Source status",
       "governanceStatus": "Governance status",
       "visibility": "Catalog visibility",
@@ -107,6 +121,7 @@
       "notCovered": "Not covered",
       "applicable": "Applicable",
       "notApplicable": "Not applicable",
+      "openMissing": "Open {count} entries missing {dimension}",
       "dimensions": {
         "business_definition": {
           "name": "Business definition",
@@ -408,7 +423,8 @@
       "logicalModel": "Logical model",
       "metric": "Metric",
       "dataService": "Data service",
-      "developmentArtifact": "Development artifact"
+      "developmentArtifact": "Development artifact",
+      "dataApplication": "Data Application"
     },
     "status": {
       "source": {

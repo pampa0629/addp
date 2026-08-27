@@ -154,6 +154,22 @@ func TestCatalogMigrateAgainstPostgres(t *testing.T) {
 	if err := tx.Create(&developBinding).Error; err != nil {
 		t.Fatalf("insert Develop DevTask binding: %v", err)
 	}
+	applicationEntry := models.Entry{
+		ID: uuid.New(), TenantID: 7, EntryType: models.EntryTypeDataApplication, EntryStatus: models.EntryStatusActive,
+		GovernanceStatus: models.GovernanceStatusDiscovered, Visibility: models.VisibilityInventory, Version: 1,
+	}
+	if err := tx.Create(&applicationEntry).Error; err != nil {
+		t.Fatalf("insert Workbench Data Application entry: %v", err)
+	}
+	applicationBinding := models.SourceBinding{
+		ID: uuid.New(), TenantID: 7, CatalogEntryID: applicationEntry.ID, SourceModule: models.SourceModuleWorkbench,
+		SourceType: models.SourceTypeDataApplication, SourceIdentity: "1714dcf7-f34e-4996-a8dc-3b88998ebe55", SourceStatus: models.SourceStatusActive,
+		SourceVersion: "00000000000000000006", IsCurrent: true, BoundAt: applicationEntry.CreatedAt,
+		ObservedSnapshot: map[string]interface{}{"name": "orders_application", "publication_status": "published"}, ObservedAt: applicationEntry.CreatedAt,
+	}
+	if err := tx.Create(&applicationBinding).Error; err != nil {
+		t.Fatalf("insert Workbench Data Application binding: %v", err)
+	}
 	collection := models.Collection{
 		ID: uuid.New(), TenantID: 7, ProjectGroupID: 9, Name: "Critical Data", Description: "", Version: 1, CreatedBy: 40,
 	}

@@ -151,3 +151,54 @@ func TestDevelopDevTaskSourceSyncCreatesDevelopmentArtifactEntry(t *testing.T) {
 		t.Fatalf("binding = %#v", binding)
 	}
 }
+
+func TestWorkbenchDataApplicationSourceSyncCreatesDataApplicationEntry(t *testing.T) {
+	db := openCatalogServiceTestDB(t)
+	now := time.Now().UTC()
+	applicationID := "d6c30859-15c8-4b88-964b-f2dd315fb923"
+	source := &fakeModelChangeSource{module: models.SourceModuleWorkbench, name: "Workbench", schema: "workbench.catalog_resource_changes/v1", batches: []*ProfessionalChangeBatch{
+		{
+			SchemaVersion: "workbench.catalog_resource_changes/v1", NextCursor: "MQ", Changes: []ProfessionalResourceChange{{
+				SourceType: "data_application", SourceIdentity: applicationID, Operation: "upsert", SourceVersion: "00000000000000000001", ObservedAt: now,
+				Snapshot: map[string]any{"name": "Orders application", "publication_status": "published", "revision_number": float64(1)},
+			}},
+		},
+		{
+			SchemaVersion: "workbench.catalog_resource_changes/v1", NextCursor: "Mg", Changes: []ProfessionalResourceChange{{
+				SourceType: "data_application", SourceIdentity: applicationID, Operation: "upsert", SourceVersion: "00000000000000000002", ObservedAt: now.Add(time.Second),
+				Snapshot: map[string]any{"name": "Orders application v2", "publication_status": "offline", "revision_number": float64(2)},
+			}},
+		},
+	}}
+	syncService := NewProfessionalSourceSyncService(db, source)
+	if err := syncService.SyncTenant(context.Background(), 7); err != nil {
+		t.Fatal(err)
+	}
+	var entry models.Entry
+	if err := db.Where("entry_type = ?", models.EntryTypeDataApplication).First(&entry).Error; err != nil {
+		t.Fatal(err)
+	}
+	var binding models.SourceBinding
+	if err := db.Where("catalog_entry_id = ?", entry.ID).First(&binding).Error; err != nil {
+		t.Fatal(err)
+	}
+	if binding.SourceModule != models.SourceModuleWorkbench || binding.SourceType != models.SourceTypeDataApplication || binding.SourceIdentity != applicationID || binding.ObservedSnapshot["name"] != "Orders application" {
+		t.Fatalf("binding = %#v", binding)
+	}
+	if err := syncService.SyncTenant(context.Background(), 7); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&entry, "id = ?", entry.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&binding, "id = ?", binding.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	var entryCount int64
+	if err := db.Model(&models.Entry{}).Count(&entryCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if entryCount != 1 || entry.Version != 2 || binding.SourceStatus != models.SourceStatusActive || binding.SourceVersion != "00000000000000000002" || binding.ObservedSnapshot["publication_status"] != "offline" {
+		t.Fatalf("republished application entry=%#v binding=%#v count=%d", entry, binding, entryCount)
+	}
+}

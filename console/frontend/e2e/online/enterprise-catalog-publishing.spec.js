@@ -53,7 +53,7 @@ async function login(page, username, password, redirect) {
   return browserAccessToken
 }
 
-test('enterprise Catalog renders governance coverage, human-readable filters, and the canonical entry', async ({ page }) => {
+test('enterprise Catalog renders governance coverage, human-readable navigation, and the canonical entry', async ({ page }) => {
   const env = environment()
   const coveragePath = '/catalog/governance/coverage'
   const totalEntries = Number(env.ADDP_ONLINE_CATALOG_COVERAGE_TOTAL)
@@ -124,15 +124,15 @@ test('enterprise Catalog renders governance coverage, human-readable filters, an
     frame = page.frameLocator('iframe[data-testid="module-iframe"]')
     const entryList = frame.getByTestId('catalog-entry-list')
     await expect(entryList).toHaveAttribute('data-load-state', 'loaded')
-    for (const testID of [
-      'catalog-primary-domain-filter',
-      'catalog-department-filter',
-      'catalog-engine-filter'
-    ]) {
-      const selector = frame.getByTestId(testID)
-      await expect(selector).toHaveCount(1)
-      await expect(selector.getByRole('combobox')).toHaveCount(1)
+    await expect(frame.getByTestId('catalog-entry-navigation')).toHaveCount(1)
+    for (const testID of ['catalog-domain-navigation', 'catalog-department-navigation', 'catalog-entry-type-navigation']) {
+      const navigation = frame.getByTestId(testID)
+      await expect(navigation).toHaveCount(1)
+      await expect(navigation.getByRole('button').first()).toBeVisible()
     }
+    const engineSelector = frame.getByTestId('catalog-engine-filter')
+    await expect(engineSelector).toHaveCount(1)
+    await expect(engineSelector.getByRole('combobox')).toHaveCount(1)
     await expect(entryList).toContainText(env.ADDP_ONLINE_CATALOG_BUSINESS_NAME)
     await expect(entryList).not.toContainText('undefined')
 

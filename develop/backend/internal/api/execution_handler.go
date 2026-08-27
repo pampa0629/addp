@@ -11,6 +11,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
+	"github.com/addp/common/taskprovider"
 	developi18n "github.com/addp/develop/backend/i18n"
 	developauthorization "github.com/addp/develop/backend/internal/authorization"
 	"github.com/addp/develop/backend/internal/models"
@@ -294,13 +295,18 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 // @Tags Execution
 // @Produce json
 // @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"
-// @Success 200 {object} models.ExecutionWithDevTaskSwagger "执行详情 | Execution details"
+// @Success 200 {object} taskprovider.ExecutionStatusResponse "TaskProvider 执行状态 | TaskProvider execution status"
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task_provider.read"]
 // @Router /task-provider/executions/{execution_id} [get]
 func (h *ExecutionHandler) ProviderGetExecution(c *gin.Context) {
-	h.getExecution(c, tenantIDValue(c))
+	execution, err := h.devExecutor.GetTaskProviderExecution(c.Param("execution_id"), tenantIDValue(c))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, taskprovider.NewExecutionStatusResponse(execution))
 }
 
 func (h *ExecutionHandler) getExecution(c *gin.Context, tenantID uint) {

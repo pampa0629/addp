@@ -444,7 +444,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.qualityTaskExecutionResponse"
+                            "$ref": "#/definitions/taskprovider.ExecutionStatusResponse"
                         }
                     },
                     "404": {
@@ -2697,8 +2697,124 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.qualityTaskExecutionResponse": {
+        "internal_api.qualityTaskProviderExecuteRequest": {
             "type": "object",
+            "properties": {
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "trigger_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.qualityTaskProviderExecuteResponse": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "pending"
+                    ],
+                    "example": "pending"
+                }
+            }
+        },
+        "internal_api.taskProviderTaskListItem": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "execution_contract": {
+                    "$ref": "#/definitions/taskprovider.ExecutionContract"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.taskProviderTaskListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.taskProviderTaskListItem"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.JSONMap": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "taskprovider.ExecutionContract": {
+            "type": "object",
+            "properties": {
+                "input_defaults": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "input_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "input_ui_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "output_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "taskprovider.ExecutionStatusResponse": {
+            "type": "object",
+            "required": [
+                "outputs"
+            ],
             "properties": {
                 "actor_principal_id": {
                     "description": "User-derived execution authorization facts. The raw User/Service tokens\nand engine connection details are never persisted in task executions.",
@@ -2846,119 +2962,6 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
-                }
-            }
-        },
-        "internal_api.qualityTaskProviderExecuteRequest": {
-            "type": "object",
-            "properties": {
-                "parameters": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "parent_execution_id": {
-                    "type": "string"
-                },
-                "source": {
-                    "type": "string"
-                },
-                "trigger_type": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.qualityTaskProviderExecuteResponse": {
-            "type": "object",
-            "properties": {
-                "execution_id": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string",
-                    "enum": [
-                        "pending"
-                    ],
-                    "example": "pending"
-                }
-            }
-        },
-        "internal_api.taskProviderTaskListItem": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "execution_contract": {
-                    "$ref": "#/definitions/taskprovider.ExecutionContract"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "last_execution_id": {
-                    "type": "string"
-                },
-                "last_execution_status": {
-                    "type": "string"
-                },
-                "last_run_at": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "task_type": {
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.taskProviderTaskListResponse": {
-            "type": "object",
-            "properties": {
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_api.taskProviderTaskListItem"
-                    }
-                },
-                "page": {
-                    "type": "integer"
-                },
-                "page_size": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "models.JSONMap": {
-            "type": "object",
-            "additionalProperties": true
-        },
-        "taskprovider.ExecutionContract": {
-            "type": "object",
-            "properties": {
-                "input_defaults": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "input_schema": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "input_ui_schema": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "output_schema": {
-                    "type": "object",
-                    "additionalProperties": true
                 }
             }
         }

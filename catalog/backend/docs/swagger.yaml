@@ -199,6 +199,7 @@ definitions:
         - standard
         - service
         - develop
+        - workbench
         type: string
       source_type:
         enum:
@@ -208,6 +209,7 @@ definitions:
         - metric
         - query_service
         - dev_task
+        - data_application
         type: string
     type: object
   github_com_addp_catalog_internal_service.CollectionDetail:
@@ -349,6 +351,10 @@ definitions:
     properties:
       accountable_departments:
         $ref: '#/definitions/github_com_addp_catalog_internal_service.EntryReferenceFacet'
+      entry_types:
+        items:
+          $ref: '#/definitions/github_com_addp_catalog_internal_service.EntryTypeFacet'
+        type: array
       primary_domains:
         $ref: '#/definitions/github_com_addp_catalog_internal_service.EntryReferenceFacet'
       source_engines:
@@ -440,6 +446,21 @@ definitions:
       version:
         type: integer
       visibility:
+        type: string
+    type: object
+  github_com_addp_catalog_internal_service.EntryTypeFacet:
+    properties:
+      count:
+        type: integer
+      entry_type:
+        enum:
+        - data_item
+        - business_entity
+        - logical_model
+        - metric
+        - data_service
+        - development_artifact
+        - data_application
         type: string
     type: object
   github_com_addp_catalog_internal_service.GovernanceCoverage:
@@ -613,6 +634,7 @@ definitions:
         - standard
         - service
         - develop
+        - workbench
         type: string
       source_type:
         enum:
@@ -622,6 +644,7 @@ definitions:
         - metric
         - query_service
         - dev_task
+        - data_application
         type: string
     type: object
   github_com_addp_catalog_internal_service.SourceEntryResolutionResult:
@@ -1125,6 +1148,24 @@ paths:
         in: query
         name: source_engine_id
         type: string
+      - description: 治理缺口维度；必须与 view=inventory、coverage_state=missing 同时使用 | Governance
+          gap dimension; requires view=inventory and coverage_state=missing
+        enum:
+        - business_definition
+        - primary_domain
+        - accountability
+        - glossary
+        - component_element
+        in: query
+        name: coverage_dimension
+        type: string
+      - description: 治理覆盖状态；第一阶段仅支持 missing | Governance coverage state; only missing
+          is supported in the first release
+        enum:
+        - missing
+        in: query
+        name: coverage_state
+        type: string
       - description: 页码，默认 1 | Page number, default 1
         in: query
         name: page
@@ -1417,6 +1458,29 @@ paths:
         - inventory
         in: query
         name: view
+        type: string
+      - description: 已选主业务域稳定 ID；约束责任部门、资源类型和来源引擎统计 | Selected primary Domain stable
+          ID; constrains Department, entry type, and source Engine counts
+        in: query
+        name: primary_domain_id
+        type: string
+      - description: 已选责任部门稳定 ID；约束资源类型和来源引擎统计 | Selected accountable Department stable
+          ID; constrains entry type and source Engine counts
+        in: query
+        name: accountable_department_id
+        type: string
+      - description: 已选资源类型；约束来源引擎统计 | Selected entry type; constrains source Engine
+          counts
+        enum:
+        - data_item
+        - business_entity
+        - logical_model
+        - metric
+        - data_service
+        - development_artifact
+        - data_application
+        in: query
+        name: entry_type
         type: string
       produces:
       - application/json

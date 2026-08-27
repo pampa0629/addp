@@ -699,7 +699,24 @@ Quality `check|materialization_gate` 是纯手动/Orchestrator 显式执行类�
 
 Develop 查询任务的 `content.query_parameters[]` 是查询参数定义事实源，每项固定包含 `name`、`type`、`default`，可选包含 `title`、`description`。参数名必须唯一且真实出现在当前查询语言的参数位置中；查询中的全部参数位置也必须有对应定义。`query_parameters[]` 的保存顺序决定 `input_ui_schema.<name>.order`，四种首期类型固定为 `string`、`integer`、`number`、`boolean`。Copilot 查询草稿可以提议同形状的 `query_parameters[]`，但它必须与候选文本在同一响应中一起校验和回填；只有用户保存后才成为 Develop 任务事实。查询任务详情必须从该定义派生非空 `execution_contract`；未定义查询参数时返回闭合空契约。即时查询在 `POST /api/v1/develop/executions` 顶层提交同语义的 `parameters` 覆盖，不能把执行值写回 `content.query_parameters` 或查询文本。
 
-`GET /executions/{execution_id}` 直接返回统一 execution 对象，`execution_id` 必须是 `common.task_executions.execution_id`。
+`GET /executions/{execution_id}` 直接返回统一 execution 对象，`execution_id` 必须是 `common.task_executions.execution_id`。TaskProvider 声明的稳定输出只允许持久化在 `common.task_executions.metadata.outputs`，状态接口必须把该对象同时投影为响应顶层必填 `outputs`；没有稳定输出时返回闭合空对象 `{}`，不得省略、返回 `null`，也不得把 `metadata.result.outputs`、模块私有结果或整个 `metadata` 解释为稳定输出。
+
+```json
+{
+  "execution_id": "uuid",
+  "status": "success",
+  "metadata": {
+    "outputs": {
+      "target_locator": "addp://engine/2/path/public/result?type=table"
+    }
+  },
+  "outputs": {
+    "target_locator": "addp://engine/2/path/public/result?type=table"
+  }
+}
+```
+
+`metadata.outputs` 是 durable execution 结果事实，顶层 `outputs` 只是 TaskProvider HTTP 交接投影，不形成第二持久事实。Go owner 必须复用 `common/taskprovider` 的标准 execution 状态响应与严格输出提取能力，不得在各模块复制不同的嵌套读取、兼容 fallback 或响应包装。
 
 Owner 模块若需要保存下游运行时或外部系统返回的本地执行 ID，不得把该本地 ID 命名为 `execution_id`，以免和统一执行 ID 形成双事实源。字段应按来源命名，例如 Develop 工作流运行时返回的本地执行 ID 保存为 `runtime_execution_id`。TaskProvider 如果需要让下游对已成功的当前平台 execution 做一致性校验，可以把同一 `common.task_executions.execution_id` 声明为稳定输出 `execution_id`；它只是统一身份的显式交接，不是第二执行事实。
 

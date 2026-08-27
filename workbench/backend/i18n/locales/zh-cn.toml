@@ -37,6 +37,11 @@ other = "数据应用尚未发布或当前已下线"
 [workbench.message.data_application_delete_succeeded]
 other = "数据应用已删除"
 
+[permissions.workbench.catalog.read.name]
+other = "读取工作台目录资源"
+[permissions.workbench.catalog.read.description]
+other = "供企业目录读取已发布数据应用的变化和当前摘要"
+
 [permissions.workbench.data_application.create.name]
 other = "创建数据应用"
 [permissions.workbench.data_application.create.description]
