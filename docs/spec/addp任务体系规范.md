@@ -198,7 +198,7 @@ Quality `check|materialization_gate`、Meta `scan`、Transfer `runtime.boundary=
 
 公共 `common/execution` 只提供 claim、lease token、heartbeat、带所有权条件的更新和过期领取等通用原语。具体 execution 是否可恢复、owner task 摘要事务、外部副作用幂等和提交边界归 owner/Provider 实现；公共层不承诺跨系统 exactly-once。
 
-Orchestrator 来源的 Develop 查询必须把参数解析后的 `content`、`engine_id`、timeout 和执行输入冻结在 `execution_config`，Worker 不得在 claim 后重新读取可变任务定义。普通查询租约失效后直接失败；只有 Model write attempt 为每个新 attempt 提供独立 staging、旧 attempt fencing 和完成幂等时，Develop 才能清除上一 attempt 的授权引用并把同一 execution 恢复为 `pending`。Worker 必须先取得 Model attempt，再按当前 `attempt + lease_token` 签发精确的同引擎 `read + write` 授权；数据写入成功后先完成 Model attempt，再收敛 Develop execution。
+Orchestrator 来源的 Develop 查询必须把参数解析后的 `content`、`engine_id`、timeout 和执行输入冻结在 `execution_config`，Worker 不得在 claim 后重新读取可变任务定义。关系结果写入必须只消费 Orchestrator 已解析的 `input_locators + target_locator`，并按当前 `attempt + lease_token` 签发精确的同引擎 `read + write` 授权。Develop 不得取得 Model attempt、调用 Model 或接管 Model staging；租约失效或写入失败时当前 execution 和父编排直接失败，重算必须从新的 Model prepare 批次开始。
 
 ad-hoc execution 的 `task_type` 仍必须是 owner 模块内稳定的业务执行类型，但稳定 execution type 不等于 TaskProvider task type。只有 owner 已提供可保存的任务定义、标准任务列表 / 详情 / 执行接口并允许 Orchestrator 引用时，才能把该类型加入 `task_capabilities[]`。
 
@@ -284,8 +284,6 @@ Develop 保存的 `query` 可以声明通用“关系输入 -> 已存在表结�
 Quality `materialization_gate` 仅由 Orchestrator 触发，任务绑定唯一 `materialization_group_id`，并静态保存与该组成员集合完全一致的逻辑表 alias 和类型化断言。Quality 通过 Common Model Client 读取现有 MaterializationGroup 并冻结组版本，不新增泛化只读物化契约；执行前组版本或成员变化必须拒绝。worker 必须在 claim 后以当前 reader execution 向 Model 获取完整 Materialization Read Context，再从父 execution 派生返回 Engine 集合的精确 `read` 授权。断言只允许 `not_null|unique_key|foreign_key|predicate_implication|row_count`，不接受自定义 SQL。任一 `severity=error` 断言不通过时 Quality execution 写 `failed`，Orchestrator 不得继续发布；成功后的 Model publish Step 必须引用同一个 MaterializationGroup，并将门禁输出的组 ID/版本绑定到 `expected_group_id + expected_group_version`。Model 在入队和发布时双重校验，但该交接不表示全局禁止不含 Quality 门禁的其他物化组编排。
 
 Model `materialization_group_publish` 以持久 MaterializationGroup 为任务定义，仅解析同一父 execution 下全部成员的已完成批次，并在同一 PostgreSQL 目标库事务中完成全部物理交换。组成员不作为运行参数，不允许跨 Engine 组或部分发布。单逻辑表 `materialization_publish` 继续仅用于非组物化；某个批次如属于当前 MaterializationGroup 的编排发布，必须只走组发布路线。
-
-Model 托管目标只允许 `bounded + snapshot + query-source + replace`：Transfer 必须校验 project field mapping 的目标列与 Model 返回的 `write_columns` 顺序完全一致，并通过目标 Engine 的 `TableWriteSessionProvider` 向已存在 staging 写数据；不得调用 `TableWritePreparer`、资源删除或任何 DDL。普通 bounded 目标 lease 过期仍 fail-closed；只有 Model 托管目标可在 `attempt < max_attempts` 时把同一 execution 返回 pending。下一次 claim 递增 attempt 并取得新的 staging；如果 Model 返回同一 writer execution 已完成的旧 attempt，worker 不再搬运数据，只补写本 execution 成功终态。不同 writer execution 不得接管已完成批次。
 
 Transfer `sync` 的稳定语义由以下正交维度表达：
 

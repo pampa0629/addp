@@ -161,6 +161,8 @@ Catalog 提供三个权限感知视图：
 
 Catalog 列表中的 Domain、Department 和 Engine Instance 都是稳定引用：稳定 ID 留在 API、URL 和聚合内部，用户通过可搜索的名称选择器交互，列表不把裸 ID 当作业务文案。“当前可见 CatalogEntry 中出现了哪些引用”由 Catalog 计算，引用名称、编码、类型和状态由 Standard / System 动态解析。Catalog 不复制 owner 完整列表，owner 短时不可达也不能阻塞 Catalog 列表、启动或 Ready。
 
+Catalog 编目编辑器同样不要求用户识别稳定 ID。Domain、Glossary、Element、Department 和 User 通过 Catalog 的统一远程候选入口选择，Catalog 再以 `addp-catalog` 运行身份向事实 owner 查询当前可引用候选；候选按搜索分页返回且不在 Catalog 落库。推荐继任项和治理任务条目筛选直接复用 CatalogEntry 名称搜索。动态查询失败必须明确提示当前候选不可用，不能退回裸 ID 输入或 owner 全量副本。
+
 资源盘点仍使用 Catalog 的分面与分页列表，不在 Catalog 重建 Engine—Node—DataItem 技术资源树；技术路径树继续归 Meta / Manager。
 
 ## 七、端到端主线

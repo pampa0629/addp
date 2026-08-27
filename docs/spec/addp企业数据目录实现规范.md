@@ -413,6 +413,7 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 | --- | --- | --- |
 | GET | `/entries` | 权限感知的分页搜索与分面筛选 |
 | GET | `/entries/facets` | 返回当前目录视图可见条目中出现的 Domain、Department 和 Engine Instance 候选引用 |
+| GET | `/reference-candidates` | 按名称分页查询当前可建立语义或责任关联的 owner 候选 |
 | GET | `/entries/:id` | 读取聚合详情、来源、语义和责任 |
 | PUT | `/entries/:id` | 使用聚合根 `version` 原子更新编目、语义、责任、可见性和治理状态 |
 | POST | `/entries/:id/rebind-source` | 显式把新 DataItem 来源重绑到既有条目 |
@@ -437,6 +438,12 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 `GET /entries/facets` 只接受同样的 `view`，并与 `/entries` 共用 Tenant、目录可见性和盘点权限过滤。Catalog 从权威库计算当前可见结果中实际出现的稳定 ID 及数量，再使用 `addp-catalog` Tenant Service Token 向 Standard / System 精确批量解析显示名、编码、类型和状态。它不返回 owner 未在当前可见 CatalogEntry 中被引用的对象，不授予额外 owner 管理权限，也不持久化 owner 完整列表。任一 owner 解析失败时，该分面返回 `unavailable` 状态，其他分面仍正常返回；不把动态解析变成 Catalog 启动或 Ready 依赖。
 
 前端的 Domain、Department 和 Engine Instance 筛选必须使用可搜索选择器，用显示名交互、用稳定 ID 提交和恢复 URL。裸 ID 输入框与列表中的裸 Engine ID 列都不是正式交互路径。
+
+`GET /reference-candidates` 是 Catalog 编目交互的唯一跨 owner 候选入口，使用 `catalog.entry.update` Permission。请求固定包含 `reference_type=domain|glossary|element|department|user`，可选 `search`，并使用 `page`、`page_size` 分页；`page_size` 最大 50。响应使用标准分页结构，候选 `id` 使用字符串，显示字段只包含 `name`、可选 `code` 和 owner 当前 `status`。该接口只返回当前 Tenant 中允许建立新关联的对象，不返回完整专业 DTO。
+
+候选事实仍由 owner 动态提供：Catalog 使用 `addp-catalog` Tenant Service Token 分别调用 Standard `GET /api/v1/standard/references/candidates` 和 System `GET /api/v1/system/runtime/catalog-references/candidates`。两个 owner 路由均按名称或编码搜索、稳定排序和分页，只允许 `addp-catalog`，并复用建立关联时已经要求的 owner read Permission。Catalog 不保存候选列表、不建立 owner 全表投影，也不把候选响应写入搜索索引；owner 不可达只使当前候选请求返回 `503 catalog_reference_validation_unavailable`，不影响 Catalog 启动、Ready、列表和已保存关联展示。
+
+推荐继任项与治理任务条目筛选属于 Catalog 自有对象选择，复用 `/entries` 的权限感知名称搜索，不另建候选事实源。编辑器加载既有关联时可以使用聚合中已保存的 `observed_snapshot` 作为“最近确认的显示摘要”，但不得把裸 ID 当作名称回退，也不得在动态候选失败时恢复手工 ID 输入。技术来源详情中的 fingerprint、Meta Item ID 等只可出现在明确的技术溯源区域，不能成为业务编目主交互。
 
 所有用户可见错误使用 Catalog i18n；Swagger 使用中文在前、英文在后的双语注解，并为每个公开 Operation 声明 `x-addp-auth-mode` 和精确 Permission。
 

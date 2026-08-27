@@ -844,7 +844,7 @@ CatalogEntry 标识 Data Application 聚合根，不标识单个发布 Revision�
 - [ ] 验证 MySQL cursor、动态字段筛选、标量类型格式化、CSV 导出和无 SpatialInfo 时禁用 Map；
 - [ ] 验证不同字段名、不同字段类型、无空间/有空间输出；
 - [ ] 验证契约变化阻断和显式修订；
-- [ ] 验证 Workbench 代码和配置中不存在领域字段硬编码。
+- [x] 验证 Workbench 代码和配置中不存在领域字段硬编码，并由前端契约门禁阻止 Outdoor、Business MySQL 验收事实进入生产实现。
 
 Outdoor 验收通过不等于通用能力通过。Phase 3 至少需要第二个不同领域服务，避免样例偶然适配被误判为平台能力。
 
@@ -982,9 +982,9 @@ Service 按正式入口重启后，已在 Console iframe 主路径完成浏览�
 
 下一步按以下边界推进：
 
-1. 若目标是完成 Phase 3 验收，优先在已登记的专用 Online Runner 执行 `workbench-service-consumption` T4 suite，取得 Business MySQL 的真实动态参数、Chart canvas、CSV、契约变化阻断和执行审计证据；成功前不勾选 Phase 3。
+1. `make test-online-runner` 已在当前工作树通过 84 项确定性测试，证明 Online 分发、预检、Host Gate、Fixture 安全边界、失败清理和 Workbench suite 协议可执行；这不等于真实 T4 通过。若目标是完成 Phase 3 验收，仍须在已登记的专用 Online Runner 执行 `workbench-service-consumption` T4 suite，取得 Business MySQL 的真实动态参数、Chart canvas、CSV、契约变化阻断和执行审计证据；成功前不勾选其余 Phase 3 验收项。
 2. 若只在当前本地环境继续人工体验，`f2` 和 `p3` 均没有发布筛选字段且结果超过单页上限，只能验证 Table 与 cursor；Chart、Map 和有限导出被完整性规则阻断是正确行为。需要动态参数或完整 Chart/Map 时，应通过 Service 正式发布一个有 `filterable_fields`、可收敛为完整有界结果的服务，不能直接改数据库制造契约。
-3. Phase 1 仍有 Service owner Resource Grant / Policy 收敛项；Phase 4 的 Data Application、CatalogEntry、Asset 与 Portal 集成尚未开始，不应混入 Phase 2 View 修补。
+3. Phase 1 的 Service owner Resource Grant / Policy 不能在 Workbench 专题内局部补齐。当前正式权限文档确认 owner Resource Grant / Policy、Scope Binding 和 Explicit Deny 的统一运行时尚未形成，企业目录主路径又明确禁止恢复旧的通用 Owner ResourceRef/ACL；因此 Service 继续使用 6.4 节规定的 fail-closed 租户级策略，待统一 owner 授权事实模型落地后接入同一 Repository 过滤与详情判断入口。该外部前置条件未满足前保持未勾选，不得在 Service 增加专属授权表或第二套 ACL。
 4. 当前最小充分门禁为 `go test ./...`（Service、Workbench Backend）、`make test-workbench-frontend`、对应 PostgreSQL 标准门禁和 `git diff --check`；涉及 Console、共享 renderer、CI 或 Swagger 时必须同步运行本专题十四章列出的扩展门禁。
 
 ## 十五、概念设计状态
