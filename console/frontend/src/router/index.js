@@ -10,6 +10,12 @@ const routes = [
     meta: { title: '登录-addp' }
   },
   {
+    path: '/invitations/accept',
+    name: 'TenantInvitationAccept',
+    component: () => import('../views/TenantInvitationAccept.vue'),
+    meta: { requiresAuth: false, title: 'ADDP' }
+  },
+  {
     path: '/',
     name: 'Console',
     component: () => import('../views/Portal.vue'),

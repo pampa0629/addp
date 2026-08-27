@@ -105,7 +105,7 @@ async function openPicker() {
 async function loadCandidates() {
   loading.value = true
   try {
-    const response = await enterpriseCatalogAPI.list({ search: keyword.value || undefined, source_status: 'active', page: 1, page_size: 100 })
+    const response = await enterpriseCatalogAPI.list({ view: 'inventory', search: keyword.value || undefined, source_status: 'active', page: 1, page_size: 100 })
     candidates.value = (response.data || []).filter(item => item.entry_status === 'active' && item.governance_status !== 'deprecated')
   } catch (error) {
     ElMessage.error(error.response?.data?.error || t('asset.catalogPicker.loadFailed'))

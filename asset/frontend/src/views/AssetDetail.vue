@@ -14,7 +14,14 @@
         <el-button v-if="asset.status === 'draft'" type="success" @click="handlePublish">{{ t('asset.assetDetail.submitPublish') }}</el-button>
         <el-button v-if="asset.status === 'published'" type="warning" plain @click="handleOffline">{{ t('asset.assetDetail.offline') }}</el-button>
         <el-button v-if="asset.status === 'offline'" type="primary" @click="handlePublish">{{ t('asset.assetDetail.republish') }}</el-button>
-        <el-popconfirm v-if="asset.status === 'draft'" :title="t('asset.assetDetail.deleteConfirm')" @confirm="handleDelete">
+        <el-popconfirm
+          v-if="['draft', 'offline'].includes(asset.status)"
+          :title="t('asset.assetDetail.deleteConfirm')"
+          :confirm-button-text="t('asset.assetDetail.confirm')"
+          :cancel-button-text="t('asset.assetDetail.cancel')"
+          confirm-button-type="danger"
+          @confirm="handleDelete"
+        >
           <template #reference>
             <el-button type="danger" plain>{{ t('asset.assetDetail.delete') }}</el-button>
           </template>

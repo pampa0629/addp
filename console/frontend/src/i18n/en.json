@@ -4,6 +4,23 @@
     "logout": "Logout",
     "sessionExpired": "Session expired, please login again",
     "logoutSuccess": "Logged out successfully",
+    "invitation": {
+      "title": "Accept tenant invitation",
+      "description": "After joining the tenant, you can use ADDP with the roles assigned by an administrator.",
+      "invalid": "This invitation link is invalid or incomplete. Ask the tenant administrator to send a new one.",
+      "acceptAs": "Accept this invitation with the current account, \"{name}\".",
+      "useAnotherAccount": "Use another account",
+      "accept": "Accept invitation",
+      "displayName": "Display name",
+      "username": "Username",
+      "password": "Password",
+      "confirmPassword": "Confirm password",
+      "existingAccount": "Sign in with an existing account",
+      "registerAndAccept": "Register and accept",
+      "passwordMismatch": "The passwords do not match",
+      "failed": "Unable to accept the invitation",
+      "succeeded": "Joined the tenant"
+    },
     "welcome": {
       "title": "Welcome to All Domain Data Platform",
       "subtitle": "Select a module group from the top, or click a card to navigate",

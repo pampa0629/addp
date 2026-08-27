@@ -10,5 +10,14 @@ const systemClient = axios.create({
 })
 
 export const authAPI = {
-  ...createAuthAPI(systemClient)
+  ...createAuthAPI(systemClient),
+  registerTenantInvitation: (data) => systemClient.post('/tenant/invitations/registrations', data, {
+    withCredentials: true
+  }),
+  acceptTenantInvitation: (invitationSecret, accessToken) => systemClient.post('/tenant/invitations/acceptances', {
+    invitation_secret: invitationSecret
+  }, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    withCredentials: true
+  })
 }

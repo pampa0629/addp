@@ -4,6 +4,23 @@
     "logout": "退出登录",
     "sessionExpired": "登录已过期，请重新登录",
     "logoutSuccess": "已退出登录",
+    "invitation": {
+      "title": "接受租户邀请",
+      "description": "加入租户后，你将按管理员分配的角色使用 ADDP。",
+      "invalid": "邀请链接无效或不完整，请联系租户管理员重新发送。",
+      "acceptAs": "将使用当前账号“{name}”接受邀请。",
+      "useAnotherAccount": "使用其他账号",
+      "accept": "接受邀请",
+      "displayName": "显示名称",
+      "username": "用户名",
+      "password": "密码",
+      "confirmPassword": "确认密码",
+      "existingAccount": "使用已有账号登录",
+      "registerAndAccept": "注册并接受邀请",
+      "passwordMismatch": "两次输入的密码不一致",
+      "failed": "无法接受邀请",
+      "succeeded": "已加入租户"
+    },
     "welcome": {
       "title": "欢迎使用全域数据平台",
       "subtitle": "请从顶部选择功能区域，或直接点击模块卡片进入",

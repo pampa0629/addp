@@ -30,7 +30,7 @@
     <el-dialog v-model="formVisible" :title="formMode === 'create' ? t('system.iam.organization.departments.create') : t('system.iam.organization.departments.edit')" width="540px" :close-on-click-modal="false">
       <el-alert v-if="versionConflict" type="warning" :closable="false" show-icon :title="t('system.iam.organization.versionConflict')" />
       <el-form label-position="top">
-        <el-form-item :label="t('system.iam.common.code')"><el-input v-model="form.code" :disabled="formMode === 'edit'" /></el-form-item>
+        <el-form-item :label="t('system.iam.common.code')" :error="organizationCodeError"><el-input v-model="form.code" :disabled="formMode === 'edit'" /></el-form-item>
         <el-form-item :label="t('system.iam.common.name')"><el-input v-model="form.name" /></el-form-item>
         <el-form-item :label="t('system.iam.organization.parent')">
           <el-select v-model="form.parentId" clearable style="width: 100%" :placeholder="t('system.iam.organization.root')">
@@ -52,6 +52,7 @@ import { CircleClose, Edit, Plus, Refresh, RefreshLeft, Search, User } from '@el
 import { useI18n } from 'vue-i18n'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
+import { isValidOrganizationCode } from '../../utils/organizationIdentity'
 import OrganizationMembershipsDialog from './OrganizationMembershipsDialog.vue'
 
 const { t } = useI18n()
@@ -72,7 +73,9 @@ const versionConflict = ref(false)
 const form = reactive({ code: '', name: '', parentId: null })
 const membersVisible = ref(false)
 const selectedDepartment = ref(null)
-const formValid = computed(() => Boolean(form.code.trim()) && Boolean(form.name.trim()))
+const organizationCodeValid = computed(() => isValidOrganizationCode(form.code))
+const organizationCodeError = computed(() => form.code && !organizationCodeValid.value ? t('system.iam.validation.organizationCode') : '')
+const formValid = computed(() => organizationCodeValid.value && Boolean(form.name.trim()))
 const parentOptions = computed(() => allDepartments.value.filter(item => item.status === 'active' && item.id !== editing.value?.id))
 
 function statusLabel(value) { return t(`system.iam.status.${value}`) }

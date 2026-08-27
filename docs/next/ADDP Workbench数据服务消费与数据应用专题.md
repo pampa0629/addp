@@ -1,6 +1,6 @@
 # ADDP Workbench 数据服务消费与数据应用专题
 
-状态：概念设计已确认；Phase 1 至 Phase 4A 已实现；Phase 4B 的 CatalogEntry、Asset `application` 组合、owner Resource Grant、可恢复履约与 Portal 打开链路已完成代码和标准门禁，等待全量重启后的真实浏览器生命周期验收。
+状态：概念设计已确认；Phase 1 至 Phase 4B 已实现并完成标准门禁及真实浏览器生命周期验收；CatalogEntry、Asset `application` 组合、owner Resource Grant、Portal 打开链路，以及普通用户在授权前、生效后、撤销后的运行权限边界均已闭环。
 
 本文跟进 ADDP `workbench` 模块的概念、边界、阶段计划与实施状态。Workbench 是平台级、领域无关的数据服务消费模块，不属于 Outdoor 业务专用能力。Outdoor 只作为首个真实验收场景；后续任何满足消费契约的数据服务都应能以同一主路径接入，禁止在 Workbench 核心模型、API、渲染判断或权限逻辑中硬编码 Outdoor 表、字段、指标或页面。
 
@@ -901,9 +901,10 @@ Phase 4A 先完成 Workbench owner 内的独立闭环：
 Phase 4B 再接企业目录和资产授权主线：
 
 - [x] 将 Workbench Data Application 作为专业资源接入 CatalogEntry；
-- [ ] 一次性启用并收敛 Asset `application` 类型的 CatalogEntry 组合路线；
-- [ ] 接入 owner Resource Grant、Asset 履约和 Portal 打开入口；
-- [ ] 删除旧的手工应用链接、软授权和专属 Token 设想。
+- [x] 一次性启用并收敛 Asset `application` 类型的 CatalogEntry 组合路线；
+- [x] 接入 owner Resource Grant、Asset 履约和 Portal 打开入口；
+- [x] 删除旧的手工应用链接、软授权和专属 Token 设想；
+- [ ] 留存普通用户“Grant 生效前拒绝—生效后运行—撤销后拒绝”的可复核浏览器证据。
 
 ### Phase 5：BI 深化与大屏
 
@@ -1191,11 +1192,29 @@ python3 scripts/ci/check-t2-ci-registration.py
 
 Workbench、Asset、Portal Swagger 已重新生成并通过各自路由覆盖校验。System 全量 IAM PostgreSQL 套件另有与本段无关的既有 migration 106/陈旧权限快照断言失败；本段新增 migration 107 已由独立标准测试命中并通过，不能把全量套件的既有红灯写成本段通过。
 
-剩余唯一 Phase 4B 验收是全量重启后的真实浏览器生命周期：使用现有 Workbench CatalogEntry 创建并发布 `application` Asset；以另一用户在 Portal 申请；管理员审批后观察 `fulfilling -> effective`；从 Portal 打开 Data Application 并执行真实 Service 查询；再撤销并观察 `revoking -> none`，确认同一用户运行被 owner 拒绝。人工验收只可清理本轮临时申请、Authorization、Grant 和临时 Asset，不得删除或下线 14.5、14.7 已确认长期保留的 Workbench 示例。
+Phase 4B 的目录、资产、申请、审批、履约、Portal 打开、真实 Service 查询和撤销生命周期已经在全量重启后完成浏览器验收。普通用户的三段式权限证据也已闭环：Grant 生效前不能运行，生效后可以通过 Portal 打开并执行真实 Service 查询，撤销后再次被 Workbench owner 拒绝。人工验收只可清理本轮临时申请、Authorization、Grant、成员关系和临时 Asset，不得删除或下线 14.5、14.7 已确认长期保留的 Workbench 示例。
 
 17:34 的首次浏览器续验发生在全量 `keepalive restart -all` 仍在进行时：旧 Catalog iframe 的父级 AuthSession 已失效，页面短暂显示 0 条；整页重载后恢复两条长期保留 Data Application，证明目录数据没有丢失。新 Asset Backend 于 17:37 启动后，正式 `addp` 数据库已物化全局 `application / 数据应用 / enabled=true / sort_order=6` 类型；重载创建页后浏览器控制层因本地 iframe URL 安全策略拒绝继续交互，因此没有创建临时 Asset，也不能把后续申请、审批、打开和撤销记作浏览器通过。接力时应从创建 `application` Asset 重新开始，不需要清理本次未提交的表单。
 
 本次运行态还发现 reconciler 在空队列时每两秒用 `First` 产生一条红色 `record not found` trace。领取查询已改为保持 `FOR UPDATE SKIP LOCKED`、排序和单条限制不变的 `Limit(1).Find`，空队列现在静默返回 `processed=false`。回归测试先捕获到一次 trace 并失败，修复后同一测试通过；Asset 全量 Go 测试和 PostgreSQL schema 门禁随后重新通过。运行中的 17:37 Asset 进程早于该日志修复构建，下一次标准重启后才会停止产生这些旧日志。
+
+18:26–18:35 在用户完成全量重启后继续了真实浏览器续验。Asset 创建页首次按数据应用名称搜索不到候选，根因是共享 `CatalogEntryPicker` 调用 Catalog 默认治理视图；正式创建/编辑契约要求选择 `active` 来源的资源盘点条目，发布时再由后端执行 `publishable` 门禁。Picker 现固定使用唯一 `view=inventory&source_status=active` 主路径，并加入路由契约回归测试。修复后成功选中 `workbench-parameter-linkage-demo` 对应 CatalogEntry `f0359420-a884-4e11-a87f-bd60e37a65e2`，创建临时 Asset `codex-workbench-grant-e2e-20260827`（ID `20376`）；在条目仍为 `discovered` 时提交上架被“尚未完成业务编目”正确阻断。
+
+Catalog 正式编目要求唯一主业务域、责任部门、业务责任人和至少一个数据管理员。当前租户最初没有 Department，故通过 System 正式组织管理入口创建长期可引用的 `户外数据治理部 / outdoor_data_governance`，再把该条目更新为 `curated`、`tenant` 可见，主业务域为 `户外域 / outdoor`，业务责任人和数据管理员为当前管理员；条目版本从 1 增至 2。部门创建过程同时暴露 System 前端允许连字符编码、后端却只接受小写字母/数字/下划线的问题：System 现复用受测试的 organization code 校验，同时覆盖 Department 与 Project Group，中文和英文均显示精确格式提示。`system/frontend` 新增 9 个边界用例，定向测试和生产构建均通过。
+
+完成编目后，Asset `20376` 已成功上架；当前管理员在 Portal 提交 30 天申请，管理端审批后真实观察到 `pending -> fulfilling -> effective`，Portal “我的申请与授权”只在 `effective` 后出现 `/data-apps/d6c30859-15c8-4b88-964b-f2dd315fb923` 打开入口。运行端默认“长沙市”执行“查询全部组件”返回 10 条真实地块明细；把唯一共享参数改为“武汉市”后两个组件一起重新查询并返回空结果，证明参数变更确实驱动真实 Service 请求而不是静态预览。该轮申请人为应用创建者 ID `4`，因此只证明 Asset 履约事实、Portal 状态和运行查询主路径；“非拥有者只有在 Grant 生效后才能运行、撤销后被拒绝”仍须使用普通用户 ID `29` 单独验收，不能把本轮拥有者运行写成非拥有者授权通过。
+
+18:39 后已完成管理员自申请链路的清理：Asset `20376` 对应 Authorization/Grant 先真实撤销，Workbench 规则写入撤销时间；随后 Asset 下架并删除，资产列表和数据库均不再存在该临时资产。清理没有修改或下线两个长期保留的 Workbench Data Application，正式编目所需的 `户外数据治理部 / outdoor_data_governance` 作为长期组织事实继续保留。
+
+清理过程发现 Asset 后端允许删除 `draft | offline`，但详情页只在 `draft` 展示“删除”，属于前后端状态契约不一致。前端现按唯一正式状态集合同时支持草稿和已下架资产删除，并新增回归断言。删除确认框原先还落回 Element Plus 英文默认按钮 `No / Yes`；现显式使用 Asset i18n 的 `取消 / 确定`（英文 `Cancel / Confirm`），确认按钮使用危险操作样式。浏览器已验证下架资产出现删除入口、确认框文本正确，并完成实际删除。
+
+普通用户生命周期使用 Asset `20377`（`Phase 4B 数据应用验收 1787826254094`）、申请 ID `7`、Authorization ID `7`、用户 ID `29` 和长期应用 `1714dcf7-f34e-4996-a8dc-3b88998ebe55` 完成。该用户通过正式租户邀请加入，并获得 `tenant.asset_consumer` 与 `tenant.data_viewer`；前者允许申请资产，后者提供 Workbench 执行的 Role Permission，最终运行权限严格取 `Role Permission ∩ owner Resource Grant`，没有把目录可见性或同租户身份当成执行授权。
+
+浏览器已直接复核完整三段式边界：Grant 生效前 Workbench 拒绝运行；审批履约后，Portal 出现“打开数据应用”，同一用户加载 Revision 2 并通过真实 Service 查询返回 CDC checkpoint 数据；撤销从 `revocation_pending` 收敛为 `revoked` 后，同一用户刷新即看到“当前用户未获得该数据应用的运行授权”，不再发出查询。CatalogEntry `4ff43d3a-3815-49fc-80e7-831dd7cc92b8` 同期完成 `curated` 编目并升级至版本 2。验收后已关闭该用户的临时租户成员关系，并清理 Asset `20377`；当前 Asset `20376`、`20377` 均不存在，Authorization `6`、`7` 均为 `revoked`，两条 Workbench 撤销 tombstone 按审计语义保留，两个长期 Data Application 均保持 `published`。
+
+该轮邀请还暴露出 Console 原先没有承接 System 生成的 `/invitations/accept?invitation=...`，邀请链接会落入需认证的通配路由。现已补齐唯一公开接受页：匿名用户通过 System 正式 registration API 注册并接受，已有会话通过 acceptance API 接受，切换账号先执行正式 Logout 再带原路径登录；System 返回的新 Tenant Session 直接接入共享内存 Browser AuthSession，不把 Access Token、邀请 Secret 或密码写入浏览器持久存储。登录认证规范、Console 单元测试与生产构建已同步。
+
+同一轮日志复核还发现 Catalog 搜索投影 worker 在空队列时使用 `First`，每次轮询都会产生 `record not found` trace；根因和 Asset 履约 reconciler 的空队列日志相同。Catalog 现保留事务、稳定排序、`LIMIT 1` 与 PostgreSQL `FOR UPDATE SKIP LOCKED`，只把领取方式收敛为 `Find + RowsAffected`；新增 logger 捕获测试先稳定复现一次 trace，修复后为 0，`catalog/backend go test ./...` 全量通过。该运行态修复需在下一次标准 Catalog 重启后反映到日志。
 
 ## 十五、概念设计状态
 

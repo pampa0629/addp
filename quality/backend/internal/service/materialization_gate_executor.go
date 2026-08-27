@@ -154,7 +154,8 @@ func (e *CheckExecutor) doMaterializationGate(ctx context.Context, task *models.
 	if execution.ExecutionAuthorizationID == nil {
 		issued, issueErr := e.systemClient.WithTenantID(uint(task.TenantID)).IssueExecutionAuthorizationFromExecution(ctx, commonClient.IssueExecutionAuthorizationFromExecutionRequest{
 			ParentExecutionID: config.ParentExecutionID, Audience: commonExecution.AudienceQuality,
-			ExecutionID: execution.ExecutionID, Accesses: []commonClient.ExecutionEngineAccessScope{{EngineID: strconv.FormatInt(engineID, 10), Effects: []string{"read"}}}, ExpiresIn: 3600,
+			ExecutionID: execution.ExecutionID, Attempt: lease.Attempt, LeaseToken: lease.Token,
+			Accesses: []commonClient.ExecutionEngineAccessScope{{EngineID: strconv.FormatInt(engineID, 10), Effects: []string{"read"}}}, ExpiresIn: 3600,
 		})
 		if issueErr != nil {
 			return nil, failExecution(gateAuthorizationFailedCode, issueErr)

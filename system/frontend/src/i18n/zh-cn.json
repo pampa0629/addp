@@ -365,7 +365,8 @@
         "critical": "严重"
       },
       "validation": {
-        "required": "此项必填"
+        "required": "此项必填",
+        "organizationCode": "编码须以小写字母开头，仅包含小写字母、数字或下划线，且不能以下划线结尾（最多 64 个字符）"
       }
     },
     "securityPolicy": {

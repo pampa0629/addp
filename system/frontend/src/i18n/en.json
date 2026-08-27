@@ -365,7 +365,8 @@
         "critical": "Critical"
       },
       "validation": {
-        "required": "This field is required"
+        "required": "This field is required",
+        "organizationCode": "Start with a lowercase letter; use only lowercase letters, numbers, or underscores; do not end with an underscore (64 characters maximum)"
       }
     },
     "securityPolicy": {

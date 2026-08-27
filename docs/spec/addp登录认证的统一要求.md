@@ -1,6 +1,6 @@
 # ADDP 登录认证的统一要求
 
-更新日期：2026-08-25
+更新日期：2026-08-27
 
 ## 一、认证事实与唯一主路径
 
@@ -310,6 +310,27 @@ Refresh 缺少 Cookie 或 Runtime 明确返回未授权时清除全部会话 Coo
 `PUT /users/me/password` 只接受 `current_password` 和 `new_password`，两者都不得为空且必须不同。基础 IAM Runtime 不继承旧 DTO 的 `min=6`，后续密码强度统一由 Authentication Policy 决定。请求必须使用当前有效第一方 Browser Access Token；Runtime 在 Principal 锁内重新校验 Token 后修改 Local Account 密码、递增授权版本、撤销全部有效 Token Family 并写 `iam.password.rotated`。
 
 当前密码错误返回 HTTP 400 和稳定 `error_code=invalid_current_password`，不得返回会触发 Browser AuthSession 刷新的 Token 401；新旧密码相同返回 400 和 `error_code=password_unchanged`。成功返回 `changed_at` 与 `revoked_family_count`，同时清除当前浏览器全部会话 Cookie，前端清空内存 Token、广播退出并跳转登录。
+
+### 6.8 租户邀请接受
+
+System 创建 Tenant Invitation 时返回的唯一浏览器入口固定为 Console 同 origin 下的
+`/invitations/accept?invitation=<opaque-secret>`。Console 拥有该公开页面和会话接管，System
+仍是 Invitation、User、Membership 和新会话的唯一事实 owner。不得把邀请链接实现为
+需要先登录的模块 iframe 路由，也不得在 Console 复制 Invitation 或 Membership 业务事实。
+
+接受流程只允许以下两条 System 正式 API 路径：
+
+- 当前浏览器没有有效会话时，用户填写本地账号注册资料，Console 调用
+  `POST /api/v1/system/tenant/invitations/registrations`；
+- 当前浏览器已有有效 User Session 时，Console 明确展示当前账号并调用
+  `POST /api/v1/system/tenant/invitations/acceptances`。用户选择其他账号时必须先通过唯一 Logout
+  流程结束当前 Family，再带原邀请路径进入登录页。
+
+两个接口成功时都直接返回新 Tenant Context 的 Browser Session 并由 System 设置 HttpOnly
+Refresh Cookie。Console 必须把 Access Token 交给共享 Browser AuthSession 的内存 Token Provider，
+随后重读 `/users/me` 和 `/auth/context`；不得把 Token、邀请 Secret 或密码写入
+`localStorage`、`sessionStorage`、日志或自建 Cookie。邀请缺失或格式无效时页面
+必须 fail-closed，不得回退到普通登录或默认 Tenant。
 
 ## 七、前端共享能力要求
 

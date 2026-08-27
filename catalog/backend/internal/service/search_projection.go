@@ -125,11 +125,12 @@ func (w *ProjectionWorker) claimNext(ctx context.Context) (*models.ProjectionTas
 		if tx.Dialector.Name() == "postgres" {
 			query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
 		}
-		if err := query.First(&task).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil
-			}
-			return fmt.Errorf("claim Catalog projection task: %w", err)
+		result := query.Find(&task)
+		if result.Error != nil {
+			return fmt.Errorf("claim Catalog projection task: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return nil
 		}
 		if err := tx.Model(&task).Updates(map[string]interface{}{"status": "processing", "updated_at": now}).Error; err != nil {
 			return fmt.Errorf("mark Catalog projection task processing: %w", err)

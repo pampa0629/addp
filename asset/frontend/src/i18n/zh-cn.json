@@ -76,6 +76,8 @@
       "republish": "重新上架",
       "delete": "删除",
       "deleteConfirm": "确定删除该资产？",
+      "confirm": "确定",
+      "cancel": "取消",
       "statusPrefix": "状态：",
       "publishedAtPrefix": "上架时间：",
       "rejectReasonPrefix": "驳回原因：",

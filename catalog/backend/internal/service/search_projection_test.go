@@ -8,7 +8,23 @@ import (
 
 	"github.com/addp/catalog/internal/models"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
+
+type projectionRecordNotFoundCaptureLogger struct {
+	recordNotFoundCount int
+}
+
+func (capture *projectionRecordNotFoundCaptureLogger) LogMode(logger.LogLevel) logger.Interface { return capture }
+func (capture *projectionRecordNotFoundCaptureLogger) Info(context.Context, string, ...interface{}) {}
+func (capture *projectionRecordNotFoundCaptureLogger) Warn(context.Context, string, ...interface{}) {}
+func (capture *projectionRecordNotFoundCaptureLogger) Error(context.Context, string, ...interface{}) {}
+func (capture *projectionRecordNotFoundCaptureLogger) Trace(_ context.Context, _ time.Time, _ func() (string, int64), err error) {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		capture.recordNotFoundCount++
+	}
+}
 
 type fakeCatalogSearchProjection struct {
 	document *CatalogSearchDocument
@@ -76,6 +92,19 @@ func TestProjectionWorkerBuildsOwnerScopedSearchDocumentAndCompletesTask(t *test
 	}
 	if taskCount != 0 {
 		t.Fatalf("completed projection tasks = %d", taskCount)
+	}
+}
+
+func TestProjectionWorkerEmptyQueueDoesNotTraceRecordNotFound(t *testing.T) {
+	db := openCatalogServiceTestDB(t)
+	capture := &projectionRecordNotFoundCaptureLogger{}
+	db = db.Session(&gorm.Session{Logger: capture})
+
+	if err := NewProjectionWorker(db, &fakeCatalogSearchProjection{}, time.Second).ProcessNext(context.Background()); err != nil {
+		t.Fatalf("process empty projection queue: %v", err)
+	}
+	if capture.recordNotFoundCount != 0 {
+		t.Fatalf("empty projection queue traced record not found %d times", capture.recordNotFoundCount)
 	}
 }
 

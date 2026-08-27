@@ -29,7 +29,7 @@
     <el-dialog v-model="formVisible" :title="formMode === 'create' ? t('system.iam.organization.projectGroups.create') : t('system.iam.organization.projectGroups.edit')" width="600px" :close-on-click-modal="false">
       <el-alert v-if="versionConflict" type="warning" :closable="false" show-icon :title="t('system.iam.organization.versionConflict')" />
       <el-form label-position="top" class="iam-form-grid">
-        <el-form-item :label="t('system.iam.common.code')"><el-input v-model="form.code" :disabled="formMode === 'edit'" /></el-form-item>
+        <el-form-item :label="t('system.iam.common.code')" :error="organizationCodeError"><el-input v-model="form.code" :disabled="formMode === 'edit'" /></el-form-item>
         <el-form-item :label="t('system.iam.common.name')"><el-input v-model="form.name" /></el-form-item>
         <el-form-item class="iam-form-span" :label="t('system.iam.common.description')"><el-input v-model="form.description" type="textarea" :rows="3" /></el-form-item>
         <el-form-item :label="t('system.iam.common.status')">
@@ -53,6 +53,7 @@ import { CircleClose, Edit, Plus, Refresh, Search, User } from '@element-plus/ic
 import { useI18n } from 'vue-i18n'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
+import { isValidOrganizationCode } from '../../utils/organizationIdentity'
 import OrganizationMembershipsDialog from './OrganizationMembershipsDialog.vue'
 
 const { t } = useI18n()
@@ -73,7 +74,9 @@ const form = reactive({ code: '', name: '', description: '', status: 'planned', 
 const membersVisible = ref(false)
 const selectedGroup = ref(null)
 const writableStatuses = computed(() => formMode.value === 'edit' && editing.value?.status === 'active' ? ['active'] : ['planned', 'active'])
-const formValid = computed(() => Boolean(form.code.trim()) && Boolean(form.name.trim()) && (!form.startsAt || !form.endsAt || form.endsAt > form.startsAt))
+const organizationCodeValid = computed(() => isValidOrganizationCode(form.code))
+const organizationCodeError = computed(() => form.code && !organizationCodeValid.value ? t('system.iam.validation.organizationCode') : '')
+const formValid = computed(() => organizationCodeValid.value && Boolean(form.name.trim()) && (!form.startsAt || !form.endsAt || form.endsAt > form.startsAt))
 
 function statusLabel(value) { return t(`system.iam.status.${value}`) }
 function statusType(value) { return ({ planned: 'info', active: 'success', closed: 'info' })[value] || 'info' }

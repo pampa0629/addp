@@ -42,4 +42,19 @@ describe('Asset public route contract', () => {
     expect(assetManager).toContain('{ catalog_id: String(id) }')
     expect(assetManager).toContain("{ history: 'replace' }")
   })
+
+  it('loads selectable CatalogEntry candidates from the inventory view', () => {
+    const picker = readSource('components/CatalogEntryPicker.vue')
+
+    expect(picker).toContain("view: 'inventory'")
+    expect(picker).toContain("source_status: 'active'")
+  })
+
+  it('exposes deletion for both draft and offline assets', () => {
+    const assetDetail = readSource('views/AssetDetail.vue')
+
+    expect(assetDetail).toContain("['draft', 'offline'].includes(asset.status)")
+    expect(assetDetail).toContain(":confirm-button-text=\"t('asset.assetDetail.confirm')\"")
+    expect(assetDetail).toContain(":cancel-button-text=\"t('asset.assetDetail.cancel')\"")
+  })
 })

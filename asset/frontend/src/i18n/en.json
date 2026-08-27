@@ -76,6 +76,8 @@
       "republish": "Republish",
       "delete": "Delete",
       "deleteConfirm": "Confirm delete this asset?",
+      "confirm": "Confirm",
+      "cancel": "Cancel",
       "statusPrefix": "Status: ",
       "publishedAtPrefix": "Published at: ",
       "rejectReasonPrefix": "Reject reason: ",
