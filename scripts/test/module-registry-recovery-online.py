@@ -21,6 +21,9 @@ class SuiteError(RuntimeError):
     pass
 
 
+LOOPBACK_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
 @dataclass(frozen=True)
 class Registration:
     module_name: str
@@ -148,7 +151,7 @@ class JSONClient:
             headers=request_headers,
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with LOOPBACK_OPENER.open(request, timeout=self.timeout) as response:
                 status = response.status
                 raw = response.read()
         except urllib.error.HTTPError as error:

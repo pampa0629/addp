@@ -123,7 +123,7 @@ test-module: ## 运行指定模块的 T0-T3 门禁；用法：make test-module M
 test-changed: ## 根据相对 HEAD 或 BASE_REF 的改动运行受影响 T0-T3 门禁
 	@python3 scripts/test/changed-gate.py --repository "$(CURDIR)" $(if $(BASE_REF),--base-ref "$(BASE_REF)",)
 
-local-ci: ## 在专用 macOS checkout 同步 origin/main 并运行辅助 T0-T3 巡检；参数用 LOCAL_CI_ARGS="--full|--check-only"
+local-ci: ## 在专用 macOS checkout 运行辅助 T0-T3 巡检；参数用 LOCAL_CI_ARGS="--full|--check-only|--no-fetch"
 	@bash scripts/test/local-macos-ci.sh $(LOCAL_CI_ARGS)
 
 test-local-ci-runner: ## 运行辅助 macOS 巡检器的确定性测试

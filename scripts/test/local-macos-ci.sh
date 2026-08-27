@@ -13,20 +13,23 @@ fail() {
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/test/local-macos-ci.sh [--check-only|--full]
+Usage: bash scripts/test/local-macos-ci.sh [--check-only|--full|--no-fetch]
 
   no option     Fast-forward to origin/main and test changes since the last successful SHA.
                 The first successful run is automatically a full run.
   --check-only  Validate the checkout, toolchain and Docker boundary without fetching or testing.
   --full        Fast-forward to origin/main and run all deterministic and PostgreSQL gates.
+  --no-fetch     Run against the current clean main checkout without fetching or merging.
 EOF
 }
 
 MODE=incremental
+FETCH_REMOTE=true
 case "${1:-}" in
   "") ;;
   --check-only) MODE=check-only ;;
   --full) MODE=full ;;
+  --no-fetch) MODE=current; FETCH_REMOTE=false ;;
   -h|--help)
     usage
     exit 0
@@ -300,12 +303,16 @@ fi
 
 acquire_lock
 
-echo "==> Fetch origin/main"
-git fetch origin main
-git merge --ff-only refs/remotes/origin/main
-[ "$(git rev-parse HEAD)" = "$(git rev-parse refs/remotes/origin/main)" ] ||
-  fail "local main does not exactly match origin/main"
-[ -z "$(tracked_or_untracked_changes)" ] || fail "checkout became dirty after fast-forward"
+if [ "$FETCH_REMOTE" = true ]; then
+  echo "==> Fetch origin/main"
+  git fetch origin main
+  git merge --ff-only refs/remotes/origin/main
+  [ "$(git rev-parse HEAD)" = "$(git rev-parse refs/remotes/origin/main)" ] ||
+    fail "local main does not exactly match origin/main"
+  [ -z "$(tracked_or_untracked_changes)" ] || fail "checkout became dirty after fast-forward"
+else
+  echo "==> Use current main checkout (no fetch)"
+fi
 
 target_sha=$(git rev-parse HEAD)
 last_success=$(sed -n '1p' "$LAST_SUCCESS_FILE" 2>/dev/null || true)
@@ -315,6 +322,9 @@ if [ "$MODE" = "incremental" ] && [ -n "$last_success" ] && [ "$last_success" = 
 fi
 
 scope=$MODE
+if [ "$scope" = current ]; then
+  scope=incremental
+fi
 if [ -z "$last_success" ] || ! git merge-base --is-ancestor "$last_success" "$target_sha"; then
   scope=full
 fi

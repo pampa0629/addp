@@ -470,9 +470,9 @@ scripts/test/
 
 根 `make test` 是 T0-T1 全部无外部服务确定性门禁的唯一聚合入口，包含 `make test-platform`、全部 Go 模块、Common Python、Agent 离线评测、Copilot 后端，以及所有已登记前端的测试和生产构建。前端与 Python CI 登记检查同时要求每个自动发现的组件进入该聚合入口，新增测试组件不能只登记 CI 而遗漏本地总门禁。需要专用 PostgreSQL、真实运行服务、在线证据或发布环境的 T2-T5 门禁不并入 `make test`，必须使用各自显式入口。
 
-日常使用的 macOS 可以在独立、干净的 `main` checkout 中定时运行 `make local-ci`。脚本会 fast-forward 到 `origin/main`，首次运行 `make test` 和全部已登记 PostgreSQL 门禁，之后以上次成功 SHA 运行 `make test-changed`；每个新 SHA 还会通过 `make build BUILD_ARGS=--force` 复验全部 Linux 产品二进制。失败不更新基线，后续调度会重试；无新提交时直接跳过。使用 `make local-ci LOCAL_CI_ARGS=--full` 可强制全量复验，使用 `make local-ci LOCAL_CI_ARGS=--check-only` 只检查 macOS、Git、Go 1.24+、Python 3.11+、`.node-version` 声明的 Node.js 24、Docker 和工作区边界。
+日常使用的 macOS 可以在独立、干净的 `main` checkout 中定时运行 `make local-ci`。脚本会 fast-forward 到 `origin/main`，首次运行 `make test` 和全部已登记 PostgreSQL 门禁，之后以上次成功 SHA 运行 `make test-changed`；每个新 SHA 还会通过 `make build BUILD_ARGS=--force` 复验全部 Linux 产品二进制。失败不更新基线，后续调度会重试；无新提交时直接跳过。使用 `make local-ci LOCAL_CI_ARGS=--full` 可强制全量复验，使用 `make local-ci LOCAL_CI_ARGS=--check-only` 只检查 macOS、Git、Go 1.24+、Python 3.11+、`.node-version` 声明的 Node.js 24、Docker 和工作区边界；使用 `make local-ci LOCAL_CI_ARGS=--no-fetch` 可在调用方已同步完成后，仅验证当前干净的 `main` checkout，不执行远端 fetch 或 fast-forward。
 
-该入口只启停 `addp-infra` Compose 项目并保留数据卷，不执行 Docker 全局清理。如果发现正在运行的 ADDP Infra，它会拒绝接管。日志、成功 SHA 和运行锁位于 `.git/addp-local-ci/`，不进入工作树。该辅助巡检不替代 GitHub Actions，也不运行 T4/T5。
+该入口只启停 `addp-infra` Compose 项目并保留数据卷，不执行 Docker 全局清理。如果发现正在运行的 ADDP Infra，它会拒绝接管。日志、成功 SHA 和运行锁位于 `.git/addp-local-ci/`，不进入工作树。Online 预检与恢复客户端的回环请求固定直连，不读取操作系统 HTTP 代理。该辅助巡检不替代 GitHub Actions，也不运行 T4/T5。
 
 Agent 的 `test-agent-eval` 与 `test-agent-frontend` 保持独立：前者只运行 Python 离线评测，后者运行前端测试和生产构建。根 `make test` 与模块门禁负责同时选择二者；CI 使用独立 Job 准备 Python 或 Node 环境，不能让评测目标隐式依赖前端安装。
 

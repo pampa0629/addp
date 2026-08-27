@@ -198,6 +198,22 @@ class LocalMacOSCiTest(unittest.TestCase):
         self._git(self.publisher, "push", "-q", "origin", "main")
         return self._git(self.publisher, "rev-parse", "HEAD")
 
+    def _commit_local_change(self) -> str:
+        change = self.repository / "local-change.txt"
+        change.write_text("changed locally\n", encoding="utf-8")
+        self._git(self.repository, "add", "local-change.txt")
+        self._git(
+            self.repository,
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-qm",
+            "local change",
+        )
+        return self._git(self.repository, "rev-parse", "HEAD")
+
     def test_first_run_is_full_and_second_run_skips_same_sha(self) -> None:
         first = self._run()
 
@@ -225,6 +241,33 @@ class LocalMacOSCiTest(unittest.TestCase):
         second = self._run()
 
         self.assertEqual(second.returncode, 0, second.stderr + second.stdout)
+        self.assertEqual(target, self._git(self.repository, "rev-parse", "HEAD"))
+        self.assertEqual(
+            [
+                "test",
+                "build BUILD_ARGS=--force",
+                "infra-up",
+                "test-integration",
+                "infra-down",
+                "build BUILD_ARGS=--force",
+                "infra-up",
+                f"test-changed BASE_REF={baseline}",
+                "infra-down",
+            ],
+            self._make_commands(),
+        )
+
+    def test_no_fetch_runs_current_main_without_remote_sync(self) -> None:
+        first = self._run()
+        self.assertEqual(first.returncode, 0, first.stderr + first.stdout)
+        baseline = self._git(self.repository, "rev-parse", "HEAD")
+        target = self._commit_local_change()
+        self._git(self.repository, "remote", "set-url", "origin", str(self.root / "missing-origin.git"))
+
+        second = self._run("--no-fetch")
+
+        self.assertEqual(second.returncode, 0, second.stderr + second.stdout)
+        self.assertIn("current main checkout (no fetch)", second.stdout)
         self.assertEqual(target, self._git(self.repository, "rev-parse", "HEAD"))
         self.assertEqual(
             [
