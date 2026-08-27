@@ -26,8 +26,6 @@ func setupAssetCleanupTestDB(t *testing.T) *gorm.DB {
 			tenant_id INTEGER NOT NULL,
 			name TEXT NOT NULL,
 			code TEXT NOT NULL,
-			auth_handler TEXT,
-			entry_type TEXT,
 			icon_url TEXT,
 			description TEXT,
 			enabled BOOLEAN DEFAULT TRUE,
@@ -110,11 +108,17 @@ func setupAssetCleanupTestDB(t *testing.T) *gorm.DB {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
 			asset_id INTEGER NOT NULL,
-			application_id INTEGER,
+			application_id INTEGER NOT NULL,
 			user_id INTEGER NOT NULL,
-			credential TEXT,
+			status TEXT NOT NULL DEFAULT 'pending',
+			target_module TEXT NOT NULL DEFAULT '',
+			target_resource_type TEXT NOT NULL DEFAULT '',
+			target_resource_id TEXT NOT NULL DEFAULT '',
 			expires_at DATETIME,
-			is_active BOOLEAN DEFAULT TRUE,
+			fulfillment_attempt INTEGER NOT NULL DEFAULT 0,
+			fulfillment_last_error TEXT NOT NULL DEFAULT '',
+			next_attempt_at DATETIME,
+			fulfilled_at DATETIME,
 			revoked_at DATETIME,
 			revoked_by INTEGER,
 			created_at DATETIME,
@@ -178,8 +182,8 @@ func TestAssetCleanupTenantDeletedLogicalOfflinesAssetsAndRevokesAuthorizations(
 	if err := db.First(&auth, authID).Error; err != nil {
 		t.Fatalf("load auth: %v", err)
 	}
-	if auth.IsActive || auth.RevokedAt == nil {
-		t.Fatalf("expected authorization revoked, got active=%v revoked_at=%v", auth.IsActive, auth.RevokedAt)
+	if auth.Status != models.AuthorizationStatusRevocationPending || auth.NextAttemptAt == nil || auth.RevokedAt != nil {
+		t.Fatalf("expected authorization revocation pending, got status=%s next_attempt_at=%v revoked_at=%v", auth.Status, auth.NextAttemptAt, auth.RevokedAt)
 	}
 }
 
@@ -251,7 +255,11 @@ func seedAssetCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64) (int
 	if err := db.Create(&app).Error; err != nil {
 		t.Fatalf("create application: %v", err)
 	}
-	auth := models.Authorization{TenantID: tenantID, AssetID: asset.ID, ApplicationID: &app.ID, UserID: 2, IsActive: true}
+	auth := models.Authorization{
+		TenantID: tenantID, AssetID: asset.ID, ApplicationID: &app.ID, UserID: 2,
+		Status: models.AuthorizationStatusEffective, TargetModule: "workbench",
+		TargetResourceType: "data_application", TargetResourceID: uuid.NewString(),
+	}
 	if err := db.Create(&auth).Error; err != nil {
 		t.Fatalf("create authorization: %v", err)
 	}

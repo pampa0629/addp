@@ -15,6 +15,7 @@ func TestGovernanceCoverageUsesApplicabilityAwareCatalogFacts(t *testing.T) {
 	db := openCatalogServiceTestDB(t)
 	metaEntry, component := createEditableCatalogEntry(t, db, 7)
 	modelEntry := createModelCatalogEntry(t, db, 7, "20")
+	departmentOnlyEntry := createMetricCatalogEntry(t, db, 7, "20")
 	now := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
 	name, description := "Customer orders", "Orders curated for enterprise reuse"
 	if err := db.Model(&models.Entry{}).Where("id = ?", metaEntry.ID).Updates(map[string]any{
@@ -47,6 +48,15 @@ func TestGovernanceCoverageUsesApplicabilityAwareCatalogFacts(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if err := db.Create(&models.Responsibility{
+		ID: uuid.New(), TenantID: 7, CatalogEntryID: departmentOnlyEntry.ID,
+		Role:        models.ResponsibilityRoleAccountableDepartment,
+		SubjectType: models.ResponsibilitySubjectDepartment, SubjectID: 31,
+		Status: models.ResponsibilityStatusActive, ObservedSnapshot: commonModels.JSONMap{"name": "Finance"},
+		VerifiedAt: now, CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Create(&models.ComponentElementAssociation{
 		ID: uuid.New(), TenantID: 7, CatalogEntryID: metaEntry.ID, ComponentID: component.ID,
 		ElementID: 50, ObservedVersion: 1, ObservedSnapshot: commonModels.JSONMap{"name": "Order ID"},
@@ -59,24 +69,29 @@ func TestGovernanceCoverageUsesApplicabilityAwareCatalogFacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetGovernanceCoverage() error = %v", err)
 	}
-	if result.TotalEntries != 2 || result.View != EntryViewInventory {
+	if result.TotalEntries != 3 || result.View != EntryViewInventory {
 		t.Fatalf("coverage scope = %#v", result)
 	}
-	if result.GovernanceStatuses[0].Status != models.GovernanceStatusDiscovered || result.GovernanceStatuses[0].Count != 2 {
+	if result.GovernanceStatuses[0].Status != models.GovernanceStatusDiscovered || result.GovernanceStatuses[0].Count != 3 {
 		t.Fatalf("governance statuses = %#v", result.GovernanceStatuses)
 	}
 	dimensions := make(map[string]GovernanceCoverageDimension, len(result.Dimensions))
 	for _, dimension := range result.Dimensions {
 		dimensions[dimension.Key] = dimension
 	}
-	assertCoverageDimension(t, dimensions[CoverageDimensionBusinessDefinition], 1, 2, 50)
-	assertCoverageDimension(t, dimensions[CoverageDimensionPrimaryDomain], 2, 2, 100)
-	assertCoverageDimension(t, dimensions[CoverageDimensionAccountability], 1, 2, 50)
-	assertCoverageDimension(t, dimensions[CoverageDimensionGlossary], 1, 2, 50)
+	assertCoverageDimension(t, dimensions[CoverageDimensionBusinessDefinition], 1, 3, 33.33)
+	assertCoverageDimension(t, dimensions[CoverageDimensionPrimaryDomain], 3, 3, 100)
+	assertCoverageDimension(t, dimensions[CoverageDimensionAccountableDepartment], 2, 3, 66.67)
+	assertCoverageDimension(t, dimensions[CoverageDimensionBusinessOwner], 1, 3, 33.33)
+	assertCoverageDimension(t, dimensions[CoverageDimensionDataSteward], 1, 3, 33.33)
+	assertCoverageDimension(t, dimensions[CoverageDimensionGlossary], 1, 3, 33.33)
 	componentCoverage := dimensions[CoverageDimensionComponentElement]
 	assertCoverageDimension(t, componentCoverage, 1, 1, 100)
-	if componentCoverage.NotApplicable != 1 || modelEntry.ID == metaEntry.ID {
+	if componentCoverage.NotApplicable != 2 || modelEntry.ID == metaEntry.ID {
 		t.Fatalf("component coverage = %#v", componentCoverage)
+	}
+	if len(dimensions) != 7 {
+		t.Fatalf("coverage dimensions = %#v, want seven atomic dimensions", dimensions)
 	}
 }
 

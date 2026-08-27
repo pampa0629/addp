@@ -34,6 +34,15 @@ other = "已发布的数据应用不能删除，请改为下线"
 [workbench.error.data_application_not_published]
 other = "数据应用尚未发布或当前已下线"
 
+[workbench.error.data_application_access_denied]
+other = "当前用户未获得该数据应用的运行授权"
+
+[workbench.error.invalid_resource_grant]
+other = "资源授权履约请求无效"
+
+[workbench.error.resource_grant_conflict]
+other = "资源授权来源已绑定其他目标或已经撤销"
+
 [workbench.message.data_application_delete_succeeded]
 other = "数据应用已删除"
 
@@ -66,6 +75,15 @@ other = "查看当前用户的数据应用配置"
 other = "更新数据应用"
 [permissions.workbench.data_application.update.description]
 other = "更新当前用户的数据应用草稿"
+
+[permissions.workbench.resource_grant.create.name]
+other = "履约工作台资源授权"
+[permissions.workbench.resource_grant.create.description]
+other = "供 Asset 为数据应用写入 owner 资源授权"
+[permissions.workbench.resource_grant.revoke.name]
+other = "撤销工作台资源授权"
+[permissions.workbench.resource_grant.revoke.description]
+other = "供 Asset 撤销数据应用的 owner 资源授权"
 
 [permissions.workbench.view.create.name]
 other = "创建工作台视图"

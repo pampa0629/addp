@@ -72,8 +72,6 @@ type TypeDefinition struct {
 	TenantID    int64     `gorm:"not null;index"                                      json:"tenant_id"`
 	Name        string    `gorm:"size:100;not null"                                   json:"name"`
 	Code        string    `gorm:"size:50;not null;uniqueIndex:uidx_type_code_tenant"  json:"code"`
-	AuthHandler string    `gorm:"size:100"                                            json:"auth_handler"` // soft/token
-	EntryType   string    `gorm:"size:50"                                             json:"entry_type"`   // preview/link/iframe/token
 	IconURL     string    `gorm:"size:500"                                            json:"icon_url"`
 	Description string    `gorm:"size:500"                                            json:"description"`
 	Enabled     bool      `gorm:"default:true"                                        json:"enabled"`
@@ -187,20 +185,34 @@ type Application struct {
 
 func (Application) TableName() string { return "asset.applications" }
 
-// Authorization 授权记录（审批通过后自动生成）
+const (
+	AuthorizationStatusPending           = "pending"
+	AuthorizationStatusEffective         = "effective"
+	AuthorizationStatusRevocationPending = "revocation_pending"
+	AuthorizationStatusRevoked           = "revoked"
+)
+
+// Authorization records Asset-owned approval fulfillment state. The owner module
+// remains the only source of the final runtime access rule.
 type Authorization struct {
-	ID            int64      `gorm:"primaryKey"              json:"id"`
-	TenantID      int64      `gorm:"not null;index"          json:"tenant_id"`
-	AssetID       int64      `gorm:"not null;index"          json:"asset_id"`
-	ApplicationID *int64     `gorm:"index"                   json:"application_id,omitempty"` // 关联申请记录，可为空（管理员直接授权）
-	UserID        int64      `gorm:"not null;index"          json:"user_id"`
-	Credential    string     `gorm:"size:2000"               json:"credential"` // 授权凭证（如 API Token），软性授权为空
-	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
-	IsActive      bool       `gorm:"default:true;index"      json:"is_active"`
-	RevokedAt     *time.Time `json:"revoked_at,omitempty"`
-	RevokedBy     *int64     `json:"revoked_by,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID                   int64      `gorm:"primaryKey" json:"id"`
+	TenantID             int64      `gorm:"not null;index" json:"tenant_id"`
+	AssetID              int64      `gorm:"not null;index" json:"asset_id"`
+	ApplicationID        *int64     `gorm:"uniqueIndex" json:"application_id"`
+	UserID               int64      `gorm:"not null;index" json:"user_id"`
+	Status               string     `gorm:"size:32;not null;default:'pending';index" json:"status"`
+	TargetModule         string     `gorm:"size:64;not null;default:''" json:"target_module,omitempty"`
+	TargetResourceType   string     `gorm:"size:64;not null;default:''" json:"target_resource_type,omitempty"`
+	TargetResourceID     string     `gorm:"size:128;not null;default:''" json:"target_resource_id,omitempty"`
+	ExpiresAt            *time.Time `json:"expires_at,omitempty"`
+	FulfillmentAttempt   int        `gorm:"not null;default:0" json:"fulfillment_attempt"`
+	FulfillmentLastError string     `gorm:"size:2000;not null;default:''" json:"-"`
+	NextAttemptAt        *time.Time `gorm:"index" json:"-"`
+	FulfilledAt          *time.Time `json:"fulfilled_at,omitempty"`
+	RevokedAt            *time.Time `json:"revoked_at,omitempty"`
+	RevokedBy            *int64     `json:"revoked_by,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 func (Authorization) TableName() string { return "asset.authorizations" }

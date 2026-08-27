@@ -112,6 +112,19 @@ func gateActiveExecutionCount(tx *gorm.DB, taskID, tenantID int64) (int64, error
 func (r *MaterializationGateRepository) CreateExecution(ctx context.Context, taskID, tenantID int64, execution *commonExecution.TaskExecution) (*models.MaterializationGateTask, error) {
 	var task models.MaterializationGateTask
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if execution.ParentExecutionID == nil {
+			return fmt.Errorf("%w: materialization gate requires parent execution", commonAPI.ErrConflict)
+		}
+		var parent commonExecution.TaskExecution
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+			Where("tenant_id = ? AND execution_id = ? AND module = ? AND status = ?",
+				tenantID, *execution.ParentExecutionID, commonExecution.ModuleOrchestrator, commonExecution.ExecutionStatusRunning).
+			First(&parent).Error; err != nil {
+			return err
+		}
+		if parent.ActorPrincipalID == nil || parent.ActorTenantMembershipID == nil || parent.IssuedAuthorizationVersion == nil {
+			return fmt.Errorf("%w: orchestration parent has no authorization lineage", commonAPI.ErrConflict)
+		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id = ? AND id = ?", tenantID, taskID).First(&task).Error; err != nil {
 			return err
 		}
@@ -124,6 +137,9 @@ func (r *MaterializationGateRepository) CreateExecution(ctx context.Context, tas
 		}
 		execution.SourceTaskID = commonExecution.NewSourceTaskIDFromInt(int(taskID))
 		execution.SourceTaskName = &task.Name
+		execution.ActorPrincipalID = parent.ActorPrincipalID
+		execution.ActorTenantMembershipID = parent.ActorTenantMembershipID
+		execution.IssuedAuthorizationVersion = parent.IssuedAuthorizationVersion
 		if err := tx.Create(execution).Error; err != nil {
 			return err
 		}

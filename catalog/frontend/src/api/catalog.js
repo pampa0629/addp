@@ -12,6 +12,10 @@ export async function resolveSourceEntries(references) {
 	return client.post('/catalog/entries/resolve-sources', { references })
 }
 
+export async function batchGovernance(payload) {
+	return client.post('/catalog/entries/batch_governance', payload)
+}
+
 export async function listReferenceCandidates(params) {
 	return client.get('/catalog/reference-candidates', { params })
 }

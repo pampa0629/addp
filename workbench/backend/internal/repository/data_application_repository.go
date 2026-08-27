@@ -194,6 +194,25 @@ func (r *DataApplicationRepository) GetRuntime(tenantID, ownerUserID int64, id s
 	return &revision, nil
 }
 
+func (r *DataApplicationRepository) GetRuntimeApplication(tenantID int64, id string) (*models.DataApplication, *models.DataApplicationRevision, error) {
+	var application models.DataApplication
+	if err := r.db.Where("tenant_id = ? AND id = ?", tenantID, id).First(&application).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, ErrDataApplicationNotFound
+		}
+		return nil, nil, err
+	}
+	if application.PublicationStatus != models.PublicationStatusPublished || application.CurrentRevisionNumber == nil {
+		return nil, nil, ErrDataApplicationNotPublished
+	}
+	var revision models.DataApplicationRevision
+	if err := r.db.Where("tenant_id = ? AND application_id = ? AND revision_number = ?", tenantID, id, *application.CurrentRevisionNumber).
+		First(&revision).Error; err != nil {
+		return nil, nil, err
+	}
+	return &application, &revision, nil
+}
+
 func (r *DataApplicationRepository) resolveWriteResult(result *gorm.DB, tenantID, ownerUserID int64, id string) error {
 	if result.Error != nil {
 		return result.Error

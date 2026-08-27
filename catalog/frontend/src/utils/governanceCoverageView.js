@@ -1,5 +1,8 @@
 const dimensionFields = new Set(['name', 'description'])
-const coverageDimensions = new Set(['business_definition', 'primary_domain', 'accountability', 'glossary', 'component_element'])
+const coverageDimensions = new Set([
+  'business_definition', 'primary_domain', 'accountable_department', 'business_owner',
+  'data_steward', 'glossary', 'component_element'
+])
 
 export function coverageDimensionLabel(translate, dimensionKey, field, emptyLabel = '-') {
   if (typeof dimensionKey !== 'string' || dimensionKey.length === 0 || !dimensionFields.has(field)) {

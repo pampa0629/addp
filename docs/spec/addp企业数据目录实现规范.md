@@ -1,13 +1,13 @@
 # ADDP 企业数据目录实现规范
 
-版本：v1.8-draft
+版本：v1.12-draft
 更新日期：2026-08-27
 
 本文定义 Catalog 模块的身份、数据、变化、API、权限、搜索和运行契约。概念边界见 [企业数据目录体系图](../concepts/addp企业数据目录体系图.md)。
 
 ## 一、适用范围与原则
 
-第一阶段以 Meta DataItem 为自动来源，并开放 Standard Domain、Glossary Term、Element 的基础关联；第二阶段接入 Model Entity 与 LogicalTable；第三阶段接入 Standard Metric；第四阶段接入 Service QueryService；第五阶段接入经过筛选的 Develop 可复用开发成果；第六阶段接入 Workbench 已首次发布的 Data Application。Quality 摘要和通用 Workspace 后续必须先明确关系与协作边界，不默认扩展为新的 CatalogEntry 类型。
+第一阶段以 Meta DataItem 为自动来源，并开放 Standard Domain、Glossary Term、Element 的基础关联；第二阶段接入 Model Entity 与 LogicalTable；第三阶段接入 Standard Metric；第四阶段接入 Service QueryService；第五阶段接入经过筛选的 Develop 可复用开发成果；第六阶段接入 Workbench 已首次发布的 Data Application。Quality 摘要只通过 owner 公开契约动态读取，不扩展为新的 CatalogEntry 类型或 Catalog 事实副本；统一 Workspace 经跨模块评估确认当前不新增，不预建模块、实体或 `workspace_id`。
 
 实现必须遵守：
 
@@ -197,6 +197,8 @@ Catalog 列表只提供两个相互排他的目录视图：
 视图是同一组 CatalogEntry 的权限感知查询，不新增实体、复制条目或维护双轨索引。DataItem 全量自动建档且可在 `inventory` 查询；完成业务编目后，同一 CatalogEntry 自然进入 `governance` 视图。
 
 目录浏览采用“主业务域 + 上下文分面 + 权威分页列表”，不建立持久化企业目录树。Standard Domain 是主业务分类，Accountable Department 是可交叉的组织责任分面，Entry Type 是资源形态分面；三者不能被固化为 Domain 拥有 Department、Department 拥有资源类型的父子事实。前端在同一 `/entries` 路由中按“业务域 → 责任部门 → 资源类型”逐步缩小当前查询，所有选择写入规范 URL，并继续由 `/entries` 返回同一批 CatalogEntry。
+
+资源盘点视图的业务域导航可以提供“待归类”虚拟入口，但它不是 Standard Domain、没有稳定 Domain ID，也不进入 `/entries/facets` 的 Domain 候选。该入口唯一映射到 `view=inventory&coverage_dimension=primary_domain&coverage_state=missing` 的权威治理缺口查询；进入时清除名称搜索、已选业务域及其下游责任部门和资源类型，退出后恢复普通目录导航。缺口视图不得继续把“待归类”表现为导航父节点，避免把治理状态误装成企业分类事实。
 
 ## 五、Meta DataItem 可恢复变化契约
 
@@ -424,17 +426,19 @@ Catalog 只为联邦导航提供自己拥有的来源绑定解析：前端把 ow
 
 治理覆盖率是 Catalog 自有治理事实的权限感知读模型，不是持久化投影。`GET /governance/coverage` 固定覆盖当前 Tenant 的资源盘点视图，因此同时要求 `catalog.entry.read` 与 `catalog.inventory.read`，并只统计 `entry_status=active` 的 CatalogEntry。聚合必须直接读取当前权威表，不创建覆盖率表、缓存副本或后台同步任务。
 
-第一阶段固定返回治理状态分布与以下五个条目级维度；每个维度都返回 `covered`、`applicable`、`not_covered`、`not_applicable` 和百分比 `coverage_rate`，其中百分比等于 `covered / applicable * 100`，无适用对象时为 `0`：
+第一阶段固定返回治理状态分布与以下七个可独立处置的条目级维度；每个维度都返回 `covered`、`applicable`、`not_covered`、`not_applicable` 和百分比 `coverage_rate`，其中百分比等于 `covered / applicable * 100`，无适用对象时为 `0`：
 
 | 维度 | 适用分母 | 覆盖判定 |
 | --- | --- | --- |
 | `business_definition` | 全部 active 条目 | 业务名称和业务说明均非空 |
 | `primary_domain` | 全部 active 条目 | Catalog 自有 primary Domain 存在，或 Model / Standard 最近一次最小观察摘要具有 owner `domain_id` |
-| `accountability` | 全部 active 条目 | 有效责任部门、业务责任人和至少一个数据管理员三项同时存在 |
+| `accountable_department` | 全部 active 条目 | 至少存在一个 active 责任部门 |
+| `business_owner` | 全部 active 条目 | 至少存在一个 active 业务责任人 |
+| `data_steward` | 全部 active 条目 | 至少存在一个 active 数据管理员 |
 | `glossary` | 全部 active 条目 | 至少关联一个 Catalog 自有 Glossary Term |
 | `component_element` | 至少有一个 active CatalogComponent 的条目 | 该条目的全部 active CatalogComponent 都有 Element 关联 |
 
-`glossary` 是观察维度，不作为 `curated` 的必备状态条件；`component_element` 对没有 CatalogComponent 的专业条目标记为不适用，不能用全体条目作为分母制造虚假低覆盖率。覆盖率只说明企业目录治理完整度，不说明底层数据质量、内容授权、Owner 专业模型完整度或资产发布资格。
+责任覆盖率必须使用 `accountable_department`、`business_owner`、`data_steward` 三个原子维度，不保留同时要求三项完整的复合 `accountability` 维度。`curated` 状态仍由 4.1 节聚合写路径同时校验三项责任；治理状态表示整体准入结果，覆盖率维度则负责准确指出需要处置的具体缺口。`glossary` 是观察维度，不作为 `curated` 的必备状态条件；`component_element` 对没有 CatalogComponent 的专业条目标记为不适用，不能用全体条目作为分母制造虚假低覆盖率。覆盖率只说明企业目录治理完整度，不说明底层数据质量、内容授权、Owner 专业模型完整度或资产发布资格。
 
 覆盖率页面必须能够沿同一权威口径下钻到待治理条目，但不得为此新增覆盖率明细表、任务实体或搜索投影字段。`GET /entries` 通过成对参数 `coverage_dimension=<固定维度>&coverage_state=missing` 返回该维度当前适用且未覆盖的 active CatalogEntry；这两个参数只允许与 `view=inventory` 同时出现，缺少任一参数、使用其他状态或在治理目录视图提交均返回 `400`。第一阶段只实现 `missing`，不预建未形成处置价值的 `covered`、`not_applicable` 等并行状态。
 
@@ -462,6 +466,8 @@ POST /api/v1/workbench/runtime/catalog-references/resolve
 
 Data Application 的草稿、Component、页面布局、参数、绑定、Revision 快照和内容哈希全部由 Workbench 权威维护，Catalog 不复制为 CatalogComponent 或可编辑专业事实。Catalog 或 Asset 可见性不授予应用执行权；应用运行仍由 Workbench 校验 `workbench.data_application.execute` 与 owner Resource Grant / Policy，组件查询继续由 Service 独立执行最终数据授权。
 
+Catalog 提供给 Asset 的 `POST /api/v1/catalog/runtime/references/resolve` 除可组合、可发布状态外，必须返回当前 `entry_type` 以及唯一当前来源的 `source_module`、`source_type`、`source_identity`。这些字段是一次动态解析结果，不成为 Asset 的来源绑定副本。`application` 类型 Asset 只接受唯一一个 `entry_type=data_application`、`source_module=workbench`、`source_type=data_application` 的 primary Component；`source_identity` 必须是规范小写 Data Application UUID。Asset 使用该解析结果建立 owner 履约目标，不从展示名称、运行路径或手工 URL 猜测资源。
+
 ## 六、Catalog API 契约
 
 BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
@@ -471,6 +477,7 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 | GET | `/entries` | 权限感知的分页搜索与分面筛选 |
 | GET | `/entries/facets` | 返回当前目录视图可见条目中出现的 Domain、Department 和 Engine Instance 候选引用 |
 | POST | `/entries/resolve-sources` | 把专业关系节点的精确来源身份批量解析为当前可见 CatalogEntry，不复制 owner 关系 |
+| POST | `/entries/batch_governance` | 对显式选择的 CatalogEntry 原子批量分配主业务域或责任部门 |
 | GET | `/reference-candidates` | 按名称分页查询当前可建立语义或责任关联的 owner 候选 |
 | GET | `/entries/:id` | 读取聚合详情、来源、语义和责任 |
 | PUT | `/entries/:id` | 使用聚合根 `version` 原子更新编目、语义、责任、可见性和治理状态 |
@@ -493,11 +500,19 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 
 `PUT /entries/:id` 必须携带完整可编辑聚合和正整数 `version`，其中 `recommended_successor_entry_id` 使用规范 UUID 或 `null`。成功返回新完整资源并递增版本；版本冲突返回 `409` 和 `catalog_entry_version_conflict`，不能自动重试或覆盖。推荐继任目标不满足同 Tenant、状态或来源约束时返回 `409` 和 `catalog_recommended_successor_invalid`。
 
+`POST /entries/batch_governance` 是资源盘点中的显式成员批量命令，只允许同时具有 `catalog.inventory.read` 与 `catalog.entry.update` 的治理人员调用。请求固定包含 1 到 200 个互不重复的 `{id, version}`、单一 `operation=assign_primary_domain|assign_accountable_department` 和 owner 稳定 `reference_id`；不接受筛选条件、查询结果全选或手工输入裸 ID。Catalog 在写事务前只向对应 owner 精确校验一次目标可引用性，在事务中按 CatalogEntry UUID 稳定排序加锁并校验全部成员，再只替换每个条目的主业务域或责任部门这一项关系，保留其他语义与责任事实。任一条目不存在、跨 Tenant、非 active、版本冲突、目标不可引用或不适用时整批回滚；成功后每个条目版本递增并按原请求顺序返回 `{id, version}`。
+
+Model `business_entity|logical_model` 与 Standard `metric` 的主业务域由专业 owner 维护，Catalog 批量命令不得覆盖；包含任一此类条目时整批返回 `409 catalog_batch_governance_unsupported_entry`。每个成功条目必须写入独立审计记录并共享同一个 `batch_id`，同时投递搜索投影任务。显式成员和逐条版本共同构成并发快照，因此本命令不创建 Tenant 级集合 `revision`；前端遇到冲突必须保留选择和输入供用户刷新后重新确认，不能自动覆盖。
+
 列表使用标准 `{data,total,page,page_size,total_pages}` 响应；`view=governance|inventory` 是稳定目录视图，省略时唯一表示 `governance`。`search`、`entry_type`、`source_status`、`governance_status`、`visibility`、`primary_domain_id`、`accountable_department_id`、`source_engine_id`、`coverage_dimension`、`coverage_state` 等过滤参数必须在 Swagger 中逐项声明，排序字段使用白名单。显式请求 `view=inventory` 但缺少 `catalog.inventory.read` 时返回 `403`，不静默降级到治理目录；治理缺口参数组合不满足 5.12 节约束时返回 `400`。
 
 `GET /entries/facets` 接受同样的 `view`，以及可选 `primary_domain_id`、`accountable_department_id`、`entry_type` 上下文参数，并与 `/entries` 共用 Tenant、目录可见性和盘点权限过滤。响应是即时聚合的导航读模型，不是目录树事实：主业务域统计始终覆盖当前视图；责任部门统计受已选业务域约束；资源类型统计受已选业务域和责任部门约束；来源引擎统计受三项选择共同约束。Catalog 从权威库计算当前可见结果中实际出现的稳定 ID 及数量，再使用 `addp-catalog` Tenant Service Token 向 Standard / System 精确批量解析显示名、编码、类型和状态。它不返回 owner 未在当前可见 CatalogEntry 中被引用的对象，不授予额外 owner 管理权限，也不持久化 owner 完整列表。任一 owner 解析失败时，该分面返回 `unavailable` 状态，其他分面仍正常返回；不把动态解析变成 Catalog 启动或 Ready 依赖。
 
 前端以可键盘操作的名称与数量选项呈现 Domain、Department 和 Entry Type 导航；Domain 或 Department 数量过多时在各自区域内部滚动，不把全量 DataItem 改造成节点树。Engine Instance 继续使用可搜索选择器。所有稳定 ID 只用于提交和恢复 URL；裸 ID 输入框与列表中的裸 Engine ID 列都不是正式交互路径。
+
+“待归类”只在资源盘点视图的 Domain 导航中作为治理动作出现，并复用 5.12 节 `primary_domain=missing` 的动态缺口口径，不伪造计数、不创建特殊 Domain，也不增加另一条列表 API。普通 Domain、Department 或 Entry Type 导航选择必须清除既有治理缺口状态，保证同一 URL 只有一种列表语义。
+
+责任部门导航在资源盘点视图提供“待分配部门”虚拟治理入口，唯一映射到 `coverage_dimension=accountable_department&coverage_state=missing`。它不是 System Department，不进入 Department 分面候选，也不使用复合责任完整度代替部门缺失。进入时保留已选 primary Domain，清除名称搜索、责任部门和下游 Entry Type，使治理人员可以处置某业务域内尚未分配组织责任的条目；缺口视图继续沿用 4.3 节的导航隐藏与退出规则。
 
 `GET /reference-candidates` 是 Catalog 编目交互的唯一跨 owner 候选入口，使用 `catalog.entry.update` Permission。请求固定包含 `reference_type=domain|glossary|element|department|user`，可选 `search`，并使用 `page`、`page_size` 分页；`page_size` 最大 50。响应使用标准分页结构，候选 `id` 使用字符串，显示字段只包含 `name`、可选 `code` 和 owner 当前 `status`。该接口只返回当前 Tenant 中允许建立新关联的对象，不返回完整专业 DTO。
 

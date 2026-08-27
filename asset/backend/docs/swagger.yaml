@@ -63,6 +63,19 @@ definitions:
     required:
     - ids
     type: object
+  github_com_addp_asset_internal_service.ConsumerAccessStatus:
+    properties:
+      open_path:
+        type: string
+      status:
+        enum:
+        - none
+        - pending
+        - fulfilling
+        - effective
+        - revoking
+        type: string
+    type: object
   github_com_addp_asset_internal_service.CreateAssetReq:
     properties:
       catalog_id:
@@ -948,9 +961,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/github_com_addp_asset_internal_service.ConsumerAccessStatus'
         "404":
           description: Not Found
           schema:

@@ -52,11 +52,12 @@ func TestEntryListDoesNotFallbackToDatabaseLikeSearch(t *testing.T) {
 
 func TestEntryListRejectsInvalidCoverageGapCombinations(t *testing.T) {
 	tests := []EntryListFilter{
-		{View: EntryViewInventory, CoverageDimension: CoverageDimensionAccountability, Page: 1, PageSize: 20},
+		{View: EntryViewInventory, CoverageDimension: CoverageDimensionAccountableDepartment, Page: 1, PageSize: 20},
 		{View: EntryViewInventory, CoverageState: CoverageStateMissing, Page: 1, PageSize: 20},
-		{View: EntryViewGovernance, CoverageDimension: CoverageDimensionAccountability, CoverageState: CoverageStateMissing, Page: 1, PageSize: 20},
+		{View: EntryViewGovernance, CoverageDimension: CoverageDimensionAccountableDepartment, CoverageState: CoverageStateMissing, Page: 1, PageSize: 20},
 		{View: EntryViewInventory, CoverageDimension: "unknown", CoverageState: CoverageStateMissing, Page: 1, PageSize: 20},
-		{View: EntryViewInventory, Search: "orders", CoverageDimension: CoverageDimensionAccountability, CoverageState: CoverageStateMissing, Page: 1, PageSize: 20},
+		{View: EntryViewInventory, CoverageDimension: "accountability", CoverageState: CoverageStateMissing, Page: 1, PageSize: 20},
+		{View: EntryViewInventory, Search: "orders", CoverageDimension: CoverageDimensionAccountableDepartment, CoverageState: CoverageStateMissing, Page: 1, PageSize: 20},
 	}
 	service := NewEntryService(nil, nil, nil)
 	for _, filter := range tests {

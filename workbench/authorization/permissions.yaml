@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: workbench
-manifest_version: 2
+manifest_version: 3
 permissions:
   - key: workbench.catalog.read
     allowed_scope_types: [tenant]
@@ -58,6 +58,22 @@ permissions:
     status: active
     name_i18n_key: permissions.workbench.data_application.update.name
     description_i18n_key: permissions.workbench.data_application.update.description
+  - key: workbench.resource_grant.create
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.workbench.resource_grant.create.name
+    description_i18n_key: permissions.workbench.resource_grant.create.description
+  - key: workbench.resource_grant.revoke
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.workbench.resource_grant.revoke.name
+    description_i18n_key: permissions.workbench.resource_grant.revoke.description
   - key: workbench.view.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: low

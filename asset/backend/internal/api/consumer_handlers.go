@@ -172,7 +172,7 @@ func (h *Handler) listConsumerApplications(c *gin.Context) {
 // @Tags Asset Consumer
 // @Produce json
 // @Param id path int true "资产 ID | Asset ID"
-// @Success 200 {object} map[string]string
+// @Success 200 {object} service.ConsumerAccessStatus
 // @Failure 404 {object} map[string]string
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
@@ -190,7 +190,7 @@ func (h *Handler) getConsumerApplicationStatus(c *gin.Context) {
 		commonAPI.NotFoundError(c, commoni18n.T(c, i18nkeys.MsgAssetNotFound))
 		return
 	}
-	commonAPI.SuccessResponse(c, gin.H{"status": status})
+	commonAPI.SuccessResponse(c, status)
 }
 
 // listConsumerRatings godoc

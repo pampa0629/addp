@@ -16,17 +16,6 @@
           <code>{{ row.code }}</code>
         </template>
       </el-table-column>
-      <el-table-column :label="t('asset.typeDefinition.authHandler')" prop="auth_handler" width="110">
-        <template #default="{ row }">
-          <el-tag v-if="row.auth_handler === 'token'" type="warning" size="small">{{ t('asset.typeDefinition.tokenAuth') }}</el-tag>
-          <el-tag v-else type="success" size="small">{{ t('asset.typeDefinition.softAuth') }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('asset.typeDefinition.entryType')" prop="entry_type" width="100">
-        <template #default="{ row }">
-          {{ entryTypeLabel(row.entry_type) }}
-        </template>
-      </el-table-column>
       <el-table-column :label="t('asset.typeDefinition.description')" prop="description" />
       <el-table-column :label="t('asset.typeDefinition.status')" prop="enabled" width="80">
         <template #default="{ row }">
@@ -58,16 +47,6 @@ const typeTagMap = {
   report: 'info',
   algo_model: 'danger',
   application: ''
-}
-
-function entryTypeLabel(entry) {
-  const map = {
-    preview: t('asset.typeDefinition.entryPreview'),
-    token: t('asset.typeDefinition.entryToken'),
-    link: t('asset.typeDefinition.entryLink'),
-    iframe: t('asset.typeDefinition.entryIframe'),
-  }
-  return map[entry] || entry
 }
 
 async function loadTypes() {

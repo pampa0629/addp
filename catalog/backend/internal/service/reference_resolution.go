@@ -17,6 +17,10 @@ type CatalogReferenceResolution struct {
 	Found            bool      `json:"found"`
 	Selectable       bool      `json:"selectable"`
 	Publishable      bool      `json:"publishable"`
+	EntryType        string    `json:"entry_type,omitempty"`
+	SourceModule     string    `json:"source_module,omitempty"`
+	SourceType       string    `json:"source_type,omitempty"`
+	SourceIdentity   string    `json:"source_identity,omitempty"`
 	DisplayName      string    `json:"display_name,omitempty"`
 	EntryStatus      string    `json:"entry_status,omitempty"`
 	GovernanceStatus string    `json:"governance_status,omitempty"`
@@ -41,12 +45,15 @@ func (s *EntryService) ResolveReferences(ctx context.Context, tenantID int64, id
 
 	type referenceRow struct {
 		models.Entry
+		SourceModule     string
+		SourceType       string
+		SourceIdentity   string
 		SourceStatus     string
 		ObservedSnapshot commonModels.JSONMap
 	}
 	var rows []referenceRow
 	if err := s.db.WithContext(ctx).Table("catalog.entries AS entries").
-		Select("entries.*, source.source_status, source.observed_snapshot").
+		Select("entries.*, source.source_module, source.source_type, source.source_identity, source.source_status, source.observed_snapshot").
 		Joins("LEFT JOIN catalog.source_bindings AS source ON source.tenant_id = entries.tenant_id AND source.catalog_entry_id = entries.id AND source.is_current = ?", true).
 		Where("entries.tenant_id = ? AND entries.id IN ?", tenantID, ids).
 		Scan(&rows).Error; err != nil {
@@ -65,6 +72,10 @@ func (s *EntryService) ResolveReferences(ctx context.Context, tenantID int64, id
 			continue
 		}
 		result.Found = true
+		result.EntryType = row.EntryType
+		result.SourceModule = row.SourceModule
+		result.SourceType = row.SourceType
+		result.SourceIdentity = row.SourceIdentity
 		result.EntryStatus = row.EntryStatus
 		result.GovernanceStatus = row.GovernanceStatus
 		result.SourceStatus = row.SourceStatus

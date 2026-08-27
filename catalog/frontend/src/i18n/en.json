@@ -57,7 +57,12 @@
         "accountableDepartment": "2. Accountable department",
         "entryType": "3. Resource type",
         "allDomains": "All domains",
+        "unclassifiedDomain": "Unclassified",
+        "unclassifiedDomainDescription": "View resources without a primary domain association",
+        "governanceGap": "Governance gap",
         "allDepartments": "All accountable departments",
+        "unassignedDepartment": "Unassigned department",
+        "unassignedDepartmentDescription": "View resources without an accountable department",
         "allEntryTypes": "All resource types",
         "optionCount": "{count} items"
       },
@@ -82,7 +87,26 @@
       "engineUnavailable": "The source engine cannot currently be resolved",
       "updatedAt": "Updated",
       "empty": "No visible catalog entries match the current filters",
-      "loadFailed": "Failed to load the enterprise catalog"
+      "loadFailed": "Failed to load the enterprise catalog",
+      "batchGovernance": {
+        "action": "Batch governance",
+        "selected": "{count} selected (current page only, up to 200)",
+        "clear": "Clear selection",
+        "title": "Batch-govern catalog entries",
+        "description": "One atomic operation will be applied to the {count} explicitly selected entries; if any entry conflicts, none will change.",
+        "operation": "Governance operation",
+        "operationPlaceholder": "Select one operation to apply",
+        "assignPrimaryDomain": "Assign primary domain",
+        "assignAccountableDepartment": "Assign accountable department",
+        "target": "Governance target",
+        "targetPlaceholder": "Search by name or code and select",
+        "unsupportedOwnerManaged": "The primary domain of {count} selected entries is managed by Model or Standard and cannot be overwritten in Catalog.",
+        "candidateSearchFailed": "Failed to load governance target candidates",
+        "success": "Batch governance completed for {count} catalog entries",
+        "failed": "Batch governance failed; none of the selected entries changed",
+        "cancel": "Cancel",
+        "confirm": "Confirm batch governance"
+      }
     },
     "governanceTasks": {
       "action": "Responsibility governance",
@@ -110,7 +134,7 @@
     "coverage": {
       "title": "Catalog Governance Coverage",
       "recentSubject": "Enterprise resource governance completeness",
-      "description": "Dynamically measure the completeness of catalog-owned business definitions, semantics, and accountability across the resource inventory.",
+      "description": "Dynamically measure the completeness of catalog-owned business definitions, semantics, and responsibility assignments across the resource inventory.",
       "dynamicHint": "This page aggregates current authoritative Catalog facts without a second coverage projection. Coverage does not imply data quality, underlying access, or asset publishability.",
       "loadFailed": "Failed to load catalog governance coverage",
       "totalEntries": "Active catalog entries",
@@ -131,9 +155,17 @@
           "name": "Primary domain",
           "description": "A Catalog association or the latest observed owner declaration provides the primary domain"
         },
-        "accountability": {
-          "name": "Accountability",
-          "description": "Accountable department, business owner, and data steward are all active"
+        "accountable_department": {
+          "name": "Accountable department",
+          "description": "At least one active accountable department is assigned"
+        },
+        "business_owner": {
+          "name": "Business owner",
+          "description": "At least one active business owner is assigned"
+        },
+        "data_steward": {
+          "name": "Data steward",
+          "description": "At least one active data steward is assigned"
         },
         "glossary": {
           "name": "Enterprise glossary",
@@ -245,6 +277,8 @@
       "ownerArtifactType": "Development artifact type",
       "ownerTaskStatus": "Task definition status",
       "ownerQueryType": "Query language type",
+      "ownerPublicationStatus": "Publication status",
+      "ownerRevisionNumber": "Published revision",
       "lastObservedProjection": "Catalog last observed",
       "components": "Data components",
       "componentCount": "{count} components",

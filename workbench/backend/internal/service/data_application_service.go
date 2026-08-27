@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/addp/workbench/internal/models"
 	"github.com/addp/workbench/internal/repository"
@@ -30,15 +31,21 @@ type dataApplicationRepository interface {
 	Offline(tenantID, ownerUserID int64, id string, expectedVersion int64) error
 	Delete(tenantID, ownerUserID int64, id string, expectedVersion int64) error
 	GetRuntime(tenantID, ownerUserID int64, id string) (*models.DataApplicationRevision, error)
+	GetRuntimeApplication(tenantID int64, id string) (*models.DataApplication, *models.DataApplicationRevision, error)
+}
+
+type dataApplicationAccessRuleRepository interface {
+	CanExecuteDataApplication(tenantID, subjectID int64, resourceID string, now time.Time) (bool, error)
 }
 
 type DataApplicationService struct {
 	repository  dataApplicationRepository
 	descriptors DescriptorReader
+	accessRules dataApplicationAccessRuleRepository
 }
 
-func NewDataApplicationService(repository dataApplicationRepository, descriptors DescriptorReader) *DataApplicationService {
-	return &DataApplicationService{repository: repository, descriptors: descriptors}
+func NewDataApplicationService(repository dataApplicationRepository, descriptors DescriptorReader, accessRules dataApplicationAccessRuleRepository) *DataApplicationService {
+	return &DataApplicationService{repository: repository, descriptors: descriptors, accessRules: accessRules}
 }
 
 func (s *DataApplicationService) List(tenantID, ownerUserID int64, page, pageSize int) ([]models.DataApplicationSummaryResponse, int64, error) {
@@ -179,10 +186,22 @@ func (s *DataApplicationService) Delete(tenantID, ownerUserID int64, id string, 
 	return mapDataApplicationRepositoryError(s.repository.Delete(tenantID, ownerUserID, id, version))
 }
 
-func (s *DataApplicationService) Runtime(tenantID, ownerUserID int64, id string) (*models.DataApplicationRuntimeResponse, error) {
-	revision, err := s.repository.GetRuntime(tenantID, ownerUserID, id)
+func (s *DataApplicationService) Runtime(tenantID, userID int64, id string) (*models.DataApplicationRuntimeResponse, error) {
+	application, revision, err := s.repository.GetRuntimeApplication(tenantID, id)
 	if err != nil {
 		return nil, mapDataApplicationRepositoryError(err)
+	}
+	if application.OwnerUserID != userID {
+		if s.accessRules == nil {
+			return nil, ErrDataApplicationAccessDenied
+		}
+		allowed, accessErr := s.accessRules.CanExecuteDataApplication(tenantID, userID, id, time.Now().UTC())
+		if accessErr != nil {
+			return nil, accessErr
+		}
+		if !allowed {
+			return nil, ErrDataApplicationAccessDenied
+		}
 	}
 	snapshot, err := decodeDataApplicationSnapshot(revision.Snapshot)
 	if err != nil {

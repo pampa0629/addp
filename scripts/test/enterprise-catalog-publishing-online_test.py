@@ -79,11 +79,17 @@ class FakeClient:
             ]
             business_covered = int(bool(self.entry.get("business_name") and self.entry.get("business_description")))
             primary_domain_covered = int(bool(self.entry.get("semantic_links")))
-            accountability_covered = int(len(self.entry.get("responsibilities") or []) >= 3)
+            responsibility_roles = {
+                item.get("role")
+                for item in self.entry.get("responsibilities") or []
+                if isinstance(item, dict)
+            }
             dimensions = [
                 self._coverage_dimension("business_definition", business_covered, 1),
                 self._coverage_dimension("primary_domain", primary_domain_covered, 1),
-                self._coverage_dimension("accountability", accountability_covered, 1),
+                self._coverage_dimension("accountable_department", int("accountable_department" in responsibility_roles), 1),
+                self._coverage_dimension("business_owner", int("business_owner" in responsibility_roles), 1),
+                self._coverage_dimension("data_steward", int("data_steward" in responsibility_roles), 1),
                 self._coverage_dimension("glossary", 0, 1),
                 self._coverage_dimension("component_element", 0, 0),
             ]
@@ -249,8 +255,9 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
             "catalog_entry_id": self.entry_id,
             "source_identity": "fingerprint-1",
             "coverage_total_entries": 1,
-            "coverage_dimensions": 5,
+            "coverage_dimensions": 7,
             "human_readable_filter_selectors": 3,
+            "explicit_batch_governance_ui": True,
             "browser_warning_errors": 0,
         }
 

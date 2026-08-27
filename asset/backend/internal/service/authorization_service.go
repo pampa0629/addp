@@ -26,13 +26,13 @@ type AuthorizationListParams struct {
 	PageSize int
 	UserID   int64
 	AssetID  int64
-	IsActive *bool // nil=不过滤
+	Status   string
 }
 
 // AuthorizationWithAsset 带资产名称的授权记录（列表展示用）
 type AuthorizationWithAsset struct {
 	models.Authorization
-	AssetName    string `json:"asset_name"`
+	AssetName     string `json:"asset_name"`
 	AssetTypeCode string `json:"asset_type_code"`
 }
 
@@ -51,9 +51,8 @@ func (s *AuthorizationService) Create(tx *gorm.DB, tenantID int64, userID int64,
 		AssetID:       assetID,
 		ApplicationID: applicationID,
 		UserID:        userID,
-		Credential:    "", // Phase 5 扩展数据服务 token
 		ExpiresAt:     expiresAt,
-		IsActive:      true,
+		Status:        models.AuthorizationStatusPending,
 	}
 	if err := db.Create(auth).Error; err != nil {
 		return nil, err
@@ -82,8 +81,8 @@ func (s *AuthorizationService) List(tenantID uint, params AuthorizationListParam
 	if params.AssetID > 0 {
 		query = query.Where("auth.asset_id = ?", params.AssetID)
 	}
-	if params.IsActive != nil {
-		query = query.Where("auth.is_active = ?", *params.IsActive)
+	if params.Status != "" {
+		query = query.Where("auth.status = ?", params.Status)
 	}
 
 	var total int64
@@ -117,28 +116,31 @@ func (s *AuthorizationService) Get(tenantID uint, id int64) (*AuthorizationWithA
 	return &result, nil
 }
 
-// ExpireOverdue 扫描并标记所有已过期授权为 is_active=false（定时任务调用）
+// ExpireOverdue moves expired grants into revocation fulfillment.
 func (s *AuthorizationService) ExpireOverdue() (int64, error) {
+	now := time.Now().UTC()
 	result := s.db.Model(&models.Authorization{}).
-		Where("is_active = true AND expires_at IS NOT NULL AND expires_at <= ?", time.Now()).
+		Where("status IN ? AND expires_at IS NOT NULL AND expires_at <= ?",
+			[]string{models.AuthorizationStatusPending, models.AuthorizationStatusEffective}, now).
 		Updates(map[string]interface{}{
-			"is_active":  false,
-			"revoked_at": time.Now(),
+			"status":          models.AuthorizationStatusRevocationPending,
+			"next_attempt_at": now,
 		})
 	return result.RowsAffected, result.Error
 }
 
 // Revoke 撤销授权
 func (s *AuthorizationService) Revoke(tenantID uint, revokedBy uint, id int64) error {
-	now := time.Now()
+	now := time.Now().UTC()
 	revokedByInt64 := int64(revokedBy)
 
 	result := s.db.Model(&models.Authorization{}).
-		Where("id = ? AND tenant_id = ? AND is_active = true", id, tenantID).
+		Where("id = ? AND tenant_id = ? AND status IN ?", id, tenantID,
+			[]string{models.AuthorizationStatusPending, models.AuthorizationStatusEffective}).
 		Updates(map[string]interface{}{
-			"is_active":  false,
-			"revoked_at": now,
-			"revoked_by": revokedByInt64,
+			"status":          models.AuthorizationStatusRevocationPending,
+			"revoked_by":      revokedByInt64,
+			"next_attempt_at": now,
 		})
 	if result.Error != nil {
 		return result.Error

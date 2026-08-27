@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/addp/workbench/internal/models"
 	"github.com/google/uuid"
@@ -134,6 +135,38 @@ func TestWorkbenchRepositoryAgainstPostgres(t *testing.T) {
 	}
 	if err := applications.Offline(7, 11, application.ID, 4); !errors.Is(err, ErrDataApplicationNotPublished) {
 		t.Fatalf("repeated Offline() error = %v", err)
+	}
+
+	accessRules := NewResourceAccessRuleRepository(db)
+	rule := models.ResourceAccessRule{
+		TenantID: 7, ResourceType: models.ResourceTypeDataApplication, ResourceID: application.ID,
+		SubjectType: models.ResourceAccessSubjectUser, SubjectID: 91,
+		Permission: models.DataApplicationExecutePermission, Effect: models.ResourceAccessEffectAllow,
+		SourceModule: models.ResourceAccessSourceAsset, SourceIdentity: "73",
+	}
+	createdRule, err := accessRules.FulfillAssetGrant(rule)
+	if err != nil {
+		t.Fatalf("FulfillAssetGrant() error = %v", err)
+	}
+	idempotentRule, err := accessRules.FulfillAssetGrant(rule)
+	if err != nil || idempotentRule.ID != createdRule.ID {
+		t.Fatalf("idempotent FulfillAssetGrant() = %#v, %v", idempotentRule, err)
+	}
+	allowed, err := accessRules.CanExecuteDataApplication(7, 91, application.ID, time.Now().UTC())
+	if err != nil || !allowed {
+		t.Fatalf("CanExecuteDataApplication() = %v, %v", allowed, err)
+	}
+	conflict := rule
+	conflict.SubjectID = 92
+	if _, err := accessRules.FulfillAssetGrant(conflict); !errors.Is(err, ErrResourceGrantConflict) {
+		t.Fatalf("conflicting FulfillAssetGrant() error = %v", err)
+	}
+	if _, err := accessRules.RevokeAssetGrant(rule, time.Now().UTC()); err != nil {
+		t.Fatalf("RevokeAssetGrant() error = %v", err)
+	}
+	allowed, err = accessRules.CanExecuteDataApplication(7, 91, application.ID, time.Now().UTC())
+	if err != nil || allowed {
+		t.Fatalf("revoked CanExecuteDataApplication() = %v, %v", allowed, err)
 	}
 }
 

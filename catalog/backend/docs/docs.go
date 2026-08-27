@@ -483,7 +483,9 @@ const docTemplate = `{
                         "enum": [
                             "business_definition",
                             "primary_domain",
-                            "accountability",
+                            "accountable_department",
+                            "business_owner",
+                            "data_steward",
                             "glossary",
                             "component_element"
                         ],
@@ -556,6 +558,92 @@ const docTemplate = `{
                 ],
                 "x-addp-required-permissions": [
                     "catalog.entry.read"
+                ]
+            }
+        },
+        "/entries/batch_governance": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "对 1 到 200 个显式选择且分别携带 version 的 CatalogEntry 原子分配同一个主业务域或责任部门；按稳定顺序锁定全部条目，任一失败整批回滚；不接受筛选结果全选；Model 业务实体/逻辑模型和 Standard 指标的主业务域仍由专业模块维护 | Atomically assign one primary domain or accountable department to 1–200 explicitly selected CatalogEntries, each with its own version; all entries are locked in stable order and any failure rolls back the entire batch; filter-wide selection is not accepted; primary domains of Model business entities/logical models and Standard metrics remain owner-managed",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog"
+                ],
+                "summary": "批量治理企业目录条目 | Batch-govern enterprise catalog entries",
+                "parameters": [
+                    {
+                        "description": "显式成员批量治理请求；跨模块 BIGINT ID 使用规范十进制字符串 | Explicit-member batch governance request; cross-module BIGINT IDs use canonical decimal strings",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.batchGovernanceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "批次 ID 与按请求顺序返回的新版本 | Batch ID and new versions in request order",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.BatchGovernanceResult"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "缺少资源盘点或目录维护权限 | Missing inventory or catalog update permission",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任一条目不存在或不属于当前租户 | Any entry is missing or outside the current tenant",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "版本、状态、引用或专业 owner 边界冲突 | Version, state, reference, or professional-owner boundary conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Standard 或 System 引用校验不可达 | Standard or System reference validation unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.inventory.read",
+                    "catalog.entry.update"
                 ]
             }
         },
@@ -1867,6 +1955,31 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_catalog_internal_service.BatchGovernanceEntryResult": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.BatchGovernanceResult": {
+            "type": "object",
+            "properties": {
+                "batch_id": {
+                    "type": "string"
+                },
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.BatchGovernanceEntryResult"
+                    }
+                }
+            }
+        },
         "github_com_addp_catalog_internal_service.CatalogReferenceResolution": {
             "type": "object",
             "properties": {
@@ -1874,6 +1987,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "entry_status": {
+                    "type": "string"
+                },
+                "entry_type": {
                     "type": "string"
                 },
                 "found": {
@@ -1891,7 +2007,16 @@ const docTemplate = `{
                 "selectable": {
                     "type": "boolean"
                 },
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_module": {
+                    "type": "string"
+                },
                 "source_status": {
+                    "type": "string"
+                },
+                "source_type": {
                     "type": "string"
                 },
                 "version": {
@@ -2351,7 +2476,9 @@ const docTemplate = `{
                     "enum": [
                         "business_definition",
                         "primary_domain",
-                        "accountability",
+                        "accountable_department",
+                        "business_owner",
+                        "data_steward",
                         "glossary",
                         "component_element"
                     ]
@@ -2612,6 +2739,51 @@ const docTemplate = `{
                 "summary": {
                     "type": "object",
                     "additionalProperties": {}
+                }
+            }
+        },
+        "internal_api.batchGovernanceEntryRequest": {
+            "type": "object",
+            "required": [
+                "id",
+                "version"
+            ],
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "internal_api.batchGovernanceRequest": {
+            "type": "object",
+            "required": [
+                "entries",
+                "operation",
+                "reference_id"
+            ],
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/internal_api.batchGovernanceEntryRequest"
+                    }
+                },
+                "operation": {
+                    "type": "string",
+                    "enum": [
+                        "assign_primary_domain",
+                        "assign_accountable_department"
+                    ]
+                },
+                "reference_id": {
+                    "type": "string"
                 }
             }
         },

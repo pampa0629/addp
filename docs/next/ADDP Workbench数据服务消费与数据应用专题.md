@@ -1,6 +1,6 @@
 # ADDP Workbench 数据服务消费与数据应用专题
 
-状态：概念设计已确认；Phase 1 至 Phase 4A 已实现；Phase 4B 的 Workbench Data Application 首次发布进入 CatalogEntry 已完成代码与门禁，运行态重启验收待完成；Asset 授权履约仍等待统一 owner Resource Grant 模型确认。
+状态：概念设计已确认；Phase 1 至 Phase 4A 已实现；Phase 4B 的 CatalogEntry、Asset `application` 组合、owner Resource Grant、可恢复履约与 Portal 打开链路已完成代码和标准门禁，等待全量重启后的真实浏览器生命周期验收。
 
 本文跟进 ADDP `workbench` 模块的概念、边界、阶段计划与实施状态。Workbench 是平台级、领域无关的数据服务消费模块，不属于 Outdoor 业务专用能力。Outdoor 只作为首个真实验收场景；后续任何满足消费契约的数据服务都应能以同一主路径接入，禁止在 Workbench 核心模型、API、渲染判断或权限逻辑中硬编码 Outdoor 表、字段、指标或页面。
 
@@ -783,6 +783,10 @@ workbench.data_application.execute
 
 Asset 负责申请、审批和履约，Service 或 Workbench 作为资源 owner 负责最终授权判断。接入 Portal 前必须与企业 CatalogEntry 与 `AssetComponent.catalog_entry_id` 的唯一来源链路一致，不能恢复通用 Owner ResourceRef、软授权、专属 Token 或 owner 实时查询 Asset ACL 的旧路线。
 
+Phase 4B 的首条正式履约协议固定为：Asset 审批事务创建 `pending` Authorization；可恢复 reconciler 通过 Catalog 当前来源解析得到 Workbench Data Application UUID，再使用 `addp-asset` Tenant Service Access Token 幂等写入 Workbench `ResourceAccessRule`。Workbench 确认规则后 Authorization 进入 `effective`；撤销或过期先进入 `revocation_pending`，Workbench 确认撤销后进入 `revoked`。Portal 只有在 `effective` 时展示打开入口。
+
+Workbench 规则使用 Asset Authorization ID 作为 `source_identity`，主体固定为申请 User，资源固定为 `data_application`，Permission 固定为 `workbench.data_application.execute`，effect 固定为 `allow`。重复履约或重试必须收敛到同一规则；请求载荷与既有规则不一致时必须冲突失败，不能覆盖为另一项授权。Application 发布状态为 `offline` 时，即使 Grant 仍在有效期内也不能运行。
+
 ## 十、契约变化
 
 Workbench View 每次加载时比较保存的 `contract_fingerprint` 与 Service 当前契约：
@@ -814,6 +818,8 @@ Workbench 发布 Data Application
 ```
 
 Asset 当前禁用的 `application` 类型后续应一次性收敛为 CatalogEntry 组合路线。不得新增 `workbench_application` 等平行资产类型，也不得恢复专业模块直接向 Asset 自动发现或写入资产草稿的旧路线。
+
+`application` 类型本轮只允许一个 primary Component，且必须动态解析为 `workbench/data_application`；不接受 supporting Component、手工应用链接、iframe URL、API Key 或自定义 Token。未来若出现真正的多应用组合需求，应先定义新的聚合和运行语义，不能把多个 CatalogEntry 临时塞进同一 application Asset。
 
 Service 已发布服务和 Workbench Data Application 都可以后续成为 CatalogEntry，但 Workbench 查询时仍使用 ServiceReference，不从 CatalogEntry 反向猜测执行地址。
 
@@ -894,7 +900,7 @@ Phase 4A 先完成 Workbench owner 内的独立闭环：
 
 Phase 4B 再接企业目录和资产授权主线：
 
-- [ ] 将 Workbench Data Application 作为专业资源接入 CatalogEntry（代码与门禁已完成，待运行态重启验收后勾选）；
+- [x] 将 Workbench Data Application 作为专业资源接入 CatalogEntry；
 - [ ] 一次性启用并收敛 Asset `application` 类型的 CatalogEntry 组合路线；
 - [ ] 接入 owner Resource Grant、Asset 履约和 Portal 打开入口；
 - [ ] 删除旧的手工应用链接、软授权和专属 Token 设想。
@@ -1072,7 +1078,7 @@ Workbench 与 System 重启后，Phase 4A 已完成创建者真实浏览器闭�
 2. 编辑器曾对 Vue reactive Proxy 直接调用 `structuredClone`，点击保存会在发出 `PUT` 前抛 `DataCloneError`；现以 JSON 契约纯函数复制和裁剪快照，并使用 Proxy 输入测试覆盖；
 3. 发布或下线确认框取消时，Element Plus 的正常 Promise rejection 曾形成未处理 Vue 错误；现只把 `cancel | close` 解释为无操作，真正异常继续抛出，并加入取消行为测试。
 
-下线与重复下线冲突已由后端单元测试和 PostgreSQL 门禁覆盖。为保留可查看的唯一正式示例，本轮在浏览器确认框中主动取消下线，没有把“浏览器下线后运行阻断”记作手工通过。Phase 4B 的 CatalogEntry、Asset `application` 组合、owner Resource Grant 和 Portal 打开入口仍全部未实现，不应在 Phase 4A 代码中增加软授权、API Key 或专属 Token。
+下线与重复下线冲突已由后端单元测试和 PostgreSQL 门禁覆盖。为保留可查看的唯一正式示例，本轮在浏览器确认框中主动取消下线，没有把“浏览器下线后运行阻断”记作手工通过。当时 Phase 4B 尚未实现；其后续实现与验收状态统一见 14.8、14.9，不应在 Phase 4A 代码中增加软授权、API Key 或专属 Token。
 
 本轮重启 Workbench Backend 时，整套环境的生命周期锁由既有 `keepalive restart -all` 持有，不能走会停止整套环境的局部 `restart.sh`。按用户授权，先使用 `scripts/dev/build-identity.sh` 的同一原子构建函数生成最新二进制，再只替换 8193 的精确 Workbench 进程；后续既有整套生命周期会继续管理 `.dev-pids/workbench.pid`，不应在锁仍被持有时手工并行启动第二个 Workbench Backend。交付检查以“PID 文件与 8193 监听进程一致、原子构建 fingerprint 为最新、`/health/ready` 成功”为准，不依赖临时 launchd 标签。
 3. Phase 1 的 Service owner Resource Grant / Policy 不能在 Workbench 专题内局部补齐。当前正式权限文档确认 owner Resource Grant / Policy、Scope Binding 和 Explicit Deny 的统一运行时尚未形成，企业目录主路径又明确禁止恢复旧的通用 Owner ResourceRef/ACL；因此 Service 继续使用 6.4 节规定的 fail-closed 租户级策略，待统一 owner 授权事实模型落地后接入同一 Repository 过滤与详情判断入口。该外部前置条件未满足前保持未勾选，不得在 Service 增加专属授权表或第二套 ACL。
@@ -1139,15 +1145,57 @@ cd catalog/backend && go test ./...
 make test-authorization
 make test-catalog-frontend
 make test-workbench-frontend
+node --test common-frontend/basic/tests/taskOwnerUrl.test.mjs
 WORKBENCH_POSTGRES_TEST_DSN='postgres://.../addp_test?sslmode=disable' make test-workbench-postgres
 CATALOG_POSTGRES_TEST_DSN='postgres://.../addp_test?sslmode=disable' make test-catalog-postgres
 ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?sslmode=disable' \
   bash scripts/test/system-iam-postgres-gate.sh --package migration --test workbench-catalog-read
 ```
 
-当前运行环境仍是修改前启动的 System、Workbench 和 Catalog 进程：业务库 migration 为 `104`，没有 `workbench.catalog.read`；`workbench.catalog_resource_changes` 尚未创建；Catalog 也尚无 Workbench 来源绑定。数据库中两个长期保留的已发布应用仍完整存在，重启后应由 migration 一次性回填并由 Catalog 同步为两个 `data_application` 目录项。接力会话不得把“代码门禁通过”写成运行态验收通过；应在外部终端按正式生命周期完成重启，再验证权限 migration `105`、变化源两条历史记录、Catalog 两个唯一来源绑定、Catalog 中文/英文类型显示以及来源详情跳转，最后才能勾选 Phase 4B 第一项。
+全量重启后的运行态验收已经完成。System migration 为 `105,false`，权限表存在唯一 `workbench.catalog.read`；Workbench 一次性回填两条变化，Catalog checkpoint 为 `Mg`，并形成两个唯一来源绑定：`workbench-p4-demo` 对应 CatalogEntry `4ff43d3a-3815-49fc-80e7-831dd7cc92b8`、来源版本 `00000000000000000001`，`workbench-parameter-linkage-demo` 对应 CatalogEntry `f0359420-a884-4e11-a87f-bd60e37a65e2`、来源版本 `00000000000000000002`。首次 Catalog 同步发生在 Workbench 监听前一秒，记录了一次连接拒绝；下一个 30 秒同步周期按既有 runner 自动恢复，不是认证或 API 错误，也不需要新增兼容重试路线。
 
-下一段不能直接沿用 Asset 现有的审批记录作为软 ACL。正式边界要求 Asset 负责申请、审批与履约状态，Workbench owner 负责最终应用执行判断，Service owner 继续逐组件执行底层数据授权。当前仓库尚未形成统一 owner Resource Grant 运行时，因此接力时先确认 owner-local Grant 事实、Asset 幂等履约/撤销协议和失败重试语义，再启用 Asset `application` 类型；不得先建 Workbench 私有分享表、让 Workbench 在线查询 Asset ACL，或让 Catalog/Portal 可见性绕过 `workbench.data_application.execute`。
+真实浏览器在企业资源盘点的 `data_application` 筛选下显示两条应用，中文类型为“数据应用”、英文为 `Data Application`；详情动态解析状态为当前，显示 Workbench 专业状态、目录变化版本、发布状态和 Revision Number。浏览器同时暴露并修复两项此前测试未覆盖的共享前端边界：
+
+1. Catalog 详情页的专业 owner 白名单漏掉 Workbench，导致后端已返回的 `source_resolution` 和 owner detail 被隐藏；现由受测试的统一 owner 映射识别 Model、Standard、Service、Develop 和 Workbench，并显示发布状态与 Revision Number；
+2. owner detail 原通过 Console SPA bridge 打开，但 `/data-apps/:application_id` 是 Workbench 顶层运行端；现统一渲染为 Console origin 的 `_top` 链接。进一步发现共享 `resolveConsoleRouteUrl` 只识别 `5173–5187`，漏掉 Inference `5188`、Catalog `5189` 和 Workbench `5190`；`common-frontend` 现按端口规范覆盖完整 `5173–5190` 模块开发端口，并增加共享测试。最终点击已真实到达 `http://localhost:5170/data-apps/1714dcf7-f34e-4996-a8dc-3b88998ebe55`，加载 Revision 2 运行端。
+
+本段完成时尚未实现 Asset 履约，随后已按正式 owner-local Resource Grant 模型完成，当前状态统一见 14.9。Catalog 可见性始终不构成应用执行授权，Workbench 也不会在线查询 Asset ACL。
+
+### 14.9 Phase 4B Asset 履约与 Portal 消费入口实现状态（2026-08-27）
+
+Phase 4B 已按单一路线完成代码实现，不沿用 Asset 旧软授权字段，也不引入 API Key、专属 Token、Workbench 私有分享表或 owner 在线查询 Asset ACL：
+
+- Asset 内置唯一 `application` 类型，资产必须且只能包含一个主组件；该组件必须解析到 `entry_type=data_application`、`source_module=workbench`、`source_type=data_application` 和 canonical UUID 来源身份。创建、修改、发布和批量发布均执行同一组合校验；
+- Asset `Authorization` 生命周期收敛为 `pending -> effective -> revocation_pending -> revoked`。审批事务只创建 `pending` 事实；可恢复 reconciler 使用 `FOR UPDATE SKIP LOCKED` 领取任务、指数退避重试，并通过 Catalog 当前来源动态解析目标，只有 owner 确认后才推进状态；
+- Workbench 保存 owner-local `ResourceAccessRule`，以 Asset Authorization ID 作为唯一 `source_identity`。履约 PUT 幂等，相同身份但不同载荷返回冲突；撤销 DELETE 写入 tombstone，重复撤销收敛；运行时只允许应用创建者或当前有效 Grant 对应的 User 执行，应用 `offline` 仍然阻断；
+- `addp-asset` 获得不可委托、不可租户自定义的 `workbench.resource_grant.fulfill` 与 `workbench.resource_grant.revoke`。System migration `000107_iam_workbench_resource_grant` 物化权限并刷新内置角色授权版本；
+- Portal 与 Asset 管理端不再推断 `is_active`。消费状态统一返回 `none | pending | fulfilling | effective | revoking`，仅 `effective` 返回 `/data-apps/{application_id}` 打开路径；Portal 使用共享 Console route 能力直接打开 Workbench 顶层运行端；
+- Asset 数据库迁移删除旧 Authorization 软授权数据和旧字段，随后建立目标、生命周期和重试约束，不保留双轨兼容路径。新增标准 `asset-postgres` 门禁并注册到根 Makefile、T2 workflow、本地 macOS CI 与基础设施数据库清单；Workbench PostgreSQL 门禁覆盖 owner Grant 的履约、冲突、撤销、过期和非所有者运行边界。
+
+当前已通过的最小充分门禁：
+
+```bash
+cd workbench/backend && go test ./...
+cd asset/backend && go test ./...
+cd portal/backend && go test ./...
+cd common && go test ./client
+make test-asset-frontend
+make test-portal-frontend
+make test-authorization
+ASSET_POSTGRES_TEST_DSN='postgres://.../addp_test?sslmode=disable' make test-asset-postgres
+WORKBENCH_POSTGRES_TEST_DSN='postgres://.../addp_test?sslmode=disable' make test-workbench-postgres
+ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?sslmode=disable' \
+  bash scripts/test/system-iam-postgres-gate.sh --package migration --test workbench-resource-grant
+python3 scripts/ci/check-t2-ci-registration.py
+```
+
+Workbench、Asset、Portal Swagger 已重新生成并通过各自路由覆盖校验。System 全量 IAM PostgreSQL 套件另有与本段无关的既有 migration 106/陈旧权限快照断言失败；本段新增 migration 107 已由独立标准测试命中并通过，不能把全量套件的既有红灯写成本段通过。
+
+剩余唯一 Phase 4B 验收是全量重启后的真实浏览器生命周期：使用现有 Workbench CatalogEntry 创建并发布 `application` Asset；以另一用户在 Portal 申请；管理员审批后观察 `fulfilling -> effective`；从 Portal 打开 Data Application 并执行真实 Service 查询；再撤销并观察 `revoking -> none`，确认同一用户运行被 owner 拒绝。人工验收只可清理本轮临时申请、Authorization、Grant 和临时 Asset，不得删除或下线 14.5、14.7 已确认长期保留的 Workbench 示例。
+
+17:34 的首次浏览器续验发生在全量 `keepalive restart -all` 仍在进行时：旧 Catalog iframe 的父级 AuthSession 已失效，页面短暂显示 0 条；整页重载后恢复两条长期保留 Data Application，证明目录数据没有丢失。新 Asset Backend 于 17:37 启动后，正式 `addp` 数据库已物化全局 `application / 数据应用 / enabled=true / sort_order=6` 类型；重载创建页后浏览器控制层因本地 iframe URL 安全策略拒绝继续交互，因此没有创建临时 Asset，也不能把后续申请、审批、打开和撤销记作浏览器通过。接力时应从创建 `application` Asset 重新开始，不需要清理本次未提交的表单。
+
+本次运行态还发现 reconciler 在空队列时每两秒用 `First` 产生一条红色 `record not found` trace。领取查询已改为保持 `FOR UPDATE SKIP LOCKED`、排序和单条限制不变的 `Limit(1).Find`，空队列现在静默返回 `processed=false`。回归测试先捕获到一次 trace 并失败，修复后同一测试通过；Asset 全量 Go 测试和 PostgreSQL schema 门禁随后重新通过。运行中的 17:37 Asset 进程早于该日志修复构建，下一次标准重启后才会停止产生这些旧日志。
 
 ## 十五、概念设计状态
 

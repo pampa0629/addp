@@ -300,7 +300,7 @@ func handleMyApplications(assetClient *commonClient.AssetClient) gin.HandlerFunc
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["asset.application.read","asset.authorization.read"]
 // handleApplyStatus GET /api/portal/assets/:id/apply-status
-// 返回当前用户对该资产的申请/授权状态：none | pending | approved
+// 返回当前用户对该资产的申请/履约状态以及可选消费入口。
 func handleApplyStatus(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		assetID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -314,7 +314,7 @@ func handleApplyStatus(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 			writeAssetClientError(c, err, "查询资产申请状态失败")
 			return
 		}
-		commonAPI.SuccessResponse(c, gin.H{"status": status})
+		commonAPI.SuccessResponse(c, status)
 	}
 }
 

@@ -107,7 +107,7 @@ test('enterprise Catalog renders governance coverage, human-readable navigation,
     const coverage = frame.getByTestId('catalog-governance-coverage')
     await expect(coverage).toHaveAttribute('data-load-state', 'loaded')
     await expect(coverage).toHaveAttribute('data-total-entries', String(totalEntries))
-    await expect(frame.getByTestId('catalog-coverage-dimension')).toHaveCount(5)
+    await expect(frame.getByTestId('catalog-coverage-dimension')).toHaveCount(7)
     await expect(coverage).not.toContainText('undefined')
 
     const detailPath = `/catalog/entries/${env.ADDP_ONLINE_CATALOG_ENTRY_ID}?view=inventory`
@@ -125,6 +125,8 @@ test('enterprise Catalog renders governance coverage, human-readable navigation,
     const entryList = frame.getByTestId('catalog-entry-list')
     await expect(entryList).toHaveAttribute('data-load-state', 'loaded')
     await expect(frame.getByTestId('catalog-entry-navigation')).toHaveCount(1)
+    await expect(frame.getByTestId('catalog-unclassified-domain-navigation')).toBeVisible()
+    await expect(frame.getByTestId('catalog-unassigned-department-navigation')).toBeVisible()
     for (const testID of ['catalog-domain-navigation', 'catalog-department-navigation', 'catalog-entry-type-navigation']) {
       const navigation = frame.getByTestId(testID)
       await expect(navigation).toHaveCount(1)
@@ -135,6 +137,17 @@ test('enterprise Catalog renders governance coverage, human-readable navigation,
     await expect(engineSelector.getByRole('combobox')).toHaveCount(1)
     await expect(entryList).toContainText(env.ADDP_ONLINE_CATALOG_BUSINESS_NAME)
     await expect(entryList).not.toContainText('undefined')
+    const batchToolbar = frame.getByTestId('catalog-batch-governance-toolbar')
+    await expect(batchToolbar).toBeVisible()
+    await entryList.locator('tbody .el-checkbox').first().click()
+    const openBatchGovernance = frame.getByTestId('catalog-batch-governance-open')
+    await expect(openBatchGovernance).toBeEnabled()
+    await openBatchGovernance.click()
+    const batchDialog = frame.getByTestId('catalog-batch-governance-dialog')
+    await expect(batchDialog).toBeVisible()
+    await expect(frame.getByTestId('catalog-batch-governance-operation')).toBeVisible()
+    await expect(frame.getByTestId('catalog-batch-governance-target')).toBeVisible()
+    await batchDialog.locator('.el-dialog__headerbtn').click()
 
     expect(failedBusinessResponses).toEqual([])
     expect(browserMessages).toEqual([])
@@ -147,8 +160,9 @@ test('enterprise Catalog renders governance coverage, human-readable navigation,
       catalog_entry_id: env.ADDP_ONLINE_CATALOG_ENTRY_ID,
       source_identity: env.ADDP_ONLINE_CATALOG_SOURCE_IDENTITY,
       coverage_total_entries: totalEntries,
-      coverage_dimensions: 5,
+      coverage_dimensions: 7,
       human_readable_filter_selectors: 3,
+      explicit_batch_governance_ui: true,
       browser_warning_errors: 0
     }
     writeFileSync(

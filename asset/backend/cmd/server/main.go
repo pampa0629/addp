@@ -14,7 +14,7 @@ import (
 	_ "github.com/addp/asset/i18n"
 	"github.com/addp/asset/internal/api"
 	"github.com/addp/asset/internal/config"
-	"github.com/addp/asset/internal/models"
+	"github.com/addp/asset/internal/repository"
 	"github.com/addp/asset/internal/search"
 	"github.com/addp/asset/internal/service"
 	commonClient "github.com/addp/common/client"
@@ -48,62 +48,11 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	// 确保 asset schema 存在
-	if err := db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", cfg.DBSchema)).Error; err != nil {
-		log.Fatalf("Failed to create schema: %v", err)
-	}
 	if err := commonExecution.EnsureStore(db); err != nil {
 		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
-
-	// AutoMigrate 所有资产相关表
-	if err := db.AutoMigrate(
-		&models.TypeDefinition{},
-		&models.TypeFieldSchema{},
-		&models.Catalog{},
-		&models.Asset{},
-		&models.AssetComponent{},
-		&models.AssetExtField{},
-		&models.Application{},
-		&models.Authorization{},
-		&models.Rating{},
-	); err != nil {
-		log.Fatalf("Failed to migrate database: %v", err)
-	}
-
-	// 迁移后执行自定义 DDL
-	// 1. 删除已废弃的旧表（AutoMigrate 已创建 asset.catalogs）
-	// 2. 删除 asset.assets 的旧 category_id 列（GORM AutoMigrate 不自动删列）
-	// 3. 原子下架仍依赖旧来源的已发布资产，并删除旧来源路线字段
-	// 4. 添加目录和资产组件约束
-	migrations := []string{
-		`DROP TABLE IF EXISTS asset.categories`,
-		`ALTER TABLE asset.assets DROP COLUMN IF EXISTS category_id`,
-		`UPDATE asset.assets SET status = 'offline' WHERE status = 'published' AND NOT EXISTS (
-		 SELECT 1 FROM asset.asset_components component WHERE component.asset_id = asset.assets.id
-		)`,
-		`DROP INDEX IF EXISTS asset.uidx_asset_fingerprint_tenant`,
-		`ALTER TABLE asset.assets DROP COLUMN IF EXISTS source_module`,
-		`ALTER TABLE asset.assets DROP COLUMN IF EXISTS source_reference`,
-		`ALTER TABLE asset.assets DROP COLUMN IF EXISTS fingerprint`,
-		`ALTER TABLE asset.assets DROP COLUMN IF EXISTS source_available`,
-		`ALTER TABLE asset.type_definitions DROP COLUMN IF EXISTS source_module`,
-		`ALTER TABLE asset.type_definitions DROP COLUMN IF EXISTS discovery_path`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_catalogs_unique_root_name
-		 ON asset.catalogs (tenant_id, name) WHERE parent_id IS NULL`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_catalogs_unique_child_name
-		 ON asset.catalogs (tenant_id, parent_id, name) WHERE parent_id IS NOT NULL`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS uq_asset_component_entry
-		 ON asset.asset_components (tenant_id, asset_id, catalog_entry_id)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS uq_asset_component_primary
-		 ON asset.asset_components (tenant_id, asset_id) WHERE role = 'primary'`,
-		`ALTER TABLE asset.asset_components DROP CONSTRAINT IF EXISTS ck_asset_component_role`,
-		`ALTER TABLE asset.asset_components ADD CONSTRAINT ck_asset_component_role CHECK (role IN ('primary', 'supporting'))`,
-	}
-	for _, sql := range migrations {
-		if err := db.Exec(sql).Error; err != nil {
-			log.Fatalf("Asset 数据库迁移失败: %v", err)
-		}
+	if err := repository.Migrate(db); err != nil {
+		log.Fatalf("Asset 数据库迁移失败: %v", err)
 	}
 	log.Printf("✅ 数据库迁移完成")
 
@@ -124,6 +73,7 @@ func main() {
 	}
 	systemClient := commonClient.NewSystemServiceClient(cfg.SystemURL, serviceTokenSource, nil)
 	catalogClient := commonClient.NewCatalogClient(cfg.CatalogURL, serviceTokenSource, nil)
+	workbenchGrantClient := commonClient.NewWorkbenchResourceGrantClient(cfg.WorkbenchURL, serviceTokenSource, nil)
 	indexer, err := search.NewIndexer(cfg.MeilisearchURL, cfg.MeilisearchMasterKey, cfg.MeilisearchPublishedAssetIndex)
 	if err != nil {
 		log.Printf("⚠️  Meilisearch 初始化失败，搜索功能将 fallback 到数据库: %v", err)
@@ -143,6 +93,8 @@ func main() {
 	}
 
 	authSvc := service.NewAuthorizationService(db)
+	grantFulfillmentSvc := service.NewGrantFulfillmentService(db, catalogClient, workbenchGrantClient)
+	grantFulfillmentSvc.Start(runtimeContext)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
 	if err := cleanupSvc.Start(runtimeContext); err != nil {
 		log.Printf("Asset 资源回收执行方启动失败: %v", err)

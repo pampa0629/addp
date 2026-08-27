@@ -25,6 +25,19 @@ func TestMaterializationGateExecutionClaimsBeforeDynamicAuthorization(t *testing
 		t.Fatal(err)
 	}
 	parent := "dbad5a67-d6cd-4d63-b99b-7646d1c89ec5"
+	principalID, membershipID, authorizationVersion := int64(21), int64(22), int64(23)
+	parentExecution := &commonExecution.TaskExecution{
+		ExecutionID: parent, TenantID: 7, Module: commonExecution.ModuleOrchestrator,
+		TaskType: "workflow", Source: commonExecution.ModuleOrchestrator,
+		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
+		Status:            commonExecution.ExecutionStatusRunning, TriggerType: commonExecution.TriggerTypeManual,
+		ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
+		IssuedAuthorizationVersion: &authorizationVersion,
+		CreatedAt:                  now, UpdatedAt: now,
+	}
+	if err := db.Create(parentExecution).Error; err != nil {
+		t.Fatalf("create parent execution: %v", err)
+	}
 	execution := &commonExecution.TaskExecution{
 		ExecutionID: "gate-execution-1", TenantID: 7, Module: commonExecution.ModuleQuality,
 		TaskType: commonExecution.TaskTypeMaterializationGate, Source: commonExecution.ModuleOrchestrator,
@@ -35,6 +48,16 @@ func TestMaterializationGateExecutionClaimsBeforeDynamicAuthorization(t *testing
 	}
 	if _, err := repo.CreateExecution(context.Background(), task.ID, task.TenantID, execution); err != nil {
 		t.Fatal(err)
+	}
+	var storedExecution commonExecution.TaskExecution
+	if err := db.Where("execution_id = ?", execution.ExecutionID).First(&storedExecution).Error; err != nil {
+		t.Fatalf("load gate execution: %v", err)
+	}
+	if storedExecution.ActorPrincipalID == nil || *storedExecution.ActorPrincipalID != principalID ||
+		storedExecution.ActorTenantMembershipID == nil || *storedExecution.ActorTenantMembershipID != membershipID ||
+		storedExecution.IssuedAuthorizationVersion == nil || *storedExecution.IssuedAuthorizationVersion != authorizationVersion {
+		t.Fatalf("gate execution authorization lineage = principal %v membership %v version %v",
+			storedExecution.ActorPrincipalID, storedExecution.ActorTenantMembershipID, storedExecution.IssuedAuthorizationVersion)
 	}
 	claimed, claimedTask, err := repo.ClaimPendingExecution(context.Background(), "quality-worker", now.Add(time.Second), time.Minute)
 	if err != nil {

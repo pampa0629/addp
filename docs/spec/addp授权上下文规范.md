@@ -147,6 +147,24 @@ Notebook Interactive Session 不复用 Agent Delegated Access Token。Develop �
 
 授权有效期不晚于 Notebook Session，到期后不能刷新；普通 Access Token 与 Refresh Token 在同一 Token Family 内轮换不影响现有 Session。Token Family 撤销或重用、Membership/Role/资源规则变化、`authorization_version` 变化、Session 显式关闭或到期时必须拒绝后续消费并取消活动查询。Session 或 Token Family 撤销必须联动撤销其派生且仍有效的 Execution Authorization；标准 Engine Access 租约复核也必须沿来源外键回查 Session 与 Token Family，不能只检查 Principal 和 Membership。长扫描只在短租约边界回查 System，不按每个 Arrow batch 往返；租约失效后关闭 Cursor。Develop 重启后本地 Session 与 authorization ID 一并丢失，Kernel 入口先 fail-closed。
 
+### 5.4 Owner Resource Grant 与 Asset 履约
+
+Resource Grant 的权威事实固定保存在业务资源 owner，不进入 System IAM、AuthContext、Catalog 或 Asset 的中央 ACL 表。owner 使用结构化 `ResourceAccessRule` 表达资源、主体、Permission、`allow | deny`、有效期、来源和撤销事实；`allow` 构成 Resource Grant，`deny` 构成 Explicit Deny。运行时必须在当前 Tenant 内同时校验 Role Permission、资源状态和 owner 规则，Deny 优先于 Allow。
+
+Asset 只拥有申请、审批、授权期限和跨 owner 履约状态，不拥有最终资源访问判断。批准申请后，Asset 在自身事务中创建 `pending` 授权履约事实，再由可恢复 reconciler 使用 `addp-asset` Tenant Service Access Token 调用 owner 的幂等 Resource Grant Runtime API；只有 owner 返回并持久化有效规则后，Asset 授权才进入 `effective`。调用失败时保持 `pending` 并重试，不能把审批成功或 Asset 本地记录存在伪装为资源已经可访问。
+
+撤销和过期统一先把 Asset 授权推进为 `revocation_pending`，再幂等撤销 owner 规则；owner 确认撤销后才进入 `revoked`。`pending | effective | revocation_pending | revoked` 是唯一履约状态，不保留 `is_active`、软授权、Credential、专属 Token 或 owner 实时反查 Asset ACL 的并行路线。Asset 的来源授权 ID 是 owner 幂等键；重复创建或撤销必须收敛到同一规则和同一最终状态。
+
+当前第一条正式 owner 适配是 Workbench Data Application：
+
+- `application` 类型 Asset 只能引用唯一一个 `workbench/data_application` CatalogEntry，不接受手工 URL；
+- Asset 解析 Catalog 当前来源身份后，向 Workbench 写入绑定当前 User 与 `workbench.data_application.execute` 的 Allow Rule；
+- Workbench 创建者继续按所有权运行，其他 User 必须命中当前有效 Grant；
+- Workbench Grant 只允许打开应用配置，Application Component 的真实数据查询仍由 Service 以当前 User Bearer 独立执行 `service.data_read.execute` 和 Service Resource Grant / Policy；
+- 尚未实现 owner 履约适配的 Asset 类型不得审批为 effective，也不得回退为软授权。
+
+Portal 是同步 BFF 和消费界面，只展示 Asset 返回的履约状态；只有 `effective` 的 Data Application 资产显示规范 `/data-apps/{application_id}` 打开入口。Portal 不保存 owner 资源 ID、Grant、Token 或运行配置。
+
 ## 六、共享中间件
 
 ### 6.1 Go

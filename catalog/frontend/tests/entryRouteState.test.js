@@ -50,20 +50,23 @@ describe('Catalog entry list route state', () => {
 
   it('preserves only a canonical inventory governance gap and removes text search', () => {
     expect(parseEntryListRoute({
-      view: 'inventory', search: 'orders', coverage_dimension: 'accountability', coverage_state: 'missing'
+      view: 'inventory', search: 'orders', coverage_dimension: 'business_owner', coverage_state: 'missing'
     })).toMatchObject({
-      view: 'inventory', search: '', coverage_dimension: 'accountability', coverage_state: 'missing'
+      view: 'inventory', search: '', coverage_dimension: 'business_owner', coverage_state: 'missing'
     })
     expect(buildEntryListQuery({
-      view: 'inventory', coverage_dimension: 'accountability', coverage_state: 'missing', page: 1, page_size: 20
+      view: 'inventory', coverage_dimension: 'business_owner', coverage_state: 'missing', page: 1, page_size: 20
     })).toEqual({
-      view: 'inventory', coverage_dimension: 'accountability', coverage_state: 'missing'
+      view: 'inventory', coverage_dimension: 'business_owner', coverage_state: 'missing'
     })
     expect(parseEntryListRoute({
-      view: 'governance', coverage_dimension: 'accountability', coverage_state: 'missing'
+      view: 'governance', coverage_dimension: 'business_owner', coverage_state: 'missing'
     })).toMatchObject({ coverage_dimension: '', coverage_state: '' })
     expect(parseEntryListRoute({
-      view: 'inventory', coverage_dimension: 'accountability'
+      view: 'inventory', coverage_dimension: 'business_owner'
+    })).toMatchObject({ coverage_dimension: '', coverage_state: '' })
+    expect(parseEntryListRoute({
+      view: 'inventory', coverage_dimension: 'accountability', coverage_state: 'missing'
     })).toMatchObject({ coverage_dimension: '', coverage_state: '' })
   })
 

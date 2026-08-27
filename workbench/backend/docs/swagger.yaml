@@ -12,6 +12,49 @@ definitions:
       total_pages:
         type: integer
     type: object
+  github_com_addp_workbench_internal_models.AssetResourceGrantRequest:
+    properties:
+      expires_at:
+        type: string
+      permission:
+        enum:
+        - workbench.data_application.execute
+        type: string
+      resource_id:
+        type: string
+      resource_type:
+        enum:
+        - data_application
+        type: string
+      subject_id:
+        type: string
+      subject_type:
+        enum:
+        - user
+        type: string
+    required:
+    - permission
+    - resource_id
+    - resource_type
+    - subject_id
+    - subject_type
+    type: object
+  github_com_addp_workbench_internal_models.AssetResourceGrantResponse:
+    properties:
+      expires_at:
+        type: string
+      id:
+        type: string
+      revoked_at:
+        type: string
+      source_identity:
+        type: string
+      status:
+        enum:
+        - effective
+        - revoked
+        type: string
+    type: object
   github_com_addp_workbench_internal_models.CatalogReference:
     properties:
       source_identity:
@@ -895,9 +938,10 @@ paths:
       - workbench.data_application.publish
   /data_applications/{id}/runtime:
     get:
-      description: Phase 4A 只允许创建者读取当前 published Revision；真实数据仍由浏览器以当前 User Bearer
-        调用各 Service | Phase 4A allows only the owner to read the current published
-        Revision; the browser still calls every Service with the current User Bearer
+      description: 创建者或持有生效 Resource Grant 的 User 可读取当前 published Revision；真实数据仍由浏览器以当前
+        User Bearer 调用各 Service | The owner or a User with an effective Resource Grant
+        may read the current published Revision; the browser still calls every Service
+        with the current User Bearer
       parameters:
       - description: Data Application UUID
         in: path
@@ -989,6 +1033,114 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - workbench.catalog.read
+  /runtime/resource-grants/{source_identity}:
+    delete:
+      consumes:
+      - application/json
+      description: 使用完整授权目标写入可重放撤销墓碑，阻止延迟的旧履约重新放开访问；只允许 addp-asset | Persist a replayable
+        revocation tombstone from the complete target so delayed fulfillment cannot
+        reopen access; restricted to addp-asset
+      parameters:
+      - description: Asset Authorization ID
+        in: path
+        name: source_identity
+        required: true
+        type: string
+      - description: 完整授权目标 | Complete grant target
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.AssetResourceGrantRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已撤销授权 | Revoked grant
+          schema:
+            $ref: '#/definitions/github_com_addp_workbench_internal_models.AssetResourceGrantResponse'
+        "400":
+          description: 请求无效 | Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 非 addp-asset 或权限不足 | Wrong client or insufficient permission
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 来源身份冲突 | Source identity conflict
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 撤销 Asset 资源授权 | Revoke an Asset resource grant
+      tags:
+      - Workbench Resource Grants
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - workbench.resource_grant.revoke
+    put:
+      consumes:
+      - application/json
+      description: 使用 Asset Authorization ID 作为幂等来源，为指定 User 建立 Data Application execute
+        Allow Rule；只允许 addp-asset | Use the Asset Authorization ID as the idempotent
+        source and create a Data Application execute Allow Rule for one User; restricted
+        to addp-asset
+      parameters:
+      - description: Asset Authorization ID
+        in: path
+        name: source_identity
+        required: true
+        type: string
+      - description: 完整授权目标 | Complete grant target
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.AssetResourceGrantRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已生效授权 | Effective grant
+          schema:
+            $ref: '#/definitions/github_com_addp_workbench_internal_models.AssetResourceGrantResponse'
+        "400":
+          description: 请求无效 | Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 非 addp-asset 或权限不足 | Wrong client or insufficient permission
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 来源身份冲突或已撤销 | Source identity conflict or already revoked
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 履约 Asset 资源授权 | Fulfill an Asset resource grant
+      tags:
+      - Workbench Resource Grants
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - workbench.resource_grant.create
   /views:
     get:
       description: 只返回当前 Tenant 和当前 User 拥有的工作台视图；不访问 Service | Return only Workbench

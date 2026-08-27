@@ -9,8 +9,9 @@
       <el-radio-group v-model="displayStatus" @change="applyFilter">
         <el-radio-button value="">{{ t('portal.myApplications.all') }}</el-radio-button>
         <el-radio-button value="pending">{{ t('portal.myApplications.pending') }}</el-radio-button>
+        <el-radio-button value="fulfilling">{{ t('portal.myApplications.fulfilling') }}</el-radio-button>
         <el-radio-button value="authorized">{{ t('portal.myApplications.authorized') }}</el-radio-button>
-        <el-radio-button value="expired">{{ t('portal.myApplications.expired') }}</el-radio-button>
+        <el-radio-button value="revoking">{{ t('portal.myApplications.revoking') }}</el-radio-button>
         <el-radio-button value="revoked">{{ t('portal.myApplications.revoked') }}</el-radio-button>
         <el-radio-button value="rejected">{{ t('portal.myApplications.rejected') }}</el-radio-button>
       </el-radio-group>
@@ -63,50 +64,13 @@
               type="primary"
               size="small"
               plain
-              @click="openUsageDialog(app)"
-            >{{ t('portal.myApplications.viewUsage') }}</el-button>
-            <!-- 已过期：重新申请 -->
-            <router-link
-              v-else-if="deriveDisplayStatus(app) === 'expired'"
-              :to="`/portal/assets/${app.asset_id}`"
-            >
-              <el-button type="warning" size="small" plain>{{ t('portal.myApplications.reapply') }}</el-button>
-            </router-link>
+              @click="openApplication(app)"
+            >{{ t('portal.myApplications.openApplication') }}</el-button>
           </div>
         </div>
       </el-card>
     </div>
 
-    <!-- 使用方式弹窗 -->
-    <el-dialog
-      v-model="usageDialogVisible"
-      :title="t('portal.myApplications.usageDialogTitle', { name: currentApp?.asset_name })"
-      width="600px"
-      destroy-on-close
-    >
-	  <div class="usage-dialog-body">
-          <!-- 有效期提示 -->
-          <el-alert
-            v-if="currentApp?.auth_expires_at"
-            :title="t('portal.myApplications.authValidUntil', { date: formatDate(currentApp.auth_expires_at) })"
-            type="success"
-            :closable="false"
-            style="margin-bottom: 16px"
-          />
-
-            <el-result
-              icon="success"
-              :title="t('portal.myApplications.authActive')"
-              :sub-title="t('portal.myApplications.authActiveDesc')"
-            >
-              <template #extra>
-                <router-link :to="`/portal/assets/${currentApp?.asset_id}`" @click="usageDialogVisible = false">
-                  <el-button type="primary">{{ t('portal.myApplications.goToDetail') }}</el-button>
-                </router-link>
-              </template>
-            </el-result>
-      </div>
-    </el-dialog>
   </div>
 </template>
 
@@ -114,7 +78,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { WarningFilled, InfoFilled } from '@element-plus/icons-vue'
-import { formatDate } from '@common-ui'
+import { formatDate, openConsoleRoute } from '@common-ui'
 import { myApplicationAPI } from '../api/portal'
 
 const { t } = useI18n()
@@ -122,13 +86,11 @@ const loading = ref(false)
 const displayStatus = ref('')
 const applications = ref([])
 
-const usageDialogVisible = ref(false)
-const currentApp = ref(null)
-
 const DISPLAY_STATUS_CONFIG = computed(() => ({
   pending:    { label: t('portal.myApplications.pending'), type: 'warning' },
+  fulfilling: { label: t('portal.myApplications.fulfilling'), type: 'warning' },
   authorized: { label: t('portal.myApplications.authorized'), type: 'success' },
-  expired:    { label: t('portal.myApplications.expired'), type: 'info' },
+  revoking:   { label: t('portal.myApplications.revoking'), type: 'warning' },
   revoked:    { label: t('portal.myApplications.revoked'), type: 'info' },
   rejected:   { label: t('portal.myApplications.rejected'), type: 'danger' },
 }))
@@ -137,9 +99,10 @@ function deriveDisplayStatus(app) {
   if (app.status === 'pending') return 'pending'
   if (app.status === 'rejected') return 'rejected'
   if (app.status === 'approved') {
-    if (app.auth_is_active === false) return 'revoked'
-    if (app.auth_expires_at && new Date(app.auth_expires_at) <= new Date()) return 'expired'
-    return 'authorized'
+    if (app.auth_status === 'pending') return 'fulfilling'
+    if (app.auth_status === 'effective') return 'authorized'
+    if (app.auth_status === 'revocation_pending') return 'revoking'
+    if (app.auth_status === 'revoked') return 'revoked'
   }
   return 'pending'
 }
@@ -155,9 +118,9 @@ const filteredApplications = computed(() => {
 
 function applyFilter() {}
 
-function openUsageDialog(app) {
-  currentApp.value = app
-  usageDialogVisible.value = true
+async function openApplication(app) {
+  if (!app.open_path) return
+  await openConsoleRoute(app.open_path, { source: 'addp-portal' })
 }
 
 async function fetchApplications() {

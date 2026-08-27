@@ -266,6 +266,12 @@ func respondError(c *gin.Context, err error) {
 		status, messageKey, errorCode = http.StatusConflict, workbenchi18n.MsgDataApplicationAlreadyPublished, "workbench_data_application_already_published"
 	case errors.Is(err, service.ErrDataApplicationNotPublished):
 		status, messageKey, errorCode = http.StatusConflict, workbenchi18n.MsgDataApplicationNotPublished, "workbench_data_application_not_published"
+	case errors.Is(err, service.ErrDataApplicationAccessDenied):
+		status, messageKey, errorCode = http.StatusForbidden, workbenchi18n.MsgDataApplicationAccessDenied, "workbench_data_application_access_denied"
+	case errors.Is(err, service.ErrInvalidResourceGrant):
+		status, messageKey, errorCode = http.StatusBadRequest, workbenchi18n.MsgInvalidResourceGrant, "workbench_resource_grant_invalid"
+	case errors.Is(err, service.ErrResourceGrantConflict):
+		status, messageKey, errorCode = http.StatusConflict, workbenchi18n.MsgResourceGrantConflict, "workbench_resource_grant_conflict"
 	}
 	body := gin.H{"error": commoni18n.T(c, messageKey)}
 	if errorCode != "" {

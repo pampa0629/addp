@@ -19,9 +19,10 @@ describe('catalog governance coverage view', () => {
   })
 
   it('builds the canonical missing-coverage inventory query only for fixed dimensions', () => {
-    expect(buildMissingCoverageEntryQuery('accountability')).toEqual({
-      view: 'inventory', coverage_dimension: 'accountability', coverage_state: 'missing'
+    expect(buildMissingCoverageEntryQuery('accountable_department')).toEqual({
+      view: 'inventory', coverage_dimension: 'accountable_department', coverage_state: 'missing'
     })
+    expect(buildMissingCoverageEntryQuery('accountability')).toBeNull()
     expect(buildMissingCoverageEntryQuery('unknown')).toBeNull()
   })
 })

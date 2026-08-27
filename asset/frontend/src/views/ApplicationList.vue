@@ -8,8 +8,9 @@
             <el-radio-group v-model="displayStatus" @change="handleFilterChange">
               <el-radio-button value="">{{ t('asset.application.all') }}</el-radio-button>
               <el-radio-button value="pending">{{ t('asset.application.pending') }}</el-radio-button>
+              <el-radio-button value="fulfilling">{{ t('asset.application.fulfilling') }}</el-radio-button>
               <el-radio-button value="authorized">{{ t('asset.application.authorized') }}</el-radio-button>
-              <el-radio-button value="expired">{{ t('asset.application.expired') }}</el-radio-button>
+              <el-radio-button value="revoking">{{ t('asset.application.revoking') }}</el-radio-button>
               <el-radio-button value="revoked">{{ t('asset.application.revoked') }}</el-radio-button>
               <el-radio-button value="rejected">{{ t('asset.application.rejected') }}</el-radio-button>
             </el-radio-group>
@@ -249,8 +250,9 @@ const rejectRules = computed(() => ({
 
 const DISPLAY_STATUS_CONFIG = computed(() => ({
   pending:    { label: t('asset.application.pending'), type: 'warning' },
+  fulfilling: { label: t('asset.application.fulfilling'), type: 'warning' },
   authorized: { label: t('asset.application.authorized'), type: 'success' },
-  expired:    { label: t('asset.application.expired'), type: 'info' },
+  revoking:   { label: t('asset.application.revoking'), type: 'warning' },
   revoked:    { label: t('asset.application.revoked'), type: 'info' },
   rejected:   { label: t('asset.application.rejected'), type: 'danger' },
 }))
@@ -259,9 +261,10 @@ function deriveDisplayStatus(row) {
   if (row.status === 'pending') return 'pending'
   if (row.status === 'rejected') return 'rejected'
   if (row.status === 'approved') {
-    if (row.auth_is_active === false) return 'revoked'
-    if (row.auth_expires_at && new Date(row.auth_expires_at) <= new Date()) return 'expired'
-    return 'authorized'
+    if (row.auth_status === 'pending') return 'fulfilling'
+    if (row.auth_status === 'effective') return 'authorized'
+    if (row.auth_status === 'revocation_pending') return 'revoking'
+    if (row.auth_status === 'revoked') return 'revoked'
   }
   return 'pending'
 }

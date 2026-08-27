@@ -111,7 +111,7 @@ func consumerTestDB(t *testing.T) *gorm.DB {
 	statements := []string{
 		`CREATE TABLE asset.type_definitions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL, code TEXT NOT NULL,
-			auth_handler TEXT, entry_type TEXT, icon_url TEXT,
+			icon_url TEXT,
 			description TEXT, enabled BOOLEAN, sort_order INTEGER, created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE asset.catalogs (
@@ -140,8 +140,11 @@ func consumerTestDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE asset.authorizations (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, asset_id INTEGER NOT NULL,
-			application_id INTEGER, user_id INTEGER NOT NULL, credential TEXT, expires_at DATETIME,
-			is_active BOOLEAN, revoked_at DATETIME, revoked_by INTEGER, created_at DATETIME, updated_at DATETIME
+			application_id INTEGER NOT NULL, user_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+			target_module TEXT NOT NULL DEFAULT '', target_resource_type TEXT NOT NULL DEFAULT '', target_resource_id TEXT NOT NULL DEFAULT '',
+			expires_at DATETIME, fulfillment_attempt INTEGER NOT NULL DEFAULT 0, fulfillment_last_error TEXT NOT NULL DEFAULT '',
+			next_attempt_at DATETIME, fulfilled_at DATETIME, revoked_at DATETIME, revoked_by INTEGER,
+			created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE asset.ratings (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, asset_id INTEGER NOT NULL,

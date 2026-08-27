@@ -11,6 +11,8 @@ other = "企业目录操作失败"
 other = "企业目录条目已被其他操作更新，请刷新后重试"
 [catalog.error.entry_not_editable]
 other = "该企业目录条目当前不可编辑"
+[catalog.error.batch_governance_unsupported_entry]
+other = "所选条目包含主业务域由专业模块维护的对象，请前往对应专业模块治理"
 [catalog.error.invalid_transition]
 other = "不允许执行该治理状态转换"
 [catalog.error.reference_not_referenceable]

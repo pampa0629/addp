@@ -1,4 +1,5 @@
 import { requestConsoleBridge } from './consoleBridge'
+import { resolveConsoleOrigin } from './consoleOrigin'
 
 export const CONSOLE_NAVIGATION_CHANNEL = 'console-navigation'
 const CONSOLE_NAVIGATION_HISTORY = new Set(['push', 'replace'])
@@ -18,17 +19,7 @@ function parseCapabilities(capabilities) {
 }
 
 function consoleOrigin(options = {}) {
-  if (hasValue(options.consoleOrigin)) {
-    return String(options.consoleOrigin).replace(/\/$/, '')
-  }
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    const { protocol, hostname, port } = window.location
-    if (port && port !== '5170' && /^51(7[3-9]|8[0-7])$/.test(port)) {
-      return `${protocol}//${hostname}:5170`
-    }
-    return window.location.origin
-  }
-  return ''
+  return resolveConsoleOrigin(typeof window === 'undefined' ? null : window.location, options.consoleOrigin)
 }
 
 function normalizeConsoleRoute(route) {

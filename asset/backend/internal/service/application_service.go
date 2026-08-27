@@ -43,8 +43,8 @@ type RejectApplicationReq struct {
 type ApplicationListParams struct {
 	Page          int
 	PageSize      int
-	Status        string // pending/approved/rejected/revoked（向后兼容）
-	DisplayStatus string // 综合状态过滤：pending/authorized/expired/revoked/rejected
+	Status        string // pending/approved/rejected
+	DisplayStatus string // pending/fulfilling/authorized/revoking/revoked/rejected
 	AssetID       int64
 	ApplicantID   int64
 }
@@ -55,9 +55,15 @@ type ApplicationWithAuth struct {
 	AssetName     string     `json:"asset_name"`
 	AssetTypeCode string     `json:"asset_type_code"`
 	AuthID        *int64     `json:"auth_id,omitempty"`
-	AuthIsActive  *bool      `json:"auth_is_active,omitempty"`
+	AuthStatus    *string    `json:"auth_status,omitempty"`
 	AuthExpiresAt *time.Time `json:"auth_expires_at,omitempty"`
 	AuthRevokedAt *time.Time `json:"auth_revoked_at,omitempty"`
+	OpenPath      string     `json:"open_path,omitempty"`
+}
+
+type ConsumerAccessStatus struct {
+	Status   string `json:"status" enums:"none,pending,fulfilling,effective,revoking"`
+	OpenPath string `json:"open_path,omitempty"`
 }
 
 // ============================================================
@@ -86,8 +92,12 @@ func (s *ApplicationService) Create(tenantID uint, applicantID int64, req *Creat
 	// 重复申请校验：是否已有有效授权
 	var authCount int64
 	s.db.Model(&models.Authorization{}).
-		Where("tenant_id = ? AND asset_id = ? AND user_id = ? AND is_active = true AND (expires_at IS NULL OR expires_at > ?)",
-			tenantID, req.AssetID, applicantID, time.Now()).
+		Where("tenant_id = ? AND asset_id = ? AND user_id = ? AND status IN ?",
+			tenantID, req.AssetID, applicantID, []string{
+				models.AuthorizationStatusPending,
+				models.AuthorizationStatusEffective,
+				models.AuthorizationStatusRevocationPending,
+			}).
 		Count(&authCount)
 	if authCount > 0 {
 		return nil, errors.New("已有有效授权，无需重复申请")
@@ -113,26 +123,37 @@ func (s *ApplicationService) Create(tenantID uint, applicantID int64, req *Creat
 }
 
 // ConsumerStatus 返回当前用户对已上架资产的消费授权状态。
-func (s *ApplicationService) ConsumerStatus(tenantID uint, applicantID, assetID int64) (string, error) {
+func (s *ApplicationService) ConsumerStatus(tenantID uint, applicantID, assetID int64) (*ConsumerAccessStatus, error) {
 	var assetCount int64
 	if err := s.db.Model(&models.Asset{}).
 		Where("tenant_id = ? AND id = ? AND status = 'published'", tenantID, assetID).
 		Count(&assetCount).Error; err != nil {
-		return "", err
+		return nil, err
 	}
 	if assetCount == 0 {
-		return "", gorm.ErrRecordNotFound
+		return nil, gorm.ErrRecordNotFound
 	}
 
-	var authorizationCount int64
-	if err := s.db.Model(&models.Authorization{}).
-		Where("tenant_id = ? AND asset_id = ? AND user_id = ? AND is_active = true AND (expires_at IS NULL OR expires_at > ?)",
-			tenantID, assetID, applicantID, time.Now()).
-		Count(&authorizationCount).Error; err != nil {
-		return "", err
-	}
-	if authorizationCount > 0 {
-		return "approved", nil
+	var authorization models.Authorization
+	err := s.db.Where("tenant_id = ? AND asset_id = ? AND user_id = ?", tenantID, assetID, applicantID).
+		Order("created_at DESC, id DESC").First(&authorization).Error
+	if err == nil {
+		switch authorization.Status {
+		case models.AuthorizationStatusEffective:
+			if authorization.ExpiresAt == nil || authorization.ExpiresAt.After(time.Now()) {
+				result := &ConsumerAccessStatus{Status: models.AuthorizationStatusEffective}
+				if authorization.TargetModule == "workbench" && authorization.TargetResourceType == "data_application" {
+					result.OpenPath = "/data-apps/" + authorization.TargetResourceID
+				}
+				return result, nil
+			}
+		case models.AuthorizationStatusPending:
+			return &ConsumerAccessStatus{Status: "fulfilling"}, nil
+		case models.AuthorizationStatusRevocationPending:
+			return &ConsumerAccessStatus{Status: "revoking"}, nil
+		}
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
 	}
 
 	var pendingCount int64
@@ -140,12 +161,12 @@ func (s *ApplicationService) ConsumerStatus(tenantID uint, applicantID, assetID 
 		Where("tenant_id = ? AND asset_id = ? AND applicant_id = ? AND status = 'pending'",
 			tenantID, assetID, applicantID).
 		Count(&pendingCount).Error; err != nil {
-		return "", err
+		return nil, err
 	}
 	if pendingCount > 0 {
-		return "pending", nil
+		return &ConsumerAccessStatus{Status: "pending"}, nil
 	}
-	return "none", nil
+	return &ConsumerAccessStatus{Status: "none"}, nil
 }
 
 // List 申请列表（管理员视角，支持多维度过滤，LEFT JOIN 授权信息）
@@ -162,9 +183,11 @@ func (s *ApplicationService) List(tenantID uint, params ApplicationListParams) (
 			a.name AS asset_name,
 			td.code AS asset_type_code,
 			auth.id AS auth_id,
-			auth.is_active AS auth_is_active,
+			auth.status AS auth_status,
 			auth.expires_at AS auth_expires_at,
-			auth.revoked_at AS auth_revoked_at`).
+			auth.revoked_at AS auth_revoked_at,
+			CASE WHEN auth.status = 'effective' AND auth.target_module = 'workbench' AND auth.target_resource_type = 'data_application'
+			     THEN '/data-apps/' || auth.target_resource_id ELSE '' END AS open_path`).
 		Joins("LEFT JOIN asset.assets a ON a.id = app.asset_id").
 		Joins("LEFT JOIN asset.type_definitions td ON td.id = a.type_id").
 		Joins("LEFT JOIN asset.authorizations auth ON auth.application_id = app.id").
@@ -174,16 +197,17 @@ func (s *ApplicationService) List(tenantID uint, params ApplicationListParams) (
 	switch params.DisplayStatus {
 	case "pending":
 		query = query.Where("app.status = 'pending'")
+	case "fulfilling":
+		query = query.Where("app.status = 'approved' AND auth.status = 'pending'")
 	case "authorized":
-		query = query.Where("app.status = 'approved' AND auth.is_active = true AND (auth.expires_at IS NULL OR auth.expires_at > NOW())")
-	case "expired":
-		query = query.Where("app.status = 'approved' AND auth.is_active = true AND auth.expires_at IS NOT NULL AND auth.expires_at <= NOW()")
+		query = query.Where("app.status = 'approved' AND auth.status = 'effective' AND (auth.expires_at IS NULL OR auth.expires_at > NOW())")
+	case "revoking":
+		query = query.Where("app.status = 'approved' AND auth.status = 'revocation_pending'")
 	case "revoked":
-		query = query.Where("app.status = 'approved' AND auth.is_active = false")
+		query = query.Where("app.status = 'approved' AND auth.status = 'revoked'")
 	case "rejected":
 		query = query.Where("app.status = 'rejected'")
 	default:
-		// 兼容旧的 status 参数
 		if params.Status != "" {
 			query = query.Where("app.status = ?", params.Status)
 		}
@@ -217,9 +241,11 @@ func (s *ApplicationService) Get(tenantID uint, id int64) (*ApplicationWithAuth,
 			a.name AS asset_name,
 			td.code AS asset_type_code,
 			auth.id AS auth_id,
-			auth.is_active AS auth_is_active,
+			auth.status AS auth_status,
 			auth.expires_at AS auth_expires_at,
-			auth.revoked_at AS auth_revoked_at`).
+			auth.revoked_at AS auth_revoked_at,
+			CASE WHEN auth.status = 'effective' AND auth.target_module = 'workbench' AND auth.target_resource_type = 'data_application'
+			     THEN '/data-apps/' || auth.target_resource_id ELSE '' END AS open_path`).
 		Joins("LEFT JOIN asset.assets a ON a.id = app.asset_id").
 		Joins("LEFT JOIN asset.type_definitions td ON td.id = a.type_id").
 		Joins("LEFT JOIN asset.authorizations auth ON auth.application_id = app.id").
@@ -246,6 +272,16 @@ func (s *ApplicationService) Approve(tenantID uint, reviewerID uint, id int64, r
 		now := time.Now()
 		reviewerInt64 := int64(reviewerID)
 		expiresAt := now.Add(time.Duration(app.DurationDay) * 24 * time.Hour)
+		var assetTypeCode string
+		if err := tx.Table("asset.assets asset").Select("type.code").
+			Joins("JOIN asset.type_definitions type ON type.id = asset.type_id").
+			Where("asset.id = ? AND asset.tenant_id = ? AND asset.status = 'published'", app.AssetID, tenantID).
+			Scan(&assetTypeCode).Error; err != nil {
+			return err
+		}
+		if assetTypeCode != "application" {
+			return errors.New("该资产类型尚未接入授权履约")
+		}
 
 		// 更新申请状态
 		if err := tx.Model(&app).Updates(map[string]interface{}{
@@ -265,9 +301,9 @@ func (s *ApplicationService) Approve(tenantID uint, reviewerID uint, id int64, r
 			AssetID:       app.AssetID,
 			ApplicationID: &appID,
 			UserID:        app.ApplicantID,
-			Credential:    "", // Phase 5 扩展数据服务 token
 			ExpiresAt:     &expiresAt,
-			IsActive:      true,
+			Status:        models.AuthorizationStatusPending,
+			NextAttemptAt: &now,
 		}
 		return tx.Create(auth).Error
 	})
@@ -309,9 +345,10 @@ func (s *ApplicationService) RevokeByApplication(tenantID uint, revokedBy uint, 
 			return fmt.Errorf("申请记录不存在或状态不是已通过")
 		}
 
-		// 找到对应的活跃授权记录
+		// 找到对应的待履约或有效授权记录
 		var auth models.Authorization
-		if err := tx.Where("application_id = ? AND tenant_id = ? AND is_active = true", appID, tenantID).
+		if err := tx.Where("application_id = ? AND tenant_id = ? AND status IN ?", appID, tenantID,
+			[]string{models.AuthorizationStatusPending, models.AuthorizationStatusEffective}).
 			First(&auth).Error; err != nil {
 			return fmt.Errorf("未找到有效的授权记录")
 		}
@@ -319,11 +356,11 @@ func (s *ApplicationService) RevokeByApplication(tenantID uint, revokedBy uint, 
 		now := time.Now()
 		revokedByInt64 := int64(revokedBy)
 
-		// 撤销授权（application.status 保持 approved 不变，撤销语义由 auth.is_active 表达）
+		// application.status 保持 approved；只有 owner 确认撤销后 Authorization 才进入 revoked。
 		return tx.Model(&auth).Updates(map[string]interface{}{
-			"is_active":  false,
-			"revoked_at": now,
-			"revoked_by": revokedByInt64,
+			"status":          models.AuthorizationStatusRevocationPending,
+			"revoked_by":      revokedByInt64,
+			"next_attempt_at": now,
 		}).Error
 	})
 }

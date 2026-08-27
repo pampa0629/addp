@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 71
+manifest_version: 72
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -422,6 +422,8 @@ roles:
     allowed_principal_types: [service_principal]
     permissions:
       - catalog.reference.read
+      - workbench.resource_grant.create
+      - workbench.resource_grant.revoke
   - key: tenant.auditor
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.auditor.name

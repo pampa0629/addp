@@ -46,8 +46,10 @@ func main() {
 		log.Fatalf("Failed to initialize Service Consumer Descriptor client: %v", err)
 	}
 	viewService := service.NewViewService(repository.NewViewRepository(db), descriptorReader)
-	dataApplicationService := service.NewDataApplicationService(repository.NewDataApplicationRepository(db), descriptorReader)
+	resourceAccessRepository := repository.NewResourceAccessRuleRepository(db)
+	dataApplicationService := service.NewDataApplicationService(repository.NewDataApplicationRepository(db), descriptorReader, resourceAccessRepository)
 	catalogResourceService := service.NewCatalogResourceService(repository.NewCatalogResourceRepository(db))
+	resourceGrantService := service.NewResourceGrantService(resourceAccessRepository)
 
 	tokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemURL, "addp-workbench", cfg.ServiceClientSecret, nil)
 	if err != nil {
@@ -55,7 +57,7 @@ func main() {
 	}
 	systemClient := commonClient.NewSystemServiceClient(cfg.SystemURL, tokenSource, nil)
 	lifecycle := modulelifecycle.NewBusiness("workbench", commonClient.ModuleRuntimeRoleBackend, databaseReadyCheck(db))
-	router := api.SetupRouter(cfg.SystemURL, lifecycle, viewService, dataApplicationService, catalogResourceService)
+	router := api.SetupRouter(cfg.SystemURL, lifecycle, viewService, dataApplicationService, catalogResourceService, resourceGrantService)
 	listener, err := net.Listen("tcp", ":"+cfg.Port)
 	if err != nil {
 		log.Fatalf("Failed to bind Workbench listener: %v", err)

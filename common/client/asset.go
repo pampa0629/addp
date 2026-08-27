@@ -133,9 +133,15 @@ type ApplicationRequest struct {
 	CreatedAt     string            `json:"created_at"`
 	UpdatedAt     string            `json:"updated_at"`
 	AuthID        *int64            `json:"auth_id,omitempty"`
-	AuthIsActive  *bool             `json:"auth_is_active,omitempty"`
+	AuthStatus    string            `json:"auth_status,omitempty"`
 	AuthExpiresAt string            `json:"auth_expires_at,omitempty"`
 	AuthRevokedAt string            `json:"auth_revoked_at,omitempty"`
+	OpenPath      string            `json:"open_path,omitempty"`
+}
+
+type AssetConsumerAccessStatus struct {
+	Status   string `json:"status"`
+	OpenPath string `json:"open_path,omitempty"`
 }
 
 type CreateApplicationRequest struct {
@@ -247,15 +253,13 @@ func (c *AssetClient) GetApplications(ctx context.Context, accessToken string) (
 	return result.Items, nil
 }
 
-func (c *AssetClient) GetApplyStatus(ctx context.Context, accessToken string, assetID int64) (string, error) {
-	var result struct {
-		Status string `json:"status"`
-	}
+func (c *AssetClient) GetApplyStatus(ctx context.Context, accessToken string, assetID int64) (*AssetConsumerAccessStatus, error) {
+	var result AssetConsumerAccessStatus
 	path := fmt.Sprintf("/api/v1/asset/consumer/assets/%d/application-status", assetID)
 	if err := c.do(ctx, accessToken, http.MethodGet, path, nil, nil, &result); err != nil {
-		return "", err
+		return nil, err
 	}
-	return result.Status, nil
+	return &result, nil
 }
 
 func (c *AssetClient) GetRatings(ctx context.Context, accessToken string, assetID int64) ([]RatingItem, int64, error) {

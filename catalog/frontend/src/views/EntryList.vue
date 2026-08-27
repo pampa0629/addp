@@ -50,7 +50,7 @@
       :title="t('catalog.entries.facetUnavailable', { facets: formattedUnavailableFacets })"
     />
 
-    <el-card v-loading="facetsLoading" shadow="never" class="navigation-card" data-testid="catalog-entry-navigation">
+    <el-card v-if="!coverageGapActive" v-loading="facetsLoading" shadow="never" class="navigation-card" data-testid="catalog-entry-navigation">
       <template #header>
         <div class="navigation-header">
           <strong>{{ t('catalog.entries.navigation.title') }}</strong>
@@ -69,6 +69,17 @@
               @click="selectNavigation('primary_domain', '')"
             >
               <span>{{ t('catalog.entries.navigation.allDomains') }}</span>
+            </button>
+            <button
+              v-if="filters.view === 'inventory'"
+              type="button"
+              class="navigation-option"
+              data-testid="catalog-unclassified-domain-navigation"
+              :aria-label="t('catalog.entries.navigation.unclassifiedDomainDescription')"
+              @click="selectUnclassifiedDomain"
+            >
+              <span class="navigation-option-name">{{ t('catalog.entries.navigation.unclassifiedDomain') }}</span>
+              <span class="navigation-option-count">{{ t('catalog.entries.navigation.governanceGap') }}</span>
             </button>
             <button
               v-for="option in domainOptions"
@@ -96,6 +107,17 @@
               @click="selectNavigation('accountable_department', '')"
             >
               <span>{{ t('catalog.entries.navigation.allDepartments') }}</span>
+            </button>
+            <button
+              v-if="filters.view === 'inventory'"
+              type="button"
+              class="navigation-option"
+              data-testid="catalog-unassigned-department-navigation"
+              :aria-label="t('catalog.entries.navigation.unassignedDepartmentDescription')"
+              @click="selectUnassignedDepartment"
+            >
+              <span class="navigation-option-name">{{ t('catalog.entries.navigation.unassignedDepartment') }}</span>
+              <span class="navigation-option-count">{{ t('catalog.entries.navigation.governanceGap') }}</span>
             </button>
             <button
               v-for="option in departmentOptions"
@@ -183,7 +205,19 @@
     </el-card>
 
     <el-card shadow="never" class="table-card">
-      <el-table v-loading="loading" :data="result.data" @row-click="openEntry">
+      <div v-if="canBatchGovernance" class="batch-toolbar" data-testid="catalog-batch-governance-toolbar">
+        <span>{{ t('catalog.entries.batchGovernance.selected', { count: selectedEntries.length }) }}</span>
+        <div class="batch-toolbar-actions">
+          <el-button :disabled="selectedEntries.length === 0" type="primary" data-testid="catalog-batch-governance-open" @click="openBatchGovernance">
+            {{ t('catalog.entries.batchGovernance.action') }}
+          </el-button>
+          <el-button :disabled="selectedEntries.length === 0" @click="clearBatchSelection">
+            {{ t('catalog.entries.batchGovernance.clear') }}
+          </el-button>
+        </div>
+      </div>
+      <el-table ref="entryTable" v-loading="loading" :data="result.data" row-key="id" @selection-change="handleSelectionChange" @row-click="openEntry">
+        <el-table-column v-if="canBatchGovernance" type="selection" width="48" />
         <el-table-column prop="display_name" :label="t('catalog.entries.name')" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="entry-link">{{ row.display_name || t('catalog.entries.unnamed') }}</span>
@@ -222,6 +256,69 @@
         />
       </div>
     </el-card>
+
+    <el-dialog
+      v-model="batchDialogVisible"
+      class="addp-dialog"
+      data-testid="catalog-batch-governance-dialog"
+      :title="t('catalog.entries.batchGovernance.title')"
+      width="min(560px, 92vw)"
+      :close-on-click-modal="false"
+    >
+      <p class="batch-dialog-description">
+        {{ t('catalog.entries.batchGovernance.description', { count: selectedEntries.length }) }}
+      </p>
+      <el-form label-position="top" :model="batchForm">
+        <el-form-item :label="t('catalog.entries.batchGovernance.operation')">
+          <el-select
+            v-model="batchForm.operation"
+            data-testid="catalog-batch-governance-operation"
+            :placeholder="t('catalog.entries.batchGovernance.operationPlaceholder')"
+            style="width: 100%"
+            @change="changeBatchOperation"
+          >
+            <el-option :label="t('catalog.entries.batchGovernance.assignPrimaryDomain')" value="assign_primary_domain" />
+            <el-option :label="t('catalog.entries.batchGovernance.assignAccountableDepartment')" value="assign_accountable_department" />
+          </el-select>
+        </el-form-item>
+        <el-alert
+          v-if="batchForm.operation === 'assign_primary_domain' && unsupportedBatchEntries.length > 0"
+          type="warning"
+          show-icon
+          :closable="false"
+          :title="t('catalog.entries.batchGovernance.unsupportedOwnerManaged', { count: unsupportedBatchEntries.length })"
+        />
+        <el-form-item :label="batchTargetLabel" class="batch-target-field">
+          <el-select
+            v-model="batchForm.reference_id"
+            data-testid="catalog-batch-governance-target"
+            filterable
+            remote
+            reserve-keyword
+            :disabled="!batchForm.operation"
+            :loading="batchCandidateLoading"
+            :remote-method="searchBatchCandidates"
+            :placeholder="t('catalog.entries.batchGovernance.targetPlaceholder')"
+            style="width: 100%"
+            @visible-change="visible => visible && searchBatchCandidates('')"
+          >
+            <el-option v-for="option in batchCandidateOptions" :key="option.id" :label="candidateLabel(option)" :value="option.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="batchDialogVisible = false">{{ t('catalog.entries.batchGovernance.cancel') }}</el-button>
+        <el-button
+          type="primary"
+          data-testid="catalog-batch-governance-submit"
+          :loading="batchSubmitting"
+          :disabled="batchSubmitDisabled"
+          @click="submitBatchGovernance"
+        >
+          {{ t('catalog.entries.batchGovernance.confirm') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -232,12 +329,23 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Refresh, Search, WarningFilled } from '@element-plus/icons-vue'
 import { navigateConsoleModuleRoute } from '@common-ui'
-import { listEntries, listEntryFacets } from '../api/catalog'
+import { batchGovernance, listEntries, listEntryFacets, listReferenceCandidates } from '../api/catalog'
 import { useAuthStore } from '../store/auth'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
 import { coverageDimensionLabel } from '../utils/governanceCoverageView'
-import { applyEntryNavigationSelection, buildEntryFacetQuery } from '../utils/entryNavigation'
+import {
+  applyEntryNavigationSelection,
+  applyUnassignedDepartmentSelection,
+  applyUnclassifiedDomainSelection,
+  buildEntryFacetQuery
+} from '../utils/entryNavigation'
 import { buildEntryListQuery, isCanonicalEntryListQuery, parseEntryListRoute } from '../utils/entryRouteState'
+import {
+  BATCH_GOVERNANCE_ASSIGN_ACCOUNTABLE_DEPARTMENT,
+  BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN,
+  buildBatchGovernancePayload,
+  unsupportedPrimaryDomainEntries
+} from '../utils/batchGovernance'
 
 const route = useRoute()
 const router = useRouter()
@@ -245,6 +353,7 @@ const { t, locale } = useI18n()
 const authStore = useAuthStore()
 const canManageGovernance = computed(() => authStore.hasPermission('catalog.entry.update'))
 const canViewInventory = computed(() => authStore.hasPermission('catalog.inventory.read'))
+const canBatchGovernance = computed(() => canManageGovernance.value && canViewInventory.value && filters.view === 'inventory')
 const governanceStatuses = ['discovered', 'curated', 'certified', 'deprecated']
 const availableGovernanceStatuses = computed(() => filters.view === 'inventory' ? governanceStatuses : governanceStatuses.filter(status => status !== 'discovered'))
 const visibilities = ['inventory', 'department', 'tenant']
@@ -253,8 +362,16 @@ const result = reactive({ data: [], total: 0, page: 1, page_size: 20, total_page
 const facets = reactive(emptyFacets())
 const loading = ref(false)
 const facetsLoading = ref(false)
+const entryTable = ref(null)
+const selectedEntries = ref([])
+const batchDialogVisible = ref(false)
+const batchSubmitting = ref(false)
+const batchCandidateLoading = ref(false)
+const batchCandidateOptions = ref([])
+const batchForm = reactive({ operation: '', reference_id: '' })
 let requestVersion = 0
 let facetRequestVersion = 0
+let batchCandidateRequestVersion = 0
 let loadedFacetKey = ''
 
 const pageTitle = computed(() => t(`catalog.entries.view.${filters.view}Title`))
@@ -271,6 +388,14 @@ const departmentOptions = computed(() => optionsWithSelected(facets.accountable_
 const entryTypeOptions = computed(() => optionsWithSelectedEntryType(facets.entry_types, filters.entry_type))
 const engineOptions = computed(() => optionsWithSelected(facets.source_engines, filters.source_engine_id))
 const engineOptionsByID = computed(() => new Map(engineOptions.value.map(option => [String(option.id), option])))
+const unsupportedBatchEntries = computed(() => unsupportedPrimaryDomainEntries(selectedEntries.value))
+const batchTargetLabel = computed(() => batchForm.operation === BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN
+  ? t('catalog.entries.primaryDomain')
+  : batchForm.operation === BATCH_GOVERNANCE_ASSIGN_ACCOUNTABLE_DEPARTMENT
+    ? t('catalog.entries.accountableDepartment')
+    : t('catalog.entries.batchGovernance.target'))
+const batchSubmitDisabled = computed(() => batchSubmitting.value || selectedEntries.value.length === 0 || !batchForm.operation || !batchForm.reference_id ||
+  (batchForm.operation === BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN && unsupportedBatchEntries.value.length > 0))
 const unavailableFacetLabels = computed(() => {
   const labels = []
   if (facets.primary_domains.status === 'unavailable') labels.push(t('catalog.entries.primaryDomain'))
@@ -337,9 +462,11 @@ async function loadEntries() {
   try {
     const response = await listEntries(filters)
     if (version !== requestVersion) return
+    clearBatchSelection()
     Object.assign(result, response, { data: response.data || [] })
   } catch (error) {
     if (version !== requestVersion) return
+    clearBatchSelection()
     Object.assign(result, { data: [], total: 0, page: filters.page, page_size: filters.page_size, total_pages: 0 })
     ElMessage.error(error?.response?.data?.error || t('catalog.entries.loadFailed'))
   } finally {
@@ -392,6 +519,18 @@ async function selectNavigation(dimension, value) {
   await navigateList('push')
 }
 
+async function selectUnclassifiedDomain() {
+  Object.assign(filters, applyUnclassifiedDomainSelection(filters))
+  loadedFacetKey = ''
+  await navigateList('push')
+}
+
+async function selectUnassignedDepartment() {
+  Object.assign(filters, applyUnassignedDepartmentSelection(filters))
+  loadedFacetKey = ''
+  await navigateList('push')
+}
+
 async function resetFilters() {
   const currentView = filters.view
   Object.assign(filters, parseEntryListRoute(currentView === 'inventory' ? { view: 'inventory' } : {}))
@@ -433,11 +572,94 @@ async function changePageSize(pageSize) {
   await navigateList('push')
 }
 
-async function openEntry(row) {
+async function openEntry(row, column) {
+  if (column?.type === 'selection') return
   await navigateConsoleModuleRoute(router, 'catalog', {
     path: `/entries/${row.id}`,
     query: buildEntryListQuery(filters)
   })
+}
+
+function handleSelectionChange(rows) {
+  selectedEntries.value = canBatchGovernance.value ? rows.slice(0, 200) : []
+}
+
+function clearBatchSelection() {
+  entryTable.value?.clearSelection()
+  selectedEntries.value = []
+}
+
+function openBatchGovernance() {
+  if (selectedEntries.value.length === 0) return
+  batchForm.operation = filters.coverage_dimension === 'primary_domain'
+    ? BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN
+    : filters.coverage_dimension === 'accountable_department'
+      ? BATCH_GOVERNANCE_ASSIGN_ACCOUNTABLE_DEPARTMENT
+      : ''
+  batchForm.reference_id = ''
+  batchCandidateOptions.value = []
+  batchDialogVisible.value = true
+  if (batchForm.operation) searchBatchCandidates('')
+}
+
+function changeBatchOperation() {
+  batchForm.reference_id = ''
+  batchCandidateOptions.value = []
+  if (batchForm.operation) searchBatchCandidates('')
+}
+
+async function searchBatchCandidates(search = '') {
+  const referenceType = batchForm.operation === BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN
+    ? 'domain'
+    : batchForm.operation === BATCH_GOVERNANCE_ASSIGN_ACCOUNTABLE_DEPARTMENT
+      ? 'department'
+      : ''
+  if (!referenceType) return
+  const version = ++batchCandidateRequestVersion
+  batchCandidateLoading.value = true
+  try {
+    const normalizedSearch = String(search || '').trim()
+    const response = await listReferenceCandidates({
+      reference_type: referenceType,
+      ...(normalizedSearch ? { search: normalizedSearch } : {}),
+      page: 1,
+      page_size: 50
+    })
+    if (version !== batchCandidateRequestVersion) return
+    const options = new Map()
+    const selected = batchCandidateOptions.value.find(option => String(option.id) === String(batchForm.reference_id))
+    if (selected) options.set(String(selected.id), selected)
+    for (const option of response.data || []) options.set(String(option.id), { ...option, id: String(option.id) })
+    batchCandidateOptions.value = [...options.values()]
+  } catch (error) {
+    if (version === batchCandidateRequestVersion) {
+      ElMessage.error(error?.response?.data?.error || t('catalog.entries.batchGovernance.candidateSearchFailed'))
+    }
+  } finally {
+    if (version === batchCandidateRequestVersion) batchCandidateLoading.value = false
+  }
+}
+
+function candidateLabel(option) {
+  return option.code ? `${option.name} · ${option.code}` : option.name
+}
+
+async function submitBatchGovernance() {
+  if (batchSubmitDisabled.value) return
+  batchSubmitting.value = true
+  try {
+    const payload = buildBatchGovernancePayload(selectedEntries.value, batchForm.operation, batchForm.reference_id)
+    await batchGovernance(payload)
+    ElMessage.success(t('catalog.entries.batchGovernance.success', { count: selectedEntries.value.length }))
+    batchDialogVisible.value = false
+    clearBatchSelection()
+    loadedFacetKey = ''
+    await Promise.all([loadEntries(), loadFacets(true)])
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.error || t('catalog.entries.batchGovernance.failed'))
+  } finally {
+    batchSubmitting.value = false
+  }
 }
 
 async function openGovernanceTasks() {
@@ -494,11 +716,17 @@ watch(() => route.query, async query => {
 .filter-card :deep(.el-form-item) { margin-bottom: 12px; }
 .filter-card :deep(.el-select), .filter-card :deep(.el-input) { width: 210px; }
 .table-card :deep(.el-table__row) { cursor: pointer; }
+.batch-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; color: var(--addp-text-secondary); }
+.batch-toolbar-actions { display: flex; gap: 8px; }
+.batch-dialog-description { margin: 0 0 16px; color: var(--addp-text-secondary); }
+.batch-target-field { margin-top: 16px; }
 .entry-link { color: var(--el-color-primary); font-weight: 600; }
 .pagination-row { display: flex; justify-content: flex-end; margin-top: 16px; }
 @media (max-width: 900px) {
   .page-header { flex-direction: column; }
   .header-actions { flex-wrap: wrap; }
+  .batch-toolbar { align-items: flex-start; flex-direction: column; }
+  .batch-toolbar-actions { flex-wrap: wrap; }
   .navigation-header { align-items: flex-start; flex-direction: column; gap: 4px; }
   .navigation-grid { grid-template-columns: 1fr; }
   .filter-card :deep(.el-form--inline .el-form-item) { display: flex; margin: 0 0 12px; width: 100%; }

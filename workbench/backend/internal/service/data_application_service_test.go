@@ -17,6 +17,12 @@ type memoryDataApplicationRepository struct {
 	revisions map[string][]models.DataApplicationRevision
 }
 
+type staticDataApplicationAccessRules struct{ allowed bool }
+
+func (rules staticDataApplicationAccessRules) CanExecuteDataApplication(_, _ int64, _ string, _ time.Time) (bool, error) {
+	return rules.allowed, nil
+}
+
 func newMemoryDataApplicationRepository() *memoryDataApplicationRepository {
 	return &memoryDataApplicationRepository{
 		views: map[string]models.View{}, apps: map[string]models.DataApplication{}, revisions: map[string][]models.DataApplicationRevision{},
@@ -151,12 +157,26 @@ func (r *memoryDataApplicationRepository) GetRuntime(tenantID, ownerUserID int64
 	return &copy, nil
 }
 
+func (r *memoryDataApplicationRepository) GetRuntimeApplication(tenantID int64, id string) (*models.DataApplication, *models.DataApplicationRevision, error) {
+	application, ok := r.apps[id]
+	if !ok || application.TenantID != tenantID {
+		return nil, nil, repository.ErrDataApplicationNotFound
+	}
+	if application.PublicationStatus != models.PublicationStatusPublished || application.CurrentRevisionNumber == nil {
+		return nil, nil, repository.ErrDataApplicationNotPublished
+	}
+	revisions := r.revisions[id]
+	copyApplication := application
+	copyRevision := revisions[len(revisions)-1]
+	return &copyApplication, &copyRevision, nil
+}
+
 func TestDataApplicationServiceOwnsSnapshotAndImmutableRevision(t *testing.T) {
 	repository := newMemoryDataApplicationRepository()
 	view := dataApplicationSourceView(7, 11)
 	repository.views[view.ID] = view
 	descriptors := &fakeDescriptorReader{descriptor: testDescriptor(false)}
-	applications := NewDataApplicationService(repository, descriptors)
+	applications := NewDataApplicationService(repository, descriptors, nil)
 
 	created, err := applications.Create(context.Background(), 7, 11, DescriptorRequest{BearerToken: "user-token"}, models.DataApplicationCreateRequest{
 		Name: "Order application", Description: "Published order view", SourceViewIDs: []string{view.ID},
@@ -192,6 +212,14 @@ func TestDataApplicationServiceOwnsSnapshotAndImmutableRevision(t *testing.T) {
 	runtimeBeforeEdit, err := applications.Runtime(7, 11, created.ID)
 	if err != nil || runtimeBeforeEdit.Name != "Order application" || runtimeBeforeEdit.RevisionNumber != 1 {
 		t.Fatalf("Runtime() before edit = %#v, %v", runtimeBeforeEdit, err)
+	}
+	grantedApplications := NewDataApplicationService(repository, descriptors, staticDataApplicationAccessRules{allowed: true})
+	if grantedRuntime, err := grantedApplications.Runtime(7, 91, created.ID); err != nil || grantedRuntime.ID != created.ID {
+		t.Fatalf("granted Runtime() = %#v, %v", grantedRuntime, err)
+	}
+	deniedApplications := NewDataApplicationService(repository, descriptors, staticDataApplicationAccessRules{})
+	if _, err := deniedApplications.Runtime(7, 92, created.ID); !errors.Is(err, ErrDataApplicationAccessDenied) {
+		t.Fatalf("denied Runtime() error = %v", err)
 	}
 
 	draft := published.Snapshot
@@ -240,7 +268,7 @@ func TestDataApplicationServiceUsesEmptyArraysWithoutViewParameters(t *testing.T
 	view.QueryTemplate = datatypes.JSON(`{"select":["id","amount"],"fixed_filter":null,"parameter_filters":[],"order_by":[{"field":"id","direction":"asc"}],"page_limit":50,"format":"json"}`)
 	view.DefaultParameterValues = datatypes.JSON(`{}`)
 	repository.views[view.ID] = view
-	applications := NewDataApplicationService(repository, &fakeDescriptorReader{descriptor: testDescriptor(false)})
+	applications := NewDataApplicationService(repository, &fakeDescriptorReader{descriptor: testDescriptor(false)}, nil)
 
 	created, err := applications.Create(context.Background(), 7, 11, DescriptorRequest{}, models.DataApplicationCreateRequest{Name: "Orders", SourceViewIDs: []string{view.ID}})
 	if err != nil {
@@ -255,7 +283,7 @@ func TestDataApplicationServiceRejectsComponentIdentityChanges(t *testing.T) {
 	repository := newMemoryDataApplicationRepository()
 	view := dataApplicationSourceView(7, 11)
 	repository.views[view.ID] = view
-	applications := NewDataApplicationService(repository, &fakeDescriptorReader{descriptor: testDescriptor(false)})
+	applications := NewDataApplicationService(repository, &fakeDescriptorReader{descriptor: testDescriptor(false)}, nil)
 	created, err := applications.Create(context.Background(), 7, 11, DescriptorRequest{}, models.DataApplicationCreateRequest{Name: "Orders", SourceViewIDs: []string{view.ID}})
 	if err != nil {
 		t.Fatal(err)

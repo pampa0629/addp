@@ -290,15 +290,15 @@ func (s *CleanupService) logicalCleanup(ctx context.Context, candidates assetCle
 		}
 		stats.OfflineAssets++
 	}
-	now := time.Now()
+	now := time.Now().UTC()
 	for _, auth := range candidates.authorizations {
-		if !auth.IsActive {
+		if auth.Status == models.AuthorizationStatusRevoked || auth.Status == models.AuthorizationStatusRevocationPending {
 			stats.SkippedItems++
 			continue
 		}
 		if err := s.db.WithContext(ctx).Model(&models.Authorization{}).Where("id = ?", auth.ID).Updates(map[string]interface{}{
-			"is_active":  false,
-			"revoked_at": now,
+			"status":          models.AuthorizationStatusRevocationPending,
+			"next_attempt_at": now,
 		}).Error; err != nil {
 			stats.Errors = append(stats.Errors, fmt.Sprintf("revoke authorization %d failed: %v", auth.ID, err))
 			continue

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { applyEntryNavigationSelection, buildEntryFacetQuery } from '../src/utils/entryNavigation'
+import {
+  applyEntryNavigationSelection,
+  applyUnassignedDepartmentSelection,
+  applyUnclassifiedDomainSelection,
+  buildEntryFacetQuery
+} from '../src/utils/entryNavigation'
 
 describe('Catalog entry navigation', () => {
   it('builds the contextual facet query from canonical route state', () => {
@@ -25,6 +30,36 @@ describe('Catalog entry navigation', () => {
     })
     expect(applyEntryNavigationSelection(current, 'entry_type', 'data_service')).toMatchObject({
       primary_domain_id: '10', accountable_department_id: '30', entry_type: 'data_service', page: 1
+    })
+  })
+
+  it('keeps ordinary navigation and governance gap states mutually exclusive', () => {
+    expect(applyEntryNavigationSelection({
+      view: 'inventory', coverage_dimension: 'primary_domain', coverage_state: 'missing'
+    }, 'primary_domain', '20')).toMatchObject({
+      primary_domain_id: '20', coverage_dimension: '', coverage_state: '', page: 1
+    })
+  })
+
+  it('maps the unclassified domain action to the canonical primary-domain gap', () => {
+    expect(applyUnclassifiedDomainSelection({
+      view: 'governance', search: 'orders', primary_domain_id: '10',
+      accountable_department_id: '30', entry_type: 'metric', source_status: 'active', page: 4
+    })).toMatchObject({
+      view: 'inventory', search: '', primary_domain_id: '', accountable_department_id: '',
+      entry_type: '', source_status: 'active', coverage_dimension: 'primary_domain',
+      coverage_state: 'missing', page: 1
+    })
+  })
+
+  it('preserves the selected domain when opening the unassigned-department gap', () => {
+    expect(applyUnassignedDepartmentSelection({
+      view: 'inventory', search: 'orders', primary_domain_id: '10',
+      accountable_department_id: '30', entry_type: 'metric', source_status: 'active', page: 4
+    })).toMatchObject({
+      view: 'inventory', search: '', primary_domain_id: '10', accountable_department_id: '',
+      entry_type: '', source_status: 'active', coverage_dimension: 'accountable_department',
+      coverage_state: 'missing', page: 1
     })
   })
 })

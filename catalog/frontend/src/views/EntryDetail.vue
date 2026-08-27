@@ -119,7 +119,7 @@
         <template #header>
           <div class="card-title-row">
             <strong>{{ t('catalog.entry.ownerFacts', { module: ownerModuleName }) }}</strong>
-            <el-button v-if="entry.source_resolution?.detail_path" text type="primary" @click="openOwnerDetail">
+            <el-button v-if="ownerDetailUrl" tag="a" :href="ownerDetailUrl" target="_top" text type="primary">
               {{ t('catalog.entry.ownerDetail', { module: ownerModuleName }) }}
             </el-button>
           </div>
@@ -402,7 +402,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Bell, Edit, Refresh, Star } from '@element-plus/icons-vue'
-import { navigateConsoleModuleRoute, openConsoleRoute, useConsolePageDescriptor } from '@common-ui'
+import { navigateConsoleModuleRoute, openConsoleRoute, resolveConsoleRouteUrl, useConsolePageDescriptor } from '@common-ui'
 import { createLineageApi, normalizeLineageGraph } from '@addp/common-frontend/graph/lineageApi.js'
 import EntryEditor from '../components/EntryEditor.vue'
 import { getEntry, getEntryHistory, getMyEntryMarks, rebindSource, replaceMyEntryMarks, resolveSourceEntries, updateEntry } from '../api/catalog'
@@ -410,6 +410,7 @@ import client from '../api/client'
 import { useAuthStore } from '../store/auth'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
 import { buildEntryListQuery, parseEntryListRoute } from '../utils/entryRouteState'
+import { isProfessionalOwner, professionalOwnerName } from '../utils/entryOwnerPresentation'
 import { lineageFailureState, lineageNodesToSourceReferences, resolveLineageSubject } from '../utils/lineageView'
 import {
   normalizeProfessionalRelations,
@@ -451,8 +452,9 @@ const rebindFormComplete = computed(() => Boolean(
 	rebindForm.value.new_source_identity && rebindForm.value.reason && rebindForm.value.evidence
 ))
 const componentElementByID = computed(() => new Map((entry.value?.component_elements || []).map(item => [item.component_id, item])))
-const isProfessionalEntry = computed(() => ['model', 'standard', 'service', 'develop'].includes(entry.value?.source?.source_module))
-const ownerModuleName = computed(() => ({ model: 'Model', standard: 'Standard', service: 'Service', develop: 'Develop' }[entry.value?.source?.source_module] || ''))
+const isProfessionalEntry = computed(() => isProfessionalOwner(entry.value?.source?.source_module))
+const ownerModuleName = computed(() => professionalOwnerName(entry.value?.source?.source_module))
+const ownerDetailUrl = computed(() => resolveConsoleRouteUrl(entry.value?.source_resolution?.detail_path || ''))
 const sourceResolutionText = computed(() => {
   const status = entry.value?.source_resolution?.status || 'unavailable'
   return t(`catalog.entry.owner${status.charAt(0).toUpperCase()}${status.slice(1)}`, { module: ownerModuleName.value })
@@ -480,7 +482,9 @@ const ownerSummaryItems = computed(() => {
     ['runtime_engine_id', 'ownerRuntimeEngine'],
     ['artifact_type', 'ownerArtifactType'],
     ['task_status', 'ownerTaskStatus'],
-    ['query_type', 'ownerQueryType']
+    ['query_type', 'ownerQueryType'],
+    ['publication_status', 'ownerPublicationStatus'],
+    ['revision_number', 'ownerRevisionNumber']
   ]
   return fields
     .filter(([key]) => summary[key] !== null && summary[key] !== undefined && String(summary[key]).trim() !== '')
@@ -831,12 +835,6 @@ async function goBack() {
     path: '/entries',
     query: buildEntryListQuery(parseEntryListRoute(route.query))
   }, { history: 'replace' })
-}
-
-async function openOwnerDetail() {
-  const path = entry.value?.source_resolution?.detail_path
-  if (!path) return
-  await openConsoleRoute(path, { source: 'addp-catalog' })
 }
 
 async function openQualityDetail() {

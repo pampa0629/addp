@@ -693,10 +693,7 @@ func (h *Handler) listAuthorizations(c *gin.Context) {
 	params := service.AuthorizationListParams{Page: page, PageSize: pageSize}
 	params.UserID, _ = strconv.ParseInt(c.Query("user_id"), 10, 64)
 	params.AssetID, _ = strconv.ParseInt(c.Query("asset_id"), 10, 64)
-	if value := c.Query("is_active"); value == "true" || value == "false" {
-		active := value == "true"
-		params.IsActive = &active
-	}
+	params.Status = c.Query("status")
 	items, total, err := h.authorizationSvc.List(commonAuth.GetTenantID(c), params)
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())

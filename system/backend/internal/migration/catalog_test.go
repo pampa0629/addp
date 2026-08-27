@@ -14,8 +14,24 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 105 {
-		t.Fatalf("LatestVersion = %d, want 105", catalog.LatestVersion)
+	if catalog.LatestVersion != 107 {
+		t.Fatalf("LatestVersion = %d, want 107", catalog.LatestVersion)
+	}
+}
+
+func TestWorkbenchResourceGrantMigrationPublishesAssetRuntimePermissions(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000107_iam_workbench_resource_grant.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 107: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'workbench.resource_grant.create'", "'workbench.resource_grant.revoke'",
+		"ARRAY['tenant']::text[]", "'tenant.asset_runtime'", "authorization_version = principal.authorization_version + 1",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 107 missing %q", fragment)
+		}
 	}
 }
 
@@ -463,6 +479,27 @@ func TestTransferExecutionAuthorizationMigration(t *testing.T) {
 		if !strings.Contains(sql, fragment) {
 			t.Fatalf("migration 80 missing %q", fragment)
 		}
+	}
+}
+
+func TestExecutionAuthorizationLeaseBoundaryMigration(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000106_iam_execution_authorization_lease_boundary.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 106: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"DROP CONSTRAINT execution_authorizations_execution_attempt_check",
+		"source_execution_attempt > 0",
+		"source_execution_lease_token IS NOT NULL",
+		"source_type = 'user'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 106 missing %q", fragment)
+		}
+	}
+	if strings.Contains(sql, "audience = 'transfer'") || strings.Contains(sql, "audience = 'develop'") {
+		t.Fatal("migration 106 kept an audience-specific lease boundary")
 	}
 }
 

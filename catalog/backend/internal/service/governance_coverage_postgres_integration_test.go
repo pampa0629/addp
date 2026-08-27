@@ -53,7 +53,7 @@ func TestPostgresGovernanceCoverageAndSourceResolution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetGovernanceCoverage() error = %v", err)
 	}
-	if coverage.TotalEntries != 2 || coverage.Dimensions[1].Key != CoverageDimensionPrimaryDomain || coverage.Dimensions[1].Covered != 1 {
+	if coverage.TotalEntries != 2 || len(coverage.Dimensions) != 7 || coverage.Dimensions[1].Key != CoverageDimensionPrimaryDomain || coverage.Dimensions[1].Covered != 1 {
 		t.Fatalf("coverage = %#v", coverage)
 	}
 	for _, dimension := range coverage.Dimensions {

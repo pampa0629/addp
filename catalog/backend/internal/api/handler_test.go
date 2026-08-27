@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/addp/catalog/internal/models"
@@ -51,6 +52,37 @@ func TestMapUpdateEntryRequestRejectsNonCanonicalIDs(t *testing.T) {
 		})
 		if err == nil {
 			t.Fatalf("id %q accepted", id)
+		}
+	}
+}
+
+func TestMapBatchGovernanceRequestParsesExplicitVersionedMembers(t *testing.T) {
+	first := uuid.New()
+	second := uuid.New()
+	input, err := mapBatchGovernanceRequest(batchGovernanceRequest{
+		Entries:   []batchGovernanceEntryRequest{{ID: first.String(), Version: 2}, {ID: second.String(), Version: 5}},
+		Operation: service.BatchGovernanceAssignAccountableDepartment, ReferenceID: "9007199254740993",
+	})
+	if err != nil {
+		t.Fatalf("mapBatchGovernanceRequest() error = %v", err)
+	}
+	if input.ReferenceID != 9007199254740993 || len(input.Entries) != 2 || input.Entries[0].ID != first || input.Entries[1].Version != 5 {
+		t.Fatalf("input = %#v", input)
+	}
+}
+
+func TestMapBatchGovernanceRequestRejectsImplicitOrNonCanonicalMembers(t *testing.T) {
+	id := uuid.New().String()
+	requests := []batchGovernanceRequest{
+		{Operation: service.BatchGovernanceAssignPrimaryDomain, ReferenceID: "1"},
+		{Entries: []batchGovernanceEntryRequest{{ID: id, Version: 1}, {ID: id, Version: 1}}, Operation: service.BatchGovernanceAssignPrimaryDomain, ReferenceID: "1"},
+		{Entries: []batchGovernanceEntryRequest{{ID: strings.ToUpper(id), Version: 1}}, Operation: service.BatchGovernanceAssignPrimaryDomain, ReferenceID: "1"},
+		{Entries: []batchGovernanceEntryRequest{{ID: id, Version: 0}}, Operation: service.BatchGovernanceAssignPrimaryDomain, ReferenceID: "1"},
+		{Entries: []batchGovernanceEntryRequest{{ID: id, Version: 1}}, Operation: service.BatchGovernanceAssignPrimaryDomain, ReferenceID: "01"},
+	}
+	for index, request := range requests {
+		if _, err := mapBatchGovernanceRequest(request); err == nil {
+			t.Fatalf("request %d accepted: %#v", index, request)
 		}
 	}
 }

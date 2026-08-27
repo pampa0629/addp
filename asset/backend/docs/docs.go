@@ -1243,10 +1243,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_asset_internal_service.ConsumerAccessStatus"
                         }
                     },
                     "404": {
@@ -1717,6 +1714,24 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                }
+            }
+        },
+        "github_com_addp_asset_internal_service.ConsumerAccessStatus": {
+            "type": "object",
+            "properties": {
+                "open_path": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "none",
+                        "pending",
+                        "fulfilling",
+                        "effective",
+                        "revoking"
+                    ]
                 }
             }
         },

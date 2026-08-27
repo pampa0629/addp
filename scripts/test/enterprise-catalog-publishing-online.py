@@ -22,7 +22,9 @@ GOVERNANCE_STATUSES = {"discovered", "curated", "certified", "deprecated"}
 COVERAGE_DIMENSIONS = {
     "business_definition",
     "primary_domain",
-    "accountability",
+    "accountable_department",
+    "business_owner",
+    "data_steward",
     "glossary",
     "component_element",
 }
@@ -643,6 +645,7 @@ def validate_browser_report(
         "coverage_total_entries": total_entries,
         "coverage_dimensions": len(COVERAGE_DIMENSIONS),
         "human_readable_filter_selectors": 3,
+        "explicit_batch_governance_ui": True,
         "browser_warning_errors": 0,
     }
     mismatches = [key for key, value in expected.items() if payload.get(key) != value]

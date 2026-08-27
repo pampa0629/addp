@@ -28,6 +28,10 @@ type CatalogReferenceResolution struct {
 	Found            bool      `json:"found"`
 	Selectable       bool      `json:"selectable"`
 	Publishable      bool      `json:"publishable"`
+	EntryType        string    `json:"entry_type,omitempty"`
+	SourceModule     string    `json:"source_module,omitempty"`
+	SourceType       string    `json:"source_type,omitempty"`
+	SourceIdentity   string    `json:"source_identity,omitempty"`
 	DisplayName      string    `json:"display_name,omitempty"`
 	EntryStatus      string    `json:"entry_status,omitempty"`
 	GovernanceStatus string    `json:"governance_status,omitempty"`

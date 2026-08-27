@@ -21,7 +21,8 @@ type Config struct {
 	SystemURL           string
 	ServiceClientSecret string
 
-	CatalogURL string
+	CatalogURL   string
+	WorkbenchURL string
 
 	// Meilisearch（用于资产全文搜索，可选）
 	MeilisearchURL                 string
@@ -44,7 +45,8 @@ func LoadConfig() (*Config, error) {
 		SystemURL:           commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
 		ServiceClientSecret: commonConfig.GetEnv("ASSET_SERVICE_CLIENT_SECRET", ""),
 
-		CatalogURL: commonConfig.GetEnv("CATALOG_URL", "http://localhost:8192"),
+		CatalogURL:   commonConfig.GetEnv("CATALOG_URL", "http://localhost:8192"),
+		WorkbenchURL: commonConfig.GetEnv("WORKBENCH_URL", "http://localhost:8193"),
 
 		MeilisearchURL:                 os.Getenv("MEILISEARCH_URL"),
 		MeilisearchMasterKey:           os.Getenv("MEILISEARCH_MASTER_KEY"),

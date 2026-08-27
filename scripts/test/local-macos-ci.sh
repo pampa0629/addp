@@ -156,11 +156,13 @@ validate_host() {
 
 clear_postgres_gate_environment() {
   unset ADDP_SYSTEM_POSTGRES_TEST_DSN
+  unset ASSET_POSTGRES_TEST_DSN
   unset META_POSTGRES_TEST_DSN
   unset CATALOG_POSTGRES_TEST_DSN
   unset ADDP_TEST_MODEL_POSTGRES_DSN
   unset SERVICE_POSTGRES_TEST_DSN
   unset STANDARD_POSTGRES_TEST_DSN
+  unset WORKBENCH_POSTGRES_TEST_DSN
   unset ADDP_POSTGRES_INTEGRATION
   unset ADDP_TEST_POSTGRES_HOST
   unset ADDP_TEST_POSTGRES_PORT
@@ -246,11 +248,13 @@ run_postgres_gates() {
   iam_dsn='postgres://addp:addp_password@127.0.0.1:15432/addp_iam_test?sslmode=disable'
   env \
     ADDP_SYSTEM_POSTGRES_TEST_DSN="$iam_dsn" \
+    ASSET_POSTGRES_TEST_DSN="$shared_dsn" \
     META_POSTGRES_TEST_DSN="$shared_dsn" \
     CATALOG_POSTGRES_TEST_DSN="$shared_dsn" \
     ADDP_TEST_MODEL_POSTGRES_DSN="$shared_dsn" \
     SERVICE_POSTGRES_TEST_DSN="$shared_dsn" \
     STANDARD_POSTGRES_TEST_DSN="$shared_dsn" \
+    WORKBENCH_POSTGRES_TEST_DSN="$shared_dsn" \
     ADDP_TEST_POSTGRES_HOST=127.0.0.1 \
     ADDP_TEST_POSTGRES_PORT=15432 \
     ADDP_TEST_POSTGRES_USER=addp \

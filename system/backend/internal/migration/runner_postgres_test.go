@@ -2091,6 +2091,187 @@ func TestWorkbenchCatalogReadForwardMigrationAgainstPostgres(t *testing.T) {
 	}
 }
 
+func TestWorkbenchResourceGrantForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset Workbench Resource Grant migration schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	through106, through107 := migrationFilesBeforeAndThrough(t, "000107_iam_workbench_resource_grant.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through106, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 106: %v", err)
+	}
+	_, tenantID := seedInitializedMigrationTenant(t, db, "workbench-resource-grant", "Workbench Resource Grant")
+	var assetPrincipalID, assetRoleID int64
+	if err := db.QueryRow(`SELECT id FROM system.service_principals WHERE name = 'addp-asset'`).Scan(&assetPrincipalID); err != nil {
+		t.Fatalf("resolve Asset service principal: %v", err)
+	}
+	if err := db.QueryRow(`SELECT id FROM system.roles WHERE tenant_id IS NULL AND role_key = 'tenant.asset_runtime'`).Scan(&assetRoleID); err != nil {
+		t.Fatalf("resolve Asset runtime role: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.tenant_memberships (tenant_id, principal_id, status, source_type, joined_at)
+		VALUES ($1, $2, 'active', 'bootstrap', now())
+		ON CONFLICT (tenant_id, principal_id) DO UPDATE SET status = 'active'
+	`, tenantID, assetPrincipalID); err != nil {
+		t.Fatalf("seed Asset tenant membership: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.role_assignments (
+			principal_id, role_id, scope_type, tenant_id, status, source_type
+		) VALUES ($1, $2, 'tenant', $3, 'active', 'bootstrap')
+	`, assetPrincipalID, assetRoleID, tenantID); err != nil {
+		t.Fatalf("seed Asset runtime assignment: %v", err)
+	}
+	var versionBefore int64
+	if err := db.QueryRow(`
+		SELECT principal.authorization_version
+		FROM system.principals principal
+		JOIN system.service_principals service_principal ON service_principal.id = principal.id
+		WHERE service_principal.name = 'addp-asset'
+	`).Scan(&versionBefore); err != nil {
+		t.Fatalf("read Asset authorization version before migration 107: %v", err)
+	}
+	if err := (&Runner{DSN: dsn, FS: through107, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply Workbench Resource Grant migration 107: %v", err)
+	}
+
+	var version int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read migration 107 version: %v", err)
+	}
+	if version != 107 || dirty {
+		t.Fatalf("migration 107 state=(%d,%t), want (107,false)", version, dirty)
+	}
+	var permissionCount, rolePermissionCount int
+	if err := db.QueryRow(`
+		SELECT COUNT(*) FROM system.permissions
+		WHERE permission_key IN ('workbench.resource_grant.create', 'workbench.resource_grant.revoke')
+		  AND owner_module = 'workbench' AND allowed_scope_types = ARRAY['tenant']::text[]
+		  AND tenant_customizable = false AND delegable = false AND status = 'active'
+	`).Scan(&permissionCount); err != nil {
+		t.Fatalf("count Workbench Resource Grant permissions: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT COUNT(*)
+		FROM system.role_permissions role_permission
+		JOIN system.roles role ON role.id = role_permission.role_id
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE role.role_key = 'tenant.asset_runtime'
+		  AND permission.permission_key IN ('workbench.resource_grant.create', 'workbench.resource_grant.revoke')
+	`).Scan(&rolePermissionCount); err != nil {
+		t.Fatalf("count Asset runtime Workbench Resource Grant permissions: %v", err)
+	}
+	var versionAfter int64
+	if err := db.QueryRow(`
+		SELECT principal.authorization_version
+		FROM system.principals principal
+		JOIN system.service_principals service_principal ON service_principal.id = principal.id
+		WHERE service_principal.name = 'addp-asset'
+	`).Scan(&versionAfter); err != nil {
+		t.Fatalf("read Asset authorization version after migration 107: %v", err)
+	}
+	if permissionCount != 2 || rolePermissionCount != 2 || versionAfter <= versionBefore {
+		t.Fatalf("migration 107 permissions=%d role_permissions=%d authorization_version=%d->%d", permissionCount, rolePermissionCount, versionBefore, versionAfter)
+	}
+}
+
+func TestExecutionAuthorizationLeaseBoundaryForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset execution authorization lease boundary schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	through105, through106 := migrationFilesBeforeAndThrough(t, "000106_iam_execution_authorization_lease_boundary.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through105, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 105: %v", err)
+	}
+
+	principalID, tenantID := seedInitializedMigrationTenant(t, db, "execution-lease-boundary", "Execution Lease Boundary")
+	var membershipID, authorizationVersion int64
+	if err := db.QueryRow(`
+		SELECT membership.id, principal.authorization_version
+		FROM system.tenant_memberships membership
+		JOIN system.principals principal ON principal.id = membership.principal_id
+		WHERE membership.tenant_id = $1 AND membership.principal_id = $2
+	`, tenantID, principalID).Scan(&membershipID, &authorizationVersion); err != nil {
+		t.Fatalf("read execution lease boundary subject: %v", err)
+	}
+
+	insertLeasedDevelopAuthorization := func(executionID string) error {
+		_, insertErr := db.Exec(`
+			INSERT INTO system.execution_authorizations (
+				actor_principal_id, tenant_id, tenant_membership_id,
+				issued_authorization_version, source_type,
+				source_execution_attempt, source_execution_lease_token,
+				execution_id, audience, expires_at, created_at
+			) VALUES (
+				$1, $2, $3, $4, 'user', 1,
+				'10600000-0000-0000-0000-000000000001',
+				$5, 'develop', now() + interval '10 minutes', now()
+			)
+		`, principalID, tenantID, membershipID, authorizationVersion, executionID)
+		return insertErr
+	}
+	if err := insertLeasedDevelopAuthorization("10600000-0000-0000-0000-000000000002"); err == nil {
+		t.Fatal("leased Develop authorization succeeded before migration 106")
+	}
+	if err := (&Runner{DSN: dsn, FS: through106, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply execution authorization lease boundary migration 106: %v", err)
+	}
+	if err := insertLeasedDevelopAuthorization("10600000-0000-0000-0000-000000000003"); err != nil {
+		t.Fatalf("leased Develop authorization after migration 106: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.execution_authorizations (
+			actor_principal_id, tenant_id, tenant_membership_id,
+			issued_authorization_version, source_type,
+			source_execution_attempt, source_execution_lease_token,
+			execution_id, audience, expires_at, created_at
+		) VALUES (
+			$1, $2, $3, $4, 'user', 1, NULL,
+			'10600000-0000-0000-0000-000000000004',
+			'develop', now() + interval '10 minutes', now()
+		)
+	`, principalID, tenantID, membershipID, authorizationVersion); err == nil {
+		t.Fatal("unpaired execution attempt succeeded after migration 106")
+	}
+
+	var version int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read migration 106 version: %v", err)
+	}
+	if version != 106 || dirty {
+		t.Fatalf("migration 106 state=(%d,%t), want (106,false)", version, dirty)
+	}
+}
+
 func TestRunnerAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
@@ -2930,7 +3111,9 @@ func assertAssetServiceRuntimeConstraints(t *testing.T, db *sql.DB) {
 			('tenant.asset_runtime', 'develop.task.read'),
 			('tenant.asset_runtime', 'meta.catalog.read'),
 			('tenant.asset_runtime', 'service.definition.read'),
-			('tenant.asset_runtime', 'standard.metric.read')
+			('tenant.asset_runtime', 'standard.metric.read'),
+			('tenant.asset_runtime', 'workbench.resource_grant.create'),
+			('tenant.asset_runtime', 'workbench.resource_grant.revoke')
 		)
 	`).Scan(&rolePermissionCount); err != nil {
 		t.Fatalf("count Asset runtime role permissions: %v", err)
@@ -2948,7 +3131,7 @@ func assertAssetServiceRuntimeConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&platformAssignmentCount); err != nil {
 		t.Fatalf("count Asset platform runtime assignment: %v", err)
 	}
-	if principalCount != 1 || roleCount != 2 || rolePermissionCount != 5 || platformAssignmentCount != 1 {
+	if principalCount != 1 || roleCount != 2 || rolePermissionCount != 7 || platformAssignmentCount != 1 {
 		t.Fatalf(
 			"Asset runtime catalog principals=%d roles=%d role_permissions=%d platform_assignments=%d",
 			principalCount, roleCount, rolePermissionCount, platformAssignmentCount,

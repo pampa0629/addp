@@ -649,7 +649,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Phase 4A 只允许创建者读取当前 published Revision；真实数据仍由浏览器以当前 User Bearer 调用各 Service | Phase 4A allows only the owner to read the current published Revision; the browser still calls every Service with the current User Bearer",
+                "description": "创建者或持有生效 Resource Grant 的 User 可读取当前 published Revision；真实数据仍由浏览器以当前 User Bearer 调用各 Service | The owner or a User with an effective Resource Grant may read the current published Revision; the browser still calls every Service with the current User Bearer",
                 "produces": [
                     "application/json"
                 ],
@@ -776,6 +776,160 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "workbench.catalog.read"
+                ]
+            }
+        },
+        "/runtime/resource-grants/{source_identity}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "使用 Asset Authorization ID 作为幂等来源，为指定 User 建立 Data Application execute Allow Rule；只允许 addp-asset | Use the Asset Authorization ID as the idempotent source and create a Data Application execute Allow Rule for one User; restricted to addp-asset",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Workbench Resource Grants"
+                ],
+                "summary": "履约 Asset 资源授权 | Fulfill an Asset resource grant",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Asset Authorization ID",
+                        "name": "source_identity",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整授权目标 | Complete grant target",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_workbench_internal_models.AssetResourceGrantRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已生效授权 | Effective grant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_workbench_internal_models.AssetResourceGrantResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "非 addp-asset 或权限不足 | Wrong client or insufficient permission",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "来源身份冲突或已撤销 | Source identity conflict or already revoked",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "workbench.resource_grant.create"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "使用完整授权目标写入可重放撤销墓碑，阻止延迟的旧履约重新放开访问；只允许 addp-asset | Persist a replayable revocation tombstone from the complete target so delayed fulfillment cannot reopen access; restricted to addp-asset",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Workbench Resource Grants"
+                ],
+                "summary": "撤销 Asset 资源授权 | Revoke an Asset resource grant",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Asset Authorization ID",
+                        "name": "source_identity",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整授权目标 | Complete grant target",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_workbench_internal_models.AssetResourceGrantRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已撤销授权 | Revoked grant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_workbench_internal_models.AssetResourceGrantResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "非 addp-asset 或权限不足 | Wrong client or insufficient permission",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "来源身份冲突 | Source identity conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "workbench.resource_grant.revoke"
                 ]
             }
         },
@@ -1159,6 +1313,69 @@
                 },
                 "total_pages": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_workbench_internal_models.AssetResourceGrantRequest": {
+            "type": "object",
+            "required": [
+                "permission",
+                "resource_id",
+                "resource_type",
+                "subject_id",
+                "subject_type"
+            ],
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "permission": {
+                    "type": "string",
+                    "enum": [
+                        "workbench.data_application.execute"
+                    ]
+                },
+                "resource_id": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string",
+                    "enum": [
+                        "data_application"
+                    ]
+                },
+                "subject_id": {
+                    "type": "string"
+                },
+                "subject_type": {
+                    "type": "string",
+                    "enum": [
+                        "user"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_workbench_internal_models.AssetResourceGrantResponse": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "revoked_at": {
+                    "type": "string"
+                },
+                "source_identity": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "effective",
+                        "revoked"
+                    ]
                 }
             }
         },

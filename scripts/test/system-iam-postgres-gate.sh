@@ -16,7 +16,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         *)
-            echo "usage: $0 [--package iam|oauth|api|migration] [--test catalog-reference-candidates|execution-audience|portal-runtime-removal|service-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|quality-catalog-read|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider]" >&2
+            echo "usage: $0 [--package iam|oauth|api|migration] [--test catalog-reference-candidates|execution-audience|execution-authorization-lease-boundary|portal-runtime-removal|service-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|quality-catalog-read|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider]" >&2
             exit 2
             ;;
     esac
@@ -79,6 +79,13 @@ case "$TEST_FILTER" in
         fi
         test_pattern='^TestExecutionAudienceForwardMigrationAgainstPostgres$'
         ;;
+    execution-authorization-lease-boundary)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "execution-authorization-lease-boundary test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestExecutionAuthorizationLeaseBoundaryForwardMigrationAgainstPostgres$'
+        ;;
     portal-runtime-removal)
         if [ "$PACKAGE_FILTER" != "migration" ]; then
             echo "portal-runtime-removal test requires --package migration" >&2
@@ -113,6 +120,13 @@ case "$TEST_FILTER" in
             exit 2
         fi
         test_pattern='^TestWorkbenchCatalogReadForwardMigrationAgainstPostgres$'
+        ;;
+    workbench-resource-grant)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "workbench-resource-grant test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestWorkbenchResourceGrantForwardMigrationAgainstPostgres$'
         ;;
     model-catalog-read)
         if [ "$PACKAGE_FILTER" != "migration" ]; then

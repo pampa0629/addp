@@ -139,11 +139,11 @@ Department 表达长期组织责任，Project Group 表达阶段性协作，User
 - Department 或 User 变为不可引用时，Catalog 保留责任历史、标记待移交并形成治理队列；修复仍通过 CatalogEntry 完整责任聚合完成；
 - Project Group 可以拥有目录集合、草稿、任务和临时协作范围；
 - “我的目录”由当前 User 的责任、任务、收藏、关注和最近访问动态形成；
-- 第一阶段不新增统一 Workspace 实体。
+- 当前跨模块评估结论是不新增统一 Workspace 实体，不预建模块或 `workspace_id`。
 
 第一阶段实际落地时，“我的目录”由责任、收藏和关注三种 Catalog 关系查询组成；治理任务沿用责任治理队列，最近访问沿用 Console 最近访问，Catalog 不复制这两类 owner 事实。收藏和关注是当前 User 的个人标记，不改变 CatalogEntry；Project Group 目录集合是独立协作聚合，集合成员关系也不改变 CatalogEntry。集合访问必须同时满足有效项目组成员关系、精确 Scope Permission 和条目自身目录可见性。Project Group 名称是 System 的可变组织事实，Catalog 只按 AuthContext 中已授权的 membership ID 动态精确解析；名称既不进入 Token，也不复制到 Catalog。
 
-只有当 Catalog、Develop、Model、Quality 等多个模块确实需要共享同一个工作空间身份、成员、生命周期、工具环境和产物集合时，才重新评估独立 Workspace 能力。
+只有当 Catalog、Develop、Model、Quality 等多个 owner 模块在同一端到端用例中确实需要共享同一稳定身份、成员边界、创建/关闭生命周期、工具或运行环境和跨模块产物集合，且 System Project Group 加模块自有聚合无法在不复制事实的前提下表达时，才重新评估独立 Workspace 能力。引擎插件中的 `SpatialWorkspace` 是 Engine Instance 技术能力事实，与企业协作 Workspace 无关。
 
 ## 六、目录视图与搜索
 

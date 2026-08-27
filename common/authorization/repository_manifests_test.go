@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 391 {
-		t.Fatalf("descriptor count = %d, want 391", len(descriptors))
+	if len(descriptors) != 393 {
+		t.Fatalf("descriptor count = %d, want 393", len(descriptors))
 	}
 	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "workbench.view.update" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
@@ -172,6 +172,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.asset_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "tenant.asset_runtime", []string{
 		"catalog.reference.read",
+		"workbench.resource_grant.create",
+		"workbench.resource_grant.revoke",
 	})
 	assertRepositoryRolePermissions(t, roles, "platform.develop_runtime", []string{
 		"system.runtime_registry.update",

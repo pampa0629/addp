@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -119,6 +120,52 @@ func TestBatchPublishRejectsDuplicateAssetIDs(t *testing.T) {
 	}
 }
 
+func TestApplicationAssetRequiresSingleWorkbenchDataApplication(t *testing.T) {
+	db := openAssetAggregateTestDB(t)
+	typeDefinition := models.TypeDefinition{TenantID: 0, Name: "Data application", Code: "application", Enabled: true}
+	if err := db.Create(&typeDefinition).Error; err != nil {
+		t.Fatal(err)
+	}
+	entryID := uuid.New()
+	applicationID := uuid.New()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		var payload struct {
+			IDs []string `json:"ids"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		results := make([]map[string]any, 0, len(payload.IDs))
+		for _, id := range payload.IDs {
+			results = append(results, map[string]any{
+				"id": id, "found": true, "selectable": true, "publishable": true, "version": "1",
+				"entry_type": "data_application", "source_module": "workbench", "source_type": "data_application", "source_identity": applicationID.String(),
+			})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"results": results})
+	}))
+	defer server.Close()
+	tokens := commonClient.ServiceTokenProviderFunc(func(_ context.Context, _ uint) (string, error) { return "asset-token", nil })
+	assetService := NewAssetService(db, commonClient.NewCatalogClient(server.URL, tokens, server.Client()), nil)
+
+	created, err := assetService.Create(context.Background(), 7, 11, &CreateAssetReq{
+		Name: "Orders app", TypeID: typeDefinition.ID,
+		Components: []AssetComponentInput{{CatalogEntryID: entryID.String(), Role: models.AssetComponentRolePrimary}},
+	})
+	if err != nil || created.TypeCode != "application" || len(created.Components) != 1 {
+		t.Fatalf("created=%#v err=%v", created, err)
+	}
+	if _, err := assetService.Create(context.Background(), 7, 11, &CreateAssetReq{
+		Name: "Invalid app", TypeID: typeDefinition.ID,
+		Components: []AssetComponentInput{
+			{CatalogEntryID: entryID.String(), Role: models.AssetComponentRolePrimary},
+			{CatalogEntryID: uuid.NewString(), Role: models.AssetComponentRoleSupporting, SortOrder: 1},
+		},
+	}); !errors.Is(err, ErrInvalidAssetAggregate) {
+		t.Fatalf("multi-component application error = %v", err)
+	}
+}
+
 func TestAssetAggregateRejectsInvalidComponentShapeBeforeCatalogCall(t *testing.T) {
 	db := openAssetAggregateTestDB(t)
 	service := NewAssetService(db, nil, nil)
@@ -127,7 +174,7 @@ func TestAssetAggregateRejectsInvalidComponentShapeBeforeCatalogCall(t *testing.
 		{{CatalogEntryID: uuid.NewString(), Role: models.AssetComponentRoleSupporting}},
 		{{CatalogEntryID: uuid.NewString(), Role: models.AssetComponentRolePrimary}, {CatalogEntryID: uuid.NewString(), Role: models.AssetComponentRolePrimary}},
 	} {
-		if _, err := service.validateComponents(context.Background(), 7, components, false); err != ErrInvalidAssetAggregate {
+		if _, err := service.validateComponents(context.Background(), 7, 1, components, false); err != ErrInvalidAssetAggregate {
 			t.Fatalf("components %#v error = %v", components, err)
 		}
 	}
@@ -145,7 +192,7 @@ func openAssetAggregateTestDB(t *testing.T) *gorm.DB {
 	for _, statement := range []string{
 		`CREATE TABLE asset.type_definitions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL, code TEXT NOT NULL,
-			auth_handler TEXT, entry_type TEXT, icon_url TEXT, description TEXT, enabled BOOLEAN, sort_order INTEGER,
+			icon_url TEXT, description TEXT, enabled BOOLEAN, sort_order INTEGER,
 			created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE asset.catalogs (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL, parent_id INTEGER,

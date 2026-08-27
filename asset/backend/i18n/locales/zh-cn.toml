@@ -44,13 +44,13 @@ other = "所选企业目录条目已失效或不可组合"
 other = "所选企业目录条目尚未完成业务编目，不能发布资产"
 
 [asset.application.approve_success]
-other = "审批通过"
+other = "审批通过，正在下发授权"
 
 [asset.application.reject_success]
 other = "已驳回"
 
 [asset.authorization.revoke_success]
-other = "授权已撤销"
+other = "撤销请求已提交"
 
 [asset.rating.missing_asset_id]
 other = "缺少 asset_id 参数"

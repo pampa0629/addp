@@ -29,10 +29,14 @@
 
         <!-- 状态按钮 -->
         <div class="header-actions">
-          <el-tooltip v-if="applyStatus === 'pending'" :content="t('portal.assetDetail.pendingTooltip')" placement="top">
+          <el-tooltip v-if="accessStatus.status === 'pending'" :content="t('portal.assetDetail.pendingTooltip')" placement="top">
             <el-button type="info" disabled size="large">{{ t('portal.assetDetail.reviewing') }}</el-button>
           </el-tooltip>
-          <el-button v-else-if="applyStatus === 'approved'" type="success" disabled size="large">{{ t('portal.assetDetail.authorized') }}</el-button>
+          <el-button v-else-if="accessStatus.status === 'fulfilling'" type="warning" disabled size="large">{{ t('portal.assetDetail.fulfilling') }}</el-button>
+          <el-button v-else-if="accessStatus.status === 'revoking'" type="warning" disabled size="large">{{ t('portal.assetDetail.revoking') }}</el-button>
+          <el-button v-else-if="accessStatus.status === 'effective'" type="success" size="large" @click="openDataApplication">
+            {{ t('portal.assetDetail.openApplication') }}
+          </el-button>
           <el-button v-else type="primary" size="large" @click="applyDialogVisible = true">
             {{ t('portal.assetDetail.applyUsage') }}
           </el-button>
@@ -99,7 +103,7 @@
               </span>
             </span>
             <el-button
-              v-if="applyStatus === 'approved'"
+              v-if="accessStatus.status === 'effective'"
               type="primary"
               size="small"
               plain
@@ -202,7 +206,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, FolderOpened } from '@element-plus/icons-vue'
-import { formatDate } from '@common-ui'
+import { formatDate, openConsoleRoute } from '@common-ui'
 import { assetAPI } from '../api/portal'
 import { useAssetType } from '../composables/useAssetType'
 import { assetDetailReturnTarget } from '../utils/routeState'
@@ -214,7 +218,7 @@ const router = useRouter()
 
 const loading = ref(false)
 const asset = ref(null)
-const applyStatus = ref('none')
+const accessStatus = ref({ status: 'none', open_path: '' })
 
 const applyDialogVisible = ref(false)
 const submitting = ref(false)
@@ -316,12 +320,15 @@ async function handleBack() {
 async function fetchApplyStatus() {
   try {
     const data = await assetAPI.getApplyStatus(route.params.id)
-    applyStatus.value = data.status || 'none'
-    if (applyStatus.value === 'approved') {
-    }
+    accessStatus.value = { status: data.status || 'none', open_path: data.open_path || '' }
   } catch {
-    applyStatus.value = 'none'
+    accessStatus.value = { status: 'none', open_path: '' }
   }
+}
+
+async function openDataApplication() {
+  if (!accessStatus.value.open_path) return
+  await openConsoleRoute(accessStatus.value.open_path, { source: 'addp-portal' })
 }
 
 async function submitApply() {
@@ -333,7 +340,7 @@ async function submitApply() {
       await assetAPI.apply(route.params.id, applyForm.value)
       ElMessage.success(t('portal.assetDetail.applySubmitted'))
       applyDialogVisible.value = false
-      applyStatus.value = 'pending'
+      accessStatus.value = { status: 'pending', open_path: '' }
       applyForm.value = { reason: '', duration_day: 30 }
     } catch (err) {
       ElMessage.error(err.message || t('portal.assetDetail.applyFailed'))
@@ -345,7 +352,7 @@ async function submitApply() {
 
 watch(() => route.params.id, async () => {
   asset.value = null
-  applyStatus.value = 'none'
+  accessStatus.value = { status: 'none', open_path: '' }
   ratings.value = []
   myRating.value = null
   ratingStats.value = { avg_score: 0, count: 0 }

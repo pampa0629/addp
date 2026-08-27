@@ -18,7 +18,7 @@ case "$database" in *test*|*disposable*) ;; *) echo "CATALOG_POSTGRES_TEST_DSN m
 
 cd "$ROOT_DIR/catalog/backend"
 go test ./internal/repository -run '^TestCatalogMigrateAgainstPostgres$' -count=1 -v 2>&1 | tee "$WORK_DIR/catalog.log"
-go test ./internal/service -run '^TestPostgres(RecommendedSuccessorUsesCatalogAggregateAndTenantBoundary|GovernanceCoverageAndSourceResolution)$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/catalog.log"
+go test ./internal/service -run '^TestPostgres(RecommendedSuccessorUsesCatalogAggregateAndTenantBoundary|GovernanceCoverageAndSourceResolution|BatchGovernanceUsesPerEntryVersionsAndRollsBackAtomically)$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/catalog.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/catalog.log"; then
     echo "Catalog PostgreSQL gate refuses skipped tests" >&2
     exit 1

@@ -22,7 +22,7 @@ func Migrate(db *gorm.DB) error {
 				return fmt.Errorf("acquire workbench schema lock: %w", err)
 			}
 		}
-		if err := tx.AutoMigrate(&models.View{}, &models.DataApplication{}, &models.DataApplicationRevision{}, &models.CatalogResourceChangeRow{}); err != nil {
+		if err := tx.AutoMigrate(&models.View{}, &models.DataApplication{}, &models.DataApplicationRevision{}, &models.CatalogResourceChangeRow{}, &models.ResourceAccessRule{}); err != nil {
 			return fmt.Errorf("auto migrate workbench schema: %w", err)
 		}
 		if tx.Dialector.Name() != "postgres" {
@@ -49,6 +49,17 @@ func Migrate(db *gorm.DB) error {
 			`ALTER TABLE workbench.data_application_revisions ADD CONSTRAINT fk_workbench_application_revisions_application FOREIGN KEY (application_id, tenant_id) REFERENCES workbench.data_applications(id, tenant_id) ON DELETE RESTRICT`,
 			`CREATE INDEX IF NOT EXISTS idx_workbench_applications_owner_updated ON workbench.data_applications (tenant_id, owner_user_id, updated_at DESC, id)`,
 			`CREATE INDEX IF NOT EXISTS idx_workbench_application_revisions_current ON workbench.data_application_revisions (tenant_id, application_id, revision_number DESC)`,
+			`ALTER TABLE workbench.resource_access_rules DROP CONSTRAINT IF EXISTS ck_workbench_resource_access_rule_resource`,
+			`ALTER TABLE workbench.resource_access_rules ADD CONSTRAINT ck_workbench_resource_access_rule_resource CHECK (resource_type = 'data_application' AND resource_id IS NOT NULL)`,
+			`ALTER TABLE workbench.resource_access_rules DROP CONSTRAINT IF EXISTS ck_workbench_resource_access_rule_subject`,
+			`ALTER TABLE workbench.resource_access_rules ADD CONSTRAINT ck_workbench_resource_access_rule_subject CHECK (subject_type = 'user' AND subject_id > 0)`,
+			`ALTER TABLE workbench.resource_access_rules DROP CONSTRAINT IF EXISTS ck_workbench_resource_access_rule_permission`,
+			`ALTER TABLE workbench.resource_access_rules ADD CONSTRAINT ck_workbench_resource_access_rule_permission CHECK (permission = 'workbench.data_application.execute')`,
+			`ALTER TABLE workbench.resource_access_rules DROP CONSTRAINT IF EXISTS ck_workbench_resource_access_rule_effect`,
+			`ALTER TABLE workbench.resource_access_rules ADD CONSTRAINT ck_workbench_resource_access_rule_effect CHECK (effect IN ('allow', 'deny'))`,
+			`ALTER TABLE workbench.resource_access_rules DROP CONSTRAINT IF EXISTS ck_workbench_resource_access_rule_source`,
+			`ALTER TABLE workbench.resource_access_rules ADD CONSTRAINT ck_workbench_resource_access_rule_source CHECK (source_module = 'asset' AND source_identity ~ '^[1-9][0-9]*$')`,
+			`ALTER TABLE workbench.resource_access_rules DROP CONSTRAINT IF EXISTS ck_workbench_resource_access_rule_expiry`,
 			`CREATE TABLE IF NOT EXISTS workbench.data_migrations (
 				version BIGINT PRIMARY KEY,
 				name TEXT NOT NULL,

@@ -54,6 +54,17 @@ type updateEntryRequest struct {
 	RecommendedSuccessorEntryID *string                         `json:"recommended_successor_entry_id" format:"uuid"`
 }
 
+type batchGovernanceEntryRequest struct {
+	ID      string `json:"id" binding:"required" format:"uuid"`
+	Version int64  `json:"version" binding:"required,gt=0" minimum:"1"`
+}
+
+type batchGovernanceRequest struct {
+	Entries     []batchGovernanceEntryRequest `json:"entries" binding:"required,min=1,max=200,dive" minItems:"1" maxItems:"200"`
+	Operation   string                        `json:"operation" binding:"required,oneof=assign_primary_domain assign_accountable_department" enums:"assign_primary_domain,assign_accountable_department"`
+	ReferenceID string                        `json:"reference_id" binding:"required"`
+}
+
 type rebindSourceRequest struct {
 	TargetVersion         int64  `json:"target_version" minimum:"1"`
 	TemporaryEntryID      string `json:"temporary_entry_id"`
@@ -498,7 +509,7 @@ func (h *Handler) ListGovernanceTasks(c *gin.Context) {
 // @Param primary_domain_id query string false "主业务域稳定 ID | Primary Domain stable ID"
 // @Param accountable_department_id query string false "责任部门稳定 ID | Accountable Department stable ID"
 // @Param source_engine_id query string false "来源引擎稳定 ID | Source engine stable ID"
-// @Param coverage_dimension query string false "治理缺口维度；必须与 view=inventory、coverage_state=missing 同时使用 | Governance gap dimension; requires view=inventory and coverage_state=missing" Enums(business_definition,primary_domain,accountability,glossary,component_element)
+// @Param coverage_dimension query string false "治理缺口维度；必须与 view=inventory、coverage_state=missing 同时使用 | Governance gap dimension; requires view=inventory and coverage_state=missing" Enums(business_definition,primary_domain,accountable_department,business_owner,data_steward,glossary,component_element)
 // @Param coverage_state query string false "治理覆盖状态；第一阶段仅支持 missing | Governance coverage state; only missing is supported in the first release" Enums(missing)
 // @Param page query int false "页码，默认 1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认 20，最大 200 | Page size, default 20 and maximum 200"
@@ -780,6 +791,57 @@ func (h *Handler) UpdateEntry(c *gin.Context) {
 	c.JSON(http.StatusOK, entry)
 }
 
+// BatchGovernanceEntries 原子批量分配主业务域或责任部门。
+// @Summary 批量治理企业目录条目 | Batch-govern enterprise catalog entries
+// @Description 对 1 到 200 个显式选择且分别携带 version 的 CatalogEntry 原子分配同一个主业务域或责任部门；按稳定顺序锁定全部条目，任一失败整批回滚；不接受筛选结果全选；Model 业务实体/逻辑模型和 Standard 指标的主业务域仍由专业模块维护 | Atomically assign one primary domain or accountable department to 1–200 explicitly selected CatalogEntries, each with its own version; all entries are locked in stable order and any failure rolls back the entire batch; filter-wide selection is not accepted; primary domains of Model business entities/logical models and Standard metrics remain owner-managed
+// @Tags Catalog
+// @Accept json
+// @Produce json
+// @Param request body batchGovernanceRequest true "显式成员批量治理请求；跨模块 BIGINT ID 使用规范十进制字符串 | Explicit-member batch governance request; cross-module BIGINT IDs use canonical decimal strings"
+// @Success 200 {object} service.BatchGovernanceResult "批次 ID 与按请求顺序返回的新版本 | Batch ID and new versions in request order"
+// @Failure 400 {object} map[string]interface{} "请求无效 | Invalid request"
+// @Failure 401 {object} map[string]interface{} "未认证 | Unauthorized"
+// @Failure 403 {object} map[string]interface{} "缺少资源盘点或目录维护权限 | Missing inventory or catalog update permission"
+// @Failure 404 {object} map[string]interface{} "任一条目不存在或不属于当前租户 | Any entry is missing or outside the current tenant"
+// @Failure 409 {object} map[string]interface{} "版本、状态、引用或专业 owner 边界冲突 | Version, state, reference, or professional-owner boundary conflict"
+// @Failure 503 {object} map[string]interface{} "Standard 或 System 引用校验不可达 | Standard or System reference validation unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["catalog.inventory.read","catalog.entry.update"]
+// @Router /entries/batch_governance [post]
+// @Security BearerAuth
+func (h *Handler) BatchGovernanceEntries(c *gin.Context) {
+	tenantID, ok := commonAuth.TenantIDFromGin(c)
+	if !ok {
+		respondError(c, http.StatusBadRequest, service.ErrInvalidBatchGovernance)
+		return
+	}
+	var request batchGovernanceRequest
+	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil {
+		respondError(c, http.StatusBadRequest, service.ErrInvalidBatchGovernance)
+		return
+	}
+	input, err := mapBatchGovernanceRequest(request)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	authContext, ok := commonAuth.AuthContextFromGin(c)
+	if !ok {
+		respondError(c, http.StatusUnauthorized, service.ErrInvalidBatchGovernance)
+		return
+	}
+	h.sync.ObserveTenant(tenantID)
+	result, err := h.entries.BatchGovernance(c.Request.Context(), tenantID, input, service.UpdateEntryActor{
+		Type: authContext.Principal.Type,
+		ID:   authContext.Principal.ID,
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
 // RebindSource 将新发现的 DataItem 来源显式重绑到既有企业目录身份。
 // @Summary 重绑目录来源 | Rebind catalog source
 // @Description 仅允许把 active + discovered + inventory 且无人工作业的临时条目合并到当前来源为 missing 的既有条目；请求必须携带两个聚合版本、原因和人工证据 | Only merge an active discovered inventory temporary entry without human work into an existing entry whose current source is missing; both aggregate versions, a reason, and human evidence are required
@@ -972,6 +1034,35 @@ func mapUpdateEntryRequest(request updateEntryRequest) (service.UpdateEntryInput
 	return input, nil
 }
 
+func mapBatchGovernanceRequest(request batchGovernanceRequest) (service.BatchGovernanceInput, error) {
+	input := service.BatchGovernanceInput{
+		Operation: request.Operation,
+		Entries:   make([]service.BatchGovernanceEntryInput, 0, len(request.Entries)),
+	}
+	referenceID, err := parseCanonicalPositiveInt64(request.ReferenceID)
+	if err != nil {
+		return input, service.ErrInvalidBatchGovernance
+	}
+	input.ReferenceID = referenceID
+	seen := make(map[uuid.UUID]struct{}, len(request.Entries))
+	for _, member := range request.Entries {
+		id, parseErr := uuid.Parse(member.ID)
+		if parseErr != nil || id == uuid.Nil || id.String() != member.ID || member.Version <= 0 {
+			return input, service.ErrInvalidBatchGovernance
+		}
+		if _, exists := seen[id]; exists {
+			return input, service.ErrInvalidBatchGovernance
+		}
+		seen[id] = struct{}{}
+		input.Entries = append(input.Entries, service.BatchGovernanceEntryInput{ID: id, Version: member.Version})
+	}
+	if len(input.Entries) < 1 || len(input.Entries) > service.BatchGovernanceMaxEntries ||
+		(input.Operation != service.BatchGovernanceAssignPrimaryDomain && input.Operation != service.BatchGovernanceAssignAccountableDepartment) {
+		return input, service.ErrInvalidBatchGovernance
+	}
+	return input, nil
+}
+
 func parseCanonicalPositiveInt64(value string) (int64, error) {
 	parsed, err := strconv.ParseInt(value, 10, 64)
 	if err != nil || parsed <= 0 || strconv.FormatInt(parsed, 10) != value {
@@ -1136,6 +1227,10 @@ func respondError(c *gin.Context, status int, err error) {
 		status = http.StatusConflict
 		message = commoni18n.T(c, catalogi18n.MsgEntryNotEditable)
 		errorCode = "catalog_entry_not_editable"
+	case errors.Is(err, service.ErrBatchGovernanceUnsupportedEntry):
+		status = http.StatusConflict
+		message = commoni18n.T(c, catalogi18n.MsgBatchGovernanceUnsupportedEntry)
+		errorCode = "catalog_batch_governance_unsupported_entry"
 	case errors.Is(err, service.ErrInvalidGovernanceTransition):
 		status = http.StatusConflict
 		message = commoni18n.T(c, catalogi18n.MsgInvalidTransition)
@@ -1169,6 +1264,10 @@ func respondError(c *gin.Context, status int, err error) {
 		message = commoni18n.T(c, catalogi18n.MsgInvalidRecommendedSuccessor)
 		errorCode = "catalog_recommended_successor_invalid"
 	case errors.Is(err, service.ErrInvalidEntryUpdate):
+		status = http.StatusBadRequest
+		message = commoni18n.T(c, catalogi18n.MsgInvalidParams)
+		errorCode = "invalid_request"
+	case errors.Is(err, service.ErrInvalidBatchGovernance):
 		status = http.StatusBadRequest
 		message = commoni18n.T(c, catalogi18n.MsgInvalidParams)
 		errorCode = "invalid_request"

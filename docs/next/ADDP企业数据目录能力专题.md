@@ -2,7 +2,7 @@
 
 更新时间：2026-08-27
 
-状态：阶段 0、阶段 1、阶段 2、阶段 3 与阶段 4 的代码收敛已完成；阶段 5 正在持续推进，Model、Standard Metric、Service QueryService 与经过筛选的 Develop 成果已完成
+状态：阶段 0 至阶段 6 的架构、实现与确定性门禁已收口；专用 macOS T4 和停机恢复场景作为外部条件验证继续保留，不阻塞本专题完成
 
 ## 一、文档定位
 
@@ -392,11 +392,18 @@ Project Group 关闭时，临时目录授权和协作任务应失效或移交，
 
 ### 10.5 是否新增统一 Workspace
 
-第一阶段不新增全局 Workspace 模块，也不在 CatalogEntry 上增加 `workspace_id`。
+截至 2026-08-27 的跨模块评估结论是：当前不新增全局 Workspace 模块，也不在 CatalogEntry 或 Develop、Model、Quality 的专业实体上增加 `workspace_id`。这是已完成的架构判断，不是待实现的暂缓项。
 
 Catalog 可以拥有 Project Group 范围的目录集合、草稿和任务，这些事实只引用 System 中的 Project Group。个人工作视图按 User 动态计算。
 
-只有当 Develop、Model、Quality、Catalog 等多个模块都明确需要共享同一个工作空间身份、成员、生命周期、工具环境和产物集合时，才重新评估独立 Workspace 能力。即使新增，也不应默认放入 System/IAM；System 只继续拥有身份、组织和授权事实。
+本轮核对表明：
+
+- System Project Group 已经权威表达跨部门成员与授权作用域；
+- Catalog Collection 已经表达项目组对 CatalogEntry 的命名协作集合，不改变目录身份、责任或底层访问权；
+- Develop DevTask、Model Entity / LogicalTable 与 Quality RuleApplication / CheckTask 拥有不同的专业聚合根、状态机、执行环境和清理边界，当前没有一个需要四个模块共同维护的稳定协作身份或统一产物生命周期；
+- 引擎插件中的 `SpatialWorkspace` 是具体 Engine Instance 的厂商空间能力事实，与企业协作 Workspace 无关，不得复用或合并。
+
+只有当出现一个明确的端到端用例，并且多个 owner 模块确实需要共享同一稳定身份、成员边界、创建/关闭生命周期、工具或运行环境以及跨模块产物集合，而 Project Group 加模块自有聚合无法在不复制事实的前提下表达时，才重新评估独立 Workspace 能力。重新评估必须先修订术语和概念规范；即使新增，也不应默认放入 System/IAM 或 Catalog，System 只继续拥有身份、组织和授权事实。
 
 ## 十一、目录组织和用户视图
 
@@ -616,9 +623,22 @@ Catalog 是自身目录事实和目录操作权限的 owner；底层资源内容
 - [x] 实现已固化契约的联邦影响分析与来源身份导航，不复制 owner 关系边；
 - [x] 打通治理覆盖率到权威缺口列表和现有编目编辑器的处置闭环；不新增覆盖率明细表、治理任务实体或搜索投影字段；
 - [x] 将企业目录浏览收敛为“主业务域 + 上下文责任部门/资源类型分面 + 权威分页列表”；复用 `/entries/facets`，不新增企业目录树实体或第二页面路线；
-- [ ] 根据真实跨模块协作需求评估统一 Workspace。
+- [x] 在资源盘点的业务域导航中增加“待归类”虚拟治理入口；严格复用 `primary_domain=missing` 权威缺口，不创建特殊 Domain 或第二查询路线；
+- [x] 将复合 `accountability` 覆盖率拆为责任部门、业务责任人、数据管理员三个原子维度，并在责任部门导航增加“待分配部门”虚拟治理入口；
+- [x] 根据真实跨模块协作需求评估统一 Workspace；结论为当前不新增，不预建模块、实体或 `workspace_id`。
 
 完成门槛：每类对象都有明确 owner、稳定引用、同步契约和权限边界。
+
+### 阶段6：规模化治理操作
+
+- [x] 资源盘点支持当前页显式多选，不提供“全部匹配筛选”或隐式全选；单次最多 200 条；
+- [x] 实现主业务域、责任部门两种原子批量分配命令，目标只能通过 owner 动态名称候选选择，不允许手工输入 ID；
+- [x] 每个 CatalogEntry 携带独立 `version`，服务端稳定排序加锁、任一失败整批回滚，成功逐条递增版本；
+- [x] Model 业务实体/逻辑模型与 Standard 指标继续由专业 owner 维护主业务域，混入批次时整体拒绝；
+- [x] 每条成功变更写独立审计并共享 `batch_id`，同步投递搜索投影任务；
+- [x] 补齐后端事务门禁、前端交互测试、Swagger、统一 Online/CI 登记和专题验证记录。
+
+完成门槛：治理人员可以在不暴露稳定 ID、不复制 owner 事实、不引入 Tenant 级热点锁的前提下，安全处置一批明确选中的目录治理缺口。
 
 ## 十八、旧路线迁移结果与剩余缺口
 
@@ -949,21 +969,21 @@ Catalog 新模块实现必须同时覆盖：
 
 ### 2026-08-27：治理覆盖率与联邦影响分析实现
 
-- `GET /api/v1/catalog/governance/coverage` 固定使用资源盘点权限，单条数据库聚合语句直接统计 active CatalogEntry 的治理状态和五个治理维度，不新增覆盖率表、缓存投影或后台同步；组件数据元只以具有 active CatalogComponent 的条目为分母，无组件的专业条目明确计为不适用；
-- 业务定义要求业务名称与说明同时存在，责任覆盖要求责任部门、业务责任人和数据管理员三项同时有效；主业务域允许 Catalog 自有 primary Domain 或 Model / Standard 最近观察摘要中的 owner `domain_id`，页面明确该口径不代表数据质量、底层授权或资产发布资格；
+- `GET /api/v1/catalog/governance/coverage` 固定使用资源盘点权限，单条数据库聚合语句直接统计 active CatalogEntry 的治理状态和七个治理维度，不新增覆盖率表、缓存投影或后台同步；组件数据元只以具有 active CatalogComponent 的条目为分母，无组件的专业条目明确计为不适用；
+- 业务定义要求业务名称与说明同时存在；责任部门、业务责任人和数据管理员分别使用可独立处置的原子覆盖维度，`curated` 状态仍同时要求三项完整。主业务域允许 Catalog 自有 primary Domain 或 Model / Standard 最近观察摘要中的 owner `domain_id`，页面明确该口径不代表数据质量、底层授权或资产发布资格；
 - Console 新增 `/catalog/governance/coverage`，只向具有 `catalog.inventory.read` 的用户展示菜单与全局搜索结果；页面显示有效条目、治理状态分布、适用分母、未覆盖数和覆盖率，不把 998 个盘点数据项再次平铺成另一个列表；
 - 新增 `POST /api/v1/catalog/entries/resolve-sources`，最多按 200 个 `{source_module,source_type,source_identity}` 精确查询 Catalog 当前来源绑定。接口只复用当前 User 的目录可见性，具有盘点权限时可解析 `inventory` 条目，否则盘点条目自然不可见；跨 Tenant、不存在和不可见统一 `found=false`；
 - Catalog 详情把推荐继任、Model / Standard 专业关系和 Meta 血缘分别标注为联邦影响分析的治理、专业和血缘分区。专业节点使用 owner 正整数稳定身份、Meta 节点使用 owner 返回的 fingerprint 动态解析 CatalogEntry 导航；owner 图仍由当前 User Token 直连查询，Catalog Backend 不代理、不复制边，也没有新增通用关系表；
 - 定向审查后将治理覆盖率从多次计数收敛为同一条数据库聚合，避免并发更新造成分母和分子来自不同快照；专业关系缺少显示名时使用明确占位，不把资源 ID 回退为业务文案；
 - Catalog Backend 全量 Go 测试、Catalog PostgreSQL 迁移/推荐继任/治理覆盖率与来源解析门禁、Catalog Frontend、Console Frontend、Catalog 20 个公开路由 Swagger 覆盖及全仓授权门禁均已通过；完整 `make test-module MODULE=catalog` 使用规定的本地 `addp_test` DSN 通过；
-- 用户统一重启后，System、Catalog、Gateway Ready 均为 `200`。`GET /api/v1/catalog/governance/coverage` 返回 `200`，页面动态展示 998 个 active 条目：主业务域覆盖 19 个（1.9%），组件数据元适用 189 个、不适用 809 个，其余三个治理维度当前覆盖均为 0；页面没有产生第二份条目清单或覆盖率投影；
+- 原五维契约运行态验收时，System、Catalog、Gateway Ready 均为 `200`，页面动态展示 998 个 active 条目且没有产生第二份条目清单或覆盖率投影；责任维度拆分后的七维契约不沿用该旧响应证据，留待下一次正常统一重启后重新读取当前事实；
 - Model Entity“订单”当前关系动态返回“订单—客户”一对多关系，两个 owner 稳定 ID 均解析到可见 CatalogEntry，并成功跳转到“客户”；Meta DataItem `test` 通过 fingerprint 解析出血缘图中的三个其他目录条目，4 个节点、3 条关系保持由 Meta 当前 User Token 查询，点击成功跳转到 `public_test.parquet`。Gateway 中治理覆盖率和四次来源解析请求均为 `200`；
 - 运行态复验发现 Element Plus 表格切换时会调用占位行插槽，新页面直接拼接占位值曾产生 `dimensions.undefined`、`source.undefined` i18n warning。现已在渲染边界使用空值安全标签函数并新增回归测试；Catalog Frontend 11 个测试文件 40 项测试与生产构建通过，全新浏览器页重复覆盖率、血缘加载和跨条目跳转后 warning/error 均为 0。
 
 ### 2026-08-27：治理覆盖率到权威缺口处置闭环
 
 - 覆盖率页面的“未覆盖”数字直接下钻到既有企业资源盘点列表，沿用 CatalogEntry 详情和现有编目编辑器；不新增覆盖率明细表、治理任务实体、专业事实副本或 Meilisearch 投影字段；
-- `GET /api/v1/catalog/entries` 增加必须成对使用的 `coverage_dimension=<固定五维之一>` 与 `coverage_state=missing`，并固定要求 `view=inventory`。缺参、未知维度、治理目录视图或与名称全文搜索并用均返回 `400`；
+- `GET /api/v1/catalog/entries` 增加必须成对使用的 `coverage_dimension=<固定七维之一>` 与 `coverage_state=missing`，并固定要求 `view=inventory`。缺参、未知维度、治理目录视图或与名称全文搜索并用均返回 `400`；
 - 缺口列表和覆盖率聚合复用同一组 PostgreSQL 适用性与覆盖谓词，并只计算 active CatalogEntry。PostgreSQL 门禁逐维断言列表 `total` 与覆盖率 `not_covered` 完全一致；
 - 前端以可恢复 URL 保存缺口维度和状态，缺口视图显示明确提示、禁用名称搜索并可一键退出；其他类型、来源状态、治理状态、可见性、业务域、责任部门和引擎等结构化筛选仍可继续组合；
 - Catalog Swagger 已重新生成，20 个公开路由覆盖一致；带规定 `addp_test` DSN 的完整 `make test-module MODULE=catalog` 已通过平台 T0、Catalog Go、Frontend 测试与生产构建、PostgreSQL T2 门禁。本轮不重启服务，运行态点击链路留待下一次正常统一重启后顺带验收。
@@ -976,13 +996,49 @@ Catalog 新模块实现必须同时覆盖：
 - Console 将重复的业务域、责任部门、资源类型下拉替换为三段可键盘操作、显示名称与数量的导航区，选择写入可恢复 URL；来源状态、治理状态、可见性和来源引擎继续作为高级筛选，权威分页列表仍位于同页下方；
 - 统一 `enterprise-catalog-publishing` T4 浏览器用例已改为校验三段目录导航和引擎名称选择器。Catalog Frontend 12 个测试文件 44 项测试及生产构建、Catalog Backend 全量 Go、PostgreSQL 上下文分面门禁、Online Runner 86 项确定性测试、Catalog 20 个公开路由 Swagger 覆盖和带规定 `addp_test` DSN 的完整 `make test-module MODULE=catalog` 均通过；本轮不单独重启服务。
 
+### 2026-08-27：资源盘点“待归类”虚拟治理入口
+
+- “待归类”只在资源盘点的业务域导航中作为治理动作出现，不创建特殊 Standard Domain、不进入 Domain 分面候选，也不建立第二套目录树或列表 API；
+- 点击唯一映射到 `view=inventory&coverage_dimension=primary_domain&coverage_state=missing`，并清除名称搜索、业务域、责任部门和资源类型选择；普通导航选择也会清除缺口状态，保证同一 URL 只有一种列表语义；
+- 进入缺口后隐藏普通三段导航，继续显示既有缺口提示、权威分页列表和结构化筛选，退出后恢复正常目录导航。责任覆盖率随后拆为三个原子维度，“待分配部门”只使用 `accountable_department=missing`；
+- `enterprise-catalog-publishing` T4 浏览器契约已纳入“待归类”入口可见性。Catalog Frontend 12 个测试文件 46 项测试及生产构建、Online Runner 86 项确定性测试通过；本轮不单独重启服务，运行态点击留待下一次正常统一重启后顺带验收。
+
+### 2026-08-27：责任覆盖率原子化与“待分配部门”入口
+
+- 删除复合 `accountability` 覆盖率枚举，不保留旧 query、前端解析或 Swagger 兼容分支；责任覆盖率唯一拆为 `accountable_department`、`business_owner`、`data_steward` 三个原子维度，使每个未覆盖数字都对应一种明确处置动作；
+- 七个覆盖维度仍由同一条 PostgreSQL 聚合动态计算，不新增表、迁移、缓存或搜索投影。测试增加只有责任部门而没有责任人的条目，分别验证三个维度不会再联动；
+- 资源盘点的责任部门导航增加“待分配部门”虚拟入口，唯一映射到 `coverage_dimension=accountable_department&coverage_state=missing`。入口保留已选业务域，清除名称搜索、责任部门和资源类型；它不是 System Department，也不进入 Department 分面候选；
+- Catalog Swagger 已按批量治理契约重新生成，21 个公开路由覆盖一致；统一 T4 验证七个覆盖率维度、“待归类”“待分配部门”两个虚拟入口以及资源盘点显式多选/批量治理对话框。Catalog Frontend 14 个测试文件 53 项测试与生产构建、Catalog Go、PostgreSQL T2 和 Online Runner 86 项均通过；本轮不重启服务。
+- 用户统一重启后，System、Catalog、Gateway Ready 与 Console 均为 `200`。覆盖率页面动态展示 1,002 个 active 条目和七个维度，责任部门、业务责任人、数据管理员分别独立显示且旧 `accountability` 不再出现；组件数据元适用 189 个、不适用 813 个；
+- 浏览器实际点击“待归类”得到 `view=inventory&coverage_dimension=primary_domain&coverage_state=missing`；选择“客户域”后点击“待分配部门”得到 `view=inventory&primary_domain_id=1&coverage_dimension=accountable_department&coverage_state=missing`。两个缺口页均隐藏普通导航、禁用名称搜索，退出后恢复业务域选中状态；客户域下资源类型即时收窄为 2 个业务实体和 2 个逻辑模型，浏览器 warning/error 为 0。
+
 ### 2026-08-27：专用 macOS 完整验证交付
 
 - 没有新增第二套 Online suite、workflow 或 Make 目标；继续使用既有 `make local-ci`、`make test-online ONLINE_SUITE=enterprise-catalog-publishing`、`online-host-gate.sh`、`online-preflight.py`、专用 PostgreSQL Engine Fixture 和 `online-t4-gates.yml`；
-- 现有 `enterprise-catalog-publishing` 已扩展为完整目录主链路：连续两次真实 Meta 扫描验证 fingerprint / CatalogEntry UUID 幂等，验证 `inventory` / `governance` 视图、五维治理覆盖率、Meta fingerprint 精确来源解析、编目、AssetComponent 发布、Portal 同身份消费及零临时资源残留；
+- 现有 `enterprise-catalog-publishing` 已扩展为完整目录主链路：连续两次真实 Meta 扫描验证 fingerprint / CatalogEntry UUID 幂等，验证 `inventory` / `governance` 视图、七维治理覆盖率、Meta fingerprint 精确来源解析、编目、AssetComponent 发布、Portal 同身份消费及零临时资源残留；
 - 同一 suite 新增真实浏览器阶段：以同一专用 User 正常登录 Console，验证治理覆盖率页、CatalogEntry 详情、Domain / Department / Entry Type 三段名称导航和 Engine 名称选择器，并拒绝 `undefined` 文案、浏览器 warning/error 和失败业务响应；浏览器报告写入仓库外 `enterprise-catalog-publishing-browser.json`；
 - 专用 macOS 验证矩阵固定为 `ECV-00` 至 `ECV-08`，完整命令、环境边界、通过证据和 Artifact 清单已写入 `scripts/README.md`。T0-T3 使用独立 Local CI checkout 执行 `make local-ci LOCAL_CI_ARGS=--full`；T4 使用 `addp-online` Runner checkout 手工触发现有 Online workflow，二者不合并为不安全的 `test-all`；
 - 确定性脚本协议、Host Gate 生命周期和 Online CI 登记检查已纳入现有 `make test-online-runner` / `make test-platform`；另一台 macOS 只负责真实环境首跑和回传证据，不需要临时补脚本或修改仓库内 `.env`。
+
+### 2026-08-27：统一 Workspace 评估收口
+
+- 核对 Catalog、Develop、Model、Quality 的专业聚合与 System 组织事实后，确认当前不存在一个同时共享身份、成员、生命周期、环境和产物集合的跨模块工作空间用例；
+- System Project Group 继续作为跨部门协作成员事实，Catalog Collection 继续作为企业目录协作聚合，专业产物和执行环境留在各 owner 模块；
+- 统一 Workspace 从“暂缓实现”收敛为“当前明确不新增”，因此没有代码、数据库迁移或 API 变更，也不增加空壳模块；
+- 本专题阶段 5 的最后待办已完成。后续只在第 10.5 节所列的端到端触发条件成立时重开架构评估。
+
+### 2026-08-27：Catalog 显式成员批量治理收口
+
+- 全局并发规范已明确区分“集合整体替换”和“显式成员批量命令”：前者使用集合 `revision`，后者逐条携带 `id + version`；不得用筛选条件在执行时隐式展开成员，也不为 Catalog 制造 Tenant 级全局修订热点；
+- 新增唯一 `POST /api/v1/catalog/entries/batch_governance`，单次接收 1 至 200 个互不重复的明确成员，只支持 `assign_primary_domain` 和 `assign_accountable_department`；同时要求 `catalog.inventory.read` 与 `catalog.entry.update`；
+- Catalog 在事务前只向 Standard 或 System 精确解析一次目标，在事务内按 UUID 稳定排序锁定全部 CatalogEntry；任一条目不存在、跨 Tenant、非 active、版本冲突、引用失效或 owner 边界不适用时整批回滚；
+- 批量主业务域只替换 Catalog 自有 primary Domain，保留 secondary Domain 与 Glossary；批量责任部门只替换 accountable department，保留业务责任人、数据管理员和技术维护者，并原子解决对应责任转移任务；
+- Model `business_entity|logical_model` 与 Standard `metric` 的主业务域仍由专业 owner 维护，混入批次时整体返回 `catalog_batch_governance_unsupported_entry`，不产生部分写入；
+- 每个成功条目独立递增版本、写入 `catalog.entry.batch_governance_applied` 审计并共享 `batch_id`，同时投递搜索投影任务；响应按原请求顺序返回新版本；
+- Console 仅在资源盘点且当前 User 同时具备两项权限时展示当前页多选。目标通过既有 owner 动态名称候选选择，不出现 Domain、Department 或 Engine ID 输入；冲突失败保留选择和对话框输入供刷新后重新确认；
+- Catalog Go 全量测试、PostgreSQL 原子回滚门禁、Frontend 14 个测试文件 53 项、生产构建、Swagger 21 路由覆盖和 Online Runner 86 项均通过。`enterprise-catalog-publishing` 已把显式多选与批量治理对话框纳入现有真实浏览器阶段，但不在永久 fixture 上重复提交治理写入。
+- 本机统一重启后完成真实写入验收：在两个并行页面中明确选择同一组 `public_test.parquet` 与 `public_test_shapefile.shp`，首个页面成功批量分配“户外域”，两个条目分别从版本 2 递增到 3，并产生同一 `batch_id=7ccc4cf6-27e2-46e4-b5e3-bff2050f16ea` 下的两条审计；第二个过期页面返回版本冲突、保留两项选择和对话框输入，数据库没有第二组审计或版本递增；
+- 运行态同时验证 Department 目标使用 System 动态名称候选且当前 Tenant 无可选部门，不回退为手工 ID；选中 Model 逻辑模型后选择主业务域操作，页面明确提示其事实由 Model / Standard 维护并禁用提交。验收结束后通过 Catalog“业务编目”完整聚合更新移除两条临时 Domain 关联，两个条目均递增到版本 4、主业务域计数恢复为 0；浏览器列表选择恢复为 0，详情页和列表页 warning/error 均为 0。
 
 ## 二十二、当前推进状态
 
@@ -992,7 +1048,7 @@ Catalog 新模块实现必须同时覆盖：
 | 独立 Catalog 模块方向 | 已确认 | 不再比较 Meta / Asset 扩展路线 |
 | CatalogEntry 自动建档 | 已确认 | 所有正式持久化 DataItem 自动创建 |
 | Meta / Standard / Catalog 边界 | 已确认 | 技术事实、语义定义、资源关联分别归属 |
-| Department / Project Group / Workspace 边界 | 已确认 | 组织与协作不决定目录身份，Workspace 暂缓 |
+| Department / Project Group / Workspace 边界 | 已完成 | 组织与协作不决定目录身份；评估结论为当前不新增统一 Workspace |
 | 搜索所有权 | 已确认 | Meta、Catalog、Manager、Asset 分别拥有对应搜索 |
 | 企业目录实体正式命名 | 已解锁 | Engine Catalog 词族已迁移，裸名 `CatalogEntry` 正式保留给企业目录 |
 | 正式术语和概念文档修订 | 已完成 | 企业目录体系图、实现规范、核心概念、模块架构和 owner 边界已同步 |
@@ -1009,16 +1065,19 @@ Catalog 新模块实现必须同时覆盖：
 | Meta DataItem 血缘联邦视图 | 已通过运行态验收 | 当前 User Token 直连 Meta、共享图组件按需加载、不复制边；抽验详情成功展示 4 个节点、3 条关系 |
 | Model / Standard 专业关系联邦视图 | 已通过运行态验收 | Standard 关系空状态正常；Model Entity 抽验成功动态返回 2 条一对多专业关系，均由当前 User Token 直连 owner |
 | Catalog 推荐继任关系 | 已完成，待运行态验收 | 唯一 Catalog 自有跨条目关系；Catalog 定向门禁已通过，全量变更门禁被 System IAM 现有失败阻断；不建立空泛通用关系表，不与 owner 专业关系类型重叠 |
-| Catalog 治理覆盖率 | 已通过运行态验收 | 998 个 active 条目按五个适用性口径动态聚合；主业务域 19/998，组件数据元分母 189，不保存覆盖率投影 |
-| 治理覆盖率缺口处置闭环 | 实现与完整模块门禁已完成 | 未覆盖数字下钻到同口径权威缺口列表并复用现有编目编辑器；不新增明细表、任务实体或搜索投影，待下一次统一重启后顺带补点击运行态证据 |
+| Catalog 治理覆盖率 | 已通过七维运行态验收 | 1,002 个 active 条目动态聚合；责任部门、业务责任人、数据管理员独立显示，组件数据元适用 189 个，不保存覆盖率投影 |
+| 治理覆盖率缺口处置闭环 | 已通过运行态验收 | 未覆盖数字与两个虚拟入口均进入同口径权威缺口列表并复用现有编目编辑器；不新增明细表、任务实体或搜索投影 |
 | 联邦影响分析与目录导航 | 已通过运行态验收 | Model 稳定 ID 和 Meta fingerprint 均已动态解析并完成可见 CatalogEntry 跳转；不代理、不复制 owner 关系边 |
 | 治理目录 / 资源盘点视图 | 已通过运行态验收 | 默认治理目录当前 0 条；显式资源盘点展示 998 条且仍使用同一批自动建档 CatalogEntry |
 | Catalog 列表人类可读分面选择器 | 已通过运行态验收 | Domain 与 Engine Instance 已展示真实名称；Department 动态解析请求成功但当前无候选，列表不再保留裸 ID 输入和引擎 ID 列 |
-| 企业目录上下文导航 | 实现与完整模块门禁已完成 | 同一 `/entries` 页面按业务域、责任部门、资源类型逐步收窄权威列表；不建立企业目录树或第二查询路线，待下一次统一重启后顺带补运行态证据 |
+| 企业目录上下文导航 | 已通过运行态验收 | 客户域 4 项即时收窄为 2 个业务实体和 2 个逻辑模型，URL 可恢复；不建立企业目录树或第二查询路线 |
+| 资源盘点“待归类”入口 | 已通过运行态验收 | 虚拟入口复用 `primary_domain=missing` 权威缺口；不伪装成 Domain、不复制条目 |
+| 资源盘点“待分配部门”入口 | 已通过运行态验收 | 保留上游业务域并复用 `accountable_department=missing`；不伪装成 Department、不复制责任事实 |
 | Catalog 编目与治理队列名称选择器 | 已通过运行态验收 | 五类 owner 动态选择器、真实名称候选及治理队列 20 个 CatalogEntry 名称候选已验证；治理队列遗漏 inventory 视图的问题已修复并加回归测试 |
 | Project Group 集合名称解析 | 接口与空状态已通过运行态验收 | `/me/project-groups` 返回 200 且无裸 ID 回退；当前身份没有有效 membership，实际成员名称组合待具备成员关系的验收身份补证 |
+| Catalog 显式成员批量治理 | 已通过运行态验收 | 当前页显式多选、Domain/Department 名称候选、逐条版本、整批原子回滚、owner 边界、共享 `batch_id` 审计、过期页面冲突保留和测试事实回收均已在真实页面验证；专用 macOS 继续随现有 T4 做周期回归，不再承担首次验收 |
 
-阶段 5 的专业来源接入、动态当前事实、基础联邦关系视图、默认治理目录、权限资源盘点、企业目录上下文导航、治理覆盖率、治理缺口处置、联邦来源身份导航、列表分面、编目/治理队列名称选择器和 Manager 精确定位已经完成实现与门禁，其中治理缺口点击链路和本次上下文导航只待下一次正常统一重启后顺带补运行态证据。Project Group 组合接口与无成员空状态已通过，真实成员名称只缺有 membership 的验收身份证据。其后优先级是由专用 Runner 首跑 `enterprise-catalog-publishing`，以及在明确停机窗口执行来源 missing、停机追赶、显式重绑、System 恢复专项 T4；这些场景需要专用 User Token、Tenant、Fixture Engine、Domain、Department 或服务停机窗口，不从当前浏览器身份和共享数据猜测。技术来源详情中的 fingerprint、Item ID 等继续只保留在明确的技术溯源区。统一 Workspace 继续保持暂缓，只有多个专业模块出现同一组可验证的成员、生命周期、环境和产物聚合需求时才重新评估。
+阶段 5 的专业来源接入、动态当前事实、基础联邦关系视图、默认治理目录、权限资源盘点、企业目录上下文导航、“待归类”与“待分配部门”虚拟治理入口、七维治理覆盖率、治理缺口处置、联邦来源身份导航、列表分面、编目/治理队列名称选择器、Manager 精确定位和统一 Workspace 评估，以及阶段 6 的显式成员批量治理均已完成。Project Group 组合接口与无成员空状态已通过，真实成员名称只缺有 membership 的验收身份证据。专用 Runner 首跑 `enterprise-catalog-publishing` 以及停机追赶、显式重绑、System 恢复等专项 T4 已纳入统一验证体系，它们需要专用 User Token、Tenant、Fixture Engine、Domain、Department 或服务停机窗口，属于外部条件验证而非本专题实现缺口。技术来源详情中的 fingerprint、Item ID 等继续只保留在明确的技术溯源区。统一 Workspace 评估结论是当前不新增；只有第 10.5 节的端到端触发条件成立时才重开。
 
 ## 二十三、后续会话接力清单
 
@@ -1032,5 +1091,7 @@ Catalog 新模块实现必须同时覆盖：
 6. 推荐继任项的名称选择器已有定向门禁；当前 Tenant 只有 998 条 `discovered` 条目，没有可进入弃用流程的 `curated|certified` 样本。后续只在自然产生合适治理状态样本后补运行态证据，不为验收篡改 CatalogEntry。
 7. 如需重跑完整 Catalog 模块门禁，显式使用 `CATALOG_POSTGRES_TEST_DSN='postgres://addp:addp_password@127.0.0.1:15432/addp_test?sslmode=disable' make test-module MODULE=catalog`；不得新建本地测试 database。
 8. System 全量 IAM PostgreSQL 门禁与全仓授权门禁的既有失败应按各自 owner 根因独立修复；不得为了让 migration 101/102 显绿而放宽计数、跳过测试或修改无关权限期望。
-9. 治理缺口处置已完成实现和完整 Catalog 模块门禁；下一次正常统一重启后只需从治理覆盖率页点击任一非零“未覆盖”数字，确认进入带 `view=inventory&coverage_dimension=...&coverage_state=missing` 的权威列表、名称搜索禁用、条目可进入既有编辑器且退出缺口视图后恢复普通搜索。无需为此单独重启。
-10. 企业目录上下文导航已完成实现、Online T4 契约同步和完整 Catalog 模块门禁；下一次正常统一重启后顺带确认业务域、责任部门、资源类型三段计数随选择收窄，URL 可刷新恢复，下面列表与导航选择一致。不要恢复三个重复下拉，也不要新建企业目录树页面。
+9. 治理缺口处置、企业目录上下文导航、“待归类”“待分配部门”和七维治理覆盖率均已完成运行态验收；后续会话不要重复重启或重做共享环境点击，只在相关契约再次变化时重跑。
+10. 旧 `accountability` 已从 API 响应、Swagger、URL 和页面删除，只在负向测试与规范删除说明中出现；不得恢复复合维度或兼容 query。
+11. 统一 Workspace 评估已收口为“当前不新增”；不得为了形式上统一而添加空壳模块、`workspace_id` 或把引擎 `SpatialWorkspace` 与企业协作概念合并；只在第 10.5 节触发条件成立时重开文档优先评估。
+12. 显式成员批量治理已经完成代码、Swagger、PostgreSQL、前端、Online 契约登记和本机真实写入验收；后续不要增加“全部匹配筛选”、手工 owner ID、Tenant 级 `revision` 或逐条部分成功路线。专用 macOS 只需随既有 `enterprise-catalog-publishing` 做当前页选择和对话框的周期回归，不在永久 fixture 上重复提交批量写入。

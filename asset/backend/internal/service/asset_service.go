@@ -251,11 +251,11 @@ func (s *AssetService) GetPublished(tenantID uint, id int64) (*AssetDetail, erro
 }
 
 func (s *AssetService) Create(ctx context.Context, tenantID uint, userID uint, req *CreateAssetReq) (*AssetDetail, error) {
-	components, err := s.validateComponents(ctx, tenantID, req.Components, false)
-	if err != nil {
+	if err := s.validateOwnedReferences(tenantID, req.TypeID, req.CatalogID); err != nil {
 		return nil, err
 	}
-	if err := s.validateOwnedReferences(tenantID, req.TypeID, req.CatalogID); err != nil {
+	components, err := s.validateComponents(ctx, tenantID, req.TypeID, req.Components, false)
+	if err != nil {
 		return nil, err
 	}
 	name := strings.TrimSpace(req.Name)
@@ -284,11 +284,11 @@ func (s *AssetService) Create(ctx context.Context, tenantID uint, userID uint, r
 
 // Update atomically replaces the complete editable Asset aggregate.
 func (s *AssetService) Update(ctx context.Context, tenantID uint, id int64, userID uint, req *UpdateAssetReq) (*AssetDetail, error) {
-	components, err := s.validateComponents(ctx, tenantID, req.Components, false)
-	if err != nil {
+	if err := s.validateOwnedReferences(tenantID, req.TypeID, req.CatalogID); err != nil {
 		return nil, err
 	}
-	if err := s.validateOwnedReferences(tenantID, req.TypeID, req.CatalogID); err != nil {
+	components, err := s.validateComponents(ctx, tenantID, req.TypeID, req.Components, false)
+	if err != nil {
 		return nil, err
 	}
 	name := strings.TrimSpace(req.Name)
@@ -369,7 +369,7 @@ func (s *AssetService) Publish(ctx context.Context, tenantID uint, id int64) err
 	if err != nil {
 		return err
 	}
-	if _, err := s.validateComponents(ctx, tenantID, components[id], true); err != nil {
+	if _, err := s.validateComponents(ctx, tenantID, asset.TypeID, components[id], true); err != nil {
 		return err
 	}
 	now := time.Now()
@@ -417,20 +417,11 @@ func (s *AssetService) BatchPublish(ctx context.Context, tenantID uint, ids []in
 	if err != nil {
 		return 0, err
 	}
-	allComponents := make([]AssetComponentInput, 0)
 	for _, asset := range candidates {
 		assetComponents := components[asset.ID]
-		if err := validateComponentShape(assetComponents); err != nil {
+		if _, err := s.validateComponents(ctx, tenantID, asset.TypeID, assetComponents, true); err != nil {
 			return 0, err
 		}
-		allComponents = append(allComponents, assetComponents...)
-	}
-	uniqueIDs, err := parseUniqueCatalogEntryIDs(allComponents)
-	if err != nil {
-		return 0, err
-	}
-	if err := s.validateCatalogResolutions(ctx, tenantID, uniqueIDs, true); err != nil {
-		return 0, err
 	}
 	now := time.Now()
 	result := s.db.Model(&models.Asset{}).
@@ -528,7 +519,7 @@ func (s *AssetService) BatchCatalog(tenantID uint, ids []int64, catalogID *int64
 	return int(result.RowsAffected), result.Error
 }
 
-func (s *AssetService) validateComponents(ctx context.Context, tenantID uint, inputs []AssetComponentInput, publish bool) ([]models.AssetComponent, error) {
+func (s *AssetService) validateComponents(ctx context.Context, tenantID uint, typeID int64, inputs []AssetComponentInput, publish bool) ([]models.AssetComponent, error) {
 	if err := validateComponentShape(inputs); err != nil {
 		return nil, err
 	}
@@ -542,27 +533,51 @@ func (s *AssetService) validateComponents(ctx context.Context, tenantID uint, in
 		ids = append(ids, id)
 		components = append(components, models.AssetComponent{CatalogEntryID: id, Role: input.Role, SortOrder: input.SortOrder})
 	}
-	if err := s.validateCatalogResolutions(ctx, tenantID, ids, publish); err != nil {
+	resolutions, err := s.resolveCatalogReferences(ctx, tenantID, ids, publish)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.validateTypeComposition(typeID, inputs, resolutions); err != nil {
 		return nil, err
 	}
 	return components, nil
 }
 
-func (s *AssetService) validateCatalogResolutions(ctx context.Context, tenantID uint, ids []uuid.UUID, publish bool) error {
+func (s *AssetService) resolveCatalogReferences(ctx context.Context, tenantID uint, ids []uuid.UUID, publish bool) ([]commonClient.CatalogReferenceResolution, error) {
 	if s.catalog == nil {
-		return ErrCatalogUnavailable
+		return nil, ErrCatalogUnavailable
 	}
 	resolutions, err := s.catalog.WithTenantID(tenantID).ResolveReferences(ctx, ids)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrCatalogUnavailable, err)
+		return nil, fmt.Errorf("%w: %v", ErrCatalogUnavailable, err)
 	}
 	for _, resolution := range resolutions {
 		if !resolution.Found || !resolution.Selectable {
-			return ErrCatalogReferenceNotSelectable
+			return nil, ErrCatalogReferenceNotSelectable
 		}
 		if publish && !resolution.Publishable {
-			return ErrCatalogReferenceNotPublishable
+			return nil, ErrCatalogReferenceNotPublishable
 		}
+	}
+	return resolutions, nil
+}
+
+func (s *AssetService) validateTypeComposition(typeID int64, inputs []AssetComponentInput, resolutions []commonClient.CatalogReferenceResolution) error {
+	var typeDefinition models.TypeDefinition
+	if err := s.db.Select("code").First(&typeDefinition, typeID).Error; err != nil {
+		return ErrInvalidAssetAggregate
+	}
+	if typeDefinition.Code != "application" {
+		return nil
+	}
+	if len(inputs) != 1 || len(resolutions) != 1 || inputs[0].Role != models.AssetComponentRolePrimary {
+		return ErrInvalidAssetAggregate
+	}
+	resolution := resolutions[0]
+	resourceID, err := uuid.Parse(resolution.SourceIdentity)
+	if err != nil || resourceID == uuid.Nil || resourceID.String() != resolution.SourceIdentity ||
+		resolution.EntryType != "data_application" || resolution.SourceModule != "workbench" || resolution.SourceType != "data_application" {
+		return ErrInvalidAssetAggregate
 	}
 	return nil
 }
@@ -761,7 +776,7 @@ func (s *AssetService) GetDashboardStats(tenantID uint) (*DashboardStats, error)
 		Where("tenant_id = ? AND status = 'pending'", tenantID).
 		Count(&stats.ApplicationPending)
 	s.db.Table("asset.authorizations").
-		Where("tenant_id = ? AND is_active = true", tenantID).
+		Where("tenant_id = ? AND status = ?", tenantID, models.AuthorizationStatusEffective).
 		Count(&stats.AuthorizationActive)
 
 	// 3. 近 30 天上架趋势

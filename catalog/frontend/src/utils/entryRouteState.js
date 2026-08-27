@@ -3,7 +3,10 @@ const ALLOWED_ENTRY_TYPES = new Set(['data_item', 'business_entity', 'logical_mo
 const ALLOWED_VIEWS = new Set(['governance', 'inventory'])
 const ALLOWED_GOVERNANCE_STATUSES = new Set(['discovered', 'curated', 'certified', 'deprecated'])
 const ALLOWED_VISIBILITIES = new Set(['inventory', 'department', 'tenant'])
-const ALLOWED_COVERAGE_DIMENSIONS = new Set(['business_definition', 'primary_domain', 'accountability', 'glossary', 'component_element'])
+const ALLOWED_COVERAGE_DIMENSIONS = new Set([
+  'business_definition', 'primary_domain', 'accountable_department', 'business_owner',
+  'data_steward', 'glossary', 'component_element'
+])
 const MAX_INT64 = 9223372036854775807n
 
 function positiveInteger(value, fallback) {

@@ -30,7 +30,7 @@
 
 尚未完成的后续能力不改变上述概念：
 
-- owner Resource Grant / Policy、Explicit Deny 和 Asset 跨服务履约尚未形成统一运行时；
+- owner Resource Grant / Policy、Explicit Deny 和 Asset 跨服务履约已以 Workbench Data Application 形成第一条统一运行时；其他 owner 必须复用同一 ResourceAccessRule 与可恢复履约语义，不得新增软授权或中央 ACL；
 - 外部 IdP 登录、账号供应、属性同步和单点退出尚未启用；
 - OIDC ID Token、Discovery 和 JWKS 尚未启用。
 

@@ -39,6 +39,10 @@ func TestResolveReferencesPreservesOrderAndDoesNotLeakOtherTenants(t *testing.T)
 	if !results[1].Selectable || !results[1].Publishable || results[1].DisplayName != "Customer Orders" {
 		t.Fatalf("curated resolution = %#v", results[1])
 	}
+	if results[1].EntryType != models.EntryTypeDataItem || results[1].SourceModule != models.SourceModuleMeta ||
+		results[1].SourceType != models.SourceTypeDataItem || results[1].SourceIdentity != "fingerprint-"+curated.ID.String() {
+		t.Fatalf("curated source resolution = %#v", results[1])
+	}
 	if results[2].Found || results[3].Found {
 		t.Fatalf("cross-tenant/unknown leaked: %#v %#v", results[2], results[3])
 	}

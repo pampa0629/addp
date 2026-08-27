@@ -32,6 +32,10 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, entrie
 		catalogauthorization.PermissionCatalogInventoryRead,
 	)
 	updatePermission := commonAuth.MustNewPermissionGuard(catalogauthorization.PermissionCatalogEntryUpdate)
+	batchGovernancePermission := commonAuth.MustNewPermissionGuard(
+		catalogauthorization.PermissionCatalogInventoryRead,
+		catalogauthorization.PermissionCatalogEntryUpdate,
+	)
 	rebindPermission := commonAuth.MustNewPermissionGuard(catalogauthorization.PermissionCatalogSourceRebind)
 	historyPermission := commonAuth.MustNewPermissionGuard(
 		catalogauthorization.PermissionCatalogEntryRead,
@@ -50,6 +54,7 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, entrie
 	api.GET("/entries", readPermission, handler.ListEntries)
 	api.GET("/entries/facets", readPermission, handler.ListEntryFacets)
 	api.POST("/entries/resolve-sources", readPermission, handler.ResolveSourceEntries)
+	api.POST("/entries/batch_governance", batchGovernancePermission, handler.BatchGovernanceEntries)
 	api.GET("/reference-candidates", updatePermission, handler.ListReferenceCandidates)
 	api.GET("/entries/:id", readPermission, handler.GetEntry)
 	api.PUT("/entries/:id", updatePermission, handler.UpdateEntry)

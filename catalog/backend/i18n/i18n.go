@@ -15,6 +15,7 @@ const (
 	MsgOperationFailed                 = "catalog.error.operation_failed"
 	MsgVersionConflict                 = "catalog.error.version_conflict"
 	MsgEntryNotEditable                = "catalog.error.entry_not_editable"
+	MsgBatchGovernanceUnsupportedEntry = "catalog.error.batch_governance_unsupported_entry"
 	MsgInvalidTransition               = "catalog.error.invalid_transition"
 	MsgReferenceNotReferenceable       = "catalog.error.reference_not_referenceable"
 	MsgCertificationPermissionRequired = "catalog.error.certification_permission_required"

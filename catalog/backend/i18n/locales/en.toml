@@ -11,6 +11,8 @@ other = "Catalog operation failed"
 other = "The catalog entry was updated by another operation; refresh and try again"
 [catalog.error.entry_not_editable]
 other = "The catalog entry is not editable in its current state"
+[catalog.error.batch_governance_unsupported_entry]
+other = "The selection contains entries whose primary domain is managed by the professional owner module"
 [catalog.error.invalid_transition]
 other = "The requested governance status transition is not allowed"
 [catalog.error.reference_not_referenceable]

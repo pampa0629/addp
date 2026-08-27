@@ -78,7 +78,7 @@ bash scripts/test/certify-infra-kafka-ha.sh
 | database | 用途 | 生命周期与约束 |
 |----------|------|----------------|
 | `addp` | ADDP 开发环境系统数据库 | 必须保留；应用服务只连接该库，禁止运行破坏性测试门禁。 |
-| `addp_test` | Model、Transfer、Manager、Quality、Graph 和 Infra Kafka 等共享集成测试库 | 必须保留；只允许测试使用，各测试负责清理自己拥有的 Schema 或事实。 |
+| `addp_test` | Asset、Workbench、Model、Transfer、Manager、Quality、Graph 和 Infra Kafka 等共享集成测试库 | 必须保留；只允许测试使用，各测试负责清理自己拥有的 Schema 或事实。 |
 | `addp_iam_test` | System IAM、Fosite、API 与 Migration PostgreSQL 发布门禁库 | 必须保留；只允许 `make test-system-iam-postgres` 串行使用，门禁会重建 `system` 和 `common` Schema。 |
 | `postgres` | PostgreSQL 默认维护连接库 | 必须保留；只用于管理操作，不存放 ADDP 业务表。 |
 
@@ -102,6 +102,13 @@ Model 物化与事务门禁使用：
 ```bash
 ADDP_TEST_MODEL_POSTGRES_DSN='postgres://addp:addp_password@localhost:15432/addp_test?sslmode=disable' \
   make test-model-postgres
+```
+
+Asset 授权履约 Schema 门禁使用：
+
+```bash
+ASSET_POSTGRES_TEST_DSN='postgres://addp:addp_password@localhost:15432/addp_test?sslmode=disable' \
+  make test-asset-postgres
 ```
 
 ### Docker Compose 项目

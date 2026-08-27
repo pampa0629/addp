@@ -240,9 +240,9 @@ func (h *Handler) OfflineDataApplication(c *gin.Context) {
 	commonapi.RespondSuccess(c, application)
 }
 
-// GetDataApplicationRuntime 获取创建者当前可运行的发布修订。
+// GetDataApplicationRuntime 获取当前用户可运行的发布修订。
 // @Summary 获取数据应用运行快照 | Get a data application runtime snapshot
-// @Description Phase 4A 只允许创建者读取当前 published Revision；真实数据仍由浏览器以当前 User Bearer 调用各 Service | Phase 4A allows only the owner to read the current published Revision; the browser still calls every Service with the current User Bearer
+// @Description 创建者或持有生效 Resource Grant 的 User 可读取当前 published Revision；真实数据仍由浏览器以当前 User Bearer 调用各 Service | The owner or a User with an effective Resource Grant may read the current published Revision; the browser still calls every Service with the current User Bearer
 // @Tags Workbench Data Applications
 // @Produce json
 // @Param id path string true "Data Application UUID"

@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
+      asset: ${{ steps.asset.outputs.run }}
       catalog: ${{ steps.catalog.outputs.run }}
       cli: ${{ steps.cli.outputs.run }}
       develop: ${{ steps.develop.outputs.run }}
@@ -68,6 +69,16 @@ jobs:
           ADDP_CI_HEAD: ${{ github.sha }}
           ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
         run: python3 scripts/ci/select-module-gate.py --module quality
+
+      - name: Select Asset PostgreSQL gate
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        id: asset
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module asset
 
       - name: Select Service PostgreSQL gate
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
@@ -329,6 +340,50 @@ jobs:
         uses: ./.github/actions/ci-gate-summary
         with:
           gate: Catalog integration (PostgreSQL 15)
+          status: ${{ job.status }}
+
+  asset-postgres:
+    name: Asset integration (PostgreSQL 15)
+    needs: selection
+    if: needs.selection.outputs.asset == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+        env:
+          POSTGRES_USER: addp_ci
+          POSTGRES_PASSWORD: addp_ci_password
+          POSTGRES_DB: addp_asset_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U addp_ci -d addp_asset_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: asset/backend/go.mod
+          cache: false
+
+      - name: Run Asset PostgreSQL gate
+        env:
+          ASSET_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_asset_test?sslmode=disable
+        run: make test-asset-postgres
+
+      - name: Summarize Asset PostgreSQL gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Asset integration (PostgreSQL 15)
           status: ${{ job.status }}
 
   workbench-postgres:

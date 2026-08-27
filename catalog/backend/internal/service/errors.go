@@ -7,6 +7,8 @@ var (
 	ErrInvalidPage                     = errors.New("invalid catalog page")
 	ErrInvalidSourceChange             = errors.New("invalid source change")
 	ErrInvalidEntryUpdate              = errors.New("invalid catalog entry update")
+	ErrInvalidBatchGovernance          = errors.New("invalid catalog batch governance")
+	ErrBatchGovernanceUnsupportedEntry = errors.New("catalog batch governance contains an owner-managed entry")
 	ErrEntryVersionConflict            = errors.New("catalog entry version conflict")
 	ErrEntryNotEditable                = errors.New("catalog entry is not editable")
 	ErrInvalidGovernanceTransition     = errors.New("invalid catalog governance transition")

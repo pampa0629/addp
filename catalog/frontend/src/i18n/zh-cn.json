@@ -57,7 +57,12 @@
         "accountableDepartment": "2. 责任部门",
         "entryType": "3. 资源类型",
         "allDomains": "全部业务域",
+        "unclassifiedDomain": "待归类",
+        "unclassifiedDomainDescription": "查看尚未建立主业务域关联的资源",
+        "governanceGap": "治理缺口",
         "allDepartments": "全部责任部门",
+        "unassignedDepartment": "待分配部门",
+        "unassignedDepartmentDescription": "查看尚未分配责任部门的资源",
         "allEntryTypes": "全部资源类型",
         "optionCount": "{count} 项"
       },
@@ -82,7 +87,26 @@
       "engineUnavailable": "来源引擎暂时无法解析",
       "updatedAt": "更新时间",
       "empty": "当前条件下没有可见的目录条目",
-      "loadFailed": "加载企业目录失败"
+      "loadFailed": "加载企业目录失败",
+      "batchGovernance": {
+        "action": "批量治理",
+        "selected": "已选择 {count} 项（仅当前页，最多 200 项）",
+        "clear": "清除选择",
+        "title": "批量治理目录条目",
+        "description": "将对明确选择的 {count} 个目录条目执行一次原子操作；任一条目冲突时整批不会生效。",
+        "operation": "治理操作",
+        "operationPlaceholder": "选择要统一执行的治理操作",
+        "assignPrimaryDomain": "分配主业务域",
+        "assignAccountableDepartment": "分配责任部门",
+        "target": "治理目标",
+        "targetPlaceholder": "按名称或编码搜索并选择",
+        "unsupportedOwnerManaged": "其中 {count} 项的主业务域由 Model 或 Standard 专业模块维护，不能在 Catalog 中批量覆盖。",
+        "candidateSearchFailed": "加载治理目标候选失败",
+        "success": "已完成 {count} 个目录条目的批量治理",
+        "failed": "批量治理失败，所选条目均未变更",
+        "cancel": "取消",
+        "confirm": "确认批量治理"
+      }
     },
     "governanceTasks": {
       "action": "责任治理队列",
@@ -131,9 +155,17 @@
           "name": "主业务域",
           "description": "具有 Catalog 关联或最近观察到的 owner 主业务域声明"
         },
-        "accountability": {
-          "name": "治理责任",
-          "description": "责任部门、业务责任人和数据管理员均有效"
+        "accountable_department": {
+          "name": "责任部门",
+          "description": "至少分配一个有效责任部门"
+        },
+        "business_owner": {
+          "name": "业务责任人",
+          "description": "至少分配一个有效业务责任人"
+        },
+        "data_steward": {
+          "name": "数据管理员",
+          "description": "至少分配一个有效数据管理员"
         },
         "glossary": {
           "name": "企业术语",
@@ -245,6 +277,8 @@
       "ownerArtifactType": "开发成果类型",
       "ownerTaskStatus": "任务定义状态",
       "ownerQueryType": "查询语言类型",
+      "ownerPublicationStatus": "发布状态",
+      "ownerRevisionNumber": "发布修订号",
       "lastObservedProjection": "目录最近观测时间",
       "components": "数据组件",
       "componentCount": "共 {count} 个组件",
