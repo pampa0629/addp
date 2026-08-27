@@ -110,7 +110,6 @@ func ValidateSecurityPolicy(policy SecurityPolicy) error {
 		{"oauth_device_code_ttl_minutes", policy.OAuthDeviceCodeTTLMinutes, 5, 30},
 		{"oauth_device_poll_interval_seconds", policy.OAuthDevicePollIntervalSeconds, 5, 60},
 		{"tenant_invitation_ttl_hours", policy.TenantInvitationTTLHours, 1, 720},
-		{"enrollment_ticket_ttl_minutes", policy.EnrollmentTicketTTLMinutes, 1, 30},
 		{"oauth_public_rate_limit_per_minute", policy.OAuthPublicRateLimitPerMinute, 1, 10000},
 		{"oauth_user_rate_limit_per_minute", policy.OAuthUserRateLimitPerMinute, 1, 10000},
 	}
@@ -140,7 +139,6 @@ func securityPolicyChanges(before, after SecurityPolicy) map[string]any {
 	add("oauth_device_code_ttl_minutes", before.OAuthDeviceCodeTTLMinutes, after.OAuthDeviceCodeTTLMinutes)
 	add("oauth_device_poll_interval_seconds", before.OAuthDevicePollIntervalSeconds, after.OAuthDevicePollIntervalSeconds)
 	add("tenant_invitation_ttl_hours", before.TenantInvitationTTLHours, after.TenantInvitationTTLHours)
-	add("enrollment_ticket_ttl_minutes", before.EnrollmentTicketTTLMinutes, after.EnrollmentTicketTTLMinutes)
 	add("oauth_public_rate_limit_per_minute", before.OAuthPublicRateLimitPerMinute, after.OAuthPublicRateLimitPerMinute)
 	add("oauth_user_rate_limit_per_minute", before.OAuthUserRateLimitPerMinute, after.OAuthUserRateLimitPerMinute)
 	return changes

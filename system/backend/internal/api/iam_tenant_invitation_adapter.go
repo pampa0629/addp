@@ -40,17 +40,6 @@ type IAMCreatedTenantInvitationResponse struct {
 	InvitationURL string                      `json:"invitation_url"`
 }
 
-type IAMInvitationEnrollmentRequest struct {
-	InvitationSecret string `json:"invitation_secret"`
-	Username         string `json:"username"`
-	Password         string `json:"password"`
-}
-
-type IAMInvitationEnrollmentResponse struct {
-	EnrollmentTicket string    `json:"enrollment_ticket"`
-	ExpiresAt        time.Time `json:"expires_at"`
-}
-
 type IAMInvitationRegistrationRequest struct {
 	InvitationSecret string  `json:"invitation_secret"`
 	Username         string  `json:"username"`
@@ -61,7 +50,6 @@ type IAMInvitationRegistrationRequest struct {
 
 type IAMInvitationAcceptanceRequest struct {
 	InvitationSecret string `json:"invitation_secret"`
-	EnrollmentTicket string `json:"enrollment_ticket,omitempty"`
 }
 
 type IAMInvitationAcceptanceResponse struct {
@@ -75,7 +63,6 @@ type iamTenantInvitationService interface {
 	Get(context.Context, int64, int64, iam.AuditMetadata) (*iam.TenantInvitation, error)
 	Create(context.Context, iam.CreateTenantInvitationInput) (*iam.CreatedTenantInvitation, error)
 	Revoke(context.Context, int64, int64, int64, iam.AuditMetadata) (*iam.TenantInvitation, error)
-	IssueEnrollmentTicket(context.Context, iam.IssueEnrollmentTicketInput) (*iam.IssuedEnrollmentTicket, error)
 	Register(context.Context, iam.RegisterTenantInvitationInput) (*iam.AcceptedTenantInvitation, error)
 	Accept(context.Context, iam.AcceptTenantInvitationInput) (*iam.AcceptedTenantInvitation, error)
 }
@@ -247,34 +234,6 @@ func (h *IAMTenantInvitationHandler) Revoke(c *gin.Context) {
 	c.JSON(http.StatusOK, mapIAMTenantInvitation(*invitation))
 }
 
-// Enroll godoc
-// @Summary      签发邀请 Enrollment Ticket | Issue invitation enrollment ticket
-// @Tags         租户邀请 | Tenant Invitations
-// @Accept       json
-// @Produce      json
-// @Param        request body IAMInvitationEnrollmentRequest true "邀请与本地账号凭据 | Invitation and local credentials"
-// @Success      201 {object} IAMInvitationEnrollmentResponse
-// @x-addp-auth-mode "public"
-// @Router       /tenant/invitations/enrollments [post]
-func (h *IAMTenantInvitationHandler) Enroll(c *gin.Context) {
-	var request IAMInvitationEnrollmentRequest
-	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil {
-		respondIAMError(c, fmt.Errorf("%w: invalid enrollment request", commonapi.ErrBadRequest))
-		return
-	}
-	issued, err := h.service.IssueEnrollmentTicket(c.Request.Context(), iam.IssueEnrollmentTicketInput{
-		InvitationSecret: request.InvitationSecret, Username: request.Username,
-		Password: request.Password, Audit: iamAuditMetadataWithStatus(c, http.StatusCreated),
-	})
-	if err != nil {
-		respondIAMError(c, err)
-		return
-	}
-	c.JSON(http.StatusCreated, IAMInvitationEnrollmentResponse{
-		EnrollmentTicket: issued.EnrollmentTicket, ExpiresAt: issued.ExpiresAt.UTC(),
-	})
-}
-
 // Register godoc
 // @Summary      通过邀请注册 | Register through tenant invitation
 // @Tags         租户邀请 | Tenant Invitations
@@ -307,7 +266,7 @@ func (h *IAMTenantInvitationHandler) Register(c *gin.Context) {
 // @Tags         租户邀请 | Tenant Invitations
 // @Accept       json
 // @Produce      json
-// @Param        request body IAMInvitationAcceptanceRequest true "邀请和可选 Enrollment Ticket | Invitation and optional enrollment ticket"
+// @Param        request body IAMInvitationAcceptanceRequest true "租户邀请 | Tenant invitation"
 // @Success      200 {object} IAMInvitationAcceptanceResponse
 // @x-addp-auth-mode "authenticated"
 // @Router       /tenant/invitations/acceptances [post]
@@ -317,38 +276,28 @@ func (h *IAMTenantInvitationHandler) Accept(c *gin.Context) {
 		respondIAMError(c, fmt.Errorf("%w: invalid invitation acceptance", commonapi.ErrBadRequest))
 		return
 	}
-	input := iam.AcceptTenantInvitationInput{
-		InvitationSecret: request.InvitationSecret, EnrollmentTicket: request.EnrollmentTicket,
-		Audit: iamAuditMetadataWithStatus(c, http.StatusOK),
-	}
+	input := iam.AcceptTenantInvitationInput{InvitationSecret: request.InvitationSecret, Audit: iamAuditMetadataWithStatus(c, http.StatusOK)}
 	bearer := iamBearerToken(c.GetHeader("Authorization"))
-	if request.EnrollmentTicket != "" {
-		if strings.TrimSpace(c.GetHeader("Authorization")) != "" {
-			respondIAMError(c, fmt.Errorf("%w: acceptance credentials are mutually exclusive", commonapi.ErrBadRequest))
-			return
-		}
-	} else {
-		if bearer == "" {
-			respondIAMError(c, commonapi.ErrUnauthorized)
-			return
-		}
-		authContext, err := h.authContext.ResolveFirstPartyAccessToken(c.Request.Context(), bearer)
-		if err != nil {
-			respondIAMError(c, err)
-			return
-		}
-		principalID, err := parseIAMDecimalID(authContext.Principal.ID)
-		if err != nil || authContext.Principal.Type != "user" {
-			respondIAMError(c, commonapi.ErrForbidden)
-			return
-		}
-		input.PrincipalID = principalID
-		input.Authentication = iam.SessionAuthentication{
-			Methods:         append([]string(nil), authContext.Authentication.Methods...),
-			AssuranceLevel:  iam.AssuranceLevel(authContext.Authentication.AssuranceLevel),
-			AuthenticatedAt: authContext.Authentication.AuthenticatedAt,
-			StepUpExpiresAt: authContext.Authentication.StepUpExpiresAt,
-		}
+	if bearer == "" {
+		respondIAMError(c, commonapi.ErrUnauthorized)
+		return
+	}
+	authContext, err := h.authContext.ResolveFirstPartyAccessToken(c.Request.Context(), bearer)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	principalID, err := parseIAMDecimalID(authContext.Principal.ID)
+	if err != nil || authContext.Principal.Type != "user" {
+		respondIAMError(c, commonapi.ErrForbidden)
+		return
+	}
+	input.PrincipalID = principalID
+	input.Authentication = iam.SessionAuthentication{
+		Methods:         append([]string(nil), authContext.Authentication.Methods...),
+		AssuranceLevel:  iam.AssuranceLevel(authContext.Authentication.AssuranceLevel),
+		AuthenticatedAt: authContext.Authentication.AuthenticatedAt,
+		StepUpExpiresAt: authContext.Authentication.StepUpExpiresAt,
 	}
 	accepted, err := h.service.Accept(c.Request.Context(), input)
 	if err != nil {

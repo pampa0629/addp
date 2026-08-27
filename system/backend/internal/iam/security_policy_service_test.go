@@ -63,7 +63,6 @@ func TestSecurityPolicyServiceUpdateAuditsAndRequiresRestart(t *testing.T) {
 		OAuthDeviceCodeTTLMinutes:        10,
 		OAuthDevicePollIntervalSeconds:   5,
 		TenantInvitationTTLHours:         168,
-		EnrollmentTicketTTLMinutes:       5,
 		OAuthPublicRateLimitPerMinute:    60,
 		OAuthUserRateLimitPerMinute:      30,
 		UpdatedByPrincipalID:             42,

@@ -13,10 +13,9 @@ import (
 )
 
 type TenantInvitationServiceConfig struct {
-	InvitationTTL       time.Duration
-	EnrollmentTicketTTL time.Duration
-	Generate            OpaqueTokenGenerator
-	Now                 func() time.Time
+	InvitationTTL time.Duration
+	Generate      OpaqueTokenGenerator
+	Now           func() time.Time
 }
 
 type CreateTenantInvitationInput struct {
@@ -31,18 +30,6 @@ type CreatedTenantInvitation struct {
 	Secret     string
 }
 
-type IssueEnrollmentTicketInput struct {
-	InvitationSecret string
-	Username         string
-	Password         string
-	Audit            AuditMetadata
-}
-
-type IssuedEnrollmentTicket struct {
-	EnrollmentTicket string
-	ExpiresAt        time.Time
-}
-
 type RegisterTenantInvitationInput struct {
 	InvitationSecret string
 	Username         string
@@ -55,7 +42,6 @@ type RegisterTenantInvitationInput struct {
 type AcceptTenantInvitationInput struct {
 	InvitationSecret string
 	PrincipalID      int64
-	EnrollmentTicket string
 	Authentication   SessionAuthentication
 	Audit            AuditMetadata
 }
@@ -82,8 +68,8 @@ func NewTenantInvitationService(
 	if repository == nil || identity == nil || tokenService == nil {
 		return nil, fmt.Errorf("%w: tenant invitation dependencies are required", commonapi.ErrBadRequest)
 	}
-	if config.InvitationTTL <= 0 || config.EnrollmentTicketTTL <= 0 {
-		return nil, fmt.Errorf("%w: tenant invitation lifetimes must be positive", commonapi.ErrBadRequest)
+	if config.InvitationTTL <= 0 {
+		return nil, fmt.Errorf("%w: tenant invitation lifetime must be positive", commonapi.ErrBadRequest)
 	}
 	if config.Generate == nil {
 		config.Generate = generateOpaqueToken
@@ -241,79 +227,6 @@ func (s *TenantInvitationService) Revoke(
 	return revoked, nil
 }
 
-func (s *TenantInvitationService) IssueEnrollmentTicket(
-	ctx context.Context,
-	input IssueEnrollmentTicketInput,
-) (*IssuedEnrollmentTicket, error) {
-	if !validOpaqueValue(input.InvitationSecret, "addp_ti_") {
-		return nil, commonapi.ErrUnauthorized
-	}
-	authenticated, err := s.identity.AuthenticateLocalAccount(ctx, input.Username, input.Password, input.Audit)
-	if err != nil {
-		return nil, err
-	}
-	now := s.config.Now().UTC()
-	plainTicket, err := s.config.Generate("addp_et_")
-	if err != nil || !validOpaqueValue(plainTicket, "addp_et_") {
-		return nil, fmt.Errorf("generate enrollment ticket")
-	}
-	var issued *IssuedEnrollmentTicket
-	var outcomeErr error
-	err = s.repository.Transaction(ctx, func(tx *Repository) error {
-		principal, err := tx.LockPrincipal(ctx, authenticated.PrincipalID)
-		if err != nil {
-			return err
-		}
-		invitation, invitationOutcome, err := s.lockUsableInvitationTx(ctx, tx, input.InvitationSecret, now, input.Audit)
-		if err != nil {
-			return err
-		}
-		if invitationOutcome != nil {
-			outcomeErr = invitationOutcome
-			return nil
-		}
-		if err := s.validateInvitationPrincipal(ctx, tx, invitation, principal); err != nil {
-			outcomeErr = err
-			return nil
-		}
-		contexts, hasPlatformRole, err := availableContexts(ctx, tx, principal.ID, AssuranceLevelAAL1, now)
-		if err != nil {
-			return err
-		}
-		if len(contexts) != 0 || hasPlatformRole {
-			outcomeErr = fmt.Errorf("%w: enrollment ticket is only available without an existing context", commonapi.ErrConflict)
-			return nil
-		}
-		expiresAt := now.Add(s.config.EnrollmentTicketTTL)
-		ticket := &EnrollmentTicket{
-			TokenHash: hashOpaqueToken(plainTicket), PrincipalID: principal.ID, InvitationID: invitation.ID,
-			IssuedAuthorizationVersion: principal.AuthorizationVersion,
-			AuthenticatedAt:            authenticated.AuthenticatedAt.UTC(), ExpiresAt: expiresAt, CreatedAt: now,
-		}
-		if err := tx.CreateEnrollmentTicket(ctx, ticket); err != nil {
-			return err
-		}
-		metadata := auditMetadataWithPrincipalFallback(input.Audit, principal.ID)
-		if err := NewAuditWriter(tx).Write(ctx, AuditEvent{
-			Metadata: metadata, EventName: "iam.enrollment_ticket.issued", Result: AuditResultSucceeded,
-			RiskLevel: AuditRiskMedium, ModuleName: "system", EntityType: "enrollment_ticket",
-			EntityID: strconv.FormatInt(ticket.ID, 10),
-			Details:  map[string]any{"invitation_id": invitation.ID, "tenant_id": invitation.TenantID, "expires_at": expiresAt},
-		}); err != nil {
-			return err
-		}
-		issued = &IssuedEnrollmentTicket{EnrollmentTicket: plainTicket, ExpiresAt: expiresAt}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	if outcomeErr != nil {
-		return nil, outcomeErr
-	}
-	return issued, nil
-}
-
 func (s *TenantInvitationService) Register(
 	ctx context.Context,
 	input RegisterTenantInvitationInput,
@@ -357,7 +270,7 @@ func (s *TenantInvitationService) Register(
 			return err
 		}
 		authentication := SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: AssuranceLevelAAL1, AuthenticatedAt: now}
-		accepted, err = s.acceptInvitationTx(ctx, tx, invitation, created.PrincipalID, nil, authentication, now, input.Audit)
+		accepted, err = s.acceptInvitationTx(ctx, tx, invitation, created.PrincipalID, authentication, now, input.Audit)
 		return err
 	})
 	if err != nil {
@@ -376,29 +289,14 @@ func (s *TenantInvitationService) Accept(
 	if !validOpaqueValue(input.InvitationSecret, "addp_ti_") {
 		return nil, commonapi.ErrUnauthorized
 	}
-	usingBrowser := input.PrincipalID > 0 && input.EnrollmentTicket == ""
-	usingEnrollment := input.PrincipalID == 0 && validOpaqueValue(input.EnrollmentTicket, "addp_et_")
-	if usingBrowser == usingEnrollment {
-		return nil, fmt.Errorf("%w: exactly one acceptance credential is required", commonapi.ErrBadRequest)
-	}
-	principalID := input.PrincipalID
-	var ticketSnapshot *EnrollmentTicket
-	var err error
-	if usingEnrollment {
-		ticketSnapshot, err = s.repository.GetEnrollmentTicketByHash(ctx, hashOpaqueToken(input.EnrollmentTicket))
-		if err != nil {
-			if errors.Is(err, commonapi.ErrNotFound) {
-				return nil, commonapi.ErrUnauthorized
-			}
-			return nil, err
-		}
-		principalID = ticketSnapshot.PrincipalID
+	if input.PrincipalID <= 0 {
+		return nil, fmt.Errorf("%w: authenticated principal is required", commonapi.ErrBadRequest)
 	}
 	now := s.config.Now().UTC()
 	var accepted *AcceptedTenantInvitation
 	var outcomeErr error
-	err = s.repository.Transaction(ctx, func(tx *Repository) error {
-		principal, err := tx.LockPrincipal(ctx, principalID)
+	err := s.repository.Transaction(ctx, func(tx *Repository) error {
+		principal, err := tx.LockPrincipal(ctx, input.PrincipalID)
 		if err != nil {
 			return err
 		}
@@ -414,26 +312,7 @@ func (s *TenantInvitationService) Accept(
 			outcomeErr = err
 			return nil
 		}
-		authentication := input.Authentication
-		var enrollmentTicket *EnrollmentTicket
-		if usingEnrollment {
-			enrollmentTicket, err = tx.LockEnrollmentTicketByHash(ctx, hashOpaqueToken(input.EnrollmentTicket))
-			if err != nil {
-				return err
-			}
-			if enrollmentTicket.ID != ticketSnapshot.ID || enrollmentTicket.PrincipalID != principal.ID ||
-				enrollmentTicket.InvitationID != invitation.ID || enrollmentTicket.ConsumedAt != nil ||
-				enrollmentTicket.IssuedAuthorizationVersion != principal.AuthorizationVersion ||
-				!enrollmentTicket.ExpiresAt.After(now) {
-				outcomeErr = commonapi.ErrUnauthorized
-				return nil
-			}
-			authentication = SessionAuthentication{
-				Methods: []string{"password"}, AssuranceLevel: AssuranceLevelAAL1,
-				AuthenticatedAt: enrollmentTicket.AuthenticatedAt,
-			}
-		}
-		accepted, err = s.acceptInvitationTx(ctx, tx, invitation, principal.ID, enrollmentTicket, authentication, now, input.Audit)
+		accepted, err = s.acceptInvitationTx(ctx, tx, invitation, principal.ID, input.Authentication, now, input.Audit)
 		return err
 	})
 	if err != nil {
@@ -450,7 +329,6 @@ func (s *TenantInvitationService) acceptInvitationTx(
 	tx *Repository,
 	invitation *TenantInvitation,
 	principalID int64,
-	enrollmentTicket *EnrollmentTicket,
 	authentication SessionAuthentication,
 	now time.Time,
 	audit AuditMetadata,
@@ -478,11 +356,6 @@ func (s *TenantInvitationService) acceptInvitationTx(
 	}
 	if err := tx.TransitionTenantInvitation(ctx, invitation.ID, TenantInvitationStatusAccepted, principalID, now); err != nil {
 		return nil, err
-	}
-	if enrollmentTicket != nil {
-		if err := tx.ConsumeEnrollmentTicket(ctx, enrollmentTicket.ID, now); err != nil {
-			return nil, err
-		}
 	}
 	principal, err := tx.GetPrincipal(ctx, principalID)
 	if err != nil {

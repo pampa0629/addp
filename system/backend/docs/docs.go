@@ -6901,7 +6901,7 @@ const docTemplate = `{
                 "summary": "接受租户邀请 | Accept tenant invitation",
                 "parameters": [
                     {
-                        "description": "邀请和可选 Enrollment Ticket | Invitation and optional enrollment ticket",
+                        "description": "租户邀请 | Tenant invitation",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -6919,40 +6919,6 @@ const docTemplate = `{
                     }
                 },
                 "x-addp-auth-mode": "authenticated"
-            }
-        },
-        "/tenant/invitations/enrollments": {
-            "post": {
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "租户邀请 | Tenant Invitations"
-                ],
-                "summary": "签发邀请 Enrollment Ticket | Issue invitation enrollment ticket",
-                "parameters": [
-                    {
-                        "description": "邀请与本地账号凭据 | Invitation and local credentials",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMInvitationEnrollmentRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMInvitationEnrollmentResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "public"
             }
         },
         "/tenant/invitations/registrations": {
@@ -11251,9 +11217,6 @@ const docTemplate = `{
         "internal_api.IAMInvitationAcceptanceRequest": {
             "type": "object",
             "properties": {
-                "enrollment_ticket": {
-                    "type": "string"
-                },
                 "invitation_secret": {
                     "type": "string"
                 }
@@ -11269,31 +11232,6 @@ const docTemplate = `{
                     "$ref": "#/definitions/internal_api.IAMAccessTokenResponse"
                 },
                 "tenant_membership_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.IAMInvitationEnrollmentRequest": {
-            "type": "object",
-            "properties": {
-                "invitation_secret": {
-                    "type": "string"
-                },
-                "password": {
-                    "type": "string"
-                },
-                "username": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.IAMInvitationEnrollmentResponse": {
-            "type": "object",
-            "properties": {
-                "enrollment_ticket": {
-                    "type": "string"
-                },
-                "expires_at": {
                     "type": "string"
                 }
             }
@@ -11889,9 +11827,6 @@ const docTemplate = `{
                 "delegated_access_token_ttl_minutes": {
                     "type": "integer"
                 },
-                "enrollment_ticket_ttl_minutes": {
-                    "type": "integer"
-                },
                 "oauth_authorization_code_ttl_minutes": {
                     "type": "integer"
                 },
@@ -12377,9 +12312,6 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "delegated_access_token_ttl_minutes": {
-                    "type": "integer"
-                },
-                "enrollment_ticket_ttl_minutes": {
                     "type": "integer"
                 },
                 "oauth_authorization_code_ttl_minutes": {

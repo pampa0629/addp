@@ -19,23 +19,23 @@ func NewResourceAccessRuleRepository(db *gorm.DB) *ResourceAccessRuleRepository 
 }
 
 func (r *ResourceAccessRuleRepository) FulfillAssetGrant(input models.ResourceAccessRule) (*models.ResourceAccessRule, error) {
+	input.ID = uuid.NewString()
+	input.SourceModule = models.ResourceAccessSourceAsset
+	input.Effect = models.ResourceAccessEffectAllow
 	var result models.ResourceAccessRule
 	err := r.db.Transaction(func(tx *gorm.DB) error {
-		var existing models.ResourceAccessRule
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("tenant_id = ? AND source_module = ? AND source_identity = ?", input.TenantID, models.ResourceAccessSourceAsset, input.SourceIdentity).
-			First(&existing).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			input.ID = uuid.NewString()
-			input.SourceModule = models.ResourceAccessSourceAsset
-			input.Effect = models.ResourceAccessEffectAllow
-			if createErr := tx.Create(&input).Error; createErr != nil {
-				return createErr
-			}
+		create := tx.Clauses(assetGrantSourceConflictClause()).Create(&input)
+		if create.Error != nil {
+			return create.Error
+		}
+		if create.RowsAffected == 1 {
 			result = input
 			return nil
 		}
-		if err != nil {
+		var existing models.ResourceAccessRule
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("tenant_id = ? AND source_module = ? AND source_identity = ?", input.TenantID, models.ResourceAccessSourceAsset, input.SourceIdentity).
+			First(&existing).Error; err != nil {
 			return err
 		}
 		if !sameAssetGrant(existing, input) || existing.RevokedAt != nil {
@@ -48,24 +48,24 @@ func (r *ResourceAccessRuleRepository) FulfillAssetGrant(input models.ResourceAc
 }
 
 func (r *ResourceAccessRuleRepository) RevokeAssetGrant(input models.ResourceAccessRule, revokedAt time.Time) (*models.ResourceAccessRule, error) {
+	input.ID = uuid.NewString()
+	input.SourceModule = models.ResourceAccessSourceAsset
+	input.Effect = models.ResourceAccessEffectAllow
+	input.RevokedAt = &revokedAt
 	var result models.ResourceAccessRule
 	err := r.db.Transaction(func(tx *gorm.DB) error {
-		var existing models.ResourceAccessRule
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("tenant_id = ? AND source_module = ? AND source_identity = ?", input.TenantID, models.ResourceAccessSourceAsset, input.SourceIdentity).
-			First(&existing).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			input.ID = uuid.NewString()
-			input.SourceModule = models.ResourceAccessSourceAsset
-			input.Effect = models.ResourceAccessEffectAllow
-			input.RevokedAt = &revokedAt
-			if createErr := tx.Create(&input).Error; createErr != nil {
-				return createErr
-			}
+		create := tx.Clauses(assetGrantSourceConflictClause()).Create(&input)
+		if create.Error != nil {
+			return create.Error
+		}
+		if create.RowsAffected == 1 {
 			result = input
 			return nil
 		}
-		if err != nil {
+		var existing models.ResourceAccessRule
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("tenant_id = ? AND source_module = ? AND source_identity = ?", input.TenantID, models.ResourceAccessSourceAsset, input.SourceIdentity).
+			First(&existing).Error; err != nil {
 			return err
 		}
 		if !sameAssetGrant(existing, input) {
@@ -81,6 +81,13 @@ func (r *ResourceAccessRuleRepository) RevokeAssetGrant(input models.ResourceAcc
 		return nil
 	})
 	return &result, err
+}
+
+func assetGrantSourceConflictClause() clause.OnConflict {
+	return clause.OnConflict{
+		Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "source_module"}, {Name: "source_identity"}},
+		DoNothing: true,
+	}
 }
 
 func (r *ResourceAccessRuleRepository) CanExecuteDataApplication(tenantID, subjectID int64, resourceID string, now time.Time) (bool, error) {

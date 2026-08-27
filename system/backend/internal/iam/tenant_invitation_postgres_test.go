@@ -22,7 +22,7 @@ func TestTenantInvitationServiceAgainstPostgres(t *testing.T) {
 		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
 	testsupport.RequireDisposablePostgresDSN(t, dsn)
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Info)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestTenantInvitationServiceAgainstPostgres(t *testing.T) {
 	membershipService := NewTenantMembershipService(repository, now)
 	tenantService := NewPlatformTenantService(repository, now)
 	invitationService, err := NewTenantInvitationService(repository, identityService, tokenService, TenantInvitationServiceConfig{
-		InvitationTTL: 7 * 24 * time.Hour, EnrollmentTicketTTL: 5 * time.Minute, Now: now,
+		InvitationTTL: 7 * 24 * time.Hour, Now: now,
 	})
 	if err != nil {
 		t.Fatalf("create tenant invitation service: %v", err)
@@ -98,38 +98,6 @@ func TestTenantInvitationServiceAgainstPostgres(t *testing.T) {
 		DisplayName: "Replay User", Audit: audit,
 	}); !errors.Is(err, commonapi.ErrUnauthorized) {
 		t.Fatalf("registration replay error = %v, want unauthorized", err)
-	}
-
-	enrollmentEmail := "enrollment.user@example.test"
-	enrollmentUser, err := identityService.CreateLocalUser(ctx, CreateLocalUserInput{
-		Username: "enrollment-user", Password: "enrollment-password", DisplayName: "Enrollment User",
-		PrimaryEmail: &enrollmentEmail, Audit: audit,
-	})
-	if err != nil {
-		t.Fatalf("create enrollment user: %v", err)
-	}
-	enrollmentInvitation := createInvitationForTest(t, ctx, invitationService, tenantA.ID, creator.PrincipalID, enrollmentEmail, audit)
-	issuedTicket, err := invitationService.IssueEnrollmentTicket(ctx, IssueEnrollmentTicketInput{
-		InvitationSecret: enrollmentInvitation.Secret, Username: "enrollment-user",
-		Password: "enrollment-password", Audit: audit,
-	})
-	if err != nil || !strings.HasPrefix(issuedTicket.EnrollmentTicket, "addp_et_") {
-		t.Fatalf("issued enrollment ticket = %#v err=%v", issuedTicket, err)
-	}
-	enrollmentAccepted, err := invitationService.Accept(ctx, AcceptTenantInvitationInput{
-		InvitationSecret: enrollmentInvitation.Secret, EnrollmentTicket: issuedTicket.EnrollmentTicket, Audit: audit,
-	})
-	if err != nil {
-		t.Fatalf("accept invitation with enrollment ticket: %v", err)
-	}
-	assertAcceptedInvitationResult(t, enrollmentAccepted, tenantA.ID)
-	if enrollmentAccepted.Membership.PrincipalID != enrollmentUser.PrincipalID {
-		t.Fatalf("enrollment membership principal = %d, want %d", enrollmentAccepted.Membership.PrincipalID, enrollmentUser.PrincipalID)
-	}
-	if _, err := invitationService.Accept(ctx, AcceptTenantInvitationInput{
-		InvitationSecret: enrollmentInvitation.Secret, EnrollmentTicket: issuedTicket.EnrollmentTicket, Audit: audit,
-	}); !errors.Is(err, commonapi.ErrUnauthorized) {
-		t.Fatalf("enrollment replay error = %v, want unauthorized", err)
 	}
 
 	browserEmail := "browser.user@example.test"

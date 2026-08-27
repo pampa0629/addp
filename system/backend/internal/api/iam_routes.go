@@ -75,7 +75,6 @@ func RegisterIAMRoutes(
 	api.POST("/logout", runtime.AuthHandler.Logout)
 	api.POST("/auth/context-selections", runtime.AuthHandler.ConsumeContextSelection)
 	api.GET("/auth/context", runtime.AuthHandler.Context)
-	api.POST("/tenant/invitations/enrollments", publicRateLimit, runtime.TenantInvitationHandler.Enroll)
 	api.POST("/tenant/invitations/registrations", publicRateLimit, runtime.TenantInvitationHandler.Register)
 	api.POST("/tenant/invitations/acceptances", publicRateLimit, runtime.TenantInvitationHandler.Accept)
 

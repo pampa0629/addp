@@ -2272,6 +2272,98 @@ func TestExecutionAuthorizationLeaseBoundaryForwardMigrationAgainstPostgres(t *t
 	}
 }
 
+func TestInvitationEnrollmentTicketRemovalForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset invitation enrollment removal migration schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	through107, through108 := migrationFilesBeforeAndThrough(t, "000108_iam_remove_invitation_enrollment_ticket.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through107, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 107: %v", err)
+	}
+
+	var legacyTableExists, legacyPolicyColumnExists bool
+	if err := db.QueryRow(`
+		SELECT to_regclass('system.enrollment_tickets') IS NOT NULL,
+		       EXISTS (
+		           SELECT 1 FROM information_schema.columns
+		           WHERE table_schema = 'system'
+		             AND table_name = 'iam_security_policy'
+		             AND column_name = 'enrollment_ticket_ttl_minutes'
+		       )
+	`).Scan(&legacyTableExists, &legacyPolicyColumnExists); err != nil {
+		t.Fatalf("inspect invitation enrollment schema before migration 108: %v", err)
+	}
+	if !legacyTableExists || !legacyPolicyColumnExists {
+		t.Fatalf("legacy invitation enrollment schema before migration 108 = table:%t policy_column:%t", legacyTableExists, legacyPolicyColumnExists)
+	}
+
+	if err := (&Runner{DSN: dsn, FS: through108, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply invitation enrollment removal migration 108: %v", err)
+	}
+	if err := (&Runner{DSN: dsn, FS: through108, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("re-run invitation enrollment removal migration catalog: %v", err)
+	}
+
+	var version, legacyFunctionCount, invitationDeleteTriggerCount int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read migration 108 version: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT to_regclass('system.enrollment_tickets') IS NOT NULL,
+		       EXISTS (
+		           SELECT 1 FROM information_schema.columns
+		           WHERE table_schema = 'system'
+		             AND table_name = 'iam_security_policy'
+		             AND column_name = 'enrollment_ticket_ttl_minutes'
+		       )
+	`).Scan(&legacyTableExists, &legacyPolicyColumnExists); err != nil {
+		t.Fatalf("inspect invitation enrollment schema after migration 108: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM pg_proc AS procedure
+		JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+		WHERE namespace.nspname = 'system'
+		  AND procedure.proname IN ('validate_enrollment_ticket_transition', 'prevent_invitation_enrollment_delete')
+	`).Scan(&legacyFunctionCount); err != nil {
+		t.Fatalf("count legacy invitation enrollment functions: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM pg_trigger AS trigger
+		JOIN pg_proc AS procedure ON procedure.oid = trigger.tgfoid
+		JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+		WHERE trigger.tgrelid = 'system.tenant_invitations'::regclass
+		  AND NOT trigger.tgisinternal
+		  AND trigger.tgname IN ('trg_tenant_invitations_prevent_delete', 'trg_tenant_invitations_prevent_truncate')
+		  AND namespace.nspname = 'system'
+		  AND procedure.proname = 'prevent_tenant_invitation_delete'
+	`).Scan(&invitationDeleteTriggerCount); err != nil {
+		t.Fatalf("count tenant invitation immutable triggers after migration 108: %v", err)
+	}
+	if version != 108 || dirty || legacyTableExists || legacyPolicyColumnExists || legacyFunctionCount != 0 || invitationDeleteTriggerCount != 2 {
+		t.Fatalf(
+			"migration 108 state=(%d,%t) legacy=(table:%t,column:%t,functions:%d) invitation_delete_triggers=%d",
+			version, dirty, legacyTableExists, legacyPolicyColumnExists, legacyFunctionCount, invitationDeleteTriggerCount,
+		)
+	}
+}
+
 func TestRunnerAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
@@ -2309,7 +2401,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	}
 
 	assertIAMCatalogSeed(t, db)
-	assertWorkbenchRuntimeCatalog(t, db, 10)
+	assertWorkbenchRuntimeCatalog(t, db, 13)
 	assertStandardDocumentCatalog(t, db)
 	assertMonitorAuthorizationCatalog(t, db)
 	assertModelAuthorizationCatalog(t, db)
@@ -2324,7 +2416,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	assertAuthorizationVersionRefreshConstraints(t, db)
 	assertOAuthFositeStorageConstraints(t, db)
 	assertAuditContextConstraints(t, db)
-	assertInvitationEnrollmentConstraints(t, db)
+	assertInvitationConstraints(t, db)
 	assertMFABootstrapConstraints(t, db)
 	assertIAMRecoveryConstraints(t, db)
 	assertTenantAdministrationClosure(t, db)
@@ -3673,8 +3765,42 @@ func assertMFABootstrapConstraints(t *testing.T, db *sql.DB) {
 	}
 }
 
-func assertInvitationEnrollmentConstraints(t *testing.T, db *sql.DB) {
+func assertInvitationConstraints(t *testing.T, db *sql.DB) {
 	t.Helper()
+
+	var enrollmentTicketsTable *string
+	if err := db.QueryRow(`SELECT to_regclass('system.enrollment_tickets')::text`).Scan(&enrollmentTicketsTable); err != nil {
+		t.Fatalf("check enrollment ticket table removal: %v", err)
+	}
+	if enrollmentTicketsTable != nil {
+		t.Fatalf("enrollment ticket table still exists: %s", *enrollmentTicketsTable)
+	}
+	var enrollmentTicketTTLColumnCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM information_schema.columns
+		WHERE table_schema = 'system'
+		  AND table_name = 'iam_security_policy'
+		  AND column_name = 'enrollment_ticket_ttl_minutes'
+	`).Scan(&enrollmentTicketTTLColumnCount); err != nil {
+		t.Fatalf("check enrollment ticket policy column removal: %v", err)
+	}
+	if enrollmentTicketTTLColumnCount != 0 {
+		t.Fatalf("enrollment ticket policy column count = %d, want 0", enrollmentTicketTTLColumnCount)
+	}
+	var legacyFunctionCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM pg_proc AS procedure
+		JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+		WHERE namespace.nspname = 'system'
+		  AND procedure.proname IN ('validate_enrollment_ticket_transition', 'prevent_invitation_enrollment_delete')
+	`).Scan(&legacyFunctionCount); err != nil {
+		t.Fatalf("check enrollment ticket function removal: %v", err)
+	}
+	if legacyFunctionCount != 0 {
+		t.Fatalf("legacy enrollment ticket function count = %d, want 0", legacyFunctionCount)
+	}
 
 	var tenantID, creatorPrincipalID int64
 	if err := db.QueryRow(`SELECT id FROM system.tenants WHERE code = 'migration-test'`).Scan(&tenantID); err != nil {
@@ -3709,29 +3835,6 @@ func assertInvitationEnrollmentConstraints(t *testing.T, db *sql.DB) {
 		t.Fatal("tenant invitation accepted a non-SHA256 secret hash")
 	}
 
-	var authorizationVersion int64
-	if err := db.QueryRow(`SELECT authorization_version FROM system.principals WHERE id = $1`, invitedPrincipalID).Scan(&authorizationVersion); err != nil {
-		t.Fatalf("read invited principal authorization version: %v", err)
-	}
-	var ticketID int64
-	if err := db.QueryRow(`
-		INSERT INTO system.enrollment_tickets
-		    (token_hash, principal_id, invitation_id, issued_authorization_version, authenticated_at, expires_at)
-		VALUES ($1, $2, $3, $4, now(), now() + interval '5 minutes')
-		RETURNING id
-	`, tokenHash('c'), invitedPrincipalID, invitationID, authorizationVersion).Scan(&ticketID); err != nil {
-		t.Fatalf("create enrollment ticket: %v", err)
-	}
-	if _, err := db.Exec(`UPDATE system.enrollment_tickets SET principal_id = $1, consumed_at = now() WHERE id = $2`, creatorPrincipalID, ticketID); err == nil {
-		t.Fatal("enrollment ticket principal binding update succeeded")
-	}
-	if _, err := db.Exec(`UPDATE system.enrollment_tickets SET consumed_at = now() WHERE id = $1`, ticketID); err != nil {
-		t.Fatalf("consume enrollment ticket: %v", err)
-	}
-	if _, err := db.Exec(`UPDATE system.enrollment_tickets SET consumed_at = now() WHERE id = $1`, ticketID); err == nil {
-		t.Fatal("enrollment ticket was consumed twice")
-	}
-
 	if _, err := db.Exec(`
 		UPDATE system.tenant_invitations
 		SET status = 'accepted', accepted_at = now(), accepted_by_principal_id = $1
@@ -3751,12 +3854,6 @@ func assertInvitationEnrollmentConstraints(t *testing.T, db *sql.DB) {
 	}
 	if _, err := db.Exec(`DELETE FROM system.tenant_invitations WHERE id = $1`, invitationID); err == nil {
 		t.Fatal("tenant invitation physical delete succeeded")
-	}
-	if _, err := db.Exec(`DELETE FROM system.enrollment_tickets WHERE id = $1`, ticketID); err == nil {
-		t.Fatal("enrollment ticket physical delete succeeded")
-	}
-	if _, err := db.Exec(`TRUNCATE system.enrollment_tickets`); err == nil {
-		t.Fatal("enrollment ticket truncate succeeded")
 	}
 }
 

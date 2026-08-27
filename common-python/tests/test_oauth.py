@@ -17,6 +17,41 @@ import httpx
 from addp_common import oauth
 
 
+LOOPBACK_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+PROXY_ENVIRONMENT_NAMES = frozenset({
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "no_proxy",
+})
+
+
+@pytest.fixture(autouse=True)
+def hostile_proxy_environment(monkeypatch):
+    proxy_url = "http://127.0.0.1:9"
+    for name in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ):
+        monkeypatch.setenv(name, proxy_url)
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(name, raising=False)
+
+
+def loopback_subprocess_environment(**values: str) -> dict[str, str]:
+    environment = {
+        name: value
+        for name, value in os.environ.items()
+        if name.lower() not in PROXY_ENVIRONMENT_NAMES
+    }
+    environment.update(values)
+    return environment
+
+
 class FakeResponse:
     status_code = 200
 
@@ -141,7 +176,7 @@ async def test_browser_login_uses_available_dynamic_loopback_port(monkeypatch):
         query = urllib.parse.parse_qs(urllib.parse.urlparse(authorization_url).query)
         opened_query = query
         callback_query = urllib.parse.urlencode({"code": "addp_ac_test", "state": query["request_id"][0]})
-        with urllib.request.urlopen(opened_redirect_uri + "?" + callback_query, timeout=2) as response:
+        with LOOPBACK_OPENER.open(opened_redirect_uri + "?" + callback_query, timeout=2) as response:
             body = response.read().decode()
             assert response.status == 200
             assert response.headers["Cache-Control"] == "no-store"
@@ -239,14 +274,14 @@ async def test_callback_ignores_other_paths_until_valid_callback():
     callback.start()
 
     with pytest.raises(urllib.error.HTTPError) as not_found:
-        urllib.request.urlopen(callback.redirect_uri.replace("/callback", "/favicon.ico"), timeout=2)
+        LOOPBACK_OPENER.open(callback.redirect_uri.replace("/callback", "/favicon.ico"), timeout=2)
     assert not_found.value.code == 404
 
     callback_url = callback.redirect_uri + "?" + urllib.parse.urlencode({
         "code": "addp_ac_expected",
         "state": "expected-state",
     })
-    with urllib.request.urlopen(callback_url, timeout=2) as response:
+    with LOOPBACK_OPENER.open(callback_url, timeout=2) as response:
         assert response.status == 200
 
     assert await callback.wait_for_code(timeout_seconds=1) == "addp_ac_expected"
@@ -262,7 +297,7 @@ async def test_callback_rejects_state_mismatch_without_reflecting_secrets():
     })
 
     with pytest.raises(urllib.error.HTTPError) as failed:
-        urllib.request.urlopen(callback_url, timeout=2)
+        LOOPBACK_OPENER.open(callback_url, timeout=2)
     body = failed.value.read().decode()
     assert failed.value.code == 400
     assert "addp_ac_secret" not in body
@@ -283,7 +318,7 @@ async def test_callback_returns_authorization_error_to_cli_only():
 
     request = urllib.request.Request(callback_url, headers={"Accept-Language": "en"})
     with pytest.raises(urllib.error.HTTPError) as failed:
-        urllib.request.urlopen(request, timeout=2)
+        LOOPBACK_OPENER.open(request, timeout=2)
     body = failed.value.read().decode()
     assert failed.value.code == 400
     assert "Authorization failed" in body
@@ -694,11 +729,10 @@ oauth._refresh_token = lambda _base_url: token_file.read_text()
 oauth._store_refresh_token = lambda _base_url, token: token_file.write_text(token)
 print(asyncio.run(oauth.refresh_access_token(os.environ["ADDP_TEST_BASE_URL"])))
 """
-    env = {
-        **os.environ,
-        "ADDP_TEST_BASE_URL": base_url,
-        "ADDP_TEST_TOKEN_FILE": str(token_file),
-    }
+    env = loopback_subprocess_environment(
+        ADDP_TEST_BASE_URL=base_url,
+        ADDP_TEST_TOKEN_FILE=str(token_file),
+    )
 
     try:
         processes = [

@@ -904,7 +904,7 @@ Phase 4B 再接企业目录和资产授权主线：
 - [x] 一次性启用并收敛 Asset `application` 类型的 CatalogEntry 组合路线；
 - [x] 接入 owner Resource Grant、Asset 履约和 Portal 打开入口；
 - [x] 删除旧的手工应用链接、软授权和专属 Token 设想；
-- [ ] 留存普通用户“Grant 生效前拒绝—生效后运行—撤销后拒绝”的可复核浏览器证据。
+- [x] 留存普通用户“Grant 生效前拒绝—生效后运行—撤销后拒绝”的可复核浏览器证据。
 
 ### Phase 5：BI 深化与大屏
 

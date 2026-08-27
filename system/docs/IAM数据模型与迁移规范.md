@@ -157,7 +157,7 @@ OIDC 表字段是未来协议启用所需的受控预留，不表示 OIDC 已对
 
 ## 九、IAM 安全策略
 
-`iam_security_policy` 是 System IAM 的平台级单例安全策略，保存 Token、OAuth Device Flow、Tenant Invitation、Enrollment Ticket 和 OAuth 限流的普通数值策略。该表不保存 Pepper、MFA 加密密钥、Service Client Secret 或其他 Secret。
+`iam_security_policy` 是 System IAM 的平台级单例安全策略，保存 Token、OAuth Device Flow、Tenant Invitation 和 OAuth 限流的普通数值策略。该表不保存 Pepper、MFA 加密密钥、Service Client Secret 或其他 Secret。
 
 策略使用 `version` 做乐观并发控制，使用 `applied_version` 表达当前 IAM Runtime 已装配的版本。System 启动时读取并校验唯一记录，然后将该版本标记为已应用；运行期间更新只产生新的待重启版本，不修改已装配 Runtime，也不读取环境变量 fallback。
 

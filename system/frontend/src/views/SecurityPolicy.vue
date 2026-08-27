@@ -59,13 +59,10 @@
       </section>
 
       <section class="form-section">
-        <h2>{{ t('system.securityPolicy.enrollmentSection') }}</h2>
+        <h2>{{ t('system.securityPolicy.invitationSection') }}</h2>
         <div class="form-grid">
           <el-form-item :label="t('system.securityPolicy.invitationTTL')" prop="tenantInvitationTTLHours">
             <el-input-number v-model="form.tenantInvitationTTLHours" :min="1" :max="720" controls-position="right" />
-          </el-form-item>
-          <el-form-item :label="t('system.securityPolicy.enrollmentTicketTTL')" prop="enrollmentTicketTTLMinutes">
-            <el-input-number v-model="form.enrollmentTicketTTLMinutes" :min="1" :max="30" controls-position="right" />
           </el-form-item>
         </div>
       </section>
@@ -117,7 +114,6 @@ const form = reactive({
   oauthDeviceCodeTTLMinutes: 10,
   oauthDevicePollIntervalSeconds: 5,
   tenantInvitationTTLHours: 168,
-  enrollmentTicketTTLMinutes: 5,
   oauthPublicRateLimitPerMinute: 60,
   oauthUserRateLimitPerMinute: 30
 })
@@ -143,7 +139,6 @@ function applyValue(value) {
   form.oauthDeviceCodeTTLMinutes = value.oauth_device_code_ttl_minutes
   form.oauthDevicePollIntervalSeconds = value.oauth_device_poll_interval_seconds
   form.tenantInvitationTTLHours = value.tenant_invitation_ttl_hours
-  form.enrollmentTicketTTLMinutes = value.enrollment_ticket_ttl_minutes
   form.oauthPublicRateLimitPerMinute = value.oauth_public_rate_limit_per_minute
   form.oauthUserRateLimitPerMinute = value.oauth_user_rate_limit_per_minute
 }
@@ -174,7 +169,6 @@ async function save() {
       oauth_device_code_ttl_minutes: form.oauthDeviceCodeTTLMinutes,
       oauth_device_poll_interval_seconds: form.oauthDevicePollIntervalSeconds,
       tenant_invitation_ttl_hours: form.tenantInvitationTTLHours,
-      enrollment_ticket_ttl_minutes: form.enrollmentTicketTTLMinutes,
       oauth_public_rate_limit_per_minute: form.oauthPublicRateLimitPerMinute,
       oauth_user_rate_limit_per_minute: form.oauthUserRateLimitPerMinute
     })

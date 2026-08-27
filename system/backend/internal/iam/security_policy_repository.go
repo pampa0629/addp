@@ -53,7 +53,6 @@ func (r *Repository) UpdateSecurityPolicy(ctx context.Context, policy SecurityPo
 			"oauth_device_code_ttl_minutes":        policy.OAuthDeviceCodeTTLMinutes,
 			"oauth_device_poll_interval_seconds":   policy.OAuthDevicePollIntervalSeconds,
 			"tenant_invitation_ttl_hours":          policy.TenantInvitationTTLHours,
-			"enrollment_ticket_ttl_minutes":        policy.EnrollmentTicketTTLMinutes,
 			"oauth_public_rate_limit_per_minute":   policy.OAuthPublicRateLimitPerMinute,
 			"oauth_user_rate_limit_per_minute":     policy.OAuthUserRateLimitPerMinute,
 			"updated_by_principal_id":              policy.UpdatedByPrincipalID,

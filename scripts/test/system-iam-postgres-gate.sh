@@ -16,7 +16,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         *)
-            echo "usage: $0 [--package iam|oauth|api|migration] [--test catalog-reference-candidates|execution-audience|execution-authorization-lease-boundary|portal-runtime-removal|service-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|quality-catalog-read|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider]" >&2
+            echo "usage: $0 [--package iam|oauth|api|migration] [--test tenant-invitation|catalog-reference-candidates|invitation-enrollment-removal|execution-audience|execution-authorization-lease-boundary|portal-runtime-removal|service-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|quality-catalog-read|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider]" >&2
             exit 2
             ;;
     esac
@@ -65,6 +65,13 @@ esac
 test_pattern='AgainstPostgres$'
 case "$TEST_FILTER" in
     "") ;;
+    tenant-invitation)
+        if [ "$PACKAGE_FILTER" != "iam" ]; then
+            echo "tenant-invitation test requires --package iam" >&2
+            exit 2
+        fi
+        test_pattern='^TestTenantInvitationServiceAgainstPostgres$'
+        ;;
     catalog-reference-candidates)
         if [ "$PACKAGE_FILTER" != "iam" ]; then
             echo "catalog-reference-candidates test requires --package iam" >&2
@@ -78,6 +85,13 @@ case "$TEST_FILTER" in
             exit 2
         fi
         test_pattern='^TestExecutionAudienceForwardMigrationAgainstPostgres$'
+        ;;
+    invitation-enrollment-removal)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "invitation-enrollment-removal test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestInvitationEnrollmentTicketRemovalForwardMigrationAgainstPostgres$'
         ;;
     execution-authorization-lease-boundary)
         if [ "$PACKAGE_FILTER" != "migration" ]; then

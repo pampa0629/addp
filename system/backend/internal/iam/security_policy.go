@@ -16,7 +16,6 @@ type SecurityPolicy struct {
 	OAuthDeviceCodeTTLMinutes        int       `gorm:"column:oauth_device_code_ttl_minutes;not null" json:"oauth_device_code_ttl_minutes"`
 	OAuthDevicePollIntervalSeconds   int       `gorm:"column:oauth_device_poll_interval_seconds;not null" json:"oauth_device_poll_interval_seconds"`
 	TenantInvitationTTLHours         int       `gorm:"column:tenant_invitation_ttl_hours;not null" json:"tenant_invitation_ttl_hours"`
-	EnrollmentTicketTTLMinutes       int       `gorm:"column:enrollment_ticket_ttl_minutes;not null" json:"enrollment_ticket_ttl_minutes"`
 	OAuthPublicRateLimitPerMinute    int       `gorm:"column:oauth_public_rate_limit_per_minute;not null" json:"oauth_public_rate_limit_per_minute"`
 	OAuthUserRateLimitPerMinute      int       `gorm:"column:oauth_user_rate_limit_per_minute;not null" json:"oauth_user_rate_limit_per_minute"`
 	UpdatedByPrincipalID             *int64    `gorm:"column:updated_by_principal_id" json:"updated_by_principal_id,omitempty"`
@@ -33,8 +32,7 @@ func DefaultSecurityPolicy() SecurityPolicy {
 		ResourceAccessTicketTTLMinutes: 15, RefreshTokenTTLDays: 30,
 		OAuthAuthorizationCodeTTLMinutes: 5, OAuthDeviceCodeTTLMinutes: 10,
 		OAuthDevicePollIntervalSeconds: 5, TenantInvitationTTLHours: 168,
-		EnrollmentTicketTTLMinutes: 5, OAuthPublicRateLimitPerMinute: 60,
-		OAuthUserRateLimitPerMinute: 30,
+		OAuthPublicRateLimitPerMinute: 60, OAuthUserRateLimitPerMinute: 30,
 	}
 }
 
@@ -48,7 +46,6 @@ type UpdateSecurityPolicyInput struct {
 	OAuthDeviceCodeTTLMinutes        int
 	OAuthDevicePollIntervalSeconds   int
 	TenantInvitationTTLHours         int
-	EnrollmentTicketTTLMinutes       int
 	OAuthPublicRateLimitPerMinute    int
 	OAuthUserRateLimitPerMinute      int
 	UpdatedByPrincipalID             int64
@@ -66,7 +63,6 @@ func (input UpdateSecurityPolicyInput) policy() SecurityPolicy {
 		OAuthDeviceCodeTTLMinutes:        input.OAuthDeviceCodeTTLMinutes,
 		OAuthDevicePollIntervalSeconds:   input.OAuthDevicePollIntervalSeconds,
 		TenantInvitationTTLHours:         input.TenantInvitationTTLHours,
-		EnrollmentTicketTTLMinutes:       input.EnrollmentTicketTTLMinutes,
 		OAuthPublicRateLimitPerMinute:    input.OAuthPublicRateLimitPerMinute,
 		OAuthUserRateLimitPerMinute:      input.OAuthUserRateLimitPerMinute,
 	}

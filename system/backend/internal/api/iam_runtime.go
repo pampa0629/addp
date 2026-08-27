@@ -89,7 +89,6 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config, securityPolicy iam.SecurityP
 	delegatedAccessTokenTTL := time.Duration(securityPolicy.DelegatedAccessTokenTTLMinutes) * time.Minute
 	resourceTicketTTL := time.Duration(securityPolicy.ResourceAccessTicketTTLMinutes) * time.Minute
 	invitationTTL := time.Duration(securityPolicy.TenantInvitationTTLHours) * time.Hour
-	enrollmentTicketTTL := time.Duration(securityPolicy.EnrollmentTicketTTLMinutes) * time.Minute
 
 	repository := iam.NewRepository(db)
 	securityPolicyService := iam.NewSecurityPolicyService(repository)
@@ -119,7 +118,7 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config, securityPolicy iam.SecurityP
 	}
 	tenantInvitationService, err := iam.NewTenantInvitationService(
 		repository, identityService, tokenFamilyService, iam.TenantInvitationServiceConfig{
-			InvitationTTL: invitationTTL, EnrollmentTicketTTL: enrollmentTicketTTL,
+			InvitationTTL: invitationTTL,
 		},
 	)
 	if err != nil {

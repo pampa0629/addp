@@ -453,20 +453,6 @@ type TenantInvitation struct {
 
 func (TenantInvitation) TableName() string { return "system.tenant_invitations" }
 
-type EnrollmentTicket struct {
-	ID                         int64      `gorm:"primaryKey;autoIncrement"`
-	TokenHash                  string     `gorm:"column:token_hash;not null;unique"`
-	PrincipalID                int64      `gorm:"column:principal_id;not null"`
-	InvitationID               int64      `gorm:"column:invitation_id;not null"`
-	IssuedAuthorizationVersion int64      `gorm:"column:issued_authorization_version;not null"`
-	AuthenticatedAt            time.Time  `gorm:"column:authenticated_at;not null"`
-	ExpiresAt                  time.Time  `gorm:"column:expires_at;not null"`
-	ConsumedAt                 *time.Time `gorm:"column:consumed_at"`
-	CreatedAt                  time.Time  `gorm:"column:created_at;autoCreateTime"`
-}
-
-func (EnrollmentTicket) TableName() string { return "system.enrollment_tickets" }
-
 type PrivilegedChangeRequest struct {
 	ID                     int64                  `gorm:"primaryKey;autoIncrement"`
 	ChangeType             PrivilegedChangeType   `gorm:"column:change_type;not null"`

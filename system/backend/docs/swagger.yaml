@@ -1978,8 +1978,6 @@ definitions:
     type: object
   internal_api.IAMInvitationAcceptanceRequest:
     properties:
-      enrollment_ticket:
-        type: string
       invitation_secret:
         type: string
     type: object
@@ -1990,22 +1988,6 @@ definitions:
       session:
         $ref: '#/definitions/internal_api.IAMAccessTokenResponse'
       tenant_membership_id:
-        type: string
-    type: object
-  internal_api.IAMInvitationEnrollmentRequest:
-    properties:
-      invitation_secret:
-        type: string
-      password:
-        type: string
-      username:
-        type: string
-    type: object
-  internal_api.IAMInvitationEnrollmentResponse:
-    properties:
-      enrollment_ticket:
-        type: string
-      expires_at:
         type: string
     type: object
   internal_api.IAMInvitationRegistrationRequest:
@@ -2391,8 +2373,6 @@ definitions:
         type: integer
       delegated_access_token_ttl_minutes:
         type: integer
-      enrollment_ticket_ttl_minutes:
-        type: integer
       oauth_authorization_code_ttl_minutes:
         type: integer
       oauth_device_code_ttl_minutes:
@@ -2711,8 +2691,6 @@ definitions:
       access_token_ttl_minutes:
         type: integer
       delegated_access_token_ttl_minutes:
-        type: integer
-      enrollment_ticket_ttl_minutes:
         type: integer
       oauth_authorization_code_ttl_minutes:
         type: integer
@@ -7624,8 +7602,7 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: 邀请和可选 Enrollment Ticket | Invitation and optional enrollment
-          ticket
+      - description: 租户邀请 | Tenant invitation
         in: body
         name: request
         required: true
@@ -7642,28 +7619,6 @@ paths:
       tags:
       - 租户邀请 | Tenant Invitations
       x-addp-auth-mode: authenticated
-  /tenant/invitations/enrollments:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 邀请与本地账号凭据 | Invitation and local credentials
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api.IAMInvitationEnrollmentRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/internal_api.IAMInvitationEnrollmentResponse'
-      summary: 签发邀请 Enrollment Ticket | Issue invitation enrollment ticket
-      tags:
-      - 租户邀请 | Tenant Invitations
-      x-addp-auth-mode: public
   /tenant/invitations/registrations:
     post:
       consumes:

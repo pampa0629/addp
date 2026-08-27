@@ -24,7 +24,6 @@ type IAMSecurityPolicyResponse struct {
 	OAuthDeviceCodeTTLMinutes        int       `json:"oauth_device_code_ttl_minutes"`
 	OAuthDevicePollIntervalSeconds   int       `json:"oauth_device_poll_interval_seconds"`
 	TenantInvitationTTLHours         int       `json:"tenant_invitation_ttl_hours"`
-	EnrollmentTicketTTLMinutes       int       `json:"enrollment_ticket_ttl_minutes"`
 	OAuthPublicRateLimitPerMinute    int       `json:"oauth_public_rate_limit_per_minute"`
 	OAuthUserRateLimitPerMinute      int       `json:"oauth_user_rate_limit_per_minute"`
 	UpdatedByPrincipalID             *string   `json:"updated_by_principal_id,omitempty"`
@@ -41,7 +40,6 @@ type IAMUpdateSecurityPolicyRequest struct {
 	OAuthDeviceCodeTTLMinutes        int   `json:"oauth_device_code_ttl_minutes"`
 	OAuthDevicePollIntervalSeconds   int   `json:"oauth_device_poll_interval_seconds"`
 	TenantInvitationTTLHours         int   `json:"tenant_invitation_ttl_hours"`
-	EnrollmentTicketTTLMinutes       int   `json:"enrollment_ticket_ttl_minutes"`
 	OAuthPublicRateLimitPerMinute    int   `json:"oauth_public_rate_limit_per_minute"`
 	OAuthUserRateLimitPerMinute      int   `json:"oauth_user_rate_limit_per_minute"`
 }
@@ -117,7 +115,6 @@ func (h *IAMSecurityPolicyHandler) Update(c *gin.Context) {
 		OAuthDeviceCodeTTLMinutes:        request.OAuthDeviceCodeTTLMinutes,
 		OAuthDevicePollIntervalSeconds:   request.OAuthDevicePollIntervalSeconds,
 		TenantInvitationTTLHours:         request.TenantInvitationTTLHours,
-		EnrollmentTicketTTLMinutes:       request.EnrollmentTicketTTLMinutes,
 		OAuthPublicRateLimitPerMinute:    request.OAuthPublicRateLimitPerMinute,
 		OAuthUserRateLimitPerMinute:      request.OAuthUserRateLimitPerMinute,
 		UpdatedByPrincipalID:             actorID,
@@ -142,7 +139,6 @@ func mapIAMSecurityPolicy(policy iam.SecurityPolicy) IAMSecurityPolicyResponse {
 		OAuthDeviceCodeTTLMinutes:        policy.OAuthDeviceCodeTTLMinutes,
 		OAuthDevicePollIntervalSeconds:   policy.OAuthDevicePollIntervalSeconds,
 		TenantInvitationTTLHours:         policy.TenantInvitationTTLHours,
-		EnrollmentTicketTTLMinutes:       policy.EnrollmentTicketTTLMinutes,
 		OAuthPublicRateLimitPerMinute:    policy.OAuthPublicRateLimitPerMinute,
 		OAuthUserRateLimitPerMinute:      policy.OAuthUserRateLimitPerMinute,
 		UpdatedAt:                        policy.UpdatedAt.UTC(),

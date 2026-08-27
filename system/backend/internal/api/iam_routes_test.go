@@ -68,7 +68,6 @@ func TestRegisterIAMRoutesExposesOnlyTargetIAMSurface(t *testing.T) {
 		http.MethodPost + " /api/v1/system/notebook-session-authorizations/:id/execution-engine-accesses",
 		http.MethodPost + " /api/v1/system/notebook-session-authorizations/:id/revocations",
 		http.MethodPost + " /api/v1/system/tenant/invitations/acceptances",
-		http.MethodPost + " /api/v1/system/tenant/invitations/enrollments",
 		http.MethodPost + " /api/v1/system/tenant/invitations/registrations",
 		http.MethodPut + " /api/v1/system/users/me/password",
 	}
@@ -84,6 +83,7 @@ func TestRegisterIAMRoutesExposesOnlyTargetIAMSurface(t *testing.T) {
 	for _, forbidden := range []string{
 		"POST /api/v1/system/register",
 		"POST /api/v1/system/oauth/authorize",
+		"POST /api/v1/system/tenant/invitations/enrollments",
 	} {
 		for _, route := range actual {
 			if route == forbidden {

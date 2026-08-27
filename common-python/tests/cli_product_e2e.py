@@ -28,6 +28,13 @@ CLIENT_ID = "addp-cli"
 KEYRING_SERVICE = "addp-cli"
 DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
 RELEASE_KEYRING_BACKEND = "keyring.backends.macOS"
+LOOPBACK_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+PROXY_ENVIRONMENT_NAMES = frozenset({
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "no_proxy",
+})
 
 
 class OAuthFixture:
@@ -341,7 +348,7 @@ class OAuthServer(ThreadingHTTPServer):
 
 def run_browser(url: str) -> int:
     try:
-        with urllib.request.urlopen(url, timeout=10) as response:
+        with LOOPBACK_OPENER.open(url, timeout=10) as response:
             response.read()
     except urllib.error.HTTPError as exc:
         if exc.code >= 400:
@@ -449,7 +456,11 @@ def main(addp: Path) -> int:
     thread.start()
     results: list[subprocess.CompletedProcess[str]] = []
     env = {
-        **os.environ,
+        **{
+            name: value
+            for name, value in os.environ.items()
+            if name.lower() not in PROXY_ENVIRONMENT_NAMES
+        },
         "ADDP_BASE_URL": fixture.base_url,
         "ADDP_CONSOLE_URL": fixture.base_url,
         "BROWSER": f"{shlex.quote(sys.executable)} {shlex.quote(str(Path(__file__).resolve()))} --browser %s",

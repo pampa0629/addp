@@ -14,8 +14,27 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 107 {
-		t.Fatalf("LatestVersion = %d, want 107", catalog.LatestVersion)
+	if catalog.LatestVersion != 108 {
+		t.Fatalf("LatestVersion = %d, want 108", catalog.LatestVersion)
+	}
+}
+
+func TestInvitationEnrollmentTicketRemovalMigrationKeepsSingleAcceptancePath(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000108_iam_remove_invitation_enrollment_ticket.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 108: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"DROP TABLE system.enrollment_tickets",
+		"DROP FUNCTION system.validate_enrollment_ticket_transition()",
+		"DROP FUNCTION system.prevent_invitation_enrollment_delete()",
+		"DROP COLUMN enrollment_ticket_ttl_minutes",
+		"CREATE FUNCTION system.prevent_tenant_invitation_delete()",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 108 missing %q", fragment)
+		}
 	}
 }
 

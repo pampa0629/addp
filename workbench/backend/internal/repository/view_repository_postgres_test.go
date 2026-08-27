@@ -3,6 +3,7 @@ package repository
 import (
 	"errors"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -151,6 +152,69 @@ func TestWorkbenchRepositoryAgainstPostgres(t *testing.T) {
 	idempotentRule, err := accessRules.FulfillAssetGrant(rule)
 	if err != nil || idempotentRule.ID != createdRule.ID {
 		t.Fatalf("idempotent FulfillAssetGrant() = %#v, %v", idempotentRule, err)
+	}
+	concurrentRule := rule
+	concurrentRule.SourceIdentity = "74"
+	concurrentRule.SubjectID = 93
+	const concurrentRequests = 12
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB.SetMaxOpenConns(concurrentRequests + 2)
+	start := make(chan struct{})
+	readyToCreate := make(chan struct{}, concurrentRequests)
+	releaseCreate := make(chan struct{})
+	results := make(chan *models.ResourceAccessRule, concurrentRequests)
+	resultErrors := make(chan error, concurrentRequests)
+	const concurrentCreateBarrier = "test:resource-access-rule-concurrent-create"
+	if err := db.Callback().Create().Before("gorm:create").Register(concurrentCreateBarrier, func(tx *gorm.DB) {
+		ruleToCreate, ok := tx.Statement.Dest.(*models.ResourceAccessRule)
+		if !ok || ruleToCreate.SourceIdentity != concurrentRule.SourceIdentity {
+			return
+		}
+		readyToCreate <- struct{}{}
+		<-releaseCreate
+	}); err != nil {
+		t.Fatalf("register concurrent create barrier: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Callback().Create().Remove(concurrentCreateBarrier)
+	})
+	var wait sync.WaitGroup
+	for range concurrentRequests {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			<-start
+			result, fulfillErr := accessRules.FulfillAssetGrant(concurrentRule)
+			results <- result
+			resultErrors <- fulfillErr
+		}()
+	}
+	close(start)
+	for range concurrentRequests {
+		<-readyToCreate
+	}
+	close(releaseCreate)
+	wait.Wait()
+	close(results)
+	close(resultErrors)
+	for fulfillErr := range resultErrors {
+		if fulfillErr != nil {
+			t.Fatalf("concurrent FulfillAssetGrant() error = %v", fulfillErr)
+		}
+	}
+	var concurrentRuleID string
+	for result := range results {
+		if result == nil || result.ID == "" {
+			t.Fatalf("concurrent FulfillAssetGrant() result = %#v", result)
+		}
+		if concurrentRuleID == "" {
+			concurrentRuleID = result.ID
+		} else if result.ID != concurrentRuleID {
+			t.Fatalf("concurrent FulfillAssetGrant() IDs = %q and %q", concurrentRuleID, result.ID)
+		}
 	}
 	allowed, err := accessRules.CanExecuteDataApplication(7, 91, application.ID, time.Now().UTC())
 	if err != nil || !allowed {

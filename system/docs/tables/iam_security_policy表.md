@@ -2,7 +2,7 @@
 
 ## 一、定位
 
-`system.iam_security_policy` 是 System IAM 的 `platform_only` 单例安全策略。它保存 Token 生命周期、OAuth Device Flow、Tenant Invitation、Enrollment Ticket 和 OAuth 限流的普通数值策略，不保存 Pepper、加密密钥、Service Client Secret 或其他 Secret。
+`system.iam_security_policy` 是 System IAM 的 `platform_only` 单例安全策略。它保存 Token 生命周期、OAuth Device Flow、Tenant Invitation 和 OAuth 限流的普通数值策略，不保存 Pepper、加密密钥、Service Client Secret 或其他 Secret。
 
 策略由 Platform Security Administrator 通过 `iam.security_policy.read/update` 维护。System 启动时读取一次当前版本并装配 IAM Runtime；运行期间更新产生待重启版本，不热更新，也不从环境变量回退。
 
@@ -21,7 +21,6 @@
 | `oauth_device_code_ttl_minutes` | integer | `5-30` | OAuth Device/User Code 有效期 |
 | `oauth_device_poll_interval_seconds` | integer | `5-60` | Device Token 轮询间隔 |
 | `tenant_invitation_ttl_hours` | integer | `1-720` | Tenant Invitation 有效期 |
-| `enrollment_ticket_ttl_minutes` | integer | `1-30` | Enrollment Ticket 有效期 |
 | `oauth_public_rate_limit_per_minute` | integer | `1-10000` | 公共 OAuth 路由每分钟上限 |
 | `oauth_user_rate_limit_per_minute` | integer | `1-10000` | 已认证用户 OAuth 路由每分钟上限 |
 | `updated_by_principal_id` | bigint | 可空、FK | 最近修改策略的 User Principal；初始种子为空 |

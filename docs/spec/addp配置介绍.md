@@ -134,7 +134,6 @@ System IAM 安全策略是 `platform_only` 的 System-owned 平台安全配置�
 | OAuth Device Code TTL | 分钟 | `5-30` |
 | OAuth Device Poll Interval | 秒 | `5-60` |
 | Tenant Invitation TTL | 小时 | `1-720` |
-| Enrollment Ticket TTL | 分钟 | `1-30` |
 | OAuth public rate limit | 次/分钟 | `1-10000` |
 | OAuth authenticated-user rate limit | 次/分钟 | `1-10000` |
 
