@@ -30,6 +30,7 @@ func SetupRouter(
 	queryHandler *QueryHandler,
 	notebookHandler *NotebookHandler,
 	devTaskService interface{}, // 添加 devTaskService 参数
+	catalogResourceHandler *CatalogResourceHandler,
 	systemClient *commonClient.SystemServiceClient, // 用于审计日志
 	lifecycle *modulelifecycle.Controller,
 	queryPolicyHandlers ...*QueryPolicyHandler,
@@ -47,7 +48,6 @@ func SetupRouter(
 	router.Use(lifecycle.RequireReady())
 
 	taskListHandler := NewTaskListHandler(devTaskService.(*service.DevTaskService))
-	assetDiscHandler := newAssetDiscoverableHandler(db)
 	var queryPolicyHandler *QueryPolicyHandler
 	if len(queryPolicyHandlers) > 0 {
 		queryPolicyHandler = queryPolicyHandlers[0]
@@ -61,7 +61,7 @@ func SetupRouter(
 
 	// Kernel Capability 只允许访问独立的只读引擎发现端点。
 	router.GET("/api/v1/develop/notebook-kernel-sessions/:session_id/engine-descriptors", notebookHandler.ListSessionEngineDescriptors)
-	router.POST("/api/v1/develop/notebook-kernel-sessions/:session_id/catalog/children", notebookHandler.ListSessionCatalogChildren)
+	router.POST("/api/v1/develop/notebook-kernel-sessions/:session_id/catalog/children", notebookHandler.ListSessionEngineCatalogChildren)
 	router.POST("/api/v1/develop/notebook-kernel-sessions/:session_id/table-scans", notebookHandler.StreamSessionTable)
 	router.POST("/api/v1/develop/notebook-kernel-sessions/:session_id/record-scans", notebookHandler.StreamSessionRecords)
 	router.POST("/api/v1/develop/notebook-kernel-sessions/:session_id/queries", notebookHandler.StreamSessionQuery)
@@ -112,6 +112,11 @@ func SetupRouter(
 		api.Use(audit.ServiceAuditMiddleware("develop", systemClient))
 	}
 	{
+		catalogResources := api.Group("")
+		catalogResources.Use(commonAuth.MustNewServiceClientGuard("addp-catalog"))
+		catalogResources.GET("/catalog-resources/changes", permission(developauthorization.PermissionDevelopCatalogRead), catalogResourceHandler.ListChanges)
+		catalogResources.POST("/runtime/catalog-references/resolve", permission(developauthorization.PermissionDevelopCatalogRead), catalogResourceHandler.ResolveReferences)
+
 		taskProvider := api.Group("/task-provider")
 		taskProvider.Use(commonAuth.MustNewServiceClientGuard("addp-orchestrator"))
 		{
@@ -120,13 +125,6 @@ func SetupRouter(
 			taskProvider.POST("/tasks/:task_type/:id/execute", permission(developauthorization.PermissionDevelopTaskProviderExecute), executionHandler.ProviderExecuteDevTask)
 			taskProvider.GET("/executions/:execution_id", permission(developauthorization.PermissionDevelopTaskProviderRead), executionHandler.ProviderGetExecution)
 		}
-
-		api.GET(
-			"/assets/discoverable",
-			commonAuth.MustNewServiceClientGuard("addp-asset"),
-			permission(developauthorization.PermissionDevelopTaskRead),
-			assetDiscHandler.listDiscoverableAssets,
-		)
 
 		// ========== 开发任务定义管理 ==========
 		taskDefinitions := api.Group("/task-definitions")

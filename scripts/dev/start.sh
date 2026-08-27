@@ -22,6 +22,8 @@ show_usage() {
   echo "  -model        启动 Model 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Standard)"
   echo "  -quality      启动 Quality 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Standard)"
   echo "  -asset        启动 Asset 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -catalog      启动 Catalog 模块 (依赖: System Backend + Gateway + Console；Meta 为后台同步软依赖)"
+  echo "  -workbench    启动 Workbench 模块 (依赖: System Backend + Service Backend + Gateway + Console)"
   echo "  -portal       启动 Portal 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Asset)"
   echo "  -graph        启动 Graph 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -geopython-workflow    启动 GeoPython Workflow (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
@@ -80,6 +82,10 @@ export MODEL3D_WORKFLOW_PORT="${MODEL3D_WORKFLOW_PORT:-8101}"
 export POINTCLOUD_WORKFLOW_PORT="${POINTCLOUD_WORKFLOW_PORT:-8102}"
 export SUPERMAP_WORKFLOW_PORT="${SUPERMAP_WORKFLOW_PORT:-8103}"
 export DUCKDB_RUNTIME_PORT="${DUCKDB_RUNTIME_PORT:-8104}"
+export CATALOG_BACKEND_PORT="${CATALOG_BACKEND_PORT:-8192}"
+export CATALOG_FE_PORT="${CATALOG_FE_PORT:-5189}"
+export WORKBENCH_BACKEND_PORT="${WORKBENCH_BACKEND_PORT:-8193}"
+export WORKBENCH_FE_PORT="${WORKBENCH_FE_PORT:-5190}"
 
 ensure_model3d_node_dependencies() {
   local dir="engines/model3d-workflow"
@@ -105,7 +111,7 @@ ensure_model3d_node_dependencies() {
 
 # 自动生成服务 URL（基于 SERVICE_HOST + XXX_BACKEND_PORT）
 generate_service_urls() {
-    local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality asset portal agent graph inference)
+    local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality asset catalog workbench portal agent graph inference)
     for svc in "${services[@]}"; do
         local port_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_BACKEND_PORT"
         local url_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_URL"
@@ -242,7 +248,7 @@ for arg in "$@"; do
     -h|--help)
       show_usage
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-inference|-standard|-model|-quality|-asset|-portal|-graph|-geopython-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-spark-workflow|-jupyter|-duckdb|-gateway|-console)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-inference|-standard|-model|-quality|-asset|-catalog|-workbench|-portal|-graph|-geopython-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-spark-workflow|-jupyter|-duckdb|-gateway|-console)
       SELECTED_MODULE="${arg#-}"
       SELECTED_MODULE_COUNT=$((SELECTED_MODULE_COUNT + 1))
       START_ALL=false
@@ -298,6 +304,7 @@ START_ORCHESTRATOR_BACKEND=false
 START_ORCHESTRATOR_FRONTEND=false
 START_DEVELOP_BACKEND=false
 START_DEVELOP_FRONTEND=false
+START_DEVELOP_QUERY_WORKER=false
 START_SERVICE_BACKEND=false
 START_SERVICE_FRONTEND=false
 START_MONITOR_BACKEND=false
@@ -316,6 +323,10 @@ START_QUALITY_FRONTEND=false
 START_QUALITY_WORKER=false
 START_ASSET_BACKEND=false
 START_ASSET_FRONTEND=false
+START_CATALOG_BACKEND=false
+START_CATALOG_FRONTEND=false
+START_WORKBENCH_BACKEND=false
+START_WORKBENCH_FRONTEND=false
 START_PORTAL_BACKEND=false
 START_PORTAL_FRONTEND=false
 START_GRAPH_BACKEND=false
@@ -357,6 +368,7 @@ if [ "$START_ALL" = true ]; then
   START_ORCHESTRATOR_FRONTEND=true
   START_DEVELOP_BACKEND=true
   START_DEVELOP_FRONTEND=true
+  START_DEVELOP_QUERY_WORKER=true
   START_SERVICE_BACKEND=true
   START_SERVICE_FRONTEND=true
   START_MONITOR_BACKEND=true
@@ -375,6 +387,10 @@ if [ "$START_ALL" = true ]; then
   START_QUALITY_WORKER=true
   START_ASSET_BACKEND=true
   START_ASSET_FRONTEND=true
+  START_CATALOG_BACKEND=true
+  START_CATALOG_FRONTEND=true
+  START_WORKBENCH_BACKEND=true
+  START_WORKBENCH_FRONTEND=true
   START_PORTAL_BACKEND=true
   START_PORTAL_FRONTEND=true
   START_GRAPH_BACKEND=true
@@ -431,6 +447,7 @@ else
     develop)
       START_DEVELOP_BACKEND=true
       START_DEVELOP_FRONTEND=true
+      START_DEVELOP_QUERY_WORKER=true
       ;;
     service)
       START_SERVICE_BACKEND=true
@@ -472,6 +489,15 @@ else
       START_ASSET_BACKEND=true
       START_ASSET_FRONTEND=true
       ;;
+    catalog)
+      START_CATALOG_BACKEND=true
+      START_CATALOG_FRONTEND=true
+      ;;
+    workbench)
+      START_SERVICE_BACKEND=true
+      START_WORKBENCH_BACKEND=true
+      START_WORKBENCH_FRONTEND=true
+      ;;
     portal)
       START_ASSET_BACKEND=true
       START_PORTAL_BACKEND=true
@@ -512,6 +538,7 @@ else
       START_TRANSFER_CONTINUOUS_WORKER=true
       START_ORCHESTRATOR_BACKEND=true
       START_DEVELOP_BACKEND=true
+      START_DEVELOP_QUERY_WORKER=true
       START_SERVICE_BACKEND=true
       START_MONITOR_BACKEND=true
       START_COPILOT_BACKEND=true
@@ -519,6 +546,7 @@ else
       START_MODEL_BACKEND=true
       START_QUALITY_BACKEND=true
       START_QUALITY_WORKER=true
+      START_CATALOG_BACKEND=true
       START_GATEWAY=true
       ;;
     console)
@@ -534,6 +562,7 @@ else
       START_ORCHESTRATOR_FRONTEND=true
       START_DEVELOP_BACKEND=true
       START_DEVELOP_FRONTEND=true
+      START_DEVELOP_QUERY_WORKER=true
       START_SERVICE_BACKEND=true
       START_SERVICE_FRONTEND=true
       START_MONITOR_BACKEND=true
@@ -546,6 +575,8 @@ else
       START_QUALITY_BACKEND=true
       START_QUALITY_FRONTEND=true
       START_QUALITY_WORKER=true
+      START_CATALOG_BACKEND=true
+      START_CATALOG_FRONTEND=true
       START_GATEWAY=true
       START_CONSOLE=true
       ;;
@@ -554,6 +585,10 @@ else
     # 单模块开发也统一保留 ADDP 基础服务和 Console 入口。
     # 各模块前端和 Console 的 /api 代理都经由 Gateway；资源、任务和审计等通用能力依赖 System/Meta。
     enable_single_module_common_dependencies
+    if [ "$SELECTED_MODULE" = "catalog" ]; then
+      START_META_BACKEND=false
+      START_META_WORKER=false
+    fi
   fi
 fi
 
@@ -711,6 +746,20 @@ build_transfer_continuous_worker() {
         return 1
     }
     echo "  ✓ addp-transfer-continuous-worker 编译完成"
+}
+
+build_develop_query_worker() {
+    local binary_path=".dev-bins/addp-develop-query-worker"
+    if addp_go_build_is_current "develop/backend" "$binary_path" ./cmd/query-worker; then
+        echo "  ✓ addp-develop-query-worker 已是最新"
+        return 0
+    fi
+    echo "  🔨 编译 addp-develop-query-worker..."
+    addp_atomic_go_build "develop-query-worker" "develop/backend" "$binary_path" ./cmd/query-worker || {
+        echo "  ✗ 编译失败: develop query worker"
+        return 1
+    }
+    echo "  ✓ addp-develop-query-worker 编译完成"
 }
 
 # 编译 Gateway 二进制
@@ -901,7 +950,7 @@ fi
 
 # 3. 并行启动所有后端服务 + Workers (System 已就绪)
 # 跳过检查：如果没有任何后端模块需要启动
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ] || [ "$START_DUCKDB" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_CATALOG_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ] || [ "$START_DUCKDB" = true ]; then
   echo -e "${YELLOW}Step 3/5: 并行启动后端服务和选定 Worker${NC}"
 
   # ============================================================
@@ -972,6 +1021,16 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     BUILD_PIDS+=($!)
   fi
 
+  if [ "$START_CATALOG_BACKEND" = true ]; then
+    build_service "catalog" "catalog/backend" &
+    BUILD_PIDS+=($!)
+  fi
+
+  if [ "$START_WORKBENCH_BACKEND" = true ]; then
+    build_service "workbench" "workbench/backend" &
+    BUILD_PIDS+=($!)
+  fi
+
   if [ "$START_PORTAL_BACKEND" = true ]; then
     build_service "portal" "portal/backend" &
     BUILD_PIDS+=($!)
@@ -1008,10 +1067,16 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     BUILD_PIDS+=($!)
   fi
 
-  # 等待所有编译完成
-  for pid in "${BUILD_PIDS[@]}"; do
-    wait "$pid" || true
-  done
+  if [ "$START_DEVELOP_QUERY_WORKER" = true ]; then
+    build_develop_query_worker &
+    BUILD_PIDS+=($!)
+  fi
+
+  # 等待所有编译完成；任何一个构建失败都禁止进入服务启动阶段。
+  if ! addp_wait_for_parallel_builds "${BUILD_PIDS[@]}"; then
+    echo -e "${RED}✗ 一个或多个后端服务编译失败，已终止启动${NC}"
+    exit 1
+  fi
 
   echo "  ${GREEN}✓ 所有服务编译完成${NC}"
 else
@@ -1021,7 +1086,7 @@ fi
 # ============================================================
 # Phase 2: 并行启动所有 Backend 服务
 # ============================================================
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_CATALOG_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ]; then
   echo "  [2/3] 并行启动 Backends..."
 
   # 启动 Manager Backend（带检查）
@@ -1145,6 +1210,28 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     fi
   fi
 
+  # 启动 Catalog Backend（Meta / Model 同步由进程后台重试，不是启动依赖）
+  if [ "$START_CATALOG_BACKEND" = true ]; then
+    if check_service_running "catalog" "$CATALOG_BACKEND_PORT"; then
+      .dev-bins/addp-catalog > logs/catalog-backend.log 2> logs/catalog-backend-stderr.log &
+      CATALOG_PID=$!
+      echo $CATALOG_PID > .dev-pids/catalog.pid
+    else
+      CATALOG_PID=$(cat .dev-pids/catalog.pid 2>/dev/null)
+    fi
+  fi
+
+  # 启动 Workbench Backend；Service 可暂时离线，不影响 Workbench Ready。
+  if [ "$START_WORKBENCH_BACKEND" = true ]; then
+    if check_service_running "workbench" "$WORKBENCH_BACKEND_PORT"; then
+      .dev-bins/addp-workbench > logs/workbench-backend.log 2> logs/workbench-backend-stderr.log &
+      WORKBENCH_PID=$!
+      echo $WORKBENCH_PID > .dev-pids/workbench.pid
+    else
+      WORKBENCH_PID=$(cat .dev-pids/workbench.pid 2>/dev/null)
+    fi
+  fi
+
   # 启动 Portal Backend（带检查）
   if [ "$START_PORTAL_BACKEND" = true ]; then
     if check_service_running "portal" "$PORTAL_BACKEND_PORT"; then
@@ -1215,6 +1302,16 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       echo $TRANSFER_CONTINUOUS_WORKER_PID > .dev-pids/transfer-continuous-worker.pid
     else
       TRANSFER_CONTINUOUS_WORKER_PID=$(cat .dev-pids/transfer-continuous-worker.pid 2>/dev/null)
+    fi
+  fi
+
+  if [ "$START_DEVELOP_QUERY_WORKER" = true ]; then
+    if check_service_running "develop-query-worker" ""; then
+      .dev-bins/addp-develop-query-worker > logs/develop-query-worker.log 2>&1 &
+      DEVELOP_QUERY_WORKER_PID=$!
+      echo $DEVELOP_QUERY_WORKER_PID > .dev-pids/develop-query-worker.pid
+    else
+      DEVELOP_QUERY_WORKER_PID=$(cat .dev-pids/develop-query-worker.pid 2>/dev/null)
     fi
   fi
 
@@ -1289,7 +1386,7 @@ fi
 # ============================================================
 # Phase 3: 并行等待所有 Backends 健康检查
 # ============================================================
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_CATALOG_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ]; then
   echo "  [3/3] 并行健康检查..."
 
   HEALTH_CHECK_PIDS=()
@@ -1431,6 +1528,38 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     HEALTH_CHECK_PIDS+=($!)
   fi
 
+  if [ "$START_CATALOG_BACKEND" = true ]; then
+    (
+      WAIT_COUNT=0
+      until curl -f "http://localhost:${CATALOG_BACKEND_PORT}/health/ready" > /dev/null 2>&1; do
+        sleep 1
+        WAIT_COUNT=$((WAIT_COUNT + 1))
+        if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+          echo -e "${RED}✗ Catalog Backend 启动超时${NC}"
+          echo "查看日志: tail -f logs/catalog-backend-stderr.log"
+          exit 1
+        fi
+      done
+    ) &
+    HEALTH_CHECK_PIDS+=($!)
+  fi
+
+  if [ "$START_WORKBENCH_BACKEND" = true ]; then
+    (
+      WAIT_COUNT=0
+      until curl -f "http://localhost:${WORKBENCH_BACKEND_PORT}/health/ready" > /dev/null 2>&1; do
+        sleep 1
+        WAIT_COUNT=$((WAIT_COUNT + 1))
+        if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+          echo -e "${RED}✗ Workbench Backend 启动超时${NC}"
+          echo "查看日志: tail -f logs/workbench-backend-stderr.log"
+          exit 1
+        fi
+      done
+    ) &
+    HEALTH_CHECK_PIDS+=($!)
+  fi
+
   # 等待所有并发的 health check 完成；任何目标失败都必须使启动失败。
   HEALTH_CHECK_FAILED=false
   for pid in "${HEALTH_CHECK_PIDS[@]}"; do
@@ -1452,10 +1581,12 @@ echo "  Transfer Backend:   PID $TRANSFER_PID (http://localhost:${TRANSFER_BACKE
 echo "  Orchestrator Backend: PID $ORCHESTRATOR_PID (http://localhost:${ORCHESTRATOR_BACKEND_PORT})"
 echo "  Develop Backend:    PID $DEVELOP_PID (http://localhost:${DEVELOP_BACKEND_PORT})"
 echo "  Service Backend:    PID $SERVICE_PID (http://localhost:${SERVICE_BACKEND_PORT})"
+echo "  Workbench Backend:  PID $WORKBENCH_PID (http://localhost:${WORKBENCH_BACKEND_PORT})"
 echo "  Meta Worker:        PID $META_WORKER_PID"
 echo "  Quality Worker:     PID $QUALITY_WORKER_PID"
 echo "  Transfer Bounded Worker: PID $TRANSFER_BOUNDED_WORKER_PID"
 echo "  Transfer Continuous Worker: PID $TRANSFER_CONTINUOUS_WORKER_PID"
+echo "  Develop Query Worker: PID $DEVELOP_QUERY_WORKER_PID"
 echo ""
 
 # DuckDB Runtime 必须在 System 和 Meta 就绪后启动。扩展只在启动准备阶段
@@ -1873,6 +2004,7 @@ pointcloud_workflow_source_fingerprint() {
         printf '%s\n' \
           common-python/README.md \
           common-python/addp_common/__init__.py \
+          common-python/addp_common/module_lifecycle.py \
           common-python/addp_common/workflow_access.py
         find common-python/addp_common/client common-python/addp_common/workflow_runtime \
           -type f ! -path '*/__pycache__/*' ! -name '*.pyc'
@@ -2519,7 +2651,7 @@ ensure_node_modules() {
 # 并发启动所有前端服务（Bash 3.2 兼容）
 # ============================================================
 # 检查是否有任何前端需要启动
-if [ "$START_CONSOLE" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$START_MANAGER_FRONTEND" = true ] || [ "$START_META_FRONTEND" = true ] || [ "$START_TRANSFER_FRONTEND" = true ] || [ "$START_ORCHESTRATOR_FRONTEND" = true ] || [ "$START_DEVELOP_FRONTEND" = true ] || [ "$START_SERVICE_FRONTEND" = true ] || [ "$START_MONITOR_FRONTEND" = true ] || [ "$START_STANDARD_FRONTEND" = true ] || [ "$START_MODEL_FRONTEND" = true ] || [ "$START_QUALITY_FRONTEND" = true ] || [ "$START_ASSET_FRONTEND" = true ] || [ "$START_PORTAL_FRONTEND" = true ] || [ "$START_AGENT_FRONTEND" = true ] || [ "$START_GRAPH_FRONTEND" = true ]; then
+if [ "$START_CONSOLE" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$START_MANAGER_FRONTEND" = true ] || [ "$START_META_FRONTEND" = true ] || [ "$START_TRANSFER_FRONTEND" = true ] || [ "$START_ORCHESTRATOR_FRONTEND" = true ] || [ "$START_DEVELOP_FRONTEND" = true ] || [ "$START_SERVICE_FRONTEND" = true ] || [ "$START_MONITOR_FRONTEND" = true ] || [ "$START_STANDARD_FRONTEND" = true ] || [ "$START_MODEL_FRONTEND" = true ] || [ "$START_QUALITY_FRONTEND" = true ] || [ "$START_CATALOG_FRONTEND" = true ] || [ "$START_ASSET_FRONTEND" = true ] || [ "$START_PORTAL_FRONTEND" = true ] || [ "$START_AGENT_FRONTEND" = true ] || [ "$START_GRAPH_FRONTEND" = true ]; then
   echo -e "${YELLOW}Step 8/8: 并发启动前端服务${NC}"
 
   # 动态构建前端配置（格式：名称:端口:目录）
@@ -2572,6 +2704,14 @@ if [ "$START_CONSOLE" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$STA
 
   if [ "$START_QUALITY_FRONTEND" = true ]; then
     FRONTEND_CONFIGS+=("quality:${QUALITY_FE_PORT}:quality/frontend")
+  fi
+
+  if [ "$START_CATALOG_FRONTEND" = true ]; then
+    FRONTEND_CONFIGS+=("catalog:${CATALOG_FE_PORT}:catalog/frontend")
+  fi
+
+  if [ "$START_WORKBENCH_FRONTEND" = true ]; then
+    FRONTEND_CONFIGS+=("workbench:${WORKBENCH_FE_PORT}:workbench/frontend")
   fi
 
   if [ "$START_ASSET_FRONTEND" = true ]; then
@@ -2749,6 +2889,7 @@ echo "  Meta Worker:          $META_WORKER_PID"
 echo "  Quality Worker:       $QUALITY_WORKER_PID"
 echo "  Transfer Bounded Worker: $TRANSFER_BOUNDED_WORKER_PID"
 echo "  Transfer Continuous Worker: $TRANSFER_CONTINUOUS_WORKER_PID"
+echo "  Develop Query Worker: $DEVELOP_QUERY_WORKER_PID"
 echo ""
 echo "日志文件:"
 echo "  System:   logs/system-backend.log"
@@ -2765,6 +2906,8 @@ echo "  Monitor:  logs/monitor-backend.log"
 echo "  Standard: logs/standard-backend.log"
 echo "  Model:    logs/model-backend.log"
 echo "  Quality:  logs/quality-backend.log"
+echo "  Catalog:  logs/catalog-backend.log"
+echo "  Workbench: logs/workbench-backend.log"
 echo "  Inference: logs/inference-backend.log"
 echo "  GeoPython Workflow: logs/geopython-workflow-engine.log"
 echo "  Math Workflow Engine: logs/math-workflow-engine.log (显式 -math-workflow 启动时)"
@@ -2778,6 +2921,7 @@ echo "  Transfer Bounded Worker: logs/transfer-bounded-worker.log"
 echo "  Transfer Continuous Worker: logs/transfer-continuous-worker.log"
 echo "  Meta Worker: logs/meta-worker.log"
 echo "  Quality Worker: logs/quality-worker.log"
+echo "  Develop Query Worker: logs/develop-query-worker.log"
 echo "  Meta FE:  logs/meta-frontend.log"
 echo "  Transfer FE:  logs/transfer-frontend.log"
 echo "  Develop FE:  logs/develop-frontend.log"

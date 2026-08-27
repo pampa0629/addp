@@ -119,6 +119,41 @@ func TestTaskProviderDeclarationIsPartOfModuleVersion(t *testing.T) {
 	}
 }
 
+func TestExistingModuleMayPublishTaskProviderDeclaration(t *testing.T) {
+	db, modules := taskProviderModuleRegistryForTest(t)
+	request := taskProviderModuleRequestForTest()
+	if err := db.Create(&models.ModuleDefinition{
+		ModuleName:  request.ModuleName,
+		RoutePrefix: request.RoutePrefix,
+		Enabled:     true,
+		Version:     1,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := modules.Register(request); err != nil {
+		t.Fatal(err)
+	}
+	module, err := modules.GetModule(request.ModuleName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if module.TaskProvider == nil || module.TaskProvider.DisplayName != request.TaskProvider.DisplayName || module.Version != 2 {
+		t.Fatalf("module after publishing TaskProvider = %#v", module)
+	}
+
+	if err := modules.Register(request); err != nil {
+		t.Fatal(err)
+	}
+	module, err = modules.GetModule(request.ModuleName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if module.Version != 2 {
+		t.Fatalf("idempotent TaskProvider publication version = %d, want 2", module.Version)
+	}
+}
+
 func TestBackendMayWithdrawTaskProviderButWorkerCannot(t *testing.T) {
 	_, modules := taskProviderModuleRegistryForTest(t)
 	request := taskProviderModuleRequestForTest()

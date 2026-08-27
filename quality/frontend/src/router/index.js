@@ -30,6 +30,12 @@ const routes = [
         meta: { requiresAuth: true, title: '检查任务' }
       },
       {
+        path: 'materialization-gate-tasks',
+        name: 'MaterializationGateTaskList',
+        component: () => import('../views/MaterializationGateTaskList.vue'),
+        meta: { requiresAuth: true, title: '物化门禁任务' }
+      },
+      {
         path: 'executions',
         name: 'ExecutionList',
         component: () => import('../views/ExecutionList.vue'),

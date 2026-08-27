@@ -58,6 +58,29 @@ export const iamAPI = {
     restore: (id, reason) => client.post(`/system/tenant/memberships/${id}/restore`, { reason }),
     close: (id, reason) => client.post(`/system/tenant/memberships/${id}/close`, { reason })
   },
+  departments: {
+    list: (params) => list('/system/tenant/departments', params),
+    get: (id) => client.get(`/system/tenant/departments/${id}`),
+    create: (data) => client.post('/system/tenant/departments', data),
+    update: (id, data) => client.put(`/system/tenant/departments/${id}`, data),
+    disable: (id, version, reason) => client.post(`/system/tenant/departments/${id}/disable`, { version, reason }),
+    restore: (id, version, reason) => client.post(`/system/tenant/departments/${id}/restore`, { version, reason }),
+    listMemberships: (id, params) => list(`/system/tenant/departments/${id}/memberships`, params),
+    createMembership: (id, data) => client.post(`/system/tenant/departments/${id}/memberships`, data),
+    updateMembership: (id, membershipId, data) => client.put(`/system/tenant/departments/${id}/memberships/${membershipId}`, data),
+    closeMembership: (id, membershipId, version, reason) => client.post(`/system/tenant/departments/${id}/memberships/${membershipId}/close`, { version, reason })
+  },
+  projectGroups: {
+    list: (params) => list('/system/tenant/project_groups', params),
+    get: (id) => client.get(`/system/tenant/project_groups/${id}`),
+    create: (data) => client.post('/system/tenant/project_groups', data),
+    update: (id, data) => client.put(`/system/tenant/project_groups/${id}`, data),
+    close: (id, version, reason) => client.post(`/system/tenant/project_groups/${id}/close`, { version, reason }),
+    listMemberships: (id, params) => list(`/system/tenant/project_groups/${id}/memberships`, params),
+    createMembership: (id, data) => client.post(`/system/tenant/project_groups/${id}/memberships`, data),
+    updateMembership: (id, membershipId, data) => client.put(`/system/tenant/project_groups/${id}/memberships/${membershipId}`, data),
+    closeMembership: (id, membershipId, version, reason) => client.post(`/system/tenant/project_groups/${id}/memberships/${membershipId}/close`, { version, reason })
+  },
   invitations: {
     list: (params) => list('/system/tenant/invitations', params),
     create: (email) => client.post('/system/tenant/invitations', { email }),

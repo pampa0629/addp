@@ -10,8 +10,8 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 )
 
-func (p *KafkaPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
-	if !plugin.IsCatalogRootPath(parent) || parent.Segments[0].Term != plugin.CatalogTermService {
+func (p *KafkaPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath, opts plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
+	if !plugin.IsEngineCatalogRootPath(parent) || parent.Segments[0].Term != plugin.EngineCatalogTermService {
 		return nil, fmt.Errorf("kafka catalog children require service root path")
 	}
 	client, err := newKafkaClient(connInfo)
@@ -23,7 +23,7 @@ func (p *KafkaPlugin) ListChildren(ctx context.Context, connInfo plugin.Connecti
 	if err != nil {
 		return nil, fmt.Errorf("list kafka topics: %w", err)
 	}
-	entries := make([]plugin.CatalogEntry, 0, len(topics))
+	entries := make([]plugin.EngineCatalogEntry, 0, len(topics))
 	for _, detail := range topics.Sorted() {
 		if detail.Err != nil {
 			return nil, fmt.Errorf("describe kafka topic %q: %w", detail.Topic, detail.Err)
@@ -38,7 +38,7 @@ func (p *KafkaPlugin) ListChildren(ctx context.Context, connInfo plugin.Connecti
 		start = 0
 	}
 	if start >= len(entries) {
-		return []plugin.CatalogEntry{}, nil
+		return []plugin.EngineCatalogEntry{}, nil
 	}
 	end := len(entries)
 	if opts.Limit > 0 && start+opts.Limit < end {
@@ -47,9 +47,9 @@ func (p *KafkaPlugin) ListChildren(ctx context.Context, connInfo plugin.Connecti
 	return entries[start:end], nil
 }
 
-func (p *KafkaPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
-	if plugin.IsCatalogRootPath(path) {
-		entry := plugin.CatalogRootEntry(p.CatalogModel(), path.EngineID, "")
+func (p *KafkaPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
+	if plugin.IsEngineCatalogRootPath(path) {
+		entry := plugin.EngineCatalogRootEntry(p.EngineCatalogModel(), path.EngineID, "")
 		return &entry, nil
 	}
 	topic, err := kafkaTopicFromPath(path)
@@ -72,11 +72,11 @@ func (p *KafkaPlugin) ResolvePath(ctx context.Context, connInfo plugin.Connectio
 		}
 		return nil, fmt.Errorf("kafka topic %q not found", topic)
 	}
-	entry := kafkaTopicEntry(plugin.CatalogRootPath(p.CatalogModel(), path.EngineID), topic)
+	entry := kafkaTopicEntry(plugin.EngineCatalogRootPath(p.EngineCatalogModel(), path.EngineID), topic)
 	return &entry, nil
 }
 
-func (p *KafkaPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *KafkaPlugin) DescribeEngineCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	topic, err := kafkaTopicFromPath(path)
 	if err != nil {
 		return nil, err
@@ -132,22 +132,22 @@ func (p *KafkaPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.
 			EarliestOffset: start.Offset, LatestOffset: end.Offset,
 		})
 	}
-	return &plugin.CatalogFacts{Path: path, Kind: CatalogKindTopic, Topic: facts}, nil
+	return &plugin.EngineCatalogFacts{Path: path, Kind: EngineCatalogKindTopic, Topic: facts}, nil
 }
 
-func kafkaTopicEntry(root plugin.CatalogPath, topic string) plugin.CatalogEntry {
+func kafkaTopicEntry(root plugin.EngineCatalogPath, topic string) plugin.EngineCatalogEntry {
 	path := root
-	path.Segments = append(append([]plugin.CatalogSegment(nil), root.Segments...), plugin.CatalogSegment{Term: CatalogTermTopic, Kind: CatalogKindTopic, Name: topic})
-	return plugin.CatalogEntry{Name: topic, Path: path, Term: CatalogTermTopic, Kind: CatalogKindTopic, Role: plugin.CatalogRoleLeaf}
+	path.Segments = append(append([]plugin.EngineCatalogSegment(nil), root.Segments...), plugin.EngineCatalogSegment{Term: EngineCatalogTermTopic, Kind: EngineCatalogKindTopic, Name: topic})
+	return plugin.EngineCatalogEntry{Name: topic, Path: path, Term: EngineCatalogTermTopic, Kind: EngineCatalogKindTopic, Role: plugin.EngineCatalogRoleLeaf}
 }
 
-func kafkaTopicFromPath(path plugin.CatalogPath) (string, error) {
-	business := plugin.CatalogPathWithoutRoot(path)
+func kafkaTopicFromPath(path plugin.EngineCatalogPath) (string, error) {
+	business := plugin.EngineCatalogPathWithoutRoot(path)
 	if len(business.Segments) != 1 {
 		return "", fmt.Errorf("kafka catalog path requires exactly one topic segment")
 	}
 	segment := business.Segments[0]
-	if segment.Term != CatalogTermTopic || segment.Kind != CatalogKindTopic || strings.TrimSpace(segment.Name) == "" {
+	if segment.Term != EngineCatalogTermTopic || segment.Kind != EngineCatalogKindTopic || strings.TrimSpace(segment.Name) == "" {
 		return "", fmt.Errorf("kafka catalog path requires topic leaf")
 	}
 	return segment.Name, nil

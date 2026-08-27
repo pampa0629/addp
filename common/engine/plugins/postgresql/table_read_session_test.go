@@ -12,7 +12,7 @@ import (
 
 func TestPostgresOpenTableReadSessionRejectsResumeMarker(t *testing.T) {
 	postgresPlugin := &PostgreSQLPlugin{}
-	_, err := postgresPlugin.OpenTableReadSession(nil, nil, plugin.CatalogPath{}, plugin.TableReadSessionOptions{
+	_, err := postgresPlugin.OpenTableReadSession(nil, nil, plugin.EngineCatalogPath{}, plugin.TableReadSessionOptions{
 		ResumeMarker: &resume.Marker{Version: resume.MarkerVersionV1},
 	})
 	if err == nil {

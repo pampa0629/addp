@@ -14,6 +14,8 @@ import (
 var builtinServiceClientIDs = []string{
 	"addp-agent",
 	"addp-asset",
+	"addp-catalog",
+	"addp-workbench",
 	"addp-copilot",
 	"addp-develop",
 	"addp-duckdb",
@@ -39,6 +41,7 @@ var builtinServiceClientIDs = []string{
 var builtinTenantRuntimeServiceClientIDs = []string{
 	"addp-agent",
 	"addp-asset",
+	"addp-catalog",
 	"addp-copilot",
 	"addp-develop",
 	"addp-duckdb",

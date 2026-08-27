@@ -576,7 +576,7 @@ func (s *EmbeddingService) readStorageLeafContent(ctx context.Context, tenantID 
 	if !ok {
 		return nil, nil, fmt.Errorf("engine %s does not implement content reading", engine.EngineType)
 	}
-	factsProvider, ok := plugin.(enginePlugin.CatalogFactsProvider)
+	factsProvider, ok := plugin.(enginePlugin.EngineCatalogFactsProvider)
 	if !ok {
 		return nil, nil, fmt.Errorf("engine %s does not implement catalog facts", engine.EngineType)
 	}
@@ -584,12 +584,12 @@ func (s *EmbeddingService) readStorageLeafContent(ctx context.Context, tenantID 
 	if loc == nil {
 		return nil, nil, fmt.Errorf("cannot build locator for item %d", item.ID)
 	}
-	catalogPath, err := resourcetree.ProviderCatalogPathFromLocator(catalogModelForEmbeddingItem(item), loc)
+	catalogPath, err := resourcetree.EngineCatalogPathFromLocator(catalogModelForEmbeddingItem(item), loc)
 	if err != nil {
 		return nil, nil, err
 	}
 	connInfo := enginePlugin.ConnectionInfo(engine.ConnectionInfo)
-	facts, err := factsProvider.DescribeCatalogFacts(ctx, connInfo, catalogPath, enginePlugin.CatalogFactsOptions{})
+	facts, err := factsProvider.DescribeEngineCatalogFacts(ctx, connInfo, catalogPath, enginePlugin.EngineCatalogFactsOptions{})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -602,11 +602,11 @@ func (s *EmbeddingService) readStorageLeafContent(ctx context.Context, tenantID 
 	if err != nil {
 		return nil, nil, err
 	}
-	info := storageInfoFromCatalogFacts(item, facts)
+	info := storageInfoFromEngineCatalogFacts(item, facts)
 	return info, data, nil
 }
 
-func catalogModelForEmbeddingItem(item commonModels.MetaItem) enginePlugin.CatalogModelSpec {
+func catalogModelForEmbeddingItem(item commonModels.MetaItem) enginePlugin.EngineCatalogModelSpec {
 	switch strings.ToLower(strings.TrimSpace(item.ItemType)) {
 	case string(resourcetree.TypeFile):
 		return enginePlugin.FileCatalogModel()
@@ -615,7 +615,7 @@ func catalogModelForEmbeddingItem(item commonModels.MetaItem) enginePlugin.Catal
 	}
 }
 
-func storageInfoFromCatalogFacts(item commonModels.MetaItem, facts *enginePlugin.CatalogFacts) *ObjectStorageInfo {
+func storageInfoFromEngineCatalogFacts(item commonModels.MetaItem, facts *enginePlugin.EngineCatalogFacts) *ObjectStorageInfo {
 	info := &ObjectStorageInfo{
 		Name: item.Name,
 	}

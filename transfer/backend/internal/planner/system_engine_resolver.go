@@ -99,3 +99,17 @@ func toEnginePluginConnInfo(connInfo commonmodels.ConnectionInfo) engineplugin.C
 	}
 	return result
 }
+
+func EngineBindingFromEngine(engine *commonmodels.Engine) (EngineBinding, error) {
+	if engine == nil || engine.ID == 0 || strings.TrimSpace(engine.EngineType) == "" {
+		return EngineBinding{}, fmt.Errorf("authorized engine is invalid")
+	}
+	capabilities, err := engineCapabilities(engine)
+	if err != nil {
+		return EngineBinding{}, fmt.Errorf("parse engine %d capabilities: %w", engine.ID, err)
+	}
+	return EngineBinding{
+		Type: strings.TrimSpace(engine.EngineType), ConnInfo: toEnginePluginConnInfo(engine.ConnectionInfo),
+		EngineID: engine.ID, Capabilities: capabilities,
+	}, nil
+}

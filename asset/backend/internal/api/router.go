@@ -63,6 +63,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 	assets.GET("/stats/dashboard", managementPermission(assetauthorization.PermissionAssetEntryRead), handler.getAssetDashboardStats)
 	assets.GET("/type-fields/:type_id", managementPermission(assetauthorization.PermissionAssetEntryRead), handler.getAssetTypeFields)
 	assets.GET("/:id", managementPermission(assetauthorization.PermissionAssetEntryRead), handler.getAsset)
+	assets.POST("", managementPermission(assetauthorization.PermissionAssetEntryUpdate), handler.createAsset)
 	assets.PUT("/:id", managementPermission(assetauthorization.PermissionAssetEntryUpdate), handler.updateAsset)
 	assets.DELETE("/:id", managementPermission(assetauthorization.PermissionAssetEntryDelete), handler.deleteAsset)
 	assets.POST("/:id/publish", managementPermission(assetauthorization.PermissionAssetEntryPublish), handler.publishAsset)
@@ -70,7 +71,6 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 	assets.POST("/batch-publish", managementPermission(assetauthorization.PermissionAssetEntryPublish), handler.batchPublishAssets)
 	assets.POST("/batch-offline", managementPermission(assetauthorization.PermissionAssetEntryOffline), handler.batchOfflineAssets)
 	assets.POST("/batch-catalog", managementPermission(assetauthorization.PermissionAssetEntryUpdate), handler.batchCatalogAssets)
-	assets.POST("/sync", managementPermission(assetauthorization.PermissionAssetEntryUpdate), handler.syncAssets)
 
 	applications := api.Group("/applications")
 	applications.GET("", managementPermission(assetauthorization.PermissionAssetApplicationRead), handler.listApplications)

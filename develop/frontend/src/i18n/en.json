@@ -171,6 +171,13 @@
       "warningTargetUnknown": "The target object could not be identified reliably from the statement",
       "warningTargetRequired": "A high-risk statement must have a selected target resource",
       "warningMissingWhere": "The statement has no WHERE condition and may affect all data",
+      "relationInputs": "Relation Inputs",
+      "relationInputsHint": "Optional reserved aliases for resources bound by orchestration",
+      "relationInputsPlaceholder": "Enter a lowercase alias and press Enter, such as person or participation",
+      "relationInputsInvalid": "Aliases must be unique, start with a letter, and contain only lowercase letters, digits, and underscores",
+      "relationSqlRequired": "Relation inputs support SQL queries only",
+      "relationPostgresRequired": "Relation inputs require a PostgreSQL query engine",
+      "relationExecutionHint": "This task can only run through orchestration after being saved. SQL references addp_input.<alias>; orchestration provides input_locators and target_locator at runtime.",
       "effect": {
         "read": "read-only",
         "write": "write",

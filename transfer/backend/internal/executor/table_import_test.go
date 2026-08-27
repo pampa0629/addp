@@ -357,7 +357,7 @@ func (r *fakeContentReader) StoreSemantics() engineplugin.StoreSemantics {
 	return engineplugin.StoreSemantics{}
 }
 
-func (r *fakeContentReader) OpenContent(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, opts engineplugin.ReadOptions) (io.ReadCloser, error) {
+func (r *fakeContentReader) OpenContent(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.EngineCatalogPath, opts engineplugin.ReadOptions) (io.ReadCloser, error) {
 	r.opens = append(r.opens, opts.Offset)
 	return io.NopCloser(strings.NewReader(r.content)), nil
 }
@@ -402,12 +402,12 @@ func (w *fakeBatchWriter) StoreSemantics() engineplugin.StoreSemantics {
 	return engineplugin.StoreSemantics{}
 }
 
-func (w *fakeBatchWriter) WriteBatch(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, batch *engineplugin.BatchData, _ engineplugin.BatchWriteOptions) error {
+func (w *fakeBatchWriter) WriteBatch(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.EngineCatalogPath, batch *engineplugin.BatchData, _ engineplugin.BatchWriteOptions) error {
 	w.batches = append(w.batches, batch)
 	return nil
 }
 
-func (w *fakeBatchWriter) OpenTableWriteSession(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, opts engineplugin.TableWriteSessionOptions) (engineplugin.TableWriteSession, error) {
+func (w *fakeBatchWriter) OpenTableWriteSession(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.EngineCatalogPath, opts engineplugin.TableWriteSessionOptions) (engineplugin.TableWriteSession, error) {
 	w.sessionOptions = opts
 	return &fakeTableWriteSession{writer: w}, nil
 }
@@ -463,7 +463,7 @@ func (p *fakeTableWritePreparer) StoreSemantics() engineplugin.StoreSemantics {
 	return engineplugin.StoreSemantics{}
 }
 
-func (p *fakeTableWritePreparer) PrepareTableWrite(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, opts engineplugin.TableWriteOptions) error {
+func (p *fakeTableWritePreparer) PrepareTableWrite(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.EngineCatalogPath, opts engineplugin.TableWriteOptions) error {
 	p.fields = append([]datatype.FieldInfo(nil), opts.Fields...)
 	return nil
 }

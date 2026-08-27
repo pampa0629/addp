@@ -31,6 +31,7 @@ class EngineStartupIsolationCheckTest(unittest.TestCase):
       START_DUCKDB=true
       ;;
 esac
+common-python/addp_common/module_lifecycle.py
 """,
             "docker-compose.yml": f"""services:
   manager-backend:
@@ -50,6 +51,9 @@ func main() {
 }
 """,
             "common/client/system_service.go": "func (c *SystemServiceClient) RegisterAndHeartbeat(ctx context.Context, request *ModuleRegistrationRequest) *ModuleRegistrationLifecycle { return nil }\n",
+            "scripts/dev/restart.sh": "common-python/addp_common/module_lifecycle.py\n",
+            "engines/pointcloud-workflow/Dockerfile": "COPY common-python/addp_common/module_lifecycle.py /common-python/addp_common/module_lifecycle.py\n",
+            "common-python/addp_common/module_lifecycle.py": "\n",
             ".env.example": "POSTGRES_HOST=localhost\n",
         }
         for relative, content in files.items():
@@ -119,6 +123,27 @@ registrationDone := client.RegisterAndHeartbeat(ctx, request)
         )
         errors = CHECKER.validate(root)
         self.assertTrue(any("does not wait" in error for error in errors), errors)
+
+    def test_rejects_pointcloud_image_missing_common_runtime_module(self) -> None:
+        root = self.repository()
+        (root / "engines/pointcloud-workflow/Dockerfile").write_text(
+            "FROM python:3.12-slim\n",
+            encoding="utf-8",
+        )
+        errors = CHECKER.validate(root)
+        self.assertTrue(
+            any("module_lifecycle.py" in error and "Dockerfile" in error for error in errors),
+            errors,
+        )
+
+    def test_rejects_pointcloud_fingerprint_missing_common_runtime_module(self) -> None:
+        root = self.repository()
+        (root / "scripts/dev/restart.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+        errors = CHECKER.validate(root)
+        self.assertTrue(
+            any("module_lifecycle.py" in error and "restart.sh" in error for error in errors),
+            errors,
+        )
 
 
 if __name__ == "__main__":

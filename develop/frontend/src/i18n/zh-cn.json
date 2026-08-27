@@ -171,6 +171,13 @@
       "warningTargetUnknown": "无法从语句中可靠识别目标对象",
       "warningTargetRequired": "高风险语句必须选择一个目标资源",
       "warningMissingWhere": "语句没有 WHERE 条件，可能影响全部数据",
+      "relationInputs": "关系输入",
+      "relationInputsHint": "可选；仅为由编排绑定资源的保留别名",
+      "relationInputsPlaceholder": "输入小写别名后回车，例如 person、participation",
+      "relationInputsInvalid": "别名必须唯一，且只能使用小写字母、数字和下划线，并以字母开头",
+      "relationSqlRequired": "关系输入仅支持 SQL 查询",
+      "relationPostgresRequired": "关系输入必须选择 PostgreSQL 查询引擎",
+      "relationExecutionHint": "该任务只能保存后由编排执行；SQL 以 addp_input.<alias> 引用关系，编排在执行期提供 input_locators 和 target_locator。",
       "effect": {
         "read": "只读",
         "write": "写入",

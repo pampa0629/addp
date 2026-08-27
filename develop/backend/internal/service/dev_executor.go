@@ -13,7 +13,6 @@ import (
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
-	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/resourcetree"
 
 	engineselection "github.com/addp/common/engine/selection"
@@ -33,7 +32,6 @@ type DevExecutor struct {
 	workflowEngine           *WorkflowEngineService
 	operatorDiscovery        *OperatorDiscoveryService
 	metaClient               *commonClient.MetaClient
-	modelClient              *commonClient.ModelClient
 	sqlEngine                *SQLEngineService
 	federatedQuery           federatedQueryExecutor
 	notebookExecutionService *NotebookExecutionService
@@ -67,7 +65,6 @@ func NewDevExecutor(
 	workflowEngine *WorkflowEngineService,
 	operatorDiscovery *OperatorDiscoveryService,
 	metaClient *commonClient.MetaClient,
-	modelClient *commonClient.ModelClient,
 	sqlEngine *SQLEngineService,
 	federatedQuery federatedQueryExecutor,
 	notebookExecutionService *NotebookExecutionService,
@@ -79,7 +76,6 @@ func NewDevExecutor(
 		workflowEngine:           workflowEngine,
 		operatorDiscovery:        operatorDiscovery,
 		metaClient:               metaClient,
-		modelClient:              modelClient,
 		sqlEngine:                sqlEngine,
 		federatedQuery:           federatedQuery,
 		notebookExecutionService: notebookExecutionService,
@@ -189,10 +185,10 @@ func (e *DevExecutor) prepareContentExecutionWithConfirmation(
 	if executionConfig == nil {
 		return nil, fmt.Errorf("临时执行必须提供 execution_config")
 	}
-	if _, managed, targetErr := materializationTargetLogicalTableID(executionConfig); targetErr != nil {
-		return nil, targetErr
-	} else if managed {
-		return nil, fmt.Errorf("逻辑表托管写入只能通过已保存任务的 Orchestrator 执行")
+	if _, relationResult, relationErr := relationInputBindings(content); relationErr != nil {
+		return nil, relationErr
+	} else if relationResult {
+		return nil, fmt.Errorf("关系输入写入只能通过已保存任务的 Orchestrator 执行")
 	}
 	if parameters == nil {
 		parameters = map[string]interface{}{}
@@ -432,7 +428,6 @@ func applySQLExecutionAuthorizationFacts(
 	execution.ActorTenantMembershipID = &authorization.ActorTenantMembershipID
 	execution.IssuedAuthorizationVersion = &authorization.IssuedAuthorizationVersion
 	execution.ExecutionAuthorizationID = &authorization.AuthorizationID
-	execution.AuthorizationEffects = formatSQLExecutionEffects(authorization.Effects)
 	expiresAt := authorization.ExpiresAt.UTC()
 	execution.AuthorizationExpiresAt = &expiresAt
 }
@@ -448,7 +443,6 @@ func applyWorkflowExecutionAuthorizationFacts(
 	execution.ActorTenantMembershipID = &authorization.ActorTenantMembershipID
 	execution.IssuedAuthorizationVersion = &authorization.IssuedAuthorizationVersion
 	execution.ExecutionAuthorizationID = &authorization.AuthorizationID
-	execution.AuthorizationEffects = append([]string(nil), authorization.Effects...)
 	expiresAt := authorization.ExpiresAt.UTC()
 	execution.AuthorizationExpiresAt = &expiresAt
 }
@@ -635,6 +629,13 @@ func (e *DevExecutor) updateExecutionStatus(ctx context.Context, executionID str
 	}
 	if currentStep != "" {
 		fields["current_step"] = currentStep
+	}
+	if lease, ok := commonExecution.LeaseFromContext(ctx); ok {
+		if lease.ExecutionID != executionID || lease.TenantID != tenantID || status != commonExecution.ExecutionStatusRunning {
+			return fmt.Errorf("bounded query progress does not match the current execution lease")
+		}
+		delete(fields, "status")
+		return e.taskExecutionRepo.UpdateWithLease(ctx, lease, fields)
 	}
 	return e.taskExecutionRepo.UpdateFields(ctx, executionID, tenantID, fields)
 }
@@ -956,7 +957,7 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 		var graphData *plugin.GraphData
 		var queryResult *plugin.QueryResult
 		var queryErr error
-		var targetPath *plugin.CatalogPath
+		var targetPath *plugin.EngineCatalogPath
 		if locatorURI := devTask.GetTargetLocator(); locatorURI != "" {
 			locator, locatorErr := resourcetree.ParseURI(locatorURI)
 			if locatorErr != nil || locator.EngineID != *engineID {
@@ -965,11 +966,11 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 				}
 				return nil, fmt.Sprintf("查询目标无效: %v", locatorErr), nil, ""
 			}
-			model, modelErr := dbbridge.CatalogModel(engine.EngineType)
+			model, modelErr := dbbridge.EngineCatalogModel(engine.EngineType)
 			if modelErr != nil {
 				return nil, fmt.Sprintf("查询目标无效: %v", modelErr), nil, ""
 			}
-			path, pathErr := resourcetree.ProviderCatalogPathFromLocator(model, locator)
+			path, pathErr := resourcetree.EngineCatalogPathFromLocator(model, locator)
 			if pathErr != nil {
 				return nil, fmt.Sprintf("查询目标无效: %v", pathErr), nil, ""
 			}
@@ -1026,7 +1027,7 @@ func queryErrorCode(err error) string {
 // MongoDB accepts a filter but returns no documents because a field name's case
 // does not match the sampled collection schema. It deliberately remains a
 // warning: dynamic schemas may be incomplete and zero rows can be legitimate.
-func mongoZeroResultDiagnostics(ctx context.Context, engine *commonModels.Engine, query string, targetPath *plugin.CatalogPath) []map[string]interface{} {
+func mongoZeroResultDiagnostics(ctx context.Context, engine *commonModels.Engine, query string, targetPath *plugin.EngineCatalogPath) []map[string]interface{} {
 	if engine == nil || !strings.EqualFold(engine.EngineType, "mongodb") || targetPath == nil {
 		return []map[string]interface{}{{"code": "query_zero_result", "reason": "diagnostic_unavailable"}}
 	}
@@ -1038,7 +1039,7 @@ func mongoZeroResultDiagnostics(ctx context.Context, engine *commonModels.Engine
 	if !ok {
 		return []map[string]interface{}{{"code": "query_zero_result", "reason": "diagnostic_unavailable"}}
 	}
-	facts, err := sampler.SampleDynamicSchema(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), *targetPath, plugin.CatalogFactsOptions{SampleSize: 100})
+	facts, err := sampler.SampleDynamicSchema(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), *targetPath, plugin.EngineCatalogFactsOptions{SampleSize: 100})
 	if err != nil || facts == nil || facts.Table == nil {
 		return []map[string]interface{}{{"code": "query_zero_result", "reason": "diagnostic_unavailable"}}
 	}
@@ -1526,7 +1527,7 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 		Progress:          0,
 		TriggerType:       normalizedTriggerType,
 		TriggeredBy:       triggeredBy,
-		ExecutionConfig:   devTaskExecutionRecordConfig(devTask, executionInputs),
+		ExecutionConfig:   devTaskExecutionRecordConfig(tempItem, executionInputs),
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
@@ -1691,64 +1692,28 @@ func (e *DevExecutor) ExecuteWithParamsFromParentExecution(
 		TaskType: preparedTask.template.DevType, Source: commonExecution.ModuleOrchestrator,
 		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(itemID), SourceTaskName: &preparedTask.template.Name,
 		ParentExecutionID: &parentID, Status: commonExecution.ExecutionStatusPending, Progress: 0,
+		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded, MaxAttempts: 3,
 		TriggerType: normalizedTriggerType, TriggeredBy: &triggeredBy,
 		ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
 		IssuedAuthorizationVersion: &authorizationVersion,
-		ExecutionConfig:            devTaskExecutionRecordConfig(preparedTask.template, preparedTask.inputs),
+		ExecutionConfig:            devTaskExecutionRecordConfig(preparedTask.task, preparedTask.inputs),
 		CreatedAt:                  now, UpdatedAt: now,
+	}
+	if _, relationResult, _ := relationInputBindings(preparedTask.task.Content); relationResult {
+		execution.MaxAttempts = 1
 	}
 	if err := e.taskExecutionRepo.Create(ctx, execution); err != nil {
 		return "", fmt.Errorf("failed to create child execution record: %w", err)
+	}
+	if preparedTask.task.DevType == commonExecution.TaskTypeQuery {
+		// Orchestrator 查询统一由 develop-query-worker 领取。查询所需的
+		// Execution Authorization 必须在 claim 后按当前执行边界签发。
+		return executionID, nil
 	}
 
 	var sqlAuthorization *IssuedSQLExecutionAuthorization
 	var workflowAuthorization *IssuedWorkflowExecutionAuthorization
 	switch preparedTask.task.DevType {
-	case commonExecution.TaskTypeQuery:
-		sqlContent, ok := preparedTask.task.Content["query"].(string)
-		if !ok || strings.TrimSpace(sqlContent) == "" {
-			err = fmt.Errorf("异步 SQL 执行上下文无效")
-		} else if logicalTableID, managed, targetErr := materializationTargetLogicalTableID(preparedTask.task.ExecutionConfig); targetErr != nil {
-			err = targetErr
-		} else if managed {
-			var writeContext *commonClient.MaterializationWriteContext
-			writeContext, err = e.resolveMaterializationWriteContext(
-				ctx, tenantID, parsedParentExecutionID, preparedTask.task, logicalTableID,
-			)
-			if err == nil {
-				preparedTask.task.Content["query"] = compileMaterializationWriteSQL(
-					writeContext.StagingLocator, writeContext.WriteColumns, sqlContent,
-				)
-				if preparedTask.task.Content["query"] == "" {
-					err = fmt.Errorf("Model 返回的逻辑表写入上下文无效")
-				} else {
-					execution.ExecutionConfig["materialization_target"] = commonModels.JSONMap{
-						"logical_table_id": logicalTableID,
-						"batch_id":         writeContext.BatchID,
-					}
-					sqlAuthorization, err = e.sqlEngine.IssueManagedWriteExecutionAuthorizationFromExecution(
-						ctx, tenantID, parsedParentExecutionID, executionUUID, uint(writeContext.EngineID), preparedTask.task.Timeout,
-					)
-				}
-			}
-		} else if e.isFederatedQuery(ctx, preparedTask.task, tenantID) {
-			var engineIDs []uint
-			engineIDs, err = e.federatedReadEngineIDs(ctx, preparedTask.task, tenantID)
-			if err == nil && len(engineIDs) > 0 {
-				sqlAuthorization, err = e.sqlEngine.IssueFederatedReadExecutionAuthorizationFromExecution(
-					ctx, tenantID, parsedParentExecutionID, executionUUID, engineIDs, preparedTask.task.Timeout,
-				)
-			}
-		} else {
-			engineID := preparedTask.task.GetEngineID()
-			if engineID == nil || *engineID == 0 {
-				err = fmt.Errorf("异步 SQL 执行上下文无效")
-			} else {
-				sqlAuthorization, err = e.sqlEngine.IssueSQLExecutionAuthorizationFromExecution(
-					ctx, tenantID, parsedParentExecutionID, executionUUID, *engineID, sqlContent, preparedTask.task.Timeout,
-				)
-			}
-		}
 	case commonExecution.TaskTypeWorkflow:
 		workflowAuthorization, err = e.prepareWorkflowExecutionAuthorizationFromExecution(
 			ctx, preparedTask.task, tenantID, parsedParentExecutionID, executionUUID,
@@ -1805,78 +1770,16 @@ func devTaskExecutionRecordConfig(devTask *models.DevTask, inputs commonModels.J
 	}
 	if devTask != nil {
 		config["engine_id"] = devTask.GetEngineID()
-		if logicalTableID, managed, err := materializationTargetLogicalTableID(devTask.ExecutionConfig); err == nil && managed {
-			config["materialization_target"] = commonModels.JSONMap{"logical_table_id": logicalTableID}
+		config["content"] = devTask.Content
+		config["timeout"] = devTask.Timeout
+		if devTask.RuntimeParameters != nil {
+			config["runtime_parameters"] = devTask.RuntimeParameters
+		}
+		if _, relationResult, _ := relationInputBindings(devTask.Content); relationResult {
+			if submitted, ok := mapValue(inputs["submitted_parameters"]); ok {
+				config["runtime_inputs"] = commonModels.JSONMap(submitted)
+			}
 		}
 	}
 	return config
-}
-
-func (e *DevExecutor) resolveMaterializationWriteContext(
-	ctx context.Context,
-	tenantID uint,
-	parentExecutionID uuid.UUID,
-	devTask *models.DevTask,
-	logicalTableID int64,
-) (*commonClient.MaterializationWriteContext, error) {
-	if e == nil || e.modelClient == nil || e.sqlEngine == nil || devTask == nil || logicalTableID <= 0 {
-		return nil, fmt.Errorf("逻辑表托管写入服务未正确初始化")
-	}
-	if devTask.GetQueryType() != "sql" || e.isFederatedQuery(ctx, devTask, tenantID) {
-		return nil, fmt.Errorf("逻辑表托管写入仅支持单引擎 SQL 查询任务")
-	}
-	engineID := devTask.GetEngineID()
-	if engineID == nil || *engineID == 0 {
-		return nil, fmt.Errorf("逻辑表托管写入缺少执行引擎")
-	}
-	writeContext, err := e.modelClient.WithTenantID(tenantID).ResolveMaterializationWriteContext(
-		ctx,
-		commonClient.MaterializationWriteContextRequest{
-			ParentExecutionID: parentExecutionID.String(),
-			LogicalTableID:    logicalTableID,
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("解析逻辑表托管写入上下文失败: %w", err)
-	}
-	if writeContext.EngineID <= 0 || uint64(writeContext.EngineID) != uint64(*engineID) {
-		return nil, fmt.Errorf("逻辑表物化引擎与查询任务引擎不一致")
-	}
-	if _, err := uuid.Parse(writeContext.BatchID); err != nil {
-		return nil, fmt.Errorf("Model 返回的物化批次无效")
-	}
-	stagingLocator, locatorErr := resourcetree.ParseURI(writeContext.StagingLocator)
-	if locatorErr != nil || stagingLocator.EngineID != *engineID || stagingLocator.Type != resourcetree.TypeTable || len(stagingLocator.Path) != 2 ||
-		compileMaterializationWriteSQL(writeContext.StagingLocator, writeContext.WriteColumns, "SELECT 1") == "" {
-		return nil, fmt.Errorf("Model 返回的逻辑表写入上下文无效")
-	}
-	return writeContext, nil
-}
-
-func compileMaterializationWriteSQL(stagingLocator string, columns []string, selectSQL string) string {
-	locator, err := resourcetree.ParseURI(strings.TrimSpace(stagingLocator))
-	if err != nil || locator.EngineID == 0 || locator.Type != resourcetree.TypeTable || len(locator.Path) != 2 || len(columns) == 0 {
-		return ""
-	}
-	analysis, err := commonquery.Analyze(selectSQL)
-	if err != nil || analysis.Statement != "SELECT" || analysis.Effect != commonquery.Read {
-		return ""
-	}
-	dialect := commonquery.ForEngine("postgresql")
-	quotedColumns := make([]string, 0, len(columns))
-	seen := make(map[string]struct{}, len(columns))
-	for _, column := range columns {
-		column = strings.TrimSpace(column)
-		if column == "" {
-			return ""
-		}
-		if _, duplicate := seen[column]; duplicate {
-			return ""
-		}
-		seen[column] = struct{}{}
-		quotedColumns = append(quotedColumns, dialect.QuoteIdentifier(column))
-	}
-	selectSQL = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(selectSQL), ";"))
-	return "INSERT INTO " + dialect.QualifiedTable(locator.Path[0], locator.Path[1]) +
-		" (" + strings.Join(quotedColumns, ", ") + ") " + selectSQL
 }

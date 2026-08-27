@@ -136,6 +136,23 @@ func TestTablePipelineProgressCarriesResumeAndCommitMarkers(t *testing.T) {
 	}
 }
 
+func TestQueryTableBatchReaderStreamsAllBatchesAndClosesAtEnd(t *testing.T) {
+	session := &fakeQueryReadSession{batches: []*engineplugin.BatchData{
+		{Rows: []map[string]interface{}{{"person_id": "p1"}, {"person_id": "p2"}}, Offset: 0},
+		{Rows: []map[string]interface{}{{"person_id": "p3"}}, Offset: 2},
+	}}
+	reader := &queryTableBatchReader{session: session}
+
+	first, err := reader.ReadBatch(t.Context(), 2)
+	if err != nil || len(first.Rows) != 2 || session.closed {
+		t.Fatalf("first ReadBatch() = %#v, err=%v, closed=%t", first, err, session.closed)
+	}
+	second, err := reader.ReadBatch(t.Context(), 2)
+	if err != nil || len(second.Rows) != 1 || !session.closed {
+		t.Fatalf("second ReadBatch() = %#v, err=%v, closed=%t", second, err, session.closed)
+	}
+}
+
 func TestTableTransferExecutorReadsShapefileRefs(t *testing.T) {
 	source := &fakeContentWriter{files: map[string][]byte{}}
 	shapefilePlugin := shapefileformat.NewPlugin(nil)
@@ -438,7 +455,7 @@ func TestTableTransferExecutorUsesBoundScopeReaderForSingleLayoutContainer(t *te
 	}
 }
 
-func writeParquetTestFile(t *testing.T, storage *fakeContentWriter, path engineplugin.CatalogPath, plugin format.TableWriterProvider, rows []map[string]interface{}) {
+func writeParquetTestFile(t *testing.T, storage *fakeContentWriter, path engineplugin.EngineCatalogPath, plugin format.TableWriterProvider, rows []map[string]interface{}) {
 	t.Helper()
 	writer := contentadapter.NewWriter(storage, nil, path, engineplugin.WriteOptions{Overwrite: true})
 	output, err := writer.Create(context.Background(), contentRefFromCatalogPath(path))
@@ -559,8 +576,8 @@ func TestTableTransferExecutorCopiesShapefileRefsPreservingSpatialInfo(t *testin
 func TestTableTransferExecutorCopiesShapefileRefsAcrossStoragePathModels(t *testing.T) {
 	tests := []struct {
 		name       string
-		sourcePath engineplugin.CatalogPath
-		targetPath engineplugin.CatalogPath
+		sourcePath engineplugin.EngineCatalogPath
+		targetPath engineplugin.EngineCatalogPath
 	}{
 		{
 			name:       "file_to_object",
@@ -634,7 +651,7 @@ func TestTableTransferExecutorCopiesShapefileRefsAcrossStoragePathModels(t *test
 	}
 }
 
-func writeShapefilePointZTestContent(t *testing.T, storage *fakeContentWriter, path engineplugin.CatalogPath, shapefilePlugin *shapefileformat.Plugin) {
+func writeShapefilePointZTestContent(t *testing.T, storage *fakeContentWriter, path engineplugin.EngineCatalogPath, shapefilePlugin *shapefileformat.Plugin) {
 	t.Helper()
 	writer := contentadapter.NewWriter(storage, nil, path, engineplugin.WriteOptions{Overwrite: true})
 	refs := format.SameBasenameRelatedRefs(path.StringPath(), shapefilePlugin.RelatedRefSpecs())
@@ -740,6 +757,25 @@ func TestNewTableTransferExecutorLoadsEncodedToEncodedProvidersFromRegistry(t *t
 
 type markerTableBatchSource struct {
 	marker *resume.Marker
+}
+
+type fakeQueryReadSession struct {
+	batches []*engineplugin.BatchData
+	closed  bool
+}
+
+func (s *fakeQueryReadSession) ReadBatch(context.Context, int) (*engineplugin.BatchData, error) {
+	if len(s.batches) == 0 {
+		return &engineplugin.BatchData{}, nil
+	}
+	batch := s.batches[0]
+	s.batches = s.batches[1:]
+	return batch, nil
+}
+
+func (s *fakeQueryReadSession) Close(context.Context) error {
+	s.closed = true
+	return nil
 }
 
 type singleLayoutScopeReaderProvider struct {

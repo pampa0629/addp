@@ -549,7 +549,7 @@ func (p *fakeChangeStreamProvider) Capabilities() plugin.EngineCapabilities {
 func (p *fakeChangeStreamProvider) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
-func (p *fakeChangeStreamProvider) OpenChangeStream(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, options plugin.ChangeStreamReadOptions) (plugin.ChangeStreamReader, error) {
+func (p *fakeChangeStreamProvider) OpenChangeStream(_ context.Context, _ plugin.ConnectionInfo, _ plugin.EngineCatalogPath, options plugin.ChangeStreamReadOptions) (plugin.ChangeStreamReader, error) {
 	p.options = options
 	return p.reader, nil
 }
@@ -651,12 +651,12 @@ func (p *fakeChangeApplyProvider) Capabilities() plugin.EngineCapabilities {
 func (p *fakeChangeApplyProvider) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
-func (p *fakeChangeApplyProvider) PreparePartitionedTableChangeApply(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, options plugin.PartitionedTableChangeApplyOptions) error {
+func (p *fakeChangeApplyProvider) PreparePartitionedTableChangeApply(_ context.Context, _ plugin.ConnectionInfo, _ plugin.EngineCatalogPath, options plugin.PartitionedTableChangeApplyOptions) error {
 	p.prepared = true
 	p.prepareOptions = options
 	return nil
 }
-func (p *fakeChangeApplyProvider) ApplyPartitionedTableChanges(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, batch *plugin.PartitionedTableChangeBatch, _ plugin.PartitionedTableChangeApplyOptions) (*plugin.PartitionedTableChangeApplyResult, error) {
+func (p *fakeChangeApplyProvider) ApplyPartitionedTableChanges(_ context.Context, _ plugin.ConnectionInfo, _ plugin.EngineCatalogPath, batch *plugin.PartitionedTableChangeBatch, _ plugin.PartitionedTableChangeApplyOptions) (*plugin.PartitionedTableChangeApplyResult, error) {
 	if p.events != nil {
 		*p.events = append(*p.events, "apply")
 	}

@@ -570,12 +570,12 @@ func openIntegrationPostgres(t *testing.T, ctx context.Context, pg *postgresql.P
 	return db
 }
 
-func integrationPostgresTablePath(schemaName, tableName string) engineplugin.CatalogPath {
-	return engineplugin.CatalogPath{
-		Version: engineplugin.CatalogPathVersion,
-		Segments: []engineplugin.CatalogSegment{
-			{Term: engineplugin.CatalogTermSchema, Kind: engineplugin.CatalogKindNamespace, Name: schemaName},
-			{Term: engineplugin.CatalogTermTable, Kind: engineplugin.CatalogKindTable, Name: tableName},
+func integrationPostgresTablePath(schemaName, tableName string) engineplugin.EngineCatalogPath {
+	return engineplugin.EngineCatalogPath{
+		Version: engineplugin.EngineCatalogPathVersion,
+		Segments: []engineplugin.EngineCatalogSegment{
+			{Term: engineplugin.EngineCatalogTermSchema, Kind: engineplugin.EngineCatalogKindNamespace, Name: schemaName},
+			{Term: engineplugin.EngineCatalogTermTable, Kind: engineplugin.EngineCatalogKindTable, Name: tableName},
 		},
 	}
 }

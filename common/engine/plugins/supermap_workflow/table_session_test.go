@@ -57,7 +57,7 @@ func TestSDXPostgreSQLTableProviderReadAndWriteSessions(t *testing.T) {
 		t.Fatalf("NewSDXPostgreSQLTableProvider() error = %v", err)
 	}
 	databaseConn := plugin.ConnectionInfo{"host": "postgres", "port": 5432, "database": "business", "user": "business"}
-	path := plugin.CatalogPath{Segments: []plugin.CatalogSegment{{Name: "sdx"}, {Name: "roads"}}}
+	path := plugin.EngineCatalogPath{Segments: []plugin.EngineCatalogSegment{{Name: "sdx"}, {Name: "roads"}}}
 
 	readSession, err := provider.OpenTableReadSession(context.Background(), databaseConn, path, plugin.TableReadSessionOptions{})
 	if err != nil {
@@ -103,7 +103,7 @@ func TestSDXPostgreSQLTableProviderReadAndWriteSessions(t *testing.T) {
 }
 
 func TestSuperMapTablePathRejectsNonSDXSchema(t *testing.T) {
-	_, _, err := superMapTablePath(plugin.CatalogPath{Segments: []plugin.CatalogSegment{{Name: "public"}, {Name: "roads"}}})
+	_, _, err := superMapTablePath(plugin.EngineCatalogPath{Segments: []plugin.EngineCatalogSegment{{Name: "public"}, {Name: "roads"}}})
 	if err == nil || !strings.Contains(err.Error(), "must be sdx") {
 		t.Fatalf("superMapTablePath() error = %v, want fixed sdx schema error", err)
 	}
@@ -141,12 +141,12 @@ func TestSDXPostgreSQLTableProviderDescribesSDKCatalogFacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSDXPostgreSQLTableProvider() error = %v", err)
 	}
-	path := plugin.CatalogPath{Segments: []plugin.CatalogSegment{{Name: "sdx"}, {Name: "regions"}}}
-	facts, err := provider.DescribeCatalogFacts(context.Background(), plugin.ConnectionInfo{
+	path := plugin.EngineCatalogPath{Segments: []plugin.EngineCatalogSegment{{Name: "sdx"}, {Name: "regions"}}}
+	facts, err := provider.DescribeEngineCatalogFacts(context.Background(), plugin.ConnectionInfo{
 		"host": "postgres", "port": 5432, "database": "business", "user": "business",
-	}, path, plugin.CatalogFactsOptions{IncludeSpatialFacts: true})
+	}, path, plugin.EngineCatalogFactsOptions{IncludeSpatialFacts: true})
 	if err != nil {
-		t.Fatalf("DescribeCatalogFacts() error = %v", err)
+		t.Fatalf("DescribeEngineCatalogFacts() error = %v", err)
 	}
 	if facts.Table == nil || facts.Table.RowCount == nil || *facts.Table.RowCount != 7 {
 		t.Fatalf("table facts = %#v, want row_count=7", facts.Table)
@@ -192,7 +192,7 @@ func TestSDXPostgreSQLWriteSessionCanAbortAfterCloseFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSDXPostgreSQLTableProvider() error = %v", err)
 	}
-	path := plugin.CatalogPath{Segments: []plugin.CatalogSegment{{Name: "sdx"}, {Name: "roads"}}}
+	path := plugin.EngineCatalogPath{Segments: []plugin.EngineCatalogSegment{{Name: "sdx"}, {Name: "roads"}}}
 	session, err := provider.OpenTableWriteSession(context.Background(), plugin.ConnectionInfo{
 		"host": "postgres", "port": 5432, "database": "business", "user": "business",
 	}, path, plugin.TableWriteSessionOptions{})

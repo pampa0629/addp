@@ -36,7 +36,6 @@ func main() {
 		log.Fatalf("Portal Service Token Source 初始化失败: %v", err)
 	}
 	assetClient := commonClient.NewAssetClient(cfg.AssetURL)
-	serviceClient := commonClient.NewServiceClient(cfg.ServiceURL, tokenSource, nil)
 	systemClient := commonClient.NewSystemServiceClient(cfg.SystemURL, tokenSource, nil)
 
 	var redisClient *redis.Client
@@ -49,7 +48,7 @@ func main() {
 	}
 
 	lifecycleController := modulelifecycle.NewBusiness("portal", commonClient.ModuleRuntimeRoleBackend)
-	router := api.SetupRouter(cfg, redisClient, assetClient, serviceClient, lifecycleController)
+	router := api.SetupRouter(cfg, redisClient, assetClient, lifecycleController)
 
 	addr := ":" + cfg.Port
 	log.Printf("Portal BFF service starting on %s", addr)

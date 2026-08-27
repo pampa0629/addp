@@ -8,39 +8,39 @@ import (
 )
 
 const (
-	CatalogTermService = "service"
-	CatalogTermBucket  = "bucket"
-	CatalogTermPrefix  = "prefix"
-	CatalogTermObject  = "object"
+	EngineCatalogTermService = "service"
+	EngineCatalogTermBucket  = "bucket"
+	EngineCatalogTermPrefix  = "prefix"
+	EngineCatalogTermObject  = "object"
 
-	CatalogKindBucket = "bucket"
-	CatalogKindPrefix = "prefix"
-	CatalogKindObject = "object"
+	EngineCatalogKindBucket = "bucket"
+	EngineCatalogKindPrefix = "prefix"
+	EngineCatalogKindObject = "object"
 )
 
 type ObjectCatalogCallbacks struct {
-	ListBucketsFunc           func(ctx context.Context, connInfo ConnectionInfo, root CatalogPath) ([]CatalogEntry, error)
-	ListDirectoryFunc         func(ctx context.Context, connInfo ConnectionInfo, parent CatalogPath) ([]CatalogEntry, error)
+	ListBucketsFunc           func(ctx context.Context, connInfo ConnectionInfo, root EngineCatalogPath) ([]EngineCatalogEntry, error)
+	ListDirectoryFunc         func(ctx context.Context, connInfo ConnectionInfo, parent EngineCatalogPath) ([]EngineCatalogEntry, error)
 	GetObjectStorageFactsFunc func(ctx context.Context, connInfo ConnectionInfo, path string) (*StorageObjectFacts, error)
 }
 
 // ObjectCatalogModel describes object storage hierarchy: service -> bucket -> prefix? -> object.
-func ObjectCatalogModel() CatalogModelSpec {
-	return CatalogModelSpec{
-		PathVersion: CatalogPathVersion,
-		RootTerm:    CatalogTermService,
-		Levels: []CatalogLevelSpec{
-			{Term: CatalogTermBucket, Kinds: []string{CatalogKindBucket}, Role: CatalogRoleBranch, I18nKey: CatalogTermI18nKey(CatalogTermBucket)},
-			{Term: CatalogTermPrefix, Kinds: []string{CatalogKindPrefix}, Role: CatalogRoleBranch, Optional: true, I18nKey: CatalogTermI18nKey(CatalogTermPrefix)},
-			{Term: CatalogTermObject, Kinds: []string{CatalogKindObject}, Role: CatalogRoleLeaf, I18nKey: CatalogTermI18nKey(CatalogTermObject)},
+func ObjectCatalogModel() EngineCatalogModelSpec {
+	return EngineCatalogModelSpec{
+		PathVersion: EngineCatalogPathVersion,
+		RootTerm:    EngineCatalogTermService,
+		Levels: []EngineCatalogLevelSpec{
+			{Term: EngineCatalogTermBucket, Kinds: []string{EngineCatalogKindBucket}, Role: EngineCatalogRoleBranch, I18nKey: EngineCatalogTermI18nKey(EngineCatalogTermBucket)},
+			{Term: EngineCatalogTermPrefix, Kinds: []string{EngineCatalogKindPrefix}, Role: EngineCatalogRoleBranch, Optional: true, I18nKey: EngineCatalogTermI18nKey(EngineCatalogTermPrefix)},
+			{Term: EngineCatalogTermObject, Kinds: []string{EngineCatalogKindObject}, Role: EngineCatalogRoleLeaf, I18nKey: EngineCatalogTermI18nKey(EngineCatalogTermObject)},
 		},
 	}
 }
 
-// ListObjectCatalogChildren maps object-storage buckets, prefixes and objects to CatalogProvider nodes.
-func ListObjectCatalogChildren(ctx context.Context, callbacks ObjectCatalogCallbacks, connInfo ConnectionInfo, engineID uint, parent CatalogPath, opts ListOptions) ([]CatalogEntry, error) {
+// ListObjectCatalogChildren maps object-storage buckets, prefixes and objects to EngineCatalogProvider nodes.
+func ListObjectCatalogChildren(ctx context.Context, callbacks ObjectCatalogCallbacks, connInfo ConnectionInfo, engineID uint, parent EngineCatalogPath, opts ListOptions) ([]EngineCatalogEntry, error) {
 	model := ObjectCatalogModel()
-	if IsCatalogRootPath(parent) {
+	if IsEngineCatalogRootPath(parent) {
 		if err := requireCatalogRootPath(parent, model); err != nil {
 			return nil, err
 		}
@@ -60,7 +60,7 @@ func ListObjectCatalogChildren(ctx context.Context, callbacks ObjectCatalogCallb
 	return listObjectCatalogChildren(ctx, callbacks, connInfo, parent, opts)
 }
 
-func listObjectCatalogChildren(ctx context.Context, callbacks ObjectCatalogCallbacks, connInfo ConnectionInfo, parent CatalogPath, opts ListOptions) ([]CatalogEntry, error) {
+func listObjectCatalogChildren(ctx context.Context, callbacks ObjectCatalogCallbacks, connInfo ConnectionInfo, parent EngineCatalogPath, opts ListOptions) ([]EngineCatalogEntry, error) {
 	if callbacks.ListDirectoryFunc == nil {
 		return nil, fmt.Errorf("object catalog callbacks ListDirectoryFunc is nil")
 	}
@@ -71,9 +71,9 @@ func listObjectCatalogChildren(ctx context.Context, callbacks ObjectCatalogCallb
 	if !opts.Recursive {
 		return nodes, nil
 	}
-	result := append([]CatalogEntry(nil), nodes...)
+	result := append([]EngineCatalogEntry(nil), nodes...)
 	for _, node := range nodes {
-		if node.Role != CatalogRoleBranch {
+		if node.Role != EngineCatalogRoleBranch {
 			continue
 		}
 		childNodes, err := listObjectCatalogChildren(ctx, callbacks, connInfo, node.Path, opts)
@@ -86,18 +86,18 @@ func listObjectCatalogChildren(ctx context.Context, callbacks ObjectCatalogCallb
 }
 
 // ResolveObjectCatalogPath resolves an object catalog path.
-func ResolveObjectCatalogPath(ctx context.Context, callbacks ObjectCatalogCallbacks, connInfo ConnectionInfo, engineID uint, path CatalogPath) (*CatalogEntry, error) {
+func ResolveObjectCatalogPath(ctx context.Context, callbacks ObjectCatalogCallbacks, connInfo ConnectionInfo, engineID uint, path EngineCatalogPath) (*EngineCatalogEntry, error) {
 	model := ObjectCatalogModel()
-	if IsCatalogRootPath(path) {
+	if IsEngineCatalogRootPath(path) {
 		if err := requireCatalogRootPath(path, model); err != nil {
 			return nil, err
 		}
-		return &CatalogEntry{
+		return &EngineCatalogEntry{
 			Name: "",
 			Path: path,
-			Term: CatalogTermService,
-			Kind: CatalogTermService,
-			Role: CatalogRoleBranch,
+			Term: EngineCatalogTermService,
+			Kind: EngineCatalogTermService,
+			Role: EngineCatalogRoleBranch,
 		}, nil
 	}
 	if _, err := requireCatalogBusinessPath(path, model); err != nil {
@@ -105,7 +105,7 @@ func ResolveObjectCatalogPath(ctx context.Context, callbacks ObjectCatalogCallba
 	}
 
 	last := path.Segments[len(path.Segments)-1]
-	if last.Kind == CatalogKindObject || last.Term == CatalogTermObject {
+	if last.Kind == EngineCatalogKindObject || last.Term == EngineCatalogTermObject {
 		if callbacks.GetObjectStorageFactsFunc == nil {
 			return nil, fmt.Errorf("object catalog callbacks GetObjectStorageFactsFunc is nil")
 		}
@@ -116,20 +116,20 @@ func ResolveObjectCatalogPath(ctx context.Context, callbacks ObjectCatalogCallba
 		return objectStorageFactsCatalogEntry(engineID, path, storageFacts), nil
 	}
 
-	return &CatalogEntry{
+	return &EngineCatalogEntry{
 		Name: last.Name,
 		Path: path,
 		Term: last.Term,
 		Kind: last.Kind,
-		Role: CatalogRoleBranch,
-		Storage: &CatalogStorageFacts{
+		Role: EngineCatalogRoleBranch,
+		Storage: &EngineCatalogStorageFacts{
 			Path: path.StringPath(),
 		},
 	}, nil
 }
 
-// DescribeObjectCatalogFacts maps object storage facts to CatalogFactsProvider output.
-func DescribeObjectCatalogFacts(ctx context.Context, callbacks ObjectCatalogCallbacks, connInfo ConnectionInfo, engineID uint, path CatalogPath) (*CatalogFacts, error) {
+// DescribeObjectCatalogFacts maps object storage facts to EngineCatalogFactsProvider output.
+func DescribeObjectCatalogFacts(ctx context.Context, callbacks ObjectCatalogCallbacks, connInfo ConnectionInfo, engineID uint, path EngineCatalogPath) (*EngineCatalogFacts, error) {
 	if _, err := requireCatalogBusinessPath(path, ObjectCatalogModel()); err != nil {
 		return nil, err
 	}
@@ -142,10 +142,10 @@ func DescribeObjectCatalogFacts(ctx context.Context, callbacks ObjectCatalogCall
 	}
 	updatedAt := storageFacts.ModifiedAt
 	sizeBytes := storageFacts.Size
-	return &CatalogFacts{
+	return &EngineCatalogFacts{
 		Path: path,
 		Kind: objectKindFromPath(path),
-		Storage: &CatalogStorageFacts{
+		Storage: &EngineCatalogStorageFacts{
 			Name:        storageFacts.Name,
 			Path:        storageFacts.Path,
 			ContentType: storageFacts.ContentType,
@@ -157,50 +157,50 @@ func DescribeObjectCatalogFacts(ctx context.Context, callbacks ObjectCatalogCall
 	}, nil
 }
 
-func objectKindFromPath(path CatalogPath) string {
+func objectKindFromPath(path EngineCatalogPath) string {
 	last := path.Segments[len(path.Segments)-1]
 	if last.Kind != "" {
 		return last.Kind
 	}
-	return CatalogKindObject
+	return EngineCatalogKindObject
 }
 
-func ObjectBucketCatalogEntry(root CatalogPath, name string) CatalogEntry {
-	return CatalogEntry{
+func ObjectBucketCatalogEntry(root EngineCatalogPath, name string) EngineCatalogEntry {
+	return EngineCatalogEntry{
 		Name: name,
-		Path: appendCatalogSegment(root, root.EngineID, CatalogTermBucket, CatalogKindBucket, name),
-		Term: CatalogTermBucket,
-		Kind: CatalogKindBucket,
-		Role: CatalogRoleBranch,
-		Storage: &CatalogStorageFacts{
+		Path: appendCatalogSegment(root, root.EngineID, EngineCatalogTermBucket, EngineCatalogKindBucket, name),
+		Term: EngineCatalogTermBucket,
+		Kind: EngineCatalogKindBucket,
+		Role: EngineCatalogRoleBranch,
+		Storage: &EngineCatalogStorageFacts{
 			Path: name + "/",
 		},
 	}
 }
 
-func ObjectPrefixCatalogEntry(parent CatalogPath, name, storagePath string) CatalogEntry {
-	return CatalogEntry{
+func ObjectPrefixCatalogEntry(parent EngineCatalogPath, name, storagePath string) EngineCatalogEntry {
+	return EngineCatalogEntry{
 		Name: name,
-		Path: appendCatalogSegment(parent, parent.EngineID, CatalogTermPrefix, CatalogKindPrefix, name),
-		Term: CatalogTermPrefix,
-		Kind: CatalogKindPrefix,
-		Role: CatalogRoleBranch,
-		Storage: &CatalogStorageFacts{
+		Path: appendCatalogSegment(parent, parent.EngineID, EngineCatalogTermPrefix, EngineCatalogKindPrefix, name),
+		Term: EngineCatalogTermPrefix,
+		Kind: EngineCatalogKindPrefix,
+		Role: EngineCatalogRoleBranch,
+		Storage: &EngineCatalogStorageFacts{
 			Path: storagePath,
 		},
 	}
 }
 
-func ObjectLeafCatalogEntry(parent CatalogPath, facts StorageObjectFacts) CatalogEntry {
+func ObjectLeafCatalogEntry(parent EngineCatalogPath, facts StorageObjectFacts) EngineCatalogEntry {
 	sizeBytes := facts.Size
 	updatedAt := facts.ModifiedAt
-	return CatalogEntry{
+	return EngineCatalogEntry{
 		Name: facts.Name,
-		Path: appendCatalogSegment(parent, parent.EngineID, CatalogTermObject, CatalogKindObject, facts.Name),
-		Term: CatalogTermObject,
-		Kind: CatalogKindObject,
-		Role: CatalogRoleLeaf,
-		Storage: CatalogEntryStorageSummary(&CatalogStorageFacts{
+		Path: appendCatalogSegment(parent, parent.EngineID, EngineCatalogTermObject, EngineCatalogKindObject, facts.Name),
+		Term: EngineCatalogTermObject,
+		Kind: EngineCatalogKindObject,
+		Role: EngineCatalogRoleLeaf,
+		Storage: EngineCatalogEntryStorageSummary(&EngineCatalogStorageFacts{
 			Path:        facts.Path,
 			ContentType: facts.ContentType,
 			ETag:        facts.ETag,
@@ -210,15 +210,15 @@ func ObjectLeafCatalogEntry(parent CatalogPath, facts StorageObjectFacts) Catalo
 	}
 }
 
-func objectStorageFactsCatalogEntry(engineID uint, path CatalogPath, facts *StorageObjectFacts) *CatalogEntry {
+func objectStorageFactsCatalogEntry(engineID uint, path EngineCatalogPath, facts *StorageObjectFacts) *EngineCatalogEntry {
 	if path.Version == "" {
-		path.Version = CatalogPathVersion
+		path.Version = EngineCatalogPathVersion
 	}
 	if path.EngineID == 0 {
 		path.EngineID = engineID
 	}
-	term := CatalogTermObject
-	kind := CatalogKindObject
+	term := EngineCatalogTermObject
+	kind := EngineCatalogKindObject
 	if len(path.Segments) > 0 {
 		last := path.Segments[len(path.Segments)-1]
 		if last.Term != "" {
@@ -229,13 +229,13 @@ func objectStorageFactsCatalogEntry(engineID uint, path CatalogPath, facts *Stor
 		}
 	}
 	updatedAt := facts.ModifiedAt
-	return &CatalogEntry{
+	return &EngineCatalogEntry{
 		Name: facts.Name,
 		Path: path,
 		Term: term,
 		Kind: kind,
-		Role: CatalogRoleLeaf,
-		Storage: CatalogEntryStorageSummary(&CatalogStorageFacts{
+		Role: EngineCatalogRoleLeaf,
+		Storage: EngineCatalogEntryStorageSummary(&EngineCatalogStorageFacts{
 			Path:        facts.Path,
 			ContentType: facts.ContentType,
 			ETag:        facts.ETag,

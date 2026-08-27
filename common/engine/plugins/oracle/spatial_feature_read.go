@@ -14,15 +14,15 @@ import (
 	"github.com/twpayne/go-geom/xy"
 )
 
-func (p *OraclePlugin) ReadSpatialFeature(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.SpatialFeatureReadOptions) (*plugin.SpatialFeatureData, error) {
-	segments := plugin.CatalogPathWithoutRoot(path).Segments
+func (p *OraclePlugin) ReadSpatialFeature(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.SpatialFeatureReadOptions) (*plugin.SpatialFeatureData, error) {
+	segments := plugin.EngineCatalogPathWithoutRoot(path).Segments
 	if len(segments) < 2 {
 		return nil, fmt.Errorf("Oracle spatial feature requires a schema/table path")
 	}
 	schema := segments[len(segments)-2].Name
 	table := segments[len(segments)-1].Name
 	if p.isSystemSchema(schema) {
-		return nil, plugin.WrapCatalogError(plugin.CatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
+		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
 	}
 	dsn, err := p.BuildDSN(connInfo)
 	if err != nil {

@@ -72,7 +72,7 @@ describe('P1 module public route contracts', () => {
     expect(assetManager).toContain("{ catalog_id: String(id) }")
   })
 
-  it('exposes only Asset workflows implemented by its backend contract', () => {
+  it('keeps Asset creation on the implemented CatalogEntry component contract', () => {
     const router = readRepoFile('asset/frontend/src/router/index.js')
     expect(router).toContain("path: 'assets/:id'")
     expect(router).toContain("path: 'assets/:id/edit'")
@@ -82,7 +82,15 @@ describe('P1 module public route contracts', () => {
     expect(detail).not.toMatch(/assetAPI\.(create|submit|approve|reject|republish)/)
 
     const api = readRepoFile('asset/frontend/src/api/asset.js')
-    expect(api).not.toContain("client.post('/asset/assets', data)")
+    expect(api).toContain("client.post('/asset/assets', data)")
+    expect(api).toContain("client.get('/catalog/entries', { params })")
+
+    const create = readRepoFile('asset/frontend/src/views/AssetCreate.vue')
+    expect(create).toContain('<CatalogEntryPicker v-model="form.components"')
+
+    const picker = readRepoFile('asset/frontend/src/components/CatalogEntryPicker.vue')
+    expect(picker).toContain('catalog_entry_id')
+    expect(picker).toContain('enterpriseCatalogAPI.list')
   })
 })
 
@@ -90,7 +98,8 @@ describe('P2 module public route contracts', () => {
   it.each([
     ['agent', 'navigateAgentRoute', 'agent'],
     ['meta', 'navigateMetaRoute', 'meta'],
-    ['system', 'navigateSystemRoute', 'system']
+    ['system', 'navigateSystemRoute', 'system'],
+    ['workbench', 'navigateWorkbenchRoute', 'workbench']
   ])('%s delegates module navigation to the Console bridge', (directory, helper, moduleName) => {
     const source = readRepoFile(`${directory}/frontend/src/utils/moduleNavigation.js`)
     expect(source).toContain(`export function ${helper}`)

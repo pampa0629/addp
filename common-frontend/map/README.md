@@ -1,6 +1,8 @@
 # ADDP Map Frontend Components
 
-`common-frontend/map` 提供 Manager 普通预览使用的地图组件、CRS registry、底图 profile 和展示坐标适配能力。
+`common-frontend/map` 提供 Manager 普通预览、Workbench 有界数据服务结果等场景共用的地图组件、CRS registry、底图 profile 和展示坐标适配能力。
+
+`GeoJSONResultRenderer` 的服务消费边界是：geometry 字段、SRID 与 CRS 只来自 Consumer Descriptor；单次结果必须完整且不超过 1000 行。它不按 `geom` 等名称猜测字段，不拼接 cursor，也不承担批量空间计算。
 
 ## CRS registry 边界
 

@@ -5,15 +5,15 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaenrich"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 func (s *ObjectStorageCatalogRuntime) detectObjectCatalogResourceFormats(
 	ctx context.Context,
 	readableProvider plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
-	resources []metacatalog.StorageResource,
+	resources []scanresource.StorageResource,
 ) {
 	for i := range resources {
 		if resources[i].NodeType != "object" || !needsContentFormatDetection(resources[i].Format) {
@@ -36,12 +36,12 @@ func detectObjectCatalogResourceFormat(
 	ctx context.Context,
 	readableProvider plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
-	resource metacatalog.StorageResource,
+	resource scanresource.StorageResource,
 ) (string, error) {
 	if readableProvider == nil {
 		return "", nil
 	}
-	detected, err := metaenrich.DetectSingleFileFormat(ctx, readableProvider, connInfo, resource.CatalogPath, resource.Path)
+	detected, err := metaenrich.DetectSingleFileFormat(ctx, readableProvider, connInfo, resource.EngineCatalogPath, resource.Path)
 	if err != nil {
 		return "", err
 	}

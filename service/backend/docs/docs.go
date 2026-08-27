@@ -112,6 +112,17 @@ const docTemplate = `{
                         "required": true
                     },
                     {
+                        "enum": [
+                            "query",
+                            "export"
+                        ],
+                        "type": "string",
+                        "default": "query",
+                        "description": "查询用途 | Query intent",
+                        "name": "X-ADDP-Query-Intent",
+                        "in": "header"
+                    },
+                    {
                         "description": "结构化查询请求 | Structured query request",
                         "name": "request",
                         "in": "body",
@@ -177,7 +188,86 @@ const docTemplate = `{
                 "x-addp-auth-mode": "public"
             }
         },
-        "/assets/discoverable": {
+        "/catalog-resources/changes": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按不透明游标返回 QueryService 的最小检索摘要变化，仅供 Catalog 服务消费 | Return QueryService minimal-search-summary changes by opaque cursor for the Catalog service only",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Integration"
+                ],
+                "summary": "拉取 QueryService 目录资源变化 | Pull QueryService catalog resource changes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "上次成功提交的不透明游标，空值从历史起点开始 | Opaque cursor committed by the consumer; empty starts from the beginning",
+                        "name": "after_cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "批大小，默认 200，最大 500 | Batch size, default 200 and maximum 500",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.CatalogResourceChangesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "无效游标或批大小 | Invalid cursor or batch size",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "需要认证 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "非 Catalog 服务或权限不足 | Catalog service or permission required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "读取失败 | Read failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.catalog.read"
+                ]
+            }
+        },
+        "/consumer/services": {
             "get": {
                 "security": [
                     {
@@ -188,24 +278,199 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Service"
+                    "ServiceConsumer"
                 ],
-                "summary": "列出可发现资产 | List discoverable assets",
+                "summary": "可消费服务列表 | List consumable services",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "搜索词 | Search",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "query",
+                            "graph",
+                            "tile",
+                            "registered"
+                        ],
+                        "type": "string",
+                        "description": "服务类型 | Service type",
+                        "name": "service_type",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "tabular",
+                            "spatial_tabular"
+                        ],
+                        "type": "string",
+                        "description": "输出类型 | Output kind",
+                        "name": "output_kind",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.ConsumerServiceListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
                             }
                         }
                     }
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "service.definition.read"
+                    "service.data_read.execute"
+                ]
+            }
+        },
+        "/consumer/services/{service_type}/{service_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ServiceConsumer"
+                ],
+                "summary": "获取服务消费描述 | Get service consumer descriptor",
+                "parameters": [
+                    {
+                        "enum": [
+                            "query",
+                            "graph",
+                            "tile",
+                            "registered"
+                        ],
+                        "type": "string",
+                        "description": "服务类型 | Service type",
+                        "name": "service_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "服务 ID | Service ID",
+                        "name": "service_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.ConsumerDescriptor"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.data_read.execute"
                 ]
             }
         },
@@ -318,61 +583,6 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "service.definition.read"
-                ]
-            }
-        },
-        "/endpoints": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Service"
-                ],
-                "summary": "获取服务端点 | Get service endpoints",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "服务引用 | Service reference",
-                        "name": "ref",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.serviceEndpointResp"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "service.endpoint.read"
                 ]
             }
         },
@@ -2349,6 +2559,85 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/catalog-references/resolve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按请求顺序动态解析 1 到 200 个 QueryService 引用；跨 Tenant 与不存在统一 found=false，仅供 Catalog 服务消费 | Dynamically resolve 1 to 200 QueryService references in request order; cross-tenant and missing references both return found=false; Catalog service only",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Integration"
+                ],
+                "summary": "解析 QueryService 目录引用 | Resolve QueryService catalog references",
+                "parameters": [
+                    {
+                        "description": "QueryService 目录引用 | QueryService catalog references",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.ResolveCatalogReferencesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.ResolveCatalogReferencesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "需要认证 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "非 Catalog 服务或权限不足 | Catalog service or permission required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "解析失败 | Resolution failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.catalog.read"
+                ]
+            }
+        },
         "/settings/runtime-policy": {
             "get": {
                 "security": [
@@ -3492,6 +3781,95 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_service_internal_models.CatalogReference": {
+            "type": "object",
+            "required": [
+                "source_identity",
+                "source_type"
+            ],
+            "properties": {
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.CatalogReferenceResolution": {
+            "type": "object",
+            "properties": {
+                "detail_path": {
+                    "type": "string"
+                },
+                "found": {
+                    "type": "boolean"
+                },
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.CatalogResourceChange": {
+            "type": "object",
+            "properties": {
+                "change_id": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "operation": {
+                    "type": "string"
+                },
+                "snapshot": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                },
+                "source_version": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.CatalogResourceChangesResponse": {
+            "type": "object",
+            "properties": {
+                "changes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.CatalogResourceChange"
+                    }
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "next_cursor": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_service_internal_models.ColumnInfo": {
             "type": "object",
             "properties": {
@@ -3503,6 +3881,318 @@ const docTemplate = `{
                 },
                 "type": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.ConsumerDescriptor": {
+            "type": "object",
+            "properties": {
+                "access_mode": {
+                    "type": "string",
+                    "enum": [
+                        "public",
+                        "private"
+                    ]
+                },
+                "contract_fingerprint": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "input_contract": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.StructuredQueryInputContract"
+                },
+                "operations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.ConsumerOperation"
+                    }
+                },
+                "output_contract": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.TabularOutputContract"
+                },
+                "ref": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.ConsumerServiceReference"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "active"
+                    ]
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.ConsumerFilterContract": {
+            "type": "object",
+            "properties": {
+                "combinators": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "max_depth": {
+                    "type": "integer"
+                },
+                "max_in_values": {
+                    "type": "integer"
+                },
+                "max_nodes": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.ConsumerGeometryField": {
+            "type": "object",
+            "properties": {
+                "crs_ref": {
+                    "type": "string"
+                },
+                "dimension": {
+                    "type": "integer"
+                },
+                "geometry_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "srid": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.ConsumerOperation": {
+            "type": "object",
+            "properties": {
+                "input_kind": {
+                    "type": "string",
+                    "enum": [
+                        "structured_query"
+                    ]
+                },
+                "key": {
+                    "type": "string",
+                    "enum": [
+                        "query"
+                    ]
+                },
+                "method": {
+                    "type": "string",
+                    "enum": [
+                        "POST"
+                    ]
+                },
+                "output_kind": {
+                    "type": "string",
+                    "enum": [
+                        "tabular",
+                        "spatial_tabular"
+                    ]
+                },
+                "path": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.ConsumerOrderContract": {
+            "type": "object",
+            "properties": {
+                "directions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "stable_key": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.ConsumerOutputField": {
+            "type": "object",
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "element_type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.ConsumerPageContract": {
+            "type": "object",
+            "properties": {
+                "default_limit": {
+                    "type": "integer"
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "cursor"
+                    ]
+                },
+                "max_limit": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.ConsumerQueryField": {
+            "type": "object",
+            "properties": {
+                "element_type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                },
+                "filterable": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "operators": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "selectable": {
+                    "type": "boolean"
+                },
+                "sortable": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.ConsumerQueryIntent": {
+            "type": "object",
+            "properties": {
+                "allowed_values": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "default_value": {
+                    "type": "string"
+                },
+                "header": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.ConsumerServiceListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.ConsumerServiceSummary"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.ConsumerServiceReference": {
+            "type": "object",
+            "properties": {
+                "service_id": {
+                    "type": "integer"
+                },
+                "service_type": {
+                    "type": "string",
+                    "enum": [
+                        "query",
+                        "graph",
+                        "tile",
+                        "registered"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.ConsumerServiceSummary": {
+            "type": "object",
+            "properties": {
+                "access_mode": {
+                    "type": "string",
+                    "enum": [
+                        "public",
+                        "private"
+                    ]
+                },
+                "contract_fingerprint": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "output_kind": {
+                    "type": "string",
+                    "enum": [
+                        "tabular",
+                        "spatial_tabular"
+                    ]
+                },
+                "ref": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.ConsumerServiceReference"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.ConsumerSpatialContract": {
+            "type": "object",
+            "properties": {
+                "crs_ref": {
+                    "type": "string"
+                },
+                "geometry_fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.ConsumerGeometryField"
+                    }
+                },
+                "primary_geometry_field": {
+                    "type": "string"
+                },
+                "srid": {
+                    "type": "integer"
                 }
             }
         },
@@ -4424,6 +5114,33 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_service_internal_models.ResolveCatalogReferencesRequest": {
+            "type": "object",
+            "required": [
+                "references"
+            ],
+            "properties": {
+                "references": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.CatalogReference"
+                    }
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.ResolveCatalogReferencesResponse": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.CatalogReferenceResolution"
+                    }
+                }
+            }
+        },
         "github_com_addp_service_internal_models.SQLQueryOutputContractRequest": {
             "type": "object",
             "required": [
@@ -4436,6 +5153,68 @@ const docTemplate = `{
                 },
                 "sql": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.StructuredQueryInputContract": {
+            "type": "object",
+            "properties": {
+                "default_selection": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.ConsumerQueryField"
+                    }
+                },
+                "filter": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.ConsumerFilterContract"
+                },
+                "formats": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "intent": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.ConsumerQueryIntent"
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "structured_query"
+                    ]
+                },
+                "order": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.ConsumerOrderContract"
+                },
+                "page": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.ConsumerPageContract"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.TabularOutputContract": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.ConsumerOutputField"
+                    }
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "tabular",
+                        "spatial_tabular"
+                    ]
+                },
+                "spatial": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.ConsumerSpatialContract"
                 }
             }
         },
@@ -5036,23 +5815,6 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/datatype.FieldInfo"
                     }
-                }
-            }
-        },
-        "internal_api.serviceEndpointResp": {
-            "type": "object",
-            "properties": {
-                "endpoints": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "service_type": {
-                    "type": "string"
-                },
-                "title": {
-                    "type": "string"
                 }
             }
         }

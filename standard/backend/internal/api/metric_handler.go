@@ -221,6 +221,43 @@ func (h *MetricHandler) GetMetric(c *gin.Context) {
 	})
 }
 
+// @Summary 查询 Metric 专业关系图 | Get Metric professional relation graph
+// @Description 返回当前 Metric 的基准指标和直接依赖关系；只使用当前 User AuthContext，不面向 Catalog Service Token 扩权 | Return the Metric base and direct dependency relations under the current User AuthContext; no Catalog service-token elevation
+// @Tags Professional Relations
+// @Produce json
+// @Param id path int true "Metric ID"
+// @Param limit query int false "最大边数量，默认100，最大200 | Maximum edges, default 100, maximum 200"
+// @Success 200 {object} models.ProfessionalRelationsResponse
+// @Failure 400 {object} map[string]string "请求无效 | Invalid request"
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Failure 404 {object} map[string]string "Metric 不存在 | Metric not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.read"]
+// @Router /metrics/{id}/relations [get]
+// @Security BearerAuth
+func (h *MetricHandler) GetProfessionalRelations(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID), "error_code": "invalid_id"})
+		return
+	}
+	limit := 100
+	if rawLimit := c.Query("limit"); rawLimit != "" {
+		limit, err = strconv.Atoi(rawLimit)
+		if err != nil || limit < 1 || limit > 200 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidParams), "error_code": "invalid_limit"})
+			return
+		}
+	}
+	response, err := h.svc.GetProfessionalRelations(id, getTenantID(c), limit)
+	if err != nil {
+		respondError(c, http.StatusNotFound, err)
+		return
+	}
+	c.JSON(http.StatusOK, response)
+}
+
 // @Summary 创建指标 | Create metric
 // @Tags Standard
 // @Produce json

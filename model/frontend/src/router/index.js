@@ -48,6 +48,12 @@ const routes = [
         meta: { requiresAuth: true, title: '逻辑表详情' }
       },
       {
+        path: 'materialization-groups',
+        name: 'MaterializationGroupList',
+        component: () => import('../views/MaterializationGroupList.vue'),
+        meta: { requiresAuth: true, title: '物化组' }
+      },
+      {
         path: 'er-diagram',
         name: 'ERDiagramManager',
         component: () => import('../views/ERDiagramManager.vue'),

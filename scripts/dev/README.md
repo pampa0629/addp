@@ -52,7 +52,7 @@ bash scripts/dev/start.sh
 # 自动执行:
 # 0. Go 依赖检查(go mod tidy,可跳过)
 # 1. 启动基础设施(PostgreSQL, Redis, MinIO, Meilisearch)
-# 2-7. 启动后端服务(System, Manager, Meta, Transfer, bounded/continuous Workers, Orchestrator, Gateway)
+# 2-7. 启动后端服务(System, Manager, Meta, Transfer, bounded/continuous Workers, Orchestrator, Develop Query Worker, Gateway)
 # 8. 启动前端服务(Console, System, Manager, Meta, Transfer, Orchestrator)
 
 # 停止所有服务
@@ -96,6 +96,7 @@ bash scripts/dev/modtidy.sh
    - Meta Backend (8082)
    - Transfer Backend (8083)
    - Transfer bounded Worker + Transfer continuous Worker + Meta Worker
+   - Develop Query Worker（只领取 Orchestrator 来源的 query execution）
    - Orchestrator Backend (8084)
    - Gateway (8000) - API 路由
 4. **就绪检查**: ADDP Backend 等待 `/health/ready` 返回 200；Engine Runtime 使用各自协议的 `/health`
@@ -110,7 +111,7 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 
 **日志位置**:
 - 所有日志: `logs/*.log`
-- 示例: `logs/system-backend.log`, `logs/manager-backend.log`, `logs/transfer-bounded-worker.log`, `logs/transfer-continuous-worker.log`
+- 示例: `logs/system-backend.log`, `logs/manager-backend.log`, `logs/transfer-bounded-worker.log`, `logs/transfer-continuous-worker.log`, `logs/develop-query-worker.log`
 
 **PID 文件**:
 - 所有 PID: `.dev-pids/*.pid`
@@ -226,7 +227,7 @@ Manager Backend (8081) + Meta Backend (8082) (并行启动)
   ↓
 Transfer Backend (8083) + Transfer bounded Worker + Transfer continuous Worker + Meta Worker
   ↓
-Orchestrator Backend (8084)
+Orchestrator Backend (8084) + Develop Query Worker
   ↓
 Model3D / PointCloud / SuperMap / GeoPython Workflows (按模块需要启动；全量启动包含 SuperMap)
   ↓

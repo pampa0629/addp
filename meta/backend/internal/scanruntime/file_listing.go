@@ -5,14 +5,14 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaitem"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 func (s *FilesystemCatalogRuntime) listDirectory(
 	ctx context.Context,
 	resource *commonModels.Engine,
-	catalogProvider plugin.CatalogProvider,
+	catalogProvider plugin.EngineCatalogProvider,
 	connInfo plugin.ConnectionInfo,
 	dirPath string,
 ) ([]metaitem.StorageFileRef, []metaitem.StorageDirectoryRef, error) {
@@ -23,10 +23,10 @@ func (s *FilesystemCatalogRuntime) listDirectory(
 func (s *FilesystemCatalogRuntime) listDirectoryWithIgnored(
 	ctx context.Context,
 	resource *commonModels.Engine,
-	catalogProvider plugin.CatalogProvider,
+	catalogProvider plugin.EngineCatalogProvider,
 	connInfo plugin.ConnectionInfo,
 	dirPath string,
-) ([]metaitem.StorageFileRef, []metaitem.StorageDirectoryRef, []plugin.CatalogEntry, error) {
+) ([]metaitem.StorageFileRef, []metaitem.StorageDirectoryRef, []plugin.EngineCatalogEntry, error) {
 	nodes, err := catalogProvider.ListChildren(ctx, connInfo, plugin.FileDirectoryPath(resource.ID, dirPath), plugin.ListOptions{})
 	if err != nil {
 		return nil, nil, nil, err
@@ -38,7 +38,7 @@ func (s *FilesystemCatalogRuntime) listDirectoryWithIgnored(
 func (s *FilesystemCatalogRuntime) listDirectoryRecursive(
 	ctx context.Context,
 	resource *commonModels.Engine,
-	catalogProvider plugin.CatalogProvider,
+	catalogProvider plugin.EngineCatalogProvider,
 	connInfo plugin.ConnectionInfo,
 	dirPath string,
 ) ([]metaitem.StorageFileRef, []metaitem.StorageDirectoryRef, error) {
@@ -50,22 +50,22 @@ func (s *FilesystemCatalogRuntime) listDirectoryRecursive(
 	return files, subdirs, nil
 }
 
-func splitFileCatalogEntries(nodes []plugin.CatalogEntry) ([]metaitem.StorageFileRef, []metaitem.StorageDirectoryRef, []plugin.CatalogEntry) {
+func splitFileCatalogEntries(nodes []plugin.EngineCatalogEntry) ([]metaitem.StorageFileRef, []metaitem.StorageDirectoryRef, []plugin.EngineCatalogEntry) {
 	files := make([]metaitem.StorageFileRef, 0, len(nodes))
 	subdirs := make([]metaitem.StorageDirectoryRef, 0, len(nodes))
-	ignored := make([]plugin.CatalogEntry, 0)
+	ignored := make([]plugin.EngineCatalogEntry, 0)
 	for _, node := range nodes {
-		if metacatalog.IgnoreSystemCatalogEntry(node) {
+		if scanresource.IgnoreSystemEngineCatalogEntry(node) {
 			ignored = append(ignored, node)
 			continue
 		}
-		if node.Role == plugin.CatalogRoleBranch {
-			if dir, ok := metacatalog.StorageDirectoryRefFromEntry(node); ok {
+		if node.Role == plugin.EngineCatalogRoleBranch {
+			if dir, ok := scanresource.StorageDirectoryRefFromEntry(node); ok {
 				subdirs = append(subdirs, dir)
 			}
 			continue
 		}
-		if file, ok := metacatalog.StorageFileRefFromEntry(node); ok {
+		if file, ok := scanresource.StorageFileRefFromEntry(node); ok {
 			files = append(files, file)
 		}
 	}

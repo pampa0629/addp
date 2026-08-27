@@ -45,7 +45,7 @@ owner 路由不得接受共享 Internal API Key、`X-Tenant-ID` 或 User Token �
 
 Execution Audience、OAuth Client ID 和 Service Principal 是三个独立概念，不得因为当前存在一对一映射就混用名称：
 
-- Execution Audience 是执行授权协议中的逻辑消费方标识，固定使用模块或 Runtime 稳定标识，不加 `addp-` 前缀，例如 `model`、`quality`、`develop`、`service`、`duckdb`。
+- Execution Audience 是执行授权协议中的逻辑消费方标识，固定使用模块或 Runtime 稳定标识，不加 `addp-` 前缀，例如 `model`、`quality`、`develop`、`transfer`、`service`、`duckdb`。
 - 机器身份使用的 Confidential OAuth Client ID 和 Service Principal 名称固定使用 `addp-<module_or_runtime>`，例如 `addp-model`、`addp-quality`、`addp-develop`、`addp-service`、`addp-duckdb`。
 - System 是 audience 到唯一 OAuth Client ID 的映射事实 owner。消费 Execution Authorization 时必须同时校验 audience 和当前 Service Principal 所属 OAuth Client，不能仅比较字符串是否相等。
 - audience 不接受 OAuth Client ID、服务进程名、前端包名或容器名作为别名。积极开发阶段修正命名时直接切换唯一标识，不保留旧 audience 兼容值。
@@ -57,6 +57,7 @@ Execution Audience、OAuth Client ID 和 Service Principal 是三个独立概念
 | `model` | `addp-model` |
 | `quality` | `addp-quality` |
 | `develop` | `addp-develop` |
+| `transfer` | `addp-transfer` |
 | `service` | `addp-service` |
 | `duckdb` | `addp-duckdb` |
 
@@ -322,14 +323,14 @@ Refresh 缺少 Cookie 或 Runtime 明确返回未授权时清除全部会话 Coo
 
 交互式 Notebook 等需要原生多方法 HTTP 与 WebSocket 协议的短期工具会话，不得扩大 Browser Resource Access Ticket 的只读语义。唯一允许的主线为：浏览器先以 Access Token 调用 owner 的会话创建 API；owner 完成 Permission、Tenant、User、资源归属和 Runtime 能力校验后，签发只绑定单个会话路径的 Browser Session Capability Cookie。该 Cookie 必须是 opaque、HttpOnly、SameSite=Strict、短 TTL，服务端只保存 Hash；不得进入 URL、前端存储或日志。owner 代理必须在每个 HTTP 请求和 WebSocket 握手时重新校验会话状态，并在关闭、过期、Context 切换、登出或 owner 重启后 fail-closed。它不能访问 owner 的其他 API，也不能作为 Access Token、Refresh Token 或 Browser Resource Access Ticket 的兼容替代。
 
-Notebook Kernel 需要发现当前可查询 Engine、实时 Catalog 或读取数据时，只允许由 Develop 在创建同一 Notebook Interactive Session 时签发独立的 Notebook Kernel Capability Token，并通过标准 Script Runtime 会话请求注入隔离 Kernel process。该 Token 必须是 opaque、短 TTL，只绑定一个 Session、Tenant、User 和 Task，Develop 只保存 Hash；它只能调用该 Session 的脱敏 Engine Runtime Descriptor、Catalog 与受控只读数据代理接口，响应不得包含 `connection_info`。Token 不得进入 Notebook 内容、浏览器、公开会话响应、URL 或日志，不得作为 User Access Token、Service Access Token、Execution Authorization、Notebook Session Authorization 或 Browser Session Capability Cookie 的兼容替代；会话关闭、过期或 Develop 重启后必须 fail-closed。创建会话时必须同时校验 Notebook 更新权限和 `system.engine.read`。
+Notebook Kernel 需要发现当前可查询 Engine、实时 Engine Catalog 或读取数据时，只允许由 Develop 在创建同一 Notebook Interactive Session 时签发独立的 Notebook Kernel Capability Token，并通过标准 Script Runtime 会话请求注入隔离 Kernel process。该 Token 必须是 opaque、短 TTL，只绑定一个 Session、Tenant、User 和 Task，Develop 只保存 Hash；它只能调用该 Session 的脱敏 Engine Runtime Descriptor、Engine Catalog 与受控只读数据代理接口，响应不得包含 `connection_info`。Token 不得进入 Notebook 内容、浏览器、公开会话响应、URL 或日志，不得作为 User Access Token、Service Access Token、Execution Authorization、Notebook Session Authorization 或 Browser Session Capability Cookie 的兼容替代；会话关闭、过期或 Develop 重启后必须 fail-closed。创建会话时必须同时校验 Notebook 更新权限和 `system.engine.read`。
 
 Notebook Session Authorization 是 System 保存的用户派生短期授权事实，不是新的 AuthContext Token 类型。唯一签发和消费流程为：
 
 1. Develop 在创建 Session 的同步请求栈内，把已经过自身 AuthContext 中间件验证的 User Bearer 转发给 `POST /api/v1/system/auth/notebook-session-authorizations`；请求只提交 Develop 已生成的 `session_id`、已验证的 `task_id` 和 `expires_in`，不得提交 User、Tenant、Membership、Permission、audience 或 Engine 列表。
 2. System 从 User AuthContext 与源 Token Family 派生 Principal、Tenant Membership、`authorization_version` 和 family 绑定，固定 audience 为 `develop`、允许操作为 `catalog.list_children` 与 `execution_engine_access.derive`，并把有效期限制为不晚于 Notebook Session 到期时间和平台上限。响应只返回不可猜测的 authorization ID 与 `expires_at`，不返回 Bearer Token。
-3. Develop 只在内存 Session 中保存 authorization ID。Kernel 使用自己的 Notebook Kernel Capability 调用 `POST /api/v1/develop/notebook-kernel-sessions/{session_id}/catalog/children`；Develop 解析 Session 后，以 `addp-develop` Tenant Service Access Token 和 authorization ID 调用 `POST /api/v1/system/notebook-session-authorizations/{id}/catalog/children`。请求必须同时携带绑定的 `session_id`、目标 `engine_id` 和完整 `CatalogListChildrenRequest`。
-4. System 在同一次请求内校验固定 OAuth Client、Service Principal Permission、Tenant、Session、Principal、Membership、Token Family、授权版本、当前 `system.engine.read`、Engine 归属与状态，再调用唯一 `CatalogProvider.ListChildren`。不得先返回通用“授权通过”结果让 Develop 使用自身身份调用另一条 Catalog 路径。
+3. Develop 只在内存 Session 中保存 authorization ID。Kernel 使用自己的 Notebook Kernel Capability 调用 `POST /api/v1/develop/notebook-kernel-sessions/{session_id}/catalog/children`；Develop 解析 Session 后，以 `addp-develop` Tenant Service Access Token 和 authorization ID 调用 `POST /api/v1/system/notebook-session-authorizations/{id}/catalog/children`。请求必须同时携带绑定的 `session_id`、目标 `engine_id` 和完整 `EngineCatalogListChildrenRequest`。路由中的 `catalog` 由 Notebook Engine 上下文限定，不表示企业 Catalog。
+4. System 在同一次请求内校验固定 OAuth Client、Service Principal Permission、Tenant、Session、Principal、Membership、Token Family、授权版本、当前 `system.engine.read`、Engine 归属与状态，再调用唯一 `EngineCatalogProvider.ListChildren`。不得先返回通用“授权通过”结果让 Develop 使用自身身份调用另一条 Engine Catalog 路径。
 5. 每次查询或扫描由 Develop 生成新的 execution ID，并以固定 `read` 效果调用 `POST /api/v1/system/notebook-session-authorizations/{id}/execution-engine-accesses`。System 在同一事务内重新校验 Session 来源、当前读取权限和目标 Engine，派生独立 Execution Authorization，并以 `source_notebook_session_authorization_id` 保存其唯一来源；同一响应返回执行授权事实和执行期 Engine Access。Kernel 不接收连接信息。
 6. Develop 显式关闭 Session 时，以 Service Access Token 调用 `POST /api/v1/system/notebook-session-authorizations/{id}/revocations` 并提交绑定的 `session_id`；重复撤销必须幂等。System 必须联动撤销该 Session 已派生且仍有效的 Execution Authorization。无论 System 撤销调用是否成功，Develop 都必须先使本地 Kernel Capability、活动查询和 Session 失效；残留授权最晚在原 `expires_at` 失效，不能延长或刷新。
 
@@ -384,7 +385,7 @@ Content-Type: application/json
 }
 ```
 
-Develop 调用 System 时使用唯一消费路由，并在原请求之外补充绑定的 `session_id`；System 响应复用 `CatalogListChildrenResponse`：
+Develop 调用 System 时使用唯一消费路由，并在原请求之外补充绑定的 `session_id`；System 响应复用 `EngineCatalogListChildrenResponse`：
 
 ```http
 POST /api/v1/system/notebook-session-authorizations/{id}/catalog/children
@@ -407,7 +408,7 @@ Content-Type: application/json
 }
 ```
 
-`engine_id` 必须与非空 `path.engine_id` 一致；System 返回的每个 `CatalogEntry.Path` 必须保留规范 engine ID 和完整 segments。消费与撤销路由只接受 `addp-develop` Tenant Service Access Token、固定 Client Guard 和 `system.notebook_session_authorization.execute`，该 Runtime Role 不包含 `system.engine.read`。
+`engine_id` 必须与非空 `path.engine_id` 一致；System 返回的每个 `EngineCatalogEntry.Path` 必须保留规范 engine ID 和完整 segments。消费与撤销路由只接受 `addp-develop` Tenant Service Access Token、固定 Client Guard 和 `system.notebook_session_authorization.execute`，该 Runtime Role 不包含 `system.engine.read`。
 
 单次查询或扫描的原子执行访问接口固定为：
 
@@ -438,7 +439,7 @@ Content-Type: application/json
 
 首次和重复撤销都返回 HTTP 204。调用方不得通过错误差异判断其他 Tenant 或其他 Session 的授权 ID 是否存在。
 
-System 对不存在、跨 Tenant、Session 不匹配、已撤销、已到期或用户授权事实失效的 authorization ID 统一返回 403 与稳定内部错误码 `notebook_session_authorization_forbidden`，不能用 404 泄露授权记录。Develop 将该错误映射为面向 Kernel 的 403 `notebook_catalog_forbidden`；System Service Access Token 无效、固定 Client Guard/Runtime Permission 配置错误、响应结构无效或 System 不可达统一映射为 502 `catalog_control_plane_failed`，不能伪装成用户无权限。Engine、CatalogPath 和 Provider 错误继续按引擎体系中的稳定错误表映射。
+System 对不存在、跨 Tenant、Session 不匹配、已撤销、已到期或用户授权事实失效的 authorization ID 统一返回 403 与稳定内部错误码 `notebook_session_authorization_forbidden`，不能用 404 泄露授权记录。Develop 将该错误映射为面向 Kernel 的 403 `notebook_engine_catalog_forbidden`；System Service Access Token 无效、固定 Client Guard/Runtime Permission 配置错误、响应结构无效或 System 不可达统一映射为 502 `engine_catalog_control_plane_failed`，不能伪装成用户无权限。Engine、EngineCatalogPath 和 Provider 错误继续按引擎体系中的稳定错误表映射。
 
 Console 与 iframe 之间的 `addp-auth/v1` 协议必须保留刷新结果语义：
 

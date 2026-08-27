@@ -130,31 +130,31 @@ other = "关闭 Notebook 编辑会话失败：{{.Detail}}"
 [develop.notebook.session_unavailable]
 other = "Notebook 会话已失效，请重新打开"
 
-[develop.notebook.catalog_request_invalid]
+[develop.notebook.engine_catalog_request_invalid]
 other = "目录请求参数或路径无效"
 
-[develop.notebook.catalog_forbidden]
+[develop.notebook.engine_catalog_forbidden]
 other = "Notebook 目录权限已失效"
 
-[develop.notebook.catalog_control_plane_failed]
+[develop.notebook.engine_catalog_control_plane_failed]
 other = "目录控制面暂时不可用"
 
-[develop.notebook.catalog_provider_failed]
+[develop.notebook.engine_catalog_provider_failed]
 other = "引擎目录读取失败"
 
-[develop.notebook.catalog_engine_not_found]
+[develop.notebook.engine_catalog_engine_not_found]
 other = "引擎不存在或当前不可访问"
 
-[develop.notebook.catalog_entry_not_found]
+[develop.notebook.engine_catalog_entry_not_found]
 other = "目录对象不存在"
 
-[develop.notebook.catalog_unsupported]
+[develop.notebook.engine_catalog_unsupported]
 other = "当前引擎不支持该目录操作"
 
-[develop.notebook.catalog_engine_unavailable]
+[develop.notebook.engine_catalog_engine_unavailable]
 other = "引擎当前不可用"
 
-[develop.notebook.catalog_timeout]
+[develop.notebook.engine_catalog_timeout]
 other = "目录读取超时"
 
 [develop.notebook.copilot_invalid_request]

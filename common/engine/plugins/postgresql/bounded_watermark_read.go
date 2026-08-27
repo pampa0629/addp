@@ -26,7 +26,7 @@ type postgresBoundedWatermarkSession struct {
 	closed       bool
 }
 
-func (p *PostgreSQLPlugin) OpenBoundedWatermarkRead(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BoundedWatermarkReadOptions) (plugin.BoundedWatermarkReadSession, error) {
+func (p *PostgreSQLPlugin) OpenBoundedWatermarkRead(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BoundedWatermarkReadOptions) (plugin.BoundedWatermarkReadSession, error) {
 	schema, table, err := tablePathParts(path)
 	if err != nil {
 		return nil, err

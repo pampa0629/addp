@@ -8,7 +8,6 @@ import (
 
 	"github.com/addp/common/events"
 	"github.com/addp/common/models"
-	"github.com/lib/pq"
 )
 
 // TaskExecution 统一执行记录
@@ -53,12 +52,11 @@ type TaskExecution struct {
 
 	// User-derived execution authorization facts. The raw User/Service tokens
 	// and engine connection details are never persisted in task executions.
-	ActorPrincipalID           *int64         `json:"actor_principal_id,omitempty"`
-	ActorTenantMembershipID    *int64         `json:"actor_tenant_membership_id,omitempty"`
-	IssuedAuthorizationVersion *int64         `json:"issued_authorization_version,omitempty"`
-	ExecutionAuthorizationID   *int64         `json:"execution_authorization_id,omitempty"`
-	AuthorizationEffects       pq.StringArray `gorm:"type:text[]" json:"authorization_effects,omitempty"`
-	AuthorizationExpiresAt     *time.Time     `json:"authorization_expires_at,omitempty"`
+	ActorPrincipalID           *int64     `json:"actor_principal_id,omitempty"`
+	ActorTenantMembershipID    *int64     `json:"actor_tenant_membership_id,omitempty"`
+	IssuedAuthorizationVersion *int64     `json:"issued_authorization_version,omitempty"`
+	ExecutionAuthorizationID   *int64     `json:"execution_authorization_id,omitempty"`
+	AuthorizationExpiresAt     *time.Time `json:"authorization_expires_at,omitempty"`
 
 	// JSONB 字段
 	ExecutionConfig models.JSONMap `gorm:"type:jsonb" json:"execution_config,omitempty"` // 执行配置
@@ -202,10 +200,13 @@ const (
 	// Graph 模块
 	TaskTypeKGBuild = "kg_build"
 	// Quality 模块
-	TaskTypeQualityCheck = "check"
+	TaskTypeQualityCheck        = "check"
+	TaskTypeMaterializationGate = "materialization_gate"
 	// Model 模块
-	TaskTypeMaterializationPrepare = "materialization_prepare"
-	TaskTypeMaterializationPublish = "materialization_publish"
+	TaskTypeMaterializationPrepare      = "materialization_prepare"
+	TaskTypeMaterializationSeal         = "materialization_seal"
+	TaskTypeMaterializationPublish      = "materialization_publish"
+	TaskTypeMaterializationGroupPublish = "materialization_group_publish"
 	// System 运维
 	TaskTypeCleanup         = "cleanup"
 	TaskTypeCleanupExecutor = "cleanup_executor"

@@ -8,32 +8,32 @@ import (
 )
 
 const (
-	CatalogTermCollection = "collection"
+	EngineCatalogTermCollection = "collection"
 
-	CatalogKindCollection = "collection"
+	EngineCatalogKindCollection = "collection"
 )
 
-func DynamicSchemaCatalogModel() CatalogModelSpec {
-	return CatalogModelSpec{
-		PathVersion: CatalogPathVersion,
-		RootTerm:    CatalogTermServer,
-		Levels: []CatalogLevelSpec{
-			{Term: CatalogTermDatabase, Kinds: []string{CatalogKindNamespace}, Role: CatalogRoleBranch, I18nKey: CatalogTermI18nKey(CatalogTermDatabase)},
-			{Term: CatalogTermCollection, Kinds: []string{CatalogKindCollection}, Role: CatalogRoleLeaf, I18nKey: CatalogTermI18nKey(CatalogTermCollection)},
+func DynamicSchemaCatalogModel() EngineCatalogModelSpec {
+	return EngineCatalogModelSpec{
+		PathVersion: EngineCatalogPathVersion,
+		RootTerm:    EngineCatalogTermServer,
+		Levels: []EngineCatalogLevelSpec{
+			{Term: EngineCatalogTermDatabase, Kinds: []string{EngineCatalogKindNamespace}, Role: EngineCatalogRoleBranch, I18nKey: EngineCatalogTermI18nKey(EngineCatalogTermDatabase)},
+			{Term: EngineCatalogTermCollection, Kinds: []string{EngineCatalogKindCollection}, Role: EngineCatalogRoleLeaf, I18nKey: EngineCatalogTermI18nKey(EngineCatalogTermCollection)},
 		},
 	}
 }
 
 type DynamicSchemaCatalogCallbacks struct {
-	ListNamespacesFunc     func(ctx context.Context, connInfo ConnectionInfo, root CatalogPath) ([]CatalogEntry, error)
-	ListCollectionsFunc    func(ctx context.Context, connInfo ConnectionInfo, parent CatalogPath, database string) ([]CatalogEntry, error)
+	ListNamespacesFunc     func(ctx context.Context, connInfo ConnectionInfo, root EngineCatalogPath) ([]EngineCatalogEntry, error)
+	ListCollectionsFunc    func(ctx context.Context, connInfo ConnectionInfo, parent EngineCatalogPath, database string) ([]EngineCatalogEntry, error)
 	DescribeCollectionFunc func(ctx context.Context, connInfo ConnectionInfo, database, collection string) (*DynamicCollectionFacts, error)
 	IsSystemDatabaseFunc   func(databaseName string) bool
 }
 
-func ListDynamicSchemaCatalogChildren(ctx context.Context, callbacks DynamicSchemaCatalogCallbacks, engineID uint, connInfo ConnectionInfo, parent CatalogPath, opts ListOptions) ([]CatalogEntry, error) {
+func ListDynamicSchemaCatalogChildren(ctx context.Context, callbacks DynamicSchemaCatalogCallbacks, engineID uint, connInfo ConnectionInfo, parent EngineCatalogPath, opts ListOptions) ([]EngineCatalogEntry, error) {
 	model := DynamicSchemaCatalogModel()
-	if IsCatalogRootPath(parent) {
+	if IsEngineCatalogRootPath(parent) {
 		if err := requireCatalogRootPath(parent, model); err != nil {
 			return nil, err
 		}
@@ -44,7 +44,7 @@ func ListDynamicSchemaCatalogChildren(ctx context.Context, callbacks DynamicSche
 		if err != nil {
 			return nil, err
 		}
-		nodes := make([]CatalogEntry, 0, len(namespaces))
+		nodes := make([]EngineCatalogEntry, 0, len(namespaces))
 		for _, namespace := range namespaces {
 			if callbacks.isSystemDatabase(namespace.Name) {
 				continue
@@ -76,13 +76,13 @@ func (a DynamicSchemaCatalogCallbacks) isSystemDatabase(databaseName string) boo
 	return a.IsSystemDatabaseFunc(databaseName)
 }
 
-func ResolveDynamicSchemaCatalogPath(ctx context.Context, callbacks DynamicSchemaCatalogCallbacks, engineID uint, connInfo ConnectionInfo, path CatalogPath) (*CatalogEntry, error) {
+func ResolveDynamicSchemaCatalogPath(ctx context.Context, callbacks DynamicSchemaCatalogCallbacks, engineID uint, connInfo ConnectionInfo, path EngineCatalogPath) (*EngineCatalogEntry, error) {
 	model := DynamicSchemaCatalogModel()
-	if IsCatalogRootPath(path) {
+	if IsEngineCatalogRootPath(path) {
 		if err := requireCatalogRootPath(path, model); err != nil {
 			return nil, err
 		}
-		return &CatalogEntry{Name: "", Path: path, Term: model.RootTerm, Kind: model.RootTerm, Role: CatalogRoleBranch}, nil
+		return &EngineCatalogEntry{Name: "", Path: path, Term: model.RootTerm, Kind: model.RootTerm, Role: EngineCatalogRoleBranch}, nil
 	}
 	segments, err := requireCatalogBusinessPath(path, model)
 	if err != nil {
@@ -90,16 +90,16 @@ func ResolveDynamicSchemaCatalogPath(ctx context.Context, callbacks DynamicSchem
 	}
 	last := segments[len(segments)-1]
 	if len(segments) == 1 {
-		return &CatalogEntry{Name: last.Name, Path: path, Term: CatalogTermDatabase, Kind: CatalogKindNamespace, Role: CatalogRoleBranch}, nil
+		return &EngineCatalogEntry{Name: last.Name, Path: path, Term: EngineCatalogTermDatabase, Kind: EngineCatalogKindNamespace, Role: EngineCatalogRoleBranch}, nil
 	}
-	facts, err := DescribeDynamicSchemaCatalogFacts(ctx, callbacks, engineID, connInfo, path, CatalogFactsOptions{})
+	facts, err := DescribeDynamicSchemaCatalogFacts(ctx, callbacks, engineID, connInfo, path, EngineCatalogFactsOptions{})
 	if err != nil {
 		return nil, err
 	}
-	return &CatalogEntry{Name: last.Name, Path: path, Term: CatalogTermCollection, Kind: CatalogKindCollection, Role: CatalogRoleLeaf, Table: CatalogEntryTableInfo(facts)}, nil
+	return &EngineCatalogEntry{Name: last.Name, Path: path, Term: EngineCatalogTermCollection, Kind: EngineCatalogKindCollection, Role: EngineCatalogRoleLeaf, Table: EngineCatalogEntryTableInfo(facts)}, nil
 }
 
-func DescribeDynamicSchemaCatalogFacts(ctx context.Context, callbacks DynamicSchemaCatalogCallbacks, engineID uint, connInfo ConnectionInfo, path CatalogPath, opts CatalogFactsOptions) (*CatalogFacts, error) {
+func DescribeDynamicSchemaCatalogFacts(ctx context.Context, callbacks DynamicSchemaCatalogCallbacks, engineID uint, connInfo ConnectionInfo, path EngineCatalogPath, opts EngineCatalogFactsOptions) (*EngineCatalogFacts, error) {
 	segments, err := requireCatalogBusinessPath(path, DynamicSchemaCatalogModel())
 	if err != nil {
 		return nil, err
@@ -120,12 +120,12 @@ func DescribeDynamicSchemaCatalogFacts(ctx context.Context, callbacks DynamicSch
 	for _, idx := range stats.Indexes {
 		indexes = append(indexes, idx)
 	}
-	return &CatalogFacts{
+	return &EngineCatalogFacts{
 		Path: path,
-		Kind: CatalogKindCollection,
+		Kind: EngineCatalogKindCollection,
 		Table: &datatype.TableInfo{
 			Name:              collection,
-			Kind:              CatalogKindCollection,
+			Kind:              EngineCatalogKindCollection,
 			EstimatedRowCount: stats.DocumentCount,
 			SizeBytes:         &stats.SizeBytes,
 			Native: map[string]interface{}{
@@ -140,17 +140,17 @@ func DescribeDynamicSchemaCatalogFacts(ctx context.Context, callbacks DynamicSch
 	}, nil
 }
 
-func DynamicCollectionCatalogEntry(parent CatalogPath, database, name string, facts DynamicCollectionFacts) CatalogEntry {
+func DynamicCollectionCatalogEntry(parent EngineCatalogPath, database, name string, facts DynamicCollectionFacts) EngineCatalogEntry {
 	sizeBytes := facts.SizeBytes
-	return CatalogEntry{
+	return EngineCatalogEntry{
 		Name: name,
-		Path: appendCatalogSegment(parent, parent.EngineID, CatalogTermCollection, CatalogKindCollection, name),
-		Term: CatalogTermCollection,
-		Kind: CatalogKindCollection,
-		Role: CatalogRoleLeaf,
-		Table: CatalogEntryTableSummary(&datatype.TableInfo{
+		Path: appendCatalogSegment(parent, parent.EngineID, EngineCatalogTermCollection, EngineCatalogKindCollection, name),
+		Term: EngineCatalogTermCollection,
+		Kind: EngineCatalogKindCollection,
+		Role: EngineCatalogRoleLeaf,
+		Table: EngineCatalogEntryTableSummary(&datatype.TableInfo{
 			Name:              name,
-			Kind:              CatalogKindCollection,
+			Kind:              EngineCatalogKindCollection,
 			EstimatedRowCount: facts.DocumentCount,
 			SizeBytes:         &sizeBytes,
 			Native: map[string]interface{}{

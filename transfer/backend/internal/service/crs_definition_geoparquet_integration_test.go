@@ -62,10 +62,10 @@ func TestIntegrationPostGIS3857ToGeoParquetUsesRuntimePROJJSON(t *testing.T) {
 		t.Fatalf("insert source rows: %v", err)
 	}
 
-	sourcePath := engineplugin.TabularItemPath(0, engineplugin.CatalogTermSchema, schemaName, tableName)
-	facts, err := pg.DescribeCatalogFacts(ctx, connInfo, sourcePath, engineplugin.CatalogFactsOptions{IncludeSpatialFacts: true})
+	sourcePath := engineplugin.TabularItemPath(0, engineplugin.EngineCatalogTermSchema, schemaName, tableName)
+	facts, err := pg.DescribeEngineCatalogFacts(ctx, connInfo, sourcePath, engineplugin.EngineCatalogFactsOptions{IncludeSpatialFacts: true})
 	if err != nil {
-		t.Fatalf("DescribeCatalogFacts: %v", err)
+		t.Fatalf("DescribeEngineCatalogFacts: %v", err)
 	}
 	if facts.Table == nil || facts.Spatial == nil {
 		t.Fatalf("source facts = %#v, want table and spatial facts", facts)
@@ -201,7 +201,7 @@ func (w *crsIntegrationContentWriter) Capabilities() engineplugin.EngineCapabili
 func (w *crsIntegrationContentWriter) StoreSemantics() engineplugin.StoreSemantics {
 	return engineplugin.StoreSemantics{}
 }
-func (w *crsIntegrationContentWriter) CreateContent(context.Context, engineplugin.ConnectionInfo, engineplugin.CatalogPath, engineplugin.WriteOptions) (io.WriteCloser, error) {
+func (w *crsIntegrationContentWriter) CreateContent(context.Context, engineplugin.ConnectionInfo, engineplugin.EngineCatalogPath, engineplugin.WriteOptions) (io.WriteCloser, error) {
 	w.buffer.Reset()
 	return &crsIntegrationWriteCloser{Writer: &w.buffer}, nil
 }

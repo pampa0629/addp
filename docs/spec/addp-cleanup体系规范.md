@@ -186,11 +186,11 @@ Graph 第一阶段资源回收执行方只治理 Graph-owned 图谱建模和构�
 
 Asset 第一阶段资源回收执行方只治理 Asset-owned 资产目录、资产状态和授权状态：
 
-- `tenant.deleted` 时，扫描该租户下 Asset-owned 类型定义、类型字段、目录、资产、资产扩展字段、申请、授权和评价。
-- `logical_cleanup` 将命中的资产下架并标记 `source_available=false`，撤销仍然有效的授权。
+- `tenant.deleted` 时，扫描该租户下 Asset-owned 类型定义、类型字段、目录、资产、资产组件、资产扩展字段、申请、授权和评价。
+- `logical_cleanup` 将命中的资产下架并撤销仍然有效的授权；CatalogEntry 来源状态由 Catalog 独立治理。
 - `physical_cleanup` 删除 Asset-owned PostgreSQL 状态记录，删除顺序必须先消费状态和子状态，再删除资产、目录和类型定义。
 - 没有明确 `tenant.deleted` lifecycle context 的普通 scan 不应把全部 Asset 状态视作待回收对象。
-- `engine.deleted` 第一阶段不扫描 Asset 状态；Asset 不解析 `source_reference` 中的模块私有引用格式，也不猜测来源模块是否绑定该 engine。
+- `engine.deleted` 第一阶段不扫描 Asset 状态；Catalog 根据来源变化将对应 CatalogEntry 标记为不可选，Asset 在下一次编辑或发布时通过精确解析拒绝失效组件。
 - Asset cleanup 第一阶段不删除 Meta / Service / Standard / Develop 的源对象，不删除已发布服务端点，不删除 Meilisearch 索引文档；搜索索引删除只有在后续被明确登记为 Asset-owned artifact state 后，才进入对应 owner executor。
 
 Model 第一阶段资源回收执行方只治理 Model-owned 建模状态：

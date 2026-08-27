@@ -36,10 +36,10 @@ type CatalogWithCount struct {
 	Count int64 `json:"count"`
 }
 
-// CatalogEntry 带子节点的目录树节点
-type CatalogEntry struct {
+// AssetCatalogTreeNode 带子节点的资产分类目录树节点。
+type AssetCatalogTreeNode struct {
 	CatalogWithCount
-	Children []CatalogEntry `json:"children"`
+	Children []AssetCatalogTreeNode `json:"children"`
 }
 
 // ListAll 返回租户所有目录（扁平列表，含每个目录直接归属的资产数量）
@@ -56,7 +56,7 @@ func (s *CatalogService) ListAll(tenantID uint) ([]CatalogWithCount, error) {
 }
 
 // GetTree 返回目录树
-func (s *CatalogService) GetTree(tenantID uint) ([]CatalogEntry, error) {
+func (s *CatalogService) GetTree(tenantID uint) ([]AssetCatalogTreeNode, error) {
 	cats, err := s.ListAll(tenantID)
 	if err != nil {
 		return nil, err
@@ -65,7 +65,7 @@ func (s *CatalogService) GetTree(tenantID uint) ([]CatalogEntry, error) {
 }
 
 // GetPublishedTree 返回至少包含一个已上架资产的目录及其必要祖先。
-func (s *CatalogService) GetPublishedTree(tenantID uint) ([]CatalogEntry, error) {
+func (s *CatalogService) GetPublishedTree(tenantID uint) ([]AssetCatalogTreeNode, error) {
 	var catalogs []CatalogWithCount
 	if err := s.db.Table("asset.catalogs c").
 		Select("c.*, COUNT(a.id) AS count").
@@ -81,8 +81,8 @@ func (s *CatalogService) GetPublishedTree(tenantID uint) ([]CatalogEntry, error)
 	return keepPublishedCatalogBranches(tree), nil
 }
 
-func keepPublishedCatalogBranches(nodes []CatalogEntry) []CatalogEntry {
-	result := make([]CatalogEntry, 0, len(nodes))
+func keepPublishedCatalogBranches(nodes []AssetCatalogTreeNode) []AssetCatalogTreeNode {
+	result := make([]AssetCatalogTreeNode, 0, len(nodes))
 	for _, node := range nodes {
 		node.Children = keepPublishedCatalogBranches(node.Children)
 		if node.Count > 0 || len(node.Children) > 0 {
@@ -92,14 +92,14 @@ func keepPublishedCatalogBranches(nodes []CatalogEntry) []CatalogEntry {
 	return result
 }
 
-func buildCatalogTree(cats []CatalogWithCount, parentID *int64) []CatalogEntry {
-	var nodes []CatalogEntry
+func buildCatalogTree(cats []CatalogWithCount, parentID *int64) []AssetCatalogTreeNode {
+	var nodes []AssetCatalogTreeNode
 	for _, c := range cats {
 		cCopy := c
 		isRoot := parentID == nil && c.ParentID == nil
 		isChild := parentID != nil && c.ParentID != nil && *parentID == *c.ParentID
 		if isRoot || isChild {
-			node := CatalogEntry{
+			node := AssetCatalogTreeNode{
 				CatalogWithCount: cCopy,
 				Children:         buildCatalogTree(cats, &cCopy.ID),
 			}

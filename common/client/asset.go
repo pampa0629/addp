@@ -76,15 +76,23 @@ type AssetSummary struct {
 	Status      AssetStatus `json:"status"`
 	OwnerID     int64       `json:"owner_id"`
 	OwnerName   string      `json:"owner_name"`
+	Version     int64       `json:"version"`
 	CreatedAt   string      `json:"created_at"`
 	UpdatedAt   string      `json:"updated_at"`
 }
 
 type AssetDetail struct {
 	AssetSummary
-	SourceModule    string          `json:"source_module"`
-	SourceReference string          `json:"source_reference"`
-	ExtFields       json.RawMessage `json:"ext_fields"`
+	Components []AssetComponent `json:"components"`
+	ExtFields  json.RawMessage  `json:"ext_fields"`
+}
+
+type AssetComponent struct {
+	ID             int64  `json:"id"`
+	AssetID        int64  `json:"asset_id"`
+	CatalogEntryID string `json:"catalog_entry_id"`
+	Role           string `json:"role"`
+	SortOrder      int    `json:"sort_order"`
 }
 
 type AssetListResponse struct {
@@ -135,12 +143,12 @@ type CreateApplicationRequest struct {
 	DurationDay int    `json:"duration_day"`
 }
 
-type CatalogEntry struct {
-	ID       int64          `json:"id"`
-	Name     string         `json:"name"`
-	ParentID *int64         `json:"parent_id,omitempty"`
-	Children []CatalogEntry `json:"children,omitempty"`
-	Count    int64          `json:"count"`
+type AssetCatalogTreeNode struct {
+	ID       int64                  `json:"id"`
+	Name     string                 `json:"name"`
+	ParentID *int64                 `json:"parent_id,omitempty"`
+	Children []AssetCatalogTreeNode `json:"children,omitempty"`
+	Count    int64                  `json:"count"`
 }
 
 type RatingItem struct {
@@ -213,8 +221,8 @@ func (c *AssetClient) GetAssetDetail(ctx context.Context, accessToken string, as
 	return &result, nil
 }
 
-func (c *AssetClient) GetCatalogs(ctx context.Context, accessToken string) ([]CatalogEntry, error) {
-	var result []CatalogEntry
+func (c *AssetClient) GetCatalogs(ctx context.Context, accessToken string) ([]AssetCatalogTreeNode, error) {
+	var result []AssetCatalogTreeNode
 	if err := c.do(ctx, accessToken, http.MethodGet, "/api/v1/asset/consumer/catalogs", nil, nil, &result); err != nil {
 		return nil, err
 	}

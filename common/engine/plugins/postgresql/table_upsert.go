@@ -11,11 +11,11 @@ import (
 	commonquery "github.com/addp/common/query"
 )
 
-func (p *PostgreSQLPlugin) PrepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableUpsertOptions) error {
+func (p *PostgreSQLPlugin) PrepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableUpsertOptions) error {
 	return p.prepareTableUpsert(ctx, connInfo, path, opts, false)
 }
 
-func (p *PostgreSQLPlugin) prepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableUpsertOptions, requireTargetAbsent bool) error {
+func (p *PostgreSQLPlugin) prepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableUpsertOptions, requireTargetAbsent bool) error {
 	keys, err := validatePostgresUpsertOptions(opts)
 	if err != nil {
 		return err
@@ -62,7 +62,7 @@ func (p *PostgreSQLPlugin) prepareTableUpsert(ctx context.Context, connInfo plug
 	return nil
 }
 
-func (p *PostgreSQLPlugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, batch *plugin.BatchData, opts plugin.TableUpsertOptions) error {
+func (p *PostgreSQLPlugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.BatchData, opts plugin.TableUpsertOptions) error {
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}

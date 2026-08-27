@@ -1,0 +1,37 @@
+[workbench.error.invalid_request]
+other = "工作台视图配置无效"
+
+[workbench.error.view_not_found]
+other = "工作台视图不存在"
+
+[workbench.error.version_conflict]
+other = "工作台视图已被其他操作更新，请刷新后重试"
+
+[workbench.error.service_access_denied]
+other = "数据服务不存在或当前用户无权访问"
+
+[workbench.error.service_unavailable]
+other = "数据服务当前不可用"
+
+[workbench.error.operation_failed]
+other = "工作台视图操作失败"
+
+[workbench.message.delete_succeeded]
+other = "工作台视图已删除"
+
+[permissions.workbench.view.create.name]
+other = "创建工作台视图"
+[permissions.workbench.view.create.description]
+other = "创建当前用户私有的工作台视图"
+[permissions.workbench.view.read.name]
+other = "查看工作台视图"
+[permissions.workbench.view.read.description]
+other = "查看当前用户私有的工作台视图"
+[permissions.workbench.view.update.name]
+other = "更新工作台视图"
+[permissions.workbench.view.update.description]
+other = "更新当前用户私有的工作台视图"
+[permissions.workbench.view.delete.name]
+other = "删除工作台视图"
+[permissions.workbench.view.delete.description]
+other = "删除当前用户私有的工作台视图"

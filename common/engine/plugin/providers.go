@@ -12,42 +12,42 @@ import (
 	"github.com/addp/common/resume"
 )
 
-// CatalogModelProvider declares an engine's catalog shape and terminology.
-type CatalogModelProvider interface {
+// EngineCatalogModelProvider declares an engine's catalog shape and terminology.
+type EngineCatalogModelProvider interface {
 	EnginePlugin
-	CatalogModel() CatalogModelSpec
+	EngineCatalogModel() EngineCatalogModelSpec
 }
 
-// CatalogProvider lists real catalog entries from an engine.
+// EngineCatalogProvider lists real catalog entries from an engine.
 //
 // ListChildren requires an explicit structural root path or a business branch
-// path below that root. It must not treat an empty CatalogPath as "root"; callers
-// that need the structural root entry should use CatalogRootEntry instead.
-type CatalogProvider interface {
+// path below that root. It must not treat an empty EngineCatalogPath as "root"; callers
+// that need the structural root entry should use EngineCatalogRootEntry instead.
+type EngineCatalogProvider interface {
 	EnginePlugin
-	ListChildren(ctx context.Context, connInfo ConnectionInfo, parent CatalogPath, opts ListOptions) ([]CatalogEntry, error)
-	ResolvePath(ctx context.Context, connInfo ConnectionInfo, path CatalogPath) (*CatalogEntry, error)
+	ListChildren(ctx context.Context, connInfo ConnectionInfo, parent EngineCatalogPath, opts ListOptions) ([]EngineCatalogEntry, error)
+	ResolvePath(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath) (*EngineCatalogEntry, error)
 }
 
-// CatalogFactsProvider describes engine-native facts for catalog leaves.
+// EngineCatalogFactsProvider describes engine-native facts for catalog leaves.
 //
-// DescribeCatalogFacts requires a business leaf path below the explicit
+// DescribeEngineCatalogFacts requires a business leaf path below the explicit
 // structural root. Root paths and empty paths are not facts targets.
-type CatalogFactsProvider interface {
+type EngineCatalogFactsProvider interface {
 	EnginePlugin
-	DescribeCatalogFacts(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts CatalogFactsOptions) (*CatalogFacts, error)
+	DescribeEngineCatalogFacts(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts EngineCatalogFactsOptions) (*EngineCatalogFacts, error)
 }
 
 // DynamicSchemaSamplingProvider samples schema-flexible catalog leaves to infer dynamic field info.
 type DynamicSchemaSamplingProvider interface {
 	EnginePlugin
-	SampleDynamicSchema(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts CatalogFactsOptions) (*CatalogFacts, error)
+	SampleDynamicSchema(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts EngineCatalogFactsOptions) (*EngineCatalogFacts, error)
 }
 
 // GraphSampleProvider samples graph nodes and relationships for lightweight previews.
 type GraphSampleProvider interface {
 	EnginePlugin
-	SampleGraph(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts GraphSampleOptions) (*GraphData, error)
+	SampleGraph(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts GraphSampleOptions) (*GraphData, error)
 }
 
 // StoreProvider is a marker for catalog-path content access capabilities.
@@ -58,37 +58,37 @@ type StoreProvider interface {
 
 type ContentReadableProvider interface {
 	StoreProvider
-	OpenContent(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts ReadOptions) (io.ReadCloser, error)
+	OpenContent(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts ReadOptions) (io.ReadCloser, error)
 }
 
 type ContentWritableProvider interface {
 	StoreProvider
-	CreateContent(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts WriteOptions) (io.WriteCloser, error)
+	CreateContent(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts WriteOptions) (io.WriteCloser, error)
 }
 
 type ResourceDeleteProvider interface {
 	StoreProvider
-	DeleteResource(ctx context.Context, connInfo ConnectionInfo, path CatalogPath) error
+	DeleteResource(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath) error
 }
 
 type RangeReadableProvider interface {
 	StoreProvider
-	OpenRange(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts ReadOptions) (io.ReadCloser, error)
+	OpenRange(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts ReadOptions) (io.ReadCloser, error)
 }
 
 type RangeWritableProvider interface {
 	StoreProvider
-	WriteRange(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, offset int64, r io.Reader, opts WriteOptions) (int64, error)
+	WriteRange(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, offset int64, r io.Reader, opts WriteOptions) (int64, error)
 }
 
 type BatchReadableProvider interface {
 	StoreProvider
-	ReadBatch(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts BatchReadOptions) (*BatchData, error)
+	ReadBatch(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts BatchReadOptions) (*BatchData, error)
 }
 
 type TableReadSessionProvider interface {
 	StoreProvider
-	OpenTableReadSession(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts TableReadSessionOptions) (TableReadSession, error)
+	OpenTableReadSession(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts TableReadSessionOptions) (TableReadSession, error)
 }
 
 type TableReadSession interface {
@@ -101,7 +101,7 @@ type TableReadSession interface {
 // not a table and records may introduce different fields over the cursor lifetime.
 type RecordReadSessionProvider interface {
 	StoreProvider
-	OpenRecordReadSession(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts RecordReadSessionOptions) (RecordReadSession, error)
+	OpenRecordReadSession(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts RecordReadSessionOptions) (RecordReadSession, error)
 }
 
 type RecordReadSessionOptions struct {
@@ -133,7 +133,7 @@ type BoundedWatermarkReadOptions struct {
 // BoundedWatermarkReadProvider opens a finite, consistently bounded table read.
 type BoundedWatermarkReadProvider interface {
 	StoreProvider
-	OpenBoundedWatermarkRead(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts BoundedWatermarkReadOptions) (BoundedWatermarkReadSession, error)
+	OpenBoundedWatermarkRead(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts BoundedWatermarkReadOptions) (BoundedWatermarkReadSession, error)
 }
 
 type BoundedWatermarkReadSession interface {
@@ -152,12 +152,12 @@ type ResumeMarkerProvider interface {
 
 type BatchWritableProvider interface {
 	StoreProvider
-	WriteBatch(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, batch *BatchData, opts BatchWriteOptions) error
+	WriteBatch(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, batch *BatchData, opts BatchWriteOptions) error
 }
 
 type TableWriteSessionProvider interface {
 	StoreProvider
-	OpenTableWriteSession(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts TableWriteSessionOptions) (TableWriteSession, error)
+	OpenTableWriteSession(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts TableWriteSessionOptions) (TableWriteSession, error)
 }
 
 type TableWriteSession interface {
@@ -174,7 +174,7 @@ type CommitMarkerProvider interface {
 
 type TableWritePreparer interface {
 	StoreProvider
-	PrepareTableWrite(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts TableWriteOptions) error
+	PrepareTableWrite(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts TableWriteOptions) error
 }
 
 type TableUpsertOptions struct {
@@ -186,8 +186,8 @@ type TableUpsertOptions struct {
 // TableUpsertProvider prepares and applies idempotent key-based table changes.
 type TableUpsertProvider interface {
 	StoreProvider
-	PrepareTableUpsert(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts TableUpsertOptions) error
-	UpsertBatch(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, batch *BatchData, opts TableUpsertOptions) error
+	PrepareTableUpsert(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts TableUpsertOptions) error
+	UpsertBatch(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, batch *BatchData, opts TableUpsertOptions) error
 }
 
 const (
@@ -251,7 +251,7 @@ type ChangeStreamPositionRange struct {
 
 type ChangeStreamReaderProvider interface {
 	StoreProvider
-	OpenChangeStream(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts ChangeStreamReadOptions) (ChangeStreamReader, error)
+	OpenChangeStream(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts ChangeStreamReadOptions) (ChangeStreamReader, error)
 }
 
 type ChangeStreamReader interface {
@@ -295,8 +295,8 @@ type PartitionedTableChangeApplyResult struct {
 // monotonic target-side partition position in the target engine.
 type PartitionedTableChangeApplyProvider interface {
 	StoreProvider
-	PreparePartitionedTableChangeApply(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts PartitionedTableChangeApplyOptions) error
-	ApplyPartitionedTableChanges(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, batch *PartitionedTableChangeBatch, opts PartitionedTableChangeApplyOptions) (*PartitionedTableChangeApplyResult, error)
+	PreparePartitionedTableChangeApply(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts PartitionedTableChangeApplyOptions) error
+	ApplyPartitionedTableChanges(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, batch *PartitionedTableChangeBatch, opts PartitionedTableChangeApplyOptions) (*PartitionedTableChangeApplyResult, error)
 }
 
 type QueryRuntimeProvider interface {
@@ -304,6 +304,19 @@ type QueryRuntimeProvider interface {
 	QueryLanguages() []string
 	GenerateSampleQuery(ctx context.Context, connInfo ConnectionInfo, opts SampleQueryOptions) (query string, language string)
 	ExecuteRuntimeQuery(ctx context.Context, connInfo ConnectionInfo, req QueryRequest) (*QueryResult, error)
+}
+
+// QueryReadSessionProvider opens a cursor-backed, read-only query result
+// session for production data movement. Unlike ExecuteRuntimeQuery, it must not
+// impose an implicit preview limit or materialize the complete result in memory.
+type QueryReadSessionProvider interface {
+	QueryRuntimeProvider
+	OpenQueryReadSession(ctx context.Context, connInfo ConnectionInfo, req QueryRequest) (QueryReadSession, error)
+}
+
+type QueryReadSession interface {
+	ReadBatch(ctx context.Context, limit int) (*BatchData, error)
+	Close(ctx context.Context) error
 }
 
 type FederatedQueryRuntimeProvider interface {
@@ -351,7 +364,7 @@ type GraphQueryProvider interface {
 // catalog database when the engine exposes more than one graph namespace.
 type PathAwareGraphQueryProvider interface {
 	GraphQueryProvider
-	ExecuteGraphQueryAtPath(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, cypher string, opts QueryOptions) (*GraphQueryResult, error)
+	ExecuteGraphQueryAtPath(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, cypher string, opts QueryOptions) (*GraphQueryResult, error)
 }
 
 type WorkflowRuntimeProvider interface {
@@ -386,16 +399,16 @@ func (e *RuntimeHTTPError) Error() string {
 	return fmt.Sprintf("runtime returned HTTP %d", e.StatusCode)
 }
 
-type CatalogPath struct {
-	Version  string           `json:"version"`
-	EngineID uint             `json:"engine_id,omitempty"`
-	Segments []CatalogSegment `json:"segments"`
+type EngineCatalogPath struct {
+	Version  string                 `json:"version"`
+	EngineID uint                   `json:"engine_id,omitempty"`
+	Segments []EngineCatalogSegment `json:"segments"`
 }
 
-func (p CatalogPath) StringPath() string {
+func (p EngineCatalogPath) StringPath() string {
 	parts := make([]string, 0, len(p.Segments))
 	for i, segment := range p.Segments {
-		if i == 0 && IsCatalogRootSegment(segment) {
+		if i == 0 && IsEngineCatalogRootSegment(segment) {
 			continue
 		}
 		if segment.Name != "" {
@@ -408,27 +421,27 @@ func (p CatalogPath) StringPath() string {
 	return strings.Join(parts, "/")
 }
 
-type CatalogSegment struct {
+type EngineCatalogSegment struct {
 	Term string `json:"term"`
 	Kind string `json:"kind"`
 	Name string `json:"name"`
 }
 
 const (
-	CatalogRoleBranch = "branch"
-	CatalogRoleLeaf   = "leaf"
+	EngineCatalogRoleBranch = "branch"
+	EngineCatalogRoleLeaf   = "leaf"
 )
 
-type CatalogEntry struct {
-	Name      string               `json:"name"`
-	Path      CatalogPath          `json:"path"`
-	Term      string               `json:"term"`
-	Kind      string               `json:"kind"`
-	Role      string               `json:"role"`
-	Table     *datatype.TableInfo  `json:"table,omitempty"`
-	Storage   *CatalogStorageFacts `json:"storage,omitempty"`
-	LeafCount *int                 `json:"leaf_count,omitempty"`
-	UpdatedAt *time.Time           `json:"updated_at,omitempty"`
+type EngineCatalogEntry struct {
+	Name      string                     `json:"name"`
+	Path      EngineCatalogPath          `json:"path"`
+	Term      string                     `json:"term"`
+	Kind      string                     `json:"kind"`
+	Role      string                     `json:"role"`
+	Table     *datatype.TableInfo        `json:"table,omitempty"`
+	Storage   *EngineCatalogStorageFacts `json:"storage,omitempty"`
+	LeafCount *int                       `json:"leaf_count,omitempty"`
+	UpdatedAt *time.Time                 `json:"updated_at,omitempty"`
 }
 
 type ListOptions struct {
@@ -437,7 +450,7 @@ type ListOptions struct {
 	Offset    int
 }
 
-type CatalogFactsOptions struct {
+type EngineCatalogFactsOptions struct {
 	IncludeStatistics   bool
 	IncludeIndexes      bool
 	IncludeConstraints  bool
@@ -484,18 +497,18 @@ type GraphSampleOptions struct {
 	Filter GraphSampleFilter
 }
 
-type CatalogFacts struct {
-	Path         CatalogPath             `json:"path"`
-	Kind         string                  `json:"kind"`
-	Table        *datatype.TableInfo     `json:"table,omitempty"`
-	Graph        *datatype.GraphInfo     `json:"graph,omitempty"`
-	Topic        *TopicFacts             `json:"topic,omitempty"`
-	Spatial      *datatype.SpatialInfo   `json:"spatial,omitempty"`
-	Storage      *CatalogStorageFacts    `json:"storage,omitempty"`
-	Indexes      []IndexFacts            `json:"indexes,omitempty"`
-	Constraints  []ConstraintFacts       `json:"constraints,omitempty"`
-	Partitioning *TablePartitioningFacts `json:"partitioning,omitempty"`
-	UpdatedAt    *time.Time              `json:"updated_at,omitempty"`
+type EngineCatalogFacts struct {
+	Path         EngineCatalogPath          `json:"path"`
+	Kind         string                     `json:"kind"`
+	Table        *datatype.TableInfo        `json:"table,omitempty"`
+	Graph        *datatype.GraphInfo        `json:"graph,omitempty"`
+	Topic        *TopicFacts                `json:"topic,omitempty"`
+	Spatial      *datatype.SpatialInfo      `json:"spatial,omitempty"`
+	Storage      *EngineCatalogStorageFacts `json:"storage,omitempty"`
+	Indexes      []IndexFacts               `json:"indexes,omitempty"`
+	Constraints  []ConstraintFacts          `json:"constraints,omitempty"`
+	Partitioning *TablePartitioningFacts    `json:"partitioning,omitempty"`
+	UpdatedAt    *time.Time                 `json:"updated_at,omitempty"`
 }
 
 type TopicFacts struct {
@@ -513,7 +526,7 @@ type TopicPartitionFacts struct {
 	LatestOffset   int64   `json:"latest_offset"`
 }
 
-type CatalogStorageFacts struct {
+type EngineCatalogStorageFacts struct {
 	Name        string `json:"name,omitempty"`
 	Path        string `json:"path,omitempty"`
 	ContentType string `json:"content_type,omitempty"`
@@ -570,7 +583,7 @@ type TableReadSessionOptions struct {
 // field without exposing engine-native spatial SQL to consumers.
 type SpatialFeatureReadProvider interface {
 	EnginePlugin
-	ReadSpatialFeature(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts SpatialFeatureReadOptions) (*SpatialFeatureData, error)
+	ReadSpatialFeature(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts SpatialFeatureReadOptions) (*SpatialFeatureData, error)
 }
 
 type SpatialFeatureReadOptions struct {
@@ -619,7 +632,7 @@ type BatchData struct {
 }
 
 type SampleQueryOptions struct {
-	Path CatalogPath
+	Path EngineCatalogPath
 }
 
 type QueryRequest struct {
@@ -628,7 +641,7 @@ type QueryRequest struct {
 	Query    string
 	// TargetPath identifies the catalog resource used by this query. Runtime
 	// providers must use it to select the concrete namespace when applicable.
-	TargetPath *CatalogPath
+	TargetPath *EngineCatalogPath
 	Options    QueryOptions
 }
 
@@ -788,24 +801,24 @@ type ScriptSession struct {
 // InteractiveScriptSessionRequest is the standard control-plane request for
 // a short-lived, owner-proxied interactive script session.
 type InteractiveScriptSessionRequest struct {
-	SessionID                    string `json:"session_id"`
-	TenantID                     uint   `json:"tenant_id"`
-	UserID                       uint   `json:"user_id"`
-	TaskID                       uint   `json:"task_id"`
-	NotebookPath                 string `json:"notebook_path"`
-	Kernel                       string `json:"kernel"`
-	BasePath                     string `json:"base_path"`
-	TTLSeconds                   int    `json:"ttl_seconds"`
-	OwnerAPIEndpoint             string `json:"owner_api_endpoint"`
-	OwnerCatalogAPIEndpoint      string `json:"owner_catalog_api_endpoint"`
-	OwnerTableScanAPIEndpoint    string `json:"owner_table_scan_api_endpoint"`
-	OwnerRecordScanAPIEndpoint   string `json:"owner_record_scan_api_endpoint"`
-	OwnerQueryAPIEndpoint        string `json:"owner_query_api_endpoint"`
-	OwnerGraphSampleAPIEndpoint  string `json:"owner_graph_sample_api_endpoint"`
-	OwnerGraphQueryAPIEndpoint   string `json:"owner_graph_query_api_endpoint"`
-	OwnerContentReadAPIEndpoint  string `json:"owner_content_read_api_endpoint"`
-	OwnerChangeStreamAPIEndpoint string `json:"owner_change_stream_api_endpoint"`
-	OwnerCapabilityToken         string `json:"owner_capability_token"`
+	SessionID                     string `json:"session_id"`
+	TenantID                      uint   `json:"tenant_id"`
+	UserID                        uint   `json:"user_id"`
+	TaskID                        uint   `json:"task_id"`
+	NotebookPath                  string `json:"notebook_path"`
+	Kernel                        string `json:"kernel"`
+	BasePath                      string `json:"base_path"`
+	TTLSeconds                    int    `json:"ttl_seconds"`
+	OwnerAPIEndpoint              string `json:"owner_api_endpoint"`
+	OwnerEngineCatalogAPIEndpoint string `json:"owner_catalog_api_endpoint"`
+	OwnerTableScanAPIEndpoint     string `json:"owner_table_scan_api_endpoint"`
+	OwnerRecordScanAPIEndpoint    string `json:"owner_record_scan_api_endpoint"`
+	OwnerQueryAPIEndpoint         string `json:"owner_query_api_endpoint"`
+	OwnerGraphSampleAPIEndpoint   string `json:"owner_graph_sample_api_endpoint"`
+	OwnerGraphQueryAPIEndpoint    string `json:"owner_graph_query_api_endpoint"`
+	OwnerContentReadAPIEndpoint   string `json:"owner_content_read_api_endpoint"`
+	OwnerChangeStreamAPIEndpoint  string `json:"owner_change_stream_api_endpoint"`
+	OwnerCapabilityToken          string `json:"owner_capability_token"`
 }
 
 // InteractiveScriptSession contains internal proxy facts. Callers must never

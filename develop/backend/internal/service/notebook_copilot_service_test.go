@@ -19,7 +19,7 @@ func (c *notebookCopilotCatalog) ListChildren(
 	_ context.Context,
 	_ uint,
 	_ string,
-	request commonClient.NotebookCatalogChildrenRequest,
+	request commonClient.NotebookEngineCatalogChildrenRequest,
 ) ([]commonClient.EngineCatalogEntry, error) {
 	segments := request.Path.Segments
 	path := func(values ...commonClient.EngineCatalogSegment) commonClient.EngineCatalogPath {

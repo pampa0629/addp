@@ -838,12 +838,6 @@ const docTemplate = `{
                 "attempt": {
                     "type": "integer"
                 },
-                "authorization_effects": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
                 "authorization_expires_at": {
                     "type": "string"
                 },

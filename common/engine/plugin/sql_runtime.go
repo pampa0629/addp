@@ -129,7 +129,7 @@ func sqlPlaceholderStyle(engineType string) commonquery.SQLPlaceholderStyle {
 }
 
 // ReadSQLBatch adapts SQLQueryRuntimeProvider to BatchReadableProvider.
-func ReadSQLBatch(ctx context.Context, provider SQLQueryRuntimeProvider, connInfo ConnectionInfo, path CatalogPath, opts BatchReadOptions) (*BatchData, error) {
+func ReadSQLBatch(ctx context.Context, provider SQLQueryRuntimeProvider, connInfo ConnectionInfo, path EngineCatalogPath, opts BatchReadOptions) (*BatchData, error) {
 	if len(opts.Args) > 0 {
 		parameterized, ok := provider.(ParameterizedSQLQueryRuntimeProvider)
 		if !ok || !parameterized.SupportsParameterizedQueries() {
@@ -138,7 +138,7 @@ func ReadSQLBatch(ctx context.Context, provider SQLQueryRuntimeProvider, connInf
 	}
 	query := strings.TrimSpace(opts.Query)
 	if query == "" {
-		segments := CatalogPathWithoutRoot(path).Segments
+		segments := EngineCatalogPathWithoutRoot(path).Segments
 		if len(segments) < 2 {
 			return nil, fmt.Errorf("SQL batch read requires item path or query")
 		}
@@ -162,9 +162,9 @@ func sampleSQLForEngine(engineType, namespace, item string, limit int, offset in
 	return commonquery.ForEngine(engineType).SelectTableSQL("*", namespace, item, "", "", limit, int(offset))
 }
 
-// SampleSQLForCatalogPath builds a bounded query for one real tabular Catalog leaf.
-func SampleSQLForCatalogPath(engineType string, path CatalogPath, limit int) string {
-	segments := CatalogPathWithoutRoot(path).Segments
+// SampleSQLForEngineCatalogPath builds a bounded query for one real tabular Catalog leaf.
+func SampleSQLForEngineCatalogPath(engineType string, path EngineCatalogPath, limit int) string {
+	segments := EngineCatalogPathWithoutRoot(path).Segments
 	if len(segments) < 2 {
 		return ""
 	}

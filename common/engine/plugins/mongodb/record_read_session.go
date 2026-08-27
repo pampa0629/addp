@@ -16,12 +16,12 @@ var _ plugin.RecordReadSessionProvider = (*MongoDBPlugin)(nil)
 func (p *MongoDBPlugin) OpenRecordReadSession(
 	ctx context.Context,
 	connInfo plugin.ConnectionInfo,
-	path plugin.CatalogPath,
+	path plugin.EngineCatalogPath,
 	_ plugin.RecordReadSessionOptions,
 ) (plugin.RecordReadSession, error) {
-	segments := plugin.CatalogPathWithoutRoot(path).Segments
-	if len(segments) != 2 || segments[0].Term != plugin.CatalogTermDatabase ||
-		segments[1].Term != plugin.CatalogTermCollection || strings.TrimSpace(segments[0].Name) == "" ||
+	segments := plugin.EngineCatalogPathWithoutRoot(path).Segments
+	if len(segments) != 2 || segments[0].Term != plugin.EngineCatalogTermDatabase ||
+		segments[1].Term != plugin.EngineCatalogTermCollection || strings.TrimSpace(segments[0].Name) == "" ||
 		strings.TrimSpace(segments[1].Name) == "" {
 		return nil, fmt.Errorf("MongoDB record read requires database/collection catalog path")
 	}

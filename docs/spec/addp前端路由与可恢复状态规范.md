@@ -79,6 +79,7 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Service | 服务目录类型 Tab | `tab`，默认 `all` 省略 |
 | Modeling | 实体列表筛选与分页 | `keyword`、`domain_id`、`status`、`page`、`page_size` |
 | Modeling | 逻辑表列表筛选与分页 | `keyword`、`domain_id`、`layer`、`status`、`page`、`page_size` |
+| Modeling | 物化组列表、创建与编辑 | `page`、`page_size`、`create=1`、`group_id`；创建和编辑保留分页上下文，默认列表省略 |
 | Modeling | ER 图业务域筛选 | `domain_id` |
 | Modeling | 实体详情 Tab、星型模型事实表 | `tab`、`table_id` |
 | Quality | 执行详情 | path parameter `execution_id` |
@@ -87,7 +88,9 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Quality | 问题工单详情 | path `/issues/:id` |
 | Quality | 问题工单列表筛选与分页 | `status`、`engine_id`、`page`、`page_size` |
 | Quality | 检查任务列表、创建与编辑 | `page`、`page_size`、`create=1`、`task_id`；创建和编辑保留分页上下文，默认列表省略 |
+| Quality | 物化门禁任务列表、创建与编辑 | `page`、`page_size`、`create=1`、`task_id`；创建和编辑保留分页上下文，默认列表省略 |
 | Asset | 资产目录、申请与反馈 Tab | `catalog_id`、`tab` |
+| Catalog | 治理目录 / 资源盘点筛选、分页与条目详情 | `view`、`search`、`entry_type`、`source_status`、`governance_status`、`visibility`、`primary_domain_id`、`accountable_department_id`、`source_engine_id`、`page`、`page_size`；默认 `view=governance` 省略，资源盘点显式使用 `view=inventory`；详情 path `/entries/:id` 并以同名 query 保留列表返回上下文 |
 | Meta | 扫描引擎与扫描任务入口 | `engine_id`、`task_id`；二者并存时任务所属引擎为事实源 |
 | System | IAM、引擎详情与审计筛选 | `tab`、path `/engines/:id`、`event_name`、`result`、`risk_level`、`module_name`、`entity_type`、`entity_id`、`page` |
 | Standard | 标准文档详情 | path `/documents/:id`；列表筛选 query 原样保留 |

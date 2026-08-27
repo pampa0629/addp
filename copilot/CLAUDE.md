@@ -160,7 +160,7 @@ Copilot Permission 只授予“生成候选结果”，不授予候选查询、W
 6. **生成与校验候选**：SQL/Cypher 先生成结构化 Query Plan，再基于已验证事实生成并校验只读候选。MQL 使用唯一的强类型语义计划路径：模型只选择已验证 collection、字段、谓词、排序、投影、统计或集合比较语义，不直接生成 MQL；集合比较只允许两个实体、一个或多个数组元素身份字段，以及 `intersection_count`、`jaccard`、`overlap_coefficient` 三种明确口径，编译器按身份字段去重后确定性生成交并集管道。任何必需语义槽位未闭合时都返回结构化澄清，不能只针对“重叠度”设置特例。用户答案作为强约束进入后续规划和编译，编译器必须验证最终计划与答案一致。Copilot 确定性校验字段类型、数组元素类型、操作符、参数、统计对象和歧义后，由 MQL 编译器生成单个 JSON command object。任何未经用户确认的同义词扩展、值翻译或非空 `assumptions` 都必须返回澄清，不能进入编译。MQL 不保留模型自由生成候选的旧路径
 7. **返回完整查询草稿**：成功响应同时返回 `query` 和与引用严格一致的 `query_parameters[]`；前端原子回填编辑器与参数面板，但不自动保存或执行，后续仍由 Develop preflight 和 execution API 负责
 
-`resources[]` 只表示具体、可预览的数据项，不表示执行容器。MongoDB `database`、关系库 `schema`、对象存储目录等容器节点不能作为查询生成输入资源；Owner 已正常确认 locator、但 preview 没有平台 `data_type` 时，应按调用参数无效处理，而不是返回 502 上游响应错误。MongoDB database 执行范围仍由 Develop 的 `target_locator` 和执行链路持有；Develop 从已有 MQL 提取所有 collection 引用，在该 database 的 Owner Catalog 中解析为具体 locator 后提交，Copilot 不得自行拼接 locator。编辑器为空时，database locator 只能进入与 `resources[]` 分离的 `resource_scope_locator`，Copilot 通过 Owner Tool 返回范围内经预览验证的候选并要求用户确认；合法 MQL 已声明 collection 时不再允许无字段事实直接生成，也不得退回范围枚举或模糊发现。
+`resources[]` 只表示具体、可预览的数据项，不表示执行容器。MongoDB `database`、关系库 `schema`、对象存储目录等容器节点不能作为查询生成输入资源；Owner 已正常确认 locator、但 preview 没有平台 `data_type` 时，应按调用参数无效处理，而不是返回 502 上游响应错误。MongoDB database 执行范围仍由 Develop 的 `target_locator` 和执行链路持有；Develop 从已有 MQL 提取所有 collection 引用，在该 database 的 Owner Engine Catalog 中解析为具体 locator 后提交，Copilot 不得自行拼接 locator。编辑器为空时，database locator 只能进入与 `resources[]` 分离的 `resource_scope_locator`，Copilot 通过 Owner Tool 返回范围内经预览验证的候选并要求用户确认；合法 MQL 已声明 collection 时不再允许无字段事实直接生成，也不得退回范围枚举或模糊发现。
 
 ### Workflow Agent 工作流程
 
@@ -170,7 +170,7 @@ Copilot Permission 只授予“生成候选结果”，不授予候选查询、W
 
 ### Notebook Agent 工作流程
 
-1. 首次调用只理解独立输入数据角色并生成中英文常用检索词，不接收或构造连接信息、ResourceLocator、CatalogPath。
+1. 首次调用只理解独立输入数据角色并生成中英文常用检索词，不接收或构造连接信息、ResourceLocator、EngineCatalogPath。
 2. Develop 只在当前 Notebook Session 授权的实时 Catalog 内粗筛，随后把候选摘要交给 Copilot；LLM 只能排序和标记推荐项，不能删除、改写或新增候选。
 3. 用户逐角色确认后，Develop 重新验证 Engine/path 并读取字段、几何列、几何类型和 CRS 等事实。
 4. Copilot 只使用确认事实生成通过 `addp_common.notebook.engines` 访问数据的 Python 单元。Notebook 分析统一通过受控表扫描进入 Pandas/GeoPandas，不生成 `engine.sql(...)`；空间表使用共享 `to_geopandas(...)` 读取真实 EWKB 几何，拒绝旁路连接、未知字段和硬编码空间字段或 CRS 假设。

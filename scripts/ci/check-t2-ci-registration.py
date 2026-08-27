@@ -14,20 +14,20 @@ class RegistrationError(RuntimeError):
     pass
 
 
-def git_files(repository: Path, pattern: str) -> list[str]:
+def repository_files(repository: Path, pattern: str) -> list[str]:
     result = subprocess.run(
-        ["git", "ls-files", pattern],
+        ["git", "ls-files", "-z", "-co", "--exclude-standard", "--", pattern],
         cwd=repository,
         check=True,
         capture_output=True,
         text=True,
     )
-    return [line for line in result.stdout.splitlines() if line]
+    return sorted(path for path in result.stdout.split("\0") if path)
 
 
 def discover_postgres_gates(repository: Path) -> list[tuple[str, str, str]]:
     gates: list[tuple[str, str, str]] = []
-    for script in git_files(repository, "scripts/test/*-postgres-gate.sh"):
+    for script in repository_files(repository, "scripts/test/*-postgres-gate.sh"):
         name = Path(script).name.removesuffix("-gate.sh")
         owner = name.split("-", 1)[0]
         gates.append((script, f"test-{name}", owner))

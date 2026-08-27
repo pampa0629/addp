@@ -4,6 +4,8 @@
 
 Service 模块负责数据服务发布与外部服务注册，覆盖查询服务、图查询服务、注册服务代理、瓦片服务、OGC API Features、OGC Tiles、WMTS 和公开访问端点。
 
+企业 Catalog 第四阶段只把 QueryService 作为 `data_service` 来源：Service 保留 SQL、发布快照、协议、输出契约、Consumer Descriptor、运行状态和端点等全部专业事实，只公开 owner-local 变化流与当前最小摘要解析。Service 不依赖 Catalog、不保存 `catalog_entry_id` 或反向列表。Graph、Tile、Registered 尚未具备统一稳定消费契约，不得借本接口输出其管理 DTO。
+
 ## 技术栈与端口
 
 - 后端：Go + Gin + GORM，默认端口 `8086`，环境变量 `SERVICE_BACKEND_PORT`。
@@ -39,12 +41,13 @@ service/
 
 ## 核心 API
 
-Service 是 `service.definition.*`、`service.endpoint.read` 和 `service.external_registration.*` 的 Permission owner；定义只存在于 `authorization/permissions.yaml`，通过 `common/authorization` 发布期聚合，不在服务启动时动态注册。`service.definition.publish/offline` 是 IAM 目标目录能力，当前独立路由仍待首次 SQL seed 前的覆盖门禁确认。
+Service 是 `service.definition.*`、`service.external_registration.*` 和 `service.catalog.read` 的 Permission owner；定义只存在于 `authorization/permissions.yaml`，通过 `common/authorization` 发布期聚合，不在服务启动时动态注册。`service.catalog.read` 只授予 `tenant.catalog_runtime`，不得委派或由 Tenant 定制。`service.definition.publish/offline` 是 IAM 目标目录能力，当前独立路由仍待首次 SQL seed 前的覆盖门禁确认。
 
 管理路由前缀：`/api/v1/service`。
 
-- 资产发现使用 `GET /api/v1/service/assets/discoverable`，只接受 `addp-asset` Tenant Service Access Token，并校验 `service.definition.read`；Tenant 只来自 canonical AuthContext。
-- 端点投影使用唯一 `GET /api/v1/service/endpoints?ref=`：只接受 `addp-portal` Tenant Service Access Token，并校验 `service.endpoint.read`。它只返回端点元数据，不替代真实服务执行时的用户 Resource Grant；旧 `/internal/endpoints`、内部密钥和 Tenant Header 路径必须删除。
+- Portal 不通过旧资产来源引用读取 Service 端点；服务消费入口由后续 Service Catalog owner 接入和 Asset 授权结果统一表达。
+- 服务消费目录：`GET /consumer/services` 返回当前用户可执行服务摘要，`GET /consumer/services/:service_type/:service_id` 返回 `addp.service_consumer/v1` Consumer Descriptor；不得向消费者投影 SQL、Engine、schema、table 或管理 DTO。
+- 企业目录来源：`GET /catalog-resources/changes` 返回 QueryService 最小摘要变化；`POST /runtime/catalog-references/resolve` 动态返回当前最小摘要。两个路由只接受 `addp-catalog` 和 `service.catalog.read`，不得返回 SQL、协议、输出契约或 Consumer Descriptor。
 - 查询服务管理：`POST/GET /query`、`GET/PUT/DELETE /query/:id`；公开执行端点：`POST /api/query/:serviceName/query`。
 - 图查询服务管理：`POST/GET /graph`、`GET/PUT/DELETE /graph/:id`；公开执行端点：`POST /api/gquery/:serviceName`。
 - 注册服务管理：`POST/GET /registered`、`GET/PUT/DELETE /registered/:id`、`POST /registered/:id/refresh`、`POST /registered/:id/health`；公开代理：`ANY /api/service/registered/proxy/:id/*path`。
@@ -57,8 +60,9 @@ Service 是 `service.definition.*`、`service.endpoint.read` 和 `service.extern
 
 - 存储引擎连接信息必须从 System 获取，Service 不管理连接配置。
 - 查询服务执行目标必须显式且互斥：普通 SQL 和关系表只使用 `engine_id`；联邦 SQL 只使用 `runtime_engine_id`；Parquet 对象表同时保存 Source `engine_id` 与 DuckDB `runtime_engine_id`。不得通过 `engine_id IS NULL` 或 SQL 内容猜测执行模式。
-- 查询服务 SQL 样例按 Engine capability 发现，不按 `engine_type` 固定列表。样例必须从当前业务 Catalog 构造，并在当前用户的 `service.definition.create + service.data_read.execute` 边界内以最多 10 行真实执行且返回非空数据后才能展示；展示给发布表单的是不含 `LIMIT/OFFSET` 的基础 SQL，由查询服务执行层统一分页，不得回退到 `SELECT 1`、硬编码业务表或在样例 SQL 内固化分页。
+- 查询服务 SQL 样例按 Engine capability 发现，不按 `engine_type` 固定列表。样例必须从当前 Engine Catalog 构造，并在当前用户的 `service.definition.create + service.data_read.execute` 边界内以最多 10 行真实执行且返回非空数据后才能展示；展示给发布表单的是不含 `LIMIT/OFFSET` 的基础 SQL，由查询服务执行层统一分页，不得回退到 `SELECT 1`、硬编码业务表或在样例 SQL 内固化分页。
 - 表、固定 SQL 和联邦 SQL 只表达查询服务的来源与执行绑定。REST Query、OGC API Features 和 WFS 必须共用唯一结构化查询内核；协议层不得拼接 SQL。发布契约必须包含非空唯一稳定排序键；业务数据查询统一使用 cursor/keyset 分页、读取 `limit + 1` 行判断下一页，默认不执行 `COUNT(*)`，不得保留 `page/offset`、原始 `filter/orderBy` 或兼容双轨。
+- Query Service 普通查询与单次有界导出使用同一 operation；可选 `X-ADDP-Query-Intent: query | export` 只表达审计用途，不改变授权与上限。CSV 和 GeoJSON 都必须返回 `X-ADDP-Has-More`、`X-ADDP-Next-Cursor` 和 `X-ADDP-Service-Version`，审计不得记录筛选字面值、cursor、原始 Body、SQL 或返回数据。
 - 联邦 SQL 发布时冻结实际引用的 Source Engine ID 并纳入 `dependency_hash`。每次请求由 Service 基于发布快照签发 `service_definition` Execution Authorization，独立 DuckDB Runtime 消费授权并取得连接；Service 不链接 DuckDB 原生库。
 - 表结构、空间信息和资源树通过 Meta 共享能力获取；Service 不重复实现资源树、表空间检测或按 `schema/table` 查找资源的代理接口。
 - 静态二维瓦片发布只接受 Meta 已识别、位于 Business 存储的 `data_type=media + format=pmtiles + layout=single` item。发布配置保存 ResourceLocator 和 PMTiles v3 依赖快照，运行时通过 System engine provider Range Read，不接受裸路径、URL 或 Manager infra `storage_ref`。

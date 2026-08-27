@@ -640,9 +640,9 @@ Meta 默认只做父容器识别和一层 children 轻量索引，不递归扫�
 - stream child：返回 child 自己的 `Reader` / `Ref`，例如 ZIP entry、目录文件；后续按 child 的 `data_type` / `format` 调对应 reader。
 - native child：复用父资源和 child 定位 options，例如 SQLite table、Excel sheet、GeoPackage layer；后续按父格式的 table reader 读取指定 child。
 
-### CatalogFactsProvider / GraphSampleProvider
+### EngineCatalogFactsProvider / GraphSampleProvider
 
-`CatalogFactsProvider` 和 `GraphSampleProvider` 面向引擎原生图的结构描述和轻量样本。图结构事实通过 `CatalogFacts.Graph` 进入 `datatype.GraphInfo`，图样本只用于预览或浏览，不作为 Meta 主事实源。
+`EngineCatalogFactsProvider` 和 `GraphSampleProvider` 面向引擎原生图的结构描述和轻量样本。图结构事实通过 `EngineCatalogFacts.Graph` 进入 `datatype.GraphInfo`，图样本只用于预览或浏览，不作为 Meta 主事实源。
 
 这两个 provider 必须返回业务图视图，而不是引擎内部实现图。插件、扩展、索引或空间能力产生的内部节点和内部关系应在 provider 或 Graph 模块服务层过滤；`datatype.GraphInfo` 只描述通用 graph facts，不承载 Neo4j Spatial、R-tree 等具体实现规则。
 

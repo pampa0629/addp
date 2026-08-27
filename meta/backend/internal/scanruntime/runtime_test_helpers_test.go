@@ -177,7 +177,7 @@ func (r staticObjectContentReader) Capabilities() plugin.EngineCapabilities {
 func (r staticObjectContentReader) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (r staticObjectContentReader) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
+func (r staticObjectContentReader) OpenContent(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader(r.content)), nil
 }
 
@@ -204,7 +204,7 @@ func (r *recordingObjectContentReader) Capabilities() plugin.EngineCapabilities 
 func (r *recordingObjectContentReader) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (r *recordingObjectContentReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+func (r *recordingObjectContentReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	r.openedPaths = append(r.openedPaths, path.StringPath())
 	return io.NopCloser(strings.NewReader(r.content)), nil
 }
@@ -230,24 +230,24 @@ func (p *objectRefGroupScanTestProvider) SensitiveFields() []string { return nil
 func (p *objectRefGroupScanTestProvider) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewObjectCapabilities(p.Type())
 }
-func (p *objectRefGroupScanTestProvider) CatalogModel() plugin.CatalogModelSpec {
+func (p *objectRefGroupScanTestProvider) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.ObjectCatalogModel()
 }
 func (p *objectRefGroupScanTestProvider) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (p *objectRefGroupScanTestProvider) ListChildren(_ context.Context, _ plugin.ConnectionInfo, parent plugin.CatalogPath, _ plugin.ListOptions) ([]plugin.CatalogEntry, error) {
-	if !plugin.IsCatalogRootPath(parent) {
+func (p *objectRefGroupScanTestProvider) ListChildren(_ context.Context, _ plugin.ConnectionInfo, parent plugin.EngineCatalogPath, _ plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
+	if !plugin.IsEngineCatalogRootPath(parent) {
 		return nil, nil
 	}
 	root := plugin.ObjectRootPath(parent.EngineID)
-	entries := make([]plugin.CatalogEntry, 0, len(p.buckets))
+	entries := make([]plugin.EngineCatalogEntry, 0, len(p.buckets))
 	for _, bucket := range p.buckets {
 		entries = append(entries, plugin.ObjectBucketCatalogEntry(root, bucket))
 	}
 	return entries, nil
 }
-func (p *objectRefGroupScanTestProvider) ResolvePath(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p *objectRefGroupScanTestProvider) ResolvePath(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	if !isObjectBucketCatalogPath(path) {
 		return nil, nil
 	}
@@ -260,15 +260,15 @@ func (p *objectRefGroupScanTestProvider) ResolvePath(_ context.Context, _ plugin
 	}
 	return nil, nil
 }
-func (p *objectRefGroupScanTestProvider) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+func (p *objectRefGroupScanTestProvider) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	p.openedPaths = append(p.openedPaths, path.StringPath())
 	return io.NopCloser(strings.NewReader(p.content)), nil
 }
 
-func isObjectBucketCatalogPath(path plugin.CatalogPath) bool {
-	if len(path.Segments) != 2 || !plugin.IsCatalogRootSegment(path.Segments[0]) {
+func isObjectBucketCatalogPath(path plugin.EngineCatalogPath) bool {
+	if len(path.Segments) != 2 || !plugin.IsEngineCatalogRootSegment(path.Segments[0]) {
 		return false
 	}
 	segment := path.Segments[1]
-	return segment.Term == plugin.CatalogTermBucket && segment.Kind == plugin.CatalogKindBucket && segment.Name != ""
+	return segment.Term == plugin.EngineCatalogTermBucket && segment.Kind == plugin.EngineCatalogKindBucket && segment.Name != ""
 }

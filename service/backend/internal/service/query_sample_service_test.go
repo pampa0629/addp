@@ -54,17 +54,17 @@ func (*querySampleSQLPlugin) ConnectionIdentityFields() []string                
 func (*querySampleSQLPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities("service_sample_sql", "tabular", plugin.TabularCapabilityOptions{DefaultLanguage: "sql"})
 }
-func (*querySampleSQLPlugin) CatalogModel() plugin.CatalogModelSpec {
-	return plugin.TabularCatalogModel(plugin.CatalogTermSchema)
+func (*querySampleSQLPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
+	return plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema)
 }
-func (*querySampleSQLPlugin) ListChildren(_ context.Context, _ plugin.ConnectionInfo, parent plugin.CatalogPath, _ plugin.ListOptions) ([]plugin.CatalogEntry, error) {
-	if plugin.IsCatalogRootPath(parent) {
-		return []plugin.CatalogEntry{{Name: "public", Role: plugin.CatalogRoleBranch, Path: plugin.TabularNamespacePath(parent.EngineID, plugin.CatalogTermSchema, "public")}}, nil
+func (*querySampleSQLPlugin) ListChildren(_ context.Context, _ plugin.ConnectionInfo, parent plugin.EngineCatalogPath, _ plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
+	if plugin.IsEngineCatalogRootPath(parent) {
+		return []plugin.EngineCatalogEntry{{Name: "public", Role: plugin.EngineCatalogRoleBranch, Path: plugin.TabularNamespacePath(parent.EngineID, plugin.EngineCatalogTermSchema, "public")}}, nil
 	}
 	rowCount := int64(3)
-	return []plugin.CatalogEntry{{Name: "orders", Role: plugin.CatalogRoleLeaf, Path: plugin.TabularItemPath(parent.EngineID, plugin.CatalogTermSchema, "public", "orders"), Table: &datatype.TableInfo{RowCount: &rowCount}}}, nil
+	return []plugin.EngineCatalogEntry{{Name: "orders", Role: plugin.EngineCatalogRoleLeaf, Path: plugin.TabularItemPath(parent.EngineID, plugin.EngineCatalogTermSchema, "public", "orders"), Table: &datatype.TableInfo{RowCount: &rowCount}}}, nil
 }
-func (*querySampleSQLPlugin) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (*querySampleSQLPlugin) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	return nil, nil
 }
 func (*querySampleSQLPlugin) QueryLanguages() []string { return []string{"sql"} }
@@ -127,8 +127,8 @@ func TestQuerySampleServiceExecutesDirectSampleThroughAuthorization(t *testing.T
 			var request client.IssueExecutionAuthorizationRequest
 			_ = json.NewDecoder(r.Body).Decode(&request)
 			_ = json.NewEncoder(w).Encode(client.IssuedExecutionAuthorization{
-				ID: "55", ExecutionID: request.ExecutionID, Audience: "service", EngineIDs: request.EngineIDs,
-				Effects: request.Effects, ExpiresAt: time.Now().Add(time.Minute), ActorPrincipalID: "1",
+				ID: "55", ExecutionID: request.ExecutionID, Audience: "service", Accesses: request.Accesses,
+				ExpiresAt: time.Now().Add(time.Minute), ActorPrincipalID: "1",
 				TenantID: "7", TenantMembershipID: "2", IssuedAuthorizationVersion: "3", SourceType: "user",
 			})
 		case "/api/v1/system/execution-authorizations/55/engine-accesses":
@@ -196,8 +196,8 @@ func TestQuerySampleServiceReturnsUnboundedFederatedSampleAndBoundsValidation(t 
 			var request client.IssueExecutionAuthorizationRequest
 			_ = json.NewDecoder(r.Body).Decode(&request)
 			_ = json.NewEncoder(w).Encode(client.IssuedExecutionAuthorization{
-				ID: "56", ExecutionID: request.ExecutionID, Audience: "duckdb", EngineIDs: request.EngineIDs,
-				Effects: request.Effects, ExpiresAt: time.Now().Add(time.Minute), ActorPrincipalID: "1",
+				ID: "56", ExecutionID: request.ExecutionID, Audience: "duckdb", Accesses: request.Accesses,
+				ExpiresAt: time.Now().Add(time.Minute), ActorPrincipalID: "1",
 				TenantID: "7", TenantMembershipID: "2", IssuedAuthorizationVersion: "3", SourceType: "user",
 			})
 		default:

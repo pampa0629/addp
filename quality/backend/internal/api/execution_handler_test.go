@@ -14,9 +14,9 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestQualityExecutionFilterIsScopedToCheckExecutions(t *testing.T) {
+func TestQualityExecutionFilterIsScopedToQualityModule(t *testing.T) {
 	filter := qualityExecutionFilter(7, 2, 50)
-	if filter.TenantID != 7 || filter.Module != commonExecution.ModuleQuality || filter.TaskType != commonExecution.TaskTypeQualityCheck || filter.Page != 2 || filter.PageSize != 50 {
+	if filter.TenantID != 7 || filter.Module != commonExecution.ModuleQuality || filter.TaskType != "" || filter.Page != 2 || filter.PageSize != 50 {
 		t.Fatalf("quality execution filter = %#v", filter)
 	}
 }
@@ -51,6 +51,7 @@ func TestExecutionListUsesQualityAndTenantFilters(t *testing.T) {
 	insertExecutionHandlerRow(t, db, 1, 7, "quality-7", commonExecution.ModuleQuality, commonExecution.TaskTypeQualityCheck, commonExecution.ExecutionStatusSuccess)
 	insertExecutionHandlerRow(t, db, 2, 8, "quality-8", commonExecution.ModuleQuality, commonExecution.TaskTypeQualityCheck, commonExecution.ExecutionStatusSuccess)
 	insertExecutionHandlerRow(t, db, 3, 7, "other-7", commonExecution.ModuleSystem, "cleanup", commonExecution.ExecutionStatusSuccess)
+	insertExecutionHandlerRow(t, db, 4, 7, "gate-7", commonExecution.ModuleQuality, commonExecution.TaskTypeMaterializationGate, commonExecution.ExecutionStatusSuccess)
 	handler := NewExecutionHandler(commonExecution.NewTaskExecutionRepository(db))
 	router := gin.New()
 	router.GET("/executions", withIssueHandlerAuth(7, 11), handler.List)
@@ -64,11 +65,39 @@ func TestExecutionListUsesQualityAndTenantFilters(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body.Total != 1 || len(body.Data) != 1 || body.Data[0].ExecutionID != "quality-7" {
+	if body.Total != 2 || len(body.Data) != 2 || body.Data[0].ExecutionID != "gate-7" || body.Data[1].ExecutionID != "quality-7" {
 		t.Fatalf("filtered executions = %#v", body)
 	}
 	if body.Page != 1 || body.PageSize != 100 || body.TotalPages != 1 {
 		t.Fatalf("normalized execution pagination = %#v", body)
+	}
+}
+
+func TestExecutionGetExposesMaterializationGateOutputs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newExecutionHandlerTestDB(t)
+	insertExecutionHandlerRow(t, db, 1, 7, "gate-7", commonExecution.ModuleQuality, commonExecution.TaskTypeMaterializationGate, commonExecution.ExecutionStatusSuccess)
+	if err := db.Exec(`UPDATE common.task_executions SET metadata = ? WHERE execution_id = ?`,
+		`{"outputs":{"materialization_group_id":5,"materialization_group_version":3}}`, "gate-7").Error; err != nil {
+		t.Fatalf("set gate outputs: %v", err)
+	}
+
+	handler := NewExecutionHandler(commonExecution.NewTaskExecutionRepository(db))
+	router := gin.New()
+	router.GET("/executions/:execution_id", withIssueHandlerAuth(7, 11), handler.Get)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/executions/gate-7", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+	var body struct {
+		Outputs map[string]interface{} `json:"outputs"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Outputs["materialization_group_id"] != float64(5) || body.Outputs["materialization_group_version"] != float64(3) {
+		t.Fatalf("outputs = %#v", body.Outputs)
 	}
 }
 
@@ -118,9 +147,9 @@ func insertExecutionHandlerRow(t *testing.T, db *gorm.DB, id, tenantID int, exec
 	}
 }
 
-func TestIsQualityCheckExecution(t *testing.T) {
+func TestIsQualityExecution(t *testing.T) {
 	valid := &commonExecution.TaskExecution{Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityCheck}
-	if !isQualityCheckExecution(valid) {
+	if !isQualityExecution(valid) {
 		t.Fatal("check execution was rejected")
 	}
 	for _, item := range []*commonExecution.TaskExecution{
@@ -128,8 +157,11 @@ func TestIsQualityCheckExecution(t *testing.T) {
 		{Module: commonExecution.ModuleQuality, TaskType: "cleanup_executor"},
 		{Module: commonExecution.ModuleSystem, TaskType: commonExecution.TaskTypeQualityCheck},
 	} {
-		if isQualityCheckExecution(item) {
+		if isQualityExecution(item) {
 			t.Fatalf("non-quality check execution accepted: %#v", item)
 		}
+	}
+	if !isQualityExecution(&commonExecution.TaskExecution{Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeMaterializationGate}) {
+		t.Fatal("materialization gate execution was rejected")
 	}
 }

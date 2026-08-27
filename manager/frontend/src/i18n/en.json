@@ -1004,6 +1004,22 @@
       "refreshItem": "Refresh Item",
       "lineageTab": "Lineage",
       "lineageLoadFailed": "Failed to load item lineage",
+      "catalogSummaryTitle": "Enterprise catalog summary",
+      "catalogSummaryDescription": "Business semantics and responsibilities are owned by Catalog; Manager reads this summary on demand only.",
+      "openCatalogEntry": "Open enterprise catalog",
+      "catalogUnnamed": "Unnamed catalog entry",
+      "catalogPending": "This data item is waiting for automatic Catalog registration or synchronization catch-up.",
+      "catalogUnavailable": "The enterprise catalog summary is currently unavailable",
+      "catalogGovernance": {
+        "discovered": "Discovered",
+        "curated": "Curated",
+        "certified": "Certified",
+        "deprecated": "Deprecated"
+      },
+      "catalogSource": {
+        "active": "Active source",
+        "missing": "Missing source"
+      },
       "vectorize": "Vectorize",
       "vectorized": "Vectorized",
       "batchVectorize": "Batch Vectorize",

@@ -3,6 +3,7 @@ package execution_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -63,6 +64,32 @@ func TestClaimNextDoesNotClaimContinuousExecution(t *testing.T) {
 	claimed, lease, err := execution.ClaimNext(context.Background(), db, execution.ClaimOptions{Module: execution.ModuleTransfer, TaskType: execution.TaskTypeSync, WorkerID: "bounded-worker", Now: now, LeaseDuration: time.Minute})
 	if err != nil || claimed != nil || lease != nil {
 		t.Fatalf("ClaimNext continuous = %#v %#v, %v", claimed, lease, err)
+	}
+}
+
+func TestClaimNextFiltersTriggerSource(t *testing.T) {
+	db := newLeaseTestDB(t)
+	now := time.Now().UTC()
+	for index, source := range []string{execution.ModuleDevelop, execution.ModuleOrchestrator} {
+		item := execution.TaskExecution{
+			TenantID: 1, ExecutionID: fmt.Sprintf("source-filter-%d", index), Module: execution.ModuleDevelop,
+			TaskType: execution.TaskTypeQuery, Source: source, ExecutionBoundary: execution.ExecutionBoundaryBounded,
+			Status: execution.ExecutionStatusPending, TriggerType: execution.TriggerTypeManual,
+			CreatedAt: now.Add(time.Duration(index) * time.Second), UpdatedAt: now,
+		}
+		if err := db.Create(&item).Error; err != nil {
+			t.Fatalf("create execution: %v", err)
+		}
+	}
+	claimed, _, err := execution.ClaimNext(context.Background(), db, execution.ClaimOptions{
+		Module: execution.ModuleDevelop, TaskType: execution.TaskTypeQuery, Source: execution.ModuleOrchestrator,
+		WorkerID: "develop-query-worker", Now: now, LeaseDuration: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("ClaimNext: %v", err)
+	}
+	if claimed == nil || claimed.Source != execution.ModuleOrchestrator {
+		t.Fatalf("claimed = %#v, want orchestrator source", claimed)
 	}
 }
 

@@ -13,7 +13,15 @@ const failureLabelKeys = {
   'quality.execution.result_invalid': 'quality.execution.failureResultInvalid',
   'quality.execution.lease_expired': 'quality.execution.failureLeaseExpired',
   'quality.execution.timeout': 'quality.execution.failureTimeout',
-  'quality.issue.reconcile_failed': 'quality.execution.failureIssueReconcileFailed'
+  'quality.issue.reconcile_failed': 'quality.execution.failureIssueReconcileFailed',
+  'quality.materialization_gate.config_invalid': 'quality.execution.failureGateConfigInvalid',
+  'quality.materialization_gate.read_context_failed': 'quality.execution.failureGateReadContextFailed',
+  'quality.materialization_gate.unsupported_engine': 'quality.execution.failureGateUnsupportedEngine',
+  'quality.materialization_gate.authorization_failed': 'quality.execution.failureGateAuthorizationFailed',
+  'quality.materialization_gate.assertion_compile_failed': 'quality.execution.failureGateCompileFailed',
+  'quality.materialization_gate.sql_execution_failed': 'quality.execution.failureGateSQLFailed',
+  'quality.materialization_gate.assertion_failed': 'quality.execution.failureGateAssertionFailed',
+  'quality.materialization_gate.result_invalid': 'quality.execution.failureGateResultInvalid'
 }
 
 export const executionFailureLabel = (execution, t) => {

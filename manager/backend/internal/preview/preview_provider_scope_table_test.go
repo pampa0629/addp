@@ -59,7 +59,7 @@ func (r *fakeRuntimeScopeTableReader) Close(context.Context) error {
 }
 
 type recordingCatalogProvider struct {
-	parent plugin.CatalogPath
+	parent plugin.EngineCatalogPath
 }
 
 func (p *recordingCatalogProvider) Type() string         { return "recording" }
@@ -82,11 +82,11 @@ func (p *recordingCatalogProvider) Capabilities() plugin.EngineCapabilities {
 func (p *recordingCatalogProvider) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (p *recordingCatalogProvider) ListChildren(_ context.Context, _ plugin.ConnectionInfo, parent plugin.CatalogPath, _ plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+func (p *recordingCatalogProvider) ListChildren(_ context.Context, _ plugin.ConnectionInfo, parent plugin.EngineCatalogPath, _ plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
 	p.parent = parent
 	return nil, nil
 }
-func (p *recordingCatalogProvider) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p *recordingCatalogProvider) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	return nil, nil
 }
 

@@ -15,11 +15,11 @@ import (
 	"github.com/addp/common/engine/workflowaccess"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
-	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
 	"github.com/addp/manager/internal/repository"
+	"github.com/addp/manager/internal/resourceutil"
 )
 
 type namedPreviewProvider struct {
@@ -105,7 +105,7 @@ func (p namedPreviewProvider) Preview(context.Context, *PreviewRequest) (*models
 }
 
 type previewRoutingModelPlugin struct {
-	model plugin.CatalogModelSpec
+	model plugin.EngineCatalogModelSpec
 }
 
 func (p *previewRoutingModelPlugin) Type() string         { return "preview-routing-model" }
@@ -123,11 +123,11 @@ func (p *previewRoutingModelPlugin) SensitiveFields() []string { return nil }
 func (p *previewRoutingModelPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{SchemaVersion: plugin.CapabilitiesSchemaVersion, EngineType: p.Type()}
 }
-func (p *previewRoutingModelPlugin) CatalogModel() plugin.CatalogModelSpec {
+func (p *previewRoutingModelPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return p.model
 }
 
-func registerPreviewRoutingModelPlugin(t *testing.T, model plugin.CatalogModelSpec) {
+func registerPreviewRoutingModelPlugin(t *testing.T, model plugin.EngineCatalogModelSpec) {
 	t.Helper()
 	const engineType = "preview-routing-model"
 	previous, err := plugin.Get(engineType)
@@ -182,7 +182,7 @@ func TestProviderNamesForMetaRoutesTopicToEventStreamProvider(t *testing.T) {
 }
 
 func TestPreviewFromURIWithBasicItemDoesNotSubmitDeepScanRun(t *testing.T) {
-	registerPreviewRoutingModelPlugin(t, plugin.TabularCatalogModel(plugin.CatalogTermSchema))
+	registerPreviewRoutingModelPlugin(t, plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema))
 	scanRunCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -769,11 +769,11 @@ func TestStringAttributeReadsPartitionedStorageOnly(t *testing.T) {
 		},
 	}
 
-	if got := catalogutil.StringAttribute(attrs, "physical_path"); got != "bucket/path.geojson" {
+	if got := resourceutil.StringAttribute(attrs, "physical_path"); got != "bucket/path.geojson" {
 		t.Fatalf("stringAttribute() = %q, want bucket/path.geojson", got)
 	}
 
-	if got := catalogutil.StringAttribute(map[string]interface{}{"physical_path": "legacy/path.geojson"}, "physical_path"); got != "" {
+	if got := resourceutil.StringAttribute(map[string]interface{}{"physical_path": "legacy/path.geojson"}, "physical_path"); got != "" {
 		t.Fatalf("stringAttribute() legacy flat = %q, want empty", got)
 	}
 }
@@ -798,7 +798,7 @@ func TestAttributeHelpersReadPartitionedSlicesAndNumbers(t *testing.T) {
 	if len(refs) != 2 || refs[0].Ref.Path != "bucket/roads/roads.shp" {
 		t.Fatalf("refs = %#v, want partitioned refs", refs)
 	}
-	if got := catalogutil.Int64Attribute(attrs, "total_size"); got != 42 {
+	if got := resourceutil.Int64Attribute(attrs, "total_size"); got != 42 {
 		t.Fatalf("total_size = %d, want 42", got)
 	}
 	if got := refRefsFromMetaAttributes(map[string]interface{}{"refs": []interface{}{map[string]interface{}{"path": "legacy/a.shp"}}}); len(got) != 0 {
@@ -828,7 +828,7 @@ func TestBuildProviderRequestUsesPartitionedPhysicalPath(t *testing.T) {
 	if providerReq.PhysicalPath != "bucket/table.parquet" {
 		t.Fatalf("PhysicalPath = %q, want bucket/table.parquet", providerReq.PhysicalPath)
 	}
-	if !plugin.IsCatalogRootSegment(providerReq.ProviderPath.Segments[0]) {
+	if !plugin.IsEngineCatalogRootSegment(providerReq.ProviderPath.Segments[0]) {
 		t.Fatalf("ProviderPath = %#v, want explicit root", providerReq.ProviderPath)
 	}
 }

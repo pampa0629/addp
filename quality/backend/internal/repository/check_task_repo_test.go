@@ -341,6 +341,27 @@ func newCheckTaskRepositoryTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create quality rule application test table: %v", err)
 	}
+	if err := db.Exec(`CREATE TABLE quality.materialization_gate_tasks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		code TEXT NOT NULL,
+		name TEXT NOT NULL,
+		description TEXT NOT NULL,
+		version INTEGER NOT NULL,
+		materialization_group_id INTEGER NOT NULL,
+		materialization_group_version INTEGER NOT NULL,
+		table_bindings JSON NOT NULL,
+		assertions JSON NOT NULL,
+		created_by INTEGER NOT NULL,
+		updated_by INTEGER NOT NULL,
+		created_at DATETIME,
+		updated_at DATETIME,
+		last_run_at DATETIME,
+		last_execution_id TEXT,
+		last_execution_status TEXT
+	)`).Error; err != nil {
+		t.Fatalf("create quality materialization gate task test table: %v", err)
+	}
 	return db
 }
 

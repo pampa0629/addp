@@ -7,7 +7,7 @@
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | engine | 引擎 | ADDP 连接和访问外部数据系统的能力入口。 | 例如 PostgreSQL、MinIO、NFS、Neo4j。 |
-| Oracle Engine | Oracle 引擎 | 通过 `engine_type=oracle` 登记的 Oracle 数据库 Engine Instance；普通表 Catalog/查询/读取与基础 Oracle Spatial（`MDSYS.SDO_GEOMETRY`、SpatialInfo、EWKB）能力以 `service_name` 所指服务为连接边界，以 schema/table 为业务路径。 | Oracle CDC 和 ArcGIS SDE 逻辑变化源分别扩展，不因共用 Oracle 连接而合并为同一能力。 |
+| Oracle Engine | Oracle 引擎 | 通过 `engine_type=oracle` 登记的 Oracle 数据库 Engine Instance；普通表 Engine Catalog / 查询 / 读取与基础 Oracle Spatial（`MDSYS.SDO_GEOMETRY`、SpatialInfo、EWKB）能力以 `service_name` 所指服务为连接边界，以 schema/table 为业务路径。 | Oracle CDC 和 ArcGIS SDE 逻辑变化源分别扩展，不因共用 Oracle 连接而合并为同一能力。 |
 | File Geodatabase | 文件地理数据库 | ArcGIS `.gdb` 目录承载的多图层矢量容器格式；ADDP 使用 `format=filegdb + layout=whole + data_type=container` 表达，feature class / table 是容器 child。 | 内置开源数据面使用 GDAL OpenFileGDB；普通图层读写不等同 Enterprise Geodatabase、SDE 注册、拓扑或版本化支持。 |
 | Microsoft Access Database | Microsoft Access 数据库 | Microsoft Jet / Access `.mdb` 承载的通用数据库容器格式；ADDP 使用 `format=access + layout=single + data_type=container` 表达。 | `.mdb` 后缀和 `application/x-msaccess` MIME 只证明 Access 容器候选，不能证明它是 ArcGIS Personal Geodatabase。 |
 | Personal Geodatabase | 个人地理数据库 | Microsoft Access `.mdb` 承载、且经 ArcGIS PGeo 驱动确定性识别的旧 ArcGIS 地理数据库容器格式；ADDP 使用 `format=pgeo + layout=single + data_type=container` 表达。 | Meta 深度扫描从 `access` 候选精化为 `pgeo`；内置开源数据面只允许作为只读 source，通过 GDAL PGeo + unixODBC / MDB Tools 抽取，不提供 `.mdb` 写回。 |
@@ -22,27 +22,49 @@
 | node | 资源节点 | 引擎内用于组织资源树的节点。 | 例如目录、bucket、prefix、schema。node 不等同于 data item。 |
 | resource tree | 资源树 | 以树形方式展示 engine 内 node 和 data item 的视图。 | 用于浏览、展开、刷新和定位；不是新的身份层。 |
 | resource tree search | 资源树搜索 | 在资源树视图内按名称、路径或轻量展示信息定位 node / data item 的浏览辅助能力。 | 不等同于全文检索或语义检索。 |
-| resource | 资源 | 引擎 catalog 或资源树语境下的外部对象统称。 | 当讨论内容读写边界时优先使用 content / ref，避免把 engine 资源模型带入 format。 |
+| resource | 资源 | Engine Catalog 或资源树语境下的外部对象统称。 | 当讨论内容读写边界时优先使用 content / ref，避免把 engine 资源模型带入 format。 |
 | resource concurrency version | 资源并发版本 | 可变持久化主资源用于乐观并发控制的单调递增正整数。 | API 字段统一为 `version`，数据库统一使用非空 `BIGINT` 并从 `1` 开始；只判断客户端编辑基线是否仍然有效，不表达业务版次、发布版本或内容来源版本。聚合子资源共用聚合根版本。 |
 | collection revision | 集合修订版本 | 对一次跨多个独立聚合的集合级替换提供并发边界的单调递增正整数。 | 仅在操作没有单一聚合根时使用；API 字段统一为 `revision`。它不是集合成员数量，也不能用任一成员的资源并发版本替代。 |
-| CatalogPath | 引擎目录路径 | 引擎 catalog 内的路径坐标。 | 不等同于 ResourceLocator，也不等同于 Meta `full_name`。 |
-| CatalogEntry | 引擎目录条目 | `CatalogProvider.ListChildren` 返回的 catalog 列表项，不是“入口”。 | 回答“当前位置下面有什么、结构上怎么走”；通过 `role=branch/leaf` 表达结构角色；列表摘要使用 `Table`、`Storage`、`LeafCount` 等显式字段，不保留兜底 attributes / stats。 |
-| CatalogRoot | 引擎目录根 | 每个引擎 catalog 的显性结构根。 | 通常投影为 root `meta_node`；`full_name=""`，ResourceLocator path 为空，但仍可通过 `node_id` 定位。面向用户展示时使用引擎实例名称，不显示内部术语。 |
-| CatalogBranch | 引擎目录分支 | 可继续列举子条目的 catalog entry。 | 例如 schema、database、bucket、prefix、directory；通常由 Meta 投影为 `meta_node`。 |
-| CatalogLeaf | 引擎目录叶子 | 引擎 catalog 模型中的终点 entry。 | 例如 table、view、object、file、collection、graph、topic；是 data item 候选，但不等于 data item。 |
-| topic | 消息主题 | Kafka catalog 中用户可选择的稳定消息资源。 | 业务 Kafka 使用 `service(cluster) -> topic`；partition 是执行分片和运行诊断，不是 catalog 子节点或用户 locator。 |
+| Engine Catalog | 引擎目录 | Engine Plugin 对真实引擎原生命名空间、可枚举层级、路径和对象事实的统一只读抽象。 | 回答“引擎当前有什么、结构上如何定位、引擎直接知道哪些事实”；不是企业数据目录，也不拥有业务语义和治理状态。跨模块代码词族统一使用 `EngineCatalog*`。 |
+| EngineCatalogPath | 引擎目录路径 | Engine Catalog 内的路径坐标。 | 不等同于 ResourceLocator，也不等同于 Meta `full_name`。线上版本值 `catalog.path/v1` 由 Engine 上下文限定，第一阶段保留。 |
+| EngineCatalogEntry | 引擎目录条目 | `EngineCatalogProvider.ListChildren` 返回的 Engine Catalog 列表项，不是“入口”。 | 回答“当前位置下面有什么、结构上怎么走”；通过 `role=branch/leaf` 表达结构角色；列表摘要使用 `Table`、`Storage`、`LeafCount` 等显式字段，不保留兜底 attributes / stats。 |
+| EngineCatalogRoot | 引擎目录根 | 每个 Engine Catalog 的显性结构根。 | 通常投影为 root `meta_node`；`full_name=""`，ResourceLocator path 为空，但仍可通过 `node_id` 定位。面向用户展示时使用引擎实例名称，不显示内部术语。 |
+| EngineCatalogBranch | 引擎目录分支 | 可继续列举子条目的 Engine Catalog entry。 | 例如 schema、database、bucket、prefix、directory；通常由 Meta 投影为 `meta_node`。 |
+| EngineCatalogLeaf | 引擎目录叶子 | Engine Catalog 模型中的终点 entry。 | 例如 table、view、object、file、collection、graph、topic；是 data item 候选，但不等于 data item。 |
+| topic | 消息主题 | Kafka Engine Catalog 中用户可选择的稳定消息资源。 | 业务 Kafka 使用 `service(cluster) -> topic`；partition 是执行分片和运行诊断，不是 Engine Catalog 子节点或用户 locator。 |
 | partition | 消息分区 | Topic 内维护有序 offset 序列的执行分片。 | Transfer 按 partition 保存 committed position；用户选择 topic，不绑定固定 partition。 |
-| CatalogFacts | 引擎目录事实 | Engine 对 catalog entry 直接知道的结构、存储、索引和原生事实详情。 | 回答“这个条目自身有哪些事实”；详情事实必须落在 `Table`、`Graph`、`Storage`、`Indexes` 等显式字段；不保留兜底 attributes / stats。 |
-| LeafCount | 叶子数量摘要 | catalog branch 下直接 leaf 条目的数量摘要。 | 只用于低成本列表展示和扫描计划提示；例如 schema 下表数量、database 下 collection 数量。不是递归总量，也不是 Meta item 计数。 |
+| EngineCatalogFacts | 引擎目录事实 | Engine 对 Engine Catalog entry 直接知道的结构、存储、索引和原生事实详情。 | 回答“这个条目自身有哪些事实”；详情事实必须落在 `Table`、`Graph`、`Storage`、`Indexes` 等显式字段；不保留兜底 attributes / stats。 |
+| LeafCount | 叶子数量摘要 | Engine Catalog branch 下直接 leaf 条目的数量摘要。 | 只用于低成本列表展示和扫描计划提示；例如 schema 下表数量、database 下 collection 数量。不是递归总量，也不是 Meta item 计数。 |
+| Enterprise Data Catalog | 企业数据目录 | 在各专业模块事实之上建立企业级稳定目录身份、业务语义关联、责任、治理状态、跨模块关系和权限感知发现视图的能力。 | 不是 Engine Catalog、Meta 技术资源树或数据资产目录的副本；由独立 Catalog 模块拥有。 |
+| Catalog module | Catalog 模块 | ADDP 中实现 Enterprise Data Catalog 的独立 owner 模块。 | 除 System 和自身必需 Infra 外，不把其他业务模块可达性作为启动或 Ready 强依赖。 |
+| CatalogEntry | 企业目录条目 | Catalog 模块中代表一项企业资源的稳定目录身份。 | 可以绑定 Meta DataItem 或其他专业资源；业务语义、责任和治理历史随该身份延续，不以物理路径或工作区作为身份。 |
+| recommended CatalogEntry successor | 企业目录推荐继任项 | Catalog 在弃用一个 CatalogEntry 时，可选指定的同 Tenant 推荐替代条目。 | 前后两个 CatalogEntry 是不同且继续有效的企业身份；旧条目保留详情和审计，不像 `merged` 一样重定向到规范身份。 |
+| CatalogComponent | 企业目录组件 | CatalogEntry 下用于承载字段或内部组件级语义关联的从属对象。 | 默认不是顶级企业目录条目，也不等同于独立 DataItem。 |
+| Catalog Source Binding | 企业目录来源绑定 | Catalog 模块中连接 CatalogEntry 与一个专业模块稳定资源身份的权威关系及历史。 | 第一阶段绑定 Meta DataItem fingerprint；Meta、Standard 等 owner 不保存 `catalog_entry_id` 反向投影。 |
+| professional relation view | 专业关系视图 | 专业 owner 在当前 User AuthContext 下，围绕一个稳定资源身份动态返回的一跳关系节点与边。 | 专业事实仍归 owner；Catalog 只做联邦展示和目录身份映射，不保存边副本，也不使用 Service Token 扩权代查。 |
+| Catalog Entry Mark | 企业目录条目标记 | 当前 User 在 Catalog 中对一个 CatalogEntry 建立的个人收藏或关注关系。 | 收藏用于快速回看，关注表达接收后续变化通知的意图；两者都不改变条目、责任、可见性或底层数据授权。 |
+| Catalog Collection | 企业目录集合 | Catalog 中由一个 Project Group 拥有、用于组织多个 CatalogEntry 的命名协作聚合。 | 只引用 System Project Group 和 CatalogEntry；不是 Workspace、资产或新的目录身份，项目组关闭后保留历史但不可继续协作。 |
+| catalog source status | 企业目录来源状态 | 专业来源当前是否仍可由 owner 观察到的状态。 | 统一使用 `active`、`missing`；与治理成熟度和资产发布状态正交。 |
+| catalog governance status | 企业目录治理状态 | CatalogEntry 从自动发现到业务治理确认的成熟度。 | 统一使用 `discovered`、`curated`、`certified`、`deprecated`；来源消失不自动改变治理状态。 |
+| catalog visibility | 企业目录可见性 | Catalog 对某个 CatalogEntry 的发现范围。 | 第一阶段使用 `inventory`、`department`、`tenant`；只控制目录发现，不授予底层内容访问权。 |
+| Workbench module | Workbench 模块 | ADDP 面向数据消费者、以已发布 Service 为唯一数据入口的动态查询、可视化和数据应用创作 owner。 | 不直连 Engine、不拥有 SQL、指标、物化或任务编排；Service 不可达只失败依赖该服务的当前请求，不影响 Workbench Ready。 |
+| Service Consumer Descriptor | 服务消费描述 | Service owner 面向消费者发布的、版本化且不包含管理事实的服务输入、输出、分页、格式和执行 operation 契约。 | 稳定协议从 `addp.service_consumer/v1` 开始；不暴露 SQL、Engine 凭据、表名或 Workbench renderer。 |
+| ServiceReference | 服务引用 | 消费者对一个已发布 Service 的强类型稳定引用，由 `service_type + service_id` 组成。 | Workbench View 保存该引用并通过 Service Consumer Catalog 解析，不能保存或猜测执行 URL。 |
+| Workbench View | 工作台视图 | Workbench 中由当前 User 私有持有、绑定一个 ServiceReference、结构化查询模板、参数配置和一种 renderer 配置的可变聚合根。 | 使用正整数 `version` 乐观并发；不保存查询结果、cursor、Token、SQL 或 Service 管理 DTO。 |
+| Data Application | 数据应用 | Workbench 后续阶段将一个或多个视图配置快照组合成页面、布局和交互，并通过不可变发布 Revision 运行的独立聚合根。 | 不等同于 System Application；第一阶段不创建占位实体、路由或兼容字段。 |
 | content | 内容 | 可被按流读取、写入或 range 读取的底层内容对象。 | 例如文件、对象存储 object、容器 entry；由 `contentio.Ref` 定位。 |
 | CAD data item | CAD 数据项 | 保留图层、块、布局、标注等 CAD 原生组织语义的设计图纸数据项。 | 当前内置二维 `dwg`、`dxf`，统一使用 `data_type=cad`；entity-as-row 不改变源 item 类型，CAD→GIS 输出是新的 table item。 |
 | data item | 数据项 | ADDP 管理、扫描、预览、检索、授权和传输的核心数据对象。 | 概念层统一称为数据项。 |
 | meta item | 元数据项 | data item 在元数据模块和数据库中的实现称呼。 | 与 data item 等价；落库实体通常是 `meta_item`。 |
-| item_type | 项类型 / 叶子术语 | data item 在所属引擎 catalog / 路径模型中的原生叶子术语。 | 例如 MinIO 为 `object`，NFS 为 `file`，PostgreSQL 为 `table`。它决定资源树路由和展示，不表示内容语义。 |
+| item_type | 项类型 / 叶子术语 | data item 在所属 Engine Catalog / 路径模型中的原生叶子术语。 | 例如 MinIO 为 `object`，NFS 为 `file`，PostgreSQL 为 `table`。它决定资源树路由和展示，不表示内容语义。 |
 | full_name | 逻辑全名 / 语义路径 | data item 在引擎内的稳定逻辑路径。 | 例如 `addp/image/开会.jpg`、`public.users`、`neo4j.graph`。它是定位和指纹的基础，但不是 URI。 |
-| ResourceLocator | 资源定位符 | 平台统一的资源 URI 定位形式。 | 形如 `addp://engine/{engine_id}/path/{resource_path}?type={type}&node_id={node_id}` 或 `...&item_id={item_id}`；`type` 表达 catalog 术语，`node_id` / `item_id` 表达真实 Meta 身份。 |
-| logical table materialization target | 逻辑表物化目标 | Model 中描述逻辑表准备落入哪个 Engine Instance 和父命名空间的设计事实。 | 使用 `target_parent_locator + target_name` 表达；Model 根据已审批逻辑表执行受控 DDL、staging 准备与原子发布，Develop 只计算并写入批次 staging，Orchestrator 只编排顺序。 |
+| ResourceLocator | 资源定位符 | 平台统一的资源 URI 定位形式。 | 形如 `addp://engine/{engine_id}/path/{resource_path}?type={type}&node_id={node_id}` 或 `...&item_id={item_id}`；`type` 表达 Engine Catalog 术语，`node_id` / `item_id` 表达真实 Meta 身份。 |
+| logical table materialization target | 逻辑表物化目标 | Model 中描述逻辑表准备落入哪个 Engine Instance 和父命名空间的设计事实。 | 使用 `target_parent_locator + target_name` 表达；Model 根据已审批逻辑表执行受控 DDL、staging 准备与原子发布。Transfer 负责跨引擎写入批次 staging，Develop 只负责目标引擎内的查询计算，Orchestrator 只编排顺序。 |
 | Materialization Batch | 物化批次 | Model 为一次逻辑表重算创建的 Tenant 级受控发布聚合，绑定逻辑表版本、目标 Engine、staging、结构指纹和 prepare/publish execution。 | 同一逻辑表同时最多一个活动批次；批次不接受调用方提交 SQL、Schema、表名或 DDL。 |
+| Materialization Read Context | 物化读上下文 | Model 面向同一父 Orchestrator execution 中的 Develop/Quality reader，对已完成有效 write attempt 生成的短期只读批次投影。 | 返回精确 staging locator、字段、结构指纹和批次身份；不返回凭据、DDL 或写入能力，也不替代 reader 自身的 Execution Authorization。 |
+| logical relation input | 逻辑关系输入 | Develop 受管查询通过保留伪 schema `addp_input` 引用的上游逻辑表关系。 | 任务将 alias 静态绑定 LogicalTable ID；worker 只在 SQL 关系节点将 `addp_input.<alias>` 改写为 Model 签发的引用安全 staging locator，不是标识符模板或表名参数。 |
+| Materialization Group | 物化组 | Model 中定义一组必须作为同一可见版本发布的已审批逻辑表。 | 组内逻辑表必须位于同一 PostgreSQL Engine；Model 在一个目标库事务中完成全部物理替换，跨 Engine 组直接拒绝。 |
+| query read session | 查询读取会话 | Engine Provider 为一次只读原生查询打开的连续批次读取会话。 | 与返回有界 `QueryResult` 的交互查询不同；生产搬运不得施加隐式行数上限。MongoDB MQL 可在源端用 `$project`、`$unwind`、`$group` 等把嵌套 BSON 整形为扁平行，但禁止 `$out`、`$merge`。 |
 | locator | 定位符 | ResourceLocator URI 的简称。 | 检索结果和前端跳转只消费 locator，不再自行拼接。 |
 | data retrieval | 数据检索 | 面向 data item 的关键词、全文或语义检索能力。 | 检索命中以 data item 为结果对象；需要回到资源树时通过 locator 定位。 |
 
@@ -80,6 +102,7 @@
 | lineage collector | 血缘采集器 | Meta 消费 owner execution / publication fact，解析资源身份并写入关系证据和当前投影的单一路径。 | 立即通知与周期漏采 / 重试都调用同一个 `LineageService.CollectExecution`；不反向解析模块私有 metadata。 |
 | published service | 已发布服务版本 | Service 一次通过验证并对外生效的不可变服务发布主体。 | 身份为 `service_id + published_revision`；不是 data item，但可作为血缘图主体。 |
 | service dependency | 服务依赖 | 已发布服务读取、发布或暴露某个 data item 的来源事实。 | 在血缘中表现为 `data item --serve--> published service`；`dependency_hash` 只是快照版本摘要，不是具体血缘边。 |
+| reusable development artifact | 可复用开发成果 | Develop 中已持久化、可被重复编辑或稳定引用的 `query` 或 `workflow` DevTask。 | 可作为 `development_artifact` CatalogEntry 的专业来源；不包含 `script` / Notebook、即时查询、execution、运行结果或 ToolApproval。 |
 | field ref | 字段引用 | 绑定到 data item 及其 schema snapshot 的字段级引用。 | 作为字段级血缘预留主体；字段默认不是独立 data item。 |
 | queryable field path | 可查询字段路径 | 从记录根到具体值字段的结构化路径事实，用于动态 schema 记录集合的字段发现、查询生成和校验。 | MongoDB 示例为 `path=["members","userInfo","nickName"]`，MQL 投影为 `members.userInfo.nickName`；路径各层的 object / array 类型由同一组字段事实表达，不传递原始样本值。 |
 | output contract snapshot | 输出契约快照 | 对没有单一 Meta item 身份的查询或计算结果，保存其已检测输出字段、主键、空间信息等契约事实。 | SQL 查询服务使用该快照；查询结果未物化并经 Meta 扫描前，不创建或伪造 Meta item。 |
@@ -132,6 +155,7 @@
 | rule key | 规则身份 | Standard 为每条质量规则持有的稳定 UUID，API 字段为 `rule_key`。 | 新规则创建时生成并在编辑时保留；Quality 只能继承该身份，不得按规则应用或物理目标生成第二套身份。 |
 | RuleApplication | 规则应用 | Quality 将一份数据元质量规则快照绑定到确定 Engine Instance、schema、table 和 column 的持久事实。 | Standard 规则变化不静默改写已有快照。 |
 | quality check | 质量检查 | Quality 在一次持久 execution 中对确定表的全部有效规则应用进行完整求值的过程。 | v1 只支持 PostgreSQL；任一规则执行错误时整次 execution 失败。 |
+| Materialization Gate | 物化门禁 | Quality 在同一父编排执行域中，对一组已完成 staging 执行类型化表级、关系级和集合级断言的发布前检查。 | 只允许 Orchestrator 触发；任一 `error` 断言不通过时 execution 失败并阻断 Model 发布，不接受自定义 SQL。 |
 | quality score | 质量分 | 一次成功质量检查中各规则通过率的算术平均。 | 不按 severity 或行数加权；无有效规则不能产生质量分。 |
 | quality issue | 质量问题 | 某条规则应用中的某条规则当前仍存在未通过事实的可治理状态。 | 稳定身份为 Tenant + RuleApplication + rule key；历史发生记录保留在 execution 结果中。 |
 
@@ -165,7 +189,7 @@
 | maintenance loop | 维护循环 | 处理固定系统维护、清理、注册同步或观测采集的后台循环。 | 不等于 execution worker；只有演进为可持久执行、可审计的任务定义后，才进入 owner scheduler + execution worker 体系。 |
 | source task id | 来源任务 ID | execution 关联的 owner 模块任务定义 ID。 | 在 `common.task_executions.source_task_id` 中保存；查询时必须结合 `module + task_type`。 |
 | parent execution id | 父执行 ID | 当前 execution 的父级 execution UUID。 | 用于 Orchestrator 子步骤追踪父编排。 |
-| execution-scoped materialization context | 执行域物化上下文 | Model 按当前 execution 的 Tenant、Actor、父执行血缘和逻辑表 ID 解析出的唯一活动物化批次。 | Develop、Quality 和 Model publish 通过 `common/client` 中的 Model Client 消费；运行时写入上下文只返回 batch、Engine、staging ResourceLocator 和有序写入列，不返回 DDL、凭据或最终目标。调用方不传物理表名，Orchestrator 也不把动态 `batch_id` 伪装成 TaskProvider 必填参数。 |
+| materialization write attempt | 物化写入尝试 | Model 为一次 Transfer/Develop worker attempt 创建的独立、受控 staging 写入边界。 | 以父编排 execution、writer execution、writer attempt 和逻辑表唯一定位；Model 创建物理表并返回受限 locator 与有序写入列。新的 worker attempt 使用新表并使旧 attempt 失效，完成后由 Model 原子地把 batch staging 指针切换到唯一 completed attempt。调用方不提交物理表名、DDL 或凭据。 |
 | ad-hoc execution | 一次性执行 | 不依赖持久任务定义、直接按本次配置创建的 execution。 | 可以没有 `source_task_id`，但必须在 `execution_config` 保存完整执行配置。 |
 | artifact state | 产物状态 | 描述派生产物当前是否可用、在哪里、由什么配置生成的状态对象。 | 例如瓦片缓存产物、embedding vectors；不是 execution。 |
 | existing result action | 已有结果动作 | 调用方在执行会刷新 owner 受管当前结果时显式声明的动作；当前只允许 `overwrite`。 | TaskProvider 请求参数为 `parameters.existing_result_action=overwrite`。前端人工执行时先二次确认再提交；Orchestrator 可将该动作保存为 Step 参数并在定时 Pipeline 中逐次提交。没有当前结果时可省略；业务派生数据不适用。 |
@@ -207,7 +231,7 @@
 | email manual retry | 邮件手动重投 | 用户把已经进入 `dead` 终态的邮件 delivery 重新放回投递队列。 | 复用原 `delivery_id`、主题和正文，使用目标当前收件地址，并以新的最大尝试周期继续投递；不得生成新 delivery 身份。 |
 | ChangeRecord | 变化原始记录 | Change stream Provider 从外部消息系统读取的原生记录。 | Kafka record 包含 topic、partition、offset、timestamp、headers、key/value 原始字节；不等于归一化 ChangeEvent。 |
 | ChangeEvent | 统一变化事件 | Transfer source adapter 将 Kafka record 或 CDC envelope 归一化后的内部变化对象。 | 业务 Kafka record v1 归一化为 `operation=upsert`；PostgreSQL、MySQL、Oracle CDC 归一化 snapshot/upsert/delete。Kafka、Debezium 和数据库日志协议细节不得进入目标 writer。 |
-| business Kafka Engine | 业务 Kafka 引擎 | 用户在 System 注册、按租户授权并显式选择 topic 的外部 Kafka。 | 进入 System engines、Catalog 和 ResourceLocator；ADDP 不默认创建或删除用户 topic。 |
+| business Kafka Engine | 业务 Kafka 引擎 | 用户在 System 注册、按租户授权并显式选择 topic 的外部 Kafka。 | 进入 System engines、Engine Catalog 和 ResourceLocator；ADDP 不默认创建或删除用户 topic。 |
 | Infra Kafka | 基础设施 Kafka | ADDP 内部为 Debezium CDC 中转、缓冲和 replay 使用的基础设施。 | 不进入 System engines、资源树或用户任务 endpoint；与业务 Kafka 即使物理共用也必须使用独立凭据、ACL 和 topic namespace。 |
 | resume | 恢复执行 | 新 execution 从任务同步主状态的 committed position 继续处理。 | 第一版 watermark 增量仅支持 resume；已结束 execution 不复用。 |
 | dead-letter record | 死信记录 | continuous runtime 按任务显式策略把无法归一化或映射的原始业务 Kafka record 持久化为可审计跳过事实。 | DLQ 写入、控制索引落库和目标 `skip` ledger 提交全部成功后才能推进主 position；PostgreSQL CDC schema/protocol 漂移不进入 DLQ。 |
@@ -233,12 +257,13 @@
 | Runtime Operator Spec | 运行时算子规范 | Workflow Runtime 实际执行算子时消费的内部契约，只声明运行时真实需要的参数、输入输出端口和执行行为。 | 不解析 ADDP `ResourceLocator`，不承载资源树 UI 配置；`connection_info/schema/table/path` 属于适配层到运行时的内部参数。 |
 | Workflow Access Plan | 工作流访问计划 | Develop、Manager 等调用方把已解析的存储资源转换为 Workflow Runtime 可执行读写计划的内部契约。 | 当前版本为 `addp.workflow.access-plan/v1`；只在执行期携带 `mounted_path` 或 `object_store` 访问参数，不作为用户任务定义、资源身份或长期事实源。 |
 | Execution Effect | 执行效果 | 一次计算对数据或外部系统可能产生的效果分类。 | 固定为 `read`、`write`、`ddl`、`external_effect`；工作流按全部算子的最高效果收窄授权，不能由客户端自报后直接信任。 |
-| Execution Audience | 执行受众 | Execution Authorization 中标识唯一逻辑消费模块或 Runtime 的稳定协议标识。 | 使用不带 `addp-` 前缀的模块或 Runtime 标识，例如 `model`、`quality`、`develop`、`service`、`duckdb`；不是 OAuth Client ID、Service Principal 名称、进程名或前端包名。规范映射见 `docs/spec/addp登录认证的统一要求.md`。 |
+| Engine Access Scope | 引擎访问范围 | Execution Authorization 中一个 Source Engine 与其允许 Execution Effect 集合组成的最小授权单元。 | 授权必须逐引擎保存和校验，不得把独立的 Engine ID 集合与 Effect 集合做笛卡尔积；例如跨引擎传输应分别表达源 `read` 和目标 `write`。 |
+| Execution Audience | 执行受众 | Execution Authorization 中标识唯一逻辑消费模块或 Runtime 的稳定协议标识。 | 使用不带 `addp-` 前缀的模块或 Runtime 标识，例如 `model`、`quality`、`develop`、`transfer`、`service`、`duckdb`；不是 OAuth Client ID、Service Principal 名称、进程名或前端包名。规范映射见 `docs/spec/addp登录认证的统一要求.md`。 |
 | Execution Authorization | 执行授权 | System 基于当前 User AuthContext 或已发布服务定义来源，绑定唯一 execution、Tenant、owner audience、Source Engine、允许效果、来源版本和有效期的短期授权事实。 | 两种来源互斥；Notebook 派生的用户来源还绑定其 Notebook Session Authorization，并继承 Session 与 Token Family 生命周期。服务定义来源只允许 owner Service Principal 为自己的已发布定义签发只读授权。它不是 Role、OAuth Scope 或第二种 Tenant Membership，只允许匹配 audience 的 Runtime Service Principal 消费。 |
 | Task Authorization Subject | 任务授权主体 | 持久任务定义为定时或延迟执行绑定的 User、Tenant Membership 和授权版本事实。 | 只能由同 Tenant 的当前 User AuthContext 在创建、更新或显式重新授权任务时写入；不保存 Access Token。任务定义变化或授权版本变化后必须重新授权，执行开始时仍需重新校验 Membership、Role、资源规则和授权版本。 |
 | Managed Compute Session | 受控计算会话 | Develop 按 Execution Authorization 创建并管理的 SQL、Workflow 或 Jupyter 执行会话。 | Runtime 只获得本次执行所需的短期访问能力；Jupyter 不再直接获得长期 Engine 凭据或共享 Lab 的无限制数据访问。 |
 | Notebook Interactive Session | Notebook 交互会话 | Develop 为一个 Tenant、User、Notebook Task 和 Script Engine 临时创建的隔离 JupyterLab 会话。 | 由已鉴权 API 创建，浏览器只访问 Develop 同源代理；会话关闭、过期或 Develop 重启后失效，Runtime 在清理前把 Notebook 保存回 owner 路径。它不是共享 Lab，也不是任务执行记录。 |
-| Notebook Native Engine Facade | Notebook 原生引擎门面 | `common-python` 面向 Notebook 使用者提供、按具体 Engine 原生术语组织的只读 Python 客户端。 | 例如 PostgreSQL 的 `schemas()` / `tables(schema=...)`、MongoDB 的 `databases()` / `collections(database=...)`。它只把用户表达编译为统一 Catalog 请求，不新增引擎专用后端契约，不模拟完整原生驱动。 |
+| Notebook Native Engine Facade | Notebook 原生引擎门面 | `common-python` 面向 Notebook 使用者提供、按具体 Engine 原生术语组织的只读 Python 客户端。 | 例如 PostgreSQL 的 `schemas()` / `tables(schema=...)`、MongoDB 的 `databases()` / `collections(database=...)`。它只把用户表达编译为统一 Engine Catalog 请求，不新增引擎专用后端契约，不模拟完整原生驱动。 |
 | workflow_def | 工作流定义 | ADDP 工作流运行时协议中的 DAG 定义结构。 | 由 ADDP 前端和后端消费；不得直接等同于某个引擎的私有 DAG JSON。 |
 | SuperMap iObjects C++ | SuperMap iObjects C++ | SuperMap 提供的 C++ 数据访问、空间分析、CAD 渲染和三维转换 SDK。 | 作为 `supermap_workflow` 的运行时内部依赖，不直接暴露给 ADDP 前端；完整 SDK 母版不进入 ADDP 仓库或最终运行镜像。 |
 | supermap_workflow | SuperMap 工作流运行时 | ADDP 工作流运行时类型，对外实现 `addp.workflow/v1`，对内使用 SuperMap iObjects C++ API 和类型化内存句柄执行 DAG。 | 第一阶段只支持普通 DAG，不实现条件、循环或子工作流；实现与部署见 `engines/supermap-workflow/README.md`。 |
@@ -322,9 +347,9 @@
 | Browser AuthSession | 浏览器认证会话 | 浏览器顶层页面持有的前端会话协调器，负责以内存保存 Access Token、通过 HttpOnly Refresh Cookie 静默恢复、跨标签页互斥刷新和 iframe Token 投递。 | Console 模式由 Console 持有；模块独立运行时由模块顶层页面持有。不得把 Access Token 持久化到浏览器存储。 |
 | Browser Resource Access Ticket | 浏览器资源访问票据 | System 基于当前第一方浏览器会话签发、供原生图片、媒体、下载和三维资源请求使用的短期 opaque 凭据。 | 只保存 SHA-256 Hash，通过 HttpOnly、Owner Path 限定 Cookie 传输；只允许对应 Owner 明确声明的 GET/HEAD 资源路由消费，不进入 URL。 |
 | Browser Session Capability Cookie | 浏览器会话能力 Cookie | 业务 owner 在 Bearer 已鉴权的会话创建请求成功后，为单个短期交互会话签发的 opaque HttpOnly Cookie。 | 只绑定一个会话 ID、owner 路径、Tenant、User 和到期时间；可代理该会话协议所需的方法与 WebSocket，但不能访问其他业务 API，不能替代 Browser Access Token 或只读 Resource Access Ticket。服务端只保存 Hash，关闭、过期、Context 变更或 owner 重启即失效。 |
-| Notebook Kernel Capability Token | Notebook Kernel 能力令牌 | Develop 为单个 Notebook Interactive Session 签发并注入其隔离 Kernel process 的短期 opaque Bearer Capability。 | 只允许调用该会话的脱敏 Engine Runtime Descriptor、实时 Catalog 和受控只读数据代理；服务端只保存 SHA-256 Hash，不能访问其他 Develop API，也不能替代 User Access Token、Service Access Token、Execution Authorization、Notebook Session Authorization 或浏览器会话 Cookie。关闭、过期或 Develop 重启后即失效。 |
-| Notebook Session Authorization | Notebook 会话授权 | System 从创建 Notebook Interactive Session 的当前 User AuthContext 派生并保存、绑定唯一 Session、Tenant、User、Task、Token Family、授权版本和有效期的短期授权事实。 | 允许 `addp-develop` 代表该 Session 执行实时 Catalog 发现，或为每次只读查询/扫描派生独立 Execution Authorization；不冻结 Engine 列表、不包含连接信息，本身不是 Token、Execution Authorization 或 Agent Delegated Access Token。 |
-| Notebook Table Scan | Notebook 表扫描 | Notebook Native Engine Facade 对一个已由实时 Catalog 解析的表发起的流式只读执行。 | 每次扫描使用独立 execution、服务端 Cursor 和 Arrow IPC 流；返回扫描开始时的一致快照，不设隐式总行数上限，当前不支持断点续读。 |
+| Notebook Kernel Capability Token | Notebook Kernel 能力令牌 | Develop 为单个 Notebook Interactive Session 签发并注入其隔离 Kernel process 的短期 opaque Bearer Capability。 | 只允许调用该会话的脱敏 Engine Runtime Descriptor、实时 Engine Catalog 和受控只读数据代理；服务端只保存 SHA-256 Hash，不能访问其他 Develop API，也不能替代 User Access Token、Service Access Token、Execution Authorization、Notebook Session Authorization 或浏览器会话 Cookie。关闭、过期或 Develop 重启后即失效。 |
+| Notebook Session Authorization | Notebook 会话授权 | System 从创建 Notebook Interactive Session 的当前 User AuthContext 派生并保存、绑定唯一 Session、Tenant、User、Task、Token Family、授权版本和有效期的短期授权事实。 | 允许 `addp-develop` 代表该 Session 执行实时 Engine Catalog 发现，或为每次只读查询/扫描派生独立 Execution Authorization；不冻结 Engine 列表、不包含连接信息，本身不是 Token、Execution Authorization 或 Agent Delegated Access Token。 |
+| Notebook Table Scan | Notebook 表扫描 | Notebook Native Engine Facade 对一个已由实时 Engine Catalog 解析的表发起的流式只读执行。 | 每次扫描使用独立 execution、服务端 Cursor 和 Arrow IPC 流；返回扫描开始时的一致快照，不设隐式总行数上限，当前不支持断点续读。 |
 | Delegated Access Token | 受委托访问令牌 | System 为 Agent 代表当前用户调用特定 owner 能力签发的短期、限 audience 和 Scope 令牌。 | 不改变原用户和租户；可绑定 AgentRun / ToolCall 用于审计。 |
 | Runtime Service Principal | 运行时服务主体 | Develop、DuckDB Runtime、Workflow Runtime、Jupyter 等工作负载用于 Client Credentials 和控制面识别的 Service Principal。 | 只证明机器身份并消费与自身 audience 匹配的 Execution Authorization 或 Notebook Session Authorization；不继承发起用户、服务创建人、引擎创建人或 Tenant 全量数据权限。 |
 
@@ -375,7 +400,6 @@
 | info provider | 信息提供者 | 读取 data type info 或 format info 的能力。 | 只提供元数据，不提供内容数据。 |
 | content reader | 内容读取器 | 按数据类型或格式读取内容数据的能力。 | 例如表格样本、文档文本片段、缩略图、原始内容。 |
 | full-text index | 全文索引 | 面向关键词检索的外部搜索索引。 | 例如 Meilisearch 中的资产记录；与 `access_index` 不同，不用于 range read 或表格分页定位。 |
-| index ref | 索引引用 | attributes 中指向外部索引记录的引用。 | 文档正文抽取后的全文索引引用写入 `capabilities.extraction.index_ref`，例如 `meilisearch:assets:<item_fingerprint>`；引用的是 item 指纹对应记录，不是 `content_hash`。 |
 | capability | 能力 | 引擎、当前进程格式实现或数据项呈现的能力。 | engine capability、format descriptor / provider status、item capability 含义不同。 |
 | spatial | 空间能力 | 描述空间字段、CRS、范围、几何类型、空间索引等横切语义。 | 是横切能力，不是 data type。 |
 | CRS definition conversion | CRS 定义转换 | 在不改变几何坐标和 CRS 身份的前提下，把同一 CRS 的定义在 WKT、ESRI WKT、Proj4、PROJJSON 等表达之间转换。 | 不等于坐标重投影；当前由 GeoPython Workflow `crs_to_projjson` direct 算子执行。 |
@@ -417,8 +441,8 @@
 4. `provider` 用于 info provider；`reader` 用于 content reader。新文档和新接口不再把内容读取能力统称为 provider。
 5. `spatial`、`temporal`、`statistics`、`extraction`、`semantic`、`partitioning`、`indexing` 等是横切能力，不新增为基础数据类型。
 6. 扫描深度统一使用 `scan_depth`，已完成深度统一使用 `scanned_depth`。不再使用 `scan_level`、`deep state`、`refresh_policy`、`if_stale` 等额外术语。
-7. 面向最终用户的 UI 使用引擎自己的原生术语，例如 `Schema`、数据库、`Bucket`、目录、`Collection`；不得展示 `catalog root`、`catalog node`、`meta node`、`meta item` 等内部术语。
-8. 靠近 Engine / Plugin / Manager 探查入口的内部契约使用 `catalog` 体系，例如 `CatalogRoot`、`CatalogEntry`、`CatalogPath`、`catalog_paths`。`catalog` 表达引擎原生目录和可枚举层级，不应被泛化为 `resource`。
-9. 靠近 Meta 存储和扫描结果的内部契约使用 `node` / `item` 体系，例如 `meta_node`、`meta_item`、`node_id`、`item_id`。`node` 表达 Meta 树结构，`item` 表达已识别数据项，不应与 engine-side `catalog entry` 混用。
-10. `resource` 只作为 UI 或资源树展示语境中的宽泛称呼使用。Meta 模块、Engine 插件接口和跨模块 API 不应新增 `resource_*` 字段来替代已有 `catalog_*`、`node_*` 或 `item_*` 术语。
-11. Notebook Native Engine Facade 的公开方法、参数和返回对象使用具体引擎原生术语；`CatalogPath`、`CatalogEntry` 和 `CatalogFacts` 只作为其内部实现契约，不要求 Notebook 使用者理解。
+7. 面向最终用户的 UI 使用引擎自己的原生术语，例如 `Schema`、数据库、`Bucket`、目录、`Collection`；不得展示 `engine catalog root`、`engine catalog node`、`meta node`、`meta item` 等内部术语。
+8. 靠近 Engine / Plugin / Manager 探查入口的内部契约使用 `EngineCatalog*` 词族，例如 `EngineCatalogRoot`、`EngineCatalogEntry`、`EngineCatalogPath`；既有线上字段 `catalog_paths` 由 Engine 上下文限定并保留。裸名 `Catalog` 和 `CatalogEntry` 只用于企业数据目录，不再表示引擎原生目录。
+9. 靠近 Meta 存储和扫描结果的内部契约使用 `node` / `item` 体系，例如 `meta_node`、`meta_item`、`node_id`、`item_id`。`node` 表达 Meta 树结构，`item` 表达已识别数据项，不应与 Engine Catalog entry 混用。
+10. `resource` 只作为 UI 或资源树展示语境中的宽泛称呼使用。Meta 模块、Engine 插件接口和跨模块 API 不应新增 `resource_*` 字段来替代已有 Engine Catalog、`node_*` 或 `item_*` 术语。
+11. Notebook Native Engine Facade 的公开方法、参数和返回对象使用具体引擎原生术语；`EngineCatalogPath`、`EngineCatalogEntry` 和 `EngineCatalogFacts` 只作为其内部实现契约，不要求 Notebook 使用者理解。

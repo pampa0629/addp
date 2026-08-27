@@ -15,7 +15,7 @@ import (
 	"github.com/addp/common/resume"
 )
 
-func (p *PostgreSQLPlugin) OpenTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
+func (p *PostgreSQLPlugin) OpenTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
 	if err := resume.RejectUnsupported(opts.ResumeMarker, "postgresql.table_read_session"); err != nil {
 		return nil, err
 	}
@@ -56,7 +56,7 @@ func (p *PostgreSQLPlugin) OpenTableReadSession(ctx context.Context, connInfo pl
 	}, nil
 }
 
-func postgresReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.CatalogPath, opts plugin.TableReadSessionOptions) (string, []datatype.FieldInfo, *datatype.SpatialInfo, error) {
+func postgresReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions) (string, []datatype.FieldInfo, *datatype.SpatialInfo, error) {
 	query := strings.TrimSpace(opts.Query)
 	if query != "" {
 		return query, nil, nil, nil

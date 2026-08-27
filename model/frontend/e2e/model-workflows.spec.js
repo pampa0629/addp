@@ -267,9 +267,7 @@ test.describe('DDL preview', () => {
     await expect.poll(() => backend.getDDLRequests()).toEqual([{
       materialization: {
         target_parent_locator: 'addp://engine/2/path/public?type=schema',
-        target_name: 'dwd_province',
-        partition_by: '',
-        partition_type: 'range'
+        target_name: 'dwd_province'
       }
     }])
   })

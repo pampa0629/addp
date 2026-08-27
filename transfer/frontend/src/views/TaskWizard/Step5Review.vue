@@ -112,6 +112,14 @@
         <el-descriptions-item :label="t('transfer.taskWizard.reviewResourcePath')" :span="2">
           {{ sourceLocatorPath }}
         </el-descriptions-item>
+        <template v-if="wizardState.sourceQueryEnabled.value">
+          <el-descriptions-item :label="t('transfer.taskWizard.queryLanguageLabel')">
+            {{ wizardState.sourceQueryLanguage.value.toUpperCase() }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('transfer.taskWizard.querySourceLabel')" :span="2">
+            <pre class="query-preview">{{ wizardState.sourceQueryStatement.value }}</pre>
+          </el-descriptions-item>
+        </template>
       </el-descriptions>
     </el-card>
 
@@ -123,8 +131,11 @@
         </div>
       </template>
       <el-descriptions :column="2" border>
-        <el-descriptions-item :label="t('transfer.taskWizard.reviewEngineId')">
+        <el-descriptions-item v-if="!isRuntimeTarget" :label="t('transfer.taskWizard.reviewEngineId')">
           {{ wizardState.targetEngineID.value }}
+        </el-descriptions-item>
+        <el-descriptions-item v-else :label="t('transfer.taskWizard.targetBindingLabel')">
+          {{ t('transfer.taskWizard.runtimeTargetReview') }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskWizard.representation')">
           {{ representationLabel(wizardState.targetRepresentation.value) }}
@@ -247,7 +258,9 @@ const warnings = computed(() => {
     warns.push(t('transfer.taskWizard.warningNoMapping'))
   }
 
-  if (!props.wizardState.schedule.value && !props.wizardState.isContinuousTask.value) {
+  if (!props.wizardState.schedule.value &&
+      !props.wizardState.isContinuousTask.value &&
+      props.wizardState.targetBinding.value !== 'runtime') {
     warns.push(t('transfer.taskWizard.warningNoSchedule'))
   }
 
@@ -255,6 +268,7 @@ const warnings = computed(() => {
 })
 
 const hasWarnings = computed(() => warnings.value.length > 0)
+const isRuntimeTarget = computed(() => props.wizardState.targetBinding.value === 'runtime')
 
 const loadModeLabel = computed(() => {
 	if (props.wizardState.isDatabaseCDCTask.value) {
@@ -281,6 +295,9 @@ const continuousInitialPositionLabel = computed(() => {
 })
 
 const targetApplyModeLabel = computed(() => {
+	if (isRuntimeTarget.value) {
+		return writeModeLabel('append')
+	}
 	if (props.wizardState.isDatabaseCDCTask.value) {
 		return t('transfer.taskWizard.applyModeUpsertDelete')
 	}
@@ -296,6 +313,9 @@ const sourceLocatorPath = computed(() => {
 })
 
 const targetResourcePath = computed(() => {
+  if (isRuntimeTarget.value) {
+    return t('transfer.taskWizard.runtimeTargetPath')
+  }
   const config = props.wizardState.targetConfig.value || {}
   if (props.wizardState.targetRepresentation.value === 'native') {
     return [props.wizardState.targetSchema.value, props.wizardState.targetTable.value].filter(Boolean).join('.') || '-'
@@ -404,6 +424,12 @@ function fallbackCopyToClipboard(text) {
   overflow-x: auto;
   font-size: 12px;
   max-height: 400px;
+}
+
+.query-preview {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .warning-list {

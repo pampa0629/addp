@@ -190,6 +190,108 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         with self.assertRaisesRegex(CHECK.RegistrationError, "process profile is missing"):
             CHECK.check_registration(self.repository)
 
+    def test_requires_consumer_engine_recovery_lifecycle_and_browser_assets(self) -> None:
+        gate = self.repository / "scripts/test/online-gate.py"
+        gate.write_text(
+            gate.read_text(encoding="utf-8").replace(
+                '"first-suite"', '"consumer-engine-recovery"'
+            ),
+            encoding="utf-8",
+        )
+        host = self.repository / "scripts/test/online-host-gate.sh"
+        host.write_text(
+            host.read_text(encoding="utf-8").replace(
+                "first-suite", "consumer-engine-recovery"
+            )
+            + "\nbash business/scripts/online-engine-fixture.sh start\n"
+            + "bash business/scripts/online-engine-fixture.sh stop\n"
+            + "bash scripts/dev/start.sh\n"
+            + "playwright install chromium\n"
+            + "python3 scripts/test/consumer-process-stability-online.py\n"
+            + "python3 scripts/test/consumer-engine-recovery-online.py --restore-only\n",
+            encoding="utf-8",
+        )
+        self.workflow.write_text(
+            self.workflow.read_text(encoding="utf-8").replace(
+                "first-suite", "consumer-engine-recovery"
+            ),
+            encoding="utf-8",
+        )
+        required = (
+            "business/scripts/online-engine-fixture.sh",
+            "scripts/test/consumer-engine-recovery-online.py",
+            "scripts/test/consumer-process-stability-online.py",
+            "console/frontend/playwright.online.config.js",
+            "console/frontend/e2e/online/consumer-engine-recovery.spec.js",
+        )
+        for relative in required:
+            path = self.repository / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            content = "ADDP_ONLINE_HOST --env-file /dev/null business-postgres\n" if relative.startswith("business/") else "fixture\n"
+            path.write_text(content, encoding="utf-8")
+
+        CHECK.check_registration(self.repository)
+        host.write_text(
+            host.read_text(encoding="utf-8").replace(
+                "python3 scripts/test/consumer-engine-recovery-online.py --restore-only\n",
+                "",
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(CHECK.RegistrationError, "process profile is missing"):
+            CHECK.check_registration(self.repository)
+
+    def test_requires_workbench_mysql_fixture_and_owner_suite(self) -> None:
+        gate = self.repository / "scripts/test/online-gate.py"
+        gate.write_text(
+            gate.read_text(encoding="utf-8").replace(
+                '"first-suite"', '"workbench-service-consumption"'
+            ),
+            encoding="utf-8",
+        )
+        host = self.repository / "scripts/test/online-host-gate.sh"
+        host.write_text(
+            host.read_text(encoding="utf-8").replace(
+                "first-suite)\n    START_TARGET=-system",
+                "workbench-service-consumption)\n    START_TARGET=-all",
+            )
+            + "\nSYSTEM_URL GATEWAY_URL SERVICE_URL WORKBENCH_URL CONSOLE_URL\n"
+            + "ADDP_ONLINE_TEST_USER_USERNAME ADDP_ONLINE_TEST_USER_PASSWORD\n"
+            + "ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID\n"
+            + "bash business/scripts/online-workbench-mysql-fixture.sh start\n"
+            + "bash business/scripts/online-workbench-mysql-fixture.sh stop\n"
+            + 'bash scripts/dev/start.sh "$START_TARGET"\n'
+            + "playwright install chromium\n",
+            encoding="utf-8",
+        )
+        self.workflow.write_text(
+            self.workflow.read_text(encoding="utf-8").replace(
+                "first-suite", "workbench-service-consumption"
+            ),
+            encoding="utf-8",
+        )
+        fixture = self.repository / "business/scripts/online-workbench-mysql-fixture.sh"
+        fixture.parent.mkdir(parents=True, exist_ok=True)
+        fixture.write_text(
+            "ADDP_ONLINE_HOST --env-file /dev/null business-mysql "
+            "REVOKE ALL PRIVILEGES, GRANT OPTION GRANT SELECT ON\n",
+            encoding="utf-8",
+        )
+        owner = self.repository / "scripts/test/workbench-service-consumption-online.py"
+        owner.write_text("fixture\n", encoding="utf-8")
+        for relative in (
+            "console/frontend/playwright.online.config.js",
+            "console/frontend/e2e/online/workbench-service-consumption.spec.js",
+        ):
+            path = self.repository / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("fixture\n", encoding="utf-8")
+
+        CHECK.check_registration(self.repository)
+        owner.unlink()
+        with self.assertRaisesRegex(CHECK.RegistrationError, "requires"):
+            CHECK.check_registration(self.repository)
+
 
 if __name__ == "__main__":
     unittest.main()

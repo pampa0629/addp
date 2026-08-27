@@ -15,6 +15,73 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/catalog-resources/changes": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按不透明游标返回 Entity 与 LogicalTable 的最小摘要变化，仅供 Catalog 服务消费 | Return Entity and LogicalTable minimal-summary changes by opaque cursor for the Catalog service only",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Integration"
+                ],
+                "summary": "拉取 Model 目录资源变化 | Pull Model catalog resource changes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "上次成功提交的不透明游标，空值从历史起点开始 | Opaque cursor committed by the consumer; empty starts from the beginning",
+                        "name": "after_cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "批大小，默认 200，最大 500 | Batch size, default 200 and maximum 500",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Model 目录资源变化批次 | Model catalog resource change batch",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.CatalogResourceChangesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "无效游标或批大小 | Invalid cursor or batch size",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "非 Catalog 服务或权限不足 | Catalog service or permission required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.catalog.read"
+                ]
+            }
+        },
         "/dw-layers": {
             "get": {
                 "security": [
@@ -1219,6 +1286,75 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "model.entity.delete"
+                ]
+            }
+        },
+        "/entities/{id}/relations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回当前 Entity 直接参与的 Model 权威关系；只使用当前 User AuthContext，不面向 Catalog Service Token 扩权 | Return Model-owned relations directly involving the Entity under the current User AuthContext; no Catalog service-token elevation",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Professional Relations"
+                ],
+                "summary": "查询 Entity 专业关系图 | Get Entity professional relation graph",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Entity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "最大边数量，默认100，最大200 | Maximum edges, default 100, maximum 200",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ProfessionalRelationsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Entity 不存在 | Entity not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity.read",
+                    "model.entity_relation.read"
                 ]
             }
         },
@@ -2959,6 +3095,74 @@ const docTemplate = `{
                 ]
             }
         },
+        "/logical-tables/{id}/relations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回 Model 权威的来源 Entity、表关系和指标引用；只使用当前 User AuthContext，且不调用 Standard 或 Catalog | Return Model-owned source Entity, table relations, and Metric references under the current User AuthContext without calling Standard or Catalog",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Professional Relations"
+                ],
+                "summary": "查询 LogicalTable 专业关系图 | Get LogicalTable professional relation graph",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "LogicalTable ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "最大边数量，默认100，最大200 | Maximum edges, default 100, maximum 200",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ProfessionalRelationsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "LogicalTable 不存在 | LogicalTable not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.read"
+                ]
+            }
+        },
         "/logical-tables/{id}/reopen": {
             "post": {
                 "security": [
@@ -3035,14 +3239,74 @@ const docTemplate = `{
                 ]
             }
         },
-        "/materialization-write-contexts/resolve": {
+        "/materialization-groups": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Materialization Groups"
+                ],
+                "summary": "列出物化组 | List materialization groups",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.materializationGroupListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.materialization_group.read"
+                ]
+            },
             "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "为固定 Develop 服务主体解析同一父编排 execution 下唯一 prepared 批次的最小 staging 写入事实；不返回 DDL、凭据或最终目标。| Resolve the minimal staging write facts for the unique prepared batch under the same parent orchestration execution for the fixed Develop service principal; DDL, credentials, and final targets are never returned.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3050,17 +3314,157 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Materialization"
+                    "Materialization Groups"
                 ],
-                "summary": "解析物化写入上下文 | Resolve materialization write context",
+                "summary": "创建物化组 | Create materialization group",
                 "parameters": [
                     {
-                        "description": "解析请求 | Resolve request",
+                        "description": "创建请求 | Create request",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api.materializationWriteContextRequest"
+                            "$ref": "#/definitions/internal_api.materializationGroupWriteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MaterializationGroup"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.materialization_group.create"
+                ]
+            }
+        },
+        "/materialization-groups/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Materialization Groups"
+                ],
+                "summary": "获取物化组 | Get materialization group",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "物化组 ID | Materialization group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MaterializationGroup"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.materialization_group.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Materialization Groups"
+                ],
+                "summary": "更新物化组 | Update materialization group",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "物化组 ID | Materialization group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整更新请求 | Full update request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.materializationGroupWriteRequest"
                         }
                     }
                 ],
@@ -3068,7 +3472,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_service.MaterializationWriteContext"
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MaterializationGroup"
                         }
                     },
                     "400": {
@@ -3109,7 +3513,235 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "model.materialization_context.read"
+                    "model.materialization_group.update"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Materialization Groups"
+                ],
+                "summary": "删除物化组 | Delete materialization group",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "物化组 ID | Materialization group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "删除请求 | Delete request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.materializationGroupDeleteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.materialization_group.delete"
+                ]
+            }
+        },
+        "/materialization-read-contexts": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅为 Develop 或 Quality 当前 worker lease 返回同一父编排中已完成物化批次的只读 staging 定位、列和结构指纹；不返回凭据、授权、DDL 或写能力。| Return read-only staging locators, columns, and schema fingerprints for completed materialization batches in the same parent orchestration, only to the current Develop or Quality worker lease; credentials, authorization, DDL, and write capability are never returned.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Materialization"
+                ],
+                "summary": "解析物化读上下文 | Resolve materialization read context",
+                "parameters": [
+                    {
+                        "description": "解析请求 | Resolve request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.materializationReadContextRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_service.MaterializationReadContext"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.materialization_read.execute"
+                ]
+            }
+        },
+        "/runtime/catalog-references/resolve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按请求顺序动态解析 1 到 200 个 Entity 或 LogicalTable 引用；跨 Tenant 与不存在统一 found=false，仅供 Catalog 服务消费 | Dynamically resolve 1 to 200 Entity or LogicalTable references in request order; cross-tenant and missing references both return found=false; Catalog service only",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Integration"
+                ],
+                "summary": "解析 Model 目录引用 | Resolve Model catalog references",
+                "parameters": [
+                    {
+                        "description": "Model 目录引用 | Model catalog references",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ResolveCatalogReferencesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当前 Model 专业摘要 | Current Model professional summaries",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ResolveCatalogReferencesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "非 Catalog 服务或权限不足 | Catalog service or permission required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.catalog.read"
                 ]
             }
         },
@@ -3279,7 +3911,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "列出由已审批逻辑表派生的物化准备和物化发布任务。| List materialization prepare and publish tasks derived from approved logical tables.",
+                "description": "列出由已审批逻辑表派生的准备任务、未分组逻辑表发布任务和 Model 物化组原子发布任务。| List prepare tasks derived from approved logical tables, publish tasks for ungrouped logical tables, and Model-owned atomic materialization group publish tasks.",
                 "produces": [
                     "application/json"
                 ],
@@ -3515,6 +4147,95 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "github_com_addp_model_internal_models.CatalogReference": {
+            "type": "object",
+            "required": [
+                "source_identity",
+                "source_type"
+            ],
+            "properties": {
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.CatalogReferenceResolution": {
+            "type": "object",
+            "properties": {
+                "detail_path": {
+                    "type": "string"
+                },
+                "found": {
+                    "type": "boolean"
+                },
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.CatalogResourceChange": {
+            "type": "object",
+            "properties": {
+                "change_id": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "operation": {
+                    "type": "string"
+                },
+                "snapshot": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                },
+                "source_version": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.CatalogResourceChangesResponse": {
+            "type": "object",
+            "properties": {
+                "changes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.CatalogResourceChange"
+                    }
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "next_cursor": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_model_internal_models.CreateDWLayerRequest": {
             "type": "object",
             "required": [
@@ -4289,6 +5010,64 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_model_internal_models.MaterializationGroup": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.MaterializationGroupMember"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.MaterializationGroupMember": {
+            "type": "object",
+            "properties": {
+                "group_id": {
+                    "type": "integer"
+                },
+                "logical_table_id": {
+                    "type": "integer"
+                },
+                "position": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_model_internal_models.MermaidExportResponse": {
             "type": "object",
             "properties": {
@@ -4348,6 +5127,142 @@ const docTemplate = `{
                 "materialization": {
                     "type": "object",
                     "additionalProperties": true
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.ProfessionalRelationComponent": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "resource_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.ProfessionalRelationEdge": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "relation_kind": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.ProfessionalResourceKey"
+                },
+                "source_component": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.ProfessionalRelationComponent"
+                },
+                "target": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.ProfessionalResourceKey"
+                },
+                "target_component": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.ProfessionalRelationComponent"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.ProfessionalRelationNode": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner_module": {
+                    "type": "string"
+                },
+                "resource_id": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.ProfessionalRelationsResponse": {
+            "type": "object",
+            "properties": {
+                "edges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.ProfessionalRelationEdge"
+                    }
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.ProfessionalRelationNode"
+                    }
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "subject": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.ProfessionalResourceKey"
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.ProfessionalResourceKey": {
+            "type": "object",
+            "properties": {
+                "owner_module": {
+                    "type": "string"
+                },
+                "resource_id": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.ResolveCatalogReferencesRequest": {
+            "type": "object",
+            "required": [
+                "references"
+            ],
+            "properties": {
+                "references": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.CatalogReference"
+                    }
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.ResolveCatalogReferencesResponse": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.CatalogReferenceResolution"
+                    }
                 }
             }
         },
@@ -4835,23 +5750,57 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_model_internal_service.MaterializationWriteContext": {
+        "github_com_addp_model_internal_service.MaterializationReadColumn": {
+            "type": "object",
+            "properties": {
+                "data_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_addp_model_internal_service.MaterializationReadContext": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_service.MaterializationReadItem"
+                    }
+                },
+                "schema_version": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_model_internal_service.MaterializationReadItem": {
             "type": "object",
             "properties": {
                 "batch_id": {
                     "type": "string"
                 },
+                "columns": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_service.MaterializationReadColumn"
+                    }
+                },
                 "engine_id": {
                     "type": "integer"
                 },
-                "staging_locator": {
+                "logical_table_id": {
+                    "type": "integer"
+                },
+                "schema_fingerprint": {
                     "type": "string"
                 },
-                "write_columns": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
+                "staging_locator": {
+                    "type": "string"
                 }
             }
         },
@@ -4900,12 +5849,6 @@ const docTemplate = `{
                 },
                 "attempt": {
                     "type": "integer"
-                },
-                "authorization_effects": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 },
                 "authorization_expires_at": {
                     "type": "string"
@@ -5046,6 +5989,83 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.materializationGroupDeleteRequest": {
+            "type": "object",
+            "properties": {
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.materializationGroupListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.MaterializationGroup"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.materializationGroupWriteRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "logical_table_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.materializationReadContextRequest": {
+            "type": "object",
+            "properties": {
+                "logical_table_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                },
+                "reader_attempt": {
+                    "type": "integer"
+                },
+                "reader_execution_id": {
+                    "type": "string"
+                },
+                "reader_lease_token": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.materializationTaskItem": {
             "type": "object",
             "properties": {
@@ -5089,17 +6109,6 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
-                }
-            }
-        },
-        "internal_api.materializationWriteContextRequest": {
-            "type": "object",
-            "properties": {
-                "logical_table_id": {
-                    "type": "integer"
-                },
-                "parent_execution_id": {
-                    "type": "string"
                 }
             }
         },

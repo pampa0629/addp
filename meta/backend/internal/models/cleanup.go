@@ -17,16 +17,6 @@ type OrphanItemDetail struct {
 	Reason   string `json:"reason"`
 }
 
-// MeilisearchRecordInfo - Meilisearch 记录信息
-type MeilisearchRecordInfo struct {
-	AssetID   string `json:"asset_id"`   // 资产ID
-	AssetType string `json:"asset_type"` // table / object
-	EngineID  uint   `json:"engine_id"`  // 引擎ID
-	TenantID  uint   `json:"tenant_id"`  // 租户ID
-	Name      string `json:"name"`       // 名称
-	Reason    string `json:"reason"`     // 原因(引擎已删除/软删除等)
-}
-
 // MetaCleanupStatistics - Meta 模块资源回收候选统计
 type MetaCleanupStatistics struct {
 	// 无效引擎的数据
@@ -59,13 +49,6 @@ type MetaCleanupStatistics struct {
 		Count int `json:"count"`
 	} `json:"duplicate_fingerprints"`
 
-	// Meilisearch 索引统计
-	MeilisearchIndexes struct {
-		Count  int                     `json:"count"`   // assets 索引中的待回收记录总数
-		ByType map[string]int          `json:"by_type"` // 按资产类型分组 (table/object)
-		Sample []MeilisearchRecordInfo `json:"sample"`  // 样本记录（最多10条）
-	} `json:"meilisearch_indexes"`
-
 	// 扫描任务定义残留
 	ScanTaskDefinitions struct {
 		Count int `json:"count"`
@@ -77,7 +60,6 @@ type MetaCleanupExecuteResult struct {
 	DeletedNodes                int      `json:"deleted_nodes"`
 	DeletedItems                int      `json:"deleted_items"`
 	DeletedFingerprints         int      `json:"deleted_fingerprints"`
-	DeletedMeilisearchIndexes   int      `json:"deleted_meilisearch_indexes"` // 删除的索引记录数
 	DisabledScanTaskDefinitions int      `json:"disabled_scan_task_definitions"`
 	DeletedScanTaskDefinitions  int      `json:"deleted_scan_task_definitions"`
 	Errors                      []string `json:"errors"`

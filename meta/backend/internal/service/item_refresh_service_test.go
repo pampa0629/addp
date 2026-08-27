@@ -510,7 +510,7 @@ func (r refreshContentReader) Capabilities() plugin.EngineCapabilities {
 func (r refreshContentReader) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (r refreshContentReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+func (r refreshContentReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	data, ok := r.content[path.StringPath()]
 	if !ok {
 		return nil, os.ErrNotExist

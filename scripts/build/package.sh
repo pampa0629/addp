@@ -163,10 +163,10 @@ export_images() {
         "system-backend" "manager-backend" "meta-backend"
         "transfer-backend" "orchestrator-backend" "develop-backend"
         "service-backend" "monitor-backend" "standard-backend" "copilot-backend"
-        "agent-backend" "model-backend" "quality-backend" "asset-backend" "portal-backend" "graph-backend" "inference-backend"
+        "agent-backend" "model-backend" "quality-backend" "asset-backend" "catalog-backend" "workbench-backend" "portal-backend" "graph-backend" "inference-backend"
         "gateway"
         # Worker services
-        "meta-worker" "quality-worker" "transfer-bounded-worker" "transfer-continuous-worker"
+        "meta-worker" "quality-worker" "transfer-bounded-worker" "transfer-continuous-worker" "develop-query-worker"
         # Engine/runtime services
         "geopython-workflow-engine" "raster-mosaic-runtime" "model3d-workflow-engine"
         "pointcloud-workflow-engine" "spark-workflow-engine" "jupyter-engine" "duckdb-engine"
@@ -174,7 +174,7 @@ export_images() {
         "system-frontend" "manager-frontend" "meta-frontend"
         "transfer-frontend" "orchestrator-frontend" "develop-frontend"
         "service-frontend" "monitor-frontend" "standard-frontend"
-        "agent-frontend" "model-frontend" "quality-frontend" "asset-frontend" "portal-frontend" "graph-frontend" "inference-frontend"
+        "agent-frontend" "model-frontend" "quality-frontend" "catalog-frontend" "workbench-frontend" "asset-frontend" "portal-frontend" "graph-frontend" "inference-frontend"
         # Infrastructure
         "console" "nginx"
     )

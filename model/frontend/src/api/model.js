@@ -234,6 +234,28 @@ export const logicalTableAPI = {
   }
 }
 
+// ========== 物化组 API ==========
+export const materializationGroupAPI = {
+  list(params) {
+    return client.get('/model/materialization-groups', { params })
+  },
+  listAll(params) {
+    return listAll(client, '/model/materialization-groups', params)
+  },
+  get(id) {
+    return client.get(`/model/materialization-groups/${id}`)
+  },
+  create(data) {
+    return client.post('/model/materialization-groups', data)
+  },
+  update(id, data) {
+    return client.put(`/model/materialization-groups/${id}`, data)
+  },
+  delete(id, version) {
+    return client.delete(`/model/materialization-groups/${id}`, { data: { version } })
+  }
+}
+
 export const dimensionHierarchyAPI = {
   list(params) {
     return standardClient.get('/standard/dimension-hierarchies', { params })

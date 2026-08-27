@@ -192,13 +192,13 @@ func (p *captureUploadPlugin) Capabilities() plugin.EngineCapabilities {
 func (p *captureUploadPlugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
-func (p *captureUploadPlugin) CatalogModel() plugin.CatalogModelSpec {
+func (p *captureUploadPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	if p.objectCatalog {
 		return plugin.ObjectCatalogModel()
 	}
 	return plugin.FileCatalogModel()
 }
-func (p *captureUploadPlugin) CreateContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.WriteOptions) (io.WriteCloser, error) {
+func (p *captureUploadPlugin) CreateContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.WriteOptions) (io.WriteCloser, error) {
 	return &captureUploadWriter{path: strings.Trim(path.StringPath(), "/"), writes: p.writes}, nil
 }
 

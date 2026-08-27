@@ -1,6 +1,6 @@
 # ADDP 引擎能力声明规范
 
-本文规范 engine plugin 的结构化能力声明。插件接口边界见 [addp引擎插件接口规范.md](addp引擎插件接口规范.md)，Catalog 路径语义见 [addp存储引擎路径体系规范.md](addp存储引擎路径体系规范.md)。
+本文规范 engine plugin 的结构化能力声明。插件接口边界见 [addp引擎插件接口规范.md](addp引擎插件接口规范.md)，Engine Catalog 路径语义见 [addp存储引擎路径体系规范.md](addp存储引擎路径体系规范.md)。
 
 能力声明用于回答“一个引擎实例自身具备哪些可由 ADDP 统一消费的能力”。上层模块不得只根据 `engine_type` 或 `engine_family` 猜能力。
 
@@ -19,14 +19,14 @@ engine.capabilities/v1
 - 实例能力探测不得进入任何模块的启动或 readiness 关键路径。System 就绪后的后台刷新必须逐 Engine Instance 隔离；探测失败时保留该实例最后一次成功落库的能力事实并记录失败，不得清空能力、终止进程或阻塞其他实例。
 - 创建 Engine Instance、变更连接或凭据以及显式连接测试可以同步探测并把失败返回给当前操作；仅修改名称、描述或生命周期不得要求实例在线，也不得触发能力探测。
 - 声明了可调用能力，就必须有对应 Provider 或明确的模块执行面。
-- Catalog、Facts、Store、Query、Workflow、Script 是不同能力面，不能混用。
+- Engine Catalog、Facts、Store、Query、Workflow、Script 是不同能力面，不能混用。
 - 核心结构只表达引擎自身原生能力与对应 Provider 能力，不承载模块适配状态。
 - `compute.query`、`compute.workflow`、`compute.script` 是计算能力事实源，取代旧版 `dev_modes` 字符串数组；开发界面可以由这些能力派生，但不得再把 `dev_modes` 作为能力声明事实源。
 - 没有明确模块消费价值的字段不进入核心声明；后续有真实调用方时再扩展。
 - `extensions` 只承载引擎特有补充信息，不得替代核心字段。
 - `extensions.spatial_workspaces` 只承载数据库实例中可识别的厂商空间工作区事实，如 SuperMap `sdx_postgis`、`sdx_postgresql` 或 ArcGIS `sde`；这一层用于 System 自动探测、高危启用和实例级 Provider 选择，不得把两个实现不同的 SuperMap 产品合并为 `sdx+`。
 - `extensions.spatial_workspaces[].can_enable` 只表示实例在当前条件下具备被显性启用的可能性；是否真的执行启用动作，由 System 的高危操作入口统一触发，不由前端或业务模块直接改写能力 JSON。
-- Oracle Engine 声明普通 tabular 的 Catalog、Facts、SQL 参数查询、BatchRead、TableReadSession、TableWriteSession 和基础 Spatial Facts/空间行读写；TableWriteSession 只创建或写入普通 Oracle 表与 `MDSYS.SDO_GEOMETRY`，不创建或修改 ArcGIS geodatabase system tables，也不表达 SDE 注册或版本化能力。不得因为底层数据库可产生 redo、Transfer 已支持 Oracle CDC 或存在 ArcGIS SDE 表就声明 `change_stream_read` 或 SDE 逻辑变化源。Oracle CDC 是 Transfer-owned capture Provider，ArcGIS SDE 仍是后续独立逻辑变化源，两者不得并入 Oracle Engine 的普通 Store 能力。
+- Oracle Engine 声明普通 tabular 的 Engine Catalog、Facts、SQL 参数查询、BatchRead、TableReadSession、TableWriteSession 和基础 Spatial Facts/空间行读写；TableWriteSession 只创建或写入普通 Oracle 表与 `MDSYS.SDO_GEOMETRY`，不创建或修改 ArcGIS geodatabase system tables，也不表达 SDE 注册或版本化能力。不得因为底层数据库可产生 redo、Transfer 已支持 Oracle CDC 或存在 ArcGIS SDE 表就声明 `change_stream_read` 或 SDE 逻辑变化源。Oracle CDC 是 Transfer-owned capture Provider，ArcGIS SDE 仍是后续独立逻辑变化源，两者不得并入 Oracle Engine 的普通 Store 能力。
 
 ArcGIS workspace kind 固定为 `arcgis/sde`。Oracle 实例能力解析器只能通过只读 Oracle data dictionary 探测 `SDE` repository owner 的企业级地理数据库正式核心系统表组合：同一 `SDE` owner 至少同时可见 `TABLE_REGISTRY`、`GDB_ITEMS`、`GDB_ITEMTYPES`、`GEOMETRY_COLUMNS` 四张注册表；`STATES`、`STATE_LINEAGES`、`VERSIONS`、`LAYERS` 等表作为版本化和要素类证据单独记录。仅存在 `SDE` schema、单张同名表或普通 `SDO_GEOMETRY` 列不得判定为 SDE workspace。探测结果写入 `extensions.spatial_workspaces[]`，使用 `backend_engine_type=oracle`、`can_enable=false`、`risk_level=high`；没有正式组合写入 `state=not_detected`，字典可见但核心表读取被拒绝时写入 `state=permission_denied`。本阶段不改变 `storage.store`，不声明 `change_stream_read`，不提供启用入口；后续 SDE 数据面必须由独立 logical change source / table provider 消费该 workspace fact。
 
@@ -71,7 +71,7 @@ type EngineCapabilities struct {
 | `limits` | 跨能力通用限制，如预览大小、超时建议。 | 可选，有真实调用方时声明。 |
 | `extensions` | 引擎特有扩展。 | 可选，不得替代核心字段。 |
 
-`engine_family` 只表达粗粒度引擎族，不能替代 `storage.catalog_model`、provider 组合或模块自身策略。尤其对 Meta 而言，是否走 namespace/leaf catalog、是否需要内容读取、是否可做动态 schema 采样，必须由 `CatalogModelSpec` 与已实现 provider 一起决定；不得把 `engine_family` 当作扫描策略事实源。
+`engine_family` 只表达粗粒度引擎族，不能替代 `storage.catalog_model`、provider 组合或模块自身策略。尤其对 Meta 而言，是否走 namespace/leaf catalog、是否需要内容读取、是否可做动态 schema 采样，必须由 `EngineCatalogModelSpec` 与已实现 provider 一起决定；不得把 `engine_family` 当作扫描策略事实源。
 
 ---
 
@@ -79,9 +79,9 @@ type EngineCapabilities struct {
 
 ```go
 type StorageCapabilities struct {
-    CatalogModel *CatalogModelSpec   `json:"catalog_model,omitempty"`
-    Catalog      *CatalogCapability  `json:"catalog,omitempty"`
-    Facts        *CatalogFactsCapability `json:"facts,omitempty"`
+    CatalogModel *EngineCatalogModelSpec   `json:"catalog_model,omitempty"`
+    Catalog      *EngineCatalogCapability  `json:"catalog,omitempty"`
+    Facts        *EngineCatalogFactsCapability `json:"facts,omitempty"`
     Store        *StoreCapability    `json:"store,omitempty"`
     Semantics    []string            `json:"semantics,omitempty"`
     NotSupported []string            `json:"not_supported,omitempty"`
@@ -99,16 +99,16 @@ type StorageCapabilities struct {
 | `semantics` | 补充稳定机器语义，如 `bucket`、`prefix_listing`、`object`。 | 可选，仅在核心字段不足以表达差异且有调用方时声明。 |
 | `not_supported` | 显式声明容易误判但不支持的能力，如 `real_directory`、`range_write`。 | 可选，对容易混淆的引擎建议声明。 |
 
-### 3.1 CatalogModelSpec
+### 3.1 EngineCatalogModelSpec
 
 ```go
-type CatalogModelSpec struct {
+type EngineCatalogModelSpec struct {
     PathVersion string             `json:"path_version"`
     RootTerm    string             `json:"root_term"`
-    Levels      []CatalogLevelSpec `json:"levels"`
+    Levels      []EngineCatalogLevelSpec `json:"levels"`
 }
 
-type CatalogLevelSpec struct {
+type EngineCatalogLevelSpec struct {
     Term     string   `json:"term"`
     Kinds    []string `json:"kinds"`
     Role     string   `json:"role"`
@@ -143,20 +143,20 @@ type CatalogLevelSpec struct {
 
 `root_term` 表达显性 catalog root；`levels` 只包含 root 下业务层级，不包含 root 本身。对外展示完整层次时可以把 `root_term` 作为前缀说明，但能力声明中的 `levels[0]` 必须是第一层业务 branch，例如 PostgreSQL 的 `schema`、MinIO 的 `bucket`、NFS 的 `directory`。
 
-`StorageCapabilities.CatalogModel` 是对外 CatalogModel 事实源。如果插件同时实现 `CatalogModelProvider`，其返回值必须与 `storage.catalog_model` 完全一致。
+`StorageCapabilities.CatalogModel` 是对外 Engine Catalog Model 事实源。如果插件同时实现 `EngineCatalogModelProvider`，其 `EngineCatalogModel()` 返回值必须与 `storage.catalog_model` 完全一致。
 
-`levels.term` 是机器语义，`levels.i18n_key` 是展示语义。Meta、Manager 等上层模块可以统一消费 `CatalogEntry` / `CatalogPath`，但面向用户的 UI 必须优先使用 `i18n_key` 展示引擎原生术语，例如 PostgreSQL 显示 `Schema`，MySQL/MongoDB 显示 `数据库 / Database`，MinIO/S3 显示 `Bucket`，NFS 显示 `目录 / Directory`。不得把平台内部的 `catalog node` 作为用户可见术语。
+`levels.term` 是机器语义，`levels.i18n_key` 是展示语义。Meta、Manager 等上层模块可以统一消费 `EngineCatalogEntry` / `EngineCatalogPath`，但面向用户的 UI 必须优先使用 `i18n_key` 展示引擎原生术语，例如 PostgreSQL 显示 `Schema`，MySQL/MongoDB 显示 `数据库 / Database`，MinIO/S3 显示 `Bucket`，NFS 显示 `目录 / Directory`。不得把平台内部的 `catalog node` 作为用户可见术语。
 
 消费规则：
 
-- `CatalogModelSpec` 负责回答“catalog 怎么分层、各层叫什么、谁是 branch / leaf”。
+- `EngineCatalogModelSpec` 负责回答“catalog 怎么分层、各层叫什么、谁是 branch / leaf”。
 - provider 组合负责回答“哪些动作真的可做”，例如是否能列目录、描述 catalog facts、采样字段、读取内容。
 - 上层模块可以基于二者形成自己的执行策略，但不得绕过 catalog model 再维护第二套 family 专属目录规则。
 
-### 3.2 CatalogCapability
+### 3.2 EngineCatalogCapability
 
 ```go
-type CatalogCapability struct {
+type EngineCatalogCapability struct {
     Supported       bool     `json:"supported"`
     RealTime        bool     `json:"real_time"`
     SupportsSearch  bool     `json:"supports_search,omitempty"`
@@ -175,10 +175,10 @@ type CatalogCapability struct {
 | `system_filtering` | 是否能过滤系统库、系统 schema、实例已识别的厂商系统表等噪声。 | 数据库类引擎建议声明。 |
 | `node_kinds` | catalog 可能返回的节点类型集合。 | 建议声明。 |
 
-### 3.3 CatalogFactsCapability
+### 3.3 EngineCatalogFactsCapability
 
 ```go
-type CatalogFactsCapability struct {
+type EngineCatalogFactsCapability struct {
     Supported       bool `json:"supported"`
     FieldInfo       bool `json:"field_info,omitempty"`
     Statistics      bool `json:"statistics,omitempty"`
@@ -203,7 +203,7 @@ type CatalogFactsCapability struct {
 | `sampling` | 是否需要或支持通过采样推断结构。 |
 | `native_facts` | 是否能获取引擎原生事实，如对象大小、ETag、修改时间、存储类别等。 |
 
-字段、约束、统计、索引、分区、空间、采样和原生详情能力必须分别声明；不能因为实现了 `CatalogFactsProvider` 就默认拥有全部子能力。`constraints=true` 表示 Provider 能返回主键、唯一约束或外键中的至少一类正式约束事实；`partitioning=true` 表示 Provider 能返回正式 `TablePartitioningFacts`，不得仅凭供应商私有 `native` 字段声明。
+字段、约束、统计、索引、分区、空间、采样和原生详情能力必须分别声明；不能因为实现了 `EngineCatalogFactsProvider` 就默认拥有全部子能力。`constraints=true` 表示 Provider 能返回主键、唯一约束或外键中的至少一类正式约束事实；`partitioning=true` 表示 Provider 能返回正式 `TablePartitioningFacts`，不得仅凭供应商私有 `native` 字段声明。
 
 ### 3.4 StoreCapability
 
@@ -344,6 +344,7 @@ type QueryCapability struct {
     ReadOnly        bool     `json:"read_only,omitempty"`
     SupportsExplain bool     `json:"supports_explain,omitempty"`
     SupportsCancel  bool     `json:"supports_cancel,omitempty"`
+    ReadSession     bool     `json:"read_session,omitempty"`
     Parameters      *QueryParameterCapability `json:"parameters,omitempty"`
     Federation      *QueryFederationCapability `json:"federation,omitempty"`
 }
@@ -371,6 +372,7 @@ type QueryFederationCapability struct {
 | `read_only` | 运行时是否只允许只读查询。 |
 | `supports_explain` | 是否支持查询计划 / 性能诊断。 |
 | `supports_cancel` | 是否支持取消运行中的查询。 |
+| `read_session` | 是否支持通过 `QueryReadSessionProvider` 连续、无隐式结果行数上限地读取只读查询结果。 |
 | `parameters` | 可选的类型化查询参数能力；声明后必须由 Provider 原生安全绑定。 |
 | `federation` | 可选的多数据源联邦查询能力；声明后必须实现 `FederatedQueryRuntimeProvider`。 |
 
@@ -382,7 +384,7 @@ DuckDB Runtime 第一阶段声明 `runtime_api="addp.query-runtime/v1"`、`sourc
 
 查询语言差异只通过 `languages` / `default_language` 和 `QueryRequest.Language` 表达，不新增按数据库类别拆分的 query provider。`result_kinds=document` 只表示原生查询结果可能是 JSON document / record 形态，不表示 data item 的 `data_type=document`。图结构查询如果需要节点 / 关系结构结果，仍使用 `GraphQueryProvider`。
 
-查询工作台的默认样例不属于静态 capability。样例必须在用户切换具体 Engine Instance 时，通过执行授权消费该实例连接、实时发现有数据的 Catalog leaf，再由 Query Runtime 按 `default_language` 生成。Catalog 发现失败或当前实例没有有数据的 leaf 时返回明确错误，不允许用固定诊断查询伪装成实例样例。
+查询工作台的默认样例不属于静态 capability。样例必须在用户切换具体 Engine Instance 时，通过执行授权消费该实例连接、实时发现有数据的 Engine Catalog leaf，再由 Query Runtime 按 `default_language` 生成。Engine Catalog 发现失败或当前实例没有有数据的 leaf 时返回明确错误，不允许用固定诊断查询伪装成实例样例。
 
 ### 4.2 WorkflowCapability
 
@@ -489,9 +491,9 @@ type CapabilitiesView struct {
 ## 八、校验规则
 
 - `schema_version` 必须存在且等于 `engine.capabilities/v1`。
-- 声明 `storage.catalog.supported=true` 的插件必须实现 `CatalogProvider`。
-- 声明 `storage.facts.supported=true` 的插件必须实现 `CatalogFactsProvider` 或明确的采样 provider。
-- `storage.catalog_model` 是对外 CatalogModel 事实源；如果插件同时实现 `CatalogModelProvider`，其返回值必须与 `storage.catalog_model` 完全一致。
+- 声明 `storage.catalog.supported=true` 的插件必须实现 `EngineCatalogProvider`。
+- 声明 `storage.facts.supported=true` 的插件必须实现 `EngineCatalogFactsProvider` 或明确的采样 provider。
+- `storage.catalog_model` 是对外 Engine Catalog Model 事实源；如果插件同时实现 `EngineCatalogModelProvider`，其 `EngineCatalogModel()` 返回值必须与 `storage.catalog_model` 完全一致。
 - 声明 `storage.store.stream_read=true` 的插件必须实现 `ContentReadableProvider`。
 - 声明 `storage.store.stream_write=true` 的插件必须实现 `ContentWritableProvider`。
 - 声明 `storage.store.bounded_watermark_read=true` 的插件必须实现 `BoundedWatermarkReadProvider`。
@@ -507,12 +509,12 @@ type CapabilitiesView struct {
 - 声明 `storage.store.batch_write=true` 的插件必须实现 `BatchWritableProvider`。
 - 声明 `storage.store.table_write_session=true` 的插件必须实现 `TableWriteSessionProvider`。
 - 声明 `storage.store.table_write_prepare=true` 的插件必须实现 `TableWritePreparer`。
-- 声明 `compute.query.supported=true` 的插件必须实现 `QueryRuntimeProvider` 或 `FederatedQueryRuntimeProvider`。声明 `compute.query.federation.supported=true` 时必须实现 `FederatedQueryRuntimeProvider`，且 `runtime_api` 非空。
+- 声明 `compute.query.supported=true` 的插件必须实现 `QueryRuntimeProvider` 或 `FederatedQueryRuntimeProvider`。声明 `compute.query.read_session=true` 时必须实现 `QueryReadSessionProvider`；实现该 Provider 时也必须反向声明。声明 `compute.query.federation.supported=true` 时必须实现 `FederatedQueryRuntimeProvider`，且 `runtime_api` 非空。
 - 声明 `compute.query.parameters.supported=true` 的插件必须对 `parameters.languages` 中每种语言实现类型化参数绑定，并拒绝缺失、未知或未使用参数；不得只声明 UI 能力而把参数插值交给调用方。
 - 声明 `compute.workflow.supported=true` 的编译期插件必须实现 `WorkflowRuntimeProvider`。通过 System 注册的 `addp.workflow/v1` 外部运行时不要求独立编译期插件，由 Common 唯一的 `HTTPWorkflowRuntimeProvider` 消费；System 必须在注册时校验 capabilities 并完成协议探测。
 - 声明 `compute.script.supported=true` 的插件必须实现 `ScriptRuntimeProvider`。
 - 声明 `compute.inference.supported=true` 的插件必须实现 `InferenceRuntimeProvider`，且 `runtime_api="addp.inference/v1"`、`operations` 非空。
-- 反向也必须成立：插件实现 `CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider`、`DynamicSchemaSamplingProvider`、具体 Store Provider、`ChangeStreamReaderProvider`、`QueryRuntimeProvider`、`FederatedQueryRuntimeProvider`、`GraphQueryProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider` 或 `InferenceRuntimeProvider` 时，`Capabilities()` 必须声明对应能力。`StoreProvider` 本身只是 marker，不单独触发能力声明；以具体读写 Provider 为准。
+- 反向也必须成立：插件实现 `EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider`、`DynamicSchemaSamplingProvider`、具体 Store Provider、`ChangeStreamReaderProvider`、`QueryRuntimeProvider`、`FederatedQueryRuntimeProvider`、`GraphQueryProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider` 或 `InferenceRuntimeProvider` 时，`Capabilities()` 必须声明对应能力。`StoreProvider` 本身只是 marker，不单独触发能力声明；以具体读写 Provider 为准。
 - capabilities 由插件返回结构体，System 统一序列化为 JSONB。插件 `Capabilities()` 是 Provider 能力模板，不得做实例连接或运行时探测。
 - 已注册编译期插件引擎的落库能力事实源是插件 `Capabilities()` 与可选实例能力解析结果。普通 Engine API、内部自注册接口和 Registry 能力注册接口收到此类插件引擎提交的 `capabilities` 时都必须忽略，并改用插件模板和实例解析结果生成落库声明。未编译独立插件的 `addp.workflow/v1` Runtime 无论是否属于 ADDP 默认部署，都必须在自注册或手动注册时提交完整 `engine.capabilities/v1`；System 校验并保存该声明，不能按 `engine_type` 生成内置能力。自注册脚本不得额外声明 `workflow_runtime`、`script_runtime` 等平行运行时能力。
 - 旧 capabilities 结构不再兼容，发现旧结构可直接刷新或清空。

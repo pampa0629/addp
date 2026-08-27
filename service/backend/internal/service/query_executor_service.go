@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/addp/common/client"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
@@ -78,7 +79,7 @@ func (s *QueryExecutorService) executeDirectQuery(
 	request *models.QueryExecutionRequest,
 	protocol queryProtocol,
 ) (*models.QueryExecutionResult, error) {
-	engine, err := s.systemClient.GetEngine(queryService.GetEngineID())
+	engine, err := s.systemClient.GetEngineForTenant(ctx, queryService.TenantID, queryService.GetEngineID())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get engine: %w", err)
 	}
@@ -164,7 +165,7 @@ func (s *QueryExecutorService) executeFederatedQuery(
 	executionID := uuid.New()
 	issued, err := s.systemService.WithTenantID(queryService.TenantID).
 		IssueExecutionAuthorizationFromServiceDefinition(ctx, client.IssueExecutionAuthorizationFromServiceDefinitionRequest{
-			ExecutionID: executionID.String(), EngineIDs: formatServiceEngineIDs(sourceEngineIDs),
+			ExecutionID: executionID.String(), Accesses: readServiceEngineAccessScopes(sourceEngineIDs),
 			DefinitionID: strconv.FormatUint(uint64(queryService.ID), 10), DefinitionVersion: snapshot.DependencyHash,
 			ExpiresIn: 60,
 		})
@@ -227,6 +228,9 @@ func (s *QueryExecutorService) finalizeResult(
 	plan *compiledQueryPlan,
 	rows []map[string]interface{},
 ) (*models.QueryExecutionResult, error) {
+	if err := normalizePublishedResultRows(rows, queryService.GetTableInfo()); err != nil {
+		return nil, err
+	}
 	hasMore := len(rows) > plan.Limit
 	if hasMore {
 		rows = rows[:plan.Limit]
@@ -264,6 +268,73 @@ func (s *QueryExecutorService) finalizeResult(
 		ServiceVersion: plan.ServiceVersion,
 		Fields:         append([]string(nil), plan.SelectedFields...), FeatureIDs: featureIDs,
 	}, nil
+}
+
+// normalizePublishedResultRows makes engine-native scalar values obey the
+// frozen public output contract before cursor encoding and protocol rendering.
+// MySQL BOOLEAN reaches database/sql as TINYINT even when the publisher has
+// explicitly contracted the output field as bool.
+func normalizePublishedResultRows(rows []map[string]interface{}, table *datatype.TableInfo) error {
+	if table == nil {
+		return errors.New("query service output contract is missing")
+	}
+	boolFields := make([]string, 0)
+	for _, field := range table.Fields {
+		if field.Type == datatype.FieldTypeBool {
+			boolFields = append(boolFields, field.Name)
+		}
+	}
+	for _, row := range rows {
+		for _, field := range boolFields {
+			value, exists := row[field]
+			if !exists || value == nil {
+				continue
+			}
+			normalized, ok := publishedBool(value)
+			if !ok {
+				return fmt.Errorf("query result field %s does not satisfy published bool contract", field)
+			}
+			row[field] = normalized
+		}
+	}
+	return nil
+}
+
+func publishedBool(value interface{}) (bool, bool) {
+	switch typed := value.(type) {
+	case bool:
+		return typed, true
+	case int:
+		return typed == 1, typed == 0 || typed == 1
+	case int8:
+		return typed == 1, typed == 0 || typed == 1
+	case int16:
+		return typed == 1, typed == 0 || typed == 1
+	case int32:
+		return typed == 1, typed == 0 || typed == 1
+	case int64:
+		return typed == 1, typed == 0 || typed == 1
+	case uint:
+		return typed == 1, typed <= 1
+	case uint8:
+		return typed == 1, typed <= 1
+	case uint16:
+		return typed == 1, typed <= 1
+	case uint32:
+		return typed == 1, typed <= 1
+	case uint64:
+		return typed == 1, typed <= 1
+	case []byte:
+		return publishedBool(string(typed))
+	case string:
+		switch strings.ToLower(strings.TrimSpace(typed)) {
+		case "1", "true":
+			return true, true
+		case "0", "false":
+			return false, true
+		}
+	}
+	return false, false
 }
 
 func rowValues(row map[string]interface{}, orderBy []models.QueryOrder) ([]interface{}, error) {
@@ -314,10 +385,12 @@ func (s *QueryExecutorService) DecodeFeatureID(queryService *models.QueryService
 	return &models.QueryFilter{And: filters}, nil
 }
 
-func formatServiceEngineIDs(engineIDs []uint) []string {
-	values := make([]string, len(engineIDs))
+func readServiceEngineAccessScopes(engineIDs []uint) []client.ExecutionEngineAccessScope {
+	values := make([]client.ExecutionEngineAccessScope, len(engineIDs))
 	for index, engineID := range engineIDs {
-		values[index] = strconv.FormatUint(uint64(engineID), 10)
+		values[index] = client.ExecutionEngineAccessScope{
+			EngineID: strconv.FormatUint(uint64(engineID), 10), Effects: []string{"read"},
+		}
 	}
 	return values
 }

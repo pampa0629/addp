@@ -109,6 +109,17 @@ func SetupRouter(
 		settings.PUT("/settings/base-map/providers", auth.MustNewPermissionGuard(managerauthorization.PermissionManagerConfigurationUpdate), handler.Update)
 	}
 
+	runtime := router.Group("/api/v1/manager/runtime")
+	runtime.Use(
+		auth.MustNewMiddleware(auth.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}),
+		auth.MustNewContextGuard("tenant"),
+		auth.MustNewServiceClientGuard("addp-meta"),
+		auth.MustNewPermissionGuard(managerauthorization.PermissionManagerContentIndexUpdate),
+	)
+	contentIndexHandler := NewContentIndexHandler(searchService)
+	runtime.PUT("/content-documents/:document_id", contentIndexHandler.UpsertDocument)
+	runtime.DELETE("/content-documents", contentIndexHandler.DeleteEngineDocuments)
+
 	// API 路由组
 	api := router.Group("/api/v1/manager")
 	api.Use(

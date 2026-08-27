@@ -109,8 +109,8 @@ func TestVectorTileSetExecutorUsesPostGISGeneratorWithoutWorkflow(t *testing.T) 
 	if generator.calls != 1 || generator.config.Concurrency != 3 || generator.config.Schema != "public" {
 		t.Fatalf("native generator calls=%d config=%#v", generator.calls, generator.config)
 	}
-	if result.CatalogPath != "vector-tiles/roads.pmtiles" {
-		t.Fatalf("catalog path = %q", result.CatalogPath)
+	if result.EngineCatalogPath != "vector-tiles/roads.pmtiles" {
+		t.Fatalf("catalog path = %q", result.EngineCatalogPath)
 	}
 	if _, err := os.Stat(filepath.Join(targetRoot, "vector-tiles", "roads.pmtiles")); err != nil {
 		t.Fatalf("business PMTiles missing: %v", err)

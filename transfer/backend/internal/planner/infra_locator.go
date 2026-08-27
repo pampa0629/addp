@@ -72,34 +72,34 @@ func (l *InfraLocator) EngineRef() EngineRef {
 	return EngineRef{Type: infraEngineRefType(l.Kind)}
 }
 
-func (l *InfraLocator) CatalogPath() (engineplugin.CatalogPath, error) {
+func (l *InfraLocator) EngineCatalogPath() (engineplugin.EngineCatalogPath, error) {
 	if l == nil {
-		return engineplugin.CatalogPath{}, fmt.Errorf("infra locator is required")
+		return engineplugin.EngineCatalogPath{}, fmt.Errorf("infra locator is required")
 	}
 	switch strings.ToLower(strings.TrimSpace(l.Kind)) {
 	case "minio":
 		return l.minioCatalogPath()
 	default:
-		return engineplugin.CatalogPath{}, fmt.Errorf("unsupported infra kind %q", l.Kind)
+		return engineplugin.EngineCatalogPath{}, fmt.Errorf("unsupported infra kind %q", l.Kind)
 	}
 }
 
-func (l *InfraLocator) minioCatalogPath() (engineplugin.CatalogPath, error) {
+func (l *InfraLocator) minioCatalogPath() (engineplugin.EngineCatalogPath, error) {
 	bucket := strings.TrimSpace(l.Namespace)
 	if bucket == "" {
-		return engineplugin.CatalogPath{}, fmt.Errorf("infra minio locator bucket is required")
+		return engineplugin.EngineCatalogPath{}, fmt.Errorf("infra minio locator bucket is required")
 	}
 	objectPath := strings.Join(l.Path, "/")
 	switch l.Type {
 	case resourcetree.TypeObject:
 		if strings.TrimSpace(objectPath) == "" {
-			return engineplugin.CatalogPath{}, fmt.Errorf("infra minio object locator path is required")
+			return engineplugin.EngineCatalogPath{}, fmt.Errorf("infra minio object locator path is required")
 		}
 		return engineplugin.ObjectItemPath(0, bucket, objectPath), nil
 	case resourcetree.TypePrefix, resourcetree.TypeDirectory:
 		return engineplugin.ObjectDirectoryPath(0, bucket, objectPath), nil
 	default:
-		return engineplugin.CatalogPath{}, fmt.Errorf("unsupported infra minio locator type %q", l.Type)
+		return engineplugin.EngineCatalogPath{}, fmt.Errorf("unsupported infra minio locator type %q", l.Type)
 	}
 }
 

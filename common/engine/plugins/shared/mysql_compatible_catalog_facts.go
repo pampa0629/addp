@@ -21,7 +21,7 @@ type MySQLCompatibleCatalogFactsDialect struct {
 	MapFieldType   func(nativeType string) datatype.FieldType
 }
 
-func (d MySQLCompatibleCatalogFactsDialect) ListNamespaces(ctx context.Context, db *gorm.DB, root plugin.CatalogPath, namespaceTerm string) ([]plugin.CatalogEntry, error) {
+func (d MySQLCompatibleCatalogFactsDialect) ListNamespaces(ctx context.Context, db *gorm.DB, root plugin.EngineCatalogPath, namespaceTerm string) ([]plugin.EngineCatalogEntry, error) {
 	var rows []mysqlCompatibleNamespaceRow
 	systemSchemas := d.systemSchemaNames()
 	query := fmt.Sprintf(`
@@ -44,7 +44,7 @@ func (d MySQLCompatibleCatalogFactsDialect) ListNamespaces(ctx context.Context, 
 	if err := db.WithContext(ctx).Raw(query, args...).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("failed to list namespaces: %w", err)
 	}
-	namespaces := make([]plugin.CatalogEntry, 0, len(rows))
+	namespaces := make([]plugin.EngineCatalogEntry, 0, len(rows))
 	for _, row := range rows {
 		namespaces = append(namespaces, plugin.TabularNamespaceCatalogEntry(root, namespaceTerm, row.Name, row.LeafCount))
 	}

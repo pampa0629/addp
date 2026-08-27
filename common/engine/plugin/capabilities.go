@@ -4,7 +4,7 @@ import "encoding/json"
 
 const (
 	CapabilitiesSchemaVersion = "engine.capabilities/v1"
-	CatalogPathVersion        = "catalog.path/v1"
+	EngineCatalogPathVersion  = "catalog.path/v1"
 
 	EngineExtensionSpatialWorkspaces      = "spatial_workspaces"
 	SpatialWorkspaceSuperMapSDXPostGIS    = "sdx_postgis"
@@ -76,21 +76,21 @@ func SpatialWorkspacesFromExtensions(extensions map[string]interface{}) ([]Spati
 }
 
 type StorageCapabilities struct {
-	CatalogModel *CatalogModelSpec       `json:"catalog_model,omitempty"`
-	Catalog      *CatalogCapability      `json:"catalog,omitempty"`
-	Facts        *CatalogFactsCapability `json:"facts,omitempty"`
-	Store        *StoreCapability        `json:"store,omitempty"`
-	Semantics    []string                `json:"semantics,omitempty"`
-	NotSupported []string                `json:"not_supported,omitempty"`
+	CatalogModel *EngineCatalogModelSpec       `json:"catalog_model,omitempty"`
+	Catalog      *EngineCatalogCapability      `json:"catalog,omitempty"`
+	Facts        *EngineCatalogFactsCapability `json:"facts,omitempty"`
+	Store        *StoreCapability              `json:"store,omitempty"`
+	Semantics    []string                      `json:"semantics,omitempty"`
+	NotSupported []string                      `json:"not_supported,omitempty"`
 }
 
-type CatalogModelSpec struct {
-	PathVersion string             `json:"path_version"`
-	RootTerm    string             `json:"root_term"`
-	Levels      []CatalogLevelSpec `json:"levels"`
+type EngineCatalogModelSpec struct {
+	PathVersion string                   `json:"path_version"`
+	RootTerm    string                   `json:"root_term"`
+	Levels      []EngineCatalogLevelSpec `json:"levels"`
 }
 
-type CatalogLevelSpec struct {
+type EngineCatalogLevelSpec struct {
 	Term     string   `json:"term"`
 	Kinds    []string `json:"kinds"`
 	Role     string   `json:"role"`
@@ -99,59 +99,59 @@ type CatalogLevelSpec struct {
 }
 
 const (
-	CatalogTermServer = "server"
+	EngineCatalogTermServer = "server"
 )
 
-func CatalogTermI18nKey(term string) string {
+func EngineCatalogTermI18nKey(term string) string {
 	if term == "" {
 		return ""
 	}
 	return "engine.term." + term
 }
 
-func CatalogLevelI18nKey(model CatalogModelSpec, term string) string {
+func EngineCatalogLevelI18nKey(model EngineCatalogModelSpec, term string) string {
 	for _, level := range model.Levels {
 		if level.Term == term {
 			if level.I18nKey != "" {
 				return level.I18nKey
 			}
-			return CatalogTermI18nKey(term)
+			return EngineCatalogTermI18nKey(term)
 		}
 		for _, kind := range level.Kinds {
 			if kind == term {
-				return CatalogTermI18nKey(term)
+				return EngineCatalogTermI18nKey(term)
 			}
 		}
 	}
-	return CatalogTermI18nKey(term)
+	return EngineCatalogTermI18nKey(term)
 }
 
-// CatalogFirstBusinessBranch 返回 root 下第一层可展开的业务 branch。
-func CatalogFirstBusinessBranch(model CatalogModelSpec) (CatalogLevelSpec, bool) {
+// EngineCatalogFirstBusinessBranch 返回 root 下第一层可展开的业务 branch。
+func EngineCatalogFirstBusinessBranch(model EngineCatalogModelSpec) (EngineCatalogLevelSpec, bool) {
 	for _, level := range model.Levels {
-		if level.Role == CatalogRoleBranch {
+		if level.Role == EngineCatalogRoleBranch {
 			return level, true
 		}
 	}
-	return CatalogLevelSpec{}, false
+	return EngineCatalogLevelSpec{}, false
 }
 
-// CatalogBusinessLevels 返回 root 下的业务层级定义。
-func CatalogBusinessLevels(model CatalogModelSpec) []CatalogLevelSpec {
-	return append([]CatalogLevelSpec(nil), model.Levels...)
+// EngineCatalogBusinessLevels 返回 root 下的业务层级定义。
+func EngineCatalogBusinessLevels(model EngineCatalogModelSpec) []EngineCatalogLevelSpec {
+	return append([]EngineCatalogLevelSpec(nil), model.Levels...)
 }
 
-// CatalogLeafTerm 返回 catalog model 中声明的 leaf 层术语。
-func CatalogLeafTerm(model CatalogModelSpec) string {
+// EngineCatalogLeafTerm 返回 catalog model 中声明的 leaf 层术语。
+func EngineCatalogLeafTerm(model EngineCatalogModelSpec) string {
 	for _, level := range model.Levels {
-		if level.Role == CatalogRoleLeaf && level.Term != "" {
+		if level.Role == EngineCatalogRoleLeaf && level.Term != "" {
 			return level.Term
 		}
 	}
 	return ""
 }
 
-type CatalogCapability struct {
+type EngineCatalogCapability struct {
 	Supported       bool     `json:"supported"`
 	RealTime        bool     `json:"real_time"`
 	SupportsSearch  bool     `json:"supports_search,omitempty"`
@@ -160,7 +160,7 @@ type CatalogCapability struct {
 	NodeKinds       []string `json:"node_kinds,omitempty"`
 }
 
-type CatalogFactsCapability struct {
+type EngineCatalogFactsCapability struct {
 	Supported    bool `json:"supported"`
 	FieldInfo    bool `json:"field_info,omitempty"`
 	Statistics   bool `json:"statistics,omitempty"`
@@ -238,6 +238,7 @@ type QueryCapability struct {
 	ReadOnly        bool                       `json:"read_only,omitempty"`
 	SupportsExplain bool                       `json:"supports_explain,omitempty"`
 	SupportsCancel  bool                       `json:"supports_cancel,omitempty"`
+	ReadSession     bool                       `json:"read_session,omitempty"`
 	Parameters      *QueryParameterCapability  `json:"parameters,omitempty"`
 	Federation      *QueryFederationCapability `json:"federation,omitempty"`
 }

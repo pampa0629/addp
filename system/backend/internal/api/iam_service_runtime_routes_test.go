@@ -153,6 +153,8 @@ func newEngineDescriptorServiceRuntimeRouter(t *testing.T, authContext commonaut
 		InternalAuditHandler:            &IAMInternalAuditHandler{},
 		ExecutionAuthorizationHandler:   &IAMExecutionAuthorizationHandler{},
 		TaskAuthorizationSubjectHandler: &IAMTaskAuthorizationSubjectHandler{},
+		CatalogReferenceHandler:         &IAMCatalogReferenceHandler{},
+		PlatformTenantHandler:           &IAMPlatformTenantHandler{},
 	}
 	router := gin.New()
 	api := router.Group("/api/v1/system")

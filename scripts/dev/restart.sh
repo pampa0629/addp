@@ -3,7 +3,7 @@ set -e
 
 # 使用说明
 show_usage() {
-  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-model] [-quality] [-asset] [-portal] [-inference] [-geopython-workflow] [-math-workflow] [-model3d-workflow] [-pointcloud-workflow] [-supermap-workflow] [-copilot] [-agent] [-spark-workflow] [-jupyter] [-duckdb]"
+  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-model] [-quality] [-asset] [-catalog] [-workbench] [-portal] [-inference] [-geopython-workflow] [-math-workflow] [-model3d-workflow] [-pointcloud-workflow] [-supermap-workflow] [-copilot] [-agent] [-spark-workflow] [-jupyter] [-duckdb]"
   echo ""
   echo "选项:"
   echo "  无参数        只重启服务,自动检测 common 模块变化并增量编译受影响的模块"
@@ -21,6 +21,8 @@ show_usage() {
   echo "  -model       强制重新编译 Model 模块"
   echo "  -quality     强制重新编译 Quality 模块"
   echo "  -asset       强制重新编译 Asset 模块"
+  echo "  -catalog     强制重新编译 Catalog 模块"
+  echo "  -workbench   强制重新编译 Workbench 模块"
   echo "  -portal      强制重新编译 Portal 模块"
   echo "  -graph       强制重新编译 Graph 模块"
   echo "  -inference   强制重新编译 Inference 模块"
@@ -77,7 +79,7 @@ export SUPERMAP_WORKFLOW_PORT="${SUPERMAP_WORKFLOW_PORT:-8103}"
 
 # 自动生成服务 URL（与 start.sh 保持一致）
 generate_service_urls() {
-    local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality asset portal agent inference)
+    local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality asset catalog workbench portal agent inference)
     for svc in "${services[@]}"; do
         local port_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_BACKEND_PORT"
         local url_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_SERVICE_URL"
@@ -91,7 +93,7 @@ generate_service_urls() {
 
 generate_service_urls
 
-SWAGGER_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality portal graph inference)
+SWAGGER_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality catalog workbench portal graph inference)
 
 is_swagger_module() {
   local module="$1"
@@ -131,7 +133,7 @@ for arg in "$@"; do
     -all)
       FORCE_BUILD_ALL=true
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-asset|-portal|-graph|-inference|-geopython-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-copilot|-agent|-spark-workflow|-jupyter|-duckdb)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-asset|-catalog|-workbench|-portal|-graph|-inference|-geopython-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-copilot|-agent|-spark-workflow|-jupyter|-duckdb)
       module="${arg#-}"  # 移除前导的 -
       FORCE_BUILD_MODULES+=("$module")
       ;;
@@ -469,6 +471,7 @@ pointcloud_workflow_source_fingerprint() {
                 printf '%s\n' \
                     common-python/README.md \
                     common-python/addp_common/__init__.py \
+                    common-python/addp_common/module_lifecycle.py \
                     common-python/addp_common/workflow_access.py
                 find common-python/addp_common/client common-python/addp_common/workflow_runtime \
                     -type f ! -path '*/__pycache__/*' ! -name '*.pyc'
@@ -911,6 +914,8 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
       rm -f .dev-bins/addp-model 2>/dev/null || true
     elif [ "$module" = "quality" ]; then
       rm -f .dev-bins/addp-quality 2>/dev/null || true
+    elif [ "$module" = "develop" ]; then
+      rm -f .dev-bins/addp-develop .dev-bins/addp-develop-query-worker 2>/dev/null || true
     else
       rm -f .dev-bins/addp-${module} 2>/dev/null || true
       if [ "$module" = "transfer" ]; then

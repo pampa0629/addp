@@ -1,0 +1,14 @@
+FROM localhost:5001/ubuntu:24.04
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates tzdata && rm -rf /var/lib/apt/lists/*
+
+ARG BUILD_ARCH=amd64
+ARG BUILD_TYPE=release
+ARG GOOS=linux
+
+WORKDIR /app
+
+COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/develop-query-worker ./worker
+RUN chmod +x ./worker
+
+CMD ["./worker"]

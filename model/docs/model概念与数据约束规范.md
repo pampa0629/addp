@@ -4,7 +4,19 @@
 
 Model 是 Tenant 级数据架构与建模事实的 owner，管理业务实体、实体关系、逻辑模型、数仓分层以及逻辑模型到 Standard 指标的引用。Standard 继续拥有业务域、数据元、维度层级和指标；Model 只保存经过 Standard API 验证的引用，不代理或复制 Standard 资源。
 
-Model 是逻辑表物化的结构控制面 owner。逻辑表的 `materialization` 保存目标父节点 ResourceLocator、目标名称和分区设计；物理表准备、受控 DDL、结构校验、原子发布和 staging 回收必须由 Model 根据已审批逻辑模型执行，不得交给 Develop 的普通 SQL 任务。Develop 只负责计算数据并写入 Model 为单次物化批次签发的受限 staging 目标；Orchestrator 只编排准备、计算、质量门禁与发布顺序。
+Model 是逻辑表物化的结构控制面 owner。逻辑表的 `materialization` 保存目标父节点 ResourceLocator、目标名称和分区设计；物理 staging 创建、受控 DDL、结构校验、封存、原子发布和回收必须由 Model 根据已审批逻辑模型执行。任何通用 writer 只获得 prepare 稳定输出的 staging ResourceLocator，并通过自身的 Engine 写能力向已存在表写入；Model 不识别、调用或依赖具体 writer 业务模块。Orchestrator 使用 TaskProvider outputs 与显式参数绑定组织准备、计算、封存、质量门禁与发布顺序。
+
+### 企业目录接入边界
+
+Model Entity 与 LogicalTable 是企业目录的专业资源来源。所有已持久化资源，包括 `draft`，都通过 Model owner-local 可恢复变化源自动建立 CatalogEntry；Catalog 不调用 Model 列表 API 轮询全表，也不向 Model 回写 CatalogEntry ID。
+
+Model 继续权威拥有完整 Entity、LogicalTable、属性、字段、物化配置、专业生命周期，以及 `domain_id`、`element_id`、`metric_id` 和建模关系。Catalog 只保存稳定来源引用与名称、编码、对象种类、专业状态等最小最后观察摘要；完整详情通过 Model 的 Catalog 专用批量解析接口动态读取。Catalog 投影不得用于恢复 Model，不得接受编辑，也不得被 Model 反向读取为专业事实。
+
+Model 的 Domain、Element、Metric 和模型关系是专业内生关系，不复制为 Catalog 人工语义关联。Catalog 可以将其展示为 owner 声明关系和搜索分面；修改仍使用 Model 唯一写路径。Catalog 自身继续拥有目录业务名称、补充说明、责任、治理、收藏、集合及不与 Model 内生关系冲突的企业关联。
+
+Model 面向当前 User AuthContext 提供 `GET /entities/{id}/relations` 与 `GET /logical-tables/{id}/relations` 一跳专业关系图。Entity 路由同时要求 `model.entity.read` 与 `model.entity_relation.read`；LogicalTable 路由要求 `model.logical_model.read`。响应遵循 `addp.professional_relations/v1`，只读取 Model 权威表，不调用 Standard、Catalog 或其他 owner，不保存 CatalogEntry ID，也不把 owner 不可达提升为 Model Ready 条件。
+
+Model 变化捕获固定使用 Entity 与 LogicalTable 聚合根上的 PostgreSQL trigger，在业务写事务中追加 `model.catalog_resource_changes`。聚合子资源写入已经必须推进根版本，因此不得再在各 Service 添加 append 回调或双写。Catalog 以 opaque cursor 拉取并可从历史起点重放；Model 或 Catalog 暂时不可达只造成同步滞后，不参与对方 Ready。
 
 PostgreSQL DDL 预览仍只是设计辅助能力，不改变逻辑模型状态，也不产生物理资源。真实物化使用独立 `MaterializationBatch` 聚合，不把 `materialized` 加入 LogicalTable 生命周期，也不允许其他模块直接读取 Model 私有表、自行拼装 DDL或持有永久数据库权限。
 
@@ -13,31 +25,53 @@ PostgreSQL DDL 预览仍只是设计辅助能力，不改变逻辑模型状态�
 一次完整重算遵循唯一顺序：
 
 ```text
-Model prepare -> Develop query compute -> Quality check -> Model publish
+Model prepare -> generic writer -> Model seal -> Quality materialization gate -> Model group publish
 ```
 
-- `prepare` 只接受已审批且配置完整物化目标的 LogicalTable ID。Model 冻结逻辑表版本、物化目标和结构指纹，生成不可由调用方指定的 staging 名称，并使用 `audience=model` 的 Execution Authorization 执行受控 PostgreSQL/PostGIS DDL。
+- `prepare` 只接受已审批且配置完整物化目标的 LogicalTable ID。Model 冻结逻辑表版本、物化目标和结构指纹，使用 `audience=model` 的 Execution Authorization 验证目标边界，并创建本批唯一可写 staging。稳定输出为 `batch_id + staging_locator`，不返回 DDL 或凭据。
 - 目标表不存在时允许首次发布；目标表已存在时，只有 Model 管理标记中的结构指纹与当前已审批逻辑表一致才允许重算。结构不一致、未受 Model 管理或包含尚未支持的分区设计时拒绝自动替换，不能把破坏性 Schema 迁移隐藏在重算中。
-- Develop 任务不得接收或拼装 Schema、表名、DDL。它保存目标 `logical_table_id`，执行时通过 Model Client 按自身 execution 解析执行域物化上下文，再使用自身用户派生 Execution Authorization 向该批次 staging 写数据。
-- Quality 如需检查 staging，使用同一执行域解析边界和自身只读 Execution Authorization；不得读取 Model 私有表或借用 Model 的引擎授权。
+- 通用 writer 任务定义不保存 LogicalTable ID、Model 上下文或 staging。Orchestrator 将 prepare 的 `staging_locator` 绑定到 writer 必填 `target_locator`；writer 使用从父 execution 派生的精确 Engine `read/write` 授权执行，稳定输出 `execution_id + target_locator + row_count`。
+- `seal` 接受 prepare 的 `batch_id`、writer 输出的 `execution_id` 和 `target_locator`。Model 必须校验 writer execution 为 `success`，与 prepare/seal 同 Tenant、同父 Orchestrator execution、同 Actor Principal/Tenant Membership/授权版本，且 locator 精确匹配批次 staging；随后校验字段顺序、物理类型、结构指纹和 Model 管理标记，成功后置为 `sealed`。Model 不校验 writer module 名称。
+- Quality 如需读取 staging，必须以同一父 Orchestrator execution 和当前 reader execution 向 Model 申请 Materialization Read Context；只能返回 sealed 批次的 staging locator、字段、批次和结构指纹。reader 仍使用自身从父 execution 派生的精确只读授权，不得读取 Model 私有表或借用 Model 的引擎授权。
 - `publish` 在同一目标数据库事务内完成旧目标暂存、staging 改名、旧目标删除和管理标记保留。事务失败必须保持原目标可用；重复执行按批次管理标记幂等收敛。
-- 同一 Tenant 的同一 LogicalTable 同时最多一个 `preparing|prepared|publishing` 批次。并发重算返回冲突，不建立多 staging 竞争或“最后完成者覆盖”语义。
-- 批次状态固定为 `preparing|prepared|publishing|published|failed|aborted`。prepare 失败进入 `failed`；publish 失败恢复为 `prepared`，允许在同一批次上重新发布；只有物理发布成功后才进入 `published`。
+- 同一 Tenant 的同一物理目标同时最多一个 `preparing|prepared|sealed|publishing` 批次。并发重算返回冲突，不建立多批次竞争或“最后完成者覆盖”语义。失败或过期且未 sealed 的批次由 Model 标记 `aborted` 并回收 staging，后续全量重算从新 prepare 开始。
+- 批次状态固定为 `preparing|prepared|sealed|publishing|published|failed|aborted`。prepare 失败进入 `failed`；seal 失败不提升批次；publish 失败恢复为 `sealed`，允许在同一 sealed 批次上重新发布；只有物理发布成功后才进入 `published`。
 
-### TaskProvider 与执行域解析
+### 物化读上下文
 
-已审批 LogicalTable 是来源驱动、不可变的物化任务定义，同一 LogicalTable ID 分别作为 `materialization_prepare` 与 `materialization_publish` 的 TaskProvider task ID。两个任务的执行输入契约均为空，不把动态 `batch_id` 设为必填运行参数：
+- 唯一接口为 `POST /api/v1/model/materialization-read-contexts`，当前只允许 `addp-quality` 通过 Common Model Client 调用。Develop 的通用关系输入直接消费 Orchestrator 绑定的 ResourceLocator，不调用本接口。
+- 请求必须提供 `parent_execution_id + reader_execution_id + reader_attempt + reader_lease_token + logical_table_ids`。Model 必须校验 reader 的 Tenant、模块、Actor 血缘、父 execution、running lease 和调用 Service Principal 一致；不接受浏览器或 Orchestrator 直接调用。
+- 每个逻辑表必须在同一父 execution 下存在 sealed 批次。任一缺失、未封存、失效或结构漂移都拒绝整份上下文，不返回部分结果。
+- 响应使用 `model.materialization-read-context/v1`，每项只包含 `logical_table_id + batch_id + engine_id + staging_locator + columns + schema_fingerprint`。这是执行期内部事实，不进入任务定义或 Orchestrator Step 参数。
+- 本能力是 Quality 物化门禁的受限读语义，不是 writer 目标解析 API；writer 目标只来自 prepare 的 TaskProvider output。
 
-- Orchestrator 调用时，prepare、Develop、Quality 和 publish 子 execution 共享同一个 `parent_execution_id`。Model 按 `tenant_id + logical_table_id + parent_execution_id` 解析唯一 prepared 批次。
-- 手动全量重算同样由用户手动启动 Orchestrator 编排，不建立绕过编排的 Model 直执行路径；因此物化 TaskProvider execution 必须携带父编排 execution。
-- `batch_id` 仍是 Model 内部聚合身份、审计事实和 prepare 的稳定 execution 输出，但不是调用方选择物理目标的入口。
-- 执行域写入解析固定使用 `POST /api/v1/model/materialization-write-contexts/resolve`，请求只包含 `parent_execution_id + logical_table_id`。Model 必须按当前 Tenant 验证唯一 `prepared` 批次与 prepare execution 的父血缘，响应只返回 `batch_id + engine_id + staging_locator + write_columns`；不返回 DDL、数据库凭据、最终目标或完整逻辑模型。
-- 该接口仅面向具有明确消费者的固定 Service Principal，通过 `common/client` 的 Model Client 调用。Develop 使用 `addp-develop`，Quality 接入前不得提前授予其权限；不得发布泛化只读“物化契约快照”接口，也不得让 Orchestrator 直接消费写入上下文。
-- `staging_locator` 是执行期内部事实，不进入 Orchestrator Step 参数和任务定义。`write_columns` 严格按已审批 LogicalField 顺序生成，供受控写入编译使用，不构成第二份逻辑模型定义。
+### 物化组与原子发布
+
+- `MaterializationGroup` 是 Model-owned 可变主资源，使用 `tenant_id + code` 作为稳定语义身份，使用正整数 `version` 作为并发版本，持久化非空且不重复的 LogicalTable ID 集合。
+- 业务 API 唯一路由为 `GET|POST /api/v1/model/materialization-groups`和 `GET|PUT|DELETE /api/v1/model/materialization-groups/{id}`。`PUT` 必须提交完整可编辑状态和当前 `version`，`code` 创建后不可修改；删除也必须提交 `version`。
+- 组内逻辑表必须已审批、配置完整物化目标，且位于同一 PostgreSQL Engine。不允许跨 Engine 发布、空组、重复成员或同一物理目标重复绑定。
+- TaskProvider 任务类型为 `materialization_group_publish`，task ID 为 MaterializationGroup ID，仅允许 Orchestrator 以非空父 execution 触发。任务输入必须提交 `expected_group_id + expected_group_version`，不接收动态成员、表名或 locator。
+- 发布必须按组定义的全部成员，解析同一父 execution 下的 sealed 批次，并在一个目标 PostgreSQL 事务内交换全部目标。任一成员不就绪、结构漂移或物理标记不匹配时整组拒绝，不部分发布。
+- 目标库事务提交后再收敛 Model 控制库状态；如响应丢失或进程崩溃，重试必须通过全部管理标记识别已提交结果并幂等收敛，不再次交换。
+
+### TaskProvider 与封存交接
+
+已审批 LogicalTable 是来源驱动、不可变的物化任务定义，同一 LogicalTable ID 分别作为 `materialization_prepare`、`materialization_seal` 与 `materialization_publish` 的 TaskProvider task ID：
+
+- prepare 执行输入契约为空，稳定输出 `batch_id + staging_locator`。
+- seal 的 `batch_id + writer_execution_id + target_locator` 是必填运行时输入，`input_defaults` 不伪造空值。seal 稳定输出 `batch_id + staging_locator + schema_fingerprint`。
+- publish 不接受 locator、Schema、表名或 DDL，按 `tenant_id + logical_table_id + parent_execution_id` 解析唯一 sealed 批次。
+- prepare、writer、seal、Quality 和 publish 子 execution 必须共享同一 `parent_execution_id`。手动全量重算同样由用户启动 Orchestrator 编排，不建立绕过编排的 Model 直执行路径。
+- `staging_locator` 可以在父编排内作为短生命周期 ResourceLocator 输出绑定，但不进入任何 writer 任务定义、Model 之外的业务实体或长期配置。
+- 动态目标 writer 不进行跨 lease 单步重试。writer 失败后整个父编排失败，下一次重算从新 prepare 开始；Model 回收旧批次，不建立 write-attempt 实体、完成回调、模块白名单或接管协议。
 
 ## 二、授权边界
 
 Model 资源当前全部属于 Tenant，不存在 Department 或 Project Group Resource Scope Binding。所有 `model.*` Permission 只允许 Tenant Scope。`tenant.data_architect` 是面向 User Principal 的完整 Model 管理角色；`tenant.graph_runtime` 只保留 Graph 导入所需的 Entity 和 EntityRelation 只读权限。
+
+物化读取精确 Permission 为 `model.materialization_read.execute`，当前仅用于 Quality 读取 sealed 批次上下文；`model.materialization_group.read|create|update|delete` 用于 MaterializationGroup 业务资源。不存在面向 Transfer/Develop 的 Model 写入 Permission。Model prepare/seal/publish 通过本模块 TaskProvider 执行权限触发，writer 只持有目标 Engine 的精确 write effect。机器身份授权与用户资源管理权限不得互相替代。
+
+`model.catalog.read` 是不可由租户自定义的 Tenant Scope 机器权限，只授予 `tenant.catalog_runtime`，并由 Model 的变化流和 Catalog 批量解析路由同时校验固定 `addp-catalog` OAuth Client。该权限不授予用户读取 Model 管理 API，也不允许 Catalog 写入 Model。
 
 Model 在写入前校验 Standard 引用时，不转发或保存 User Access Token。`addp-model` 使用当前 Tenant 的 Service Access Token 和专用 `tenant.model_runtime`，且该角色只包含 `standard.domain.read`、`standard.element.read`、`standard.dimension_hierarchy.read` 与 `standard.metric.read`。Standard 协调被 Model 引用资源的删除时，`addp-standard` 使用当前 Tenant 的 Service Access Token 和专用 `tenant.standard_runtime`，该角色只包含 `model.standard_reference.update`。平台控制面的 Runtime Role 不参与 Tenant 业务引用校验或删除协调。
 
@@ -139,6 +173,8 @@ Mermaid 可逆子集必须通过 ADDP 元数据注释完整保存所有可编辑
 Cleanup 是内部强制生命周期写入，不从外部请求接收 `version`。它仍必须锁定受影响资源，推进被修改资源的 `version`，并在涉及实体模型集合时推进 Tenant `revision`；physical cleanup 必须在单个事务中完成锁定、删除和修订推进。
 
 PostgreSQL DDL 预览只接受结构化物化配置。物化目标统一使用 `target_parent_locator + target_name`：父定位符必须是标准 ResourceLocator 且指向 `schema` 节点，目标名称是尚未创建或准备替换的物理表名。配置不再接受脱离 Engine Instance 身份的 `schema_name/table_name`，也不构造尚不存在资源的伪 `target_locator`。父定位符与目标名称必须同时为空或同时存在；为空时 DDL 仅按逻辑表编码生成无 Schema 限定的设计预览。Schema、表、字段和分区标识符必须统一校验与引用；分区类型使用固定枚举；不接受任意 SQL 扩展字段。
+
+未分区是物化配置的唯一默认形态，持久化时必须同时省略 `partition_by` 与 `partition_type`，不得使用空字符串或单独的 `partition_type` 表达“未分区”。只有非空 `partition_by` 才表示分区设计，此时 `partition_type` 必须规范化为 `range|list|hash`。当前 DDL 预览可展示该设计，但物化 prepare 与 TaskProvider 不得发布或执行非空分区配置；在 Model 完成受控分区物化前，必须以稳定领域错误明确拒绝。
 
 ## 六、完成条件
 

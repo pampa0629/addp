@@ -19,24 +19,24 @@ func TestKafkaCapabilitiesMatchProviders(t *testing.T) {
 }
 
 func TestKafkaCatalogModelIsServiceTopic(t *testing.T) {
-	model := (&KafkaPlugin{}).CatalogModel()
-	if model.RootTerm != plugin.CatalogTermService || len(model.Levels) != 1 {
-		t.Fatalf("CatalogModel() = %#v, want service -> topic", model)
+	model := (&KafkaPlugin{}).EngineCatalogModel()
+	if model.RootTerm != plugin.EngineCatalogTermService || len(model.Levels) != 1 {
+		t.Fatalf("EngineCatalogModel() = %#v, want service -> topic", model)
 	}
 	level := model.Levels[0]
-	if level.Term != CatalogTermTopic || level.Role != plugin.CatalogRoleLeaf || !reflect.DeepEqual(level.Kinds, []string{CatalogKindTopic}) {
+	if level.Term != EngineCatalogTermTopic || level.Role != plugin.EngineCatalogRoleLeaf || !reflect.DeepEqual(level.Kinds, []string{EngineCatalogKindTopic}) {
 		t.Fatalf("topic level = %#v", level)
 	}
 }
 
 func TestKafkaTopicPathPreservesDotsAsSingleSegment(t *testing.T) {
-	root := plugin.CatalogRootPath((&KafkaPlugin{}).CatalogModel(), 30)
+	root := plugin.EngineCatalogRootPath((&KafkaPlugin{}).EngineCatalogModel(), 30)
 	entry := kafkaTopicEntry(root, "orders.events")
 	topic, err := kafkaTopicFromPath(entry.Path)
 	if err != nil {
 		t.Fatalf("kafkaTopicFromPath() error = %v", err)
 	}
-	if topic != "orders.events" || len(plugin.CatalogPathWithoutRoot(entry.Path).Segments) != 1 {
+	if topic != "orders.events" || len(plugin.EngineCatalogPathWithoutRoot(entry.Path).Segments) != 1 {
 		t.Fatalf("topic=%q path=%#v", topic, entry.Path)
 	}
 }

@@ -15,9 +15,9 @@ const (
 	defaultNotebookSessionAuthorizationTTL = time.Hour
 	maximumNotebookExecutionAccessTTL      = time.Hour
 	notebookSessionAudience                = "develop"
-	notebookCatalogOperation               = "catalog.list_children"
+	notebookEngineCatalogOperation         = "catalog.list_children"
 	notebookExecutionAccessOperation       = "execution_engine_access.derive"
-	notebookCatalogUserPermission          = "system.engine.read"
+	notebookEngineCatalogUserPermission    = "system.engine.read"
 	notebookSessionServiceClientID         = "addp-develop"
 )
 
@@ -41,7 +41,7 @@ type IssuedNotebookSessionAuthorization struct {
 	ExpiresAt time.Time
 }
 
-type AuthorizeNotebookCatalogInput struct {
+type AuthorizeNotebookEngineCatalogInput struct {
 	AuthorizationID    uuid.UUID
 	SessionID          uuid.UUID
 	ServicePrincipalID int64
@@ -50,7 +50,7 @@ type AuthorizeNotebookCatalogInput struct {
 	Audit              AuditMetadata
 }
 
-type AuthorizedNotebookCatalog struct {
+type AuthorizedNotebookEngineCatalog struct {
 	AuthorizationID uuid.UUID
 	SessionID       uuid.UUID
 	TaskID          int64
@@ -136,7 +136,7 @@ func (s *NotebookSessionAuthorizationService) Issue(
 		if err != nil {
 			return err
 		}
-		if !containsNotebookCatalogPermission(permissionRows) {
+		if !containsNotebookEngineCatalogPermission(permissionRows) {
 			return commonapi.ErrForbidden
 		}
 
@@ -151,13 +151,13 @@ func (s *NotebookSessionAuthorizationService) Issue(
 			TenantMembershipID: *lockedSnapshot.TenantMembershipID, TokenFamilyID: family.ID,
 			IssuedAuthorizationVersion: principal.AuthorizationVersion,
 			Audience:                   notebookSessionAudience,
-			Operations:                 pq.StringArray{notebookCatalogOperation, notebookExecutionAccessOperation},
+			Operations:                 pq.StringArray{notebookEngineCatalogOperation, notebookExecutionAccessOperation},
 			ExpiresAt:                  expiresAt, CreatedAt: now,
 		}
 		if err := tx.CreateNotebookSessionAuthorization(ctx, authorization); err != nil {
 			return err
 		}
-		if err := writeNotebookCatalogAudit(ctx, tx, notebookCatalogSourceAudit(input.Audit, principal, family, authorization),
+		if err := writeNotebookEngineCatalogAudit(ctx, tx, notebookEngineCatalogSourceAudit(input.Audit, principal, family, authorization),
 			"iam.notebook_session_authorization.issued", authorization, nil); err != nil {
 			return err
 		}
@@ -175,13 +175,13 @@ func (s *NotebookSessionAuthorizationService) Issue(
 
 func (s *NotebookSessionAuthorizationService) Authorize(
 	ctx context.Context,
-	input AuthorizeNotebookCatalogInput,
-) (*AuthorizedNotebookCatalog, error) {
+	input AuthorizeNotebookEngineCatalogInput,
+) (*AuthorizedNotebookEngineCatalog, error) {
 	if err := validateNotebookSessionServiceActor(input.AuthorizationID, input.SessionID,
 		input.ServicePrincipalID, input.ServiceClientID, input.TenantID, input.Audit); err != nil {
 		return nil, err
 	}
-	var authorized *AuthorizedNotebookCatalog
+	var authorized *AuthorizedNotebookEngineCatalog
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
 		authorization, principal, membership, _, now, err := lockAndValidateNotebookSessionSource(
 			ctx, tx, input.AuthorizationID,
@@ -191,7 +191,7 @@ func (s *NotebookSessionAuthorizationService) Authorize(
 		}
 		if authorization.SessionID != input.SessionID || authorization.TenantID != input.TenantID ||
 			authorization.Audience != notebookSessionAudience ||
-			!containsNotebookSessionOperation(authorization.Operations, notebookCatalogOperation) ||
+			!containsNotebookSessionOperation(authorization.Operations, notebookEngineCatalogOperation) ||
 			authorization.RevokedAt != nil || !authorization.ExpiresAt.After(now) {
 			return ErrNotebookSessionAuthorizationForbidden
 		}
@@ -202,14 +202,14 @@ func (s *NotebookSessionAuthorizationService) Authorize(
 		if err != nil {
 			return err
 		}
-		if !containsNotebookCatalogPermission(permissions) {
+		if !containsNotebookEngineCatalogPermission(permissions) {
 			return ErrNotebookSessionAuthorizationForbidden
 		}
-		if err := writeNotebookCatalogAudit(ctx, tx, input.Audit,
+		if err := writeNotebookEngineCatalogAudit(ctx, tx, input.Audit,
 			"iam.notebook_session_authorization.consumed", authorization, nil); err != nil {
 			return err
 		}
-		authorized = &AuthorizedNotebookCatalog{
+		authorized = &AuthorizedNotebookEngineCatalog{
 			AuthorizationID: authorization.ID, SessionID: authorization.SessionID,
 			TaskID: authorization.TaskID, TenantID: authorization.TenantID,
 			ExpiresAt: authorization.ExpiresAt.UTC(),
@@ -259,7 +259,7 @@ func (s *NotebookSessionAuthorizationService) DeriveExecutionEngineAccess(
 		if err != nil {
 			return err
 		}
-		if !containsNotebookCatalogPermission(permissions) ||
+		if !containsNotebookEngineCatalogPermission(permissions) ||
 			!containsAllExecutionPermissions(permissions, notebookSessionAudience, []string{"read"}) {
 			return ErrExecutionAuthorizationPermissionDenied
 		}
@@ -280,10 +280,12 @@ func (s *NotebookSessionAuthorizationService) DeriveExecutionEngineAccess(
 			SourceType:                           executionAuthorizationSourceUser,
 			SourceNotebookSessionAuthorizationID: &sessionAuthorization.ID,
 			ExecutionID:                          input.ExecutionID,
-			Audience:                             notebookSessionAudience, Effects: pq.StringArray{"read"},
-			EngineIDs: pq.Int64Array{input.EngineID}, ExpiresAt: expiresAt, CreatedAt: now,
+			Audience:                             notebookSessionAudience,
+			ExpiresAt:                            expiresAt, CreatedAt: now,
 		}
-		if err := tx.CreateExecutionAuthorization(ctx, authorization); err != nil {
+		if err := tx.CreateExecutionAuthorization(ctx, authorization, []ExecutionAuthorizationEngineAccess{{
+			EngineID: input.EngineID, Effects: pq.StringArray{"read"},
+		}}); err != nil {
 			return err
 		}
 		if err := NewAuditWriter(tx).Write(ctx, AuditEvent{
@@ -427,16 +429,16 @@ func containsNotebookSessionOperation(operations []string, required string) bool
 	return false
 }
 
-func containsNotebookCatalogPermission(rows []RoleAssignmentPermissionProjection) bool {
+func containsNotebookEngineCatalogPermission(rows []RoleAssignmentPermissionProjection) bool {
 	for _, row := range rows {
-		if row.PermissionKey == notebookCatalogUserPermission {
+		if row.PermissionKey == notebookEngineCatalogUserPermission {
 			return true
 		}
 	}
 	return false
 }
 
-func writeNotebookCatalogAudit(
+func writeNotebookEngineCatalogAudit(
 	ctx context.Context,
 	repository *Repository,
 	metadata AuditMetadata,
@@ -462,7 +464,7 @@ func writeNotebookCatalogAudit(
 	})
 }
 
-func notebookCatalogSourceAudit(
+func notebookEngineCatalogSourceAudit(
 	metadata AuditMetadata,
 	principal *Principal,
 	family *RefreshTokenFamily,

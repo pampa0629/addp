@@ -101,6 +101,8 @@ System 的 `platform.configuration.read/update` 只允许管理 System-owned 的
 
 `SYSTEM_URL`、`GATEWAY_URL`、`MANAGER_URL`、`STANDARD_URL` 和 `MODEL_URL` 是部署级模块地址，不是 System 下发配置。本地开发模板使用显式回环地址，容器与生产编排必须覆盖为该部署内的实际地址。T4 专用 Runner 的仓库外环境文件必须显式提供参与套件的地址；进程乱序套件至少需要前三项，且通用预检拒绝非回环目标。专用 Runner 不得把仓库根 `.env` 作为第二条配置路径。
 
+Catalog 当前使用 `CATALOG_SOURCE_SYNC_INTERVAL`、`CATALOG_PROJECTION_INTERVAL` 和 `CATALOG_RESPONSIBILITY_RECONCILIATION_INTERVAL` 控制进程内后台调度周期，默认分别为 `30s`、`2s` 和 `5m`。责任对账周期只决定 Catalog 何时批量复核 System 主体引用，不改变责任关系或治理任务的事实语义；System 暂时不可达时对账延后，不影响 Catalog Ready。这些变量必须由部署环境在进程启动前确定，不由 System 下发，也不能在运行中形成另一套动态值。
+
 IAM 环境密钥边界：
 
 - ADDP 只签发随机 opaque Token，不签发或解析用户 JWT，因此禁止配置 `JWT_SECRET`。
@@ -430,6 +432,11 @@ TRANSFER_BOUNDED_WORKER_CONCURRENCY=10
 TRANSFER_BOUNDED_LEASE_DURATION=2m
 TRANSFER_BOUNDED_HEARTBEAT_INTERVAL=30s
 TRANSFER_BOUNDED_CLAIM_INTERVAL=1s
+# Develop 只领取 source=orchestrator 的有界 query execution。时间项单位为秒。
+DEVELOP_QUERY_WORKER_CONCURRENCY=4
+DEVELOP_QUERY_LEASE_SECONDS=120
+DEVELOP_QUERY_HEARTBEAT_SECONDS=30
+DEVELOP_QUERY_CLAIM_INTERVAL_SECONDS=1
 SERVICE_SERVICE_CLIENT_SECRET=
 STANDARD_SERVICE_CLIENT_SECRET=
 TRANSFER_SERVICE_CLIENT_SECRET=

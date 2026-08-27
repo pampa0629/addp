@@ -16,7 +16,6 @@ func SetupRouter(
 	cfg *config.Config,
 	redisClient *redis.Client,
 	assetClient *commonClient.AssetClient,
-	serviceClient *commonClient.ServiceClient,
 	lifecycle *modulelifecycle.Controller,
 ) *gin.Engine {
 	router := gin.Default()
@@ -54,7 +53,7 @@ func SetupRouter(
 	api.GET("/home", permission("asset.entry.read"), handleHome(assetClient))
 
 	// ============================================================
-	// 资产发现（Phase 3）
+	// 已发布资产消费面
 	// ============================================================
 	api.GET("/search", permission("asset.entry.read"), handleSearch(assetClient))
 	api.GET("/catalogs", permission("asset.catalog.read"), handleCatalogs(assetClient))
@@ -68,7 +67,6 @@ func SetupRouter(
 	api.POST("/assets/:id/apply", permission("asset.application.create"), handleApply(assetClient))
 	api.GET("/assets/:id/apply-status", permission("asset.application.read", "asset.authorization.read"), handleApplyStatus(assetClient))
 	api.GET("/my/applications", permission("asset.application.read"), handleMyApplications(assetClient))
-	api.GET("/assets/:id/endpoints", permission("asset.entry.read", "asset.application.read", "asset.authorization.read"), handleAssetEndpoints(assetClient, serviceClient))
 
 	// ============================================================
 	// 资产评价（Phase 6）

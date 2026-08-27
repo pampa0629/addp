@@ -12,7 +12,6 @@ import (
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaenrich"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/metapath"
@@ -20,6 +19,7 @@ import (
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scanprocessor"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 type ItemRefreshRuntime struct {
@@ -162,15 +162,15 @@ func (r *ItemRefreshRuntime) refreshKnownDynamicSchemaItem(
 	parentNode models.MetaNode,
 ) (scanprocessor.Result, bool, error) {
 	samplingProvider, ok := p.(plugin.DynamicSchemaSamplingProvider)
-	if !ok || item.ItemType != plugin.CatalogTermCollection {
+	if !ok || item.ItemType != plugin.EngineCatalogTermCollection {
 		return scanprocessor.Result{}, false, nil
 	}
-	model := scanflow.CatalogModelForPlugin(p)
+	model := scanflow.EngineCatalogModelForPlugin(p)
 	if model == nil || len(model.Levels) != 2 {
 		return scanprocessor.Result{}, true, fmt.Errorf("dynamic schema item refresh requires a branch-leaf catalog model")
 	}
 	branchLevel, leafLevel := model.Levels[0], model.Levels[1]
-	if branchLevel.Role != plugin.CatalogRoleBranch || leafLevel.Role != plugin.CatalogRoleLeaf ||
+	if branchLevel.Role != plugin.EngineCatalogRoleBranch || leafLevel.Role != plugin.EngineCatalogRoleLeaf ||
 		leafLevel.Term != item.ItemType || len(leafLevel.Kinds) != 1 || strings.TrimSpace(leafLevel.Kinds[0]) == "" {
 		return scanprocessor.Result{}, true, fmt.Errorf("dynamic schema item refresh target does not match catalog model")
 	}
@@ -179,8 +179,8 @@ func (r *ItemRefreshRuntime) refreshKnownDynamicSchemaItem(
 		return scanprocessor.Result{}, true, fmt.Errorf("dynamic schema item refresh target is incomplete; rescan the parent node")
 	}
 
-	itemPath := plugin.BranchLeafCatalogPath(*model, resource.ID, branchLevel.Term, branchName, leafLevel.Term, leafLevel.Kinds[0], item.Name)
-	facts, err := samplingProvider.SampleDynamicSchema(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), itemPath, plugin.CatalogFactsOptions{
+	itemPath := plugin.EngineCatalogBranchLeafPath(*model, resource.ID, branchLevel.Term, branchName, leafLevel.Term, leafLevel.Kinds[0], item.Name)
+	facts, err := samplingProvider.SampleDynamicSchema(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), itemPath, plugin.EngineCatalogFactsOptions{
 		IncludeSamples:    true,
 		IncludeStatistics: true,
 		IncludeIndexes:    true,
@@ -199,7 +199,7 @@ func (r *ItemRefreshRuntime) refreshKnownDynamicSchemaItem(
 	var dataUpdatedAt = item.DataUpdatedAt
 	var sizeBytes int64
 	fieldCount := 0
-	if tableInfo := plugin.CatalogFactsTableInfo(facts); tableInfo != nil {
+	if tableInfo := plugin.EngineCatalogFactsTableInfo(facts); tableInfo != nil {
 		rowCount = tableInfo.RowCount
 		estimatedRowCount = tableInfo.EstimatedRowCount
 		dataUpdatedAt = tableInfo.UpdatedAt
@@ -247,8 +247,8 @@ func (r *ItemRefreshRuntime) reDetectKnownWholeScopeItem(
 	if resource == nil || descriptor.Layout != format.LayoutWhole || contentReader == nil || strings.TrimSpace(physicalPath) == "" {
 		return nil, false
 	}
-	catalogProvider, ok := enginePlugin.(plugin.CatalogProvider)
-	if !ok || scanflow.CatalogLeafTermForPlugin(enginePlugin, "") != plugin.CatalogTermFile {
+	catalogProvider, ok := enginePlugin.(plugin.EngineCatalogProvider)
+	if !ok || scanflow.EngineCatalogLeafTermForPlugin(enginePlugin, "") != plugin.EngineCatalogTermFile {
 		return nil, false
 	}
 
@@ -294,7 +294,7 @@ func (r *ItemRefreshRuntime) reDetectKnownWholeScopeItem(
 func listKnownFileDirectory(
 	ctx context.Context,
 	engineID uint,
-	catalogProvider plugin.CatalogProvider,
+	catalogProvider plugin.EngineCatalogProvider,
 	connInfo plugin.ConnectionInfo,
 	dirPath string,
 	recursive bool,
@@ -306,13 +306,13 @@ func listKnownFileDirectory(
 	files := make([]metaitem.StorageFileRef, 0, len(nodes))
 	subdirs := make([]metaitem.StorageDirectoryRef, 0, len(nodes))
 	for _, node := range nodes {
-		if node.Role == plugin.CatalogRoleBranch {
-			if dir, ok := metacatalog.StorageDirectoryRefFromEntry(node); ok {
+		if node.Role == plugin.EngineCatalogRoleBranch {
+			if dir, ok := scanresource.StorageDirectoryRefFromEntry(node); ok {
 				subdirs = append(subdirs, dir)
 			}
 			continue
 		}
-		if file, ok := metacatalog.StorageFileRefFromEntry(node); ok {
+		if file, ok := scanresource.StorageFileRefFromEntry(node); ok {
 			files = append(files, file)
 		}
 	}
@@ -340,7 +340,7 @@ func (r *ItemRefreshRuntime) reDetectKnownSingleItemFormat(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
-	catalogPathFor func(string) plugin.CatalogPath,
+	catalogPathFor func(string) plugin.EngineCatalogPath,
 	descriptor dataitem.ItemDescriptor,
 	physicalPath string,
 ) dataitem.ItemDescriptor {
@@ -367,12 +367,12 @@ func (r *ItemRefreshRuntime) refreshKnownCatalogFactsItem(
 	item models.MetaItem,
 	parentNode models.MetaNode,
 ) (scanprocessor.Result, bool, error) {
-	factsProvider, ok := p.(plugin.CatalogFactsProvider)
+	factsProvider, ok := p.(plugin.EngineCatalogFactsProvider)
 	if !ok {
 		return scanprocessor.Result{}, false, nil
 	}
 
-	if scanflow.CatalogLeafTermForPlugin(p, "") != plugin.CatalogTermTable || item.ItemType != plugin.CatalogTermTable {
+	if scanflow.EngineCatalogLeafTermForPlugin(p, "") != plugin.EngineCatalogTermTable || item.ItemType != plugin.EngineCatalogTermTable {
 		return r.refreshKnownDirectCatalogLeafFactsItem(ctx, resource, tenantID, p, factsProvider, item, parentNode)
 	}
 
@@ -386,7 +386,7 @@ func (r *ItemRefreshRuntime) refreshKnownCatalogFactsItem(
 
 	namespaceTerm := scanflow.NamespaceTermForPlugin(p)
 	path := plugin.TabularItemPath(resource.ID, namespaceTerm, schemaName, item.Name)
-	facts, err := factsProvider.DescribeCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.CatalogFactsOptions{
+	facts, err := factsProvider.DescribeEngineCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.EngineCatalogFactsOptions{
 		IncludeSpatialFacts: true,
 		IncludeStatistics:   true,
 		IncludeIndexes:      true,
@@ -402,7 +402,7 @@ func (r *ItemRefreshRuntime) refreshKnownCatalogFactsItem(
 		tableInfo = *existingTableInfo
 	}
 	tableInfo.Name = item.Name
-	if factsTable := plugin.CatalogFactsTableInfo(facts); factsTable != nil {
+	if factsTable := plugin.EngineCatalogFactsTableInfo(facts); factsTable != nil {
 		tableInfo = mergeDatabaseTableInfo(tableInfo, *factsTable)
 	}
 	tableInfo.Kind = normalizedTableKind(tableInfo)
@@ -420,8 +420,8 @@ func (r *ItemRefreshRuntime) refreshKnownCatalogFactsItem(
 	}
 	metaattr.SetStorage(attrs, "schema_name", schemaName)
 	metaattr.ApplyTableItemAttributes(attrs, &tableInfo)
-	metaattr.ApplyCatalogFactsCapabilities(attrs, facts)
-	if spatialInfo := plugin.CatalogFactsSpatialInfo(facts); spatialInfo != nil {
+	metaattr.ApplyEngineCatalogFactsCapabilities(attrs, facts)
+	if spatialInfo := plugin.EngineCatalogFactsSpatialInfo(facts); spatialInfo != nil {
 		metaattr.MergeStandardAttributes(attrs, metaattr.TableDescribeAttributes(metaattr.TableDescribeAttributesInput{
 			Spatial: spatialInfo,
 		}))
@@ -449,7 +449,7 @@ func (r *ItemRefreshRuntime) refreshKnownCatalogFactsItem(
 	}
 
 	if r.indexer != nil {
-		r.indexer.IndexTableAsset(ctx, resource, tenantID, schemaName, tableInfo, tableInfo.Fields, refreshed)
+		r.indexer.IndexTableContent(ctx, resource, tenantID, schemaName, tableInfo, tableInfo.Fields, refreshed)
 	}
 
 	return scanprocessor.Result{Item: refreshed, Fields: len(tableInfo.Fields)}, true, nil
@@ -460,29 +460,29 @@ func (r *ItemRefreshRuntime) refreshKnownDirectCatalogLeafFactsItem(
 	resource *commonModels.Engine,
 	tenantID uint,
 	p plugin.EnginePlugin,
-	factsProvider plugin.CatalogFactsProvider,
+	factsProvider plugin.EngineCatalogFactsProvider,
 	item models.MetaItem,
 	parentNode models.MetaNode,
 ) (scanprocessor.Result, bool, error) {
-	model := scanflow.CatalogModelForPlugin(p)
+	model := scanflow.EngineCatalogModelForPlugin(p)
 	if model == nil || len(model.Levels) != 1 {
 		return scanprocessor.Result{}, false, nil
 	}
 	leaf := model.Levels[0]
-	if leaf.Role != plugin.CatalogRoleLeaf || leaf.Term != item.ItemType {
+	if leaf.Role != plugin.EngineCatalogRoleLeaf || leaf.Term != item.ItemType {
 		return scanprocessor.Result{}, false, nil
 	}
 	if strings.TrimSpace(item.Name) == "" || len(leaf.Kinds) != 1 || strings.TrimSpace(leaf.Kinds[0]) == "" {
 		return scanprocessor.Result{}, true, fmt.Errorf("catalog leaf refresh target is incomplete; rescan the parent node")
 	}
 
-	path := plugin.CatalogRootPath(*model, resource.ID)
-	path.Segments = append(path.Segments, plugin.CatalogSegment{
+	path := plugin.EngineCatalogRootPath(*model, resource.ID)
+	path.Segments = append(path.Segments, plugin.EngineCatalogSegment{
 		Term: leaf.Term,
 		Kind: leaf.Kinds[0],
 		Name: item.Name,
 	})
-	facts, err := factsProvider.DescribeCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.CatalogFactsOptions{
+	facts, err := factsProvider.DescribeEngineCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.EngineCatalogFactsOptions{
 		IncludeStatistics: true,
 	})
 	if err != nil {

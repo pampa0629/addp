@@ -339,7 +339,7 @@ func TestObjectCatalogContentReaderStripsBucketPrefixFromRefPath(t *testing.T) {
 	if got := enginePlugin.openedPath.StringPath(); got != "addp/gis/规划用地.dbf" {
 		t.Fatalf("opened path = %q, want catalog path with bucket plus object key", got)
 	}
-	segments := plugin.CatalogPathWithoutRoot(enginePlugin.openedPath).Segments
+	segments := plugin.EngineCatalogPathWithoutRoot(enginePlugin.openedPath).Segments
 	if len(segments) != 3 {
 		t.Fatalf("segments = %#v, want bucket + prefix + object", enginePlugin.openedPath.Segments)
 	}
@@ -363,7 +363,7 @@ func TestObjectCatalogContentReaderOpenRangeStripsBucketPrefixFromRefPath(t *tes
 	if got := enginePlugin.rangeOpenedPath.StringPath(); got != "addp/gis/规划用地.shx" {
 		t.Fatalf("range opened path = %q, want catalog path with bucket plus object key", got)
 	}
-	segments := plugin.CatalogPathWithoutRoot(enginePlugin.rangeOpenedPath).Segments
+	segments := plugin.EngineCatalogPathWithoutRoot(enginePlugin.rangeOpenedPath).Segments
 	if len(segments) != 3 {
 		t.Fatalf("segments = %#v, want bucket + prefix + object", enginePlugin.rangeOpenedPath.Segments)
 	}
@@ -2340,8 +2340,8 @@ type recordingContentPlugin struct {
 	engineType      string
 	content         []byte
 	contents        map[string][]byte
-	openedPath      plugin.CatalogPath
-	rangeOpenedPath plugin.CatalogPath
+	openedPath      plugin.EngineCatalogPath
+	rangeOpenedPath plugin.EngineCatalogPath
 	rangeOptions    plugin.ReadOptions
 }
 
@@ -2368,7 +2368,7 @@ func (p *recordingContentPlugin) Capabilities() plugin.EngineCapabilities {
 func (p *recordingContentPlugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (p *recordingContentPlugin) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+func (p *recordingContentPlugin) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	p.openedPath = path
 	if p.contents != nil {
 		if content, ok := p.contents[path.StringPath()]; ok {
@@ -2380,7 +2380,7 @@ func (p *recordingContentPlugin) OpenContent(_ context.Context, _ plugin.Connect
 	}
 	return io.NopCloser(strings.NewReader("name\nAlice\n")), nil
 }
-func (p *recordingContentPlugin) OpenRange(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+func (p *recordingContentPlugin) OpenRange(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
 	p.rangeOpenedPath = path
 	p.rangeOptions = opts
 	return io.NopCloser(strings.NewReader("range")), nil

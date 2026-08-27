@@ -710,7 +710,7 @@ func toEngineDetailResponse(engine *models.Engine) engineResponse {
 	return toEngineResponse(engine)
 }
 
-// ListCatalogChildren 列出指定引擎的实时 catalog 子节点。
+// ListEngineCatalogChildren 列出指定引擎的实时 catalog 子节点。
 // @Summary 列出实时 catalog 子节点 | List live catalog children
 // @Description 基于 System 管理的引擎连接信息实时浏览真实引擎 catalog。请求空 path 返回显性结构 root；请求 root path 返回 schema、bucket、database、directory 等第一层业务节点。| Browse live engine catalog using System-managed connection information. Empty path returns the explicit structural root; root path returns first business branches.
 // @Tags 引擎管理 | Engine Management
@@ -718,8 +718,8 @@ func toEngineDetailResponse(engine *models.Engine) engineResponse {
 // @Produce json
 // @Security BearerAuth
 // @Param id path int true "引擎ID | Engine ID"
-// @Param request body models.CatalogListChildrenRequest true "Catalog 路径请求 | Catalog path request"
-// @Success 200 {object} models.CatalogListChildrenResponse
+// @Param request body models.EngineCatalogListChildrenRequest true "Catalog 路径请求 | Catalog path request"
+// @Success 200 {object} models.EngineCatalogListChildrenResponse
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 401 {object} models.ErrorResponse
 // @Failure 404 {object} models.ErrorResponse
@@ -727,13 +727,13 @@ func toEngineDetailResponse(engine *models.Engine) engineResponse {
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.engine.read"]
 // @Router /engines/{id}/catalog/children [post]
-func (h *EngineHandler) ListCatalogChildren(c *gin.Context) {
+func (h *EngineHandler) ListEngineCatalogChildren(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
 		return
 	}
 
-	var req models.CatalogListChildrenRequest
+	var req models.EngineCatalogListChildrenRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
 		return
@@ -750,16 +750,16 @@ func (h *EngineHandler) ListCatalogChildren(c *gin.Context) {
 		return
 	}
 
-	nodes, err := h.storageEngineService.ListCatalogChildren(c.Request.Context(), engine, req)
+	nodes, err := h.storageEngineService.ListEngineCatalogChildren(c.Request.Context(), engine, req)
 	if err != nil {
 		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	commonapi.RespondSuccess(c, models.CatalogListChildrenResponse{Nodes: nodes})
+	commonapi.RespondSuccess(c, models.EngineCatalogListChildrenResponse{Nodes: nodes})
 }
 
-// DescribeCatalogFacts 返回指定实时 catalog 叶子的结构事实。
+// DescribeEngineCatalogFacts 返回指定实时 catalog 叶子的结构事实。
 // @Summary 获取实时 catalog 叶子事实 | Describe live catalog leaf facts
 // @Description 基于 System 管理的引擎连接读取一个 catalog 叶子的结构事实；普通列表不会携带的字段详情通过此接口按需读取。| Read structural facts for one catalog leaf using the System-managed engine connection. Field details omitted from list responses are loaded here on demand.
 // @Tags 引擎管理 | Engine Management
@@ -767,8 +767,8 @@ func (h *EngineHandler) ListCatalogChildren(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Param id path int true "引擎ID | Engine ID"
-// @Param request body models.CatalogDescribeFactsRequest true "Catalog 叶子路径 | Catalog leaf path"
-// @Success 200 {object} plugin.CatalogFacts
+// @Param request body models.EngineCatalogDescribeFactsRequest true "Catalog 叶子路径 | Catalog leaf path"
+// @Success 200 {object} plugin.EngineCatalogFacts
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 401 {object} models.ErrorResponse
 // @Failure 404 {object} models.ErrorResponse
@@ -776,12 +776,12 @@ func (h *EngineHandler) ListCatalogChildren(c *gin.Context) {
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.engine.read"]
 // @Router /engines/{id}/catalog/facts [post]
-func (h *EngineHandler) DescribeCatalogFacts(c *gin.Context) {
+func (h *EngineHandler) DescribeEngineCatalogFacts(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
 		return
 	}
-	var req models.CatalogDescribeFactsRequest
+	var req models.EngineCatalogDescribeFactsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
 		return
@@ -796,7 +796,7 @@ func (h *EngineHandler) DescribeCatalogFacts(c *gin.Context) {
 		h.respondWithResourceError(c, err)
 		return
 	}
-	facts, err := h.storageEngineService.DescribeCatalogFacts(c.Request.Context(), engine, req)
+	facts, err := h.storageEngineService.DescribeEngineCatalogFacts(c.Request.Context(), engine, req)
 	if err != nil {
 		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
 		return

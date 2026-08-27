@@ -28,6 +28,21 @@ other = "资产已上架"
 [asset.asset.offlined]
 other = "资产已下架"
 
+[asset.asset.catalog_unavailable]
+other = "企业数据目录当前不可用，请稍后重试"
+
+[asset.asset.version_conflict]
+other = "资产已被其他人更新，请刷新后重试"
+
+[asset.asset.not_editable]
+other = "已上架资产不能直接编辑，请先下架"
+
+[asset.asset.reference_not_selectable]
+other = "所选企业目录条目已失效或不可组合"
+
+[asset.asset.reference_not_publishable]
+other = "所选企业目录条目尚未完成业务编目，不能发布资产"
+
 [asset.application.approve_success]
 other = "审批通过"
 

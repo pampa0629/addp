@@ -351,61 +351,6 @@ func handleAssetDetail(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	}
 }
 
-// @Summary 获取资产服务端点 | Get asset service endpoints
-// @Tags Portal
-// @Produce json
-// @Param id path int true "资产ID | Asset ID"
-// @Success 200 {object} map[string]interface{}
-// @Failure 502 {object} map[string]string "下游服务调用失败 | Downstream service request failed"
-// @Router /assets/{id}/endpoints [get]
-// @Security BearerAuth
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.entry.read","asset.application.read","asset.authorization.read"]
-// handleAssetEndpoints GET /api/portal/assets/:id/endpoints
-// 已授权用户获取数据服务资产的服务端点信息
-func handleAssetEndpoints(assetClient *commonClient.AssetClient, serviceClient *commonClient.ServiceClient) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		tenantID := int64(commonAuth.GetTenantID(c))
-
-		assetID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-		if err != nil {
-			commonAPI.BadRequestError(c, "无效的资产 ID")
-			return
-		}
-
-		// 验证用户已授权
-		status, err := assetClient.GetApplyStatus(c.Request.Context(), userAccessToken(c), assetID)
-		if err != nil {
-			writeAssetClientError(c, err, "查询资产授权状态失败")
-			return
-		}
-		if status != "approved" {
-			commonAPI.ForbiddenError(c, "无访问权限，请先申请并获得授权")
-			return
-		}
-
-		// 获取资产详情（含 source_reference）
-		detail, err := assetClient.GetAssetDetail(c.Request.Context(), userAccessToken(c), assetID)
-		if err != nil {
-			writeAssetClientError(c, err, "获取资产详情失败")
-			return
-		}
-
-		// 仅数据服务类型有 endpoint
-		if detail.SourceModule != "service" || detail.SourceReference == "" {
-			commonAPI.SuccessResponse(c, gin.H{"service_type": "", "title": detail.Name, "endpoints": map[string]string{}})
-			return
-		}
-
-		info, err := serviceClient.GetEndpointsByRef(c.Request.Context(), uint(tenantID), detail.SourceReference)
-		if err != nil {
-			commonAPI.ErrorResponse(c, http.StatusBadGateway, "获取服务端点失败")
-			return
-		}
-		commonAPI.SuccessResponse(c, info)
-	}
-}
-
 // ============================================================
 // 资产评价（Phase 6）
 // ============================================================

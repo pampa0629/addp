@@ -112,7 +112,7 @@ func TestPostgresGeometryColumns(t *testing.T) {
 }
 
 func TestTablePathPartsRequiresSchemaAndTable(t *testing.T) {
-	_, _, err := tablePathParts(plugin.CatalogPath{})
+	_, _, err := tablePathParts(plugin.EngineCatalogPath{})
 	if err == nil {
 		t.Fatal("tablePathParts() succeeded, want error")
 	}

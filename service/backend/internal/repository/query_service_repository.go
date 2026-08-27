@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"strings"
+
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/service/internal/models"
 	"gorm.io/gorm"
@@ -8,6 +10,56 @@ import (
 
 type QueryServiceRepository struct {
 	db *gorm.DB
+}
+
+// ListConsumerServices returns only Query Services that satisfy the current
+// owner resource policy. Every row-level predicate is applied before count and
+// pagination so list totals cannot disclose unavailable services.
+func (r *QueryServiceRepository) ListConsumerServices(filter models.ConsumerServiceListFilter) ([]models.QueryService, int64, error) {
+	var services []models.QueryService
+	var total int64
+
+	query := r.consumerServicesQuery(filter.TenantID)
+	if search := strings.TrimSpace(filter.Search); search != "" {
+		pattern := "%" + search + "%"
+		query = query.Where("title ILIKE ? OR description ILIKE ?", pattern, pattern)
+	}
+	switch filter.OutputKind {
+	case models.ConsumerOutputKindSpatialTabular:
+		query = query.Where("COALESCE(data_config #>> '{source_snapshot,spatial,primary_geometry_column}', '') <> ''")
+	case models.ConsumerOutputKindTabular:
+		query = query.Where("COALESCE(data_config #>> '{source_snapshot,spatial,primary_geometry_column}', '') = ''")
+	}
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if err := query.
+		Order("title ASC").
+		Order("id ASC").
+		Offset(filter.Offset).
+		Limit(filter.Limit).
+		Find(&services).Error; err != nil {
+		return nil, 0, err
+	}
+	return services, total, nil
+}
+
+// GetConsumerServiceByID applies the same owner resource policy used by the
+// catalog list. Unavailable services are therefore indistinguishable from
+// missing services at the consumer boundary.
+func (r *QueryServiceRepository) GetConsumerServiceByID(tenantID, serviceID uint) (*models.QueryService, error) {
+	var service models.QueryService
+	if err := r.consumerServicesQuery(tenantID).Where("id = ?", serviceID).First(&service).Error; err != nil {
+		return nil, commonrepo.WrapDBError(err)
+	}
+	return &service, nil
+}
+
+func (r *QueryServiceRepository) consumerServicesQuery(tenantID uint) *gorm.DB {
+	return r.db.Model(&models.QueryService{}).
+		Where("tenant_id = ?", tenantID).
+		Where("status = ?", "active").
+		Where("protocols @> ?::jsonb", `{"rest_api":{"enabled":true}}`)
 }
 
 func NewQueryServiceRepository(db *gorm.DB) *QueryServiceRepository {

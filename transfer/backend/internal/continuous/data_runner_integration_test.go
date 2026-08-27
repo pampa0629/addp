@@ -253,12 +253,12 @@ func TestIntegrationContinuousKafkaRetentionHealthTransitions(t *testing.T) {
 	defer admin.DeleteTopics(context.Background(), topic)
 
 	plugin := &kafka.KafkaPlugin{}
-	root := engineplugin.CatalogRootPath(plugin.CatalogModel(), 30)
+	root := engineplugin.EngineCatalogRootPath(plugin.EngineCatalogModel(), 30)
 	entries, err := plugin.ListChildren(ctx, kafkaInfo, root, engineplugin.ListOptions{})
 	if err != nil {
 		t.Fatalf("list Kafka topics: %v", err)
 	}
-	var topicPath engineplugin.CatalogPath
+	var topicPath engineplugin.EngineCatalogPath
 	for _, entry := range entries {
 		if entry.Name == topic {
 			topicPath = entry.Path

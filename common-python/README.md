@@ -93,7 +93,7 @@ from addp_common.notebook import engines
 available_engines = engines.list()
 available_engines
 
-# PostgreSQL 使用原生 Schema / Table 术语，无需理解 CatalogPath
+# PostgreSQL 使用原生 Schema / Table 术语，无需理解 EngineCatalogPath
 pg = engines.client(available_engines[0]["id"])
 schemas = pg.schemas()
 tables = pg.tables(schema="public")
@@ -130,7 +130,7 @@ filtered = pg.sql(
 )
 ```
 
-`engines.client()` 按精确 `engine_type` 返回已注册的原生只读门面；首期支持 PostgreSQL。SDK 内部仍使用统一 Catalog 契约，只缓存服务端返回的 root/branch 规范路径，不缓存 children、失败或数据内容。`scan()` 是算法读取全部数据的主路径；`to_pandas()` 只消费 `scan()`，并同时检查 Catalog 估算大小和实际 Arrow 解码字节；PostgreSQL `to_geopandas()` 在同一内存边界内把受控扫描返回的 EWKB 空间列转换为 GeoDataFrame，几何列和 CRS 必须来自调用方已验证的 Catalog facts。任意 SQL 的流式 `scan_sql()` 属于后续阶段，当前 `sql()` 固定返回有 `max_rows` 边界的 DataFrame。
+`engines.client()` 按精确 `engine_type` 返回已注册的原生只读门面；首期支持 PostgreSQL。SDK 内部仍使用统一 Engine Catalog 契约，只缓存服务端返回的 root/branch 规范路径，不缓存 children、失败或数据内容。`scan()` 是算法读取全部数据的主路径；`to_pandas()` 只消费 `scan()`，并同时检查 Engine Catalog 估算大小和实际 Arrow 解码字节；PostgreSQL `to_geopandas()` 在同一内存边界内把受控扫描返回的 EWKB 空间列转换为 GeoDataFrame，几何列和 CRS 必须来自调用方已验证的 Engine Catalog facts。任意 SQL 的流式 `scan_sql()` 属于后续阶段，当前 `sql()` 固定返回有 `max_rows` 边界的 DataFrame。
 
 该 SDK 只读取 Runtime 注入当前 Kernel process 的短期 Notebook Kernel Capability，不接受手工 Token，不读取 `ADDP_TOKEN`，也不返回 `connection_info`。在普通 Python process、已关闭或已过期的 Notebook 会话中调用时会 fail-closed。
 

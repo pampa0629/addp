@@ -251,15 +251,15 @@ func TestFileScanRefGroupsPersistsSingleShapefileItem(t *testing.T) {
 func TestFileScanRefGroupsPersistsFileGDBScopeItem(t *testing.T) {
 	sizeBytes := int64(12)
 	provider := filesystemScanTestProvider{
-		entriesByPath: map[string][]plugin.CatalogEntry{
+		entriesByPath: map[string][]plugin.EngineCatalogEntry{
 			"arcgis/pgeo_roundtrip.gdb": {
 				{
 					Name: "a00000001.gdbtable",
 					Path: plugin.FileItemPath(27, "arcgis/pgeo_roundtrip.gdb/a00000001.gdbtable"),
-					Term: plugin.CatalogTermFile,
-					Kind: plugin.CatalogKindFile,
-					Role: plugin.CatalogRoleLeaf,
-					Storage: &plugin.CatalogStorageFacts{
+					Term: plugin.EngineCatalogTermFile,
+					Kind: plugin.EngineCatalogKindFile,
+					Role: plugin.EngineCatalogRoleLeaf,
+					Storage: &plugin.EngineCatalogStorageFacts{
 						Path:      "arcgis/pgeo_roundtrip.gdb/a00000001.gdbtable",
 						SizeBytes: &sizeBytes,
 					},
@@ -267,10 +267,10 @@ func TestFileScanRefGroupsPersistsFileGDBScopeItem(t *testing.T) {
 				{
 					Name: "a00000001.gdbtablx",
 					Path: plugin.FileItemPath(27, "arcgis/pgeo_roundtrip.gdb/a00000001.gdbtablx"),
-					Term: plugin.CatalogTermFile,
-					Kind: plugin.CatalogKindFile,
-					Role: plugin.CatalogRoleLeaf,
-					Storage: &plugin.CatalogStorageFacts{
+					Term: plugin.EngineCatalogTermFile,
+					Kind: plugin.EngineCatalogKindFile,
+					Role: plugin.EngineCatalogRoleLeaf,
+					Storage: &plugin.EngineCatalogStorageFacts{
 						Path:      "arcgis/pgeo_roundtrip.gdb/a00000001.gdbtablx",
 						SizeBytes: &sizeBytes,
 					},

@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/addp/common/datatype"
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 func TestShouldUpdateTableUsesUpdatedAt(t *testing.T) {
@@ -76,16 +76,16 @@ func TestShouldUpdateStorageResourceUsesExactSourceState(t *testing.T) {
 	size := int64(100)
 	item := &models.MetaItem{DataUpdatedAt: &modifiedAt, SizeBytes: &size}
 
-	if ShouldUpdateStorageResource(item, metacatalog.StorageResource{LastModified: &modifiedAt, SizeBytes: size}) {
+	if ShouldUpdateStorageResource(item, scanresource.StorageResource{LastModified: &modifiedAt, SizeBytes: size}) {
 		t.Fatal("unchanged object should not update")
 	}
 
 	later := modifiedAt.Add(time.Second)
-	if !ShouldUpdateStorageResource(item, metacatalog.StorageResource{LastModified: &later, SizeBytes: size}) {
+	if !ShouldUpdateStorageResource(item, scanresource.StorageResource{LastModified: &later, SizeBytes: size}) {
 		t.Fatal("object should update when last_modified changes")
 	}
 
-	if !ShouldUpdateStorageResource(item, metacatalog.StorageResource{LastModified: &modifiedAt, SizeBytes: size + 1}) {
+	if !ShouldUpdateStorageResource(item, scanresource.StorageResource{LastModified: &modifiedAt, SizeBytes: size + 1}) {
 		t.Fatal("object should update when size changes")
 	}
 }

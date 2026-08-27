@@ -10,13 +10,13 @@ import (
 )
 
 func TestNeo4jDatabaseFromCatalogPath(t *testing.T) {
-	database, ok := neo4jDatabaseFromCatalogPath(plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
+	database, ok := neo4jDatabaseFromCatalogPath(plugin.EngineCatalogPath{
+		Version:  plugin.EngineCatalogPathVersion,
 		EngineID: 9,
-		Segments: []plugin.CatalogSegment{
-			{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer},
-			{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: "business"},
-			{Term: plugin.CatalogTermGraph, Kind: plugin.CatalogKindGraph, Name: plugin.CatalogKindGraph},
+		Segments: []plugin.EngineCatalogSegment{
+			{Term: plugin.EngineCatalogTermServer, Kind: plugin.EngineCatalogTermServer},
+			{Term: plugin.EngineCatalogTermDatabase, Kind: plugin.EngineCatalogKindNamespace, Name: "business"},
+			{Term: plugin.EngineCatalogTermGraph, Kind: plugin.EngineCatalogKindGraph, Name: plugin.EngineCatalogKindGraph},
 		},
 	})
 	if !ok || database != "business" {

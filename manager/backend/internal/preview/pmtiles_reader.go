@@ -31,7 +31,7 @@ func (r *PreviewResolver) ReadPMTilesTileFromURI(ctx context.Context, locatorURI
 	if !ok {
 		return nil, true, fmt.Errorf("engine %s does not support PMTiles range reads", providerReq.Engine.EngineType)
 	}
-	catalog, ok := providerReq.EnginePlugin.(plugin.CatalogProvider)
+	catalog, ok := providerReq.EnginePlugin.(plugin.EngineCatalogProvider)
 	if !ok {
 		return nil, true, fmt.Errorf("engine %s does not support PMTiles catalog resolution", providerReq.Engine.EngineType)
 	}

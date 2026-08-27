@@ -131,7 +131,7 @@ func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 	})
 }
 
-func (p *PostgreSQLPlugin) CatalogModel() plugin.CatalogModelSpec {
+func (p *PostgreSQLPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.TabularCatalogModel("schema")
 }
 
@@ -151,15 +151,15 @@ func (p *PostgreSQLPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallba
 	}
 }
 
-func (p *PostgreSQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+func (p *PostgreSQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath, opts plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
 	return plugin.ListTabularCatalogChildren(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
 }
 
-func (p *PostgreSQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p *PostgreSQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	return plugin.ResolveTabularCatalogPath(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
 }
 
-func (p *PostgreSQLPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *PostgreSQLPlugin) DescribeEngineCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	return plugin.DescribeTabularCatalogFacts(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
 }
 
@@ -168,7 +168,7 @@ func (p *PostgreSQLPlugin) QueryLanguages() []string {
 }
 
 func (p *PostgreSQLPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
-	return plugin.SampleSQLForCatalogPath(p.Type(), opts.Path, 10), "sql"
+	return plugin.SampleSQLForEngineCatalogPath(p.Type(), opts.Path, 10), "sql"
 }
 
 func (p *PostgreSQLPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
@@ -187,7 +187,7 @@ func (p *PostgreSQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.Conne
 	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)
 }
 
-func (p *PostgreSQLPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
+func (p *PostgreSQLPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
 	return plugin.ReadSQLBatch(ctx, p, connInfo, path, opts)
 }
 
@@ -227,10 +227,10 @@ func (p *PostgreSQLPlugin) GetDialect() string {
 	return "postgres"
 }
 
-// === CatalogProvider / CatalogFactsProvider 回调实现 ===
+// === EngineCatalogProvider / EngineCatalogFactsProvider 回调实现 ===
 
 // listNamespaces 列出所有 Schema。
-func (p *PostgreSQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB, root plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
+func (p *PostgreSQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB, root plugin.EngineCatalogPath) ([]plugin.EngineCatalogEntry, error) {
 	var rows []postgresNamespaceRow
 
 	superMapSDXDetected, err := p.hasSuperMapSDXSystemTables(ctx, db)
@@ -261,7 +261,7 @@ func (p *PostgreSQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB, root
 		return nil, fmt.Errorf("failed to list namespaces: %w", err)
 	}
 
-	namespaces := make([]plugin.CatalogEntry, 0, len(rows))
+	namespaces := make([]plugin.EngineCatalogEntry, 0, len(rows))
 	for _, row := range rows {
 		namespaces = append(namespaces, plugin.TabularNamespaceCatalogEntry(root, "schema", row.Name, row.LeafCount))
 	}

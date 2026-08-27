@@ -7,18 +7,18 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 // scanDirectory 递归扫描目录，对每个目录运行 item resolver 链。
 func (s *FilesystemCatalogRuntime) scanDirectory(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
-	catalogProvider plugin.CatalogProvider,
+	catalogProvider plugin.EngineCatalogProvider,
 	connInfo plugin.ConnectionInfo,
 	resource *commonModels.Engine,
 	tenantID uint,
@@ -147,7 +147,7 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 
 	for _, subdir := range subdirs {
 		subdirName := subdir.Name
-		subdirAttrs := metacatalog.FileDirectoryNodeAttributes(subdir.Path)
+		subdirAttrs := scanresource.FileDirectoryNodeAttributes(subdir.Path)
 		subdirFullName := metapath.JoinFSPath(parentNode.FullName, subdirName)
 		scannedSubdirFullNames[subdirFullName] = true
 		subdirNode, err := s.repo.UpsertNode(tenantID, resource.ID, parentNode, "dir", subdirName, &subdirFullName, subdirAttrs)

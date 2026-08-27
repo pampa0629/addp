@@ -142,38 +142,6 @@ paths:
       x-addp-required-permissions:
       - asset.application.read
       - asset.authorization.read
-  /assets/{id}/endpoints:
-    get:
-      parameters:
-      - description: 资产ID | Asset ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "502":
-          description: 下游服务调用失败 | Downstream service request failed
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取资产服务端点 | Get asset service endpoints
-      tags:
-      - Portal
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - asset.entry.read
-      - asset.application.read
-      - asset.authorization.read
   /assets/{id}/ratings:
     get:
       parameters:

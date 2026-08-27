@@ -413,7 +413,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "quality.check_task.read"
+                    "quality.task_provider.read"
                 ]
             }
         },
@@ -444,7 +444,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.qualityExecutionResponse"
+                            "$ref": "#/definitions/internal_api.qualityTaskExecutionResponse"
                         }
                     },
                     "404": {
@@ -462,7 +462,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "quality.check_task.read"
+                    "quality.task_provider.read"
                 ]
             }
         },
@@ -665,6 +665,285 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "quality.issue.update"
+                ]
+            }
+        },
+        "/materialization-gate-tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "MaterializationGate"
+                ],
+                "summary": "列出物化门禁任务 | List materialization gate tasks",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityMaterializationGateTaskListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.materialization_gate.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "MaterializationGate"
+                ],
+                "summary": "创建物化门禁任务 | Create materialization gate task",
+                "parameters": [
+                    {
+                        "description": "物化门禁定义 | Materialization gate definition",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_quality_internal_service.MaterializationGateWriteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityMaterializationGateTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.materialization_gate.create"
+                ]
+            }
+        },
+        "/materialization-gate-tasks/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "MaterializationGate"
+                ],
+                "summary": "获取物化门禁任务 | Get materialization gate task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityMaterializationGateTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.materialization_gate.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "MaterializationGate"
+                ],
+                "summary": "更新物化门禁任务 | Update materialization gate task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整物化门禁定义 | Complete materialization gate definition",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_quality_internal_service.MaterializationGateWriteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityMaterializationGateTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.materialization_gate.update"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "MaterializationGate"
+                ],
+                "summary": "删除物化门禁任务 | Delete materialization gate task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "删除版本 | Delete version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.materializationGateDeleteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityMessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.materialization_gate.delete"
                 ]
             }
         },
@@ -1050,6 +1329,77 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/catalog-summaries/resolve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按请求顺序解析 1 到 200 个 PostgreSQL 表的当前质量摘要，仅供 Catalog 服务消费 | Resolve current quality summaries for 1 to 200 PostgreSQL tables in request order; Catalog service only",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Integration"
+                ],
+                "summary": "解析企业目录质量摘要 | Resolve enterprise catalog quality summaries",
+                "parameters": [
+                    {
+                        "description": "结构化表引用 | Structured table references",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_quality_internal_models.ResolveCatalogSummariesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_quality_internal_models.ResolveCatalogSummariesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "需要认证 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "非 Catalog 服务或权限不足 | Catalog service or permission required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "解析失败 | Resolution failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.catalog.read"
+                ]
+            }
+        },
         "/tasks": {
             "get": {
                 "security": [
@@ -1057,7 +1407,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按标准 TaskProvider 协议列出 Quality 检查任务；task_type 仅支持 check。| List Quality check tasks through the standard TaskProvider protocol; task_type only supports check.",
+                "description": "按标准 TaskProvider 协议列出 Quality 任务；task_type 支持 check|materialization_gate。| List Quality tasks through the standard TaskProvider protocol; task_type supports check or materialization_gate.",
                 "produces": [
                     "application/json"
                 ],
@@ -1068,7 +1418,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型，固定为 check | Task type, fixed to check",
+                        "description": "任务类型：check|materialization_gate | Task type: check or materialization_gate",
                         "name": "task_type",
                         "in": "query"
                     }
@@ -1095,7 +1445,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "quality.check_task.read"
+                    "quality.task_provider.read"
                 ]
             }
         },
@@ -1106,7 +1456,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按标准 TaskProvider 协议获取 Quality 检查任务详情；task_type 仅支持 check。| Get Quality check task detail through the standard TaskProvider protocol; task_type only supports check.",
+                "description": "按标准 TaskProvider 协议获取 Quality 任务详情；task_type 支持 check|materialization_gate。| Get Quality task detail through the standard TaskProvider protocol; task_type supports check or materialization_gate.",
                 "produces": [
                     "application/json"
                 ],
@@ -1117,7 +1467,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型，固定为 check | Task type, fixed to check",
+                        "description": "任务类型：check|materialization_gate | Task type: check or materialization_gate",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -1152,7 +1502,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "quality.check_task.read"
+                    "quality.task_provider.read"
                 ]
             }
         },
@@ -1163,7 +1513,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按标准 TaskProvider 协议执行 Quality 检查任务；task_type 仅支持 check，parameters 当前不支持覆盖。| Execute a Quality check task through the standard TaskProvider protocol; task_type only supports check and parameters overrides are not supported.",
+                "description": "按标准 TaskProvider 协议执行 Quality 任务；materialization_gate 仅允许 Orchestrator 且 parameters 不支持覆盖。| Execute a Quality task through the standard TaskProvider protocol; materialization_gate only accepts Orchestrator and parameters overrides are not supported.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1177,7 +1527,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型，固定为 check | Task type, fixed to check",
+                        "description": "任务类型：check|materialization_gate | Task type: check or materialization_gate",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -1232,7 +1582,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "quality.check_task.execute"
+                    "quality.task_provider.execute"
                 ]
             }
         }
@@ -1307,12 +1657,6 @@ const docTemplate = `{
                 },
                 "attempt": {
                     "type": "integer"
-                },
-                "authorization_effects": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 },
                 "authorization_expires_at": {
                     "type": "string"
@@ -1450,6 +1794,52 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_quality_internal_models.CatalogSummaryReference": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "schema_name": {
+                    "type": "string"
+                },
+                "table_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_quality_internal_models.CatalogSummaryResolution": {
+            "type": "object",
+            "properties": {
+                "check_task_id": {
+                    "type": "integer"
+                },
+                "configured": {
+                    "type": "boolean"
+                },
+                "detail_path": {
+                    "type": "string"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_observed_at": {
+                    "type": "string"
+                },
+                "open_issue_count": {
+                    "type": "integer"
+                },
+                "quality_score": {
+                    "type": "number"
+                },
+                "reference": {
+                    "$ref": "#/definitions/github_com_addp_quality_internal_models.CatalogSummaryReference"
+                }
+            }
+        },
         "github_com_addp_quality_internal_models.CheckTask": {
             "type": "object",
             "properties": {
@@ -1580,6 +1970,90 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_quality_internal_models.MaterializationGateTask": {
+            "type": "object",
+            "properties": {
+                "assertions": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "materialization_group_id": {
+                    "type": "integer"
+                },
+                "materialization_group_version": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "table_bindings": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_quality_internal_models.ResolveCatalogSummariesRequest": {
+            "type": "object",
+            "properties": {
+                "references": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_quality_internal_models.CatalogSummaryReference"
+                    }
+                }
+            }
+        },
+        "github_com_addp_quality_internal_models.ResolveCatalogSummariesResponse": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_quality_internal_models.CatalogSummaryResolution"
+                    }
+                }
+            }
+        },
         "github_com_addp_quality_internal_service.CreateCheckTaskRequest": {
             "type": "object",
             "required": [
@@ -1630,6 +2104,49 @@ const docTemplate = `{
                 },
                 "table_name": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_quality_internal_service.MaterializationGateTableBinding": {
+            "type": "object",
+            "properties": {
+                "alias": {
+                    "type": "string"
+                },
+                "logical_table_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_quality_internal_service.MaterializationGateWriteRequest": {
+            "type": "object",
+            "properties": {
+                "assertions": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "materialization_group_id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "table_bindings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_quality_internal_service.MaterializationGateTableBinding"
+                    }
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -1774,6 +2291,14 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.materializationGateDeleteRequest": {
+            "type": "object",
+            "properties": {
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.qualityCheckTaskListResponse": {
             "type": "object",
             "properties": {
@@ -1902,161 +2427,6 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.qualityExecutionResponse": {
-            "type": "object",
-            "properties": {
-                "actor_principal_id": {
-                    "description": "User-derived execution authorization facts. The raw User/Service tokens\nand engine connection details are never persisted in task executions.",
-                    "type": "integer"
-                },
-                "actor_tenant_membership_id": {
-                    "type": "integer"
-                },
-                "attempt": {
-                    "type": "integer"
-                },
-                "authorization_effects": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "authorization_expires_at": {
-                    "type": "string"
-                },
-                "bytes_read": {
-                    "description": "Transfer 读取字节数",
-                    "type": "integer"
-                },
-                "bytes_written": {
-                    "description": "Transfer 写入字节数",
-                    "type": "integer"
-                },
-                "completed_at": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "current_step": {
-                    "description": "当前步骤（Orchestrator/Workflow）",
-                    "type": "string"
-                },
-                "error_details": {
-                    "description": "错误详情（仅失败时有值）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
-                },
-                "execution_authorization_id": {
-                    "type": "integer"
-                },
-                "execution_boundary": {
-                    "description": "ExecutionBoundary separates finite queue work from long-running runtime sessions.",
-                    "type": "string"
-                },
-                "execution_config": {
-                    "description": "JSONB 字段",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
-                },
-                "execution_id": {
-                    "description": "执行标识",
-                    "type": "string"
-                },
-                "execution_time_ms": {
-                    "description": "性能指标",
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "issued_authorization_version": {
-                    "type": "integer"
-                },
-                "max_attempts": {
-                    "type": "integer"
-                },
-                "metadata": {
-                    "description": "模块特有扩展数据（结果、断点、步骤结果等）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
-                },
-                "module": {
-                    "description": "模块标识",
-                    "type": "string"
-                },
-                "parent_execution_id": {
-                    "description": "父执行（Orchestrator 子步骤追踪父编排）",
-                    "type": "string"
-                },
-                "progress": {
-                    "description": "0-100",
-                    "type": "integer"
-                },
-                "records_read": {
-                    "description": "Transfer 读取记录数",
-                    "type": "integer"
-                },
-                "records_written": {
-                    "description": "Transfer 写入记录数",
-                    "type": "integer"
-                },
-                "retry_of_execution_id": {
-                    "type": "string"
-                },
-                "rows_affected": {
-                    "description": "SQL 影响行数",
-                    "type": "integer"
-                },
-                "source": {
-                    "description": "触发来源模块",
-                    "type": "string"
-                },
-                "source_task_id": {
-                    "description": "关联原始任务",
-                    "type": "string"
-                },
-                "source_task_name": {
-                    "description": "任务名称（冗余，便于查询）",
-                    "type": "string"
-                },
-                "started_at": {
-                    "description": "时间戳",
-                    "type": "string"
-                },
-                "status": {
-                    "description": "执行状态",
-                    "type": "string"
-                },
-                "task_type": {
-                    "description": "稳定执行类型；可来自任务定义或 ad-hoc execution",
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "trigger_type": {
-                    "description": "触发信息",
-                    "type": "string"
-                },
-                "triggered_by": {
-                    "description": "触发用户ID",
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
         "internal_api.qualityIssueListResponse": {
             "type": "object",
             "properties": {
@@ -2162,6 +2532,91 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.qualityMaterializationGateTaskListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_quality_internal_models.MaterializationGateTask"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.qualityMaterializationGateTaskResponse": {
+            "type": "object",
+            "properties": {
+                "assertions": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "materialization_group_id": {
+                    "type": "integer"
+                },
+                "materialization_group_version": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "table_bindings": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.qualityMessageResponse": {
             "type": "object",
             "properties": {
@@ -2239,6 +2694,158 @@ const docTemplate = `{
                 },
                 "updated_by": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api.qualityTaskExecutionResponse": {
+            "type": "object",
+            "properties": {
+                "actor_principal_id": {
+                    "description": "User-derived execution authorization facts. The raw User/Service tokens\nand engine connection details are never persisted in task executions.",
+                    "type": "integer"
+                },
+                "actor_tenant_membership_id": {
+                    "type": "integer"
+                },
+                "attempt": {
+                    "type": "integer"
+                },
+                "authorization_expires_at": {
+                    "type": "string"
+                },
+                "bytes_read": {
+                    "description": "Transfer 读取字节数",
+                    "type": "integer"
+                },
+                "bytes_written": {
+                    "description": "Transfer 写入字节数",
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "description": "当前步骤（Orchestrator/Workflow）",
+                    "type": "string"
+                },
+                "error_details": {
+                    "description": "错误详情（仅失败时有值）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.JSONMap"
+                        }
+                    ]
+                },
+                "execution_authorization_id": {
+                    "type": "integer"
+                },
+                "execution_boundary": {
+                    "description": "ExecutionBoundary separates finite queue work from long-running runtime sessions.",
+                    "type": "string"
+                },
+                "execution_config": {
+                    "description": "JSONB 字段",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.JSONMap"
+                        }
+                    ]
+                },
+                "execution_id": {
+                    "description": "执行标识",
+                    "type": "string"
+                },
+                "execution_time_ms": {
+                    "description": "性能指标",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "issued_authorization_version": {
+                    "type": "integer"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "description": "模块特有扩展数据（结果、断点、步骤结果等）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.JSONMap"
+                        }
+                    ]
+                },
+                "module": {
+                    "description": "模块标识",
+                    "type": "string"
+                },
+                "outputs": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "parent_execution_id": {
+                    "description": "父执行（Orchestrator 子步骤追踪父编排）",
+                    "type": "string"
+                },
+                "progress": {
+                    "description": "0-100",
+                    "type": "integer"
+                },
+                "records_read": {
+                    "description": "Transfer 读取记录数",
+                    "type": "integer"
+                },
+                "records_written": {
+                    "description": "Transfer 写入记录数",
+                    "type": "integer"
+                },
+                "retry_of_execution_id": {
+                    "type": "string"
+                },
+                "rows_affected": {
+                    "description": "SQL 影响行数",
+                    "type": "integer"
+                },
+                "source": {
+                    "description": "触发来源模块",
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "description": "关联原始任务",
+                    "type": "string"
+                },
+                "source_task_name": {
+                    "description": "任务名称（冗余，便于查询）",
+                    "type": "string"
+                },
+                "started_at": {
+                    "description": "时间戳",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "执行状态",
+                    "type": "string"
+                },
+                "task_type": {
+                    "description": "稳定执行类型；可来自任务定义或 ad-hoc execution",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "trigger_type": {
+                    "description": "触发信息",
+                    "type": "string"
+                },
+                "triggered_by": {
+                    "description": "触发用户ID",
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },

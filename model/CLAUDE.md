@@ -16,6 +16,14 @@
 - DDL 预览（物化前的 SQL 预览）
 - 数仓分层（DW Layer）定义
 
+Model Entity / LogicalTable 是企业 Catalog 的专业资源来源。Model 权威拥有完整对象、属性、字段、Domain / Element / Metric 引用和建模关系；Catalog 只通过 owner-local 变化源自动建立企业身份，并动态读取当前专业摘要，不保存或编辑这些专业事实的副本。变化捕获、动态解析 API、`model.catalog.read` 权限和软依赖边界以 [Model 概念与数据约束规范](docs/model概念与数据约束规范.md) 为准。
+
+Model Entity 与 LogicalTable 的专业关系通过当前 User Token 读取 `/:id/relations` 一跳图；它与只供 `addp-catalog` 机器同步使用的变化流、批量摘要解析严格分离。该查询只读 Model 本地事实，不调用 Catalog 或 Standard，不保存 CatalogEntry 反向引用。
+
+Model prepare 为每个 MaterializationBatch 创建唯一 staging，通过 TaskProvider 稳定输出把 `batch_id + staging_locator` 交给 Orchestrator。任意通用 writer 只按 ResourceLocator 向已存在表写入，不调用 Model。写入成功后，Model `materialization_seal` 使用 `batch_id + writer_execution_id + target_locator` 验证同父编排、同授权主体、writer 终态、目标身份和结构，再将批次提升为 `sealed`。Model 不保存 write-attempt 实体，不识别 writer 模块，不向 Transfer/Develop 提供写入回调或专用 Permission。失败的完整编排从新 prepare 重算，旧 staging 的 DDL 生命周期仍完全由 Model 管理。
+
+`materialization_group_publish` 的 TaskProvider 输入必须显式提交 `expected_group_id + expected_group_version`。Model 在创建 execution 的事务内和 worker 实际物理发布前都校验该期望；Quality 门禁编排必须从门禁稳定输出绑定这两个字段。该参数只表达一致性交接，Model 不因此反向依赖 Quality。
+
 **端口**:
 - 后端: `8181`（环境变量 `MODEL_BACKEND_PORT`）
 - 前端: `5182`（开发环境）
@@ -310,9 +318,9 @@ draft ⇄ approved
    cd model/backend
    go test ./...
    ADDP_TEST_MODEL_POSTGRES_DSN='postgres://addp:addp_password@localhost:15432/addp_test?sslmode=disable' \
-     go test ./internal/service -run 'TestPostgres' -count=1 -v
+     make -C ../.. test-model-postgres
    ```
-   PostgreSQL 集成测试未设置 `ADDP_TEST_MODEL_POSTGRES_DSN` 时会跳过；并发、事务和迁移相关改动必须显式执行第二条命令。
+   PostgreSQL 集成测试未设置 `ADDP_TEST_MODEL_POSTGRES_DSN` 时会跳过；并发、事务和迁移相关改动必须通过根 Makefile 的第二条标准门禁执行，不能直接创建临时 database。
 
 ## 前端公开路由
 

@@ -15,7 +15,7 @@ func TestQualityTaskProviderDeclaration(t *testing.T) {
 		t.Fatalf("invalid declaration: %v", err)
 	}
 	capabilities, _ := taskprovider.ParseCapabilities(string(*declaration.Capabilities))
-	if capabilities.CapabilityFor("check") == nil {
+	if capabilities.CapabilityFor("check") == nil || capabilities.CapabilityFor("materialization_gate") == nil {
 		t.Fatalf("capabilities = %#v", capabilities.TaskCapabilities)
 	}
 }

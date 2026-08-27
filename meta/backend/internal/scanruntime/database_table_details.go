@@ -30,7 +30,7 @@ func (s *DatabaseRuntime) scanTableDetails(
 			return nil, nil, fmt.Errorf("字段扫描失败: %w", err)
 		}
 		describedTable := datatype.TableInfo{Name: tableInfo.Name}
-		if factsTable := plugin.CatalogFactsTableInfo(describedFacts); factsTable != nil {
+		if factsTable := plugin.EngineCatalogFactsTableInfo(describedFacts); factsTable != nil {
 			describedTable = *factsTable
 		}
 		tableInfo = mergeDatabaseTableInfo(tableInfo, describedTable)
@@ -51,9 +51,9 @@ func (s *DatabaseRuntime) scanTableDetails(
 		tableInfo.Fields = fields
 		tableInfo.PrimaryKey = primaryKeyColumns
 		attrs = tableItemAttributes(schemaName, tableInfo)
-		metaattr.ApplyCatalogFactsCapabilities(attrs, describedFacts)
+		metaattr.ApplyEngineCatalogFactsCapabilities(attrs, describedFacts)
 
-		if spatialInfo := plugin.CatalogFactsSpatialInfo(describedFacts); spatialInfo != nil {
+		if spatialInfo := plugin.EngineCatalogFactsSpatialInfo(describedFacts); spatialInfo != nil {
 			metaattr.MergeStandardAttributes(attrs, metaattr.TableDescribeAttributes(metaattr.TableDescribeAttributesInput{
 				Spatial: spatialInfo,
 			}))

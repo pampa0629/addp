@@ -72,18 +72,24 @@ func main() {
 	}
 	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemURL, serviceTokenSource, nil)
 	standardClient := commonClient.NewStandardClient(cfg.StandardURL, serviceTokenSource, nil)
+	modelClient := commonClient.NewModelClient(cfg.ModelURL, serviceTokenSource, nil)
 	executionAuthorizationClient := commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemURL, nil)
 
 	// Repositories
 	ruleAppRepo := repository.NewRuleApplicationRepository(db)
 	checkTaskRepo := repository.NewCheckTaskRepository(db)
+	gateTaskRepo := repository.NewMaterializationGateRepository(db)
 	issueRepo := repository.NewIssueRepository(db)
+	catalogSummaryRepo := repository.NewCatalogSummaryRepository(db)
 
 	// Services
 	ruleEngineSvc := service.NewRuleEngineService(standardClient, systemServiceClient, ruleAppRepo)
 	checkTaskSvc := service.NewCheckTaskService(checkTaskRepo, systemServiceClient)
+	gateTaskSvc := service.NewMaterializationGateService(gateTaskRepo, modelClient, cfg.CheckTimeout)
 	checkExecutor := service.NewCheckExecutor(systemServiceClient, executionAuthorizationClient, checkTaskRepo, issueRepo, cfg.CheckTimeout, cfg.WorkerConcurrency)
+	checkExecutor.ConfigureMaterializationGate(modelClient, gateTaskRepo)
 	issueSvc := service.NewIssueService(issueRepo)
+	catalogSummarySvc := service.NewCatalogSummaryService(catalogSummaryRepo)
 	cleanupService := service.NewCleanupService(db, redisClient, commonExecution.NewTaskExecutionRepository(db))
 	if err := cleanupService.Start(runtimeContext); err != nil {
 		log.Printf("Quality 资源回收服务启动失败: %v", err)
@@ -94,8 +100,10 @@ func main() {
 	router := api.SetupRouter(
 		ruleEngineSvc,
 		checkTaskSvc,
+		gateTaskSvc,
 		checkExecutor,
 		issueSvc,
+		catalogSummarySvc,
 		db,
 		cfg.SystemURL,
 		redisClient,

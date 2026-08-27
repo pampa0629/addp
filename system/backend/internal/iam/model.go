@@ -79,6 +79,50 @@ const (
 	TenantMembershipSourceBootstrap     TenantMembershipSource = "bootstrap"
 )
 
+type DepartmentStatus string
+
+const (
+	DepartmentStatusActive   DepartmentStatus = "active"
+	DepartmentStatusDisabled DepartmentStatus = "disabled"
+)
+
+type OrganizationMembershipStatus string
+
+const (
+	OrganizationMembershipStatusActive OrganizationMembershipStatus = "active"
+	OrganizationMembershipStatusEnded  OrganizationMembershipStatus = "ended"
+)
+
+type DepartmentMembershipType string
+
+const (
+	DepartmentMembershipTypePrimary    DepartmentMembershipType = "primary"
+	DepartmentMembershipTypeAdditional DepartmentMembershipType = "additional"
+)
+
+type DepartmentRelationRole string
+
+const (
+	DepartmentRelationRoleMember DepartmentRelationRole = "member"
+	DepartmentRelationRoleLeader DepartmentRelationRole = "leader"
+)
+
+type ProjectGroupStatus string
+
+const (
+	ProjectGroupStatusPlanned ProjectGroupStatus = "planned"
+	ProjectGroupStatusActive  ProjectGroupStatus = "active"
+	ProjectGroupStatusClosed  ProjectGroupStatus = "closed"
+)
+
+type ProjectGroupRelationRole string
+
+const (
+	ProjectGroupRelationRoleMember      ProjectGroupRelationRole = "member"
+	ProjectGroupRelationRoleLeader      ProjectGroupRelationRole = "leader"
+	ProjectGroupRelationRoleCoordinator ProjectGroupRelationRole = "coordinator"
+)
+
 type TenantInvitationStatus string
 
 const (
@@ -328,6 +372,67 @@ type TenantMembership struct {
 
 func (TenantMembership) TableName() string { return "system.tenant_memberships" }
 
+type Department struct {
+	ID        int64            `gorm:"primaryKey;autoIncrement"`
+	TenantID  int64            `gorm:"column:tenant_id;not null"`
+	ParentID  *int64           `gorm:"column:parent_id"`
+	Code      string           `gorm:"column:code;not null"`
+	Name      string           `gorm:"column:name;not null"`
+	Status    DepartmentStatus `gorm:"column:status;not null"`
+	Version   int64            `gorm:"column:version;not null"`
+	CreatedAt time.Time        `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt time.Time        `gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (Department) TableName() string { return "system.departments" }
+
+type DepartmentMembership struct {
+	ID                 int64                        `gorm:"primaryKey;autoIncrement"`
+	TenantID           int64                        `gorm:"column:tenant_id;not null"`
+	DepartmentID       int64                        `gorm:"column:department_id;not null"`
+	TenantMembershipID int64                        `gorm:"column:tenant_membership_id;not null"`
+	MembershipType     DepartmentMembershipType     `gorm:"column:membership_type;not null"`
+	RelationRole       DepartmentRelationRole       `gorm:"column:relation_role;not null"`
+	Status             OrganizationMembershipStatus `gorm:"column:status;not null"`
+	EndedAt            *time.Time                   `gorm:"column:ended_at"`
+	Version            int64                        `gorm:"column:version;not null"`
+	CreatedAt          time.Time                    `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt          time.Time                    `gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (DepartmentMembership) TableName() string { return "system.department_memberships" }
+
+type ProjectGroup struct {
+	ID          int64              `gorm:"primaryKey;autoIncrement"`
+	TenantID    int64              `gorm:"column:tenant_id;not null"`
+	Code        string             `gorm:"column:code;not null"`
+	Name        string             `gorm:"column:name;not null"`
+	Description string             `gorm:"column:description;not null"`
+	Status      ProjectGroupStatus `gorm:"column:status;not null"`
+	StartsAt    *time.Time         `gorm:"column:starts_at"`
+	EndsAt      *time.Time         `gorm:"column:ends_at"`
+	Version     int64              `gorm:"column:version;not null"`
+	CreatedAt   time.Time          `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt   time.Time          `gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (ProjectGroup) TableName() string { return "system.project_groups" }
+
+type ProjectGroupMembership struct {
+	ID                 int64                        `gorm:"primaryKey;autoIncrement"`
+	TenantID           int64                        `gorm:"column:tenant_id;not null"`
+	ProjectGroupID     int64                        `gorm:"column:project_group_id;not null"`
+	TenantMembershipID int64                        `gorm:"column:tenant_membership_id;not null"`
+	RelationRole       ProjectGroupRelationRole     `gorm:"column:relation_role;not null"`
+	Status             OrganizationMembershipStatus `gorm:"column:status;not null"`
+	EndedAt            *time.Time                   `gorm:"column:ended_at"`
+	Version            int64                        `gorm:"column:version;not null"`
+	CreatedAt          time.Time                    `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt          time.Time                    `gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (ProjectGroupMembership) TableName() string { return "system.project_group_memberships" }
+
 type TenantInvitation struct {
 	ID                    int64                  `gorm:"primaryKey;autoIncrement"`
 	TenantID              int64                  `gorm:"column:tenant_id;not null"`
@@ -530,23 +635,34 @@ func (DelegatedAccessToken) TableName() string { return "system.delegated_access
 // ExecutionAuthorization records a short-lived authorization boundary for one
 // execution. It is an auditable database fact, not a bearer credential.
 type ExecutionAuthorization struct {
-	ID                                   int64          `gorm:"primaryKey;autoIncrement"`
-	ActorPrincipalID                     int64          `gorm:"column:actor_principal_id;not null"`
-	TenantID                             int64          `gorm:"column:tenant_id;not null"`
-	TenantMembershipID                   int64          `gorm:"column:tenant_membership_id;not null"`
-	IssuedAuthorizationVersion           int64          `gorm:"column:issued_authorization_version;not null"`
-	SourceType                           string         `gorm:"column:source_type;not null"`
-	SourceDefinitionID                   *int64         `gorm:"column:source_definition_id"`
-	SourceDefinitionVersion              *string        `gorm:"column:source_definition_version"`
-	SourceNotebookSessionAuthorizationID *uuid.UUID     `gorm:"column:source_notebook_session_authorization_id;type:uuid"`
-	ExecutionID                          uuid.UUID      `gorm:"column:execution_id;type:uuid;not null"`
-	Audience                             string         `gorm:"column:audience;not null"`
-	Effects                              pq.StringArray `gorm:"column:effects;type:text[];not null"`
-	EngineIDs                            pq.Int64Array  `gorm:"column:engine_ids;type:bigint[];not null"`
-	ExpiresAt                            time.Time      `gorm:"column:expires_at;not null"`
-	RevokedAt                            *time.Time     `gorm:"column:revoked_at"`
-	RevokedReason                        *string        `gorm:"column:revoked_reason"`
-	CreatedAt                            time.Time      `gorm:"column:created_at;autoCreateTime"`
+	ID                                   int64      `gorm:"primaryKey;autoIncrement"`
+	ActorPrincipalID                     int64      `gorm:"column:actor_principal_id;not null"`
+	TenantID                             int64      `gorm:"column:tenant_id;not null"`
+	TenantMembershipID                   int64      `gorm:"column:tenant_membership_id;not null"`
+	IssuedAuthorizationVersion           int64      `gorm:"column:issued_authorization_version;not null"`
+	SourceType                           string     `gorm:"column:source_type;not null"`
+	SourceDefinitionID                   *int64     `gorm:"column:source_definition_id"`
+	SourceDefinitionVersion              *string    `gorm:"column:source_definition_version"`
+	SourceNotebookSessionAuthorizationID *uuid.UUID `gorm:"column:source_notebook_session_authorization_id;type:uuid"`
+	SourceExecutionAttempt               *int       `gorm:"column:source_execution_attempt"`
+	SourceExecutionLeaseToken            *uuid.UUID `gorm:"column:source_execution_lease_token;type:uuid"`
+	ExecutionID                          uuid.UUID  `gorm:"column:execution_id;type:uuid;not null"`
+	Audience                             string     `gorm:"column:audience;not null"`
+	ExpiresAt                            time.Time  `gorm:"column:expires_at;not null"`
+	SealedAt                             *time.Time `gorm:"column:sealed_at"`
+	RevokedAt                            *time.Time `gorm:"column:revoked_at"`
+	RevokedReason                        *string    `gorm:"column:revoked_reason"`
+	CreatedAt                            time.Time  `gorm:"column:created_at;autoCreateTime"`
+}
+
+type ExecutionAuthorizationEngineAccess struct {
+	AuthorizationID int64          `gorm:"column:authorization_id;primaryKey"`
+	EngineID        int64          `gorm:"column:engine_id;primaryKey"`
+	Effects         pq.StringArray `gorm:"column:effects;type:text[];not null"`
+}
+
+func (ExecutionAuthorizationEngineAccess) TableName() string {
+	return "system.execution_authorization_engine_accesses"
 }
 
 func (ExecutionAuthorization) TableName() string {

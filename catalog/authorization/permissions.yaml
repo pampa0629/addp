@@ -1,0 +1,84 @@
+schema_version: addp.permission_manifest/v1
+owner_module: catalog
+manifest_version: 5
+permissions:
+  - key: catalog.audit.read
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.catalog.audit.read.name
+    description_i18n_key: permissions.catalog.audit.read.description
+  - key: catalog.collection.read
+    allowed_scope_types: [tenant, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: true
+    status: active
+    name_i18n_key: permissions.catalog.collection.read.name
+    description_i18n_key: permissions.catalog.collection.read.description
+  - key: catalog.collection.update
+    allowed_scope_types: [tenant, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.catalog.collection.update.name
+    description_i18n_key: permissions.catalog.collection.update.description
+  - key: catalog.entry.certify
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.catalog.entry.certify.name
+    description_i18n_key: permissions.catalog.entry.certify.description
+  - key: catalog.entry.deprecate
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.catalog.entry.deprecate.name
+    description_i18n_key: permissions.catalog.entry.deprecate.description
+  - key: catalog.entry.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: true
+    status: active
+    name_i18n_key: permissions.catalog.entry.read.name
+    description_i18n_key: permissions.catalog.entry.read.description
+  - key: catalog.entry.update
+    allowed_scope_types: [tenant, department]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.catalog.entry.update.name
+    description_i18n_key: permissions.catalog.entry.update.description
+  - key: catalog.inventory.read
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.catalog.inventory.read.name
+    description_i18n_key: permissions.catalog.inventory.read.description
+  - key: catalog.reference.read
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.catalog.reference.read.name
+    description_i18n_key: permissions.catalog.reference.read.description
+  - key: catalog.source.rebind
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.catalog.source.rebind.name
+    description_i18n_key: permissions.catalog.source.rebind.description

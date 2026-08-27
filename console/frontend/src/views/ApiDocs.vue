@@ -215,11 +215,25 @@ const modules = computed(() => [
     healthUrl: isDev ? '/module-health/quality' : null,
   },
   {
+    name: 'catalog',
+    label: t('console.apiDocs.modules.catalog'),
+    port: ':8192',
+    swaggerUrl: isDev ? viewer('/swagger-spec/catalog') : viewer('/catalog/swagger/doc.json'),
+    healthUrl: isDev ? '/module-health/catalog' : null,
+  },
+  {
     name: 'service',
     label: t('console.apiDocs.modules.service'),
     port: ':8086',
     swaggerUrl: isDev ? viewer('/swagger-spec/service') : viewer('/service/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/service' : null,
+  },
+  {
+    name: 'workbench',
+    label: t('console.apiDocs.modules.workbench'),
+    port: ':8193',
+    swaggerUrl: isDev ? viewer('/swagger-spec/workbench') : viewer('/workbench/swagger/doc.json'),
+    healthUrl: isDev ? '/module-health/workbench' : null,
   },
   {
     name: 'standard',

@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
-	"sort"
 	"testing"
 	"time"
 
@@ -36,7 +35,7 @@ func TestPrepareWorkflowExecutionAuthorizationAggregatesEffectsAndEngines(t *tes
 		}
 		_ = json.NewEncoder(w).Encode(commonClient.IssuedExecutionAuthorization{
 			ID: "91", ExecutionID: captured.ExecutionID, Audience: captured.Audience,
-			EngineIDs: captured.EngineIDs, Effects: captured.Effects,
+			Accesses:  captured.Accesses,
 			ExpiresAt: time.Now().Add(10 * time.Minute), ActorPrincipalID: "11", TenantID: "7",
 			TenantMembershipID: "13", IssuedAuthorizationVersion: "17",
 		})
@@ -117,13 +116,13 @@ func TestPrepareWorkflowExecutionAuthorizationAggregatesEffectsAndEngines(t *tes
 		authorization.ActorTenantMembershipID != 13 || authorization.IssuedAuthorizationVersion != 17 {
 		t.Fatalf("authorization facts = %#v", authorization)
 	}
-	if !reflect.DeepEqual(captured.Effects, []string{"read", "write"}) {
-		t.Fatalf("effects = %#v", captured.Effects)
+	wantAccesses := []commonClient.ExecutionEngineAccessScope{
+		{EngineID: "12", Effects: []string{"read"}},
+		{EngineID: "13", Effects: []string{"write"}},
+		{EngineID: "50", Effects: []string{"read", "write"}},
 	}
-	engineIDs := append([]string(nil), captured.EngineIDs...)
-	sort.Strings(engineIDs)
-	if !reflect.DeepEqual(engineIDs, []string{"12", "13", "50"}) {
-		t.Fatalf("engine_ids = %#v", captured.EngineIDs)
+	if !reflect.DeepEqual(captured.Accesses, wantAccesses) {
+		t.Fatalf("accesses = %#v, want %#v", captured.Accesses, wantAccesses)
 	}
 	if !reflect.DeepEqual(authorization.EngineEffects[12], []string{"read"}) ||
 		!reflect.DeepEqual(authorization.EngineEffects[13], []string{"write"}) ||
@@ -139,37 +138,5 @@ func TestPrepareWorkflowExecutionAuthorizationRequiresUserToken(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatal("prepareWorkflowExecutionAuthorization() error = nil, want User token requirement")
-	}
-}
-
-func TestIssueManagedWriteExecutionAuthorizationFromExecutionRequestsReadAndWrite(t *testing.T) {
-	var captured commonClient.IssueExecutionAuthorizationFromExecutionRequest
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != "/api/v1/system/runtime/execution-authorizations" {
-			http.NotFound(w, request)
-			return
-		}
-		if err := json.NewDecoder(request.Body).Decode(&captured); err != nil {
-			t.Fatal(err)
-		}
-		_ = json.NewEncoder(w).Encode(commonClient.IssuedExecutionAuthorization{
-			ID: "91", ExecutionID: captured.ExecutionID, Audience: captured.Audience,
-			EngineIDs: captured.EngineIDs, Effects: captured.Effects,
-			ExpiresAt: time.Now().Add(10 * time.Minute), ActorPrincipalID: "11", TenantID: "7",
-			TenantMembershipID: "13", IssuedAuthorizationVersion: "17",
-		})
-	}))
-	defer server.Close()
-
-	systemClient := commonClient.NewSystemServiceClient(server.URL, staticServiceTokenSource("addp_at_develop"), server.Client())
-	authorization, err := NewSQLEngineService(&config.Config{}, systemClient, nil).IssueManagedWriteExecutionAuthorizationFromExecution(
-		context.Background(), 7, uuid.New(), uuid.New(), 12, 60,
-	)
-	if err != nil {
-		t.Fatalf("IssueManagedWriteExecutionAuthorizationFromExecution() error = %v", err)
-	}
-	if !reflect.DeepEqual(captured.Effects, []string{"read", "write"}) ||
-		!reflect.DeepEqual(authorization.Effects, []SQLExecutionEffect{SQLExecutionEffectRead, SQLExecutionEffectWrite}) {
-		t.Fatalf("request effects=%#v authorization=%#v", captured.Effects, authorization.Effects)
 	}
 }

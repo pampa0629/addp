@@ -1,0 +1,7 @@
+<template><div class="login"><el-card class="card"><template #header><h2>{{ t('workbench.login.title') }}</h2></template><el-form ref="formRef" :model="form" @submit.prevent="submit"><el-form-item><el-input v-model="form.username" :placeholder="t('workbench.login.username')" /></el-form-item><el-form-item><el-input v-model="form.password" type="password" show-password :placeholder="t('workbench.login.password')" /></el-form-item><el-button type="primary" native-type="submit" :loading="loading" class="full">{{ t('workbench.login.submit') }}</el-button></el-form></el-card></div></template>
+<script setup>
+import { reactive, ref } from 'vue'; import { useI18n } from 'vue-i18n'; import { useRouter } from 'vue-router'; import { ElMessage } from 'element-plus'; import { useAuthStore } from '../store/auth'
+const { t }=useI18n(), router=useRouter(), auth=useAuthStore(); const form=reactive({username:'',password:''}),loading=ref(false)
+async function submit(){if(!form.username||!form.password)return;loading.value=true;try{await auth.login(form.username,form.password);await router.push('/views')}catch(e){ElMessage.error(e?.message||t('workbench.login.failed'))}finally{loading.value=false}}
+</script>
+<style scoped>.login{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--addp-bg-secondary)}.card{width:min(400px,calc(100vw - 32px))}.full{width:100%}h2{margin:0;color:var(--addp-text-primary)}</style>

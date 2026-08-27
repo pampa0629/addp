@@ -28,8 +28,7 @@ type IssuedWorkflowExecutionAuthorization struct {
 
 type workflowExecutionAuthorizationPlan struct {
 	engineEffects map[uint][]string
-	engineIDs     []string
-	effects       []string
+	accesses      []commonClient.ExecutionEngineAccessScope
 	expiresIn     int64
 }
 
@@ -58,8 +57,8 @@ func (e *DevExecutor) prepareWorkflowExecutionAuthorization(
 		return nil, fmt.Errorf("执行 ID 无效: %w", err)
 	}
 	issued, err := e.sqlEngine.executionAuthorizations.Issue(ctx, userAccessToken, commonClient.IssueExecutionAuthorizationRequest{
-		Audience: "develop", ExecutionID: parsedExecutionID.String(), EngineIDs: plan.engineIDs,
-		Effects: plan.effects, ExpiresIn: plan.expiresIn,
+		Audience: "develop", ExecutionID: parsedExecutionID.String(), Accesses: plan.accesses,
+		ExpiresIn: plan.expiresIn,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("签发工作流执行授权失败: %w", err)
@@ -89,8 +88,8 @@ func (e *DevExecutor) prepareWorkflowExecutionAuthorizationFromExecution(
 		ctx,
 		commonClient.IssueExecutionAuthorizationFromExecutionRequest{
 			ParentExecutionID: parentExecutionID.String(), Audience: "develop",
-			ExecutionID: executionID.String(), EngineIDs: plan.engineIDs,
-			Effects: plan.effects, ExpiresIn: plan.expiresIn,
+			ExecutionID: executionID.String(), Accesses: plan.accesses,
+			ExpiresIn: plan.expiresIn,
 		},
 	)
 	if err != nil {
@@ -188,14 +187,10 @@ func (e *DevExecutor) buildWorkflowExecutionAuthorizationPlan(
 	}
 
 	engineIDs := make([]uint, 0, len(engineEffects))
-	engineIDTexts := make([]string, 0, len(engineEffects))
 	for engineID := range engineEffects {
 		engineIDs = append(engineIDs, engineID)
 	}
 	sort.Slice(engineIDs, func(i, j int) bool { return engineIDs[i] < engineIDs[j] })
-	for _, engineID := range engineIDs {
-		engineIDTexts = append(engineIDTexts, strconv.FormatUint(uint64(engineID), 10))
-	}
 	timeout := devTask.Timeout
 	if timeout <= 0 {
 		timeout = 300
@@ -208,10 +203,16 @@ func (e *DevExecutor) buildWorkflowExecutionAuthorizationPlan(
 	for engineID, values := range engineEffects {
 		normalizedEngineEffects[engineID] = orderedWorkflowEffects(values)
 	}
+	accesses := make([]commonClient.ExecutionEngineAccessScope, 0, len(engineIDs))
+	for _, engineID := range engineIDs {
+		accesses = append(accesses, commonClient.ExecutionEngineAccessScope{
+			EngineID: strconv.FormatUint(uint64(engineID), 10),
+			Effects:  append([]string(nil), normalizedEngineEffects[engineID]...),
+		})
+	}
 	return &workflowExecutionAuthorizationPlan{
 		engineEffects: normalizedEngineEffects,
-		engineIDs:     engineIDTexts,
-		effects:       effects,
+		accesses:      accesses,
 		expiresIn:     int64(expiresIn),
 	}, nil
 }
@@ -241,10 +242,21 @@ func issuedWorkflowExecutionAuthorization(
 		return nil, err
 	}
 	return &IssuedWorkflowExecutionAuthorization{
-		AuthorizationID: authorizationID, EngineEffects: plan.engineEffects, Effects: plan.effects,
+		AuthorizationID: authorizationID, EngineEffects: plan.engineEffects,
+		Effects:          append([]string(nil), workflowEffectUnion(plan.engineEffects)...),
 		ActorPrincipalID: actorPrincipalID, ActorTenantMembershipID: membershipID,
 		IssuedAuthorizationVersion: authorizationVersion, ExpiresAt: issued.ExpiresAt.UTC(),
 	}, nil
+}
+
+func workflowEffectUnion(engineEffects map[uint][]string) []string {
+	values := make(map[string]struct{})
+	for _, effects := range engineEffects {
+		for _, effect := range effects {
+			values[effect] = struct{}{}
+		}
+	}
+	return orderedWorkflowEffects(values)
 }
 
 func addLocatorEngineEffect(engineEffects map[uint]map[string]struct{}, params map[string]interface{}, name, effect string) error {

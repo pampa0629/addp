@@ -84,7 +84,7 @@ func IsSuperMapSDXPostgreSQLTable(engine *models.Engine, schema, table string) b
 	if !IsSuperMapSDXPostgreSQL(engine) {
 		return false
 	}
-	path := plugin.TabularItemPath(engine.ID, plugin.CatalogTermSchema, schema, table)
+	path := plugin.TabularItemPath(engine.ID, plugin.EngineCatalogTermSchema, schema, table)
 	return supermapworkflow.IsSDXPostgreSQLTablePath(path)
 }
 

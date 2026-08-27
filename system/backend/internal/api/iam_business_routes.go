@@ -72,8 +72,8 @@ func RegisterIAMMigratedBusinessRoutes(
 		engines.DELETE("/:id", runtime.UserAccessCredential, enginePermissions["system.engine.delete"], engineHandler.Delete)
 		engines.POST("/:id/test", runtime.UserAccessCredential, enginePermissions["system.engine.execute"], engineHandler.TestConnection)
 		engines.POST("/test-connection", runtime.UserAccessCredential, enginePermissions["system.engine.execute"], engineHandler.TestConnectionBeforeCreate)
-		engines.POST("/:id/catalog/children", engineDetailCredential, enginePermissions["system.engine.read"], engineHandler.ListCatalogChildren)
-		engines.POST("/:id/catalog/facts", engineDetailCredential, enginePermissions["system.engine.read"], engineHandler.DescribeCatalogFacts)
+		engines.POST("/:id/catalog/children", engineDetailCredential, enginePermissions["system.engine.read"], engineHandler.ListEngineCatalogChildren)
+		engines.POST("/:id/catalog/facts", engineDetailCredential, enginePermissions["system.engine.read"], engineHandler.DescribeEngineCatalogFacts)
 		engines.POST("/:id/spatial-workspaces/:ecosystem/:kind/enable",
 			runtime.UserAccessCredential,
 			enginePermissions["system.engine.execute"],

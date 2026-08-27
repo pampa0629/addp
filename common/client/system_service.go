@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +38,12 @@ type SystemAPIError struct {
 	ErrorCode    string
 	ErrorMessage string
 	ResponseBody string
+}
+
+type SystemCatalogTenant struct {
+	ID          string `json:"id"`
+	Status      string `json:"status"`
+	Initialized bool   `json:"initialized"`
 }
 
 func (e *SystemAPIError) Error() string {
@@ -98,16 +105,54 @@ func (c *SystemServiceClient) TenantServiceAccessToken(ctx context.Context, tena
 	return c.tenantTokens.Token(ctx, tenantID)
 }
 
+// ListCatalogTenantIDs returns initialized active tenant identities for a
+// platform runtime that must schedule tenant-scoped background work.
+func (c *SystemServiceClient) ListCatalogTenantIDs(ctx context.Context) ([]uint, error) {
+	const pageSize = 100
+	result := make([]uint, 0, pageSize)
+	for page := 1; ; page++ {
+		var response struct {
+			Data     []SystemCatalogTenant `json:"data"`
+			Total    int64                 `json:"total"`
+			Page     int                   `json:"page"`
+			PageSize int                   `json:"page_size"`
+		}
+		path := fmt.Sprintf("/api/v1/system/runtime/tenants?page=%d&page_size=%d&status=active", page, pageSize)
+		if err := c.doPlatformJSON(ctx, http.MethodGet, path, nil, &response); err != nil {
+			return nil, err
+		}
+		if response.Total < 0 || response.Page != page || response.PageSize != pageSize || len(response.Data) > pageSize {
+			return nil, errors.New("System tenant list returned an invalid pagination response")
+		}
+		for _, tenant := range response.Data {
+			if tenant.Status != "active" || !tenant.Initialized {
+				continue
+			}
+			id, err := strconv.ParseUint(tenant.ID, 10, 64)
+			if err != nil || id == 0 {
+				return nil, errors.New("System tenant list returned an invalid tenant ID")
+			}
+			result = append(result, uint(id))
+		}
+		if int64(page*pageSize) >= response.Total {
+			return result, nil
+		}
+		if len(response.Data) == 0 {
+			return nil, errors.New("System tenant pagination ended before the declared total")
+		}
+	}
+}
+
 func (c *SystemServiceClient) GetEngine(ctx context.Context, engineID uint) (*models.Engine, error) {
 	var engine models.Engine
 	err := c.doTenantJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v1/system/engines/%d", engineID), nil, &engine)
 	return &engine, err
 }
 
-// ListCatalogChildren lists live catalog entries using the tenant service
+// ListEngineCatalogChildren lists live catalog entries using the tenant service
 // access token. The System catalog endpoint is also used by service modules
 // when they need to validate a user-selected resource before persisting it.
-func (c *SystemServiceClient) ListCatalogChildren(ctx context.Context, engineID uint, req EngineCatalogListChildrenRequest) ([]EngineCatalogEntry, error) {
+func (c *SystemServiceClient) ListEngineCatalogChildren(ctx context.Context, engineID uint, req EngineCatalogListChildrenRequest) ([]EngineCatalogEntry, error) {
 	var response EngineCatalogListChildrenResponse
 	if err := c.doTenantJSON(ctx, http.MethodPost, fmt.Sprintf("/api/v1/system/engines/%d/catalog/children", engineID), req, &response); err != nil {
 		return nil, err
@@ -115,9 +160,9 @@ func (c *SystemServiceClient) ListCatalogChildren(ctx context.Context, engineID 
 	return response.Nodes, nil
 }
 
-// DescribeCatalogFacts reads the live structural facts for one catalog leaf.
-func (c *SystemServiceClient) DescribeCatalogFacts(ctx context.Context, engineID uint, req EngineCatalogDescribeFactsRequest) (*plugin.CatalogFacts, error) {
-	var facts plugin.CatalogFacts
+// DescribeEngineCatalogFacts reads the live structural facts for one catalog leaf.
+func (c *SystemServiceClient) DescribeEngineCatalogFacts(ctx context.Context, engineID uint, req EngineCatalogDescribeFactsRequest) (*plugin.EngineCatalogFacts, error) {
+	var facts plugin.EngineCatalogFacts
 	if err := c.doTenantJSON(ctx, http.MethodPost, fmt.Sprintf("/api/v1/system/engines/%d/catalog/facts", engineID), req, &facts); err != nil {
 		return nil, err
 	}

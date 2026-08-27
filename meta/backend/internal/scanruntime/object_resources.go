@@ -7,12 +7,12 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanchange"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scanprocessor"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 // persistObjectResources 持久化对象 catalog leaf 到数据库。
@@ -21,7 +21,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 	resource *commonModels.Engine,
 	tenantID, engineID uint,
 	bucketNode *models.MetaNode,
-	resources []metacatalog.StorageResource,
+	resources []scanresource.StorageResource,
 	stats map[uint]*scanflow.ObjectCatalogNodeAggregate,
 	includeBucketAggregate bool,
 	scanDepth string,
@@ -100,7 +100,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 			"scanPathPrefix", scanPathPrefix,
 			"basePrefixNode", basePrefixNode.Name)
 
-		pathPlan := metacatalog.PlanObjectCatalogRelativePath(trimmed, scanPathPrefix)
+		pathPlan := scanresource.PlanObjectRelativePath(trimmed, scanPathPrefix)
 		if pathPlan.ExactBase && catalogResource.NodeType == "prefix" {
 			scanflow.EnsureObjectCatalogNodeAggregate(stats, basePrefixNode)
 		}
@@ -124,7 +124,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 					break
 				}
 				fullName := metapath.ComposeNodeFullName(segment, currentParent, "/")
-				attrs := metacatalog.ObjectPrefixNodeAttributes(catalogResource.RootName, strings.Join(pathPlan.Segments[:idx+1], "/")+"/")
+				attrs := scanresource.ObjectPrefixNodeAttributes(catalogResource.RootName, strings.Join(pathPlan.Segments[:idx+1], "/")+"/")
 				childNode, err := s.repo.UpsertNode(tenantID, engineID, currentParent, "prefix", segment, &fullName, attrs)
 				if err != nil {
 					return objects, extractionStats, err
@@ -142,7 +142,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 			continue
 		}
 
-		itemPlan := metacatalog.PlanObjectCatalogSingleItem(engineID, catalogResource, trimmed, itemTerm)
+		itemPlan := scanresource.PlanObjectSingleItem(engineID, catalogResource, trimmed, itemTerm)
 		if scannedFingerprints != nil {
 			scannedFingerprints[itemPlan.Fingerprint] = true
 		}

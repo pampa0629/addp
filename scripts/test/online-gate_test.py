@@ -75,7 +75,13 @@ class OnlineGateTest(unittest.TestCase):
     def test_registers_only_executable_online_suites(self):
         self.assertEqual(
             set(ONLINE_GATE.SUITES),
-            {"module-registry-recovery", "standard-model-reference-deletion"},
+            {
+                "consumer-engine-recovery",
+                "enterprise-catalog-publishing",
+                "module-registry-recovery",
+                "standard-model-reference-deletion",
+                "workbench-service-consumption",
+            },
         )
         suite = ONLINE_GATE.SUITES["standard-model-reference-deletion"]
         self.assertEqual(
@@ -91,6 +97,38 @@ class OnlineGateTest(unittest.TestCase):
         self.assertEqual(
             registry_suite.services,
             (("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL")),
+        )
+        consumer_suite = ONLINE_GATE.SUITES["consumer-engine-recovery"]
+        self.assertEqual(
+            consumer_suite.services,
+            (
+                ("gateway", "GATEWAY_URL"),
+                ("system", "SYSTEM_URL"),
+                ("manager", "MANAGER_URL"),
+                ("service", "SERVICE_URL"),
+            ),
+        )
+        catalog_suite = ONLINE_GATE.SUITES["enterprise-catalog-publishing"]
+        self.assertEqual(
+            catalog_suite.services,
+            (
+                ("gateway", "GATEWAY_URL"),
+                ("system", "SYSTEM_URL"),
+                ("meta", "META_URL"),
+                ("catalog", "CATALOG_URL"),
+                ("asset", "ASSET_URL"),
+                ("portal", "PORTAL_URL"),
+            ),
+        )
+        workbench_suite = ONLINE_GATE.SUITES["workbench-service-consumption"]
+        self.assertEqual(
+            workbench_suite.services,
+            (
+                ("gateway", "GATEWAY_URL"),
+                ("system", "SYSTEM_URL"),
+                ("service", "SERVICE_URL"),
+                ("workbench", "WORKBENCH_URL"),
+            ),
         )
 
     @patch.object(

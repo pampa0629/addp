@@ -38,7 +38,7 @@ func (p *emptyQueryTemplatePlugin) SensitiveFields() []string                   
 func (p *emptyQueryTemplatePlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{}
 }
-func (p *emptyQueryTemplatePlugin) CatalogModel() plugin.CatalogModelSpec {
+func (p *emptyQueryTemplatePlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.DynamicSchemaCatalogModel()
 }
 func (p *emptyQueryTemplatePlugin) QueryLanguages() []string { return []string{"mql"} }
@@ -91,15 +91,15 @@ func TestConnectionUsesUserDerivedReadAuthorizationAndServiceTokenConsumption(t 
 			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
 				t.Fatal(err)
 			}
-			if payload.Audience != "develop" || len(payload.EngineIDs) != 1 || payload.EngineIDs[0] != "12" ||
-				len(payload.Effects) != 1 || payload.Effects[0] != "read" || payload.ExpiresIn <= 0 {
+			if payload.Audience != "develop" || len(payload.Accesses) != 1 || payload.Accesses[0].EngineID != "12" ||
+				len(payload.Accesses[0].Effects) != 1 || payload.Accesses[0].Effects[0] != "read" || payload.ExpiresIn <= 0 {
 				t.Fatalf("issue payload = %#v", payload)
 			}
 			issuedExecutionID = payload.ExecutionID
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(commonClient.IssuedExecutionAuthorization{
 				ID: "77", ExecutionID: issuedExecutionID, Audience: "develop",
-				EngineIDs: []string{"12"}, Effects: []string{"read"}, ExpiresAt: time.Now().Add(time.Minute),
+				Accesses: []commonClient.ExecutionEngineAccessScope{{EngineID: "12", Effects: []string{"read"}}}, ExpiresAt: time.Now().Add(time.Minute),
 				ActorPrincipalID: "1", TenantID: "7", TenantMembershipID: "9", IssuedAuthorizationVersion: "3",
 			})
 		case "/api/v1/system/execution-authorizations/77/engine-accesses":
@@ -203,14 +203,14 @@ func TestGetSampleQueryUsesAuthorizedEngineAndRejectsUnavailableCatalog(t *testi
 				t.Fatal(err)
 			}
 			if request.Header.Get("Authorization") != "Bearer addp_at_user" ||
-				len(payload.EngineIDs) != 1 || payload.EngineIDs[0] != "12" ||
-				len(payload.Effects) != 1 || payload.Effects[0] != "read" {
+				len(payload.Accesses) != 1 || payload.Accesses[0].EngineID != "12" ||
+				len(payload.Accesses[0].Effects) != 1 || payload.Accesses[0].Effects[0] != "read" {
 				t.Fatalf("sample issue request = %#v, headers=%#v", payload, request.Header)
 			}
 			issuedExecutionID = payload.ExecutionID
 			_ = json.NewEncoder(w).Encode(commonClient.IssuedExecutionAuthorization{
 				ID: "77", ExecutionID: payload.ExecutionID, Audience: "develop",
-				EngineIDs: []string{"12"}, Effects: []string{"read"}, ExpiresAt: time.Now().Add(time.Minute),
+				Accesses: []commonClient.ExecutionEngineAccessScope{{EngineID: "12", Effects: []string{"read"}}}, ExpiresAt: time.Now().Add(time.Minute),
 				ActorPrincipalID: "1", TenantID: "7", TenantMembershipID: "9", IssuedAuthorizationVersion: "3",
 			})
 		case "/api/v1/system/execution-authorizations/77/engine-accesses":
@@ -269,7 +269,7 @@ func TestGetSampleQueryReportsSelectedResourceEmptyInRequestedLanguage(t *testin
 			issuedExecutionID = payload.ExecutionID
 			_ = json.NewEncoder(w).Encode(commonClient.IssuedExecutionAuthorization{
 				ID: "77", ExecutionID: issuedExecutionID, Audience: "develop",
-				EngineIDs: []string{"12"}, Effects: []string{"read"}, ExpiresAt: time.Now().Add(time.Minute),
+				Accesses: []commonClient.ExecutionEngineAccessScope{{EngineID: "12", Effects: []string{"read"}}}, ExpiresAt: time.Now().Add(time.Minute),
 				ActorPrincipalID: "1", TenantID: "7", TenantMembershipID: "9", IssuedAuthorizationVersion: "3",
 			})
 		case "/api/v1/system/execution-authorizations/77/engine-accesses":

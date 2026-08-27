@@ -40,7 +40,7 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 	}
 
 	contentReader, _ := plug.(plugin.ContentReadableProvider)
-	catalogProvider, _ := plug.(plugin.CatalogProvider)
+	catalogProvider, _ := plug.(plugin.EngineCatalogProvider)
 
 	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
 	reader, err := scopeTableContentReader(req, contentReader, catalogProvider, connInfo)
@@ -64,7 +64,7 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 		dirPath = nfsPhysicalPath(req.Schema, req.Table)
 	}
 	if catalogProvider == nil || contentReader == nil {
-		err = fmt.Errorf("engine %s does not implement CatalogProvider and ContentReadableProvider", req.Engine.EngineType)
+		err = fmt.Errorf("engine %s does not implement EngineCatalogProvider and ContentReadableProvider", req.Engine.EngineType)
 	} else {
 		scope := contentio.NewRef(dirPath, contentio.RoleScope)
 		tableInfo = tableInfoFromMetaAttributes(req.Attributes, "table")
@@ -245,7 +245,7 @@ func scopeTableSampleOptionsFromMetaAttributes(attrs map[string]interface{}) *fo
 	return optionsProvider.SampleOptionsFromAttributes(attrs)
 }
 
-func scopeTableContentReader(req *PreviewRequest, contentReader plugin.ContentReadableProvider, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo) (contentio.Reader, error) {
+func scopeTableContentReader(req *PreviewRequest, contentReader plugin.ContentReadableProvider, catalogProvider plugin.EngineCatalogProvider, connInfo plugin.ConnectionInfo) (contentio.Reader, error) {
 	if req == nil || req.Engine == nil {
 		return nil, fmt.Errorf("engine is required")
 	}

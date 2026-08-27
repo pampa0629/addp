@@ -23,6 +23,7 @@ MODULES=(
   "service/frontend"
   "console/frontend"
   "monitor/frontend"
+  "catalog/frontend"
 )
 
 for MODULE in "${MODULES[@]}"; do

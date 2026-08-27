@@ -95,6 +95,17 @@ func setupLifecycleServiceTestDB(t *testing.T) *gorm.DB {
 			fact_table_id INTEGER NOT NULL, metric_id INTEGER NOT NULL, field_id INTEGER,
 			note TEXT, created_by INTEGER NOT NULL, created_at DATETIME
 		)`,
+		`CREATE TABLE model.materialization_groups (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL,
+			code TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+			version INTEGER NOT NULL DEFAULT 1, created_by INTEGER NOT NULL, updated_by INTEGER NOT NULL,
+			created_at DATETIME, updated_at DATETIME
+		)`,
+		`CREATE TABLE model.materialization_group_members (
+			group_id INTEGER NOT NULL, tenant_id INTEGER NOT NULL,
+			logical_table_id INTEGER NOT NULL, position INTEGER NOT NULL,
+			PRIMARY KEY (group_id, logical_table_id)
+		)`,
 		`CREATE TABLE model.standard_reference_guards (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
@@ -680,6 +691,62 @@ func TestPutUpdatesClearNullableModelReferences(t *testing.T) {
 	}
 	if updatedTable.DomainID != nil || updatedTable.EntityID != nil {
 		t.Fatalf("references = domain:%v entity:%v, want nil", updatedTable.DomainID, updatedTable.EntityID)
+	}
+}
+
+func TestLogicalTableWritesCanonicalizeUnpartitionedMaterialization(t *testing.T) {
+	db := setupLifecycleServiceTestDB(t)
+	layer := models.DWLayer{TenantID: 1, LayerCode: "dwd", LayerName: "DWD", Version: 1}
+	if err := db.Create(&layer).Error; err != nil {
+		t.Fatalf("create layer: %v", err)
+	}
+	svc := NewLogicalTableService(
+		repository.NewLogicalTableRepository(db),
+		repository.NewEntityRepository(db),
+		repository.NewDWLayerRepository(db),
+	)
+	table, err := svc.CreateLogicalTable(&models.CreateLogicalTableRequest{
+		Name: "Orders", Code: "orders", TableType: "entity", Layer: "dwd",
+		Materialization: map[string]interface{}{
+			"target_parent_locator": " addp://engine/2/path/public?type=schema ",
+			"target_name":           " orders ", "partition_by": "", "partition_type": "range",
+		},
+	}, 1, 1)
+	if err != nil {
+		t.Fatalf("create logical table: %v", err)
+	}
+	if _, exists := table.Materialization["partition_by"]; exists {
+		t.Fatalf("created materialization retains partition_by: %#v", table.Materialization)
+	}
+	if _, exists := table.Materialization["partition_type"]; exists {
+		t.Fatalf("created materialization retains partition_type: %#v", table.Materialization)
+	}
+	if table.Materialization["target_name"] != "orders" {
+		t.Fatalf("created materialization target is not normalized: %#v", table.Materialization)
+	}
+
+	updated, err := svc.UpdateLogicalTable(table.ID, 1, 1, &models.UpdateLogicalTableRequest{
+		Version: table.Version, Name: table.Name, TableType: table.TableType, Layer: table.Layer,
+		SCDType: intPointer(0), Materialization: map[string]interface{}{
+			"target_parent_locator": "addp://engine/2/path/public?type=schema",
+			"target_name":           "orders", "partition_by": "   ", "partition_type": "list",
+		},
+	})
+	if err != nil {
+		t.Fatalf("update logical table: %v", err)
+	}
+	if _, exists := updated.Materialization["partition_by"]; exists {
+		t.Fatalf("updated materialization retains partition_by: %#v", updated.Materialization)
+	}
+	if _, exists := updated.Materialization["partition_type"]; exists {
+		t.Fatalf("updated materialization retains partition_type: %#v", updated.Materialization)
+	}
+	reloaded, err := repository.NewLogicalTableRepository(db).GetByID(table.ID, 1)
+	if err != nil {
+		t.Fatalf("reload logical table: %v", err)
+	}
+	if _, exists := reloaded.Materialization["partition_type"]; exists {
+		t.Fatalf("persisted materialization is not canonical: %#v", reloaded.Materialization)
 	}
 }
 

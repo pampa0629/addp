@@ -11,10 +11,10 @@ import (
 )
 
 type sampleCatalogProvider struct {
-	namespaces []plugin.CatalogEntry
-	items      map[string][]plugin.CatalogEntry
-	parents    []plugin.CatalogPath
-	model      plugin.CatalogModelSpec
+	namespaces []plugin.EngineCatalogEntry
+	items      map[string][]plugin.EngineCatalogEntry
+	parents    []plugin.EngineCatalogPath
+	model      plugin.EngineCatalogModelSpec
 }
 
 func (p *sampleCatalogProvider) Type() string { return "sample" }
@@ -42,32 +42,32 @@ func (p *sampleCatalogProvider) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{}
 }
 
-func (p *sampleCatalogProvider) CatalogModel() plugin.CatalogModelSpec {
+func (p *sampleCatalogProvider) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	if p.model.PathVersion != "" {
 		return p.model
 	}
-	return plugin.TabularCatalogModel(plugin.CatalogTermSchema)
+	return plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema)
 }
 
-func (p *sampleCatalogProvider) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+func (p *sampleCatalogProvider) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath, opts plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
 	p.parents = append(p.parents, parent)
-	if plugin.IsCatalogRootPath(parent) {
+	if plugin.IsEngineCatalogRootPath(parent) {
 		return p.namespaces, nil
 	}
-	business := plugin.CatalogPathWithoutRoot(parent)
+	business := plugin.EngineCatalogPathWithoutRoot(parent)
 	return p.items[business.Segments[0].Name], nil
 }
 
-func (p *sampleCatalogProvider) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p *sampleCatalogProvider) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	return nil, nil
 }
 
 func TestGenerateCatalogSampleQueryPrefersTableWithRows(t *testing.T) {
 	cp := &sampleCatalogProvider{
-		namespaces: []plugin.CatalogEntry{
+		namespaces: []plugin.EngineCatalogEntry{
 			namespaceNode("public"),
 		},
-		items: map[string][]plugin.CatalogEntry{
+		items: map[string][]plugin.EngineCatalogEntry{
 			"public": {
 				itemNode("empty_table", 0),
 				itemNode("cities", 12),
@@ -88,10 +88,10 @@ func TestGenerateCatalogSampleQueryPrefersTableWithRows(t *testing.T) {
 
 func TestGenerateCatalogSampleQueryRejectsEmptyTables(t *testing.T) {
 	cp := &sampleCatalogProvider{
-		namespaces: []plugin.CatalogEntry{
+		namespaces: []plugin.EngineCatalogEntry{
 			namespaceNode("analytics"),
 		},
-		items: map[string][]plugin.CatalogEntry{
+		items: map[string][]plugin.EngineCatalogEntry{
 			"analytics": {
 				itemNode("events", 0),
 			},
@@ -107,10 +107,10 @@ func TestGenerateCatalogSampleQueryRejectsEmptyTables(t *testing.T) {
 func TestGenerateCatalogSampleQueryRequiresTableLeafModel(t *testing.T) {
 	cp := &sampleCatalogProvider{
 		model: plugin.ObjectCatalogModel(),
-		namespaces: []plugin.CatalogEntry{
+		namespaces: []plugin.EngineCatalogEntry{
 			namespaceNode("bucket"),
 		},
-		items: map[string][]plugin.CatalogEntry{
+		items: map[string][]plugin.EngineCatalogEntry{
 			"bucket": {
 				itemNode("object.csv", 12),
 			},
@@ -171,22 +171,22 @@ func TestListCatalogChildrenEmptyPathReturnsExplicitRoot(t *testing.T) {
 		plugin.Unregister(cp.Type())
 	})
 
-	nodes, err := ListCatalogChildren(context.Background(), &models.Engine{
+	nodes, err := ListEngineCatalogChildren(context.Background(), &models.Engine{
 		ID:         99,
 		Name:       "Analytics DB",
 		EngineType: cp.Type(),
-	}, plugin.CatalogPath{}, plugin.ListOptions{})
+	}, plugin.EngineCatalogPath{}, plugin.ListOptions{})
 	if err != nil {
-		t.Fatalf("ListCatalogChildren() error = %v", err)
+		t.Fatalf("ListEngineCatalogChildren() error = %v", err)
 	}
 	if len(nodes) != 1 {
 		t.Fatalf("nodes = %#v, want single root", nodes)
 	}
 	root := nodes[0]
-	if root.Name != "Analytics DB" || root.Term != plugin.CatalogTermServer || root.Kind != plugin.CatalogTermServer || root.Role != plugin.CatalogRoleBranch {
+	if root.Name != "Analytics DB" || root.Term != plugin.EngineCatalogTermServer || root.Kind != plugin.EngineCatalogTermServer || root.Role != plugin.EngineCatalogRoleBranch {
 		t.Fatalf("root = %#v", root)
 	}
-	if !plugin.IsCatalogRootPath(root.Path) {
+	if !plugin.IsEngineCatalogRootPath(root.Path) {
 		t.Fatalf("root path = %#v, want explicit catalog root", root.Path)
 	}
 	if len(cp.parents) != 0 {
@@ -196,7 +196,7 @@ func TestListCatalogChildrenEmptyPathReturnsExplicitRoot(t *testing.T) {
 
 func TestListCatalogChildrenExplicitRootForwardsToProvider(t *testing.T) {
 	cp := &sampleCatalogProvider{
-		namespaces: []plugin.CatalogEntry{
+		namespaces: []plugin.EngineCatalogEntry{
 			namespaceNode("public"),
 		},
 	}
@@ -205,35 +205,35 @@ func TestListCatalogChildrenExplicitRootForwardsToProvider(t *testing.T) {
 		plugin.Unregister(cp.Type())
 	})
 
-	rootPath := plugin.CatalogRootPath(cp.CatalogModel(), 99)
-	nodes, err := ListCatalogChildren(context.Background(), &models.Engine{
+	rootPath := plugin.EngineCatalogRootPath(cp.EngineCatalogModel(), 99)
+	nodes, err := ListEngineCatalogChildren(context.Background(), &models.Engine{
 		ID:         99,
 		Name:       "Analytics DB",
 		EngineType: cp.Type(),
 	}, rootPath, plugin.ListOptions{})
 	if err != nil {
-		t.Fatalf("ListCatalogChildren(root) error = %v", err)
+		t.Fatalf("ListEngineCatalogChildren(root) error = %v", err)
 	}
 	if len(nodes) != 1 || nodes[0].Name != "public" {
 		t.Fatalf("nodes = %#v, want public namespace", nodes)
 	}
-	if len(cp.parents) != 1 || !plugin.IsCatalogRootPath(cp.parents[0]) {
+	if len(cp.parents) != 1 || !plugin.IsEngineCatalogRootPath(cp.parents[0]) {
 		t.Fatalf("provider parents = %#v, want explicit root", cp.parents)
 	}
 }
 
-func namespaceNode(name string) plugin.CatalogEntry {
-	return plugin.CatalogEntry{
+func namespaceNode(name string) plugin.EngineCatalogEntry {
+	return plugin.EngineCatalogEntry{
 		Name: name,
-		Path: plugin.TabularNamespacePath(1, plugin.CatalogTermSchema, name),
-		Role: plugin.CatalogRoleBranch,
+		Path: plugin.TabularNamespacePath(1, plugin.EngineCatalogTermSchema, name),
+		Role: plugin.EngineCatalogRoleBranch,
 	}
 }
 
-func itemNode(name string, rowCount int64) plugin.CatalogEntry {
-	return plugin.CatalogEntry{
+func itemNode(name string, rowCount int64) plugin.EngineCatalogEntry {
+	return plugin.EngineCatalogEntry{
 		Name:  name,
-		Role:  plugin.CatalogRoleLeaf,
+		Role:  plugin.EngineCatalogRoleLeaf,
 		Table: &datatype.TableInfo{RowCount: &rowCount},
 	}
 }

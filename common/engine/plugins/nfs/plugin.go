@@ -139,7 +139,7 @@ func (p *NFSPlugin) StoreSemantics() plugin.StoreSemantics {
 	}
 }
 
-func (p *NFSPlugin) CatalogModel() plugin.CatalogModelSpec {
+func (p *NFSPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.FileCatalogModel()
 }
 
@@ -150,19 +150,19 @@ func (p *NFSPlugin) fileCatalogCallbacks() plugin.FileCatalogCallbacks {
 	}
 }
 
-func (p *NFSPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+func (p *NFSPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath, opts plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
 	return plugin.ListFileCatalogChildren(ctx, p.fileCatalogCallbacks(), connInfo, parent.EngineID, parent, opts)
 }
 
-func (p *NFSPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p *NFSPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	return plugin.ResolveFileCatalogPath(ctx, p.fileCatalogCallbacks(), connInfo, path.EngineID, path)
 }
 
-func (p *NFSPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *NFSPlugin) DescribeEngineCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	return plugin.DescribeFileCatalogFacts(ctx, p.fileCatalogCallbacks(), connInfo, path.EngineID, path)
 }
 
-func (p *NFSPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+func (p *NFSPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
 	filePath, err := plugin.RequireFileLeafPath(path)
 	if err != nil {
 		return nil, err
@@ -170,7 +170,7 @@ func (p *NFSPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionI
 	return p.readFile(ctx, connInfo, filePath)
 }
 
-func (p *NFSPlugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+func (p *NFSPlugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
 	if opts.Offset < 0 {
 		return nil, fmt.Errorf("range read offset cannot be negative")
 	}
@@ -184,7 +184,7 @@ func (p *NFSPlugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionInf
 	return p.readFileRange(ctx, connInfo, filePath, opts)
 }
 
-func (p *NFSPlugin) CreateContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.WriteOptions) (io.WriteCloser, error) {
+func (p *NFSPlugin) CreateContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.WriteOptions) (io.WriteCloser, error) {
 	filePath, err := plugin.RequireFileLeafPath(path)
 	if err != nil {
 		return nil, err
@@ -192,7 +192,7 @@ func (p *NFSPlugin) CreateContent(ctx context.Context, connInfo plugin.Connectio
 	return p.openFileForWrite(ctx, connInfo, filePath, opts.Overwrite)
 }
 
-func (p *NFSPlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) error {
+func (p *NFSPlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) error {
 	filePath, err := plugin.RequireFileLeafPath(path)
 	if err != nil {
 		return err
@@ -219,7 +219,7 @@ func (p *NFSPlugin) TestConnection(ctx context.Context, connInfo plugin.Connecti
 }
 
 // listDirectory 列出目录内容（非递归）
-func (p *NFSPlugin) listDirectory(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
+func (p *NFSPlugin) listDirectory(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath) ([]plugin.EngineCatalogEntry, error) {
 	server, exportPath, err := p.parseConnInfo(connInfo)
 	if err != nil {
 		return nil, err
@@ -242,7 +242,7 @@ func (p *NFSPlugin) listDirectory(ctx context.Context, connInfo plugin.Connectio
 		return nil, fmt.Errorf("failed to list directory %s: %w", dirPath, err)
 	}
 
-	var nodes []plugin.CatalogEntry
+	var nodes []plugin.EngineCatalogEntry
 
 	for _, entry := range entries {
 		name := entry.FileName

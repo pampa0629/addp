@@ -1,0 +1,84 @@
+[catalog.error.invalid_params]
+other = "请求参数无效"
+
+[catalog.error.entry_not_found]
+other = "企业目录条目不存在"
+
+[catalog.error.operation_failed]
+other = "企业目录操作失败"
+
+[catalog.error.version_conflict]
+other = "企业目录条目已被其他操作更新，请刷新后重试"
+[catalog.error.entry_not_editable]
+other = "该企业目录条目当前不可编辑"
+[catalog.error.invalid_transition]
+other = "不允许执行该治理状态转换"
+[catalog.error.reference_not_referenceable]
+other = "一个或多个语义或责任引用不存在、已失效或不属于当前租户"
+[catalog.error.certification_permission_required]
+other = "认证企业目录条目需要独立认证权限"
+[catalog.error.deprecation_permission_required]
+other = "弃用企业目录条目需要独立弃用权限"
+[catalog.error.reference_validation_unavailable]
+other = "语义或责任引用校验服务当前不可用"
+[catalog.error.source_rebind_conflict]
+other = "来源重绑前置条件不满足，请刷新并核对目标条目与临时条目"
+[catalog.error.search_unavailable]
+other = "企业目录搜索投影当前不可用"
+[catalog.error.inventory_permission_required]
+other = "查看企业资源盘点需要独立的盘点权限"
+[catalog.error.curation_requirements_not_met]
+other = "业务名称、业务说明、主业务域和必要责任尚未完整"
+[catalog.error.deprecation_reason_required]
+other = "弃用企业目录条目必须填写原因"
+[catalog.error.invalid_recommended_successor]
+other = "推荐继任项必须是当前租户中来源有效且已编目或已认证的目录条目"
+[catalog.error.user_principal_required]
+other = "该操作只允许当前租户中的用户执行"
+[catalog.error.collection_not_found]
+other = "目录集合不存在或当前用户无权访问"
+[catalog.error.collection_version_conflict]
+other = "目录集合已被其他操作更新，请刷新后重试"
+[catalog.error.collection_name_conflict]
+other = "当前项目组中已存在同名目录集合"
+
+[permissions.catalog.inventory.read.name]
+other = "查看企业资源盘点"
+[permissions.catalog.inventory.read.description]
+other = "查看自动发现且尚未完成业务编目的企业数据目录条目"
+[permissions.catalog.reference.read.name]
+other = "解析目录引用"
+[permissions.catalog.reference.read.description]
+other = "供 Asset 运行时精确校验 CatalogEntry 的可组合与可发布状态"
+[permissions.catalog.entry.read.name]
+other = "查看企业数据目录"
+[permissions.catalog.entry.read.description]
+other = "按目录可见性查看企业数据目录条目"
+[permissions.catalog.collection.read.name]
+other = "查看项目组目录集合"
+[permissions.catalog.collection.read.description]
+other = "查看当前参与项目组拥有的企业目录集合"
+[permissions.catalog.collection.update.name]
+other = "维护项目组目录集合"
+[permissions.catalog.collection.update.description]
+other = "创建、更新和删除当前参与项目组拥有的企业目录集合"
+[permissions.catalog.entry.update.name]
+other = "维护企业数据目录"
+[permissions.catalog.entry.update.description]
+other = "维护目录业务信息、语义关联、责任和可见性"
+[permissions.catalog.entry.certify.name]
+other = "认证企业目录条目"
+[permissions.catalog.entry.certify.description]
+other = "将满足条件的企业目录条目推进为已认证状态"
+[permissions.catalog.entry.deprecate.name]
+other = "弃用企业目录条目"
+[permissions.catalog.entry.deprecate.description]
+other = "弃用企业目录条目、记录治理原因并维护可选推荐继任项"
+[permissions.catalog.source.rebind.name]
+other = "重绑目录来源"
+[permissions.catalog.source.rebind.description]
+other = "将新的技术来源显式重绑到既有企业目录身份"
+[permissions.catalog.audit.read.name]
+other = "查看企业目录审计"
+[permissions.catalog.audit.read.description]
+other = "查看企业目录治理、责任和来源重绑审计"

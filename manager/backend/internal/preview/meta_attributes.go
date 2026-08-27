@@ -7,7 +7,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
-	"github.com/addp/manager/internal/catalogutil"
+	"github.com/addp/manager/internal/resourceutil"
 )
 
 // 本文件只把 PreviewRequest 已持有的 Meta item/node snapshot attributes
@@ -27,19 +27,19 @@ func graphInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.GraphIn
 }
 
 func itemDataTypeFromMetaAttributes(attrs map[string]interface{}) string {
-	return strings.ToLower(strings.TrimSpace(catalogutil.StringAttribute(attrs, "data_type")))
+	return strings.ToLower(strings.TrimSpace(resourceutil.StringAttribute(attrs, "data_type")))
 }
 
 func itemLayoutFromMetaAttributes(attrs map[string]interface{}) string {
-	return strings.ToLower(strings.TrimSpace(catalogutil.StringAttribute(attrs, "layout")))
+	return strings.ToLower(strings.TrimSpace(resourceutil.StringAttribute(attrs, "layout")))
 }
 
 func physicalPathFromMetaAttributes(attrs map[string]interface{}) string {
-	return strings.TrimSpace(catalogutil.StringAttribute(attrs, "physical_path"))
+	return strings.TrimSpace(resourceutil.StringAttribute(attrs, "physical_path"))
 }
 
 func formatNameFromMetaAttributes(attrs map[string]interface{}) string {
-	return strings.TrimSpace(catalogutil.StringAttribute(attrs, "format"))
+	return strings.TrimSpace(resourceutil.StringAttribute(attrs, "format"))
 }
 
 func formatTypeFromMetaAttributes(attrs map[string]interface{}) format.FormatType {
@@ -109,5 +109,5 @@ func fileFormatTypeFromMetaAttributes(attrs map[string]interface{}) format.Forma
 	if formatType := formatTypeFromMetaAttributes(attrs); formatType != "" && formatType != format.FormatUnknown {
 		return formatType
 	}
-	return format.MIMEToFormat(catalogutil.StringAttribute(attrs, "content_type"))
+	return format.MIMEToFormat(resourceutil.StringAttribute(attrs, "content_type"))
 }

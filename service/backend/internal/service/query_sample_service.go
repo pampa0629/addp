@@ -68,13 +68,9 @@ func (s *QuerySampleService) DescribeFederatedSQL(
 	}
 	objectTables := federatedDescribeObjectTables(query, provider, candidates, sources)
 	executionID := uuid.New()
-	engineIDs := make([]string, len(sourceEngineIDs))
-	for index, engineID := range sourceEngineIDs {
-		engineIDs[index] = strconv.FormatUint(uint64(engineID), 10)
-	}
 	issued, err := s.issuer.Issue(ctx, userAccessToken, client.IssueExecutionAuthorizationRequest{
-		Audience: "duckdb", ExecutionID: executionID.String(), EngineIDs: engineIDs,
-		Effects: []string{"read"}, ExpiresIn: 60,
+		Audience: "duckdb", ExecutionID: executionID.String(), Accesses: readServiceEngineAccessScopes(sourceEngineIDs),
+		ExpiresIn: 60,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("签发联邦 SQL 输出契约执行授权失败: %w", err)
@@ -250,8 +246,7 @@ func (s *QuerySampleService) generateDirect(
 	issued, err := s.issuer.Issue(ctx, userAccessToken, client.IssueExecutionAuthorizationRequest{
 		Audience:    "service",
 		ExecutionID: executionID.String(),
-		EngineIDs:   []string{strconv.FormatUint(uint64(engineID), 10)},
-		Effects:     []string{"read"},
+		Accesses:    readServiceEngineAccessScopes([]uint{engineID}),
 		ExpiresIn:   40,
 	})
 	if err != nil {
@@ -295,8 +290,7 @@ func (s *QuerySampleService) generateFederated(
 		issued, issueErr := s.issuer.Issue(ctx, userAccessToken, client.IssueExecutionAuthorizationRequest{
 			Audience:    "duckdb",
 			ExecutionID: executionID.String(),
-			EngineIDs:   []string{strconv.FormatUint(uint64(candidate.EngineID), 10)},
-			Effects:     []string{"read"},
+			Accesses:    readServiceEngineAccessScopes([]uint{candidate.EngineID}),
 			ExpiresIn:   60,
 		})
 		if issueErr != nil {

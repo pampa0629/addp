@@ -144,7 +144,7 @@ func (s *NotebookSessionService) StreamRecords(
 	destination io.Writer, ready func(),
 ) error {
 	if request.EngineID == 0 || request.BatchSize <= 0 || request.BatchSize > 1_000_000 || request.MaxRows < 0 ||
-		!validNotebookCatalogPath(request.EngineID, request.Path) || destination == nil {
+		!validNotebookEngineCatalogPath(request.EngineID, request.Path) || destination == nil {
 		return ErrNotebookRecordScanInvalid
 	}
 	execution, err := s.beginNotebookEngineExecution(ctx, sessionID, token, request.EngineID)
@@ -212,7 +212,7 @@ func (s *NotebookSessionService) SampleGraph(
 	ctx context.Context, sessionID, token string, request NotebookGraphSampleRequest,
 ) (*plugin.GraphData, error) {
 	if request.EngineID == 0 || request.Limit <= 0 || request.Limit > 10_000 || request.Timeout <= 0 ||
-		request.Timeout > 5*time.Minute || !validNotebookCatalogPath(request.EngineID, request.Path) {
+		request.Timeout > 5*time.Minute || !validNotebookEngineCatalogPath(request.EngineID, request.Path) {
 		return nil, ErrNotebookGraphRequestInvalid
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, request.Timeout)
@@ -256,7 +256,7 @@ func (s *NotebookSessionService) StreamContent(
 	ctx context.Context, sessionID, token string, request NotebookContentReadRequest,
 	destination io.Writer, ready func(),
 ) error {
-	if request.EngineID == 0 || !validNotebookCatalogPath(request.EngineID, request.Path) || destination == nil ||
+	if request.EngineID == 0 || !validNotebookEngineCatalogPath(request.EngineID, request.Path) || destination == nil ||
 		(request.Range != nil && (request.Range.Offset < 0 || request.Range.Length <= 0)) {
 		return ErrNotebookContentReadInvalid
 	}
@@ -320,7 +320,7 @@ func (s *NotebookSessionService) StreamChanges(
 	destination io.Writer, ready func(),
 ) error {
 	initial := strings.ToLower(strings.TrimSpace(request.InitialPosition))
-	if request.EngineID == 0 || !validNotebookCatalogPath(request.EngineID, request.Path) || destination == nil ||
+	if request.EngineID == 0 || !validNotebookEngineCatalogPath(request.EngineID, request.Path) || destination == nil ||
 		request.BatchSize <= 0 || request.BatchSize > 10_000 || request.PollTimeout <= 0 || request.PollTimeout > time.Minute ||
 		(initial != plugin.ChangeStreamInitialEarliest && initial != plugin.ChangeStreamInitialLatest) {
 		return ErrNotebookChangeStreamInvalid
@@ -386,8 +386,8 @@ func (s *NotebookSessionService) StreamChanges(
 	}
 }
 
-func validNotebookCatalogPath(engineID uint, path commonClient.EngineCatalogPath) bool {
-	return engineID > 0 && path.EngineID == engineID && path.Version == plugin.CatalogPathVersion && len(path.Segments) > 0
+func validNotebookEngineCatalogPath(engineID uint, path commonClient.EngineCatalogPath) bool {
+	return engineID > 0 && path.EngineID == engineID && path.Version == plugin.EngineCatalogPathVersion && len(path.Segments) > 0
 }
 
 func closeNotebookRecordReadSession(session plugin.RecordReadSession) {

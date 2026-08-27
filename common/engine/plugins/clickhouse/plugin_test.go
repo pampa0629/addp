@@ -202,7 +202,7 @@ func TestClickHouseNormalizeTypeName(t *testing.T) {
 }
 
 func TestClickHouseTablePathPartsRequiresDatabaseAndTable(t *testing.T) {
-	_, _, err := clickhouseTablePathParts(plugin.CatalogPath{})
+	_, _, err := clickhouseTablePathParts(plugin.EngineCatalogPath{})
 	if err == nil {
 		t.Fatal("clickhouseTablePathParts() succeeded, want error")
 	}
@@ -241,7 +241,7 @@ func TestShouldUseClickHouseInsertWriteMethod(t *testing.T) {
 
 func TestClickHouseOpenTableWriteSessionRejectsResumeMarker(t *testing.T) {
 	clickhousePlugin := &ClickHousePlugin{}
-	_, err := clickhousePlugin.OpenTableWriteSession(nil, nil, plugin.CatalogPath{}, plugin.TableWriteSessionOptions{
+	_, err := clickhousePlugin.OpenTableWriteSession(nil, nil, plugin.EngineCatalogPath{}, plugin.TableWriteSessionOptions{
 		ResumeMarker: &resume.Marker{Version: resume.MarkerVersionV1},
 	})
 	if err == nil {

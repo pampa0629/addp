@@ -58,7 +58,7 @@ func (p *SparkSQLPlugin) Capabilities() plugin.EngineCapabilities {
 	})
 }
 
-func (p *SparkSQLPlugin) CatalogModel() plugin.CatalogModelSpec {
+func (p *SparkSQLPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.TabularCatalogModel("database")
 }
 
@@ -71,7 +71,7 @@ func (p *SparkSQLPlugin) QueryLanguages() []string {
 }
 
 func (p *SparkSQLPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
-	return plugin.SampleSQLForCatalogPath(p.Type(), opts.Path, 10), "sql"
+	return plugin.SampleSQLForEngineCatalogPath(p.Type(), opts.Path, 10), "sql"
 }
 
 func (p *SparkSQLPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
@@ -94,7 +94,7 @@ func (p *SparkSQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.Connect
 	return p.runQuery(ctx, connInfo, sql)
 }
 
-func (p *SparkSQLPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
+func (p *SparkSQLPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
 	return plugin.ReadSQLBatch(ctx, p, connInfo, path, opts)
 }
 

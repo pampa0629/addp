@@ -28,6 +28,8 @@ func SetupRouter(
 	metricSvc *service.MetricService,
 	documentSvc *service.DocumentService,
 	dimHierarchySvc *service.DimensionHierarchyService,
+	referenceResolutionSvc *service.ReferenceResolutionService,
+	catalogResourceSvc *service.CatalogResourceService,
 	systemURL string,
 	lifecycle *modulelifecycle.Controller,
 ) *gin.Engine {
@@ -59,7 +61,8 @@ func SetupRouter(
 	metricHandler := NewMetricHandler(metricSvc)
 	documentHandler := NewDocumentHandler(documentSvc)
 	dimHierarchyHandler := NewDimensionHierarchyHandler(dimHierarchySvc)
-	assetDiscHandler := newAssetDiscoverableHandler(db)
+	referenceResolutionHandler := NewReferenceResolutionHandler(referenceResolutionSvc)
+	catalogResourceHandler := NewCatalogResourceHandler(catalogResourceSvc)
 
 	api := router.Group("/api/v1/standard")
 	api.Use(
@@ -74,11 +77,20 @@ func SetupRouter(
 		return commonAuth.MustNewPermissionGuard(keys...)
 	}
 	{
-		api.GET(
-			"/assets/discoverable",
-			commonAuth.MustNewServiceClientGuard("addp-asset"),
-			permission(standardauthorization.PermissionStandardMetricRead),
-			assetDiscHandler.listDiscoverableAssets,
+		catalogResources := api.Group("")
+		catalogResources.Use(commonAuth.MustNewServiceClientGuard("addp-catalog"))
+		catalogResources.GET("/catalog-resources/changes", permission(standardauthorization.PermissionStandardCatalogRead), catalogResourceHandler.ListChanges)
+		catalogResources.POST("/runtime/catalog-references/resolve", permission(standardauthorization.PermissionStandardCatalogRead), catalogResourceHandler.ResolveReferences)
+
+		api.POST(
+			"/references/resolve",
+			commonAuth.MustNewServiceClientGuard("addp-catalog"),
+			permission(
+				standardauthorization.PermissionStandardDomainRead,
+				standardauthorization.PermissionStandardGlossaryRead,
+				standardauthorization.PermissionStandardElementRead,
+			),
+			referenceResolutionHandler.Resolve,
 		)
 
 		domains := api.Group("/domains")
@@ -178,6 +190,7 @@ func SetupRouter(
 			metrics.GET("", permission(standardauthorization.PermissionStandardMetricRead), metricHandler.ListMetrics)
 			metrics.POST("", permission(standardauthorization.PermissionStandardMetricCreate), metricHandler.CreateMetric)
 			metrics.GET("/:id", permission(standardauthorization.PermissionStandardMetricRead), metricHandler.GetMetric)
+			metrics.GET("/:id/relations", permission(standardauthorization.PermissionStandardMetricRead), metricHandler.GetProfessionalRelations)
 			metrics.PUT("/:id", permission(standardauthorization.PermissionStandardMetricUpdate), metricHandler.UpdateMetric)
 			metrics.DELETE("/:id", permission(standardauthorization.PermissionStandardMetricDelete), metricHandler.DeleteMetric)
 			metrics.POST("/:id/approve", permission(standardauthorization.PermissionStandardMetricApprove), metricHandler.ApproveMetric)

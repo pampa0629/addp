@@ -568,6 +568,30 @@ definitions:
     x-enum-varnames:
     - ContextTypePlatform
     - ContextTypeTenant
+  github_com_addp_system_internal_iam.DepartmentMembershipType:
+    enum:
+    - primary
+    - additional
+    type: string
+    x-enum-varnames:
+    - DepartmentMembershipTypePrimary
+    - DepartmentMembershipTypeAdditional
+  github_com_addp_system_internal_iam.DepartmentRelationRole:
+    enum:
+    - member
+    - leader
+    type: string
+    x-enum-varnames:
+    - DepartmentRelationRoleMember
+    - DepartmentRelationRoleLeader
+  github_com_addp_system_internal_iam.DepartmentStatus:
+    enum:
+    - active
+    - disabled
+    type: string
+    x-enum-varnames:
+    - DepartmentStatusActive
+    - DepartmentStatusDisabled
   github_com_addp_system_internal_iam.LocalAccountStatus:
     enum:
     - active
@@ -578,6 +602,14 @@ definitions:
     - LocalAccountStatusActive
     - LocalAccountStatusLocked
     - LocalAccountStatusDisabled
+  github_com_addp_system_internal_iam.OrganizationMembershipStatus:
+    enum:
+    - active
+    - ended
+    type: string
+    x-enum-varnames:
+    - OrganizationMembershipStatusActive
+    - OrganizationMembershipStatusEnded
   github_com_addp_system_internal_iam.PrincipalStatus:
     enum:
     - active
@@ -624,6 +656,26 @@ definitions:
     - PrivilegedChangePlatformIdentityDeactivate
     - PrivilegedChangePlatformRoleGrant
     - PrivilegedChangePlatformRoleRevoke
+  github_com_addp_system_internal_iam.ProjectGroupRelationRole:
+    enum:
+    - member
+    - leader
+    - coordinator
+    type: string
+    x-enum-varnames:
+    - ProjectGroupRelationRoleMember
+    - ProjectGroupRelationRoleLeader
+    - ProjectGroupRelationRoleCoordinator
+  github_com_addp_system_internal_iam.ProjectGroupStatus:
+    enum:
+    - planned
+    - active
+    - closed
+    type: string
+    x-enum-varnames:
+    - ProjectGroupStatusPlanned
+    - ProjectGroupStatusActive
+    - ProjectGroupStatusClosed
   github_com_addp_system_internal_iam.TenantInvitationStatus:
     enum:
     - pending
@@ -765,87 +817,6 @@ definitions:
         items:
           $ref: '#/definitions/github_com_addp_common_models.CapabilityViewBadge'
         type: array
-    type: object
-  github_com_addp_system_internal_models.CatalogDescribeFactsRequest:
-    properties:
-      path:
-        $ref: '#/definitions/github_com_addp_system_internal_models.CatalogPath'
-    type: object
-  github_com_addp_system_internal_models.CatalogEntry:
-    properties:
-      kind:
-        example: namespace
-        type: string
-      leaf_count:
-        type: integer
-      name:
-        example: public
-        type: string
-      path:
-        $ref: '#/definitions/github_com_addp_system_internal_models.CatalogPath'
-      role:
-        example: branch
-        type: string
-      storage:
-        $ref: '#/definitions/plugin.CatalogStorageFacts'
-      table:
-        $ref: '#/definitions/datatype.TableInfo'
-      term:
-        example: schema
-        type: string
-      updated_at:
-        type: string
-    type: object
-  github_com_addp_system_internal_models.CatalogListChildrenRequest:
-    properties:
-      options:
-        $ref: '#/definitions/github_com_addp_system_internal_models.CatalogListOptions'
-      path:
-        $ref: '#/definitions/github_com_addp_system_internal_models.CatalogPath'
-    type: object
-  github_com_addp_system_internal_models.CatalogListChildrenResponse:
-    properties:
-      nodes:
-        items:
-          $ref: '#/definitions/github_com_addp_system_internal_models.CatalogEntry'
-        type: array
-    type: object
-  github_com_addp_system_internal_models.CatalogListOptions:
-    properties:
-      limit:
-        example: 100
-        type: integer
-      offset:
-        example: 0
-        type: integer
-      recursive:
-        example: false
-        type: boolean
-    type: object
-  github_com_addp_system_internal_models.CatalogPath:
-    properties:
-      engine_id:
-        example: 1
-        type: integer
-      segments:
-        items:
-          $ref: '#/definitions/github_com_addp_system_internal_models.CatalogSegment'
-        type: array
-      version:
-        example: catalog.path/v1
-        type: string
-    type: object
-  github_com_addp_system_internal_models.CatalogSegment:
-    properties:
-      kind:
-        example: namespace
-        type: string
-      name:
-        example: public
-        type: string
-      term:
-        example: schema
-        type: string
     type: object
   github_com_addp_system_internal_models.CleanupTask:
     properties:
@@ -1004,6 +975,87 @@ definitions:
         type: string
       version:
         type: integer
+    type: object
+  github_com_addp_system_internal_models.EngineCatalogDescribeFactsRequest:
+    properties:
+      path:
+        $ref: '#/definitions/github_com_addp_system_internal_models.EngineCatalogPath'
+    type: object
+  github_com_addp_system_internal_models.EngineCatalogEntry:
+    properties:
+      kind:
+        example: namespace
+        type: string
+      leaf_count:
+        type: integer
+      name:
+        example: public
+        type: string
+      path:
+        $ref: '#/definitions/github_com_addp_system_internal_models.EngineCatalogPath'
+      role:
+        example: branch
+        type: string
+      storage:
+        $ref: '#/definitions/plugin.EngineCatalogStorageFacts'
+      table:
+        $ref: '#/definitions/datatype.TableInfo'
+      term:
+        example: schema
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.EngineCatalogListChildrenRequest:
+    properties:
+      options:
+        $ref: '#/definitions/github_com_addp_system_internal_models.EngineCatalogListOptions'
+      path:
+        $ref: '#/definitions/github_com_addp_system_internal_models.EngineCatalogPath'
+    type: object
+  github_com_addp_system_internal_models.EngineCatalogListChildrenResponse:
+    properties:
+      nodes:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineCatalogEntry'
+        type: array
+    type: object
+  github_com_addp_system_internal_models.EngineCatalogListOptions:
+    properties:
+      limit:
+        example: 100
+        type: integer
+      offset:
+        example: 0
+        type: integer
+      recursive:
+        example: false
+        type: boolean
+    type: object
+  github_com_addp_system_internal_models.EngineCatalogPath:
+    properties:
+      engine_id:
+        example: 1
+        type: integer
+      segments:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineCatalogSegment'
+        type: array
+      version:
+        example: catalog.path/v1
+        type: string
+    type: object
+  github_com_addp_system_internal_models.EngineCatalogSegment:
+    properties:
+      kind:
+        example: namespace
+        type: string
+      name:
+        example: public
+        type: string
+      term:
+        example: schema
+        type: string
     type: object
   github_com_addp_system_internal_models.EngineConnectionProbe:
     properties:
@@ -1523,6 +1575,51 @@ definitions:
       session:
         $ref: '#/definitions/internal_api.IAMAccessTokenResponse'
     type: object
+  internal_api.IAMCatalogReferenceBatchRequest:
+    properties:
+      references:
+        items:
+          $ref: '#/definitions/internal_api.IAMCatalogReferenceRequest'
+        type: array
+    type: object
+  internal_api.IAMCatalogReferenceBatchResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/internal_api.IAMCatalogReferenceResolution'
+        type: array
+    type: object
+  internal_api.IAMCatalogReferenceRequest:
+    properties:
+      id:
+        type: string
+      subject_type:
+        enum:
+        - department
+        - user
+        type: string
+    type: object
+  internal_api.IAMCatalogReferenceResolution:
+    properties:
+      code:
+        type: string
+      found:
+        type: boolean
+      id:
+        type: string
+      membership_status:
+        type: string
+      name:
+        type: string
+      principal_status:
+        type: string
+      referenceable:
+        type: boolean
+      status:
+        type: string
+      subject_type:
+        type: string
+    type: object
   internal_api.IAMChangeCurrentPasswordRequest:
     properties:
       current_password:
@@ -1602,6 +1699,24 @@ definitions:
       tenant_membership_id:
         type: string
     type: object
+  internal_api.IAMCreateDepartmentMembershipRequest:
+    properties:
+      membership_type:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.DepartmentMembershipType'
+      relation_role:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.DepartmentRelationRole'
+      tenant_membership_id:
+        type: string
+    type: object
+  internal_api.IAMCreateDepartmentRequest:
+    properties:
+      code:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: string
+    type: object
   internal_api.IAMCreateManagedUserRequest:
     properties:
       display_name:
@@ -1626,6 +1741,28 @@ definitions:
         type: string
       target_principal_id:
         type: string
+    type: object
+  internal_api.IAMCreateProjectGroupMembershipRequest:
+    properties:
+      relation_role:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.ProjectGroupRelationRole'
+      tenant_membership_id:
+        type: string
+    type: object
+  internal_api.IAMCreateProjectGroupRequest:
+    properties:
+      code:
+        type: string
+      description:
+        type: string
+      ends_at:
+        type: string
+      name:
+        type: string
+      starts_at:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.ProjectGroupStatus'
     type: object
   internal_api.IAMCreateTenantInvitationRequest:
     properties:
@@ -1726,6 +1863,25 @@ definitions:
       reason:
         type: string
     type: object
+  internal_api.IAMDepartmentResponse:
+    properties:
+      code:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.DepartmentStatus'
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
   internal_api.IAMErrorResponse:
     properties:
       error:
@@ -1735,18 +1891,14 @@ definitions:
     type: object
   internal_api.IAMExecutionAuthorizationResponse:
     properties:
+      accesses:
+        items:
+          $ref: '#/definitions/internal_api.IAMExecutionEngineAccessScope'
+        type: array
       actor_principal_id:
         type: string
       audience:
         type: string
-      effects:
-        items:
-          type: string
-        type: array
-      engine_ids:
-        items:
-          type: string
-        type: array
       execution_id:
         type: string
       expires_at:
@@ -1794,6 +1946,15 @@ definitions:
       execution_id:
         type: string
       expires_at:
+        type: string
+    type: object
+  internal_api.IAMExecutionEngineAccessScope:
+    properties:
+      effects:
+        items:
+          type: string
+        type: array
+      engine_id:
         type: string
     type: object
   internal_api.IAMInitializeTenantRequest:
@@ -1848,33 +2009,33 @@ definitions:
     type: object
   internal_api.IAMIssueExecutionAuthorizationFromExecutionRequest:
     properties:
+      accesses:
+        items:
+          $ref: '#/definitions/internal_api.IAMExecutionEngineAccessScope'
+        type: array
+      attempt:
+        type: integer
       audience:
         type: string
-      effects:
-        items:
-          type: string
-        type: array
-      engine_ids:
-        items:
-          type: string
-        type: array
       execution_id:
         type: string
       expires_in:
         type: integer
+      lease_token:
+        type: string
       parent_execution_id:
         type: string
     type: object
   internal_api.IAMIssueExecutionAuthorizationFromServiceDefinitionRequest:
     properties:
+      accesses:
+        items:
+          $ref: '#/definitions/internal_api.IAMExecutionEngineAccessScope'
+        type: array
       definition_id:
         type: string
       definition_version:
         type: string
-      engine_ids:
-        items:
-          type: string
-        type: array
       execution_id:
         type: string
       expires_in:
@@ -1882,16 +2043,12 @@ definitions:
     type: object
   internal_api.IAMIssueExecutionAuthorizationRequest:
     properties:
+      accesses:
+        items:
+          $ref: '#/definitions/internal_api.IAMExecutionEngineAccessScope'
+        type: array
       audience:
         type: string
-      effects:
-        items:
-          type: string
-        type: array
-      engine_ids:
-        items:
-          type: string
-        type: array
       execution_id:
         type: string
       expires_in:
@@ -2014,14 +2171,14 @@ definitions:
       user:
         $ref: '#/definitions/internal_api.IAMManagedUserResponse'
     type: object
-  internal_api.IAMNotebookCatalogChildrenRequest:
+  internal_api.IAMNotebookEngineCatalogChildrenRequest:
     properties:
       engine_id:
         type: integer
       options:
-        $ref: '#/definitions/github_com_addp_system_internal_models.CatalogListOptions'
+        $ref: '#/definitions/github_com_addp_system_internal_models.EngineCatalogListOptions'
       path:
-        $ref: '#/definitions/github_com_addp_system_internal_models.CatalogPath'
+        $ref: '#/definitions/github_com_addp_system_internal_models.EngineCatalogPath'
       session_id:
         type: string
     type: object
@@ -2101,6 +2258,35 @@ definitions:
       token_type:
         type: string
     type: object
+  internal_api.IAMOrganizationMembershipResponse:
+    properties:
+      created_at:
+        type: string
+      department_role:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.DepartmentRelationRole'
+      display_name:
+        type: string
+      ended_at:
+        type: string
+      id:
+        type: string
+      membership_type:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.DepartmentMembershipType'
+      principal_id:
+        type: string
+      project_group_role:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.ProjectGroupRelationRole'
+      status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.OrganizationMembershipStatus'
+      tenant_membership_id:
+        type: string
+      updated_at:
+        type: string
+      username:
+        type: string
+      version:
+        type: integer
+    type: object
   internal_api.IAMPasswordRotationResponse:
     properties:
       changed_at:
@@ -2132,6 +2318,29 @@ definitions:
         type: string
       updated_at:
         type: string
+    type: object
+  internal_api.IAMProjectGroupResponse:
+    properties:
+      code:
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      ends_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      starts_at:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.ProjectGroupStatus'
+      updated_at:
+        type: string
+      version:
+        type: integer
     type: object
   internal_api.IAMResetManagedLocalAccountPasswordRequest:
     properties:
@@ -2434,6 +2643,24 @@ definitions:
       tenant:
         $ref: '#/definitions/internal_api.IAMTenantResponse'
     type: object
+  internal_api.IAMUpdateDepartmentMembershipRequest:
+    properties:
+      membership_type:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.DepartmentMembershipType'
+      relation_role:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.DepartmentRelationRole'
+      version:
+        type: integer
+    type: object
+  internal_api.IAMUpdateDepartmentRequest:
+    properties:
+      name:
+        type: string
+      parent_id:
+        type: string
+      version:
+        type: integer
+    type: object
   internal_api.IAMUpdateManagedUserRequest:
     properties:
       display_name:
@@ -2442,6 +2669,28 @@ definitions:
         type: string
       primary_email:
         type: string
+    type: object
+  internal_api.IAMUpdateProjectGroupMembershipRequest:
+    properties:
+      relation_role:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.ProjectGroupRelationRole'
+      version:
+        type: integer
+    type: object
+  internal_api.IAMUpdateProjectGroupRequest:
+    properties:
+      description:
+        type: string
+      ends_at:
+        type: string
+      name:
+        type: string
+      starts_at:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.ProjectGroupStatus'
+      version:
+        type: integer
     type: object
   internal_api.IAMUpdateSecurityPolicyRequest:
     properties:
@@ -2481,6 +2730,13 @@ definitions:
         type: string
       name:
         type: string
+    type: object
+  internal_api.IAMVersionedLifecycleRequest:
+    properties:
+      reason:
+        type: string
+      version:
+        type: integer
     type: object
   internal_api.RuntimeEngineRegistrationRequest:
     properties:
@@ -2624,70 +2880,6 @@ definitions:
         description: 任务状态端点
         type: string
     type: object
-  plugin.CatalogFacts:
-    properties:
-      constraints:
-        items:
-          $ref: '#/definitions/plugin.ConstraintFacts'
-        type: array
-      graph:
-        $ref: '#/definitions/datatype.GraphInfo'
-      indexes:
-        items:
-          $ref: '#/definitions/plugin.IndexFacts'
-        type: array
-      kind:
-        type: string
-      partitioning:
-        $ref: '#/definitions/plugin.TablePartitioningFacts'
-      path:
-        $ref: '#/definitions/plugin.CatalogPath'
-      spatial:
-        $ref: '#/definitions/datatype.SpatialInfo'
-      storage:
-        $ref: '#/definitions/plugin.CatalogStorageFacts'
-      table:
-        $ref: '#/definitions/datatype.TableInfo'
-      topic:
-        $ref: '#/definitions/plugin.TopicFacts'
-      updated_at:
-        type: string
-    type: object
-  plugin.CatalogPath:
-    properties:
-      engine_id:
-        type: integer
-      segments:
-        items:
-          $ref: '#/definitions/plugin.CatalogSegment'
-        type: array
-      version:
-        type: string
-    type: object
-  plugin.CatalogSegment:
-    properties:
-      kind:
-        type: string
-      name:
-        type: string
-      term:
-        type: string
-    type: object
-  plugin.CatalogStorageFacts:
-    properties:
-      content_type:
-        type: string
-      etag:
-        type: string
-      extension:
-        type: string
-      name:
-        type: string
-      path:
-        type: string
-      size_bytes:
-        type: integer
-    type: object
   plugin.ConstraintFacts:
     properties:
       constraint_type:
@@ -2706,6 +2898,70 @@ definitions:
         type: string
       referenced_table:
         type: string
+    type: object
+  plugin.EngineCatalogFacts:
+    properties:
+      constraints:
+        items:
+          $ref: '#/definitions/plugin.ConstraintFacts'
+        type: array
+      graph:
+        $ref: '#/definitions/datatype.GraphInfo'
+      indexes:
+        items:
+          $ref: '#/definitions/plugin.IndexFacts'
+        type: array
+      kind:
+        type: string
+      partitioning:
+        $ref: '#/definitions/plugin.TablePartitioningFacts'
+      path:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+      spatial:
+        $ref: '#/definitions/datatype.SpatialInfo'
+      storage:
+        $ref: '#/definitions/plugin.EngineCatalogStorageFacts'
+      table:
+        $ref: '#/definitions/datatype.TableInfo'
+      topic:
+        $ref: '#/definitions/plugin.TopicFacts'
+      updated_at:
+        type: string
+    type: object
+  plugin.EngineCatalogPath:
+    properties:
+      engine_id:
+        type: integer
+      segments:
+        items:
+          $ref: '#/definitions/plugin.EngineCatalogSegment'
+        type: array
+      version:
+        type: string
+    type: object
+  plugin.EngineCatalogSegment:
+    properties:
+      kind:
+        type: string
+      name:
+        type: string
+      term:
+        type: string
+    type: object
+  plugin.EngineCatalogStorageFacts:
+    properties:
+      content_type:
+        type: string
+      etag:
+        type: string
+      extension:
+        type: string
+      name:
+        type: string
+      path:
+        type: string
+      size_bytes:
+        type: integer
     type: object
   plugin.IndexFacts:
     properties:
@@ -3813,14 +4069,14 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_system_internal_models.CatalogListChildrenRequest'
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineCatalogListChildrenRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.CatalogListChildrenResponse'
+            $ref: '#/definitions/github_com_addp_system_internal_models.EngineCatalogListChildrenResponse'
         "400":
           description: Bad Request
           schema:
@@ -3863,14 +4119,14 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_system_internal_models.CatalogDescribeFactsRequest'
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineCatalogDescribeFactsRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/plugin.CatalogFacts'
+            $ref: '#/definitions/plugin.EngineCatalogFacts'
         "400":
           description: Bad Request
           schema:
@@ -4259,9 +4515,10 @@ paths:
       consumes:
       - application/json
       description: 仅 addp-develop Tenant Service Principal 可消费绑定 Session 的用户派生授权；授权复核与
-        CatalogProvider.ListChildren 在同一请求完成 | Only the addp-develop tenant service
-        principal may consume the session-bound user-derived authorization; authorization
-        review and CatalogProvider.ListChildren complete in one request
+        EngineCatalogProvider.ListChildren 在同一请求完成 | Only the addp-develop tenant
+        service principal may consume the session-bound user-derived authorization;
+        authorization review and EngineCatalogProvider.ListChildren complete in one
+        request
       parameters:
       - description: Notebook 会话授权 ID | Notebook session authorization ID
         in: path
@@ -4273,14 +4530,14 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/internal_api.IAMNotebookCatalogChildrenRequest'
+          $ref: '#/definitions/internal_api.IAMNotebookEngineCatalogChildrenRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.CatalogListChildrenResponse'
+            $ref: '#/definitions/github_com_addp_system_internal_models.EngineCatalogListChildrenResponse'
         "400":
           description: Bad Request
           schema:
@@ -5878,6 +6135,50 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.api_key.read
+  /runtime/catalog-references/resolve:
+    post:
+      consumes:
+      - application/json
+      description: 仅 addp-catalog Tenant Service Principal 可按当前 Tenant 解析 Department
+        与 User；User ID 是全局稳定身份，但必须有当前 Tenant Membership；跨 Tenant 与不存在统一返回 found=false
+        | Only the addp-catalog tenant service principal may resolve departments and
+        users in the current tenant; a user ID is globally stable but requires a current
+        tenant membership; cross-tenant and missing subjects both return found=false
+      parameters:
+      - description: 主体引用集合，最多 200 个 | Subject references, up to 200
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMCatalogReferenceBatchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMCatalogReferenceBatchResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 精确批量解析 Catalog 责任主体 | Resolve Catalog responsibility subjects in batch
+      tags:
+      - Runtime Catalog References
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.department.read
+      - iam.tenant_membership.read
   /runtime/engine-descriptors:
     get:
       description: 返回同 Tenant 可见的脱敏控制面投影；工作流、脚本、联邦查询和 AI 推理运行时包含 protocol/host/port，数据引擎不返回
@@ -6040,9 +6341,11 @@ paths:
       consumes:
       - application/json
       description: 仅匹配 audience 的 Tenant Runtime Service Principal 可基于可验证的 Orchestrator
-        父 execution 与 owner 子 execution 来源链签发授权 | Only the tenant runtime service
+        父 execution 与 owner 子 execution 来源链签发授权；子 execution 必须处于 pending，或由请求中精确的
+        attempt 与 lease_token 持有未过期的 running 租约 | Only the tenant runtime service
         principal matching the audience may issue from a verified Orchestrator parent
-        and owner child execution chain
+        and owner child execution chain; the child must be pending or hold the exact
+        unexpired running lease identified by attempt and lease_token
       parameters:
       - description: 父子执行与授权边界 | Parent/child execution and authorization boundary
         in: body
@@ -6079,6 +6382,10 @@ paths:
       tags:
       - Runtime 执行授权 | Runtime Execution Authorization
       x-addp-auth-mode: permission
+      x-addp-conditional-permissions:
+      - transfer.task.execute
+      - develop.data_read.execute
+      - develop.data_write.execute
       x-addp-required-permissions:
       - system.execution_authorization.execute
   /runtime/execution-authorizations/service-definitions:
@@ -6509,6 +6816,59 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.runtime_registry.read
+  /runtime/tenants:
+    get:
+      description: 供平台 Service Principal 发现已初始化的 active Tenant | Allows platform Service
+        Principals to discover initialized active tenants
+      parameters:
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: 状态 | Status
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/internal_api.IAMTenantResponse'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 发现运行时租户 | Discover runtime tenants
+      tags:
+      - 服务运行时 | Service Runtime
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.tenant.read
   /tenant/audit/events:
     get:
       parameters:
@@ -6697,6 +7057,365 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - audit.tenant_event.read
+  /tenant/departments:
+    get:
+      description: 分页查询当前 Tenant 的稳定组织单元 | List stable organization units in the current
+        tenant
+      parameters:
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: 编码或名称 | Code or name
+        in: query
+        name: search
+        type: string
+      - description: '状态：active/disabled | Status: active/disabled'
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/internal_api.IAMDepartmentResponse'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询部门 | List departments
+      tags:
+      - 租户组织 | Tenant Organization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.department.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 部门定义 | Department definition
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMCreateDepartmentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.IAMDepartmentResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建部门 | Create department
+      tags:
+      - 租户组织 | Tenant Organization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.department.create
+  /tenant/departments/{id}:
+    get:
+      parameters:
+      - description: 部门 ID | Department ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMDepartmentResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询部门详情 | Get department
+      tags:
+      - 租户组织 | Tenant Organization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.department.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 部门 ID | Department ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 完整可编辑聚合与版本 | Full editable aggregate and version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMUpdateDepartmentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMDepartmentResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新部门 | Update department
+      tags:
+      - 租户组织 | Tenant Organization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.department.update
+  /tenant/departments/{id}/disable:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 部门 ID | Department ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 版本与原因 | Version and reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMVersionedLifecycleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMDepartmentResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 停用部门 | Disable department
+      tags:
+      - 租户组织 | Tenant Organization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.department.update
+  /tenant/departments/{id}/memberships:
+    get:
+      parameters:
+      - description: 部门 ID | Department ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: '状态：active/ended | Status: active/ended'
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/internal_api.IAMOrganizationMembershipResponse'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询部门成员 | List department memberships
+      tags:
+      - 租户组织 | Tenant Organization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.department_membership.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 部门 ID | Department ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 成员关系 | Membership
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMCreateDepartmentMembershipRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.IAMOrganizationMembershipResponse'
+      security:
+      - BearerAuth: []
+      summary: 新增部门成员 | Create department membership
+      tags:
+      - 租户组织 | Tenant Organization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.department_membership.create
+  /tenant/departments/{id}/memberships/{membership_id}:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 部门 ID | Department ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 成员关系 ID | Membership ID
+        in: path
+        name: membership_id
+        required: true
+        type: string
+      - description: 关系与版本 | Relationship and version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMUpdateDepartmentMembershipRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMOrganizationMembershipResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新部门成员关系 | Update department membership
+      tags:
+      - 租户组织 | Tenant Organization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.department_membership.update
+  /tenant/departments/{id}/memberships/{membership_id}/close:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 部门 ID | Department ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 成员关系 ID | Membership ID
+        in: path
+        name: membership_id
+        required: true
+        type: string
+      - description: 版本与原因 | Version and reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMVersionedLifecycleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMOrganizationMembershipResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 结束部门成员关系 | Close department membership
+      tags:
+      - 租户组织 | Tenant Organization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.department_membership.close
+  /tenant/departments/{id}/restore:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 部门 ID | Department ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 版本与原因 | Version and reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMVersionedLifecycleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMDepartmentResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 恢复部门 | Restore department
+      tags:
+      - 租户组织 | Tenant Organization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.department.restore
   /tenant/invitations:
     get:
       parameters:
@@ -7075,6 +7794,330 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - iam.tenant_membership.suspend
+  /tenant/project_groups:
+    get:
+      description: 分页查询当前 Tenant 的跨部门协作集合 | List cross-department collaboration groups
+        in the current tenant
+      parameters:
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: 编码或名称 | Code or name
+        in: query
+        name: search
+        type: string
+      - description: '状态：planned/active/closed | Status: planned/active/closed'
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/internal_api.IAMProjectGroupResponse'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询项目组 | List project groups
+      tags:
+      - 租户组织 | Tenant Organization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.project_group.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目组定义 | Project group definition
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMCreateProjectGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.IAMProjectGroupResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建项目组 | Create project group
+      tags:
+      - 租户组织 | Tenant Organization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.project_group.create
+  /tenant/project_groups/{id}:
+    get:
+      parameters:
+      - description: 项目组 ID | Project group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMProjectGroupResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询项目组详情 | Get project group
+      tags:
+      - 租户组织 | Tenant Organization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.project_group.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目组 ID | Project group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 完整可编辑聚合与版本 | Full editable aggregate and version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMUpdateProjectGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMProjectGroupResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新项目组 | Update project group
+      tags:
+      - 租户组织 | Tenant Organization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.project_group.update
+  /tenant/project_groups/{id}/close:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目组 ID | Project group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 版本与原因 | Version and reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMVersionedLifecycleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMProjectGroupResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 关闭项目组 | Close project group
+      tags:
+      - 租户组织 | Tenant Organization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.project_group.close
+  /tenant/project_groups/{id}/memberships:
+    get:
+      parameters:
+      - description: 项目组 ID | Project group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: '状态：active/ended | Status: active/ended'
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/internal_api.IAMOrganizationMembershipResponse'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询项目组成员 | List project group memberships
+      tags:
+      - 租户组织 | Tenant Organization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.project_group_membership.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目组 ID | Project group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 成员关系 | Membership
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMCreateProjectGroupMembershipRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.IAMOrganizationMembershipResponse'
+      security:
+      - BearerAuth: []
+      summary: 新增项目组成员 | Create project group membership
+      tags:
+      - 租户组织 | Tenant Organization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.project_group_membership.create
+  /tenant/project_groups/{id}/memberships/{membership_id}:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目组 ID | Project group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 成员关系 ID | Membership ID
+        in: path
+        name: membership_id
+        required: true
+        type: string
+      - description: 组内角色与版本 | Group role and version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMUpdateProjectGroupMembershipRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMOrganizationMembershipResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新项目组成员关系 | Update project group membership
+      tags:
+      - 租户组织 | Tenant Organization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.project_group_membership.update
+  /tenant/project_groups/{id}/memberships/{membership_id}/close:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目组 ID | Project group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 成员关系 ID | Membership ID
+        in: path
+        name: membership_id
+        required: true
+        type: string
+      - description: 版本与原因 | Version and reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMVersionedLifecycleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMOrganizationMembershipResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 结束项目组成员关系 | Close project group membership
+      tags:
+      - 租户组织 | Tenant Organization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.project_group_membership.close
   /tenant/role_assignments:
     get:
       parameters:

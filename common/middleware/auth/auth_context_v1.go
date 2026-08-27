@@ -283,9 +283,16 @@ func MustNewContextGuard(contextType string) gin.HandlerFunc {
 	return guard
 }
 
-func NewServiceClientGuard(expectedClientID string) (gin.HandlerFunc, error) {
-	expectedClientID = strings.TrimSpace(expectedClientID)
-	if expectedClientID == "" {
+func NewServiceClientGuard(expectedClientIDs ...string) (gin.HandlerFunc, error) {
+	allowed := make(map[string]struct{}, len(expectedClientIDs))
+	for _, expectedClientID := range expectedClientIDs {
+		expectedClientID = strings.TrimSpace(expectedClientID)
+		if expectedClientID == "" {
+			return nil, fmt.Errorf("%w: expected service client ID is required", commonapi.ErrBadRequest)
+		}
+		allowed[expectedClientID] = struct{}{}
+	}
+	if len(allowed) == 0 {
 		return nil, fmt.Errorf("%w: expected service client ID is required", commonapi.ErrBadRequest)
 	}
 	return func(c *gin.Context) {
@@ -294,8 +301,8 @@ func NewServiceClientGuard(expectedClientID string) (gin.HandlerFunc, error) {
 			abortAuthenticationRequired(c)
 			return
 		}
-		if authContext.Principal.Type != "service_principal" ||
-			authContext.Client.ClientID == nil || *authContext.Client.ClientID != expectedClientID {
+		_, clientAllowed := allowed[GetClientID(c)]
+		if authContext.Principal.Type != "service_principal" || !clientAllowed {
 			abortPermissionDenied(c)
 			return
 		}
@@ -303,8 +310,8 @@ func NewServiceClientGuard(expectedClientID string) (gin.HandlerFunc, error) {
 	}, nil
 }
 
-func MustNewServiceClientGuard(expectedClientID string) gin.HandlerFunc {
-	guard, err := NewServiceClientGuard(expectedClientID)
+func MustNewServiceClientGuard(expectedClientIDs ...string) gin.HandlerFunc {
+	guard, err := NewServiceClientGuard(expectedClientIDs...)
 	if err != nil {
 		panic(err)
 	}

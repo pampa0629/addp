@@ -61,7 +61,7 @@ func (p *MongoDBPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewDynamicSchemaCapabilities(p.Type())
 }
 
-func (p *MongoDBPlugin) CatalogModel() plugin.CatalogModelSpec {
+func (p *MongoDBPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.DynamicSchemaCatalogModel()
 }
 
@@ -78,15 +78,15 @@ func (p *MongoDBPlugin) dynamicSchemaCatalogCallbacks() plugin.DynamicSchemaCata
 	}
 }
 
-func (p *MongoDBPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+func (p *MongoDBPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath, opts plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
 	return plugin.ListDynamicSchemaCatalogChildren(ctx, p.dynamicSchemaCatalogCallbacks(), parent.EngineID, connInfo, parent, opts)
 }
 
-func (p *MongoDBPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p *MongoDBPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	return plugin.ResolveDynamicSchemaCatalogPath(ctx, p.dynamicSchemaCatalogCallbacks(), path.EngineID, connInfo, path)
 }
 
-func (p *MongoDBPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *MongoDBPlugin) DescribeEngineCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	if _, _, ok := mongoCollectionFromCatalogPath(path); ok {
 		return p.SampleDynamicSchema(ctx, connInfo, path, opts)
 	}
@@ -105,18 +105,18 @@ func (p *MongoDBPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin
 	return p.generateSampleQuery(ctx, connInfo)
 }
 
-func mongoCollectionFromCatalogPath(path plugin.CatalogPath) (string, string, bool) {
-	segments := plugin.CatalogPathWithoutRoot(path).Segments
-	if len(segments) != 2 || segments[0].Term != plugin.CatalogTermDatabase ||
-		segments[1].Term != plugin.CatalogTermCollection || segments[0].Name == "" || segments[1].Name == "" {
+func mongoCollectionFromCatalogPath(path plugin.EngineCatalogPath) (string, string, bool) {
+	segments := plugin.EngineCatalogPathWithoutRoot(path).Segments
+	if len(segments) != 2 || segments[0].Term != plugin.EngineCatalogTermDatabase ||
+		segments[1].Term != plugin.EngineCatalogTermCollection || segments[0].Name == "" || segments[1].Name == "" {
 		return "", "", false
 	}
 	return segments[0].Name, segments[1].Name, true
 }
 
-func mongoDatabaseFromCatalogPath(path plugin.CatalogPath) (string, bool) {
-	segments := plugin.CatalogPathWithoutRoot(path).Segments
-	if len(segments) == 0 || segments[0].Term != plugin.CatalogTermDatabase || segments[0].Name == "" {
+func mongoDatabaseFromCatalogPath(path plugin.EngineCatalogPath) (string, bool) {
+	segments := plugin.EngineCatalogPathWithoutRoot(path).Segments
+	if len(segments) == 0 || segments[0].Term != plugin.EngineCatalogTermDatabase || segments[0].Name == "" {
 		return "", false
 	}
 	return segments[0].Name, true
@@ -130,9 +130,9 @@ func (p *MongoDBPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin
 	return p.executeQuery(ctx, connInfo, req.Query, req.Options)
 }
 
-func valueOrEmptyPath(path *plugin.CatalogPath) plugin.CatalogPath {
+func valueOrEmptyPath(path *plugin.EngineCatalogPath) plugin.EngineCatalogPath {
 	if path == nil {
-		return plugin.CatalogPath{}
+		return plugin.EngineCatalogPath{}
 	}
 	return *path
 }

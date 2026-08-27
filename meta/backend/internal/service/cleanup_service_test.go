@@ -5,30 +5,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/events"
-	"github.com/addp/meta/internal/metacleanup"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scantask"
 )
-
-type recordingMetaSearchCleaner struct {
-	executedEngineIDs []uint
-}
-
-func (c *recordingMetaSearchCleaner) Enabled() bool { return true }
-
-func (c *recordingMetaSearchCleaner) ScanReclaimCandidates(context.Context, uint, []uint) (*metacleanup.MeilisearchReclaimStats, error) {
-	return &metacleanup.MeilisearchReclaimStats{}, nil
-}
-
-func (c *recordingMetaSearchCleaner) ExecuteCleanup(_ context.Context, _ uint, engineIDs []uint) (int, error) {
-	c.executedEngineIDs = append([]uint(nil), engineIDs...)
-	return len(engineIDs), nil
-}
 
 func TestCleanupScanReportsInvalidEngineScanTaskDefinitions(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
@@ -118,7 +103,7 @@ func TestCleanupPhysicalDeletesInvalidEngineScanTaskDefinitions(t *testing.T) {
 	}
 }
 
-func TestCleanupLogicalKeepsInvalidEngineSnapshotForSearchCleanup(t *testing.T) {
+func TestCleanupLogicalDeletesManagerContentProjection(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	systemClient := newEmptyEngineSystemClient(t)
 
@@ -129,19 +114,26 @@ func TestCleanupLogicalKeepsInvalidEngineSnapshotForSearchCleanup(t *testing.T) 
 		t.Fatalf("create meta node: %v", err)
 	}
 
-	searchCleaner := &recordingMetaSearchCleaner{}
-	svc := NewCleanupService(db, nil, systemClient, nil, CleanupConfig{Enabled: true})
-	svc.searchCleaner = searchCleaner
+	var deletedEngineID uint64
+	manager := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodDelete || request.URL.Path != "/api/v1/manager/runtime/content-documents" || request.Header.Get("Authorization") != "Bearer manager-token" {
+			t.Fatalf("unexpected Manager request: %s %s", request.Method, request.URL.String())
+		}
+		deletedEngineID, _ = strconv.ParseUint(request.URL.Query().Get("engine_id"), 10, 64)
+		response.WriteHeader(http.StatusNoContent)
+	}))
+	defer manager.Close()
+	contentIndex := commonClient.NewManagerContentClient(manager.URL, commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "manager-token", nil
+	}), manager.Client())
+	svc := NewCleanupService(db, nil, systemClient, contentIndex, CleanupConfig{Enabled: true})
 
 	result, err := svc.ExecuteCleanup(context.Background(), tenantID, events.CleanupModeLogical, map[string]interface{}{"engine_id": engineID})
 	if err != nil {
 		t.Fatalf("ExecuteCleanup() error = %v", err)
 	}
-	if len(searchCleaner.executedEngineIDs) != 1 || searchCleaner.executedEngineIDs[0] != engineID {
-		t.Fatalf("search cleanup engine IDs = %v, want [%d]", searchCleaner.executedEngineIDs, engineID)
-	}
-	if result.DeletedMeilisearchIndexes != 1 {
-		t.Fatalf("deleted Meilisearch indexes = %d, want 1", result.DeletedMeilisearchIndexes)
+	if deletedEngineID != uint64(engineID) {
+		t.Fatalf("deleted engine ID = %d errors=%v, want %d", deletedEngineID, result.Errors, engineID)
 	}
 }
 
@@ -182,11 +174,9 @@ func TestMetaScanSummaryCountsResourcesUnderInvalidEngines(t *testing.T) {
 		{EngineID: 8, AffectedNodes: 2, AffectedItems: 5},
 	}
 	stats.OrphanItems.Count = 4
-	stats.MeilisearchIndexes.Count = 6
-
 	summary := metaScanSummary(stats)
-	if summary.ScannedItems != 31 {
-		t.Fatalf("scanned items = %d, want 31", summary.ScannedItems)
+	if summary.ScannedItems != 25 {
+		t.Fatalf("scanned items = %d, want 25", summary.ScannedItems)
 	}
 }
 

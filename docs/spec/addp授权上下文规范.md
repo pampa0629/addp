@@ -131,19 +131,19 @@ Grant 或 Resource Ticket 独立判断。
 
 SQL、Workflow、Jupyter 以及 Service 查询服务发布前的样例验收等用户计算入口，必须先在当前 User AuthContext 下完成两层判断：一是入口自身的功能 Permission，二是本次执行涉及资源与 `read | write | ddl | external_effect` 效果的 owner 决策。Service 样例验收使用 `service.definition.create + service.data_read.execute`，普通 SQL 的 Execution Authorization audience 为 `service`，联邦 SQL 的 audience 为 `duckdb`。已发布查询服务由 Service 根据不可变服务定义、数据源依赖快照、公开/私有访问策略和当前请求上下文作出 owner 决策。两类入口通过后都由 System 创建绑定唯一 execution 的 Execution Authorization。
 
-Execution Authorization 的来源固定为互斥的 `user` 或 `service_definition`。用户来源包含当前 Principal、Tenant Membership 和 `authorization_version`；其中由 Notebook Session 派生的用户来源还必须保存 `source_notebook_session_authorization_id`，不能退化为不受 Session 和 Token Family 生命周期约束的普通用户来源。服务定义来源包含 owner module、definition ID、definition version/hash 和签发 Service Principal。两者都必须包含 owner audience、execution ID、允许的 Source Engine、允许效果、签发时间和到期时间。查询服务定义的 version/hash 必须覆盖发布时冻结的 Source Engine ID，Service 不得在请求期按当前 Engine 名称重新绑定数据源。服务定义来源第一阶段只允许 `addp-service` 为本 Tenant 的已发布查询服务签发 `read`，System 不接受客户端自报其他 owner、效果或 audience。
+Execution Authorization 的来源固定为互斥的 `user` 或 `service_definition`。用户来源包含当前 Principal、Tenant Membership 和 `authorization_version`；其中由 Notebook Session 派生的用户来源还必须保存 `source_notebook_session_authorization_id`，不能退化为不受 Session 和 Token Family 生命周期约束的普通用户来源。服务定义来源包含 owner module、definition ID、definition version/hash 和签发 Service Principal。两者都必须包含 owner audience、execution ID、逐 Source Engine 保存的 Engine Access Scope、签发时间和到期时间。每个 scope 由唯一 `engine_id` 和该引擎允许的非空效果集合组成；禁止以独立 `engine_ids` 与 `effects` 集合表达授权，因为两者笛卡尔积会扩大权限。查询服务定义的 version/hash 必须覆盖发布时冻结的 Source Engine ID，Service 不得在请求期按当前 Engine 名称重新绑定数据源。服务定义来源第一阶段只允许 `addp-service` 为本 Tenant 的已发布查询服务签发逐引擎 `read` scope，System 不接受客户端自报其他 owner、效果或 audience。
 
-匹配 audience 的 Runtime Service Principal 使用自身 Service Access Token 消费 Execution Authorization。System 必须同时校验 Service Principal/OAuth Client 与 audience 匹配、Tenant Context 相同、Execution Authorization 未过期或撤销、来源仍有效、Engine 与效果均在授权边界内。用户来源继续校验 Principal/Membership/授权版本；服务定义来源校验 owner Service Principal、definition version/hash 和未撤销状态。需要在调用 Runtime 前解析脱敏端点的 owner Runtime Role，可以同时获得 `system.engine_descriptor.read` 与 `system.execution_authorization.execute`；它仍不得获得通用 `system.engine.read`、Tenant 数据 Permission 或用户 Role。
+匹配 audience 的 Runtime Service Principal 使用自身 Service Access Token 消费 Execution Authorization。System 必须同时校验 Service Principal/OAuth Client 与 audience 匹配、Tenant Context 相同、Execution Authorization 未过期或撤销、来源仍有效，并且当前 Engine 的 scope 包含本次所需效果。不得用其他 Engine scope 的效果满足当前 Engine。用户来源继续校验 Principal/Membership/授权版本；服务定义来源校验 owner Service Principal、definition version/hash 和未撤销状态。需要在调用 Runtime 前解析脱敏端点的 owner Runtime Role，可以同时获得 `system.engine_descriptor.read` 与 `system.execution_authorization.execute`；它仍不得获得通用 `system.engine.read`、Tenant 数据 Permission 或用户 Role。
 
 交互式执行以当前 User 为授权主体；异步执行把创建 execution 时的 User、Tenant Membership 和授权版本写为不可变执行来源事实。定时执行绑定任务授权主体：该主体只能由同 Tenant 的当前 User AuthContext 在创建、更新或显式重新授权任务时写入，并必须绑定当前任务定义；任务定义或授权版本发生变化后不得继续沿用旧主体。每次执行开始前必须重新校验 Membership、Role、资源规则和授权版本；显式平台自动任务才使用 Service Principal 自身 Runtime Role。任何路径都不得持久化或代传原始 User Access Token。
 
-跨模块异步调用时，owner Runtime Service Principal 只能为与自身 audience 匹配的子 execution 请求 Execution Authorization。System 必须验证父 execution、子 execution、Tenant、User、Membership、授权版本和 `parent_execution_id` 来源链完全一致，并重新计算当前 Role Permission；调用方提交的主体字段不能单独成为授权事实。Orchestrator Service Principal 只负责调用 TaskProvider 和传递父 execution 身份，不获得数据效果 Permission，也不能任意指定或替换任务授权主体。
+跨模块异步调用时，owner Runtime Service Principal 只能为与自身 audience 匹配的子 execution 请求 Execution Authorization。System 必须验证父 execution、子 execution、Tenant、User、Membership、授权版本和 `parent_execution_id` 来源链完全一致，并重新计算当前 Role Permission；调用方提交的主体字段不能单独成为授权事实。静态资源边界只允许子 execution 处于 `pending` 时签发，每个 `audience + execution_id` 只有一份不可变授权；必须在 claim 后解析的动态资源边界，请求必须同时提交正数 `attempt` 和规范 UUID `lease_token`，System 只在数据库中的子 execution 处于 `running`、attempt/token 精确匹配且 `lease_expires_at > NOW()` 时签发。该授权不可变绑定当前 attempt 和 lease token，每个 `audience + execution_id + attempt` 只有一份；消费引擎访问时 System 必须再次校验它仍是当前未过期租约。新 attempt 必须签发新授权，旧 attempt 授权保留审计但不再可消费；两种状态不得使用兼容或降级路径互换。Orchestrator Service Principal 只负责调用 TaskProvider 和传递父 execution 身份，不获得数据效果 Permission，也不能任意指定或替换任务授权主体。
 
 ### 5.3 Notebook 会话授权
 
 Notebook Interactive Session 不复用 Agent Delegated Access Token。Develop 必须在 Session 创建的同步 BFF 调用栈内，用当前 User Bearer 请求 System 创建 Notebook Session Authorization，随后丢弃 User Bearer。System 保存的授权事实至少绑定唯一 authorization ID、Notebook Session ID、Develop Task ID、Tenant、Principal、Tenant Membership、Token Family、`authorization_version`、固定 audience `develop`、允许操作集合、签发时间、到期时间和撤销时间；不保存 User Token、Service Token、Engine ID 列表或连接信息。
 
-后续操作由 `addp-develop` Tenant Service Principal 使用自身 Service Access Token 和 authorization ID 消费。Catalog 请求在一次调用内完成授权校验和 `CatalogProvider.ListChildren`。每次查询或扫描则提交新的 execution ID、单个 Engine ID、固定 `read` 效果和短 TTL；System 在一个事务内重新校验用户来源并创建绑定该 Notebook Session Authorization 的独立 Execution Authorization，随后在同一控制面请求返回执行期 Engine Access。System 只给该 Runtime Role `system.notebook_session_authorization.execute`，不得授予通用 `system.engine.read`；authorization ID 是引用，不是 Bearer Credential。
+后续操作由 `addp-develop` Tenant Service Principal 使用自身 Service Access Token 和 authorization ID 消费。Engine Catalog 请求在一次调用内完成授权校验和 `EngineCatalogProvider.ListChildren`。每次查询或扫描则提交新的 execution ID、单个 Engine ID、固定 `read` 效果和短 TTL；System 在一个事务内重新校验用户来源并创建绑定该 Notebook Session Authorization 的独立 Execution Authorization，随后在同一控制面请求返回执行期 Engine Access。System 只给该 Runtime Role `system.notebook_session_authorization.execute`，不得授予通用 `system.engine.read`；authorization ID 是引用，不是 Bearer Credential。
 
 授权有效期不晚于 Notebook Session，到期后不能刷新；普通 Access Token 与 Refresh Token 在同一 Token Family 内轮换不影响现有 Session。Token Family 撤销或重用、Membership/Role/资源规则变化、`authorization_version` 变化、Session 显式关闭或到期时必须拒绝后续消费并取消活动查询。Session 或 Token Family 撤销必须联动撤销其派生且仍有效的 Execution Authorization；标准 Engine Access 租约复核也必须沿来源外键回查 Session 与 Token Family，不能只检查 Principal 和 Membership。长扫描只在短租约边界回查 System，不按每个 Arrow batch 往返；租约失效后关闭 Cursor。Develop 重启后本地 Session 与 authorization ID 一并丢失，Kernel 入口先 fail-closed。
 
@@ -186,6 +186,8 @@ Platform Service Role，不允许 Service Principal 持有或借用平台三员 
 `assurance_level=not_applicable`，有效期不超过 5 分钟且不签发 Refresh Token。业务请求只
 发送 Bearer Token，禁止同时发送 `X-Internal-API-Key` 或 `X-Tenant-ID`。
 
+Service Principal 只能访问显式挂载在 `/api/v1/system/runtime/*` 等 Service Runtime 路由上的机器契约。`/api/v1/system/platform/*` 是平台 User 管理面，即使 Service Principal 所持 Runtime Role 含有同名 Permission，也不得用 Service Token 访问该管理路由。需要平台事实的 Runtime 必须使用单独的最小投影 API，并同时校验 Platform Service Context 与精确 Permission；不得为复用 User 管理 API 而放宽凭据类型守卫。
+
 ## 八、禁止事项
 
 - 外部 Agent 使用共享服务密钥或模块 OAuth Client Secret 直接调用 owner API；
@@ -202,7 +204,7 @@ Platform Service Role，不允许 Service Principal 持有或借用平台三员 
 
 Resource Ticket 使用所属第一方 Browser Family 的同一身份与授权投影，并用 owner audience 和 `resource:read` 额外收窄；Delegated Token 回溯源 Access Token 与 Family，并用 owner Tool Scope 和审计绑定额外收窄；Service Access Token 只由 Fosite Client Credentials Grant 签发，并固定为一个 Tenant Membership Context 或一个显式 Platform Service Context。调用方不能保留共享 Internal API Key 与 Bearer 双轨。
 
-Execution Authorization 与 Notebook Session Authorization 都不新增 AuthContext Token 类型，也不复用 Agent Delegated Access Token。前者授权绑定 execution 的数据效果；后者绑定 Notebook Session 生命周期，并且只能执行实时 Catalog 或派生新的只读 Execution Authorization。两者不能互换；禁止恢复“Service Principal 直接获得通用 Engine 明文读取权限”和“用户 Token 代传到 Worker/Runtime”两条旧路径。
+Execution Authorization 与 Notebook Session Authorization 都不新增 AuthContext Token 类型，也不复用 Agent Delegated Access Token。前者授权绑定 execution 的数据效果；后者绑定 Notebook Session 生命周期，并且只能执行实时 Engine Catalog 或派生新的只读 Execution Authorization。两者不能互换；禁止恢复“Service Principal 直接获得通用 Engine 明文读取权限”和“用户 Token 代传到 Worker/Runtime”两条旧路径。
 
 v1 契约演进必须同步修改 Schema、共享 Go/Python 类型、System 投影、所有消费者和契约测试。ADDP 当前不提供按 Client 协商多个 AuthContext Schema 的兼容机制；需要破坏性变化时先修订本规范，再一次性切换全平台。
 

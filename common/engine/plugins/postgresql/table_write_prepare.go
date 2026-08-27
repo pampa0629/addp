@@ -11,7 +11,7 @@ import (
 	commonquery "github.com/addp/common/query"
 )
 
-func (p *PostgreSQLPlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteOptions) error {
+func (p *PostgreSQLPlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteOptions) error {
 	schema, table, err := tablePathParts(path)
 	if err != nil {
 		return err
@@ -211,7 +211,7 @@ func postgresExpectedSpatialFactsForField(field datatype.FieldInfo, spatialInfo 
 	return geometryType, srid, dimension
 }
 
-func (p *PostgreSQLPlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) error {
+func (p *PostgreSQLPlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) error {
 	schema, table, err := tablePathParts(path)
 	if err != nil {
 		return err

@@ -75,9 +75,9 @@ func (s *InspectService) inspectBuiltinMinIO(ctx context.Context, tenantID uint,
 	if !ok {
 		return nil, fmt.Errorf("minio plugin does not implement ContentReadableProvider")
 	}
-	catalogProvider, ok := enginePlugin.(plugin.CatalogProvider)
+	catalogProvider, ok := enginePlugin.(plugin.EngineCatalogProvider)
 	if !ok {
-		return nil, fmt.Errorf("minio plugin does not implement CatalogProvider")
+		return nil, fmt.Errorf("minio plugin does not implement EngineCatalogProvider")
 	}
 
 	connInfo := plugin.ConnectionInfo{
@@ -105,7 +105,7 @@ func (s *InspectService) inspectBuiltinMinIO(ctx context.Context, tenantID uint,
 	return inspectFirstObjectRefGroup(ctx, resource, contentReader, connInfo, groups)
 }
 
-func (s *InspectService) refGroupFromInfraObject(ctx context.Context, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo, loc *infraLocator) (models.ScanRefGroup, error) {
+func (s *InspectService) refGroupFromInfraObject(ctx context.Context, catalogProvider plugin.EngineCatalogProvider, connInfo plugin.ConnectionInfo, loc *infraLocator) (models.ScanRefGroup, error) {
 	if loc == nil || loc.Type != resourcetree.TypeObject {
 		return models.ScanRefGroup{}, fmt.Errorf("inspect locator must be an infra minio object")
 	}
@@ -126,7 +126,7 @@ func (s *InspectService) refGroupFromInfraObject(ctx context.Context, catalogPro
 	primary := strings.Trim(loc.Namespace+"/"+objectPath, "/")
 	refs := make([]models.ScanRef, 0, len(children))
 	for _, child := range children {
-		if child.Role != plugin.CatalogRoleLeaf {
+		if child.Role != plugin.EngineCatalogRoleLeaf {
 			continue
 		}
 		storagePath := strings.TrimSpace("")

@@ -18,11 +18,11 @@ import (
 	"github.com/twpayne/go-geom/encoding/wkb"
 )
 
-func (p *MySQLPlugin) OpenTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
+func (p *MySQLPlugin) OpenTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
 	return p.openTableReadSession(ctx, connInfo, path, opts, 0, 0)
 }
 
-func (p *MySQLPlugin) readBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
+func (p *MySQLPlugin) readBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
 	session, err := p.openTableReadSession(ctx, connInfo, path, plugin.TableReadSessionOptions{
 		Query: opts.Query, Args: opts.Args, Hints: opts.Hints,
 	}, opts.Limit, opts.Offset)
@@ -33,7 +33,7 @@ func (p *MySQLPlugin) readBatch(ctx context.Context, connInfo plugin.ConnectionI
 	return session.ReadBatch(ctx, opts.Limit)
 }
 
-func (p *MySQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (plugin.TableReadSession, error) {
+func (p *MySQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (plugin.TableReadSession, error) {
 	if err := resume.RejectUnsupported(opts.ResumeMarker, "mysql.table_read_session"); err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func (p *MySQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.
 	return &mysqlTableReadSession{db: db, tx: tx, rows: rows, fields: fields, spatialInfo: spatialInfo, geometryEncoding: encoding}, nil
 }
 
-func mysqlReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.CatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (string, []datatype.FieldInfo, *datatype.SpatialInfo, format.GeometryEncoding, error) {
+func mysqlReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (string, []datatype.FieldInfo, *datatype.SpatialInfo, format.GeometryEncoding, error) {
 	encoding := mysqlGeometryEncodingHint(opts.Hints)
 	query := strings.TrimSpace(opts.Query)
 	if query != "" {

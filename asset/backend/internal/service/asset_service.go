@@ -2,38 +2,38 @@ package service
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/addp/asset/internal/models"
 	"github.com/addp/asset/internal/search"
 	commonClient "github.com/addp/common/client"
-	commonModels "github.com/addp/common/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type AssetService struct {
-	db            *gorm.DB
-	moduleURLs    map[string]string // sourceModule -> base URL
-	httpClient    *http.Client
-	serviceTokens commonClient.ServiceTokenProvider
-	indexer       *search.Indexer
+	db      *gorm.DB
+	catalog *commonClient.CatalogClient
+	indexer *search.Indexer
 }
 
-func NewAssetService(db *gorm.DB, moduleURLs map[string]string, serviceTokens commonClient.ServiceTokenProvider, indexer *search.Indexer) *AssetService {
-	return &AssetService{
-		db:            db,
-		moduleURLs:    moduleURLs,
-		httpClient:    &http.Client{Timeout: 10 * time.Second},
-		serviceTokens: serviceTokens,
-		indexer:       indexer,
-	}
+func NewAssetService(db *gorm.DB, catalog *commonClient.CatalogClient, indexer *search.Indexer) *AssetService {
+	return &AssetService{db: db, catalog: catalog, indexer: indexer}
 }
+
+var (
+	ErrCatalogUnavailable             = errors.New("enterprise Catalog is unavailable")
+	ErrCatalogReferenceNotSelectable  = errors.New("CatalogEntry is not selectable")
+	ErrCatalogReferenceNotPublishable = errors.New("CatalogEntry is not publishable")
+	ErrInvalidAssetAggregate          = errors.New("invalid Asset aggregate")
+	ErrAssetNotEditable               = errors.New("Asset is not editable in its current status")
+	ErrAssetVersionConflict           = errors.New("Asset version conflict")
+)
 
 // AssetListParams 资产列表查询参数
 type AssetListParams struct {
@@ -56,20 +56,39 @@ type AssetWithType struct {
 // AssetDetail 资产详情（含扩展字段和目录信息）
 type AssetDetail struct {
 	models.Asset
-	TypeName    string                 `json:"type_name"`
-	TypeCode    string                 `json:"type_code"`
-	CatalogName string                 `json:"catalog_name,omitempty"`
-	ExtFields   []models.AssetExtField `json:"ext_fields"`
-	Catalog     *models.Catalog        `json:"catalog,omitempty"`
-	TypeDef     *models.TypeDefinition `json:"type_def,omitempty"`
+	TypeName    string                  `json:"type_name"`
+	TypeCode    string                  `json:"type_code"`
+	CatalogName string                  `json:"catalog_name,omitempty"`
+	ExtFields   []models.AssetExtField  `json:"ext_fields"`
+	Catalog     *models.Catalog         `json:"catalog,omitempty"`
+	TypeDef     *models.TypeDefinition  `json:"type_def,omitempty"`
+	Components  []models.AssetComponent `json:"components"`
 }
 
-// UpdateAssetReq 更新资产请求（编目用：名称/描述/目录/标签）
+type AssetComponentInput struct {
+	CatalogEntryID string `json:"catalog_entry_id"`
+	Role           string `json:"role"`
+	SortOrder      int    `json:"sort_order"`
+}
+
+type CreateAssetReq struct {
+	Name        string                `json:"name" binding:"required"`
+	Description string                `json:"description"`
+	TypeID      int64                 `json:"type_id" binding:"required"`
+	CatalogID   *int64                `json:"catalog_id"`
+	Tags        []string              `json:"tags"`
+	Components  []AssetComponentInput `json:"components" binding:"required,min=1"`
+}
+
+// UpdateAssetReq 原子替换资产的完整可编辑聚合。
 type UpdateAssetReq struct {
-	Name        *string  `json:"name"`
-	Description *string  `json:"description"`
-	CatalogID   *int64   `json:"catalog_id"`
-	Tags        []string `json:"tags"`
+	Version     int64                 `json:"version" binding:"required,min=1"`
+	Name        string                `json:"name" binding:"required"`
+	Description string                `json:"description"`
+	TypeID      int64                 `json:"type_id" binding:"required"`
+	CatalogID   *int64                `json:"catalog_id"`
+	Tags        []string              `json:"tags"`
+	Components  []AssetComponentInput `json:"components" binding:"required,min=1"`
 }
 
 // BatchIDsReq 批量操作请求
@@ -83,18 +102,12 @@ type BatchCatalogReq struct {
 	CatalogID *int64  `json:"catalog_id"` // null 表示清除目录
 }
 
-// SyncResult 同步结果
-type SyncResult struct {
-	Created int `json:"created"`
-	Skipped int `json:"skipped"`
-	Errors  int `json:"errors"`
-}
-
-// List 查询资产列表（分页 + 过滤）
-// 当 Keyword 非空且 Meilisearch 可用时，优先走全文搜索
+// List 查询资产列表（分页 + 过滤）。关键词搜索只走 Asset 自己的搜索投影。
 func (s *AssetService) List(tenantID uint, params *AssetListParams) ([]AssetWithType, int64, error) {
-	// 当有关键词时，先走 Meilisearch 获取匹配 ID 列表
-	if params.Keyword != "" && s.indexer.Enabled() {
+	if params.Keyword != "" {
+		if !s.indexer.Enabled() {
+			return nil, 0, errors.New("Asset search projection is unavailable")
+		}
 		var typeCode string
 		if params.TypeID > 0 {
 			var td models.TypeDefinition
@@ -104,34 +117,33 @@ func (s *AssetService) List(tenantID uint, params *AssetListParams) ([]AssetWith
 		}
 		offset := int64((params.Page - 1) * params.PageSize)
 		msResult, err := s.indexer.Search(int64(tenantID), params.Keyword, typeCode, params.CatalogID, int64(params.PageSize), offset)
-		if err == nil && msResult != nil {
-			if len(msResult.IDs) == 0 {
-				return []AssetWithType{}, msResult.Total, nil
-			}
-			var assets []AssetWithType
-			if err := s.db.Table("asset.assets a").
-				Select("a.*, t.name as type_name, t.code as type_code, c.name as catalog_name").
-				Joins("LEFT JOIN asset.type_definitions t ON t.id = a.type_id").
-				Joins("LEFT JOIN asset.catalogs c ON c.id = a.catalog_id").
-				Where("a.id IN ?", msResult.IDs).
-				Scan(&assets).Error; err != nil {
-				return nil, 0, err
-			}
-			// 按 Meilisearch 返回的相关度顺序重排
-			order := make(map[int64]int, len(msResult.IDs))
-			for i, id := range msResult.IDs {
-				order[id] = i
-			}
-			sorted := make([]AssetWithType, len(assets))
-			for _, a := range assets {
-				if i, ok := order[a.ID]; ok {
-					sorted[i] = a
-				}
-			}
-			return sorted, msResult.Total, nil
+		if err != nil || msResult == nil {
+			return nil, 0, fmt.Errorf("Asset search projection is unavailable: %w", err)
 		}
-		// Meilisearch 不可用时 fallback 到 ILIKE（不中断请求）
-		log.Printf("⚠️  Meilisearch 搜索失败，fallback 到数据库搜索: %v", err)
+		if len(msResult.IDs) == 0 {
+			return []AssetWithType{}, msResult.Total, nil
+		}
+		var assets []AssetWithType
+		if err := s.db.Table("asset.assets a").
+			Select("a.*, t.name as type_name, t.code as type_code, c.name as catalog_name").
+			Joins("LEFT JOIN asset.type_definitions t ON t.id = a.type_id").
+			Joins("LEFT JOIN asset.catalogs c ON c.id = a.catalog_id").
+			Where("a.tenant_id = ? AND a.id IN ?", tenantID, msResult.IDs).
+			Scan(&assets).Error; err != nil {
+			return nil, 0, err
+		}
+		order := make(map[int64]int, len(msResult.IDs))
+		for i, id := range msResult.IDs {
+			order[id] = i
+		}
+		sorted := make([]AssetWithType, 0, len(assets))
+		for _, asset := range assets {
+			if _, ok := order[asset.ID]; ok {
+				sorted = append(sorted, asset)
+			}
+		}
+		sort.Slice(sorted, func(i, j int) bool { return order[sorted[i].ID] < order[sorted[j].ID] })
+		return sorted, msResult.Total, nil
 	}
 
 	query := s.db.Table("asset.assets a").
@@ -153,11 +165,6 @@ func (s *AssetService) List(tenantID uint, params *AssetListParams) ([]AssetWith
 			query = query.Where("a.catalog_id = ?", *params.CatalogID)
 		}
 	}
-	if params.Keyword != "" {
-		query = query.Where("a.name ILIKE ? OR a.description ILIKE ?",
-			"%"+params.Keyword+"%", "%"+params.Keyword+"%")
-	}
-
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -186,6 +193,10 @@ func (s *AssetService) Get(tenantID uint, id int64) (*AssetDetail, error) {
 	var extFields []models.AssetExtField
 	s.db.Where("asset_id = ?", id).Find(&extFields)
 	detail.ExtFields = extFields
+	if err := s.db.Where("tenant_id = ? AND asset_id = ?", tenantID, id).
+		Order("sort_order ASC, id ASC").Find(&detail.Components).Error; err != nil {
+		return nil, err
+	}
 
 	var typeDef models.TypeDefinition
 	if err := s.db.First(&typeDef, asset.TypeID).Error; err == nil {
@@ -218,6 +229,10 @@ func (s *AssetService) GetPublished(tenantID uint, id int64) (*AssetDetail, erro
 		return nil, err
 	}
 	detail.ExtFields = extFields
+	if err := s.db.Where("tenant_id = ? AND asset_id = ?", tenantID, id).
+		Order("sort_order ASC, id ASC").Find(&detail.Components).Error; err != nil {
+		return nil, err
+	}
 
 	var typeDef models.TypeDefinition
 	if err := s.db.First(&typeDef, asset.TypeID).Error; err == nil {
@@ -235,57 +250,127 @@ func (s *AssetService) GetPublished(tenantID uint, id int64) (*AssetDetail, erro
 	return detail, nil
 }
 
-// Update 更新资产基本信息（名称/描述/分类/标签）
-func (s *AssetService) Update(tenantID uint, id int64, userID uint, req *UpdateAssetReq) (*AssetDetail, error) {
-	var asset models.Asset
-	if err := s.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&asset).Error; err != nil {
+func (s *AssetService) Create(ctx context.Context, tenantID uint, userID uint, req *CreateAssetReq) (*AssetDetail, error) {
+	components, err := s.validateComponents(ctx, tenantID, req.Components, false)
+	if err != nil {
 		return nil, err
 	}
-
-	updatedBy := int64(userID)
-	asset.UpdatedBy = &updatedBy
-
-	if req.Name != nil {
-		asset.Name = *req.Name
-	}
-	if req.Description != nil {
-		asset.Description = *req.Description
-	}
-	if req.CatalogID != nil {
-		asset.CatalogID = req.CatalogID
-	}
-	if req.Tags != nil {
-		asset.Tags = models.JSONBArray(req.Tags)
-	}
-
-	if err := s.db.Save(&asset).Error; err != nil {
+	if err := s.validateOwnedReferences(tenantID, req.TypeID, req.CatalogID); err != nil {
 		return nil, err
 	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return nil, ErrInvalidAssetAggregate
+	}
+	asset := models.Asset{
+		TenantID: int64(tenantID), Name: name, Description: strings.TrimSpace(req.Description),
+		TypeID: req.TypeID, CatalogID: req.CatalogID, Tags: models.JSONBArray(req.Tags), Status: "draft",
+		OwnerID: int64(userID), Version: 1, CreatedBy: int64(userID),
+	}
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&asset).Error; err != nil {
+			return err
+		}
+		for index := range components {
+			components[index].TenantID = int64(tenantID)
+			components[index].AssetID = asset.ID
+		}
+		return tx.Create(&components).Error
+	}); err != nil {
+		return nil, err
+	}
+	return s.Get(tenantID, asset.ID)
+}
 
+// Update atomically replaces the complete editable Asset aggregate.
+func (s *AssetService) Update(ctx context.Context, tenantID uint, id int64, userID uint, req *UpdateAssetReq) (*AssetDetail, error) {
+	components, err := s.validateComponents(ctx, tenantID, req.Components, false)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.validateOwnedReferences(tenantID, req.TypeID, req.CatalogID); err != nil {
+		return nil, err
+	}
+	name := strings.TrimSpace(req.Name)
+	if req.Version <= 0 || name == "" {
+		return nil, ErrInvalidAssetAggregate
+	}
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		updatedBy := int64(userID)
+		result := tx.Model(&models.Asset{}).
+			Where("id = ? AND tenant_id = ? AND version = ? AND status IN ('draft','offline')", id, tenantID, req.Version).
+			Updates(map[string]any{
+				"name": name, "description": strings.TrimSpace(req.Description), "type_id": req.TypeID,
+				"catalog_id": req.CatalogID, "tags": models.JSONBArray(req.Tags), "updated_by": updatedBy,
+				"version": gorm.Expr("version + 1"),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			var current models.Asset
+			if err := tx.Select("id", "status", "version").Where("id = ? AND tenant_id = ?", id, tenantID).First(&current).Error; err != nil {
+				return err
+			}
+			if current.Status != "draft" && current.Status != "offline" {
+				return ErrAssetNotEditable
+			}
+			return ErrAssetVersionConflict
+		}
+		if err := tx.Where("tenant_id = ? AND asset_id = ?", tenantID, id).Delete(&models.AssetComponent{}).Error; err != nil {
+			return err
+		}
+		for index := range components {
+			components[index].TenantID = int64(tenantID)
+			components[index].AssetID = id
+		}
+		return tx.Create(&components).Error
+	})
+	if err != nil {
+		return nil, err
+	}
 	return s.Get(tenantID, id)
 }
 
-// Delete 删除资产（仅限草稿状态）
+// Delete 删除草稿或已下架资产；已发布资产必须先下架。
 func (s *AssetService) Delete(tenantID uint, id int64) error {
 	var asset models.Asset
 	if err := s.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&asset).Error; err != nil {
 		return err
 	}
-	if asset.Status != "draft" {
-		return fmt.Errorf("只有草稿状态的资产可以删除")
+	if asset.Status != "draft" && asset.Status != "offline" {
+		return fmt.Errorf("只有草稿或已下架状态的资产可以删除")
 	}
-	s.db.Where("asset_id = ?", id).Delete(&models.AssetExtField{})
-	return s.db.Delete(&asset).Error
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("asset_id = ?", id).Delete(&models.AssetExtField{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("tenant_id = ? AND asset_id = ?", tenantID, id).Delete(&models.AssetComponent{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&asset).Error
+	}); err != nil {
+		return err
+	}
+	go s.indexer.DeleteAsset(id)
+	return nil
 }
 
 // Publish 上架（draft/offline → published）
-func (s *AssetService) Publish(tenantID uint, id int64) error {
+func (s *AssetService) Publish(ctx context.Context, tenantID uint, id int64) error {
 	var asset models.Asset
 	if err := s.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&asset).Error; err != nil {
 		return err
 	}
 	if asset.Status != "draft" && asset.Status != "offline" {
 		return fmt.Errorf("只有草稿或已下架的资产可以上架")
+	}
+	components, err := s.loadComponentInputs(tenantID, []int64{id})
+	if err != nil {
+		return err
+	}
+	if _, err := s.validateComponents(ctx, tenantID, components[id], true); err != nil {
+		return err
 	}
 	now := time.Now()
 	asset.Status = "published"
@@ -317,7 +402,36 @@ func (s *AssetService) Offline(tenantID uint, id int64) error {
 }
 
 // BatchPublish 批量上架
-func (s *AssetService) BatchPublish(tenantID uint, ids []int64) (int, error) {
+func (s *AssetService) BatchPublish(ctx context.Context, tenantID uint, ids []int64) (int, error) {
+	if !validUniqueAssetIDs(ids) {
+		return 0, ErrInvalidAssetAggregate
+	}
+	var candidates []models.Asset
+	if err := s.db.Where("id IN ? AND tenant_id = ? AND status IN ('draft','offline')", ids, tenantID).Find(&candidates).Error; err != nil {
+		return 0, err
+	}
+	if len(candidates) != len(ids) {
+		return 0, ErrInvalidAssetAggregate
+	}
+	components, err := s.loadComponentInputs(tenantID, ids)
+	if err != nil {
+		return 0, err
+	}
+	allComponents := make([]AssetComponentInput, 0)
+	for _, asset := range candidates {
+		assetComponents := components[asset.ID]
+		if err := validateComponentShape(assetComponents); err != nil {
+			return 0, err
+		}
+		allComponents = append(allComponents, assetComponents...)
+	}
+	uniqueIDs, err := parseUniqueCatalogEntryIDs(allComponents)
+	if err != nil {
+		return 0, err
+	}
+	if err := s.validateCatalogResolutions(ctx, tenantID, uniqueIDs, true); err != nil {
+		return 0, err
+	}
 	now := time.Now()
 	result := s.db.Model(&models.Asset{}).
 		Where("id IN ? AND tenant_id = ? AND status IN ('draft','offline')", ids, tenantID).
@@ -344,6 +458,23 @@ func (s *AssetService) BatchPublish(tenantID uint, ids []int64) (int, error) {
 		s.indexer.UpsertAssets(docs)
 	}()
 	return int(result.RowsAffected), nil
+}
+
+func validUniqueAssetIDs(ids []int64) bool {
+	if len(ids) == 0 {
+		return false
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			return false
+		}
+		if _, exists := seen[id]; exists {
+			return false
+		}
+		seen[id] = struct{}{}
+	}
+	return true
 }
 
 // BatchOffline 批量下架
@@ -397,110 +528,124 @@ func (s *AssetService) BatchCatalog(tenantID uint, ids []int64, catalogID *int64
 	return int(result.RowsAffected), result.Error
 }
 
-// Sync 从各源模块发现新资产，自动创建草稿
-// 各模块独立调用，单个模块失败不影响其他模块
-func (s *AssetService) Sync(ctx context.Context, tenantID uint) (*SyncResult, error) {
-	var typeDefs []models.TypeDefinition
-	if err := s.db.Where("(tenant_id = 0 OR tenant_id = ?) AND enabled = true AND discovery_path != ''", tenantID).
-		Find(&typeDefs).Error; err != nil {
+func (s *AssetService) validateComponents(ctx context.Context, tenantID uint, inputs []AssetComponentInput, publish bool) ([]models.AssetComponent, error) {
+	if err := validateComponentShape(inputs); err != nil {
 		return nil, err
 	}
-
-	result := &SyncResult{}
-
-	for _, td := range typeDefs {
-		baseURL, ok := s.moduleURLs[td.SourceModule]
-		if !ok || baseURL == "" {
-			continue
+	ids := make([]uuid.UUID, 0, len(inputs))
+	components := make([]models.AssetComponent, 0, len(inputs))
+	for _, input := range inputs {
+		id, err := uuid.Parse(input.CatalogEntryID)
+		if err != nil || id == uuid.Nil || id.String() != input.CatalogEntryID {
+			return nil, ErrInvalidAssetAggregate
 		}
+		ids = append(ids, id)
+		components = append(components, models.AssetComponent{CatalogEntryID: id, Role: input.Role, SortOrder: input.SortOrder})
+	}
+	if err := s.validateCatalogResolutions(ctx, tenantID, ids, publish); err != nil {
+		return nil, err
+	}
+	return components, nil
+}
 
-		items, err := s.fetchDiscoverableAssets(ctx, baseURL, td.DiscoveryPath, tenantID)
-		if err != nil {
-			// 模块不可达或出错：记录日志，跳过，不影响其他模块
-			log.Printf("⚠️  资产发现：%s 模块不可用，跳过 (%s%s): %v",
-				td.SourceModule, baseURL, td.DiscoveryPath, err)
-			result.Errors++
-			continue
+func (s *AssetService) validateCatalogResolutions(ctx context.Context, tenantID uint, ids []uuid.UUID, publish bool) error {
+	if s.catalog == nil {
+		return ErrCatalogUnavailable
+	}
+	resolutions, err := s.catalog.WithTenantID(tenantID).ResolveReferences(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrCatalogUnavailable, err)
+	}
+	for _, resolution := range resolutions {
+		if !resolution.Found || !resolution.Selectable {
+			return ErrCatalogReferenceNotSelectable
 		}
-
-		for _, item := range items {
-			fingerprint := commonModels.GenerateAssetFingerprint(
-				int64(tenantID), td.SourceModule, item.SourceReference,
-			)
-
-			// 新资产：自动创建草稿
-			asset := &models.Asset{
-				TenantID:        int64(tenantID),
-				Name:            item.Name,
-				Description:     item.Description,
-				TypeID:          td.ID,
-				Status:          "draft",
-				OwnerID:         int64(tenantID),
-				SourceModule:    td.SourceModule,
-				SourceReference: item.SourceReference,
-				Fingerprint:     fingerprint,
-				SourceAvailable: true,
-				CreatedBy:       0, // 系统自动创建
-			}
-			insert := s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(asset)
-			if insert.Error != nil {
-				log.Printf("⚠️  创建草稿资产失败 (%s/%s): %v", td.SourceModule, item.SourceReference, insert.Error)
-				result.Errors++
-				continue
-			}
-			if insert.RowsAffected == 0 {
-				if err := s.db.Model(&models.Asset{}).
-					Where("fingerprint = ? AND tenant_id = ?", fingerprint, tenantID).
-					Update("source_available", true).Error; err != nil {
-					log.Printf("⚠️  更新资产来源状态失败 (%s/%s): %v", td.SourceModule, item.SourceReference, err)
-					result.Errors++
-					continue
-				}
-				result.Skipped++
-				continue
-			}
-			result.Created++
+		if publish && !resolution.Publishable {
+			return ErrCatalogReferenceNotPublishable
 		}
 	}
+	return nil
+}
 
+func validateComponentShape(inputs []AssetComponentInput) error {
+	if len(inputs) == 0 || len(inputs) > 200 {
+		return ErrInvalidAssetAggregate
+	}
+	seen := make(map[string]struct{}, len(inputs))
+	primaryCount := 0
+	for _, input := range inputs {
+		if input.SortOrder < 0 || (input.Role != models.AssetComponentRolePrimary && input.Role != models.AssetComponentRoleSupporting) {
+			return ErrInvalidAssetAggregate
+		}
+		if _, exists := seen[input.CatalogEntryID]; exists {
+			return ErrInvalidAssetAggregate
+		}
+		seen[input.CatalogEntryID] = struct{}{}
+		if input.Role == models.AssetComponentRolePrimary {
+			primaryCount++
+		}
+	}
+	if primaryCount != 1 {
+		return ErrInvalidAssetAggregate
+	}
+	return nil
+}
+
+func (s *AssetService) validateOwnedReferences(tenantID uint, typeID int64, catalogID *int64) error {
+	if typeID <= 0 {
+		return ErrInvalidAssetAggregate
+	}
+	var typeCount int64
+	if err := s.db.Model(&models.TypeDefinition{}).
+		Where("id = ? AND enabled = ? AND (tenant_id = 0 OR tenant_id = ?)", typeID, true, tenantID).
+		Count(&typeCount).Error; err != nil {
+		return err
+	}
+	if typeCount != 1 {
+		return ErrInvalidAssetAggregate
+	}
+	if catalogID != nil {
+		var catalogCount int64
+		if err := s.db.Model(&models.Catalog{}).Where("id = ? AND tenant_id = ?", *catalogID, tenantID).Count(&catalogCount).Error; err != nil {
+			return err
+		}
+		if catalogCount != 1 {
+			return ErrInvalidAssetAggregate
+		}
+	}
+	return nil
+}
+
+func (s *AssetService) loadComponentInputs(tenantID uint, assetIDs []int64) (map[int64][]AssetComponentInput, error) {
+	var components []models.AssetComponent
+	if err := s.db.Where("tenant_id = ? AND asset_id IN ?", tenantID, assetIDs).
+		Order("asset_id ASC, sort_order ASC, id ASC").Find(&components).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[int64][]AssetComponentInput, len(assetIDs))
+	for _, component := range components {
+		result[component.AssetID] = append(result[component.AssetID], AssetComponentInput{
+			CatalogEntryID: component.CatalogEntryID.String(), Role: component.Role, SortOrder: component.SortOrder,
+		})
+	}
 	return result, nil
 }
 
-// fetchDiscoverableAssets 调用源模块的 discoverable 接口
-func (s *AssetService) fetchDiscoverableAssets(ctx context.Context, baseURL, discoveryPath string, tenantID uint) ([]commonClient.DiscoverableAsset, error) {
-	url := fmt.Sprintf("%s%s", baseURL, discoveryPath)
-
-	token, err := s.serviceTokens.Token(ctx, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("获取 Asset Service Access Token 失败: %w", err)
+func parseUniqueCatalogEntryIDs(inputs []AssetComponentInput) ([]uuid.UUID, error) {
+	result := make([]uuid.UUID, 0, len(inputs))
+	seen := make(map[string]struct{}, len(inputs))
+	for _, input := range inputs {
+		if _, exists := seen[input.CatalogEntryID]; exists {
+			continue
+		}
+		id, err := uuid.Parse(input.CatalogEntryID)
+		if err != nil || id == uuid.Nil || id.String() != input.CatalogEntryID {
+			return nil, ErrInvalidAssetAggregate
+		}
+		seen[input.CatalogEntryID] = struct{}{}
+		result = append(result, id)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("创建请求失败: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("请求失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("读取响应失败: %w", err)
-	}
-
-	var items []commonClient.DiscoverableAsset
-	if err := json.Unmarshal(body, &items); err != nil {
-		return nil, fmt.Errorf("解析响应失败: %w", err)
-	}
-	return items, nil
+	return result, nil
 }
 
 // GetTypeFieldSchemas 获取指定类型的扩展字段定义

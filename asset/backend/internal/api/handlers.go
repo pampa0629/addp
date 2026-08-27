@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+	"net/http"
 	"strconv"
 
 	i18nkeys "github.com/addp/asset/i18n"
@@ -272,6 +274,33 @@ func (h *Handler) getAsset(c *gin.Context) {
 	commonAPI.SuccessResponse(c, asset)
 }
 
+// createAsset godoc
+// @Summary 创建资产 | Create asset
+// @Description 选择一个或多个 CatalogEntry 原子创建资产草稿 | Atomically create an asset draft by selecting one or more CatalogEntry references
+// @Tags Asset
+// @Accept json
+// @Produce json
+// @Param request body service.CreateAssetReq true "完整资产聚合 | Complete asset aggregate"
+// @Success 201 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 503 {object} map[string]interface{}
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.management.read","asset.entry.update"]
+// @Router /assets [post]
+func (h *Handler) createAsset(c *gin.Context) {
+	var request service.CreateAssetReq
+	if !commonAPI.BindJSON(c, &request) {
+		return
+	}
+	asset, err := h.assetSvc.Create(c.Request.Context(), commonAuth.GetTenantID(c), commonAuth.GetUserID(c), &request)
+	if err != nil {
+		respondAssetOperationError(c, err)
+		return
+	}
+	commonAPI.CreatedResponse(c, asset)
+}
+
 // updateAsset godoc
 // @Summary 更新资产 | Update asset
 // @Tags Asset
@@ -293,16 +322,17 @@ func (h *Handler) updateAsset(c *gin.Context) {
 	if !commonAPI.BindJSON(c, &request) {
 		return
 	}
-	asset, err := h.assetSvc.Update(commonAuth.GetTenantID(c), id, commonAuth.GetUserID(c), &request)
+	asset, err := h.assetSvc.Update(c.Request.Context(), commonAuth.GetTenantID(c), id, commonAuth.GetUserID(c), &request)
 	if err != nil {
-		commonAPI.BadRequestError(c, err.Error())
+		respondAssetOperationError(c, err)
 		return
 	}
 	commonAPI.SuccessResponse(c, asset)
 }
 
 // deleteAsset godoc
-// @Summary 删除资产 | Delete asset
+// @Summary 删除草稿或已下架资产 | Delete draft or offline asset
+// @Description 已发布资产必须先下架再删除 | Published assets must be offlined before deletion
 // @Tags Asset
 // @Produce json
 // @Param id path int true "资产 ID | Asset ID"
@@ -334,7 +364,15 @@ func (h *Handler) deleteAsset(c *gin.Context) {
 // @x-addp-required-permissions ["asset.management.read","asset.entry.publish"]
 // @Router /assets/{id}/publish [post]
 func (h *Handler) publishAsset(c *gin.Context) {
-	h.assetStatusAction(c, h.assetSvc.Publish, i18nkeys.MsgAssetPublished)
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	if err := h.assetSvc.Publish(c.Request.Context(), commonAuth.GetTenantID(c), id); err != nil {
+		respondAssetOperationError(c, err)
+		return
+	}
+	commonAPI.SuccessResponse(c, gin.H{"message": commoni18n.T(c, i18nkeys.MsgAssetPublished)})
 }
 
 // offlineAsset godoc
@@ -375,7 +413,16 @@ func (h *Handler) assetStatusAction(c *gin.Context, action func(uint, int64) err
 // @x-addp-required-permissions ["asset.management.read","asset.entry.publish"]
 // @Router /assets/batch-publish [post]
 func (h *Handler) batchPublishAssets(c *gin.Context) {
-	h.batchAssetAction(c, h.assetSvc.BatchPublish)
+	var request service.BatchIDsReq
+	if !commonAPI.BindJSON(c, &request) {
+		return
+	}
+	count, err := h.assetSvc.BatchPublish(c.Request.Context(), commonAuth.GetTenantID(c), request.IDs)
+	if err != nil {
+		respondAssetOperationError(c, err)
+		return
+	}
+	commonAPI.SuccessResponse(c, gin.H{"affected": count})
 }
 
 // batchOfflineAssets godoc
@@ -430,22 +477,21 @@ func (h *Handler) batchCatalogAssets(c *gin.Context) {
 	commonAPI.SuccessResponse(c, gin.H{"affected": count})
 }
 
-// syncAssets godoc
-// @Summary 同步资产 | Sync assets
-// @Tags Asset
-// @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Security BearerAuth
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.management.read","asset.entry.update"]
-// @Router /assets/sync [post]
-func (h *Handler) syncAssets(c *gin.Context) {
-	result, err := h.assetSvc.Sync(c.Request.Context(), commonAuth.GetTenantID(c))
-	if err != nil {
-		commonAPI.InternalServerError(c, err.Error())
-		return
+func respondAssetOperationError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrCatalogUnavailable):
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, i18nkeys.MsgCatalogUnavailable), "error_code": "asset_catalog_unavailable"})
+	case errors.Is(err, service.ErrAssetVersionConflict):
+		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, i18nkeys.MsgVersionConflict), "error_code": "asset_version_conflict"})
+	case errors.Is(err, service.ErrAssetNotEditable):
+		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, i18nkeys.MsgNotEditable), "error_code": "asset_not_editable"})
+	case errors.Is(err, service.ErrCatalogReferenceNotSelectable):
+		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, i18nkeys.MsgReferenceNotSelectable), "error_code": "asset_catalog_reference_not_selectable"})
+	case errors.Is(err, service.ErrCatalogReferenceNotPublishable):
+		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, i18nkeys.MsgReferenceNotPublishable), "error_code": "asset_catalog_reference_not_publishable"})
+	default:
+		commonAPI.BadRequestError(c, err.Error())
 	}
-	commonAPI.SuccessResponse(c, result)
 }
 
 // getAssetStats godoc

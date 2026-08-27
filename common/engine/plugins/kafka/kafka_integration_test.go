@@ -46,12 +46,12 @@ func TestIntegrationKafkaCatalogAndChangeStream(t *testing.T) {
 		t.Fatalf("produce records: %v", err)
 	}
 
-	root := plugin.CatalogRootPath(p.CatalogModel(), 30)
+	root := plugin.EngineCatalogRootPath(p.EngineCatalogModel(), 30)
 	entries, err := p.ListChildren(ctx, connInfo, root, plugin.ListOptions{})
 	if err != nil {
 		t.Fatalf("ListChildren failed: %v", err)
 	}
-	var topicPath plugin.CatalogPath
+	var topicPath plugin.EngineCatalogPath
 	for _, entry := range entries {
 		if entry.Name == topic {
 			topicPath = entry.Path
@@ -61,9 +61,9 @@ func TestIntegrationKafkaCatalogAndChangeStream(t *testing.T) {
 	if len(topicPath.Segments) == 0 {
 		t.Fatalf("topic %q not found in catalog", topic)
 	}
-	facts, err := p.DescribeCatalogFacts(ctx, connInfo, topicPath, plugin.CatalogFactsOptions{})
+	facts, err := p.DescribeEngineCatalogFacts(ctx, connInfo, topicPath, plugin.EngineCatalogFactsOptions{})
 	if err != nil {
-		t.Fatalf("DescribeCatalogFacts failed: %v", err)
+		t.Fatalf("DescribeEngineCatalogFacts failed: %v", err)
 	}
 	if facts.Topic == nil || facts.Topic.PartitionCount != 2 {
 		t.Fatalf("topic facts=%#v, want two partitions", facts.Topic)
@@ -144,7 +144,7 @@ func TestIntegrationKafkaChangeStreamStartsAtTransferCommittedPosition(t *testin
 		t.Fatalf("produce records: %v", err)
 	}
 
-	reader, err := p.OpenChangeStream(ctx, connInfo, kafkaTopicEntry(plugin.CatalogRootPath(p.CatalogModel(), 30), topic).Path, plugin.ChangeStreamReadOptions{
+	reader, err := p.OpenChangeStream(ctx, connInfo, kafkaTopicEntry(plugin.EngineCatalogRootPath(p.EngineCatalogModel(), 30), topic).Path, plugin.ChangeStreamReadOptions{
 		ConsumerGroup: fmt.Sprintf("addp-transfer-resume-it-%d", time.Now().UnixNano()),
 		CommittedPositions: map[string]plugin.ChangeStreamPosition{
 			"0": kafkaOffsetPosition("0", 2),
@@ -189,7 +189,7 @@ func TestIntegrationKafkaChangeStreamRebalance(t *testing.T) {
 	}
 	defer admin.DeleteTopics(context.Background(), topic)
 
-	topicPath := kafkaTopicEntry(plugin.CatalogRootPath(p.CatalogModel(), 30), topic).Path
+	topicPath := kafkaTopicEntry(plugin.EngineCatalogRootPath(p.EngineCatalogModel(), 30), topic).Path
 	group := fmt.Sprintf("addp-transfer-rebalance-it-%d", time.Now().UnixNano())
 	open := func() plugin.ChangeStreamReader {
 		reader, openErr := p.OpenChangeStream(ctx, connInfo, topicPath, plugin.ChangeStreamReadOptions{
@@ -308,7 +308,7 @@ func TestIntegrationKafkaChangeStreamRejectsExpiredCommittedPosition(t *testing.
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	topicPath := kafkaTopicEntry(plugin.CatalogRootPath(p.CatalogModel(), 30), topic).Path
+	topicPath := kafkaTopicEntry(plugin.EngineCatalogRootPath(p.EngineCatalogModel(), 30), topic).Path
 	_, err = p.OpenChangeStream(ctx, connInfo, topicPath, plugin.ChangeStreamReadOptions{
 		ConsumerGroup: fmt.Sprintf("addp-transfer-retention-it-%d", time.Now().UnixNano()),
 		CommittedPositions: map[string]plugin.ChangeStreamPosition{

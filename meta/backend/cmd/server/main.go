@@ -104,11 +104,8 @@ func main() {
 	// 初始化服务
 	engineService := service.NewEngineService(db, systemClient)
 
-	scanService, searchIndexer, err := service.NewRuntimeScanService(db, engineService, cfg)
-	if err != nil {
-		logger.L().Error("扫描运行时初始化失败", "error", err)
-		os.Exit(1)
-	}
+	contentIndexClient := commonClient.NewManagerContentClient(cfg.ManagerServiceURL, tokenSource, nil)
+	scanService := service.NewRuntimeScanService(db, engineService, cfg, contentIndexClient)
 
 	// 初始化扫描事件发布器（如果 Redis 可用）
 	if redisClient != nil {
@@ -127,7 +124,7 @@ func main() {
 	scheduler := service.NewScanTaskScheduler(taskService, executionService)
 
 	// ========== 启动 Meta 资源回收服务 ==========
-	cleanupService := service.NewCleanupService(db, redisClient, systemClient, searchIndexer, service.CleanupConfig{
+	cleanupService := service.NewCleanupService(db, redisClient, systemClient, contentIndexClient, service.CleanupConfig{
 		Enabled:         true,
 		RetentionDays:   90,
 		CleanupInterval: 24 * time.Hour,

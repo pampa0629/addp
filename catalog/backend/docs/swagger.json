@@ -1,0 +1,2264 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "title": "ADDP Catalog API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "host": "localhost:8192",
+    "basePath": "/api/v1/catalog",
+    "paths": {
+        "/collections": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Collections"
+                ],
+                "summary": "查询项目组目录集合 | List project group catalog collections",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Project Group 稳定 ID | Project Group stable ID",
+                        "name": "project_group_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认 1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认 20，最大 200 | Page size, default 20 and maximum 200",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "目录集合分页结果 | Paginated catalog collections",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.CollectionListResult"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read",
+                    "catalog.collection.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Collections"
+                ],
+                "summary": "创建项目组目录集合 | Create a project group catalog collection",
+                "parameters": [
+                    {
+                        "description": "集合完整内容 | Complete collection content",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.createCollectionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "目录集合 | Catalog collection",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.CollectionDetail"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "集合名称冲突 | Collection name conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read",
+                    "catalog.collection.read",
+                    "catalog.collection.update"
+                ]
+            }
+        },
+        "/collections/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Collections"
+                ],
+                "summary": "读取项目组目录集合 | Get a project group catalog collection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collection UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "目录集合与当前可见条目 | Collection and currently visible entries",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.CollectionDetail"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "集合不存在或不可访问 | Collection not found or inaccessible",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read",
+                    "catalog.collection.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Collections"
+                ],
+                "summary": "更新项目组目录集合 | Replace a project group catalog collection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collection UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "集合版本与完整内容 | Collection version and complete content",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.updateCollectionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的目录集合 | Updated catalog collection",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.CollectionDetail"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "集合不存在或不可访问 | Collection not found or inaccessible",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "版本或名称冲突 | Version or name conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read",
+                    "catalog.collection.read",
+                    "catalog.collection.update"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Collections"
+                ],
+                "summary": "删除项目组目录集合 | Delete a project group catalog collection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collection UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "当前集合版本 | Current collection version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.deleteCollectionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "删除成功 | Deleted"
+                    },
+                    "400": {
+                        "description": "请求参数无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "集合不存在或不可访问 | Collection not found or inaccessible",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "版本冲突 | Version conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read",
+                    "catalog.collection.read",
+                    "catalog.collection.update"
+                ]
+            }
+        },
+        "/entries": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按目录可见性返回当前租户的企业目录条目；目录可见不代表底层数据内容授权 | Return enterprise catalog entries visible to the caller; catalog visibility does not grant data content access",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog"
+                ],
+                "summary": "列出企业数据目录 | List enterprise catalog entries",
+                "parameters": [
+                    {
+                        "enum": [
+                            "governance",
+                            "inventory"
+                        ],
+                        "type": "string",
+                        "description": "目录视图，默认 governance | Catalog view, governance by default",
+                        "name": "view",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "名称搜索 | Name search",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "data_item",
+                            "business_entity",
+                            "logical_model",
+                            "metric",
+                            "data_service",
+                            "development_artifact"
+                        ],
+                        "type": "string",
+                        "description": "目录对象类型 | Catalog entry type",
+                        "name": "entry_type",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "active",
+                            "missing"
+                        ],
+                        "type": "string",
+                        "description": "来源状态 | Source status",
+                        "name": "source_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "来源 owner 的精确稳定身份；第一阶段为 Meta fingerprint | Exact stable owner identity; Meta fingerprint in the first release",
+                        "name": "source_identity",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "discovered",
+                            "curated",
+                            "certified",
+                            "deprecated"
+                        ],
+                        "type": "string",
+                        "description": "治理状态 | Governance status",
+                        "name": "governance_status",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "inventory",
+                            "department",
+                            "tenant"
+                        ],
+                        "type": "string",
+                        "description": "目录可见性 | Catalog visibility",
+                        "name": "visibility",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "主业务域稳定 ID | Primary Domain stable ID",
+                        "name": "primary_domain_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "责任部门稳定 ID | Accountable Department stable ID",
+                        "name": "accountable_department_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "来源引擎稳定 ID | Source engine stable ID",
+                        "name": "source_engine_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认 1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认 20，最大 200 | Page size, default 20 and maximum 200",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "企业目录分页结果 | Paginated catalog entries",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntryListResult"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "catalog.inventory.read"
+                ],
+                "x-addp-required-permissions": [
+                    "catalog.entry.read"
+                ]
+            }
+        },
+        "/entries/facets": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Catalog 计算当前调用方可见条目中的引用集，Standard / System 动态解析显示信息；分面解析不影响目录列表和 Ready | Catalog computes references from entries visible to the caller while Standard and System dynamically resolve display facts; facet resolution does not affect entry listing or readiness",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog"
+                ],
+                "summary": "列出企业目录引用分面 | List enterprise catalog reference facets",
+                "parameters": [
+                    {
+                        "enum": [
+                            "governance",
+                            "inventory"
+                        ],
+                        "type": "string",
+                        "description": "目录视图，默认 governance | Catalog view, governance by default",
+                        "name": "view",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "权限感知引用分面 | Permission-aware reference facets",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntryFacets"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "缺少盘点权限 | Inventory permission required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "catalog.inventory.read"
+                ],
+                "x-addp-required-permissions": [
+                    "catalog.entry.read"
+                ]
+            }
+        },
+        "/entries/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回目录条目、当前来源绑定和组件；目录可见不代表底层数据内容授权 | Return the catalog entry, current source binding, and components; catalog visibility does not grant data content access",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog"
+                ],
+                "summary": "获取企业目录详情 | Get enterprise catalog entry",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "CatalogEntry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "企业目录详情 | Catalog entry detail",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntryDetail"
+                        }
+                    },
+                    "400": {
+                        "description": "无效 ID | Invalid ID",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "条目不存在或不可见 | Entry not found or not visible",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "catalog.inventory.read"
+                ],
+                "x-addp-required-permissions": [
+                    "catalog.entry.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "使用聚合根 version 原子替换业务信息、语义关联、责任、组件数据元关联、可见性、治理状态和可选推荐继任项；推荐继任只允许指向同租户、来源有效且已编目或已认证的 active 条目；Standard 或 System 校验不可达时明确失败但不影响模块 Ready | Atomically replace business metadata, semantic links, responsibilities, component-element links, visibility, governance status, and the optional recommended successor using the aggregate version; a successor must be an active-source curated or certified entry in the same tenant; unavailable Standard or System validation fails explicitly without affecting module readiness",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog"
+                ],
+                "summary": "编目企业目录条目 | Curate an enterprise catalog entry",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "CatalogEntry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整可编辑聚合；所有跨模块 BIGINT ID 使用规范十进制字符串 | Complete editable aggregate; all cross-module BIGINT IDs use canonical decimal strings",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.updateEntryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的完整条目 | Updated complete entry",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntryDetail"
+                        }
+                    },
+                    "400": {
+                        "description": "请求或编目要求无效 | Invalid request or curation requirements",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "缺少更新或条件状态权限 | Missing update or conditional status permission",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "条目不存在 | Entry not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "版本、状态或引用冲突 | Version, state, or reference conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Standard 或 System 引用校验不可达 | Standard or System reference validation unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "catalog.entry.certify",
+                    "catalog.entry.deprecate"
+                ],
+                "x-addp-required-permissions": [
+                    "catalog.entry.update"
+                ]
+            }
+        },
+        "/entries/{id}/history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回当前调用方可发现条目的来源绑定历史与最近 200 条不可变领域审计 | Return source binding history and the latest 200 immutable domain audit events for an entry visible to the caller",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog"
+                ],
+                "summary": "获取目录历史 | Get catalog entry history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "CatalogEntry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "目录历史 | Catalog entry history",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntryHistory"
+                        }
+                    },
+                    "400": {
+                        "description": "无效 ID | Invalid ID",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "条目不存在或不可见 | Entry not found or not visible",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "catalog.inventory.read"
+                ],
+                "x-addp-required-permissions": [
+                    "catalog.entry.read",
+                    "catalog.audit.read"
+                ]
+            }
+        },
+        "/entries/{id}/rebind-source": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅允许把 active + discovered + inventory 且无人工作业的临时条目合并到当前来源为 missing 的既有条目；请求必须携带两个聚合版本、原因和人工证据 | Only merge an active discovered inventory temporary entry without human work into an existing entry whose current source is missing; both aggregate versions, a reason, and human evidence are required",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog"
+                ],
+                "summary": "重绑目录来源 | Rebind catalog source",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "目标 CatalogEntry UUID | Target CatalogEntry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "重绑请求 | Rebind request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.rebindSourceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "重绑后的规范目录条目 | Canonical catalog entry after rebind",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntryDetail"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "目录条目不存在 | Catalog entry not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "版本或重绑前置条件冲突 | Version or rebind precondition conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.source.rebind"
+                ]
+            }
+        },
+        "/governance/tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回由 System 责任引用失效对账产生的任务；责任修复仍通过 CatalogEntry 完整聚合更新完成 | Return tasks derived from invalid System responsibility references; repair still uses the full CatalogEntry aggregate update",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Governance"
+                ],
+                "summary": "查询责任治理队列 | List responsibility governance tasks",
+                "parameters": [
+                    {
+                        "enum": [
+                            "open",
+                            "resolved"
+                        ],
+                        "type": "string",
+                        "description": "任务状态，默认 open | Task status, open by default",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "CatalogEntry UUID",
+                        "name": "entry_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认 1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认 20，最大 200 | Page size, default 20 and maximum 200",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "治理任务分页结果 | Paginated governance tasks",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.GovernanceTaskListResult"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.update"
+                ]
+            }
+        },
+        "/me/entries": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按当前 User 的责任、收藏或关注关系返回仍然可见的目录条目 | Return still-visible entries related to the current User by responsibility, favorite, or following",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Personal"
+                ],
+                "summary": "查询我的目录 | List my catalog entries",
+                "parameters": [
+                    {
+                        "enum": [
+                            "responsible",
+                            "favorite",
+                            "following"
+                        ],
+                        "type": "string",
+                        "description": "个人关系 | Personal relation",
+                        "name": "relation",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认 1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认 20，最大 200 | Page size, default 20 and maximum 200",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "我的目录分页结果 | Paginated personal catalog entries",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntryListResult"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "当前主体不是 User 或权限不足 | User principal or permission required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read"
+                ]
+            }
+        },
+        "/me/entries/{id}/marks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Personal"
+                ],
+                "summary": "读取我的条目标记 | Get my entry marks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "CatalogEntry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "收藏与关注状态 | Favorite and following state",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntryMarks"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "当前主体不是 User 或权限不足 | User principal or permission required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "目录条目不存在或不可见 | Catalog entry not found or not visible",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Personal"
+                ],
+                "summary": "更新我的条目标记 | Replace my entry marks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "CatalogEntry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整收藏与关注状态 | Complete favorite and following state",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.replaceEntryMarksRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的标记 | Updated marks",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntryMarks"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "当前主体不是 User 或权限不足 | User principal or permission required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "目录条目不存在或不可见 | Catalog entry not found or not visible",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read"
+                ]
+            }
+        },
+        "/runtime/references/resolve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按请求顺序返回当前租户 CatalogEntry 的可组合与可发布状态；只允许 addp-asset Service Client 调用 | Return selectable and publishable states for current-tenant CatalogEntry references in request order; restricted to the addp-asset service client",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Runtime"
+                ],
+                "summary": "解析资产目录引用 | Resolve asset catalog references",
+                "parameters": [
+                    {
+                        "description": "CatalogEntry UUID 列表，1 到 200 个 | CatalogEntry UUID list, 1 to 200 items",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.resolveReferencesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.resolveReferencesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "非 addp-asset 客户端或权限不足 | Wrong service client or insufficient permission",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.reference.read"
+                ]
+            }
+        }
+    },
+    "definitions": {
+        "github_com_addp_catalog_internal_models.AuditEvent": {
+            "type": "object",
+            "properties": {
+                "actor_id": {
+                    "type": "string"
+                },
+                "actor_type": {
+                    "type": "string"
+                },
+                "catalog_entry_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "details": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "event_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_models.Collection": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string",
+                    "example": ""
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "project_group_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_models.Component": {
+            "type": "object",
+            "properties": {
+                "catalog_entry_id": {
+                    "type": "string"
+                },
+                "component_key": {
+                    "type": "string"
+                },
+                "component_status": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "data_type": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "observed_snapshot": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "ordinal": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_models.ComponentElementAssociation": {
+            "type": "object",
+            "properties": {
+                "catalog_entry_id": {
+                    "type": "string"
+                },
+                "component_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "element_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "id": {
+                    "type": "string"
+                },
+                "observed_snapshot": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "observed_version": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "verified_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_models.Responsibility": {
+            "type": "object",
+            "properties": {
+                "catalog_entry_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "observed_snapshot": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "subject_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "subject_type": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "verified_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_models.SemanticAssociation": {
+            "type": "object",
+            "properties": {
+                "catalog_entry_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "observed_snapshot": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "observed_version": {
+                    "type": "integer"
+                },
+                "relation_role": {
+                    "type": "string"
+                },
+                "semantic_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "semantic_type": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "verified_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_models.SourceBinding": {
+            "type": "object",
+            "properties": {
+                "bound_at": {
+                    "type": "string"
+                },
+                "catalog_entry_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_current": {
+                    "type": "boolean"
+                },
+                "missing_at": {
+                    "type": "string"
+                },
+                "missing_reason": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "observed_snapshot": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "replaced_binding_id": {
+                    "type": "string"
+                },
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_module": {
+                    "type": "string"
+                },
+                "source_status": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                },
+                "source_version": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.CatalogReferenceResolution": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "entry_status": {
+                    "type": "string"
+                },
+                "found": {
+                    "type": "boolean"
+                },
+                "governance_status": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "publishable": {
+                    "type": "boolean"
+                },
+                "selectable": {
+                    "type": "boolean"
+                },
+                "source_status": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.CollectionDetail": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string",
+                    "example": ""
+                },
+                "description": {
+                    "type": "string"
+                },
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntrySummary"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "project_group_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.CollectionListResult": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_models.Collection"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.EntryDetail": {
+            "type": "object",
+            "properties": {
+                "business_description": {
+                    "type": "string"
+                },
+                "business_name": {
+                    "type": "string"
+                },
+                "component_elements": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_models.ComponentElementAssociation"
+                    }
+                },
+                "components": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_models.Component"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "entry_status": {
+                    "type": "string"
+                },
+                "entry_type": {
+                    "type": "string"
+                },
+                "governance_status": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "merged_into_entry_id": {
+                    "type": "string"
+                },
+                "quality_summary": {
+                    "$ref": "#/definitions/github_com_addp_catalog_internal_service.QualitySummary"
+                },
+                "recommended_successor": {
+                    "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntrySummary"
+                },
+                "recommended_successor_entry_id": {
+                    "type": "string"
+                },
+                "responsibilities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_models.Responsibility"
+                    }
+                },
+                "semantic_links": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_models.SemanticAssociation"
+                    }
+                },
+                "source": {
+                    "$ref": "#/definitions/github_com_addp_catalog_internal_models.SourceBinding"
+                },
+                "source_resolution": {
+                    "$ref": "#/definitions/github_com_addp_catalog_internal_service.SourceResolution"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "visibility": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.EntryFacetOption": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "count": {
+                    "type": "integer"
+                },
+                "engine_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "referenceable": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.EntryFacets": {
+            "type": "object",
+            "properties": {
+                "accountable_departments": {
+                    "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntryReferenceFacet"
+                },
+                "primary_domains": {
+                    "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntryReferenceFacet"
+                },
+                "source_engines": {
+                    "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntryReferenceFacet"
+                },
+                "view": {
+                    "type": "string",
+                    "enum": [
+                        "governance",
+                        "inventory"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.EntryHistory": {
+            "type": "object",
+            "properties": {
+                "audit_events": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_models.AuditEvent"
+                    }
+                },
+                "entry_id": {
+                    "type": "string"
+                },
+                "source_bindings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_models.SourceBinding"
+                    }
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.EntryListResult": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntrySummary"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.EntryMarks": {
+            "type": "object",
+            "properties": {
+                "favorite": {
+                    "type": "boolean"
+                },
+                "following": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.EntryReferenceFacet": {
+            "type": "object",
+            "properties": {
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntryFacetOption"
+                    }
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "current",
+                        "unavailable"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.EntrySummary": {
+            "type": "object",
+            "properties": {
+                "business_description": {
+                    "type": "string"
+                },
+                "business_name": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "entry_status": {
+                    "type": "string"
+                },
+                "entry_type": {
+                    "type": "string"
+                },
+                "governance_status": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "merged_into_entry_id": {
+                    "type": "string"
+                },
+                "recommended_successor_entry_id": {
+                    "type": "string"
+                },
+                "source_engine_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "visibility": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.GovernanceTaskListResult": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.GovernanceTaskSummary"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.GovernanceTaskSummary": {
+            "type": "object",
+            "properties": {
+                "catalog_entry_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "entry_display_name": {
+                    "type": "string"
+                },
+                "entry_version": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "observed_snapshot": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "opened_at": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "resolution": {
+                    "type": "string"
+                },
+                "resolved_at": {
+                    "type": "string"
+                },
+                "responsibility_role": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "subject_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "subject_type": {
+                    "type": "string"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.QualitySummary": {
+            "type": "object",
+            "properties": {
+                "check_task_id": {
+                    "type": "integer"
+                },
+                "configured": {
+                    "type": "boolean"
+                },
+                "detail_path": {
+                    "type": "string"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_observed_at": {
+                    "type": "string"
+                },
+                "open_issue_count": {
+                    "type": "integer"
+                },
+                "quality_score": {
+                    "type": "number"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.SourceResolution": {
+            "type": "object",
+            "properties": {
+                "detail_path": {
+                    "type": "string"
+                },
+                "last_observed_at": {
+                    "type": "string"
+                },
+                "owner_status": {
+                    "type": "string"
+                },
+                "owner_version": {
+                    "type": "integer"
+                },
+                "resolved_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": {}
+                }
+            }
+        },
+        "internal_api.createCollectionRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "entry_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "project_group_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.deleteCollectionRequest": {
+            "type": "object",
+            "properties": {
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "internal_api.rebindSourceRequest": {
+            "type": "object",
+            "properties": {
+                "evidence": {
+                    "type": "string"
+                },
+                "new_source_identity": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "target_version": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "temporary_entry_id": {
+                    "type": "string"
+                },
+                "temporary_entry_version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "internal_api.replaceEntryMarksRequest": {
+            "type": "object",
+            "properties": {
+                "favorite": {
+                    "type": "boolean"
+                },
+                "following": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_api.resolveReferencesRequest": {
+            "type": "object",
+            "properties": {
+                "ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_api.resolveReferencesResponse": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.CatalogReferenceResolution"
+                    }
+                }
+            }
+        },
+        "internal_api.updateCollectionRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "entry_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "internal_api.updateComponentElementRequest": {
+            "type": "object",
+            "properties": {
+                "component_id": {
+                    "type": "string"
+                },
+                "element_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.updateDomainLinkRequest": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string",
+                    "enum": [
+                        "primary",
+                        "secondary"
+                    ]
+                }
+            }
+        },
+        "internal_api.updateEntryRequest": {
+            "type": "object",
+            "properties": {
+                "business_description": {
+                    "type": "string"
+                },
+                "business_name": {
+                    "type": "string"
+                },
+                "component_elements": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.updateComponentElementRequest"
+                    }
+                },
+                "deprecation_reason": {
+                    "type": "string"
+                },
+                "domains": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.updateDomainLinkRequest"
+                    }
+                },
+                "glossary_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "governance_status": {
+                    "type": "string",
+                    "enum": [
+                        "discovered",
+                        "curated",
+                        "certified",
+                        "deprecated"
+                    ]
+                },
+                "recommended_successor_entry_id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "responsibilities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.updateResponsibilityRequest"
+                    }
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "visibility": {
+                    "type": "string",
+                    "enum": [
+                        "inventory",
+                        "department",
+                        "tenant"
+                    ]
+                }
+            }
+        },
+        "internal_api.updateResponsibilityRequest": {
+            "type": "object",
+            "properties": {
+                "role": {
+                    "type": "string",
+                    "enum": [
+                        "accountable_department",
+                        "business_owner",
+                        "data_steward",
+                        "technical_owner"
+                    ]
+                },
+                "subject_id": {
+                    "type": "string"
+                },
+                "subject_type": {
+                    "type": "string",
+                    "enum": [
+                        "department",
+                        "user"
+                    ]
+                }
+            }
+        },
+        "models.JSONMap": {
+            "type": "object",
+            "additionalProperties": true
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

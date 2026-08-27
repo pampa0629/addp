@@ -64,7 +64,7 @@ func (s *QueryService) Query(ctx context.Context, req *models.DataQueryRequest) 
 	}
 
 	// 3. 获取列信息
-	metadata, err := describeTabularItemFacts(ctx, engine, tableRef.SchemaName, tableRef.TableName, plugin.CatalogFactsOptions{})
+	metadata, err := describeTabularItemFacts(ctx, engine, tableRef.SchemaName, tableRef.TableName, plugin.EngineCatalogFactsOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list columns: %w", err)
 	}
@@ -391,8 +391,8 @@ func (s *QueryService) GetTableStructure(ctx context.Context, locator string) ([
 		return nil, fmt.Errorf("获取引擎失败: %w", err)
 	}
 
-	// 2. 获取列信息：dbbridge 内部走 CatalogFactsProvider。
-	metadata, err := describeTabularItemFacts(ctx, engine, tableRef.SchemaName, tableRef.TableName, plugin.CatalogFactsOptions{})
+	// 2. 获取列信息：dbbridge 内部走 EngineCatalogFactsProvider。
+	metadata, err := describeTabularItemFacts(ctx, engine, tableRef.SchemaName, tableRef.TableName, plugin.EngineCatalogFactsOptions{})
 	if err != nil {
 		if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "not found") {
 			return nil, fmt.Errorf("表 %s.%s 不存在", tableRef.SchemaName, tableRef.TableName)
@@ -465,11 +465,11 @@ type metadataColumnInfo struct {
 	Comment      string
 }
 
-func columnInfosFromMetadata(metadata *plugin.CatalogFacts) []metadataColumnInfo {
+func columnInfosFromMetadata(metadata *plugin.EngineCatalogFacts) []metadataColumnInfo {
 	if metadata == nil {
 		return nil
 	}
-	tableInfo := plugin.CatalogFactsTableInfo(metadata)
+	tableInfo := plugin.EngineCatalogFactsTableInfo(metadata)
 	if tableInfo == nil {
 		return nil
 	}
@@ -491,17 +491,17 @@ func columnInfosFromMetadata(metadata *plugin.CatalogFacts) []metadataColumnInfo
 	return columns
 }
 
-func describeTabularItemFacts(ctx context.Context, engine *commonModels.Engine, namespace, table string, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
-	model, err := dbbridge.CatalogModel(engine.EngineType)
+func describeTabularItemFacts(ctx context.Context, engine *commonModels.Engine, namespace, table string, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
+	model, err := dbbridge.EngineCatalogModel(engine.EngineType)
 	if err != nil {
 		return nil, err
 	}
-	branchLevel, ok := plugin.CatalogFirstBusinessBranch(model)
+	branchLevel, ok := plugin.EngineCatalogFirstBusinessBranch(model)
 	if !ok || branchLevel.Term == "" {
 		return nil, fmt.Errorf("catalog model for %s has no first business branch", engine.EngineType)
 	}
 	path := plugin.TabularItemPath(engine.ID, branchLevel.Term, namespace, table)
-	return dbbridge.DescribeCatalogFacts(ctx, engine, path, opts)
+	return dbbridge.DescribeEngineCatalogFacts(ctx, engine, path, opts)
 }
 
 // Close 关闭所有数据库连接

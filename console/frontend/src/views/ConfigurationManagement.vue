@@ -1,5 +1,9 @@
 <template>
-  <section class="configuration-management">
+  <section
+    class="configuration-management"
+    data-testid="configuration-management"
+    :data-load-state="configurationLoadState"
+  >
     <header class="page-header">
       <div>
         <div class="title-line">
@@ -66,6 +70,7 @@ const route = useRoute()
 const authStore = useAuthStore()
 const loading = ref(false)
 const entries = ref([])
+const loadFailed = ref(false)
 const ENTRY_REFRESH_INTERVAL_MS = 10000
 let entriesRequest = null
 let refreshTimer = null
@@ -105,6 +110,9 @@ const moduleEntries = computed(() => {
   }
   return [...modules.values()]
 })
+const configurationLoadState = computed(() => loading.value
+  ? 'loading'
+  : (loadFailed.value ? 'error' : 'loaded'))
 const selectedOwner = computed(() => {
   const parts = route.path.split('/').filter(Boolean)
   return parts[0] === 'configuration' && ['agent', 'copilot', 'develop', 'manager', 'transfer', 'monitor', 'service'].includes(parts[1]) ? parts[1] : ''
@@ -138,8 +146,10 @@ function loadEntries({ silent = false } = {}) {
   entriesRequest = listConfigurationManagementEntries()
     .then((result) => {
       entries.value = result
+      loadFailed.value = false
     })
     .catch(() => {
+      loadFailed.value = true
       if (!silent) {
         entries.value = []
         ElMessage.error(t('console.configuration.loadFailed'))

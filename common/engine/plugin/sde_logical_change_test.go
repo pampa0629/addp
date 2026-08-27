@@ -10,13 +10,13 @@ import (
 
 type sdeLogicalChangeProviderFixture struct{}
 
-func (sdeLogicalChangeProviderFixture) OpenSDELogicalChangeSource(context.Context, ConnectionInfo, CatalogPath, SDELogicalChangeOpenOptions) (SDELogicalChangeSource, error) {
+func (sdeLogicalChangeProviderFixture) OpenSDELogicalChangeSource(context.Context, ConnectionInfo, EngineCatalogPath, SDELogicalChangeOpenOptions) (SDELogicalChangeSource, error) {
 	return nil, ErrSDELogicalPositionExpired
 }
 
 func TestSDELogicalChangeProviderContractIsWorkspaceScoped(t *testing.T) {
 	var provider SDELogicalChangeSourceProvider = sdeLogicalChangeProviderFixture{}
-	_, err := provider.OpenSDELogicalChangeSource(context.Background(), nil, CatalogPath{}, SDELogicalChangeOpenOptions{
+	_, err := provider.OpenSDELogicalChangeSource(context.Background(), nil, EngineCatalogPath{}, SDELogicalChangeOpenOptions{
 		BootstrapMode: SDELogicalBootstrapInitial,
 	})
 	if !errors.Is(err, ErrSDELogicalPositionExpired) {

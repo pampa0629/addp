@@ -1,7 +1,15 @@
 schema_version: addp.permission_manifest/v1
 owner_module: service
-manifest_version: 5
+manifest_version: 7
 permissions:
+  - key: service.catalog.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.service.catalog.read.name
+    description_i18n_key: permissions.service.catalog.read.description
   - key: service.configuration.read
     allowed_scope_types: [platform]
     risk_level: low
@@ -74,14 +82,6 @@ permissions:
     status: active
     name_i18n_key: permissions.service.definition.update.name
     description_i18n_key: permissions.service.definition.update.description
-  - key: service.endpoint.read
-    allowed_scope_types: [tenant, department, project_group]
-    risk_level: low
-    tenant_customizable: true
-    delegable: false
-    status: active
-    name_i18n_key: permissions.service.endpoint.read.name
-    description_i18n_key: permissions.service.endpoint.read.description
   - key: service.external_registration.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium

@@ -6,8 +6,8 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
-	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/resourceutil"
 )
 
 const (
@@ -22,7 +22,7 @@ const (
 )
 
 func stringAttribute(attrs map[string]interface{}, key string) string {
-	return catalogutil.StringAttribute(attrs, key)
+	return resourceutil.StringAttribute(attrs, key)
 }
 
 func interfaceSlice(value interface{}) []interface{} {

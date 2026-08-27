@@ -40,13 +40,13 @@ func TestDynamicSchemaCollectionPreviewUsesMetaRowCountForPagination(t *testing.
 		Page:         2,
 		PageSize:     20,
 		ItemRowCount: &metaRowCount,
-		ProviderPath: plugin.CatalogPath{
-			Version:  plugin.CatalogPathVersion,
+		ProviderPath: plugin.EngineCatalogPath{
+			Version:  plugin.EngineCatalogPathVersion,
 			EngineID: 11,
-			Segments: []plugin.CatalogSegment{
-				{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer},
-				{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: "Outdoor"},
-				{Term: plugin.CatalogTermCollection, Kind: plugin.CatalogKindCollection, Name: "Outdoors"},
+			Segments: []plugin.EngineCatalogSegment{
+				{Term: plugin.EngineCatalogTermServer, Kind: plugin.EngineCatalogTermServer},
+				{Term: plugin.EngineCatalogTermDatabase, Kind: plugin.EngineCatalogKindNamespace, Name: "Outdoor"},
+				{Term: plugin.EngineCatalogTermCollection, Kind: plugin.EngineCatalogKindCollection, Name: "Outdoors"},
 			},
 		},
 	})
@@ -86,7 +86,7 @@ type recordingDynamicSchemaPreviewPlugin struct {
 	fields        []datatype.FieldInfo
 	queryResult   *plugin.QueryResult
 	queryRequests []plugin.QueryRequest
-	factsOptions  []plugin.CatalogFactsOptions
+	factsOptions  []plugin.EngineCatalogFactsOptions
 }
 
 func (p *recordingDynamicSchemaPreviewPlugin) Type() string         { return p.engineType }
@@ -118,13 +118,13 @@ func (p *recordingDynamicSchemaPreviewPlugin) ExecuteRuntimeQuery(_ context.Cont
 	p.queryRequests = append(p.queryRequests, req)
 	return p.queryResult, nil
 }
-func (p *recordingDynamicSchemaPreviewPlugin) DescribeCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *recordingDynamicSchemaPreviewPlugin) DescribeEngineCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, _ plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	p.factsOptions = append(p.factsOptions, opts)
 	estimatedRowCount := int64(2383)
-	return &plugin.CatalogFacts{
+	return &plugin.EngineCatalogFacts{
 		Table: &datatype.TableInfo{Fields: p.fields, EstimatedRowCount: &estimatedRowCount},
 	}, nil
 }
 
 var _ plugin.QueryRuntimeProvider = (*recordingDynamicSchemaPreviewPlugin)(nil)
-var _ plugin.CatalogFactsProvider = (*recordingDynamicSchemaPreviewPlugin)(nil)
+var _ plugin.EngineCatalogFactsProvider = (*recordingDynamicSchemaPreviewPlugin)(nil)

@@ -25,8 +25,8 @@ func (s *BranchLeafRuntime) softDeleteMissingItemsByType(tenantID, engineID, bra
 	}
 }
 
-func catalogLeafItemType(node plugin.CatalogEntry) string {
-	if node.Role != plugin.CatalogRoleLeaf {
+func catalogLeafItemType(node plugin.EngineCatalogEntry) string {
+	if node.Role != plugin.EngineCatalogRoleLeaf {
 		return ""
 	}
 	if node.Term != "" {
@@ -43,7 +43,7 @@ func itemTypes(items []*models.MetaItem) map[string]struct{} {
 	return result
 }
 
-func catalogEntryEstimatedRowCount(node plugin.CatalogEntry, itemType string) *int64 {
+func catalogEntryEstimatedRowCount(node plugin.EngineCatalogEntry, itemType string) *int64 {
 	if itemType == "collection" && node.Table != nil && node.Table.EstimatedRowCount != nil {
 		estimatedRowCount := *node.Table.EstimatedRowCount
 		return &estimatedRowCount
@@ -51,7 +51,7 @@ func catalogEntryEstimatedRowCount(node plugin.CatalogEntry, itemType string) *i
 	return nil
 }
 
-func catalogEntrySizeBytes(node plugin.CatalogEntry) int64 {
+func engineCatalogEntrySizeBytes(node plugin.EngineCatalogEntry) int64 {
 	if node.Table != nil && node.Table.SizeBytes != nil {
 		return *node.Table.SizeBytes
 	}

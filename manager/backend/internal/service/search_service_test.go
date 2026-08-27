@@ -25,21 +25,17 @@ func TestMapMeilisearchHitKeepsOnlyIndexedLocator(t *testing.T) {
 	t.Parallel()
 
 	doc := mapMeilisearchHit(map[string]interface{}{
-		"document_id":  "item-fingerprint",
-		"asset_id":     "item-fingerprint",
-		"content_hash": "content-sha256",
-		"engine_id":    float64(9),
-		"engine_type":  "minio",
-		"asset_type":   "object",
-		"full_name":    "addp/reports/report.docx",
-		"name":         "report.docx",
+		"document_id":    "item-fingerprint",
+		"content_hash":   "content-sha256",
+		"engine_id":      float64(9),
+		"engine_type":    "minio",
+		"data_item_type": "object",
+		"full_name":      "addp/reports/report.docx",
+		"name":           "report.docx",
 	})
 
 	if doc.DocumentID != "item-fingerprint" {
 		t.Fatalf("DocumentID = %q, want item fingerprint", doc.DocumentID)
-	}
-	if doc.AssetID != "item-fingerprint" {
-		t.Fatalf("AssetID = %q, want item fingerprint", doc.AssetID)
 	}
 	if doc.FileName != "report.docx" {
 		t.Fatalf("FileName = %q, want report.docx", doc.FileName)
@@ -53,13 +49,12 @@ func TestMapMeilisearchHitPrefersIndexedLocator(t *testing.T) {
 	t.Parallel()
 
 	doc := mapMeilisearchHit(map[string]interface{}{
-		"document_id": "item-fingerprint",
-		"asset_id":    "item-fingerprint",
-		"locator":     "addp://engine/9/path/addp/reports/report.docx?type=object&item_id=7",
-		"engine_id":   float64(9),
-		"asset_type":  "object",
-		"full_name":   "wrong/path.txt",
-		"name":        "report.docx",
+		"document_id":    "item-fingerprint",
+		"locator":        "addp://engine/9/path/addp/reports/report.docx?type=object&item_id=7",
+		"engine_id":      float64(9),
+		"data_item_type": "object",
+		"full_name":      "wrong/path.txt",
+		"name":           "report.docx",
 	})
 
 	if doc.Locator != "addp://engine/9/path/addp/reports/report.docx?type=object&item_id=7" {
@@ -71,13 +66,12 @@ func TestMapMeilisearchHitRejectsLocatorWithoutItemID(t *testing.T) {
 	t.Parallel()
 
 	doc := mapMeilisearchHit(map[string]interface{}{
-		"document_id": "item-fingerprint",
-		"asset_id":    "item-fingerprint",
-		"locator":     "addp://engine/9/path/addp/reports/report.docx?type=object",
-		"engine_id":   float64(9),
-		"asset_type":  "object",
-		"full_name":   "addp/reports/report.docx",
-		"name":        "report.docx",
+		"document_id":    "item-fingerprint",
+		"locator":        "addp://engine/9/path/addp/reports/report.docx?type=object",
+		"engine_id":      float64(9),
+		"data_item_type": "object",
+		"full_name":      "addp/reports/report.docx",
+		"name":           "report.docx",
 	})
 
 	if doc.Locator != "" {
@@ -91,7 +85,6 @@ func TestVectorDocumentToSearchDocumentKeepsMetadataLocator(t *testing.T) {
 	doc := vectorDocumentToSearchDocument(VectorDocument{
 		DocumentID: "vector-doc",
 		EngineID:   9,
-		AssetID:    "vector-doc",
 		Metadata: map[string]interface{}{
 			"locator": "addp://engine/9/path/addp/reports/report.docx?type=object&item_id=7",
 			"storage": map[string]interface{}{
@@ -113,7 +106,6 @@ func TestVectorDocumentToSearchDocumentRejectsMetadataLocatorWithoutItemID(t *te
 	doc := vectorDocumentToSearchDocument(VectorDocument{
 		DocumentID: "vector-doc",
 		EngineID:   9,
-		AssetID:    "vector-doc",
 		Metadata: map[string]interface{}{
 			"resource": map[string]interface{}{
 				"locator": "addp://engine/9/path/addp/reports/report.docx?type=object",

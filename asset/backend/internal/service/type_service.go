@@ -34,7 +34,7 @@ func (s *TypeService) GetType(id int64) (*models.TypeDefinition, error) {
 }
 
 // SeedBuiltinTypes 初始化内置资产类型（幂等，重复执行安全）
-// 若记录已存在则更新 name/discovery_path/enabled 字段
+// 若记录已存在则更新当前内置展示定义。
 func (s *TypeService) SeedBuiltinTypes() error {
 	// 迁移：将旧 code=model 重命名为 algo_model
 	s.db.Model(&models.TypeDefinition{}).
@@ -42,74 +42,64 @@ func (s *TypeService) SeedBuiltinTypes() error {
 		Updates(map[string]interface{}{"code": "algo_model", "name": "算法模型"})
 	builtinTypes := []models.TypeDefinition{
 		{
-			TenantID:      0,
-			Name:          "数据集",
-			Code:          "dataset",
-			SourceModule:  "meta",
-			AuthHandler:   "soft",
-			EntryType:     "preview",
-			DiscoveryPath: "/api/v1/meta/assets/discoverable",
-			Description:   "数据库表、文件、空间数据等",
-			Enabled:       true,
-			SortOrder:     1,
+			TenantID:    0,
+			Name:        "数据集",
+			Code:        "dataset",
+			AuthHandler: "soft",
+			EntryType:   "preview",
+			Description: "数据库表、文件、空间数据等",
+			Enabled:     true,
+			SortOrder:   1,
 		},
 		{
-			TenantID:      0,
-			Name:          "数据服务",
-			Code:          "service",
-			SourceModule:  "service",
-			AuthHandler:   "token",
-			EntryType:     "token",
-			DiscoveryPath: "/api/v1/service/assets/discoverable",
-			Description:   "REST API 服务、OGC 服务",
-			Enabled:       true,
-			SortOrder:     2,
+			TenantID:    0,
+			Name:        "数据服务",
+			Code:        "service",
+			AuthHandler: "token",
+			EntryType:   "token",
+			Description: "REST API 服务、OGC 服务",
+			Enabled:     true,
+			SortOrder:   2,
 		},
 		{
-			TenantID:      0,
-			Name:          "指标",
-			Code:          "metric",
-			SourceModule:  "standard",
-			AuthHandler:   "soft",
-			EntryType:     "preview",
-			DiscoveryPath: "/api/v1/standard/assets/discoverable",
-			Description:   "业务 KPI、统计指标定义",
-			Enabled:       true,
-			SortOrder:     3,
+			TenantID:    0,
+			Name:        "指标",
+			Code:        "metric",
+			AuthHandler: "soft",
+			EntryType:   "preview",
+			Description: "业务 KPI、统计指标定义",
+			Enabled:     true,
+			SortOrder:   3,
 		},
 		{
-			TenantID:     0,
-			Name:         "报表/看板",
-			Code:         "report",
-			SourceModule: "manual",
-			AuthHandler:  "soft",
-			EntryType:    "link",
-			Description:  "BI 报表、分析看板（手动录入，暂不支持）",
-			Enabled:      false,
-			SortOrder:    4,
+			TenantID:    0,
+			Name:        "报表/看板",
+			Code:        "report",
+			AuthHandler: "soft",
+			EntryType:   "link",
+			Description: "BI 报表、分析看板（手动录入，暂不支持）",
+			Enabled:     false,
+			SortOrder:   4,
 		},
 		{
-			TenantID:      0,
-			Name:          "算法模型",
-			Code:          "algo_model",
-			SourceModule:  "develop",
-			AuthHandler:   "soft",
-			EntryType:     "link",
-			DiscoveryPath: "/api/v1/develop/assets/discoverable",
-			Description:   "工作流、Notebook、训练模型",
-			Enabled:       true,
-			SortOrder:     5,
+			TenantID:    0,
+			Name:        "算法模型",
+			Code:        "algo_model",
+			AuthHandler: "soft",
+			EntryType:   "link",
+			Description: "工作流、Notebook、训练模型",
+			Enabled:     true,
+			SortOrder:   5,
 		},
 		{
-			TenantID:     0,
-			Name:         "应用",
-			Code:         "application",
-			SourceModule: "manual",
-			AuthHandler:  "soft",
-			EntryType:    "link",
-			Description:  "外部系统/工具，注册接入（手动录入，暂不支持）",
-			Enabled:      false,
-			SortOrder:    6,
+			TenantID:    0,
+			Name:        "应用",
+			Code:        "application",
+			AuthHandler: "soft",
+			EntryType:   "link",
+			Description: "外部系统/工具，注册接入（手动录入，暂不支持）",
+			Enabled:     false,
+			SortOrder:   6,
 		},
 	}
 
@@ -121,11 +111,11 @@ func (s *TypeService) SeedBuiltinTypes() error {
 				return err
 			}
 		} else if err == nil {
-			// 更新 name/discovery_path/enabled，确保与代码定义一致
+			// 更新发布期内置展示定义，确保与代码一致。
 			s.db.Model(&existing).Updates(map[string]interface{}{
-				"name":           t.Name,
-				"discovery_path": t.DiscoveryPath,
-				"enabled":        t.Enabled,
+				"name":        t.Name,
+				"description": t.Description,
+				"enabled":     t.Enabled,
 			})
 		}
 	}

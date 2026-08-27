@@ -5,10 +5,10 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scanprocessor"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 func (s *ObjectStorageCatalogRuntime) persistObjectCatalogCompositeItems(
@@ -16,7 +16,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectCatalogCompositeItems(
 	resource *commonModels.Engine,
 	tenantID, engineID uint,
 	bucketNode, basePrefixNode *models.MetaNode,
-	items []metacatalog.ObjectCatalogCompositeItem,
+	items []scanresource.ObjectCompositeItem,
 	stats map[uint]*scanflow.ObjectCatalogNodeAggregate,
 	includeBucketAggregate bool,
 	scanPathPrefix string,
@@ -35,7 +35,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectCatalogCompositeItems(
 		if composite.Item == nil {
 			continue
 		}
-		itemPlan, ok := metacatalog.PlanObjectCatalogCompositeItem(engineID, composite, itemTerm)
+		itemPlan, ok := scanresource.PlanObjectCompositeItem(engineID, composite, itemTerm)
 		if !ok {
 			continue
 		}

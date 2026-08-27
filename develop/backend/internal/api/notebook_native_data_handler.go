@@ -79,7 +79,7 @@ func (h *NotebookHandler) StreamSessionRecords(c *gin.Context) {
 	}
 	var request notebookRecordScanRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		respondDevelopCatalogError(c, http.StatusBadRequest, "record_scan_request_invalid", developi18n.MsgNotebookCatalogRequestInvalid)
+		respondDevelopCatalogError(c, http.StatusBadRequest, "record_scan_request_invalid", developi18n.MsgNotebookEngineCatalogRequestInvalid)
 		return
 	}
 	ready := false
@@ -123,7 +123,7 @@ func (h *NotebookHandler) SampleSessionGraph(c *gin.Context) {
 	}
 	var request notebookGraphSampleRequest
 	if err := c.ShouldBindJSON(&request); err != nil || request.Timeout <= 0 || request.Timeout > 300 {
-		respondDevelopCatalogError(c, http.StatusBadRequest, "graph_request_invalid", developi18n.MsgNotebookCatalogRequestInvalid)
+		respondDevelopCatalogError(c, http.StatusBadRequest, "graph_request_invalid", developi18n.MsgNotebookEngineCatalogRequestInvalid)
 		return
 	}
 	result, err := h.notebookSessionService.SampleGraph(c.Request.Context(), c.Param("session_id"), token,
@@ -162,7 +162,7 @@ func (h *NotebookHandler) QuerySessionGraph(c *gin.Context) {
 	}
 	var request notebookGraphQueryRequest
 	if err := c.ShouldBindJSON(&request); err != nil || request.Timeout <= 0 || request.Timeout > 300 {
-		respondDevelopCatalogError(c, http.StatusBadRequest, "graph_request_invalid", developi18n.MsgNotebookCatalogRequestInvalid)
+		respondDevelopCatalogError(c, http.StatusBadRequest, "graph_request_invalid", developi18n.MsgNotebookEngineCatalogRequestInvalid)
 		return
 	}
 	result, err := h.notebookSessionService.QueryGraph(c.Request.Context(), c.Param("session_id"), token,
@@ -201,7 +201,7 @@ func (h *NotebookHandler) StreamSessionContent(c *gin.Context) {
 	}
 	var request notebookContentReadRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		respondDevelopCatalogError(c, http.StatusBadRequest, "content_read_request_invalid", developi18n.MsgNotebookCatalogRequestInvalid)
+		respondDevelopCatalogError(c, http.StatusBadRequest, "content_read_request_invalid", developi18n.MsgNotebookEngineCatalogRequestInvalid)
 		return
 	}
 	serviceRequest := service.NotebookContentReadRequest{EngineID: request.EngineID, Path: request.Path}
@@ -247,7 +247,7 @@ func (h *NotebookHandler) StreamSessionChanges(c *gin.Context) {
 	}
 	var request notebookChangeStreamRequest
 	if err := c.ShouldBindJSON(&request); err != nil || request.PollTimeout <= 0 || request.PollTimeout > 60 {
-		respondDevelopCatalogError(c, http.StatusBadRequest, "change_stream_request_invalid", developi18n.MsgNotebookCatalogRequestInvalid)
+		respondDevelopCatalogError(c, http.StatusBadRequest, "change_stream_request_invalid", developi18n.MsgNotebookEngineCatalogRequestInvalid)
 		return
 	}
 	ready := false
@@ -280,22 +280,22 @@ func respondNotebookDataError(
 	case errors.Is(err, service.ErrNotebookSessionNotFound):
 		respondDevelopCatalogError(c, http.StatusUnauthorized, "notebook_session_unavailable", developi18n.MsgNotebookSessionUnavailable)
 	case errors.Is(err, invalidErr):
-		respondDevelopCatalogError(c, http.StatusBadRequest, invalidCode, developi18n.MsgNotebookCatalogRequestInvalid)
+		respondDevelopCatalogError(c, http.StatusBadRequest, invalidCode, developi18n.MsgNotebookEngineCatalogRequestInvalid)
 	case errors.Is(err, unsupportedErr):
-		respondDevelopCatalogError(c, http.StatusUnprocessableEntity, unsupportedCode, developi18n.MsgNotebookCatalogUnsupported)
+		respondDevelopCatalogError(c, http.StatusUnprocessableEntity, unsupportedCode, developi18n.MsgNotebookEngineCatalogUnsupported)
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
-		respondDevelopCatalogError(c, http.StatusGatewayTimeout, timeoutCode, developi18n.MsgNotebookCatalogTimeout)
+		respondDevelopCatalogError(c, http.StatusGatewayTimeout, timeoutCode, developi18n.MsgNotebookEngineCatalogTimeout)
 	default:
 		if code, ok := commonClient.SystemAPIErrorCode(err); ok {
 			switch code {
 			case "notebook_session_authorization_forbidden", "execution_access_forbidden":
-				respondDevelopCatalogError(c, http.StatusForbidden, "notebook_data_forbidden", developi18n.MsgNotebookCatalogForbidden)
+				respondDevelopCatalogError(c, http.StatusForbidden, "notebook_data_forbidden", developi18n.MsgNotebookEngineCatalogForbidden)
 				return
 			case "engine_unavailable":
-				respondDevelopCatalogError(c, http.StatusServiceUnavailable, code, developi18n.MsgNotebookCatalogEngineUnavailable)
+				respondDevelopCatalogError(c, http.StatusServiceUnavailable, code, developi18n.MsgNotebookEngineCatalogEngineUnavailable)
 				return
 			}
 		}
-		respondDevelopCatalogError(c, http.StatusBadGateway, "notebook_data_provider_failed", developi18n.MsgNotebookCatalogProviderFailed)
+		respondDevelopCatalogError(c, http.StatusBadGateway, "notebook_data_provider_failed", developi18n.MsgNotebookEngineCatalogProviderFailed)
 	}
 }

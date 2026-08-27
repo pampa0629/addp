@@ -18,7 +18,7 @@ const clickhouseMaxBindParams = 65535
 const clickhouseTableWriteSessionMarkerProvider = "clickhouse.table_write_session"
 const clickhouseTableWriteSessionMarkerPositionUnit = "session_commit"
 
-func (p *ClickHousePlugin) WriteBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, batch *plugin.BatchData, opts plugin.BatchWriteOptions) error {
+func (p *ClickHousePlugin) WriteBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.BatchData, opts plugin.BatchWriteOptions) error {
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
@@ -36,7 +36,7 @@ func (p *ClickHousePlugin) WriteBatch(ctx context.Context, connInfo plugin.Conne
 	return session.Close(ctx)
 }
 
-func (p *ClickHousePlugin) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
+func (p *ClickHousePlugin) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
 	if err := resume.RejectUnsupported(opts.ResumeMarker, "clickhouse.table_write_session"); err != nil {
 		return nil, err
 	}

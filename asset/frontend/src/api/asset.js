@@ -18,20 +18,26 @@ export const catalogAPI = {
 
 // 资产管理
 export const assetAPI = {
-  list: (params) => client.get('/asset/assets', { params }),
-  get: (id) => client.get(`/asset/assets/${id}`),
+	list: (params) => client.get('/asset/assets', { params }),
+	get: (id) => client.get(`/asset/assets/${id}`),
+	create: (data) => client.post('/asset/assets', data),
   update: (id, data) => client.put(`/asset/assets/${id}`, data),
   delete: (id) => client.delete(`/asset/assets/${id}`),
   // 状态流转（简化版：draft ↔ published ↔ offline）
   publish: (id) => client.post(`/asset/assets/${id}/publish`),
   offline: (id) => client.post(`/asset/assets/${id}/offline`),
-  // 批量操作
-  sync: () => client.post('/asset/assets/sync'),
+	// 批量操作
   batchPublish: (ids) => client.post('/asset/assets/batch-publish', { ids }),
   batchOffline: (ids) => client.post('/asset/assets/batch-offline', { ids }),
   batchCatalog: (ids, catalogId) => client.post('/asset/assets/batch-catalog', { ids, catalog_id: catalogId }),
   // 类型扩展字段定义
   typeFields: (typeId) => client.get(`/asset/assets/type-fields/${typeId}`)
+}
+
+// 企业数据目录只用于管理员显式选择资产组件。
+export const enterpriseCatalogAPI = {
+	list: (params) => client.get('/catalog/entries', { params }),
+	get: (id) => client.get(`/catalog/entries/${id}`)
 }
 
 // 申请管理（Phase 4）

@@ -38,7 +38,7 @@ func TestEnsureFilesystemScanRootUsesDirectoryNodeForNonRootPath(t *testing.T) {
 	if !ok {
 		t.Fatalf("root catalog attributes = %#v", rootNode.Attributes)
 	}
-	if catalogAttrs["root_term"] != plugin.CatalogTermRoot || catalogAttrs["native_name"] != "/" {
+	if catalogAttrs["root_term"] != plugin.EngineCatalogTermRoot || catalogAttrs["native_name"] != "/" {
 		t.Fatalf("root catalog attributes = %#v, want root_term=root and native_name=/", catalogAttrs)
 	}
 	if rootNode.ID == scanNode.ID {
@@ -78,25 +78,25 @@ func TestFilesystemScanRootDoesNotPromoteRootFilesToNodes(t *testing.T) {
 	svc := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 	sizeBytes := int64(12)
 	provider := filesystemScanTestProvider{
-		entriesByPath: map[string][]plugin.CatalogEntry{
+		entriesByPath: map[string][]plugin.EngineCatalogEntry{
 			"": {
 				{
 					Name: "docs",
 					Path: plugin.FileDirectoryPath(26, "docs"),
-					Term: plugin.CatalogTermDirectory,
-					Kind: plugin.CatalogKindDirectory,
-					Role: plugin.CatalogRoleBranch,
-					Storage: &plugin.CatalogStorageFacts{
+					Term: plugin.EngineCatalogTermDirectory,
+					Kind: plugin.EngineCatalogKindDirectory,
+					Role: plugin.EngineCatalogRoleBranch,
+					Storage: &plugin.EngineCatalogStorageFacts{
 						Path: "docs",
 					},
 				},
 				{
 					Name: "README.md",
 					Path: plugin.FileItemPath(26, "README.md"),
-					Term: plugin.CatalogTermFile,
-					Kind: plugin.CatalogKindFile,
-					Role: plugin.CatalogRoleLeaf,
-					Storage: &plugin.CatalogStorageFacts{
+					Term: plugin.EngineCatalogTermFile,
+					Kind: plugin.EngineCatalogKindFile,
+					Role: plugin.EngineCatalogRoleLeaf,
+					Storage: &plugin.EngineCatalogStorageFacts{
 						Path:      "README.md",
 						SizeBytes: &sizeBytes,
 					},
@@ -148,25 +148,25 @@ func TestFilesystemScanIgnoresSystemFiles(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	repo := metaRepo.NewScanRepository(db)
 	svc := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
-	root, err := repo.UpsertNode(1, 26, nil, plugin.CatalogTermRoot, "Business NFS", strPtr(""), models.JSONMap{})
+	root, err := repo.UpsertNode(1, 26, nil, plugin.EngineCatalogTermRoot, "Business NFS", strPtr(""), models.JSONMap{})
 	if err != nil {
 		t.Fatalf("create root node: %v", err)
 	}
-	if _, err := repo.UpsertItemWithDepth(1, 26, root, plugin.CatalogTermFile, ".DS_Store", ".DS_Store", models.JSONMap{}, nil, nil, nil, models.ScannedDepthDeep); err != nil {
+	if _, err := repo.UpsertItemWithDepth(1, 26, root, plugin.EngineCatalogTermFile, ".DS_Store", ".DS_Store", models.JSONMap{}, nil, nil, nil, models.ScannedDepthDeep); err != nil {
 		t.Fatalf("create old .DS_Store item: %v", err)
 	}
 	sizeBytes := int64(12)
 	systemSizeBytes := int64(1)
 	provider := filesystemScanTestProvider{
-		entriesByPath: map[string][]plugin.CatalogEntry{
+		entriesByPath: map[string][]plugin.EngineCatalogEntry{
 			"": {
 				{
 					Name: ".DS_Store",
 					Path: plugin.FileItemPath(26, ".DS_Store"),
-					Term: plugin.CatalogTermFile,
-					Kind: plugin.CatalogKindFile,
-					Role: plugin.CatalogRoleLeaf,
-					Storage: &plugin.CatalogStorageFacts{
+					Term: plugin.EngineCatalogTermFile,
+					Kind: plugin.EngineCatalogKindFile,
+					Role: plugin.EngineCatalogRoleLeaf,
+					Storage: &plugin.EngineCatalogStorageFacts{
 						Path:      ".DS_Store",
 						SizeBytes: &systemSizeBytes,
 					},
@@ -174,10 +174,10 @@ func TestFilesystemScanIgnoresSystemFiles(t *testing.T) {
 				{
 					Name: "README.md",
 					Path: plugin.FileItemPath(26, "README.md"),
-					Term: plugin.CatalogTermFile,
-					Kind: plugin.CatalogKindFile,
-					Role: plugin.CatalogRoleLeaf,
-					Storage: &plugin.CatalogStorageFacts{
+					Term: plugin.EngineCatalogTermFile,
+					Kind: plugin.EngineCatalogKindFile,
+					Role: plugin.EngineCatalogRoleLeaf,
+					Storage: &plugin.EngineCatalogStorageFacts{
 						Path:      "README.md",
 						SizeBytes: &sizeBytes,
 					},
@@ -215,7 +215,7 @@ func TestFilesystemForceScanReconcilesStaleRootFileNodes(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	repo := metaRepo.NewScanRepository(db)
 	svc := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
-	root, err := repo.UpsertNode(1, 26, nil, plugin.CatalogTermRoot, "Business NFS", strPtr(""), models.JSONMap{})
+	root, err := repo.UpsertNode(1, 26, nil, plugin.EngineCatalogTermRoot, "Business NFS", strPtr(""), models.JSONMap{})
 	if err != nil {
 		t.Fatalf("create root node: %v", err)
 	}
@@ -237,25 +237,25 @@ func TestFilesystemForceScanReconcilesStaleRootFileNodes(t *testing.T) {
 	}
 	sizeBytes := int64(12)
 	provider := filesystemScanTestProvider{
-		entriesByPath: map[string][]plugin.CatalogEntry{
+		entriesByPath: map[string][]plugin.EngineCatalogEntry{
 			"": {
 				{
 					Name: "docs",
 					Path: plugin.FileDirectoryPath(26, "docs"),
-					Term: plugin.CatalogTermDirectory,
-					Kind: plugin.CatalogKindDirectory,
-					Role: plugin.CatalogRoleBranch,
-					Storage: &plugin.CatalogStorageFacts{
+					Term: plugin.EngineCatalogTermDirectory,
+					Kind: plugin.EngineCatalogKindDirectory,
+					Role: plugin.EngineCatalogRoleBranch,
+					Storage: &plugin.EngineCatalogStorageFacts{
 						Path: "docs",
 					},
 				},
 				{
 					Name: "README.md",
 					Path: plugin.FileItemPath(26, "README.md"),
-					Term: plugin.CatalogTermFile,
-					Kind: plugin.CatalogKindFile,
-					Role: plugin.CatalogRoleLeaf,
-					Storage: &plugin.CatalogStorageFacts{
+					Term: plugin.EngineCatalogTermFile,
+					Kind: plugin.EngineCatalogKindFile,
+					Role: plugin.EngineCatalogRoleLeaf,
+					Storage: &plugin.EngineCatalogStorageFacts{
 						Path:      "README.md",
 						SizeBytes: &sizeBytes,
 					},
@@ -265,10 +265,10 @@ func TestFilesystemForceScanReconcilesStaleRootFileNodes(t *testing.T) {
 				{
 					Name: "guide.md",
 					Path: plugin.FileItemPath(26, "docs/guide.md"),
-					Term: plugin.CatalogTermFile,
-					Kind: plugin.CatalogKindFile,
-					Role: plugin.CatalogRoleLeaf,
-					Storage: &plugin.CatalogStorageFacts{
+					Term: plugin.EngineCatalogTermFile,
+					Kind: plugin.EngineCatalogKindFile,
+					Role: plugin.EngineCatalogRoleLeaf,
+					Storage: &plugin.EngineCatalogStorageFacts{
 						Path:      "docs/guide.md",
 						SizeBytes: &sizeBytes,
 					},
@@ -326,7 +326,7 @@ func TestFilesystemScanDeletesRootFileNodesWithoutForce(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	repo := metaRepo.NewScanRepository(db)
 	svc := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
-	root, err := repo.UpsertNode(1, 26, nil, plugin.CatalogTermRoot, "Business NFS", strPtr(""), models.JSONMap{})
+	root, err := repo.UpsertNode(1, 26, nil, plugin.EngineCatalogTermRoot, "Business NFS", strPtr(""), models.JSONMap{})
 	if err != nil {
 		t.Fatalf("create root node: %v", err)
 	}
@@ -336,15 +336,15 @@ func TestFilesystemScanDeletesRootFileNodesWithoutForce(t *testing.T) {
 	}
 	sizeBytes := int64(12)
 	provider := filesystemScanTestProvider{
-		entriesByPath: map[string][]plugin.CatalogEntry{
+		entriesByPath: map[string][]plugin.EngineCatalogEntry{
 			"": {
 				{
 					Name: "README.md",
 					Path: plugin.FileItemPath(26, "README.md"),
-					Term: plugin.CatalogTermFile,
-					Kind: plugin.CatalogKindFile,
-					Role: plugin.CatalogRoleLeaf,
-					Storage: &plugin.CatalogStorageFacts{
+					Term: plugin.EngineCatalogTermFile,
+					Kind: plugin.EngineCatalogKindFile,
+					Role: plugin.EngineCatalogRoleLeaf,
+					Storage: &plugin.EngineCatalogStorageFacts{
 						Path:      "README.md",
 						SizeBytes: &sizeBytes,
 					},
@@ -386,7 +386,7 @@ func TestFilesystemScanFilePathTargetDoesNotCreateNode(t *testing.T) {
 	repo := metaRepo.NewScanRepository(db)
 	svc := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 	provider := filesystemScanTestProvider{
-		entriesByPath: map[string][]plugin.CatalogEntry{
+		entriesByPath: map[string][]plugin.EngineCatalogEntry{
 			"": nil,
 		},
 		missingDirectories: map[string]bool{
@@ -434,13 +434,13 @@ func TestFilesystemDeepScanExtractsDOCXHeaderFooter(t *testing.T) {
 	})
 	sizeBytes := int64(len(docx))
 	provider := filesystemScanTestProvider{
-		files: []plugin.CatalogEntry{{
+		files: []plugin.EngineCatalogEntry{{
 			Name: "时空数据中台产品详细设计V3.0.0.0（ChatBI部分）.docx",
 			Path: plugin.FileItemPath(26, "doc/时空数据中台产品详细设计V3.0.0.0（ChatBI部分）.docx"),
-			Term: plugin.CatalogTermFile,
-			Kind: plugin.CatalogKindFile,
-			Role: plugin.CatalogRoleLeaf,
-			Storage: &plugin.CatalogStorageFacts{
+			Term: plugin.EngineCatalogTermFile,
+			Kind: plugin.EngineCatalogKindFile,
+			Role: plugin.EngineCatalogRoleLeaf,
+			Storage: &plugin.EngineCatalogStorageFacts{
 				Path:      "doc/时空数据中台产品详细设计V3.0.0.0（ChatBI部分）.docx",
 				SizeBytes: &sizeBytes,
 			},
@@ -449,7 +449,7 @@ func TestFilesystemDeepScanExtractsDOCXHeaderFooter(t *testing.T) {
 	}
 	resource := &commonModels.Engine{ID: 26, EngineType: provider.Type()}
 
-	items, extraction, err := svc.scanDirectory(context.Background(), provider, provider, nil, resource, 1, "doc", parentNode, false, plugin.CatalogTermFile, models.ScannedDepthDeep, true)
+	items, extraction, err := svc.scanDirectory(context.Background(), provider, provider, nil, resource, 1, "doc", parentNode, false, plugin.EngineCatalogTermFile, models.ScannedDepthDeep, true)
 	if err != nil {
 		t.Fatalf("scanDirectory() error = %v", err)
 	}
@@ -482,8 +482,8 @@ func TestFilesystemDeepScanExtractsDOCXHeaderFooter(t *testing.T) {
 }
 
 type filesystemScanTestProvider struct {
-	files              []plugin.CatalogEntry
-	entriesByPath      map[string][]plugin.CatalogEntry
+	files              []plugin.EngineCatalogEntry
+	entriesByPath      map[string][]plugin.EngineCatalogEntry
 	missingDirectories map[string]bool
 	content            string
 }
@@ -501,13 +501,13 @@ func (p filesystemScanTestProvider) SensitiveFields() []string                  
 func (p filesystemScanTestProvider) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{}
 }
-func (p filesystemScanTestProvider) CatalogModel() plugin.CatalogModelSpec {
+func (p filesystemScanTestProvider) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.FileCatalogModel()
 }
 func (p filesystemScanTestProvider) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (p filesystemScanTestProvider) ListChildren(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+func (p filesystemScanTestProvider) ListChildren(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
 	if p.missingDirectories[path.StringPath()] {
 		return nil, fmt.Errorf("not a directory: %s", path.StringPath())
 	}
@@ -516,10 +516,10 @@ func (p filesystemScanTestProvider) ListChildren(_ context.Context, _ plugin.Con
 	}
 	return p.files, nil
 }
-func (p filesystemScanTestProvider) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p filesystemScanTestProvider) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	return nil, nil
 }
-func (p filesystemScanTestProvider) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
+func (p filesystemScanTestProvider) OpenContent(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader(p.content)), nil
 }
 

@@ -13,7 +13,7 @@ import (
 
 const contentHashAlgorithmSHA256 = "sha256"
 
-func computeContentSHA256(ctx context.Context, readableProvider plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, catalogPath plugin.CatalogPath) (string, error) {
+func computeContentSHA256(ctx context.Context, readableProvider plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, catalogPath plugin.EngineCatalogPath) (string, error) {
 	if readableProvider == nil || len(catalogPath.Segments) == 0 {
 		return "", nil
 	}

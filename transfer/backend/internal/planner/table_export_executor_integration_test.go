@@ -192,12 +192,12 @@ func (w *plannerIntegrationContentWriter) StoreSemantics() engineplugin.StoreSem
 	return engineplugin.StoreSemantics{}
 }
 
-func (w *plannerIntegrationContentWriter) CreateContent(context.Context, engineplugin.ConnectionInfo, engineplugin.CatalogPath, engineplugin.WriteOptions) (io.WriteCloser, error) {
+func (w *plannerIntegrationContentWriter) CreateContent(context.Context, engineplugin.ConnectionInfo, engineplugin.EngineCatalogPath, engineplugin.WriteOptions) (io.WriteCloser, error) {
 	w.buf.Reset()
 	return plannerIntegrationWriteCloser{Writer: &w.buf}, nil
 }
 
-func (w *plannerIntegrationContentWriter) DeleteResource(context.Context, engineplugin.ConnectionInfo, engineplugin.CatalogPath) error {
+func (w *plannerIntegrationContentWriter) DeleteResource(context.Context, engineplugin.ConnectionInfo, engineplugin.EngineCatalogPath) error {
 	return nil
 }
 

@@ -1,5 +1,36 @@
 <template>
   <div class="item-panel">
+    <section v-if="itemFingerprint" class="catalog-summary-card">
+      <div class="catalog-summary-card__header">
+        <div>
+          <strong>{{ t('manager.explorer.catalogSummaryTitle') }}</strong>
+          <span>{{ t('manager.explorer.catalogSummaryDescription') }}</span>
+        </div>
+        <el-button v-if="catalogSummary" type="primary" plain size="small" @click="emit('open-catalog', catalogSummary.id)">
+          {{ t('manager.explorer.openCatalogEntry') }}
+        </el-button>
+      </div>
+      <el-skeleton v-if="catalogLookupState === 'loading'" :rows="1" animated />
+      <div v-else-if="catalogSummary" class="catalog-summary-card__facts">
+        <span class="catalog-summary-card__name">{{ catalogSummary.display_name || t('manager.explorer.catalogUnnamed') }}</span>
+        <el-tag size="small">{{ t(`manager.explorer.catalogGovernance.${catalogSummary.governance_status}`) }}</el-tag>
+        <el-tag size="small" :type="catalogSummary.source_status === 'active' ? 'success' : 'warning'">
+          {{ t(`manager.explorer.catalogSource.${catalogSummary.source_status}`) }}
+        </el-tag>
+      </div>
+      <el-alert
+        v-else-if="catalogLookupState === 'missing'"
+        type="info"
+        :closable="false"
+        :title="t('manager.explorer.catalogPending')"
+      />
+      <el-alert
+        v-else-if="catalogLookupState === 'error'"
+        type="warning"
+        :closable="false"
+        :title="catalogLookupError || t('manager.explorer.catalogUnavailable')"
+      />
+    </section>
     <div class="item-tab-bar" role="tablist">
       <button
         class="item-tab-button"
@@ -280,11 +311,13 @@ import PreviewPanel from '@/components/explorer/PreviewPanel.vue'
 import { optionalCount, pickNestedCount } from '@/utils/metadataRowCount'
 import { parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
+import { useAuthStore } from '@/store/auth'
 import { LineageViewer, createLineageApi, normalizeLineageGraph } from '@addp/common-frontend/graph'
 
 const DataProfilePanel = defineAsyncComponent(() => import('@/components/explorer/DataProfilePanel.vue'))
 
 const { t } = useI18n()
+const authStore = useAuthStore()
 
 const props = defineProps({
   activeTab: {
@@ -321,7 +354,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['page-change', 'navigate', 'child-change', 'tab-change'])
+const emit = defineEmits(['page-change', 'navigate', 'child-change', 'tab-change', 'open-catalog'])
 
 const profileVisited = ref(false)
 const jsonDialogVisible = ref(false)
@@ -382,6 +415,42 @@ watch(() => [
 })
 
 const itemMeta = computed(() => props.previewData?.item_meta)
+const itemFingerprint = computed(() => String(itemMeta.value?.fingerprint || '').trim())
+const catalogSummary = ref(null)
+const catalogLookupState = ref('idle')
+const catalogLookupError = ref('')
+let catalogLookupSeq = 0
+
+const loadCatalogSummary = async () => {
+  const fingerprint = itemFingerprint.value
+  const requestSeq = ++catalogLookupSeq
+  catalogSummary.value = null
+  catalogLookupError.value = ''
+  if (!fingerprint) {
+    catalogLookupState.value = 'idle'
+    return
+  }
+  catalogLookupState.value = 'loading'
+  try {
+    const response = await client.get('/catalog/entries', {
+      params: {
+        ...(authStore.hasPermission('catalog.inventory.read') ? { view: 'inventory' } : {}),
+        source_identity: fingerprint,
+        page: 1,
+        page_size: 1
+      }
+    })
+    if (requestSeq !== catalogLookupSeq) return
+    catalogSummary.value = response?.data?.[0] || null
+    catalogLookupState.value = catalogSummary.value ? 'ready' : 'missing'
+  } catch (error) {
+    if (requestSeq !== catalogLookupSeq) return
+    catalogLookupState.value = 'error'
+    catalogLookupError.value = error?.response?.data?.error || t('manager.explorer.catalogUnavailable')
+  }
+}
+
+watch(itemFingerprint, loadCatalogSummary, { immediate: true })
 const selectedContentActive = computed(() => Boolean(
   props.selectedChildName || props.selectedRefPath || props.selectedNestedChildPath
 ))
@@ -1382,6 +1451,44 @@ const compareKeys = (a, b, order) => {
   padding: 0 14px;
   background: var(--addp-bg-primary);
   border-bottom: 1px solid var(--addp-border-color);
+}
+
+.catalog-summary-card {
+  margin: 12px 16px 0;
+  padding: 14px;
+  border: 1px solid var(--addp-border-color-light);
+  border-radius: 8px;
+  background: var(--addp-bg-secondary);
+}
+
+.catalog-summary-card__header,
+.catalog-summary-card__facts {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.catalog-summary-card__header > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.catalog-summary-card__header span {
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+}
+
+.catalog-summary-card__facts {
+  justify-content: flex-start;
+  margin-top: 12px;
+}
+
+.catalog-summary-card__name {
+  color: var(--addp-text-primary);
+  font-weight: 600;
+  margin-right: auto;
 }
 
 .item-tab-button {

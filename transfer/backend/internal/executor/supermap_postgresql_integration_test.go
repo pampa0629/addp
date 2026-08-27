@@ -421,7 +421,7 @@ func runSuperMapTransferRoundTrip(t *testing.T, geometryType string, geometries 
 	assertIntegrationMetrics(t, metrics, int64(len(geometries)))
 
 	assertSuperMapPhysicalTable(t, ctx, superMapDB, superMapTable, int64(len(geometries)*2))
-	facts, err := superMapProvider.DescribeCatalogFacts(ctx, superMapDBConn, superMapPath, plugin.CatalogFactsOptions{
+	facts, err := superMapProvider.DescribeEngineCatalogFacts(ctx, superMapDBConn, superMapPath, plugin.EngineCatalogFactsOptions{
 		IncludeSpatialFacts: true,
 		IncludeStatistics:   true,
 	})
@@ -602,8 +602,8 @@ func integrationEnvInt(t *testing.T, key string, fallback int) int {
 	return parsed
 }
 
-func tableCatalogPath(schema, table string) plugin.CatalogPath {
-	return plugin.CatalogPath{Segments: []plugin.CatalogSegment{{Name: schema}, {Name: table}}}
+func tableCatalogPath(schema, table string) plugin.EngineCatalogPath {
+	return plugin.EngineCatalogPath{Segments: []plugin.EngineCatalogSegment{{Name: schema}, {Name: table}}}
 }
 
 func quoteIntegrationIdentifier(value string) string {

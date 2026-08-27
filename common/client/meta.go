@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -88,6 +89,22 @@ type MetaLineageServicePublication struct {
 type MetaLineageCollectionResult struct {
 	Observed int `json:"observed"`
 	Skipped  int `json:"skipped"`
+}
+
+type MetaDataItemChange struct {
+	ChangeID       string                 `json:"change_id"`
+	Operation      string                 `json:"operation"`
+	SourceIdentity string                 `json:"source_identity"`
+	SourceVersion  string                 `json:"source_version"`
+	ObservedAt     time.Time              `json:"observed_at"`
+	Snapshot       map[string]interface{} `json:"snapshot"`
+}
+
+type MetaDataItemChangesResponse struct {
+	SchemaVersion string               `json:"schema_version"`
+	Changes       []MetaDataItemChange `json:"changes"`
+	NextCursor    string               `json:"next_cursor"`
+	HasMore       bool                 `json:"has_more"`
 }
 
 func normalizeManualMetaTriggerType(triggerType string) (string, error) {
@@ -188,6 +205,42 @@ func (c *MetaClient) CollectExecutionLineage(ctx context.Context, executionID st
 	var result MetaLineageCollectionResult
 	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decode Meta lineage collection response: %w", err)
+	}
+	return &result, nil
+}
+
+// ListDataItemChanges pulls one ordered, replayable change batch for the current tenant.
+func (c *MetaClient) ListDataItemChanges(ctx context.Context, afterCursor string, limit int) (*MetaDataItemChangesResponse, error) {
+	if c == nil || c.baseURL == "" || c.tenantID == nil || *c.tenantID == 0 {
+		return nil, errors.New("Meta DataItem changes require a tenant context")
+	}
+	query := url.Values{}
+	if afterCursor = strings.TrimSpace(afterCursor); afterCursor != "" {
+		query.Set("after_cursor", afterCursor)
+	}
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	requestURL := c.baseURL + "/api/v1/meta/data-items/changes"
+	if encoded := query.Encode(); encoded != "" {
+		requestURL += "?" + encoded
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create Meta DataItem changes request: %w", err)
+	}
+	response, err := c.do(request)
+	if err != nil {
+		return nil, fmt.Errorf("send Meta DataItem changes request: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		payload, _ := io.ReadAll(io.LimitReader(response.Body, 8192))
+		return nil, fmt.Errorf("Meta DataItem changes returned status %d: %s", response.StatusCode, strings.TrimSpace(string(payload)))
+	}
+	var result MetaDataItemChangesResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode Meta DataItem changes response: %w", err)
 	}
 	return &result, nil
 }

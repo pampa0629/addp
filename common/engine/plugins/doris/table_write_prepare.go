@@ -11,7 +11,7 @@ import (
 	commonquery "github.com/addp/common/query"
 )
 
-func (p *DorisPlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteOptions) error {
+func (p *DorisPlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteOptions) error {
 	database, table, err := dorisTablePathParts(path)
 	if err != nil {
 		return err
@@ -29,7 +29,7 @@ func (p *DorisPlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.Con
 	return createDorisTableIfNotExists(ctx, db, database, table, opts.Fields)
 }
 
-func (p *DorisPlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) error {
+func (p *DorisPlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) error {
 	database, table, err := dorisTablePathParts(path)
 	if err != nil {
 		return err
@@ -334,7 +334,7 @@ func dorisCommonFieldType(column dorisColumnInfo) datatype.FieldType {
 	}
 }
 
-func dorisTablePathParts(path plugin.CatalogPath) (string, string, error) {
+func dorisTablePathParts(path plugin.EngineCatalogPath) (string, string, error) {
 	if len(path.Segments) < 2 {
 		return "", "", fmt.Errorf("doris table write requires database/table catalog path")
 	}

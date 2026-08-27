@@ -28,7 +28,7 @@ var (
 type ExecutableSampleQueryOptions struct {
 	QueryLimit      int
 	ValidationLimit int
-	Path            *plugin.CatalogPath
+	Path            *plugin.EngineCatalogPath
 }
 
 // GenerateSampleQuery 从当前引擎的实时 Catalog 生成一个可直接执行的样例查询。
@@ -36,7 +36,7 @@ func GenerateSampleQuery(ctx context.Context, engine *models.Engine, queryLimit 
 	return generateSampleQueryWithPath(ctx, engine, queryLimit, nil)
 }
 
-func generateSampleQueryWithPath(ctx context.Context, engine *models.Engine, queryLimit int, selectedPath *plugin.CatalogPath) (query string, language string, err error) {
+func generateSampleQueryWithPath(ctx context.Context, engine *models.Engine, queryLimit int, selectedPath *plugin.EngineCatalogPath) (query string, language string, err error) {
 	if engine == nil {
 		return "", "", fmt.Errorf("%w: 引擎不能为空", ErrSampleQueryUnavailable)
 	}
@@ -63,7 +63,7 @@ func generateSampleQueryWithPath(ctx context.Context, engine *models.Engine, que
 	}
 
 	if _, ok := p.(plugin.SQLQueryRuntimeProvider); ok {
-		cp, ok := p.(plugin.CatalogProvider)
+		cp, ok := p.(plugin.EngineCatalogProvider)
 		if !ok {
 			return "", "", fmt.Errorf("%w: 引擎未提供实时 Catalog", ErrSampleQueryUnavailable)
 		}
@@ -117,17 +117,17 @@ func GenerateExecutableSampleQuery(
 	return query, language, nil
 }
 
-func generateCatalogSampleQuery(ctx context.Context, enginePlugin plugin.EnginePlugin, cp plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, engineType string, queryLimit int) (string, error) {
-	modelProvider, ok := enginePlugin.(plugin.CatalogModelProvider)
+func generateCatalogSampleQuery(ctx context.Context, enginePlugin plugin.EnginePlugin, cp plugin.EngineCatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, engineType string, queryLimit int) (string, error) {
+	modelProvider, ok := enginePlugin.(plugin.EngineCatalogModelProvider)
 	if !ok {
 		return "", fmt.Errorf("%w: 引擎未声明 Catalog 模型", ErrSampleQueryUnavailable)
 	}
-	model := modelProvider.CatalogModel()
-	if plugin.CatalogLeafTerm(model) != plugin.CatalogTermTable {
+	model := modelProvider.EngineCatalogModel()
+	if plugin.EngineCatalogLeafTerm(model) != plugin.EngineCatalogTermTable {
 		return "", fmt.Errorf("%w: Catalog leaf 不是表", ErrSampleQueryUnavailable)
 	}
 
-	namespaces, err := cp.ListChildren(ctx, connInfo, plugin.CatalogRootPath(model, engineID), plugin.ListOptions{})
+	namespaces, err := cp.ListChildren(ctx, connInfo, plugin.EngineCatalogRootPath(model, engineID), plugin.ListOptions{})
 	if err != nil {
 		return "", fmt.Errorf("%w: 列出 Catalog namespace 失败: %v", ErrSampleQueryUnavailable, err)
 	}
@@ -135,7 +135,7 @@ func generateCatalogSampleQuery(ctx context.Context, enginePlugin plugin.EngineP
 	resource := &plugin.Engine{ID: engineID, EngineType: engineType, ConnectionInfo: connInfo}
 	foundTable := false
 	for _, namespace := range namespaces {
-		if namespace.Role != plugin.CatalogRoleBranch {
+		if namespace.Role != plugin.EngineCatalogRoleBranch {
 			continue
 		}
 
@@ -145,14 +145,14 @@ func generateCatalogSampleQuery(ctx context.Context, enginePlugin plugin.EngineP
 		}
 
 		for _, item := range items {
-			if item.Role != plugin.CatalogRoleLeaf {
+			if item.Role != plugin.EngineCatalogRoleLeaf {
 				continue
 			}
 			foundTable = true
 			if catalogEntryRowCount(item) > 0 {
 				return tableSampleSQL(engineType, namespace.Name, item.Name, queryLimit), nil
 			}
-			count, countErr := plugin.CountCatalogItemRows(ctx, resource, item.Path)
+			count, countErr := plugin.CountEngineCatalogItemRows(ctx, resource, item.Path)
 			if countErr == nil && count > 0 {
 				return tableSampleSQL(engineType, namespace.Name, item.Name, queryLimit), nil
 			}
@@ -169,7 +169,7 @@ func tableSampleSQL(engineType, namespace, table string, limit int) string {
 	return commonquery.SelectAllSampleSQL(engineType, namespace, table, limit)
 }
 
-func catalogEntryRowCount(entry plugin.CatalogEntry) int64 {
+func catalogEntryRowCount(entry plugin.EngineCatalogEntry) int64 {
 	if entry.Table == nil || entry.Table.RowCount == nil {
 		return 0
 	}
@@ -427,7 +427,7 @@ func ExecuteReadOnlyRuntimeQuery(ctx context.Context, engine *models.Engine, lan
 
 // ExecuteReadOnlyRuntimeQueryWithPath executes a native read-only query against
 // the concrete catalog path selected by the caller.
-func ExecuteReadOnlyRuntimeQueryWithPath(ctx context.Context, engine *models.Engine, language, query string, parameters map[string]interface{}, limit int, targetPath *plugin.CatalogPath) (*plugin.QueryResult, error) {
+func ExecuteReadOnlyRuntimeQueryWithPath(ctx context.Context, engine *models.Engine, language, query string, parameters map[string]interface{}, limit int, targetPath *plugin.EngineCatalogPath) (*plugin.QueryResult, error) {
 	if engine == nil {
 		return nil, fmt.Errorf("引擎不能为空")
 	}
@@ -459,7 +459,7 @@ func ExecuteReadOnlyGraphQuery(ctx context.Context, engine *models.Engine, langu
 	return ExecuteReadOnlyGraphQueryWithPath(ctx, engine, language, query, parameters, limit, nil)
 }
 
-func ExecuteReadOnlyGraphQueryWithPath(ctx context.Context, engine *models.Engine, language, query string, parameters map[string]interface{}, limit int, targetPath *plugin.CatalogPath) (*plugin.GraphQueryResult, error) {
+func ExecuteReadOnlyGraphQueryWithPath(ctx context.Context, engine *models.Engine, language, query string, parameters map[string]interface{}, limit int, targetPath *plugin.EngineCatalogPath) (*plugin.GraphQueryResult, error) {
 	if engine == nil {
 		return nil, fmt.Errorf("引擎不能为空")
 	}

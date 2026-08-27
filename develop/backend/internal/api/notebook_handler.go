@@ -35,11 +35,11 @@ func NewNotebookHandler(
 	jupyterService *service.JupyterService,
 	notebookExecutionService *service.NotebookExecutionService,
 	devTaskService *service.DevTaskService,
-	notebookCatalog service.NotebookSessionControlPlane,
+	notebookEngineCatalog service.NotebookSessionControlPlane,
 	developServiceURL string,
 	copilotServiceURL string,
 ) *NotebookHandler {
-	sessionService := service.NewNotebookSessionService(jupyterService, devTaskService, notebookCatalog, time.Hour, developServiceURL)
+	sessionService := service.NewNotebookSessionService(jupyterService, devTaskService, notebookEngineCatalog, time.Hour, developServiceURL)
 	return &NotebookHandler{
 		jupyterService:               jupyterService,
 		notebookExecutionService:     notebookExecutionService,

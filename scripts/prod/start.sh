@@ -79,6 +79,7 @@ docker compose -f docker-compose.yml up -d \
   transfer-continuous-worker \
   orchestrator-backend \
   develop-backend \
+  develop-query-worker \
   service-backend \
   copilot-backend \
   inference-backend \
@@ -89,6 +90,7 @@ docker compose -f docker-compose.yml up -d \
   model-backend \
   quality-backend \
   quality-worker \
+  catalog-backend \
   asset-backend \
   portal-backend \
   geopython-workflow-engine \
@@ -120,6 +122,7 @@ services=(
   "inference-backend:8191"
   "model-backend:8181"
   "quality-backend:8182"
+  "catalog-backend:8192"
   "asset-backend:8183"
   "portal-backend:8184"
   "jupyter-engine:8097"
@@ -179,6 +182,7 @@ docker compose -f docker-compose.yml up -d \
   inference-frontend \
   model-frontend \
   quality-frontend \
+  catalog-frontend \
   asset-frontend \
   portal-frontend \
   console \

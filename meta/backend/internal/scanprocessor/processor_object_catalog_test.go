@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"strings"
 	"testing"
 
 	"github.com/addp/common/dataitem"
@@ -13,10 +12,10 @@ import (
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
@@ -24,34 +23,34 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 
 	db := openObjectCatalogProcessorTestDB(t)
 	repo := metaRepo.NewScanRepository(db)
-	parentNode, err := repo.UpsertNode(1, 7, nil, "bucket", "addp", strPtr("addp"), metacatalog.ObjectBucketNodeAttributes("addp"))
+	parentNode, err := repo.UpsertNode(1, 7, nil, "bucket", "addp", strPtr("addp"), scanresource.ObjectBucketNodeAttributes("addp"))
 	if err != nil {
 		t.Fatalf("create parent node: %v", err)
 	}
-	resource := metacatalog.StorageResource{
-		RootName:    "addp",
-		Path:        "datasets/converted.json",
-		FullPath:    "addp/datasets/converted.json",
-		SizeBytes:   64,
-		Format:      string(format.FormatJSON),
-		CatalogPath: plugin.ObjectItemPath(7, "addp", "datasets/converted.json"),
+	resource := scanresource.StorageResource{
+		RootName:          "addp",
+		Path:              "datasets/converted.json",
+		FullPath:          "addp/datasets/converted.json",
+		SizeBytes:         64,
+		Format:            string(format.FormatJSON),
+		EngineCatalogPath: plugin.ObjectItemPath(7, "addp", "datasets/converted.json"),
 	}
 	item := metaitemForJSONDocument(resource)
 
 	result, err := New(repo, nil, slog.New(slog.NewTextHandler(io.Discard, nil))).Process(context.Background(), input{
-		Resource:      &commonModels.Engine{ID: 7, EngineType: "static"},
-		TenantID:      1,
-		EngineID:      7,
-		ParentNode:    parentNode,
-		ItemType:      "object",
-		ItemName:      "converted.json",
-		FullName:      resource.FullPath,
-		Attributes:    models.JSONMap{},
-		Detected:      item,
-		ContentReader: staticObjectContentReader{content: `[{"id":1,"name":"A"},{"id":2,"name":"B"}]`},
-		CatalogPath:   resource.CatalogPath,
-		CatalogPathFor: func(string) plugin.CatalogPath {
-			return resource.CatalogPath
+		Resource:          &commonModels.Engine{ID: 7, EngineType: "static"},
+		TenantID:          1,
+		EngineID:          7,
+		ParentNode:        parentNode,
+		ItemType:          "object",
+		ItemName:          "converted.json",
+		FullName:          resource.FullPath,
+		Attributes:        models.JSONMap{},
+		Detected:          item,
+		ContentReader:     staticObjectContentReader{content: `[{"id":1,"name":"A"},{"id":2,"name":"B"}]`},
+		EngineCatalogPath: resource.EngineCatalogPath,
+		EngineCatalogPathFor: func(string) plugin.EngineCatalogPath {
+			return resource.EngineCatalogPath
 		},
 		PhysicalPath:       resource.FullPath,
 		IndexRootName:      resource.RootName,
@@ -139,9 +138,6 @@ func TestDocumentTextExtractionReadsDOCX(t *testing.T) {
 	}
 	if got := commonJSON.String(attrs, "capabilities.extraction", "plain_text_preview"); got != "Hello DOCX\nSearch body" {
 		t.Fatalf("plain_text_preview = %q", got)
-	}
-	if got := commonJSON.String(attrs, "capabilities.extraction", "index_ref"); !strings.HasPrefix(got, "meilisearch:assets:") {
-		t.Fatalf("index_ref = %q", got)
 	}
 	if commonJSON.Bool(attrs, "capabilities.extraction", "text_truncated") {
 		t.Fatalf("text_truncated = true, want false")
@@ -252,14 +248,14 @@ func TestContentSHA256WritesStorageContentHash(t *testing.T) {
 	}
 }
 
-func textExtractionResource(path string, formatName format.FormatType, sizeBytes int64) metacatalog.StorageResource {
-	return metacatalog.StorageResource{
-		RootName:    "addp",
-		Path:        path,
-		FullPath:    "addp/" + path,
-		SizeBytes:   sizeBytes,
-		Format:      string(formatName),
-		CatalogPath: plugin.ObjectItemPath(7, "addp", path),
+func textExtractionResource(path string, formatName format.FormatType, sizeBytes int64) scanresource.StorageResource {
+	return scanresource.StorageResource{
+		RootName:          "addp",
+		Path:              path,
+		FullPath:          "addp/" + path,
+		SizeBytes:         sizeBytes,
+		Format:            string(formatName),
+		EngineCatalogPath: plugin.ObjectItemPath(7, "addp", path),
 	}
 }
 
@@ -272,6 +268,6 @@ func documentDetectedItem(formatName format.FormatType) *metaitem.DetectedItem {
 	}
 }
 
-func metaitemForJSONDocument(resource metacatalog.StorageResource) *metaitem.DetectedItem {
-	return metacatalog.InferObjectCatalogDataItem(resource, "converted.json")
+func metaitemForJSONDocument(resource scanresource.StorageResource) *metaitem.DetectedItem {
+	return scanresource.InferObjectDataItem(resource, "converted.json")
 }

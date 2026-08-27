@@ -17,7 +17,7 @@ func DetectSingleFileFormat(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
-	catalogPath plugin.CatalogPath,
+	catalogPath plugin.EngineCatalogPath,
 	fallbackPath string,
 ) (format.FormatType, error) {
 	if contentReader == nil {
@@ -50,7 +50,7 @@ func openSingleFilePeekReader(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
-	catalogPath plugin.CatalogPath,
+	catalogPath plugin.EngineCatalogPath,
 ) (io.ReadCloser, error) {
 	if rangeReader, ok := contentReader.(plugin.RangeReadableProvider); ok {
 		return rangeReader.OpenRange(ctx, connInfo, catalogPath, plugin.ReadOptions{Length: singleFileFormatPeekBytes})

@@ -20,15 +20,6 @@ func TestLoadDefaultsDevelopServiceURLToStandardPort(t *testing.T) {
 	}
 }
 
-func TestLoadDefaultsModelServiceURLToStandardPort(t *testing.T) {
-	t.Setenv("MODEL_URL", "")
-
-	cfg := Load()
-	if cfg.ModelServiceURL != "http://localhost:8181" {
-		t.Fatalf("expected Model service URL http://localhost:8181, got %s", cfg.ModelServiceURL)
-	}
-}
-
 func TestLoadQueryPolicyDefaults(t *testing.T) {
 	cfg := Load()
 	if cfg.DefaultQueryTimeout != 30 || cfg.MaxQueryTimeout != 300 || cfg.QueryResultLimit != 500 {

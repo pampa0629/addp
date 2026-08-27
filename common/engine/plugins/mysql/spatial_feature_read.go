@@ -15,7 +15,7 @@ import (
 	"github.com/twpayne/go-geom/xy"
 )
 
-func (p *MySQLPlugin) ReadSpatialFeature(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.SpatialFeatureReadOptions) (*plugin.SpatialFeatureData, error) {
+func (p *MySQLPlugin) ReadSpatialFeature(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.SpatialFeatureReadOptions) (*plugin.SpatialFeatureData, error) {
 	database, table, err := mysqlTablePathParts(path)
 	if err != nil {
 		return nil, err

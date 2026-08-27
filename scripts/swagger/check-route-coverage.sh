@@ -10,7 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${ROOT_DIR}"
 
-GO_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality portal graph asset inference)
+GO_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality portal graph asset inference catalog workbench)
 FASTAPI_MODULES=(agent copilot)
 ALL_MODULES=("${GO_MODULES[@]}" "${FASTAPI_MODULES[@]}")
 

@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -28,7 +29,6 @@ type Config struct {
 
 	// 其他模块服务配置（用于算子发现）
 	MetaServiceURL     string
-	ModelServiceURL    string
 	TransferServiceURL string
 	ManagerServiceURL  string
 	CopilotServiceURL  string
@@ -37,6 +37,11 @@ type Config struct {
 	DefaultQueryTimeout int // 默认查询超时(秒)
 	MaxQueryTimeout     int // 最大查询超时(秒)
 	QueryResultLimit    int // execution 结果预览最大行数
+
+	QueryWorkerConcurrency int
+	QueryLeaseDuration     time.Duration
+	QueryHeartbeatInterval time.Duration
+	QueryClaimInterval     time.Duration
 
 	// Redis 配置（资源回收 request/result）
 	RedisHost     string
@@ -71,15 +76,18 @@ func Load() *Config {
 
 		// 其他模块服务配置
 		MetaServiceURL:     getEnv("META_URL", "http://localhost:8082"),
-		ModelServiceURL:    getEnv("MODEL_URL", "http://localhost:8181"),
 		TransferServiceURL: getEnv("TRANSFER_URL", "http://localhost:8083"),
 		ManagerServiceURL:  getEnv("MANAGER_URL", "http://localhost:8081"),
 		CopilotServiceURL:  getEnv("COPILOT_URL", "http://localhost:8087"),
 
 		// SQL 执行配置
-		DefaultQueryTimeout: 30,
-		MaxQueryTimeout:     300,
-		QueryResultLimit:    500,
+		DefaultQueryTimeout:    30,
+		MaxQueryTimeout:        300,
+		QueryResultLimit:       getEnvAsInt("QUERY_RESULT_LIMIT", 500),
+		QueryWorkerConcurrency: getEnvAsInt("DEVELOP_QUERY_WORKER_CONCURRENCY", 4),
+		QueryLeaseDuration:     time.Duration(getEnvAsInt("DEVELOP_QUERY_LEASE_SECONDS", 120)) * time.Second,
+		QueryHeartbeatInterval: time.Duration(getEnvAsInt("DEVELOP_QUERY_HEARTBEAT_SECONDS", 30)) * time.Second,
+		QueryClaimInterval:     time.Duration(getEnvAsInt("DEVELOP_QUERY_CLAIM_INTERVAL_SECONDS", 1)) * time.Second,
 
 		// Redis 配置
 		RedisHost:     getEnv("REDIS_HOST", "localhost"),

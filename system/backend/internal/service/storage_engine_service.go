@@ -78,9 +78,9 @@ func maskString(value interface{}) string {
 	return "****"
 }
 
-// ListCatalogChildren 列出指定 catalog 路径下的实时子节点。
-func (s *StorageEngineService) ListCatalogChildren(ctx context.Context, resource *models.Engine, req models.CatalogListChildrenRequest) ([]models.CatalogEntry, error) {
-	nodes, err := dbbridge.ListCatalogChildren(ctx, resource, toPluginCatalogPath(req.Path), plugin.ListOptions{
+// ListEngineCatalogChildren 列出指定 catalog 路径下的实时子节点。
+func (s *StorageEngineService) ListEngineCatalogChildren(ctx context.Context, resource *models.Engine, req models.EngineCatalogListChildrenRequest) ([]models.EngineCatalogEntry, error) {
+	nodes, err := dbbridge.ListEngineCatalogChildren(ctx, resource, toPluginEngineCatalogPath(req.Path), plugin.ListOptions{
 		Recursive: req.Options.Recursive,
 		Limit:     req.Options.Limit,
 		Offset:    req.Options.Offset,
@@ -89,38 +89,38 @@ func (s *StorageEngineService) ListCatalogChildren(ctx context.Context, resource
 		return nil, err
 	}
 
-	result := make([]models.CatalogEntry, 0, len(nodes))
+	result := make([]models.EngineCatalogEntry, 0, len(nodes))
 	for _, node := range nodes {
-		result = append(result, fromPluginCatalogEntry(node))
+		result = append(result, fromPluginEngineCatalogEntry(node))
 	}
 	return result, nil
 }
 
-// DescribeCatalogFacts 返回指定 catalog 叶子的实时结构事实。
-func (s *StorageEngineService) DescribeCatalogFacts(ctx context.Context, resource *models.Engine, req models.CatalogDescribeFactsRequest) (*plugin.CatalogFacts, error) {
-	return dbbridge.DescribeCatalogFacts(ctx, resource, toPluginCatalogPath(req.Path), plugin.CatalogFactsOptions{})
+// DescribeEngineCatalogFacts 返回指定 catalog 叶子的实时结构事实。
+func (s *StorageEngineService) DescribeEngineCatalogFacts(ctx context.Context, resource *models.Engine, req models.EngineCatalogDescribeFactsRequest) (*plugin.EngineCatalogFacts, error) {
+	return dbbridge.DescribeEngineCatalogFacts(ctx, resource, toPluginEngineCatalogPath(req.Path), plugin.EngineCatalogFactsOptions{})
 }
 
-func toPluginCatalogPath(path models.CatalogPath) plugin.CatalogPath {
-	segments := make([]plugin.CatalogSegment, 0, len(path.Segments))
+func toPluginEngineCatalogPath(path models.EngineCatalogPath) plugin.EngineCatalogPath {
+	segments := make([]plugin.EngineCatalogSegment, 0, len(path.Segments))
 	for _, segment := range path.Segments {
-		segments = append(segments, plugin.CatalogSegment{
+		segments = append(segments, plugin.EngineCatalogSegment{
 			Term: segment.Term,
 			Kind: segment.Kind,
 			Name: segment.Name,
 		})
 	}
-	return plugin.CatalogPath{
+	return plugin.EngineCatalogPath{
 		Version:  path.Version,
 		EngineID: path.EngineID,
 		Segments: segments,
 	}
 }
 
-func fromPluginCatalogEntry(node plugin.CatalogEntry) models.CatalogEntry {
-	return models.CatalogEntry{
+func fromPluginEngineCatalogEntry(node plugin.EngineCatalogEntry) models.EngineCatalogEntry {
+	return models.EngineCatalogEntry{
 		Name:      node.Name,
-		Path:      fromPluginCatalogPath(node.Path),
+		Path:      fromPluginEngineCatalogPath(node.Path),
 		Term:      node.Term,
 		Kind:      node.Kind,
 		Role:      node.Role,
@@ -131,16 +131,16 @@ func fromPluginCatalogEntry(node plugin.CatalogEntry) models.CatalogEntry {
 	}
 }
 
-func fromPluginCatalogPath(path plugin.CatalogPath) models.CatalogPath {
-	segments := make([]models.CatalogSegment, 0, len(path.Segments))
+func fromPluginEngineCatalogPath(path plugin.EngineCatalogPath) models.EngineCatalogPath {
+	segments := make([]models.EngineCatalogSegment, 0, len(path.Segments))
 	for _, segment := range path.Segments {
-		segments = append(segments, models.CatalogSegment{
+		segments = append(segments, models.EngineCatalogSegment{
 			Term: segment.Term,
 			Kind: segment.Kind,
 			Name: segment.Name,
 		})
 	}
-	return models.CatalogPath{
+	return models.EngineCatalogPath{
 		Version:  path.Version,
 		EngineID: path.EngineID,
 		Segments: segments,

@@ -232,7 +232,7 @@ func TestMySQLSchemaEvolutionStatementsAddsMissingNonNullColumnWithDefault(t *te
 }
 
 func TestMySQLTablePathPartsRequiresDatabaseAndTable(t *testing.T) {
-	_, _, err := mysqlTablePathParts(plugin.CatalogPath{})
+	_, _, err := mysqlTablePathParts(plugin.EngineCatalogPath{})
 	if err == nil {
 		t.Fatal("mysqlTablePathParts() succeeded, want error")
 	}

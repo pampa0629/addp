@@ -12,7 +12,7 @@ import (
 func (s *FilesystemCatalogRuntime) resolveFileCatalogDirectoryItems(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
-	catalogProvider plugin.CatalogProvider,
+	catalogProvider plugin.EngineCatalogProvider,
 	connInfo plugin.ConnectionInfo,
 	resource *commonModels.Engine,
 	dirPath string,

@@ -28,7 +28,7 @@ type EngineService struct {
 	engineCache    map[engineCacheKey]*engineCacheEntry
 	cacheTTL       time.Duration
 	log            *slog.Logger
-	rootReconciler *CatalogRootReconciler
+	rootReconciler *EngineCatalogRootReconciler
 }
 
 func NewEngineService(db *gorm.DB, systemClient *commonClient.SystemServiceClient) *EngineService {
@@ -39,7 +39,7 @@ func NewEngineService(db *gorm.DB, systemClient *commonClient.SystemServiceClien
 		cacheTTL:     5 * time.Minute,
 		log:          logger.With("component", "engine_service"),
 	}
-	service.rootReconciler = NewCatalogRootReconciler(db)
+	service.rootReconciler = NewEngineCatalogRootReconciler(db)
 	return service
 }
 

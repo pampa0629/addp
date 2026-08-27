@@ -30,7 +30,7 @@ func (service *fakeExecutionAuthorizationService) IssueFromServiceDefinition(
 	definitionVersion := input.DefinitionVersion
 	return &iam.IssuedExecutionAuthorization{
 		ID: 93, ExecutionID: input.ExecutionID, Audience: "duckdb",
-		EngineIDs: input.EngineIDs, Effects: []string{"read"}, ExpiresAt: time.Now().UTC().Add(time.Minute),
+		Accesses: input.Accesses, ExpiresAt: time.Now().UTC().Add(time.Minute),
 		ActorPrincipalID: 7, TenantID: input.TenantID, TenantMembershipID: 8, IssuedAuthorizationVersion: 3,
 		SourceType: "service_definition", SourceDefinitionID: &definitionID,
 		SourceDefinitionVersion: &definitionVersion,
@@ -44,7 +44,7 @@ func (service *fakeExecutionAuthorizationService) IssueFromExecution(
 	service.issueFromExecution = input
 	return &iam.IssuedExecutionAuthorization{
 		ID: 92, ExecutionID: input.ExecutionID, Audience: input.Audience,
-		EngineIDs: []int64{12}, Effects: []string{"read"}, ExpiresAt: time.Now().UTC().Add(time.Minute),
+		Accesses: []iam.ExecutionEngineAccessScope{{EngineID: 12, Effects: []string{"read"}}}, ExpiresAt: time.Now().UTC().Add(time.Minute),
 		ActorPrincipalID: 7, TenantID: input.TenantID, TenantMembershipID: 8, IssuedAuthorizationVersion: 3,
 	}, nil
 }
@@ -56,7 +56,7 @@ func (service *fakeExecutionAuthorizationService) Issue(
 	service.issueInput = input
 	return &iam.IssuedExecutionAuthorization{
 		ID: 91, ExecutionID: input.ExecutionID, Audience: input.Audience,
-		EngineIDs: []int64{12}, Effects: []string{"read"}, ExpiresAt: time.Now().UTC().Add(time.Minute),
+		Accesses: []iam.ExecutionEngineAccessScope{{EngineID: 12, Effects: []string{"read"}}}, ExpiresAt: time.Now().UTC().Add(time.Minute),
 		ActorPrincipalID: 7, TenantID: 5, TenantMembershipID: 8, IssuedAuthorizationVersion: 3,
 	}, nil
 }
@@ -97,8 +97,8 @@ func TestIAMExecutionAuthorizationHandlerUsesUserAndServiceActors(t *testing.T) 
 	}, handler.AuthorizeEngineAccess)
 
 	issue := performIAMJSONRequest(t, router, http.MethodPost, "/api/v1/system/auth/execution-authorizations", map[string]any{
-		"audience": "develop", "execution_id": executionID, "engine_ids": []string{"12"},
-		"effects": []string{"read"}, "expires_in": 600,
+		"audience": "develop", "execution_id": executionID,
+		"accesses": []map[string]any{{"engine_id": "12", "effects": []string{"read"}}}, "expires_in": 600,
 	}, map[string]string{"Authorization": "Bearer addp_at_user"})
 	if issue.Code != http.StatusCreated || fakeService.issueInput.SourceAccessToken != "addp_at_user" ||
 		fakeService.issueInput.ExecutionID != uuid.MustParse(executionID) {
@@ -116,5 +116,41 @@ func TestIAMExecutionAuthorizationHandlerUsesUserAndServiceActors(t *testing.T) 
 	if err := json.Unmarshal(consume.Body.Bytes(), &response); err != nil || response.Engine == nil ||
 		response.Engine.ConnectionInfo["password"] != "plain" {
 		t.Fatalf("consume response=%#v error=%v", response, err)
+	}
+}
+
+func TestIAMExecutionAuthorizationHandlerParsesCurrentLeaseBoundary(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fakeService := &fakeExecutionAuthorizationService{}
+	handler, err := NewIAMExecutionAuthorizationHandler(fakeService, fakeExecutionEngineResolver{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	router.POST("/api/v1/system/runtime/execution-authorizations", func(c *gin.Context) {
+		if err := sharedauth.SetAuthContextForGin(c, testIAMServiceActorContext("tenant", "addp-transfer")); err != nil {
+			t.Fatal(err)
+		}
+		c.Next()
+	}, handler.IssueFromExecution)
+	parentExecutionID := uuid.NewString()
+	executionID := uuid.NewString()
+	leaseToken := uuid.New()
+	response := performIAMJSONRequest(t, router, http.MethodPost, "/api/v1/system/runtime/execution-authorizations", map[string]any{
+		"parent_execution_id": parentExecutionID, "audience": "transfer", "execution_id": executionID,
+		"attempt": 3, "lease_token": leaseToken.String(),
+		"accesses": []map[string]any{{"engine_id": "12", "effects": []string{"read"}}}, "expires_in": 60,
+	}, nil)
+	if response.Code != http.StatusCreated || fakeService.issueFromExecution.Attempt != 3 ||
+		fakeService.issueFromExecution.LeaseToken != leaseToken || fakeService.issueFromExecution.ServiceClientID != "addp-transfer" {
+		t.Fatalf("issue from execution status=%d input=%#v body=%s", response.Code, fakeService.issueFromExecution, response.Body.String())
+	}
+
+	invalid := performIAMJSONRequest(t, router, http.MethodPost, "/api/v1/system/runtime/execution-authorizations", map[string]any{
+		"parent_execution_id": parentExecutionID, "audience": "transfer", "execution_id": uuid.NewString(),
+		"attempt": 3, "accesses": []map[string]any{{"engine_id": "12", "effects": []string{"read"}}}, "expires_in": 60,
+	}, nil)
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("partial lease boundary status=%d body=%s", invalid.Code, invalid.Body.String())
 	}
 }

@@ -116,6 +116,15 @@ class T2CIRegistrationTest(unittest.TestCase):
             MODULE.validate_registration(self.repository),
         )
 
+    def test_detects_untracked_gate_before_commit(self) -> None:
+        script = self.repository / "scripts/test/new-postgres-gate.sh"
+        script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+        errors = MODULE.validate_registration(self.repository)
+        self.assertIn(
+            "scripts/test/new-postgres-gate.sh: Makefile target test-new-postgres is missing",
+            errors,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

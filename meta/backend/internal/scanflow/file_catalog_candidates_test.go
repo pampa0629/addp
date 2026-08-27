@@ -29,7 +29,7 @@ func TestFileCatalogDirectoryCandidateSet(t *testing.T) {
 	if len(candidates.RecursiveSubdirs) != 1 || candidates.RecursiveSubdirs[0].Path != "lake/partition/day=1" {
 		t.Fatalf("recursive subdirs = %#v", candidates.RecursiveSubdirs)
 	}
-	if got := candidates.CatalogPathFor("lake/roads.shp").StringPath(); got != "lake/roads.shp" {
+	if got := candidates.EngineCatalogPathFor("lake/roads.shp").StringPath(); got != "lake/roads.shp" {
 		t.Fatalf("catalog path = %q", got)
 	}
 }

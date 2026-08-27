@@ -150,6 +150,7 @@ func main() {
 
 	// 初始化 handlers
 	queryServiceHandler := api.NewQueryServiceHandler(queryServiceService, queryExecutorService)
+	queryServiceHandler.SetExecutionAuditWriter(api.NewQueryExecutionAuditWriter(systemServiceClient))
 	ogcFeaturesHandler := api.NewOGCFeaturesHandler(queryServiceService, queryExecutorService, cfg.GatewayURL)
 	registeredServiceHandler := api.NewRegisteredServiceHandler(registeredServiceService)
 	tileServiceHandler := api.NewTileServiceHandler(tileServiceService)
@@ -159,12 +160,23 @@ func main() {
 	dataServiceHandler := api.NewDataServiceHandler(queryService)
 	resourceCapabilityHandler := api.NewResourceCapabilityHandler(systemClient, metaClient)
 	resourceCapabilityHandler.SetQuerySampleService(querySampleService)
-	serviceEndpointHandler := api.NewServiceEndpointHandler(queryServiceService, registeredServiceService, tileServiceService)
+	consumerCatalogService := serviceInternal.NewConsumerCatalogService(queryServiceRepo)
+	migratedConsumerContracts, err := consumerCatalogService.MigrateInvalidQueryServiceContracts()
+	if err != nil {
+		logger.L().Error("Query Service 消费契约迁移失败", "error", err)
+		os.Exit(1)
+	}
+	if migratedConsumerContracts > 0 {
+		logger.L().Warn("已将不满足当前消费契约的 Query Service 置为 error", "count", migratedConsumerContracts)
+	}
+	consumerCatalogHandler := api.NewConsumerCatalogHandler(consumerCatalogService)
+	catalogResourceService := serviceInternal.NewCatalogResourceService(repository.NewCatalogResourceRepository(db))
+	catalogResourceHandler := api.NewCatalogResourceHandler(catalogResourceService)
 	graphQueryHandler := api.NewGraphQueryHandler(graphQueryServiceService, graphQueryExecutor)
 
 	// 设置路由（传递 systemClient 用于审计日志）
 	lifecycleController := modulelifecycle.NewBusiness("service", commonClient.ModuleRuntimeRoleBackend)
-	router := api.SetupRouter(cfg, db, dataServiceHandler, queryServiceHandler, ogcFeaturesHandler, registeredServiceHandler, tileServiceHandler, tileEndpointHandler, wmtsHandler, ogcTilesHandler, resourceCapabilityHandler, serviceEndpointHandler, graphQueryHandler, systemClient, systemServiceClient, runtimePolicyService, lifecycleController)
+	router := api.SetupRouter(cfg, db, dataServiceHandler, queryServiceHandler, ogcFeaturesHandler, registeredServiceHandler, tileServiceHandler, tileEndpointHandler, wmtsHandler, ogcTilesHandler, resourceCapabilityHandler, consumerCatalogHandler, catalogResourceHandler, graphQueryHandler, systemClient, systemServiceClient, runtimePolicyService, lifecycleController)
 	addr := ":" + cfg.Port
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {

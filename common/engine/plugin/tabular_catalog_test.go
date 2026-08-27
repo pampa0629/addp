@@ -25,8 +25,8 @@ func TestTabularCatalogEntryCarriesTableInfo(t *testing.T) {
 		},
 	}
 
-	node := tabularCatalogEntryFromFacts(CatalogPath{Version: CatalogPathVersion}, "orders", "table", &CatalogFacts{
-		Kind:      CatalogKindTable,
+	node := tabularCatalogEntryFromFacts(EngineCatalogPath{Version: EngineCatalogPathVersion}, "orders", "table", &EngineCatalogFacts{
+		Kind:      EngineCatalogKindTable,
 		Table:     table.Clone(),
 		UpdatedAt: &updatedAt,
 	})
@@ -56,9 +56,9 @@ func TestTabularCatalogEntryCarriesTableInfo(t *testing.T) {
 }
 
 func TestTabularNamespaceCatalogEntryUsesLeafCount(t *testing.T) {
-	root := CatalogRootPath(TabularCatalogModel(CatalogTermDatabase), 7)
+	root := EngineCatalogRootPath(TabularCatalogModel(EngineCatalogTermDatabase), 7)
 
-	node := TabularNamespaceCatalogEntry(root, CatalogTermDatabase, "analytics", 3)
+	node := TabularNamespaceCatalogEntry(root, EngineCatalogTermDatabase, "analytics", 3)
 
 	if node.LeafCount == nil || *node.LeafCount != 3 {
 		t.Fatalf("LeafCount = %#v, want 3", node.LeafCount)
@@ -82,12 +82,12 @@ func TestTabularNamespaceCatalogEntryUsesLeafCount(t *testing.T) {
 func TestBuildTabularCatalogFactsCarriesTableInfo(t *testing.T) {
 	rowCount := int64(42)
 	updatedAt := time.Unix(300, 0)
-	item := buildTabularCatalogFacts(CatalogPath{
-		Version:  CatalogPathVersion,
+	item := buildTabularCatalogFacts(EngineCatalogPath{
+		Version:  EngineCatalogPathVersion,
 		EngineID: 7,
-		Segments: []CatalogSegment{
-			{Term: CatalogTermDatabase, Kind: CatalogKindNamespace, Name: "analytics"},
-			{Term: CatalogTermTable, Kind: CatalogKindTable, Name: "orders"},
+		Segments: []EngineCatalogSegment{
+			{Term: EngineCatalogTermDatabase, Kind: EngineCatalogKindNamespace, Name: "analytics"},
+			{Term: EngineCatalogTermTable, Kind: EngineCatalogKindTable, Name: "orders"},
 		},
 	}, "analytics", "orders", []datatype.FieldInfo{
 		{Name: "id", Type: datatype.FieldTypeBigInt, NativeType: "bigint", PrimaryKey: true},
@@ -101,9 +101,9 @@ func TestBuildTabularCatalogFactsCarriesTableInfo(t *testing.T) {
 		Native: map[string]interface{}{
 			"engine": "MergeTree",
 		},
-	}, true, CatalogKindTable, nil, nil)
+	}, true, EngineCatalogKindTable, nil, nil)
 	if item.Table == nil {
-		t.Fatal("CatalogFacts.Table is nil")
+		t.Fatal("EngineCatalogFacts.Table is nil")
 	}
 	if item.Table.Name != "orders" || item.Table.Kind != "view" || item.Table.Comment != "order facts" {
 		t.Fatalf("Table = %#v", item.Table)
@@ -124,7 +124,7 @@ func TestBuildTabularCatalogFactsCarriesTableInfo(t *testing.T) {
 
 func TestTabularCatalogEntryFromFactsCarriesTableInfo(t *testing.T) {
 	rowCount := int64(10)
-	facts := &CatalogFacts{
+	facts := &EngineCatalogFacts{
 		Table: &datatype.TableInfo{
 			Name:     "orders",
 			Kind:     "view",
@@ -134,9 +134,9 @@ func TestTabularCatalogEntryFromFactsCarriesTableInfo(t *testing.T) {
 		},
 	}
 
-	node := tabularCatalogEntryFromFacts(CatalogPath{Version: CatalogPathVersion}, "orders", "view", facts)
+	node := tabularCatalogEntryFromFacts(EngineCatalogPath{Version: EngineCatalogPathVersion}, "orders", "view", facts)
 
-	if node.Kind != "view" || node.Role != CatalogRoleLeaf {
+	if node.Kind != "view" || node.Role != EngineCatalogRoleLeaf {
 		t.Fatalf("node kind/role = %q/%q", node.Kind, node.Role)
 	}
 	if node.Table == nil || node.Table.RowCount == nil || *node.Table.RowCount != int64(10) {
@@ -156,11 +156,11 @@ func TestTabularCatalogEntryFromFactsCarriesTableInfo(t *testing.T) {
 func TestDescribeTabularItemOnlyRunsRowCountWhenStatisticsRequested(t *testing.T) {
 	rowCountCalls := 0
 	callbacks := TabularCatalogCallbacks{
-		ListNamespaces: func(context.Context, *gorm.DB, CatalogPath) ([]CatalogEntry, error) {
+		ListNamespaces: func(context.Context, *gorm.DB, EngineCatalogPath) ([]EngineCatalogEntry, error) {
 			return nil, nil
 		},
 		ListTables: func(context.Context, *gorm.DB, string) ([]datatype.TableInfo, error) {
-			return []datatype.TableInfo{{Name: "orders", Kind: CatalogKindTable}}, nil
+			return []datatype.TableInfo{{Name: "orders", Kind: EngineCatalogKindTable}}, nil
 		},
 		ListColumns: func(context.Context, *gorm.DB, string, string) ([]datatype.FieldInfo, error) {
 			return []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}}, nil
@@ -171,13 +171,13 @@ func TestDescribeTabularItemOnlyRunsRowCountWhenStatisticsRequested(t *testing.T
 		},
 	}
 	engine := &Engine{ID: 7001, EngineType: "tabular_catalog_test"}
-	path := CatalogPath{
-		Version:  CatalogPathVersion,
+	path := EngineCatalogPath{
+		Version:  EngineCatalogPathVersion,
 		EngineID: engine.ID,
-		Segments: []CatalogSegment{
-			{Term: CatalogTermServer, Kind: CatalogTermServer},
-			{Term: CatalogTermDatabase, Kind: CatalogKindNamespace, Name: "analytics"},
-			{Term: CatalogTermTable, Kind: CatalogKindTable, Name: "orders"},
+		Segments: []EngineCatalogSegment{
+			{Term: EngineCatalogTermServer, Kind: EngineCatalogTermServer},
+			{Term: EngineCatalogTermDatabase, Kind: EngineCatalogKindNamespace, Name: "analytics"},
+			{Term: EngineCatalogTermTable, Kind: EngineCatalogKindTable, Name: "orders"},
 		},
 	}
 
@@ -187,7 +187,7 @@ func TestDescribeTabularItemOnlyRunsRowCountWhenStatisticsRequested(t *testing.T
 		ClosePool(engine.ID)
 	})
 
-	item, err := DescribeTabularCatalogFacts(context.Background(), callbacks, engine, path, CatalogFactsOptions{})
+	item, err := DescribeTabularCatalogFacts(context.Background(), callbacks, engine, path, EngineCatalogFactsOptions{})
 	if err != nil {
 		t.Fatalf("DescribeTabularCatalogFacts() error = %v", err)
 	}
@@ -198,7 +198,7 @@ func TestDescribeTabularItemOnlyRunsRowCountWhenStatisticsRequested(t *testing.T
 		t.Fatalf("Table.RowCount = %#v, want nil without IncludeStatistics", item.Table.RowCount)
 	}
 
-	item, err = DescribeTabularCatalogFacts(context.Background(), callbacks, engine, path, CatalogFactsOptions{IncludeStatistics: true})
+	item, err = DescribeTabularCatalogFacts(context.Background(), callbacks, engine, path, EngineCatalogFactsOptions{IncludeStatistics: true})
 	if err != nil {
 		t.Fatalf("DescribeTabularCatalogFacts(IncludeStatistics) error = %v", err)
 	}
@@ -214,11 +214,11 @@ func TestDescribeTabularItemCarriesSpatialFactsWhenRequested(t *testing.T) {
 	srid := 4326
 	spatialCalls := 0
 	callbacks := TabularCatalogCallbacks{
-		ListNamespaces: func(context.Context, *gorm.DB, CatalogPath) ([]CatalogEntry, error) {
+		ListNamespaces: func(context.Context, *gorm.DB, EngineCatalogPath) ([]EngineCatalogEntry, error) {
 			return nil, nil
 		},
 		ListTables: func(context.Context, *gorm.DB, string) ([]datatype.TableInfo, error) {
-			return []datatype.TableInfo{{Name: "roads", Kind: CatalogKindTable}}, nil
+			return []datatype.TableInfo{{Name: "roads", Kind: EngineCatalogKindTable}}, nil
 		},
 		ListColumns: func(context.Context, *gorm.DB, string, string) ([]datatype.FieldInfo, error) {
 			return []datatype.FieldInfo{{Name: "geom", Type: datatype.FieldTypeGeometry}}, nil
@@ -235,13 +235,13 @@ func TestDescribeTabularItemCarriesSpatialFactsWhenRequested(t *testing.T) {
 		},
 	}
 	engine := &Engine{ID: 7002, EngineType: "tabular_catalog_test"}
-	path := CatalogPath{
-		Version:  CatalogPathVersion,
+	path := EngineCatalogPath{
+		Version:  EngineCatalogPathVersion,
 		EngineID: engine.ID,
-		Segments: []CatalogSegment{
-			{Term: CatalogTermServer, Kind: CatalogTermServer},
-			{Term: CatalogTermDatabase, Kind: CatalogKindNamespace, Name: "analytics"},
-			{Term: CatalogTermTable, Kind: CatalogKindTable, Name: "roads"},
+		Segments: []EngineCatalogSegment{
+			{Term: EngineCatalogTermServer, Kind: EngineCatalogTermServer},
+			{Term: EngineCatalogTermDatabase, Kind: EngineCatalogKindNamespace, Name: "analytics"},
+			{Term: EngineCatalogTermTable, Kind: EngineCatalogKindTable, Name: "roads"},
 		},
 	}
 
@@ -251,7 +251,7 @@ func TestDescribeTabularItemCarriesSpatialFactsWhenRequested(t *testing.T) {
 		ClosePool(engine.ID)
 	})
 
-	item, err := DescribeTabularCatalogFacts(context.Background(), callbacks, engine, path, CatalogFactsOptions{})
+	item, err := DescribeTabularCatalogFacts(context.Background(), callbacks, engine, path, EngineCatalogFactsOptions{})
 	if err != nil {
 		t.Fatalf("DescribeTabularCatalogFacts() error = %v", err)
 	}
@@ -262,7 +262,7 @@ func TestDescribeTabularItemCarriesSpatialFactsWhenRequested(t *testing.T) {
 		t.Fatalf("Spatial = %#v, want nil without IncludeSpatialFacts", item.Spatial)
 	}
 
-	item, err = DescribeTabularCatalogFacts(context.Background(), callbacks, engine, path, CatalogFactsOptions{IncludeSpatialFacts: true})
+	item, err = DescribeTabularCatalogFacts(context.Background(), callbacks, engine, path, EngineCatalogFactsOptions{IncludeSpatialFacts: true})
 	if err != nil {
 		t.Fatalf("DescribeTabularCatalogFacts(IncludeSpatialFacts) error = %v", err)
 	}
@@ -282,11 +282,11 @@ func TestDescribeTabularItemOnlyReadsRequestedRelationalFacts(t *testing.T) {
 	constraintCalls := 0
 	partitioningCalls := 0
 	callbacks := TabularCatalogCallbacks{
-		ListNamespaces: func(context.Context, *gorm.DB, CatalogPath) ([]CatalogEntry, error) {
+		ListNamespaces: func(context.Context, *gorm.DB, EngineCatalogPath) ([]EngineCatalogEntry, error) {
 			return nil, nil
 		},
 		ListTables: func(context.Context, *gorm.DB, string) ([]datatype.TableInfo, error) {
-			return []datatype.TableInfo{{Name: "orders", Kind: CatalogKindTable}}, nil
+			return []datatype.TableInfo{{Name: "orders", Kind: EngineCatalogKindTable}}, nil
 		},
 		ListColumns: func(context.Context, *gorm.DB, string, string) ([]datatype.FieldInfo, error) {
 			return []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}}, nil
@@ -305,13 +305,13 @@ func TestDescribeTabularItemOnlyReadsRequestedRelationalFacts(t *testing.T) {
 		},
 	}
 	engine := &Engine{ID: 7003, EngineType: "tabular_catalog_test"}
-	path := CatalogPath{
-		Version:  CatalogPathVersion,
+	path := EngineCatalogPath{
+		Version:  EngineCatalogPathVersion,
 		EngineID: engine.ID,
-		Segments: []CatalogSegment{
-			{Term: CatalogTermServer, Kind: CatalogTermServer},
-			{Term: CatalogTermDatabase, Kind: CatalogKindNamespace, Name: "analytics"},
-			{Term: CatalogTermTable, Kind: CatalogKindTable, Name: "orders"},
+		Segments: []EngineCatalogSegment{
+			{Term: EngineCatalogTermServer, Kind: EngineCatalogTermServer},
+			{Term: EngineCatalogTermDatabase, Kind: EngineCatalogKindNamespace, Name: "analytics"},
+			{Term: EngineCatalogTermTable, Kind: EngineCatalogKindTable, Name: "orders"},
 		},
 	}
 
@@ -321,7 +321,7 @@ func TestDescribeTabularItemOnlyReadsRequestedRelationalFacts(t *testing.T) {
 		ClosePool(engine.ID)
 	})
 
-	facts, err := DescribeTabularCatalogFacts(context.Background(), callbacks, engine, path, CatalogFactsOptions{})
+	facts, err := DescribeTabularCatalogFacts(context.Background(), callbacks, engine, path, EngineCatalogFactsOptions{})
 	if err != nil {
 		t.Fatalf("DescribeTabularCatalogFacts() error = %v", err)
 	}
@@ -329,7 +329,7 @@ func TestDescribeTabularItemOnlyReadsRequestedRelationalFacts(t *testing.T) {
 		t.Fatalf("unrequested facts were read: calls=%d/%d/%d facts=%#v", indexCalls, constraintCalls, partitioningCalls, facts)
 	}
 
-	facts, err = DescribeTabularCatalogFacts(context.Background(), callbacks, engine, path, CatalogFactsOptions{
+	facts, err = DescribeTabularCatalogFacts(context.Background(), callbacks, engine, path, EngineCatalogFactsOptions{
 		IncludeIndexes:      true,
 		IncludeConstraints:  true,
 		IncludePartitioning: true,

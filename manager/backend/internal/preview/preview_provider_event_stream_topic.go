@@ -40,20 +40,20 @@ func (p *EventStreamTopicPreviewProvider) Preview(ctx context.Context, req *Prev
 	if err != nil {
 		return nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
 	}
-	factsProvider, ok := enginePlugin.(plugin.CatalogFactsProvider)
+	factsProvider, ok := enginePlugin.(plugin.EngineCatalogFactsProvider)
 	if !ok {
-		return nil, fmt.Errorf("engine %s does not implement CatalogFactsProvider", req.Engine.EngineType)
+		return nil, fmt.Errorf("engine %s does not implement EngineCatalogFactsProvider", req.Engine.EngineType)
 	}
 	readerProvider, ok := enginePlugin.(plugin.ChangeStreamReaderProvider)
 	if !ok {
 		return nil, fmt.Errorf("engine %s does not implement ChangeStreamReaderProvider", req.Engine.EngineType)
 	}
 
-	facts, err := factsProvider.DescribeCatalogFacts(
+	facts, err := factsProvider.DescribeEngineCatalogFacts(
 		ctx,
 		plugin.ConnectionInfo(req.Engine.ConnectionInfo),
 		req.ProviderPath,
-		plugin.CatalogFactsOptions{IncludeStatistics: true},
+		plugin.EngineCatalogFactsOptions{IncludeStatistics: true},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe event stream topic: %w", err)
@@ -173,7 +173,7 @@ func eventStreamPreviewBytes(value []byte) interface{} {
 	}
 }
 
-func eventStreamTopicName(path plugin.CatalogPath) string {
+func eventStreamTopicName(path plugin.EngineCatalogPath) string {
 	if len(path.Segments) == 0 {
 		return ""
 	}

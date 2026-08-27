@@ -82,7 +82,7 @@ func TestDatabaseGeometryColumnsUsesCommonSpatialFactsForMySQL(t *testing.T) {
 func TestDatabasePreviewMySQLUsesCatalogReadWithGeoJSONHint(t *testing.T) {
 	reader := &recordingDatabasePreviewPlugin{engineType: "mysql"}
 	provider := &DatabaseTablePreviewProvider{}
-	_, err := provider.queryData(context.Background(), reader, nil, plugin.ConnectionInfo{}, plugin.CatalogPath{}, "mysql", "business", "store_locations", 20, 10, nil, dataprofile.DataScope{})
+	_, err := provider.queryData(context.Background(), reader, nil, plugin.ConnectionInfo{}, plugin.EngineCatalogPath{}, "mysql", "business", "store_locations", 20, 10, nil, dataprofile.DataScope{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestDatabasePreviewOracleUsesTableReadSessionForSpatialRows(t *testing.T) {
 	provider := &DatabaseTablePreviewProvider{}
 	rows, err := provider.queryData(
 		context.Background(), reader, reader, plugin.ConnectionInfo{},
-		plugin.TabularItemPath(22, plugin.CatalogTermSchema, "BUSINESS", "CUSTOMER_LOCATIONS"),
+		plugin.TabularItemPath(22, plugin.EngineCatalogTermSchema, "BUSINESS", "CUSTOMER_LOCATIONS"),
 		"oracle", "BUSINESS", "CUSTOMER_LOCATIONS", 0, 20,
 		[]datatype.FieldInfo{
 			{Name: "ID", Type: datatype.FieldTypeBigInt},
@@ -133,7 +133,7 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 	srid := 2360
 	enginePlugin := &recordingDatabasePreviewPlugin{
 		engineType: "postgresql",
-		catalogFacts: &plugin.CatalogFacts{
+		catalogFacts: &plugin.EngineCatalogFacts{
 			Table: &datatype.TableInfo{
 				RowCount: &rowCount,
 				Fields: []datatype.FieldInfo{
@@ -197,13 +197,13 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 		Table:        "public.dltb",
 		Page:         3,
 		PageSize:     2,
-		ProviderPath: plugin.CatalogPath{
-			Version:  plugin.CatalogPathVersion,
+		ProviderPath: plugin.EngineCatalogPath{
+			Version:  plugin.EngineCatalogPathVersion,
 			EngineID: 7,
-			Segments: []plugin.CatalogSegment{
-				{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer},
-				{Term: plugin.CatalogTermSchema, Kind: plugin.CatalogKindNamespace, Name: "public"},
-				{Term: plugin.CatalogTermTable, Kind: plugin.CatalogKindTable, Name: "dltb"},
+			Segments: []plugin.EngineCatalogSegment{
+				{Term: plugin.EngineCatalogTermServer, Kind: plugin.EngineCatalogTermServer},
+				{Term: plugin.EngineCatalogTermSchema, Kind: plugin.EngineCatalogKindNamespace, Name: "public"},
+				{Term: plugin.EngineCatalogTermTable, Kind: plugin.EngineCatalogKindTable, Name: "dltb"},
 			},
 		},
 		Attributes: map[string]interface{}{
@@ -224,11 +224,11 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 	if len(enginePlugin.readBatchCalls) != 1 {
 		t.Fatalf("ReadBatch call count = %d, want 1", len(enginePlugin.readBatchCalls))
 	}
-	if len(enginePlugin.readBatchPaths) != 1 || !plugin.IsCatalogRootSegment(enginePlugin.readBatchPaths[0].Segments[0]) {
+	if len(enginePlugin.readBatchPaths) != 1 || !plugin.IsEngineCatalogRootSegment(enginePlugin.readBatchPaths[0].Segments[0]) {
 		t.Fatalf("ReadBatch path = %#v, want explicit root segment", enginePlugin.readBatchPaths)
 	}
-	if len(enginePlugin.describePaths) != 1 || !plugin.IsCatalogRootSegment(enginePlugin.describePaths[0].Segments[0]) {
-		t.Fatalf("DescribeCatalogFacts path = %#v, want explicit root segment", enginePlugin.describePaths)
+	if len(enginePlugin.describePaths) != 1 || !plugin.IsEngineCatalogRootSegment(enginePlugin.describePaths[0].Segments[0]) {
+		t.Fatalf("DescribeEngineCatalogFacts path = %#v, want explicit root segment", enginePlugin.describePaths)
 	}
 	if got := enginePlugin.readBatchCalls[0].Query; !strings.Contains(got, `WITH "__addp_page_keys"`) {
 		t.Fatalf("ReadBatch query does not use page-key CTE:\n%s", got)
@@ -261,7 +261,7 @@ func TestDatabaseTablePreviewProviderBindsProfileConditionsBeforePaging(t *testi
 	provider := &DatabaseTablePreviewProvider{}
 	_, err := provider.queryData(
 		context.Background(), reader, nil, plugin.ConnectionInfo{},
-		plugin.TabularItemPath(7, plugin.CatalogTermSchema, "public", "orders"),
+		plugin.TabularItemPath(7, plugin.EngineCatalogTermSchema, "public", "orders"),
 		"postgresql", "public", "orders", 0, 500,
 		[]datatype.FieldInfo{{Name: "status", Type: datatype.FieldTypeString}},
 		dataprofile.DataScope{
@@ -286,7 +286,7 @@ func TestDatabaseTablePreviewProviderPreviewFallsBackToCatalogFactsRowCount(t *t
 	rowCount := int64(999)
 	enginePlugin := &recordingDatabasePreviewPlugin{
 		engineType: "postgresql",
-		catalogFacts: &plugin.CatalogFacts{
+		catalogFacts: &plugin.EngineCatalogFacts{
 			Table: &datatype.TableInfo{
 				RowCount: &rowCount,
 				Fields: []datatype.FieldInfo{
@@ -321,13 +321,13 @@ func TestDatabaseTablePreviewProviderPreviewFallsBackToCatalogFactsRowCount(t *t
 		Table:        "public.people",
 		Page:         1,
 		PageSize:     10,
-		ProviderPath: plugin.CatalogPath{
-			Version:  plugin.CatalogPathVersion,
+		ProviderPath: plugin.EngineCatalogPath{
+			Version:  plugin.EngineCatalogPathVersion,
 			EngineID: 8,
-			Segments: []plugin.CatalogSegment{
-				{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer},
-				{Term: plugin.CatalogTermSchema, Kind: plugin.CatalogKindNamespace, Name: "public"},
-				{Term: plugin.CatalogTermTable, Kind: plugin.CatalogKindTable, Name: "people"},
+			Segments: []plugin.EngineCatalogSegment{
+				{Term: plugin.EngineCatalogTermServer, Kind: plugin.EngineCatalogTermServer},
+				{Term: plugin.EngineCatalogTermSchema, Kind: plugin.EngineCatalogKindNamespace, Name: "public"},
+				{Term: plugin.EngineCatalogTermTable, Kind: plugin.EngineCatalogKindTable, Name: "people"},
 			},
 		},
 	}
@@ -353,7 +353,7 @@ func TestDatabaseTablePreviewProviderAllowsQuickViewPageSize(t *testing.T) {
 	rowCount := int64(127)
 	enginePlugin := &recordingDatabasePreviewPlugin{
 		engineType: "postgresql",
-		catalogFacts: &plugin.CatalogFacts{
+		catalogFacts: &plugin.EngineCatalogFacts{
 			Table: &datatype.TableInfo{
 				RowCount: &rowCount,
 				Fields: []datatype.FieldInfo{
@@ -383,13 +383,13 @@ func TestDatabaseTablePreviewProviderAllowsQuickViewPageSize(t *testing.T) {
 		Table:        "public.farmland",
 		Page:         1,
 		PageSize:     127,
-		ProviderPath: plugin.CatalogPath{
-			Version:  plugin.CatalogPathVersion,
+		ProviderPath: plugin.EngineCatalogPath{
+			Version:  plugin.EngineCatalogPathVersion,
 			EngineID: 8,
-			Segments: []plugin.CatalogSegment{
-				{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer},
-				{Term: plugin.CatalogTermSchema, Kind: plugin.CatalogKindNamespace, Name: "public"},
-				{Term: plugin.CatalogTermTable, Kind: plugin.CatalogKindTable, Name: "farmland"},
+			Segments: []plugin.EngineCatalogSegment{
+				{Term: plugin.EngineCatalogTermServer, Kind: plugin.EngineCatalogTermServer},
+				{Term: plugin.EngineCatalogTermSchema, Kind: plugin.EngineCatalogKindNamespace, Name: "public"},
+				{Term: plugin.EngineCatalogTermTable, Kind: plugin.EngineCatalogKindTable, Name: "farmland"},
 			},
 		},
 	}
@@ -411,11 +411,11 @@ func TestDatabaseTablePreviewProviderAllowsQuickViewPageSize(t *testing.T) {
 
 type recordingDatabasePreviewPlugin struct {
 	engineType       string
-	catalogFacts     *plugin.CatalogFacts
+	catalogFacts     *plugin.EngineCatalogFacts
 	batchData        *plugin.BatchData
 	sessionData      *plugin.BatchData
-	describePaths    []plugin.CatalogPath
-	readBatchPaths   []plugin.CatalogPath
+	describePaths    []plugin.EngineCatalogPath
+	readBatchPaths   []plugin.EngineCatalogPath
 	readBatchCalls   []plugin.BatchReadOptions
 	openSessionCalls []plugin.TableReadSessionOptions
 }
@@ -442,17 +442,17 @@ func (p *recordingDatabasePreviewPlugin) Capabilities() plugin.EngineCapabilitie
 		EngineFamily:  "tabular",
 	}
 }
-func (p *recordingDatabasePreviewPlugin) CatalogModel() plugin.CatalogModelSpec {
+func (p *recordingDatabasePreviewPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.TabularCatalogModel("schema")
 }
-func (p *recordingDatabasePreviewPlugin) DescribeCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *recordingDatabasePreviewPlugin) DescribeEngineCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	p.describePaths = append(p.describePaths, path)
 	if p.catalogFacts == nil {
 		return nil, nil
 	}
 	return p.catalogFacts, nil
 }
-func (p *recordingDatabasePreviewPlugin) ReadBatch(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
+func (p *recordingDatabasePreviewPlugin) ReadBatch(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
 	p.readBatchPaths = append(p.readBatchPaths, path)
 	p.readBatchCalls = append(p.readBatchCalls, opts)
 	if p.batchData == nil {
@@ -461,7 +461,7 @@ func (p *recordingDatabasePreviewPlugin) ReadBatch(_ context.Context, _ plugin.C
 	return p.batchData, nil
 }
 
-func (p *recordingDatabasePreviewPlugin) OpenTableReadSession(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
+func (p *recordingDatabasePreviewPlugin) OpenTableReadSession(_ context.Context, _ plugin.ConnectionInfo, _ plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
 	p.openSessionCalls = append(p.openSessionCalls, opts)
 	return &recordingTableReadSession{data: p.sessionData}, nil
 }
@@ -482,7 +482,7 @@ func (s *recordingTableReadSession) ReadBatch(context.Context, int) (*plugin.Bat
 func (*recordingTableReadSession) Close(context.Context) error { return nil }
 
 var _ plugin.EnginePlugin = (*recordingDatabasePreviewPlugin)(nil)
-var _ plugin.CatalogModelProvider = (*recordingDatabasePreviewPlugin)(nil)
-var _ plugin.CatalogFactsProvider = (*recordingDatabasePreviewPlugin)(nil)
+var _ plugin.EngineCatalogModelProvider = (*recordingDatabasePreviewPlugin)(nil)
+var _ plugin.EngineCatalogFactsProvider = (*recordingDatabasePreviewPlugin)(nil)
 var _ plugin.BatchReadableProvider = (*recordingDatabasePreviewPlugin)(nil)
 var _ plugin.TableReadSessionProvider = (*recordingDatabasePreviewPlugin)(nil)

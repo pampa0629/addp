@@ -1853,7 +1853,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按标准 TaskProvider 协议启动 Transfer 任务；task_type 仅支持 sync，parameters 当前不支持覆盖。| Start a Transfer task through the standard TaskProvider protocol; task_type only supports sync and parameters overrides are not supported.",
+                "description": "按标准 TaskProvider 协议启动 Transfer 任务；runtime target 任务要求由 Orchestrator 绑定 target_locator。| Start a Transfer task through the standard TaskProvider protocol; runtime-target tasks require Orchestrator to bind target_locator.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2763,6 +2763,23 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_transfer_internal_models.TransferQuerySourceDoc": {
+            "type": "object",
+            "properties": {
+                "language": {
+                    "type": "string",
+                    "example": "mql"
+                },
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "statement": {
+                    "type": "string",
+                    "example": "{\"aggregate\":\"orders\",\"pipeline\":[{\"$project\":{\"customer_id\":\"$customer.id\",\"_id\":0}}]}"
+                }
+            }
+        },
         "github_com_addp_transfer_internal_models.TransferRecordFailureDoc": {
             "type": "object",
             "properties": {
@@ -2817,6 +2834,9 @@ const docTemplate = `{
                 "policy": {
                     "type": "object",
                     "additionalProperties": true
+                },
+                "query": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferQuerySourceDoc"
                 },
                 "representation": {
                     "type": "string",

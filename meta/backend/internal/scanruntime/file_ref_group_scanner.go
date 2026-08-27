@@ -27,11 +27,11 @@ func scanFileRefGroups(
 	if !ok {
 		return scanflow.DispatchResult{}, fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)
 	}
-	catalogProvider, ok := enginePlugin.(plugin.CatalogProvider)
+	catalogProvider, ok := enginePlugin.(plugin.EngineCatalogProvider)
 	if !ok {
-		return scanflow.DispatchResult{}, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
+		return scanflow.DispatchResult{}, fmt.Errorf("engine %s does not implement EngineCatalogProvider", resource.EngineType)
 	}
-	itemTerm := scanflow.CatalogLeafTermForPlugin(enginePlugin, plugin.CatalogTermFile)
+	itemTerm := scanflow.EngineCatalogLeafTermForPlugin(enginePlugin, plugin.EngineCatalogTermFile)
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 
 	result := scanflow.DispatchResult{}

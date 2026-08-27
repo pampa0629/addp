@@ -28,7 +28,7 @@ const (
 
 type ContinuousSourcePlan struct {
 	ConnInfo        engineplugin.ConnectionInfo
-	Path            engineplugin.CatalogPath
+	Path            engineplugin.EngineCatalogPath
 	SourceIdentity  string
 	ConsumerGroup   string
 	InitialPosition string
@@ -49,7 +49,7 @@ type DatabaseCDCStreamBinding struct {
 	Provider       string
 	ConnectorName  string
 	ConnInfo       engineplugin.ConnectionInfo
-	Path           engineplugin.CatalogPath
+	Path           engineplugin.EngineCatalogPath
 	ConsumerGroup  string
 	SourceIdentity string
 	Database       string
@@ -62,7 +62,7 @@ type DatabaseCDCStreamBinding struct {
 type ContinuousTargetPlan struct {
 	EngineID    uint
 	ConnInfo    engineplugin.ConnectionInfo
-	Path        engineplugin.CatalogPath
+	Path        engineplugin.EngineCatalogPath
 	Fields      []datatype.FieldInfo
 	SpatialInfo *datatype.SpatialInfo
 	Keys        []string
@@ -122,15 +122,15 @@ func BuildContinuousPlan(spec ContinuousTaskSpec, resolver EngineResolver) (*Con
 	if err != nil {
 		return nil, err
 	}
-	catalogProvider, ok := sourcePlugin.(engineplugin.CatalogModelProvider)
+	catalogProvider, ok := sourcePlugin.(engineplugin.EngineCatalogModelProvider)
 	if !ok {
-		return nil, fmt.Errorf("source Kafka engine does not implement CatalogModelProvider")
+		return nil, fmt.Errorf("source Kafka engine does not implement EngineCatalogModelProvider")
 	}
 	sourceLocator, err := resourcetree.ParseURI(strings.TrimSpace(spec.Source.Locator))
 	if err != nil {
 		return nil, err
 	}
-	sourcePath, err := resourcetree.ProviderCatalogPathFromLocator(catalogProvider.CatalogModel(), sourceLocator)
+	sourcePath, err := resourcetree.EngineCatalogPathFromLocator(catalogProvider.EngineCatalogModel(), sourceLocator)
 	if err != nil {
 		return nil, fmt.Errorf("build continuous source path: %w", err)
 	}

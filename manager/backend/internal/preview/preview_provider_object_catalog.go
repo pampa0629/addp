@@ -17,10 +17,10 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
 	"github.com/addp/manager/internal/repository"
+	"github.com/addp/manager/internal/resourceutil"
 	"gorm.io/gorm"
 )
 
@@ -161,11 +161,11 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 	if err != nil {
 		return nil, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
-	catalogProvider, _ := pl.(plugin.CatalogProvider)
-	factsProvider, _ := pl.(plugin.CatalogFactsProvider)
+	catalogProvider, _ := pl.(plugin.EngineCatalogProvider)
+	factsProvider, _ := pl.(plugin.EngineCatalogFactsProvider)
 	contentReader, _ := pl.(plugin.ContentReadableProvider)
 	if catalogProvider == nil {
-		return nil, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
+		return nil, fmt.Errorf("engine %s does not implement EngineCatalogProvider", resource.EngineType)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -320,7 +320,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 	preview.Object.StorageRef = fmt.Sprintf("%s/%s", bucket, objectPath)
 	preview.Object.Download = previewDownloadPlan(resource.ID, "object", preview.Object.StorageRef, objectPath, "")
 
-	stat, err := catalogutil.ObjectStorageFacts(ctx, factsProvider, connInfo, resource.ID, bucket, objectPath)
+	stat, err := resourceutil.ObjectStorageFacts(ctx, factsProvider, connInfo, resource.ID, bucket, objectPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat object %s: %w", objectPath, err)
 	}
@@ -330,9 +330,9 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 			preview.Object.SizeBytes = *item.ObjectSizeBytes
 		} else if item.SizeBytes != nil {
 			preview.Object.SizeBytes = *item.SizeBytes
-		} else if sizeBytes := catalogutil.Int64Attribute(item.Attributes, "size_bytes"); sizeBytes > 0 {
+		} else if sizeBytes := resourceutil.Int64Attribute(item.Attributes, "size_bytes"); sizeBytes > 0 {
 			preview.Object.SizeBytes = sizeBytes
-		} else if totalSize := catalogutil.Int64Attribute(item.Attributes, "total_size"); totalSize > 0 {
+		} else if totalSize := resourceutil.Int64Attribute(item.Attributes, "total_size"); totalSize > 0 {
 			preview.Object.SizeBytes = totalSize
 		} else {
 			preview.Object.SizeBytes = stat.Size
@@ -340,7 +340,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 		if rowCount := item.RowCount; rowCount != nil {
 			preview.Object.ObjectCount = *rowCount
 		}
-		if v := catalogutil.StringAttribute(item.Attributes, "content_type"); v != "" {
+		if v := resourceutil.StringAttribute(item.Attributes, "content_type"); v != "" {
 			preview.Object.ContentType = v
 		}
 	} else {
@@ -374,7 +374,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 			Bucket:      bucket,
 			Path:        dir,  // 目录路径（以 / 结尾）
 			Name:        name, // 文件名
-			Format:      normalizeObjectContentRequestFormat(catalogutil.StringAttribute(combinedAttributes, "format")),
+			Format:      normalizeObjectContentRequestFormat(resourceutil.StringAttribute(combinedAttributes, "format")),
 			Extension:   defaultExtension(objectPath),
 			ContentType: canonicalContentType,
 			Size:        stat.Size,
@@ -404,7 +404,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 			}
 			if streamHandler, ok := handler.(objectcontent.StreamableContentHandler); ok {
 				streamer := func() (io.ReadCloser, error) {
-					return catalogutil.OpenObjectContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
+					return resourceutil.OpenObjectContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
 				}
 
 				content, truncated, err := streamHandler.HandleStream(ctx, contentReq, streamer)
@@ -425,7 +425,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 					if limitBytes <= 0 {
 						limitBytes = maxTextPreviewBytes
 					}
-					reader, err := catalogutil.OpenObjectContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
+					reader, err := resourceutil.OpenObjectContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
 					if err != nil {
 						return nil, false, fmt.Errorf("failed to get object: %w", err)
 					}
@@ -482,7 +482,7 @@ func (p *objectCatalogPreviewProvider) connectionInfo(engine *models.Engine) (pl
 	return plugin.ConnectionInfo(engine.ConnectionInfo), nil
 }
 
-func listObjectPreviewChildren(ctx context.Context, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, prefix string) ([]models.ObjectPreviewChild, error) {
+func listObjectPreviewChildren(ctx context.Context, catalogProvider plugin.EngineCatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, prefix string) ([]models.ObjectPreviewChild, error) {
 	nodes, err := catalogProvider.ListChildren(ctx, connInfo, plugin.ObjectDirectoryPath(engineID, bucket, prefix), plugin.ListOptions{})
 	if err != nil {
 		return nil, err
@@ -494,11 +494,11 @@ func listObjectPreviewChildren(ctx context.Context, catalogProvider plugin.Catal
 		}
 		childType := "object"
 		contentType := catalogEntryContentType(node)
-		if node.Role == plugin.CatalogRoleBranch {
+		if node.Role == plugin.EngineCatalogRoleBranch {
 			childType = "prefix"
 			contentType = "application/x-directory"
 		}
-		childPath := strings.TrimPrefix(catalogutil.NodePhysicalPath(node), strings.Trim(bucket, "/")+"/")
+		childPath := strings.TrimPrefix(resourceutil.NodePhysicalPath(node), strings.Trim(bucket, "/")+"/")
 		if childPath == "" {
 			childPath = joinObjectPath(prefix, node.Name)
 		}
@@ -521,14 +521,14 @@ func listObjectPreviewChildren(ctx context.Context, catalogProvider plugin.Catal
 	return children, nil
 }
 
-func catalogEntryContentType(node plugin.CatalogEntry) string {
+func catalogEntryContentType(node plugin.EngineCatalogEntry) string {
 	if node.Storage == nil {
 		return ""
 	}
 	return node.Storage.ContentType
 }
 
-func catalogEntrySizeBytes(node plugin.CatalogEntry) int64 {
+func catalogEntrySizeBytes(node plugin.EngineCatalogEntry) int64 {
 	if node.Storage == nil || node.Storage.SizeBytes == nil {
 		return 0
 	}

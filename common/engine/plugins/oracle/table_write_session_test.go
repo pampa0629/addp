@@ -83,7 +83,7 @@ func TestOracleSpatialBoundsDerivesToleranceAndExpandsPoint(t *testing.T) {
 }
 
 func TestOracleTableWriteSessionRejectsResumeMarker(t *testing.T) {
-	_, err := (&OraclePlugin{}).OpenTableWriteSession(nil, nil, plugin.CatalogPath{}, plugin.TableWriteSessionOptions{
+	_, err := (&OraclePlugin{}).OpenTableWriteSession(nil, nil, plugin.EngineCatalogPath{}, plugin.TableWriteSessionOptions{
 		ResumeMarker: &resume.Marker{Version: resume.MarkerVersionV1},
 	})
 	if err == nil || !strings.Contains(err.Error(), "resume") {

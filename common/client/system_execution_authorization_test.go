@@ -16,6 +16,7 @@ func TestSystemExecutionAuthorizationClientsUseRequestScopedUserAndServiceBearer
 	executionID := "9a21ab1a-2900-42a5-ae91-821339b3fcdd"
 	childExecutionID := "2aaeb79d-2bbd-47a2-a8d4-a607ce6d51a5"
 	parentExecutionID := "74d980cf-3ced-41ef-81fc-271f89249110"
+	leaseToken := "efb9e051-a079-4f6b-9f4e-4d9c83c34b98"
 	definitionVersion := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	expiresAt := time.Now().UTC().Add(10 * time.Minute)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -33,7 +34,7 @@ func TestSystemExecutionAuthorizationClientsUseRequestScopedUserAndServiceBearer
 			}
 			_ = json.NewEncoder(w).Encode(IssuedExecutionAuthorization{
 				ID: "91", ExecutionID: executionID, Audience: "develop",
-				EngineIDs: []string{"12"}, Effects: []string{"read"}, ExpiresAt: expiresAt,
+				Accesses: []ExecutionEngineAccessScope{{EngineID: "12", Effects: []string{"read"}}}, ExpiresAt: expiresAt,
 				ActorPrincipalID: "7", TenantID: "5", TenantMembershipID: "8",
 				IssuedAuthorizationVersion: "3",
 			})
@@ -65,12 +66,13 @@ func TestSystemExecutionAuthorizationClientsUseRequestScopedUserAndServiceBearer
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				t.Fatal(err)
 			}
-			if request.ParentExecutionID != parentExecutionID || request.ExecutionID != childExecutionID {
+			if request.ParentExecutionID != parentExecutionID || request.ExecutionID != childExecutionID ||
+				request.Attempt != 2 || request.LeaseToken != leaseToken {
 				t.Fatalf("issue from execution request = %#v", request)
 			}
 			_ = json.NewEncoder(w).Encode(IssuedExecutionAuthorization{
 				ID: "92", ExecutionID: childExecutionID, Audience: "develop",
-				EngineIDs: []string{"12"}, Effects: []string{"read"}, ExpiresAt: expiresAt,
+				Accesses: []ExecutionEngineAccessScope{{EngineID: "12", Effects: []string{"read"}}}, ExpiresAt: expiresAt,
 				ActorPrincipalID: "7", TenantID: "5", TenantMembershipID: "8",
 				IssuedAuthorizationVersion: "3",
 			})
@@ -81,7 +83,7 @@ func TestSystemExecutionAuthorizationClientsUseRequestScopedUserAndServiceBearer
 			}
 			_ = json.NewEncoder(w).Encode(IssuedExecutionAuthorization{
 				ID: "93", ExecutionID: request.ExecutionID, Audience: "duckdb",
-				EngineIDs: request.EngineIDs, Effects: []string{"read"}, ExpiresAt: expiresAt,
+				Accesses: request.Accesses, ExpiresAt: expiresAt,
 				ActorPrincipalID: "7", TenantID: "5", TenantMembershipID: "8",
 				IssuedAuthorizationVersion: "3", SourceType: "service_definition",
 				SourceDefinitionID: &request.DefinitionID, SourceDefinitionVersion: &request.DefinitionVersion,
@@ -94,8 +96,8 @@ func TestSystemExecutionAuthorizationClientsUseRequestScopedUserAndServiceBearer
 
 	issuer := NewSystemExecutionAuthorizationClient(server.URL, server.Client())
 	issued, err := issuer.Issue(context.Background(), "addp_at_user", IssueExecutionAuthorizationRequest{
-		Audience: "develop", ExecutionID: executionID, EngineIDs: []string{"12"},
-		Effects: []string{"read"}, ExpiresIn: 600,
+		Audience: "develop", ExecutionID: executionID,
+		Accesses: []ExecutionEngineAccessScope{{EngineID: "12", Effects: []string{"read"}}}, ExpiresIn: 600,
 	})
 	if err != nil || issued.ID != "91" {
 		t.Fatalf("Issue() response=%#v error=%v", issued, err)
@@ -109,15 +111,24 @@ func TestSystemExecutionAuthorizationClientsUseRequestScopedUserAndServiceBearer
 	issuedFromExecution, err := serviceClient.IssueExecutionAuthorizationFromExecution(
 		context.Background(), IssueExecutionAuthorizationFromExecutionRequest{
 			ParentExecutionID: parentExecutionID, Audience: "develop", ExecutionID: childExecutionID,
-			EngineIDs: []string{"12"}, Effects: []string{"read"}, ExpiresIn: 600,
+			Attempt: 2, LeaseToken: leaseToken,
+			Accesses: []ExecutionEngineAccessScope{{EngineID: "12", Effects: []string{"read"}}}, ExpiresIn: 600,
 		},
 	)
 	if err != nil || issuedFromExecution.ID != "92" {
 		t.Fatalf("IssueExecutionAuthorizationFromExecution() response=%#v error=%v", issuedFromExecution, err)
 	}
+	if _, err := serviceClient.IssueExecutionAuthorizationFromExecution(
+		context.Background(), IssueExecutionAuthorizationFromExecutionRequest{
+			ParentExecutionID: parentExecutionID, Audience: "develop", ExecutionID: childExecutionID,
+			Attempt: 2, Accesses: []ExecutionEngineAccessScope{{EngineID: "12", Effects: []string{"read"}}}, ExpiresIn: 600,
+		},
+	); err == nil {
+		t.Fatal("IssueExecutionAuthorizationFromExecution accepted an attempt without lease token")
+	}
 	issuedFromDefinition, err := serviceClient.IssueExecutionAuthorizationFromServiceDefinition(
 		context.Background(), IssueExecutionAuthorizationFromServiceDefinitionRequest{
-			ExecutionID: childExecutionID, EngineIDs: []string{"12"}, DefinitionID: "41",
+			ExecutionID: childExecutionID, Accesses: []ExecutionEngineAccessScope{{EngineID: "12", Effects: []string{"read"}}}, DefinitionID: "41",
 			DefinitionVersion: definitionVersion, ExpiresIn: 60,
 		},
 	)

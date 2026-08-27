@@ -64,6 +64,74 @@ func TestValidateNewTaskConfigStillAcceptsTableTransfer(t *testing.T) {
 	}
 }
 
+func TestRuntimeTargetTaskRequiresOrchestratorInputs(t *testing.T) {
+	db := newTransferTaskServiceTestDB(t)
+	taskService := NewTaskService(db, nil, nil)
+	task, err := taskService.CreateTask(context.Background(), &models.CreateTaskRequest{
+		Name: "managed-dim", TaskType: commonExecution.TaskTypeSync,
+		Config: validRuntimeTargetTransferTaskConfig(),
+	}, 7, 9)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if task.Enabled || task.Schedule != "" || task.AutoScanMetadata {
+		t.Fatalf("managed task owns scheduling or scanning: %#v", task)
+	}
+	if _, err := taskService.StartTask(context.Background(), task.ID, 7, 9); err == nil || !strings.Contains(err.Error(), "target_locator") {
+		t.Fatalf("StartTask() error = %v, want runtime input rejection", err)
+	}
+	parentExecutionID := uuid.NewString()
+	actorPrincipalID, actorMembershipID, authorizationVersion := int64(91), int64(92), int64(3)
+	if err := db.Create(&commonExecution.TaskExecution{
+		TenantID: 7, ExecutionID: parentExecutionID, Module: commonExecution.ModuleOrchestrator,
+		TaskType: commonExecution.TaskTypeOrchestration, Source: commonExecution.ModuleOrchestrator,
+		Status: commonExecution.ExecutionStatusRunning, ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
+		TriggerType:      commonExecution.TriggerTypeManual,
+		ActorPrincipalID: &actorPrincipalID, ActorTenantMembershipID: &actorMembershipID,
+		IssuedAuthorizationVersion: &authorizationVersion,
+	}).Error; err != nil {
+		t.Fatalf("create Orchestrator parent execution: %v", err)
+	}
+	execution, err := taskService.StartTaskWithExecutionParameters(
+		context.Background(), task.ID, 7, 9, commonExecution.TriggerTypeManual,
+		commonExecution.ModuleOrchestrator, &parentExecutionID,
+		map[string]interface{}{"target_locator": "addp://engine/9/path/public/staging?type=table"},
+	)
+	if err != nil {
+		t.Fatalf("StartTaskWithContext() error = %v", err)
+	}
+	if execution.Status != commonExecution.ExecutionStatusPending {
+		t.Fatalf("managed execution = %#v", execution)
+	}
+	var persistedExecution commonExecution.TaskExecution
+	if err := db.Where("execution_id = ?", execution.ExecutionID).First(&persistedExecution).Error; err != nil {
+		t.Fatalf("query managed execution parent: %v", err)
+	}
+	if persistedExecution.ParentExecutionID == nil || *persistedExecution.ParentExecutionID != parentExecutionID {
+		t.Fatalf("parent_execution_id = %v, want %s", persistedExecution.ParentExecutionID, parentExecutionID)
+	}
+}
+
+func TestRuntimeTargetTaskRejectsTaskOwnedScheduleAndScan(t *testing.T) {
+	for name, request := range map[string]*models.CreateTaskRequest{
+		"schedule": {
+			Name: "scheduled-managed", TaskType: commonExecution.TaskTypeSync,
+			Config: validRuntimeTargetTransferTaskConfig(), Schedule: "0 0 * * * *", Enabled: boolPtr(true),
+		},
+		"scan": {
+			Name: "scanning-managed", TaskType: commonExecution.TaskTypeSync,
+			Config: validRuntimeTargetTransferTaskConfig(), AutoScanMetadata: boolPtr(true),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			taskService := NewTaskService(newTransferTaskServiceTestDB(t), nil, nil)
+			if _, err := taskService.CreateTask(context.Background(), request, 7, 9); !errors.Is(err, ErrInvalidTaskConfig) {
+				t.Fatalf("CreateTask() error = %v, want invalid task config", err)
+			}
+		})
+	}
+}
+
 func TestValidateNewTaskConfigAcceptsPostgreSQLCDCAfterDataPlaneIsAvailable(t *testing.T) {
 	if err := validateNewTaskConfig(validPostgreSQLCDCTaskConfig(), 1000); err != nil {
 		t.Fatalf("PostgreSQL CDC task config rejected: %v", err)
@@ -556,6 +624,27 @@ func validTableTransferTaskConfig() map[string]interface{} {
 			"format":         string(format.FormatCSV),
 			"policy":         map[string]interface{}{"apply_mode": "replace"},
 		},
+	}
+}
+
+func validRuntimeTargetTransferTaskConfig() map[string]interface{} {
+	return map[string]interface{}{
+		"runtime": map[string]interface{}{"boundary": "bounded"},
+		"load":    map[string]interface{}{"mode": "snapshot"},
+		"source": map[string]interface{}{
+			"locator": "addp://engine/1/path/outdoor/entries?type=table", "data_type": "table", "representation": "native",
+			"query": map[string]interface{}{"language": "mql", "statement": `[{"$project":{"person_id":"$person.id"}}]`},
+		},
+		"target": map[string]interface{}{
+			"binding": "runtime", "data_type": "table", "representation": "native",
+			"policy": map[string]interface{}{"apply_mode": "append"},
+		},
+		"transforms": []interface{}{map[string]interface{}{
+			"type": "field_mapping", "version": "v1", "mode": "project",
+			"fields": []interface{}{map[string]interface{}{
+				"source": "person_id", "target": "person_id", "target_type": "string", "nullable": false,
+			}},
+		}},
 	}
 }
 

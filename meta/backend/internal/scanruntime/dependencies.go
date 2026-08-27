@@ -10,7 +10,7 @@ import (
 )
 
 type TableAssetIndexer interface {
-	IndexTableAsset(ctx context.Context, resource *commonModels.Engine, tenantID uint, schemaName string, tableInfo datatype.TableInfo, fields []datatype.FieldInfo, item *models.MetaItem)
+	IndexTableContent(ctx context.Context, resource *commonModels.Engine, tenantID uint, schemaName string, tableInfo datatype.TableInfo, fields []datatype.FieldInfo, item *models.MetaItem)
 	DeleteTablesFromIndex(tenantID, engineID uint, schemaName string)
 }
 

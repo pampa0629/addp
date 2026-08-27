@@ -17,10 +17,10 @@ func TestDirectLeafRuntimeScansRootLeavesAndDeletesMissingItems(t *testing.T) {
 	db := metatest.OpenMetadataDB(t)
 	repo := metaRepo.NewScanRepository(db)
 	enginePlugin := &directLeafRuntimeTestPlugin{
-		entries: []plugin.CatalogEntry{
+		entries: []plugin.EngineCatalogEntry{
 			directLeafRuntimeTestEntry(41, "orders", "topic"),
 			directLeafRuntimeTestEntry(41, "events", ""),
-			{Name: "ignored", Role: plugin.CatalogRoleBranch},
+			{Name: "ignored", Role: plugin.EngineCatalogRoleBranch},
 		},
 	}
 	runtime := NewDirectLeafRuntime(slog.New(slog.NewTextHandler(io.Discard, nil)), repo)
@@ -38,7 +38,7 @@ func TestDirectLeafRuntimeScansRootLeavesAndDeletesMissingItems(t *testing.T) {
 	if err := db.Where("tenant_id = ? AND engine_id = ? AND parent_node_id IS NULL", 1, resource.ID).First(&root).Error; err != nil {
 		t.Fatalf("query root node: %v", err)
 	}
-	if root.NodeType != plugin.CatalogTermService || root.FullName != "" {
+	if root.NodeType != plugin.EngineCatalogTermService || root.FullName != "" {
 		t.Fatalf("root type/full_name = %q/%q, want service/empty", root.NodeType, root.FullName)
 	}
 	if root.ScanStatus != "completed" || root.ItemCount != 2 || root.ScannedDepth != models.ScannedDepthBasic {
@@ -65,7 +65,7 @@ func TestDirectLeafRuntimeScansRootLeavesAndDeletesMissingItems(t *testing.T) {
 		t.Fatalf("events item_type = %q, want fallback kind topic", events.ItemType)
 	}
 
-	enginePlugin.entries = []plugin.CatalogEntry{directLeafRuntimeTestEntry(41, "orders", "topic")}
+	enginePlugin.entries = []plugin.EngineCatalogEntry{directLeafRuntimeTestEntry(41, "orders", "topic")}
 	items, err = runtime.ScanRoot(context.Background(), enginePlugin, resource, 1, models.ScannedDepthDeep, true)
 	if err != nil {
 		t.Fatalf("second ScanRoot() error = %v", err)
@@ -85,7 +85,7 @@ func TestDirectLeafRuntimeScansRootLeavesAndDeletesMissingItems(t *testing.T) {
 }
 
 type directLeafRuntimeTestPlugin struct {
-	entries []plugin.CatalogEntry
+	entries []plugin.EngineCatalogEntry
 }
 
 func (p *directLeafRuntimeTestPlugin) Type() string         { return "direct-leaf-runtime-test" }
@@ -107,36 +107,36 @@ func (p *directLeafRuntimeTestPlugin) TestConnection(context.Context, plugin.Con
 func (p *directLeafRuntimeTestPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{}
 }
-func (p *directLeafRuntimeTestPlugin) CatalogModel() plugin.CatalogModelSpec {
-	return plugin.CatalogModelSpec{
-		PathVersion: plugin.CatalogPathVersion,
-		RootTerm:    plugin.CatalogTermService,
-		Levels: []plugin.CatalogLevelSpec{
-			{Term: "topic", Kinds: []string{"topic"}, Role: plugin.CatalogRoleLeaf},
+func (p *directLeafRuntimeTestPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
+	return plugin.EngineCatalogModelSpec{
+		PathVersion: plugin.EngineCatalogPathVersion,
+		RootTerm:    plugin.EngineCatalogTermService,
+		Levels: []plugin.EngineCatalogLevelSpec{
+			{Term: "topic", Kinds: []string{"topic"}, Role: plugin.EngineCatalogRoleLeaf},
 		},
 	}
 }
-func (p *directLeafRuntimeTestPlugin) ListChildren(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ListOptions) ([]plugin.CatalogEntry, error) {
-	return append([]plugin.CatalogEntry(nil), p.entries...), nil
+func (p *directLeafRuntimeTestPlugin) ListChildren(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
+	return append([]plugin.EngineCatalogEntry(nil), p.entries...), nil
 }
-func (p *directLeafRuntimeTestPlugin) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p *directLeafRuntimeTestPlugin) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	return nil, nil
 }
 
-func directLeafRuntimeTestEntry(engineID uint, name, term string) plugin.CatalogEntry {
-	path := plugin.CatalogRootPath(plugin.CatalogModelSpec{
-		PathVersion: plugin.CatalogPathVersion,
-		RootTerm:    plugin.CatalogTermService,
+func directLeafRuntimeTestEntry(engineID uint, name, term string) plugin.EngineCatalogEntry {
+	path := plugin.EngineCatalogRootPath(plugin.EngineCatalogModelSpec{
+		PathVersion: plugin.EngineCatalogPathVersion,
+		RootTerm:    plugin.EngineCatalogTermService,
 	}, engineID)
-	path.Segments = append(path.Segments, plugin.CatalogSegment{Term: "topic", Kind: "topic", Name: name})
-	return plugin.CatalogEntry{
+	path.Segments = append(path.Segments, plugin.EngineCatalogSegment{Term: "topic", Kind: "topic", Name: name})
+	return plugin.EngineCatalogEntry{
 		Name: name,
 		Path: path,
 		Term: term,
 		Kind: "topic",
-		Role: plugin.CatalogRoleLeaf,
+		Role: plugin.EngineCatalogRoleLeaf,
 	}
 }
 
-var _ plugin.CatalogModelProvider = (*directLeafRuntimeTestPlugin)(nil)
-var _ plugin.CatalogProvider = (*directLeafRuntimeTestPlugin)(nil)
+var _ plugin.EngineCatalogModelProvider = (*directLeafRuntimeTestPlugin)(nil)
+var _ plugin.EngineCatalogProvider = (*directLeafRuntimeTestPlugin)(nil)

@@ -23,7 +23,7 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 	scanDepth string,
 	force bool,
 ) (int, int, error) {
-	parentPath := plugin.BranchCatalogPath(scanCatalog.model, resource.ID, scanCatalog.branchTerm, branchName)
+	parentPath := plugin.EngineCatalogBranchPath(scanCatalog.model, resource.ID, scanCatalog.branchTerm, branchName)
 	nodes, err := scanCatalog.catalogProvider.ListChildren(ctx, scanCatalog.connInfo, parentPath, plugin.ListOptions{})
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to list catalog leaves: %w", err)
@@ -49,7 +49,7 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 			continue
 		}
 		estimatedCount := catalogEntryEstimatedRowCount(node, itemType)
-		sizeBytes := catalogEntrySizeBytes(node)
+		sizeBytes := engineCatalogEntrySizeBytes(node)
 		itemName := node.Name
 
 		s.log.Info(fmt.Sprintf("处理第 %d/%d 个 catalog branch leaf", i+1, len(nodes)),
@@ -79,8 +79,8 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 		estimatedRowCount := estimatedCount
 
 		if itemType == "collection" && strings.EqualFold(scanDepth, "deep") && scanCatalog.samplingProvider != nil {
-			itemPath := plugin.BranchLeafCatalogPath(scanCatalog.model, resource.ID, scanCatalog.branchTerm, branchName, node.Term, node.Kind, itemName)
-			catalogFacts, err := scanCatalog.samplingProvider.SampleDynamicSchema(ctx, scanCatalog.connInfo, itemPath, plugin.CatalogFactsOptions{
+			itemPath := plugin.EngineCatalogBranchLeafPath(scanCatalog.model, resource.ID, scanCatalog.branchTerm, branchName, node.Term, node.Kind, itemName)
+			catalogFacts, err := scanCatalog.samplingProvider.SampleDynamicSchema(ctx, scanCatalog.connInfo, itemPath, plugin.EngineCatalogFactsOptions{
 				IncludeSamples:    true,
 				IncludeStatistics: true,
 				IncludeIndexes:    true,
@@ -90,7 +90,7 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 				s.log.Warn("动态 schema 采样失败", "branch", branchName, "collection", itemName, "error", err)
 			} else {
 				attrs = metaattr.BuildDynamicSchemaAttributes(dynamicSchemaAttributesInput(catalogFacts))
-				if tableInfo := plugin.CatalogFactsTableInfo(catalogFacts); tableInfo != nil {
+				if tableInfo := plugin.EngineCatalogFactsTableInfo(catalogFacts); tableInfo != nil {
 					totalFields += len(tableInfo.Fields)
 					rowCount = tableInfo.RowCount
 					if tableInfo.EstimatedRowCount != nil {
@@ -105,7 +105,7 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 				s.log.Warn("图 catalog leaf 缺少 facts provider", "branch", branchName, "leaf", itemName)
 				continue
 			}
-			catalogFacts, err := scanCatalog.factsProvider.DescribeCatalogFacts(ctx, scanCatalog.connInfo, node.Path, plugin.CatalogFactsOptions{
+			catalogFacts, err := scanCatalog.factsProvider.DescribeEngineCatalogFacts(ctx, scanCatalog.connInfo, node.Path, plugin.EngineCatalogFactsOptions{
 				IncludeStatistics: true,
 				IncludeSamples:    strings.EqualFold(scanDepth, "deep"),
 			})
@@ -113,7 +113,7 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 				s.log.Warn("图结构扫描失败", "branch", branchName, "leaf", itemName, "error", err)
 				continue
 			}
-			graphInfo = plugin.CatalogFactsGraphInfo(catalogFacts)
+			graphInfo = plugin.EngineCatalogFactsGraphInfo(catalogFacts)
 			if graphInfo == nil {
 				s.log.Warn("图结构扫描未返回 GraphInfo", "branch", branchName, "leaf", itemName)
 				continue

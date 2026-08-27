@@ -36,7 +36,7 @@
 9. Monitor 只聚合观察，不成为任务 owner。
 10. ad-hoc-only execution type 可以写入统一执行记录，但在没有持久任务定义前不得声明为 TaskProvider 能力或进入 Orchestrator 任务选择。
 11. 真实读写 owner 必须在 execution 结果中写入版本化 `lineage_facts`；Meta 负责消费并维护血缘关系，Orchestrator 不重复生成资源血缘。
-12. Quality `check`、Meta `scan` 和 Transfer bounded `sync` 的 execution worker 必须是 owner 模块附属的独立进程，并统一使用 PostgreSQL execution claim + lease；owner Backend 不执行这些 bounded execution。
+12. Quality `check|materialization_gate`、Meta `scan`、Transfer bounded `sync` 和 Orchestrator 来源的 Develop `query` 的 execution worker 必须是 owner 模块附属的独立进程，并统一使用 PostgreSQL execution claim + lease；owner Backend 不执行这些 bounded execution。
 13. owner scheduler 运行在 owner Backend，只负责按任务定义发现到期任务并创建 durable `pending` execution；Worker 不可用不得阻止 scheduler 创建 execution。dispatcher 只负责 outbox/delivery 投递，二者都不得替代 execution worker 成为业务执行事实源。
 14. bounded runtime queue 的唯一主路线是 `common.task_executions` PostgreSQL claim，不保留 Redis/Asynq、进程内 channel 或 Backend 内嵌执行 fallback。continuous runtime、dispatcher 和 maintenance loop 继续使用各自专用协议，不强行迁入 bounded claim。
 
@@ -179,12 +179,13 @@ POST /api/v1/meta/lineage/executions/{execution_id}/collect
 11. owner 任务定义上的最近执行摘要或运行状态若随 execution 状态推进，必须与对应 execution 的 claim、`pending → running` 和终态更新分别位于同一数据库事务；不得先推进公共 execution、再单独更新 owner 表，或反向操作。
 12. 对已有任务定义发起 execution 时，owner 必须在任务定义行锁保护下检查 active execution，并在同一事务创建唯一 pending execution。重跑还必须在该事务中完成运行材料、待处理结果和任务摘要的重置，不能先重置再进入第二次 claim。
 13. 取消操作只有在 owner 能定位并中断真实运行体、等待其停止并由运行体写入 `cancelled` 终态时才能成功；仅修改任务或 execution 状态属于伪取消，必须拒绝。
+14. 子 execution 的授权事实只允许三个完整状态：尚无身份血缘和执行授权、仅有完整 `actor_principal_id + actor_tenant_membership_id + issued_authorization_version` 身份血缘、已附加 `execution_authorization_id + authorization_expires_at` 的完整执行授权引用。`common.task_executions` 不复制 Engine Access Scope；精确范围只由 System 的不可变 Execution Authorization 保存和校验，禁止保留会丢失引擎与效果对应关系的 `authorization_effects` 摘要。任意残缺组合必须由数据库约束拒绝。owner 可在创建子 execution 的事务中先固化父执行身份血缘，提交后再由 System 沿 `parent_execution_id` 校验并签发 Execution Authorization。静态资源绑定应在 claim 前完成签发，失败的 pending execution 不得进入 worker；只有资源身份必须由当前 lease attempt 的受控 owner API 动态解析时，worker 才可在 claim 后、任何数据访问前签发，并提交当前 `attempt + lease_token`。System 必须直接校验子 execution 仍为 `running`、attempt/token 精确匹配且租约未过期，将二者固化为不可变授权边界，并在每次授权消费时复核仍为当前租约。owner 只能以同一 lease 条件附加授权；安全恢复为新 attempt 时必须清除子 execution 上一 attempt 的两个授权字段（保留身份血缘）并签发新授权，旧授权保留审计但不再可消费。失败时由当前 lease 收敛为终态。
 
 ### Bounded execution 领取、租约和恢复契约
 
-Quality `check`、Meta `scan` 和 Transfer `runtime.boundary=bounded` 必须遵守同一个公共所有权协议：
+Quality `check|materialization_gate`、Meta `scan`、Transfer `runtime.boundary=bounded` 和 Orchestrator 来源的 Develop `query` 必须遵守同一个公共所有权协议：
 
-1. Worker 使用 PostgreSQL `FOR UPDATE SKIP LOCKED` 从 `common.task_executions` 领取本模块、task type 和满足本模块授权前置条件的最早 `pending` execution。
+1. Worker 使用 PostgreSQL `FOR UPDATE SKIP LOCKED` 从 `common.task_executions` 领取本模块、task type、可选触发 `source` 和满足本模块授权前置条件的最早 `pending` execution。Develop Query Worker 固定领取 `module=develop + task_type=query + source=orchestrator`；`source=develop` 的查询工作台与 Develop 手动执行仍由 Backend 即时运行，二者不得竞争同一 execution。
 2. claim 必须原子完成 `pending → running`、首次写入 `started_at`、递增 `attempt`、生成新的随机 `lease_token` 并写入 `lease_owner + lease_expires_at`。`lease_owner` 只用于观测，不能替代 token。
 3. 未取得 claim 的运行体必须 fail-closed；不得执行外部读取、写入、扫描、结果 reconcile 或进度更新。
 4. heartbeat、进度和终态写入必须同时匹配 `execution_id + status=running + attempt + lease_token`。租约过期、被新 attempt 接管或 token 不匹配的旧运行体必须停止，且任何迟到写回都必须被拒绝。
@@ -196,6 +197,8 @@ Quality `check`、Meta `scan` 和 Transfer `runtime.boundary=bounded` 必须遵�
 10. Worker 优雅停机先停止 claim 新 execution，再取消或收敛当前运行体；不能通过清空 lease 冒充业务已经停止。
 
 公共 `common/execution` 只提供 claim、lease token、heartbeat、带所有权条件的更新和过期领取等通用原语。具体 execution 是否可恢复、owner task 摘要事务、外部副作用幂等和提交边界归 owner/Provider 实现；公共层不承诺跨系统 exactly-once。
+
+Orchestrator 来源的 Develop 查询必须把参数解析后的 `content`、`engine_id`、timeout 和执行输入冻结在 `execution_config`，Worker 不得在 claim 后重新读取可变任务定义。普通查询租约失效后直接失败；只有 Model write attempt 为每个新 attempt 提供独立 staging、旧 attempt fencing 和完成幂等时，Develop 才能清除上一 attempt 的授权引用并把同一 execution 恢复为 `pending`。Worker 必须先取得 Model attempt，再按当前 `attempt + lease_token` 签发精确的同引擎 `read + write` 授权；数据写入成功后先完成 Model attempt，再收敛 Develop execution。
 
 ad-hoc execution 的 `task_type` 仍必须是 owner 模块内稳定的业务执行类型，但稳定 execution type 不等于 TaskProvider task type。只有 owner 已提供可保存的任务定义、标准任务列表 / 详情 / 执行接口并允许 Orchestrator 引用时，才能把该类型加入 `task_capabilities[]`。
 
@@ -255,8 +258,8 @@ Common 不维护全量业务 `task_type` 编译期枚举。稳定 execution type
 | Transfer | `sync` | `transfer.transfer_tasks` |
 | Develop | `query` / `workflow` / `script` | `develop.dev_tasks` |
 | Manager | `vector_tile_cache_generation` / `vector_tile_set_generation` / `vector_materialized_view_generation` / `embedding` / `raster_cog_generation` / `raster_mosaic_generation` / `model_3d_glb_generation` / `model3d_tiles_generation` / `gaussian_splat_ksplat_generation` / `point_cloud_copc_generation` / `cad_preview_generation` | `manager.vector_tile_cache_tasks` / `manager.vector_tile_set_tasks` / `manager.vector_materialized_view_tasks` / `manager.embedding_tasks` / `manager.raster_cog_tasks` / `manager.raster_mosaic_tasks` / `manager.model_3d_glb_tasks` / `manager.model3d_tiles_tasks` / `manager.gaussian_splat_ksplat_tasks` / `manager.point_cloud_copc_tasks` / `manager.cad_preview_tasks` |
-| Quality | `check` | `quality.check_tasks` |
-| Model | `materialization_prepare` / `materialization_publish` | 已审批 `model.logical_tables`（来源驱动、不可变任务定义） |
+| Quality | `check` / `materialization_gate` | `quality.check_tasks` / `quality.materialization_gate_tasks` |
+| Model | `materialization_prepare` / `materialization_seal` / `materialization_publish` / `materialization_group_publish` | 已审批 `model.logical_tables` / `model.materialization_groups` |
 | Graph | `kg_build` | `graph.build_tasks` |
 | Orchestrator | `orchestration` | `orchestrator.orchestrations` |
 
@@ -268,9 +271,21 @@ System 资源回收（cleanup）不纳入 TaskProvider，也不进入 Orchestrat
 
 Transfer 的内部任务语义统一收敛为同步执行。阶段 1 对外只声明 `task_type=sync`，并通过 TaskProvider 和 `common.task_executions` 关联任务定义。Manager 的导入 / 导出入口通过 client 创建并触发 Transfer `sync`，不得在 Transfer 侧并行保留 `import`、`export`、`transfer` 等旧任务类型。
 
-Model 的 `materialization_prepare` 与 `materialization_publish` 以已审批 LogicalTable 作为来源驱动任务定义，task ID 均为 LogicalTable ID。两者都不接受动态 `batch_id` 作为必填执行参数：prepare 创建批次；publish 按当前 execution 的 Tenant、Actor、`parent_execution_id` 和 LogicalTable ID 解析唯一 prepared 批次。Orchestrator 编排中的 Develop、Quality 和 publish 必须通过同一父 execution 血缘解析批次，不得用空默认值绕过 `execution_contract`，不得把 Schema、表名或 DDL 作为 Step 参数。prepare 可以在稳定 execution outputs 中返回 `batch_id` 供审计和诊断，但下游业务步骤不能据此绕过 Model 的执行域校验。
+Model 的 `materialization_prepare|materialization_seal|materialization_publish` 以已审批 LogicalTable 作为来源驱动任务定义，task ID 均为 LogicalTable ID。`prepare` 冻结逻辑表版本和结构指纹，由 Model 创建本批次唯一 staging，稳定输出 `batch_id + staging_locator`；DDL、Schema 和表名仍不进入任务定义或用户输入。`seal` 必须通过运行时输入接受 prepare 的 `batch_id`、通用 writer 的 `execution_id` 和 writer 回显的 `target_locator`；Model 校验 writer 已成功、同 Tenant、同 Actor 血缘、同一父编排，target 精确等于本批 staging，并完成物理管理标记和结构校验后才把批次置为 `sealed`。`seal` 不校验 writer 所属业务模块，不引入 Transfer/Develop 硬编码。`publish` 只消费同一父编排下的 sealed 批次。
 
-Develop 为 Model 物化 staging 计算数据时，保存的 `query` 任务必须在 `execution_config.materialization_target.logical_table_id` 静态绑定唯一 LogicalTable；该字段不进入 TaskProvider input contract，Orchestrator 不能覆盖。此类任务的 `content.query` 必须是单条只读 `SELECT`，Develop 通过 Model Client 以当前父 execution 解析 staging，并在服务端编译为 `INSERT INTO <quoted staging> (<approved columns>) <select>`。不得提供标识符模板、表名参数或允许用户提交完整 `INSERT` 的第二路线。第一阶段只支持 staging 与查询 Engine 相同；Develop 必须校验 `execution_config.engine_id` 与上下文 `engine_id` 相等，并从父 execution 派生 `read + write` effects，DDL effect 仍只由 Model 使用。
+业务模块之间默认不得在任务定义中保存另一业务 owner 的专有 ID，也不得以共享 Client 掩盖语义依赖。跨模块数据交接必须优先使用 TaskProvider 的稳定 outputs、Orchestrator 显式依赖与标准 ResourceLocator；只有无法用稳定公共概念表达且已在正式规范中说明的场景，才允许业务模块之间的 owner-specific 运行时调用。
+
+Transfer 的 bounded query-source 写入是通用“写入已存在表”能力。任务定义只保存 source、字段映射和严格类型转换，执行契约把 `target_locator` 声明为必填运行时输入。Worker 通过通用 Engine capability 读取目标实际结构，只使用 `TableWriteSessionProvider` 向既有表 append 本 execution 结果，不得在此模式下删除、清空、建表或改表。稳定输出至少包含 `execution_id + target_locator + row_count`。Transfer 不得保存 LogicalTable ID、调用 Model API 或持有 Model Permission。
+
+Develop 保存的 `query` 可以声明通用“关系输入 -> 已存在表结果”模式。任务定义只保存小写 alias 集合和单条只读 `SELECT`，SQL 只能以保留伪 schema `addp_input.<alias>` 引用已声明关系；执行契约按 alias 在 `input_locators` 对象中声明必填 ResourceLocator，并把 `target_locator` 声明为必填运行时输入。Worker 校验所有 locator 与查询 Runtime 位于同一 PostgreSQL Engine，通过 AST 只改写已声明的关系节点，并在事务中执行 `INSERT INTO <target> SELECT ...`。未声明 alias、未使用声明、真实物理关系、表函数数据源、非 PostgreSQL 查询或跨 Engine 输入必须拒绝。稳定输出至少包含 `execution_id + target_locator + row_count`。Develop 不得保存 LogicalTable ID、调用 Model API 或持有 Model Permission。
+
+上述动态目标 writer 不允许在 worker lease 过期后单独重试；写入失败使整个父编排失败，重算必须从 Model prepare 开始新批次。Model 负责回收未 sealed 的失败或过期批次，不为 writer 增设跨 lease 的 staging 接管协议。
+
+Quality `materialization_gate` 仅由 Orchestrator 触发，任务绑定唯一 `materialization_group_id`，并静态保存与该组成员集合完全一致的逻辑表 alias 和类型化断言。Quality 通过 Common Model Client 读取现有 MaterializationGroup 并冻结组版本，不新增泛化只读物化契约；执行前组版本或成员变化必须拒绝。worker 必须在 claim 后以当前 reader execution 向 Model 获取完整 Materialization Read Context，再从父 execution 派生返回 Engine 集合的精确 `read` 授权。断言只允许 `not_null|unique_key|foreign_key|predicate_implication|row_count`，不接受自定义 SQL。任一 `severity=error` 断言不通过时 Quality execution 写 `failed`，Orchestrator 不得继续发布；成功后的 Model publish Step 必须引用同一个 MaterializationGroup，并将门禁输出的组 ID/版本绑定到 `expected_group_id + expected_group_version`。Model 在入队和发布时双重校验，但该交接不表示全局禁止不含 Quality 门禁的其他物化组编排。
+
+Model `materialization_group_publish` 以持久 MaterializationGroup 为任务定义，仅解析同一父 execution 下全部成员的已完成批次，并在同一 PostgreSQL 目标库事务中完成全部物理交换。组成员不作为运行参数，不允许跨 Engine 组或部分发布。单逻辑表 `materialization_publish` 继续仅用于非组物化；某个批次如属于当前 MaterializationGroup 的编排发布，必须只走组发布路线。
+
+Model 托管目标只允许 `bounded + snapshot + query-source + replace`：Transfer 必须校验 project field mapping 的目标列与 Model 返回的 `write_columns` 顺序完全一致，并通过目标 Engine 的 `TableWriteSessionProvider` 向已存在 staging 写数据；不得调用 `TableWritePreparer`、资源删除或任何 DDL。普通 bounded 目标 lease 过期仍 fail-closed；只有 Model 托管目标可在 `attempt < max_attempts` 时把同一 execution 返回 pending。下一次 claim 递增 attempt 并取得新的 staging；如果 Model 返回同一 writer execution 已完成的旧 attempt，worker 不再搬运数据，只补写本 execution 成功终态。不同 writer execution 不得接管已完成批次。
 
 Transfer `sync` 的稳定语义由以下正交维度表达：
 
@@ -465,7 +480,7 @@ Oracle 单表 -> Debezium Oracle Connector -> Infra Kafka
 6. Debezium `op=r` 归一化为 `snapshot` 并按 upsert 应用，`op=c|u` 归一化为 `upsert`，`op=d` 使用 Kafka record key 归一化为 `delete`。`Initial Snapshot` 的 `STARTED|IN_PROGRESS|TABLE_SCAN_COMPLETED|COMPLETED|SKIPPED` 通知归一化为 `skip`，必须严格校验通知字段、类型和当前 generation connector name；只有 `COMPLETED` 同时产生初始快照完成语义，`SKIPPED` 只表示 connector 重启时无需再次执行初始快照。未知或畸形通知、`op=t|m`、空 value tombstone、来源表身份不匹配和未知 op 均视为协议错误，不得静默推进 offset。
 7. delete 只按映射后的稳定目标 key 执行物理行删除，不依赖 `before` 包含完整旧行。目标必须使用 `apply_mode=upsert_delete`，目标 `PartitionedTableChangeApplyProvider` 必须真实声明并实现 `operations=[upsert,delete,skip]` 后才可开放 CDC capability；`skip` 只推进目标 ledger，不写业务行。
 8. snapshot/upsert/delete 必须与目标 Provider 的业务库 apply ledger 在同一事务按 partition monotonic apply；PostgreSQL 使用 `addp_transfer.apply_positions`，MySQL 使用目标业务数据库内的 `_addp_transfer_apply_positions` InnoDB 私有表，Oracle 使用目标 schema 内的 `_ADDP_TRANSFER_APPLY_POSITIONS` 私有表。`transfer.sync_states` 继续保存 `kafka_offset/v1.next_offset`，目标提交后才允许以 runtime fencing + state version 做 CAS 推进。
-	Oracle target schema 必须等于连接用户；ledger 必须带固定 ownership comment 并从 Catalog 隐藏。Oracle CDC 目标继续使用 `PartitionedTableChangeApplyProvider`；普通 bounded table write 使用同一 Oracle Engine 的 `TableWriteSessionProvider`，只创建或写入普通表和 `MDSYS.SDO_GEOMETRY`，不得注册 SDE feature class 或修改 geodatabase system tables。两条能力复用同一 Oracle 字段/空间类型校验与 EWKB → SDO 转换规则，不建立 Transfer 私有 Oracle writer。当前支持 `string|int|bigint|float|double|decimal|bool|date|timestamp|json|uuid|bytes|geometry`，明确拒绝独立 `time`、decimal precision > 38 和非 XY geometry。geometry 边界仍是 EWKB + 冻结 `SpatialInfo`，Provider 必须校验 SRID/type/dimension 后转换为标准 WKB，并使用 `SDO_UTIL.FROM_WKBGEOMETRY` 写入 `MDSYS.SDO_GEOMETRY`。CDC ledger 行锁必须使用 `FOR UPDATE NOWAIT` 有界重试并检查 runtime context；锁等待取消与任何业务写失败都必须回滚业务行和 ledger。
+	Oracle target schema 必须等于连接用户；ledger 必须带固定 ownership comment 并从 Engine Catalog 隐藏。Oracle CDC 目标继续使用 `PartitionedTableChangeApplyProvider`；普通 bounded table write 使用同一 Oracle Engine 的 `TableWriteSessionProvider`，只创建或写入普通表和 `MDSYS.SDO_GEOMETRY`，不得注册 SDE feature class 或修改 geodatabase system tables。两条能力复用同一 Oracle 字段/空间类型校验与 EWKB → SDO 转换规则，不建立 Transfer 私有 Oracle writer。当前支持 `string|int|bigint|float|double|decimal|bool|date|timestamp|json|uuid|bytes|geometry`，明确拒绝独立 `time`、decimal precision > 38 和非 XY geometry。geometry 边界仍是 EWKB + 冻结 `SpatialInfo`，Provider 必须校验 SRID/type/dimension 后转换为标准 WKB，并使用 `SDO_UTIL.FROM_WKBGEOMETRY` 写入 `MDSYS.SDO_GEOMETRY`。CDC ledger 行锁必须使用 `FOR UPDATE NOWAIT` 有界重试并检查 runtime context；锁等待取消与任何业务写失败都必须回滚业务行和 ledger。
 9. Kafka Connect offset 是捕获位点，回答源数据库日志已捕获到哪里；Transfer committed position 是消费位点，回答目标已应用到哪个 Infra Kafka offset。两者由各自 owner 管理，任何一方都不能代替另一方。
 10. PostgreSQL LSN、MySQL binlog file/position/GTID、Oracle SCN、事务 ID 和事件时间可以进入 ChangeEvent 诊断信息，但不得替代 Kafka partition offset，也不承诺把一个源数据库事务跨多行原子提交到目标；交付保证仍是 at-least-once + target monotonic apply。
 11. PostgreSQL CDC v1 接受可无歧义映射到 ADDP `string|bool|int|bigint|float|double|decimal|date|time|timestamp|json|uuid|geometry` 的源字段；完整源表字段必须逐一映射且声明类型必须与真实 PostgreSQL 类型一致。PostGIS 只开放带 typmod 的 `geometry(<OGC type>[Z], <positive SRID>)`，不开放 `geography`、未约束的 generic geometry、M/ZM、geometry 主键或运行时重投影。capture generation 创建前必须从源库冻结每个 geometry 字段的 OGC type、SRID、维度和 nullable，并持久化为 generation source spatial facts；Debezium schemaless JSON geometry 固定按 `{wkb: <base64>, srid: <number>}` 解码。进入 ADDP 数据面的标准中间表示仍是行内 `[]byte` EWKB 加表级 `datatype.SpatialInfo`，`geom.T` 只允许作为 native encoding 与 EWKB 转换、校验时的短生命周期对象，不进入 ChangeEvent、Provider、任务配置或持久状态。消息 SRID、几何类型或维度与冻结事实不一致时按 schema drift 阻塞且不得推进 offset。目标 Engine Provider 使用映射后的字段名和同一组空间事实转换为目标 native geometry；PostgreSQL 目标按此创建 geometry typmod 列。跨引擎或跨执行边界的空间链路默认复用 native geometry ↔ EWKB + `SpatialInfo` 边界，不能引入数据库私有的跨层几何对象；只有 source 与 target 通过能力声明协商出完全相同的 native geometry encoding，且链路不经过编码转换、CRS 转换或中间几何算子时，planner 才可选择 native encoding 直通。PostGIS `geometry` 是数据库内部类型而不是跨 Provider encoding；当前 PostgreSQL CDC 经过 Debezium 和 Infra Kafka，不满足 native 直通条件。`bytea`、数组、interval、枚举和其他用户定义类型在创建 capture 前明确拒绝，不得先启动 connector 再让运行时失败。Decimal 以原始十进制字符串传递；date 使用 epoch days；time 和无时区 timestamp 只允许声明精度 `0..3` 并使用毫秒编码，默认微秒精度或显式精度大于 3 的列必须拒绝，不能静默截断；带时区 timestamp 接受 RFC 3339 并按 UTC instant 写入目标 `timestamp`；JSON/JSONB 使用合法 JSON 字符串。
@@ -582,7 +597,7 @@ Graph 的 `kg_build` 任务定义由 `graph.build_tasks` 保存。`graph.build_t
 
 Develop 的任务类型按开发方式划分为 `query`、`workflow`、`script`。`script` 表示命令式代码开发任务，当前可由 Jupyter Notebook runtime 承载；`notebook` 只是脚本开发的实现形态和 UI 入口，不作为独立 `task_type` 声明，不进入 TaskProvider capabilities。
 
-Develop 的 `develop.dev_tasks.content` 必须使用规范字段：`query` 使用 `content.query` 和 `content.query_type`，执行目标统一写入 `execution_config.engine_id` 并指向 System 中具备 query 能力的真实 Engine；Model staging 托管写入可以额外保存 `execution_config.materialization_target.logical_table_id`，但不得保存 staging、Schema 或物理表名。DuckDB 联邦查询绑定平台内置 DuckDB Runtime Engine，不使用独立模式字段或虚拟 Engine。`workflow` 使用 `content.workflow_definition` 和可选 `content.inputs`，执行目标只写 `execution_config.engine_id` 指向具体工作流运行时实例，不写 `execution_config.engine_type`，运行时类型必须由后端按该实例 ID 从 System 查询；`script` 的 Notebook 形态使用 `content.notebook_path`。Develop 的 ad-hoc 临时执行同样必须提交 `execution_config`，不得使用顶层 `engine_id` 表达查询目标，且不得声明 Model staging 托管写入。`/develop/engines` 统一返回 System 中具备 query 能力的真实 Engine Instance，不提供 Develop 私有查询模式或 `id=0` 虚拟 Engine。不得再新增或消费 `content.sql`、`content.workflow_def`、`content.input_data`、`execution_config.data_source_id` 等旧字段。
+Develop 的 `develop.dev_tasks.content` 必须使用规范字段：`query` 使用 `content.query` 和 `content.query_type`，执行目标统一写入 `execution_config.engine_id` 并指向 System 中具备 query 能力的真实 Engine。需要把查询结果写入执行期指定的已存在表时，保存任务仅用 `content.relation_inputs[]` 声明关系别名，SQL 仅引用 `addp_input.<alias>`；TaskProvider 契约要求调用方提供精确的 `input_locators` 和 `target_locator`，ResourceLocator 不得写入任务定义。该能力是 Develop 自身的通用关系计算契约，不保存或解析 Model 资源 ID，也不调用 Model。DuckDB 联邦查询绑定平台内置 DuckDB Runtime Engine，不使用独立模式字段或虚拟 Engine。`workflow` 使用 `content.workflow_definition` 和可选 `content.inputs`，执行目标只写 `execution_config.engine_id` 指向具体工作流运行时实例，不写 `execution_config.engine_type`，运行时类型必须由后端按该实例 ID 从 System 查询；`script` 的 Notebook 形态使用 `content.notebook_path`。Develop 的 ad-hoc 临时执行同样必须提交 `execution_config`，不得使用顶层 `engine_id` 表达查询目标，也不得使用关系结果写入；关系结果写入只允许由 Orchestrator 父执行调用保存任务。`/develop/engines` 统一返回 System 中具备 query 能力的真实 Engine Instance，不提供 Develop 私有查询模式或 `id=0` 虚拟 Engine。不得再新增或消费 `content.sql`、`content.workflow_def`、`content.input_data`、`execution_config.data_source_id` 等未声明字段。
 
 查询工作台的即时执行固定使用 `POST /api/v1/develop/executions` 创建 ad-hoc execution，写入 `module=develop`、`task_type=query`、`source=develop`、`source_task_id=null`，并在 `execution_config` 保存 `content`、目标 `engine_id`、语言和 timeout 快照。前端通过 `GET /api/v1/develop/executions/{execution_id}` 回查状态和结果。不得保留直接执行并同步返回结果的 `/develop/execute` 或其他旁路。查询结果只能保存受限预览，并明确记录 `result_limit`、`truncated` 和 capability 驱动的 `result_kind`；完整无界结果不得写入 execution metadata。
 
@@ -657,9 +672,9 @@ TaskProvider 任务列表是跨模块编排专用契约，不适用通用业务�
 }
 ```
 
-`GET /tasks/{task_type}/{id}` 直接返回 owner 模块的任务定义摘要对象。对象必须包含 `id`、`task_type`、`name`、`status` 和该具体任务的 `execution_contract`；多任务类型 provider 可以按 `task_type` 返回不同任务定义 DTO，但不得再包一层 `data`。`enabled`、`schedule`、`next_run_at` 只允许在该 task type 明确声明并实现 `supports_schedule=true` 的 owner 调度闭环时出现；不支持调度的 TaskProvider 不得暴露这些调度活状态字段。
+`GET /tasks/{task_type}/{id}` 直接返回 owner 模块的任务定义摘要对象。对象必须包含 `id`、`task_type`、`name`、`status` 和该具体任务的 `execution_contract`；多任务类型 provider 可以按 `task_type` 返回不同任务定义 DTO，但不得再包一层 `data`。`enabled`、`schedule`、`next_run_at` 只允许在该 task type 明确声明并实现 `supports_schedule=true` 的 owner 调度闭环时出现；不支持调度的 TaskProvider 不得暴露这些调度活状态字段。`input_schema.required` 可以声明只能在手动触发或 Orchestrator Step 中绑定的必填运行时输入；`input_defaults` 是部分默认值，只校验已提供字段的类型和约束，不要求覆盖全部 required。执行前，owner 与 Orchestrator 必须在默认值、显式参数和上游输出绑定解析后，对完整参数再执行一次严格 required 校验。
 
-Quality `check` 是纯手动/Orchestrator 显式执行类型，当前不保存或返回 `enabled`、`schedule`、`next_run_at` 等调度活状态字段。`execution_contract` 是具体任务可执行输入和稳定输出的唯一事实源：
+Quality `check|materialization_gate` 是纯手动/Orchestrator 显式执行类型，当前不保存或返回 `enabled`、`schedule`、`next_run_at` 等调度活状态字段。其中 `materialization_gate` 仅允许 Orchestrator 触发。`execution_contract` 是具体任务可执行输入和稳定输出的唯一事实源：
 
 ```json
 {
@@ -680,13 +695,13 @@ Quality `check` 是纯手动/Orchestrator 显式执行类型，当前不保存�
 }
 ```
 
-不支持执行输入覆盖或没有稳定输出的任务仍必须返回对应的闭合空对象。`input_defaults` 只提供任务当前保存的工作流配置，不能使缺少必填定义参数的任务变成可保存任务；任务定义本身必须始终完整且可直接执行。`input_ui_schema` 只描述 `input_schema.properties` 中已声明字段的控件语义，不得增加输入字段或覆盖服务端 Schema 约束。需要稳定展示顺序时，字段和分组必须在对应 UI Schema 节点声明从 `0` 开始的 `order`；消费者必须按 `order` 排序，不能依赖 JSON 对象属性顺序。算子工作流的分组顺序使用稳定 DAG 拓扑顺序：上游算子在前，同层并行算子按任务定义 `tasks[]` 的保存顺序排列；分组内字段按公开参数声明顺序排列，不依赖画布坐标。`format=resource-locator` 的值在契约和请求中仍使用标准 ResourceLocator，但用户界面只能展示解析后的资源路径、名称和本地化类型，不得直接显示 `addp://` URI、Engine ID、`node_id` 或 `item_id`；无法解析时统一显示“已配置资源”，不得回退为原始内部值。
+不支持执行输入覆盖或没有稳定输出的任务仍必须返回对应的闭合空对象。`input_defaults` 只提供任务定义中已保存的可覆盖默认值；它不能隐式填充任务定义本身必须持久的业务字段，也不能绕过执行时 required 校验。`input_ui_schema` 只描述 `input_schema.properties` 中已声明字段的控件语义，不得增加输入字段或覆盖服务端 Schema 约束。需要稳定展示顺序时，字段和分组必须在对应 UI Schema 节点声明从 `0` 开始的 `order`；消费者必须按 `order` 排序，不能依赖 JSON 对象属性顺序。算子工作流的分组顺序使用稳定 DAG 拓扑顺序：上游算子在前，同层并行算子按任务定义 `tasks[]` 的保存顺序排列；分组内字段按公开参数声明顺序排列，不依赖画布坐标。`format=resource-locator` 的值在契约和请求中仍使用标准 ResourceLocator，但用户界面只能展示解析后的资源路径、名称和本地化类型，不得直接显示 `addp://` URI、Engine ID、`node_id` 或 `item_id`；无法解析时统一显示“已配置资源”，不得回退为原始内部值。
 
 Develop 查询任务的 `content.query_parameters[]` 是查询参数定义事实源，每项固定包含 `name`、`type`、`default`，可选包含 `title`、`description`。参数名必须唯一且真实出现在当前查询语言的参数位置中；查询中的全部参数位置也必须有对应定义。`query_parameters[]` 的保存顺序决定 `input_ui_schema.<name>.order`，四种首期类型固定为 `string`、`integer`、`number`、`boolean`。Copilot 查询草稿可以提议同形状的 `query_parameters[]`，但它必须与候选文本在同一响应中一起校验和回填；只有用户保存后才成为 Develop 任务事实。查询任务详情必须从该定义派生非空 `execution_contract`；未定义查询参数时返回闭合空契约。即时查询在 `POST /api/v1/develop/executions` 顶层提交同语义的 `parameters` 覆盖，不能把执行值写回 `content.query_parameters` 或查询文本。
 
 `GET /executions/{execution_id}` 直接返回统一 execution 对象，`execution_id` 必须是 `common.task_executions.execution_id`。
 
-Owner 模块若需要保存下游运行时或外部系统返回的本地执行 ID，不得在 execution 结果摘要中再次使用 `execution_id` 字段，以免和统一执行 ID 形成双事实源。字段应按来源命名，例如 Develop 工作流运行时返回的本地执行 ID 保存为 `runtime_execution_id`，而不是覆盖或并列一个新的 `execution_id`。
+Owner 模块若需要保存下游运行时或外部系统返回的本地执行 ID，不得把该本地 ID 命名为 `execution_id`，以免和统一执行 ID 形成双事实源。字段应按来源命名，例如 Develop 工作流运行时返回的本地执行 ID 保存为 `runtime_execution_id`。TaskProvider 如果需要让下游对已成功的当前平台 execution 做一致性校验，可以把同一 `common.task_executions.execution_id` 声明为稳定输出 `execution_id`；它只是统一身份的显式交接，不是第二执行事实。
 
 Develop 工作流任务可以在 execution 结果摘要中保存 `runtime_status` 诊断对象，用于排查工作流运行时本地状态、进度、错误码和耗时。`runtime_status` 中的本地执行 ID 字段同样必须命名为 `runtime_execution_id`。`runtime_status` 不得作为 Orchestrator 或 Monitor 的主状态源，不得替代 `common.task_executions.status/progress/error_details`，也不得保存运行时完整 `result`、`all_results` 或原始响应体。
 

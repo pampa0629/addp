@@ -349,7 +349,7 @@ func newQualityConcurrencyServer(t *testing.T, engineID, tenantID int64, delay t
 			authorizationID := strconv.FormatInt(800000+authorizationSequence.Add(1), 10)
 			_ = json.NewEncoder(w).Encode(commonClient.IssuedExecutionAuthorization{
 				ID: authorizationID, ExecutionID: request.ExecutionID, Audience: request.Audience,
-				EngineIDs: request.EngineIDs, Effects: request.Effects, ExpiresAt: time.Now().UTC().Add(time.Hour),
+				Accesses: request.Accesses, ExpiresAt: time.Now().UTC().Add(time.Hour),
 				ActorPrincipalID: "42", TenantID: strconv.FormatInt(tenantID, 10), TenantMembershipID: "800002",
 				IssuedAuthorizationVersion: "1", SourceType: "user",
 			})
@@ -443,7 +443,7 @@ func newQualityExecutionContractServer(t *testing.T, engineID, elementID, tenant
 				t.Fatalf("decode authorization request: %v", err)
 			}
 			authorizationID := strconv.FormatInt(700000+authorizationSequence.Add(1), 10)
-			_ = json.NewEncoder(w).Encode(commonClient.IssuedExecutionAuthorization{ID: authorizationID, ExecutionID: request.ExecutionID, Audience: request.Audience, EngineIDs: request.EngineIDs, Effects: request.Effects, ExpiresAt: time.Now().UTC().Add(time.Hour), ActorPrincipalID: "42", TenantID: strconv.FormatInt(tenantID, 10), TenantMembershipID: "700002", IssuedAuthorizationVersion: "1", SourceType: "user"})
+			_ = json.NewEncoder(w).Encode(commonClient.IssuedExecutionAuthorization{ID: authorizationID, ExecutionID: request.ExecutionID, Audience: request.Audience, Accesses: request.Accesses, ExpiresAt: time.Now().UTC().Add(time.Hour), ActorPrincipalID: "42", TenantID: strconv.FormatInt(tenantID, 10), TenantMembershipID: "700002", IssuedAuthorizationVersion: "1", SourceType: "user"})
 		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/system/execution-authorizations/") && strings.HasSuffix(r.URL.Path, "/engine-accesses"):
 			if engineAccessDelayMilliseconds != nil {
 				delay := time.Duration(engineAccessDelayMilliseconds.Load()) * time.Millisecond

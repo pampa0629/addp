@@ -96,7 +96,7 @@ func (h *Handler) getConsumerAssetStats(c *gin.Context) {
 // @Summary 浏览已上架资产目录 | Browse published asset catalogs
 // @Tags Asset Consumer
 // @Produce json
-// @Success 200 {array} service.CatalogEntry
+// @Success 200 {array} service.AssetCatalogTreeNode
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["asset.catalog.read"]

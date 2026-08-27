@@ -91,6 +91,17 @@ ADDP_ONLINE_ARTIFACT_DIR=$REQUESTED_ARTIFACT_DIR
 export ONLINE_SUITE ADDP_ONLINE_ARTIFACT_DIR
 
 case "$ONLINE_SUITE" in
+  consumer-engine-recovery)
+    START_TARGET=-all
+    REQUIRED_SUITE_ENV=(
+      SYSTEM_URL GATEWAY_URL MANAGER_URL SERVICE_URL CONSOLE_URL
+      ADDP_ONLINE_TEST_USER_ACCESS_TOKEN ADDP_ONLINE_TEST_USER_USERNAME
+      ADDP_ONLINE_TEST_USER_PASSWORD ADDP_ONLINE_TEST_TENANT_ID
+      ADDP_ONLINE_TEST_ENGINE_ID ADDP_ONLINE_TEST_ENGINE_NAME
+      ADDP_ONLINE_TEST_ENGINE_PORT ADDP_ONLINE_TEST_ENGINE_USER
+      ADDP_ONLINE_TEST_ENGINE_PASSWORD ADDP_ONLINE_TEST_ENGINE_DATABASE
+    )
+    ;;
   module-registry-recovery)
     START_TARGET=-system
     REQUIRED_SUITE_ENV=(SYSTEM_URL GATEWAY_URL MANAGER_URL MANAGER_SERVICE_CLIENT_SECRET)
@@ -98,6 +109,28 @@ case "$ONLINE_SUITE" in
   standard-model-reference-deletion)
     START_TARGET=-model
     REQUIRED_SUITE_ENV=(SYSTEM_URL GATEWAY_URL STANDARD_URL MODEL_URL ADDP_ONLINE_TEST_USER_ACCESS_TOKEN)
+    ;;
+  enterprise-catalog-publishing)
+    START_TARGET=-all
+    REQUIRED_SUITE_ENV=(
+      SYSTEM_URL GATEWAY_URL META_URL CATALOG_URL ASSET_URL PORTAL_URL
+      ADDP_ONLINE_TEST_USER_ACCESS_TOKEN ADDP_ONLINE_TEST_TENANT_ID
+      ADDP_ONLINE_TEST_ENGINE_ID ADDP_ONLINE_TEST_ENGINE_PORT
+      ADDP_ONLINE_TEST_ENGINE_USER ADDP_ONLINE_TEST_ENGINE_PASSWORD
+      ADDP_ONLINE_TEST_ENGINE_DATABASE ADDP_ONLINE_TEST_CATALOG_DOMAIN_ID
+      ADDP_ONLINE_TEST_CATALOG_DEPARTMENT_ID
+    )
+    ;;
+  workbench-service-consumption)
+    START_TARGET=-all
+    REQUIRED_SUITE_ENV=(
+      SYSTEM_URL GATEWAY_URL SERVICE_URL WORKBENCH_URL CONSOLE_URL
+      ADDP_ONLINE_TEST_USER_ACCESS_TOKEN ADDP_ONLINE_TEST_USER_USERNAME
+      ADDP_ONLINE_TEST_USER_PASSWORD ADDP_ONLINE_TEST_TENANT_ID
+      ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID ADDP_ONLINE_WORKBENCH_MYSQL_PORT
+      ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE ADDP_ONLINE_WORKBENCH_MYSQL_USER
+      ADDP_ONLINE_WORKBENCH_MYSQL_PASSWORD ADDP_ONLINE_WORKBENCH_MYSQL_ROOT_PASSWORD
+    )
     ;;
   *)
     fail "ONLINE_SUITE has no dedicated deployment profile: $ONLINE_SUITE"
@@ -155,6 +188,9 @@ fi
 
 cleanup_required=0
 process_lifecycle=not-applicable
+engine_fixture_cleanup_required=0
+engine_restore_required=0
+workbench_mysql_cleanup_required=0
 
 run_logged() {
   "$@" 2>&1 | tee -a "$GATE_LOG"
@@ -186,8 +222,31 @@ finish() {
   local cleanup=not-required
   trap - EXIT INT TERM
 
+  if [ "$engine_fixture_cleanup_required" -eq 1 ]; then
+    if [ "$engine_restore_required" -eq 1 ]; then
+      if ! run_logged bash business/scripts/online-engine-fixture.sh start; then
+        cleanup=failed
+        gate_status=1
+      elif ! run_logged python3 scripts/test/consumer-engine-recovery-online.py --restore-only; then
+        cleanup=failed
+        gate_status=1
+      fi
+    fi
+    if ! run_logged bash business/scripts/online-engine-fixture.sh stop; then
+      cleanup=failed
+      gate_status=1
+    fi
+  fi
+
+  if [ "$workbench_mysql_cleanup_required" -eq 1 ]; then
+    if ! run_logged bash business/scripts/online-workbench-mysql-fixture.sh stop; then
+      cleanup=failed
+      gate_status=1
+    fi
+  fi
+
   if [ "$cleanup_required" -eq 1 ]; then
-    cleanup=passed
+    [ "$cleanup" = "failed" ] || cleanup=passed
     if ! run_logged bash scripts/dev/stop.sh; then
       cleanup=failed
       gate_status=1
@@ -253,8 +312,39 @@ PY
   # multi-instance scenario claims the same module route prefix.
   run_logged bash scripts/dev/stop-exact-process.sh -manager
   process_lifecycle=passed
+elif [ "$ONLINE_SUITE" = "consumer-engine-recovery" ]; then
+  process_lifecycle=not-run
+  engine_fixture_cleanup_required=1
+  engine_restore_required=1
+  run_logged bash business/scripts/online-engine-fixture.sh stop
+  run_logged bash business/scripts/online-engine-fixture.sh start
+  run_logged bash scripts/dev/start.sh
+  run_logged npm --prefix console/frontend exec -- playwright install chromium
+  run_logged python3 scripts/test/consumer-process-stability-online.py \
+    --capture \
+    --repository "$ROOT_DIR" \
+    --output "$ADDP_ONLINE_ARTIFACT_DIR/consumer-process-stability.json"
+elif [ "$ONLINE_SUITE" = "enterprise-catalog-publishing" ]; then
+  engine_fixture_cleanup_required=1
+  run_logged bash business/scripts/online-engine-fixture.sh stop
+  run_logged bash business/scripts/online-engine-fixture.sh start
+  run_logged bash scripts/dev/start.sh "$START_TARGET"
+elif [ "$ONLINE_SUITE" = "workbench-service-consumption" ]; then
+  workbench_mysql_cleanup_required=1
+  run_logged bash business/scripts/online-workbench-mysql-fixture.sh stop
+  run_logged bash business/scripts/online-workbench-mysql-fixture.sh start
+  run_logged bash scripts/dev/start.sh "$START_TARGET"
+  run_logged npm --prefix console/frontend exec -- playwright install chromium
 else
   run_logged bash scripts/dev/start.sh "$START_TARGET"
 fi
 
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"
+
+if [ "$ONLINE_SUITE" = "consumer-engine-recovery" ]; then
+  run_logged python3 scripts/test/consumer-process-stability-online.py \
+    --verify \
+    --repository "$ROOT_DIR" \
+    --output "$ADDP_ONLINE_ARTIFACT_DIR/consumer-process-stability.json"
+  process_lifecycle=passed
+fi

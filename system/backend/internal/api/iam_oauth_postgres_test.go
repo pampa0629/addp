@@ -391,6 +391,8 @@ func testBuiltinServiceClientSecrets(prefix string) map[string]string {
 	return map[string]string{
 		"addp-agent":        prefix + "-agent-0123456789abcdef0123456789abcdef",
 		"addp-asset":        prefix + "-asset-0123456789abcdef0123456789abcdef",
+		"addp-catalog":      prefix + "-catalog-0123456789abcdef0123456789abcdef",
+		"addp-workbench":    prefix + "-workbench-0123456789abcdef0123456789abcdef",
 		"addp-copilot":      prefix + "-copilot-0123456789abcdef0123456789abcdef",
 		"addp-develop":      prefix + "-develop-0123456789abcdef0123456789abcdef",
 		"addp-duckdb":       prefix + "-duckdb-0123456789abcdef0123456789abcdef",

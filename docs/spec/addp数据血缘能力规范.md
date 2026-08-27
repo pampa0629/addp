@@ -315,7 +315,7 @@ POST /api/v1/meta/lineage/executions/{execution_id}/collect
 - 注入宿主认证 API client 的 `createLineageApi` 或 composable。
 - 中英文 i18n 消息。
 
-共享组件只负责展示、交互和节点事件，不负责权限、Token、业务路由、Service/Asset DTO 解析或 Meta 数据刷新。Manager、Service、Asset、Portal 通过宿主页面传入根主体和导航回调，集成同一个查看器。
+共享组件只负责展示、交互和节点事件，不负责权限、Token、业务路由、Service/Asset DTO 解析或 Meta 数据刷新。Manager、Catalog、Service、Asset、Portal 通过宿主页面传入根主体和导航回调，集成同一个查看器。Catalog 必须使用当前 User Access Token 直接查询 Meta，不得使用 Catalog Service Principal 扩权代查。
 
 组件放在 `common-frontend/graph`，不放入 `basic`；消费模块按需声明 G6 依赖，保持 Vue 单实例和共享前端无自有 `node_modules`。
 

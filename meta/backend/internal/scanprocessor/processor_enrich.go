@@ -19,19 +19,19 @@ func (p Processor) enrichDeep(ctx context.Context, input *input, attrs models.JS
 	attrs = enrichedAttrs
 
 	enriched, _, err := metaenrich.EnrichResourceAttributes(ctx, attrs, metaenrich.ResourceAttributesInput{
-		ContentReader:      input.ContentReader,
-		ConnInfo:           input.ConnInfo,
-		EngineID:           input.EngineID,
-		Item:               input.Detected,
-		PhysicalPath:       input.PhysicalPath,
-		SizeBytes:          input.SizeBytes,
-		IncludeAccessIndex: input.IncludeAccessIndex,
-		CatalogPathFor:     input.CatalogPathFor,
-		CADInspector:       p.cadInspector,
-		FormatDetector:     p.formatDetector,
-		ContainerInspector: p.containerInspector,
-		SourceEngine:       input.Resource,
-		TenantID:           input.TenantID,
+		ContentReader:        input.ContentReader,
+		ConnInfo:             input.ConnInfo,
+		EngineID:             input.EngineID,
+		Item:                 input.Detected,
+		PhysicalPath:         input.PhysicalPath,
+		SizeBytes:            input.SizeBytes,
+		IncludeAccessIndex:   input.IncludeAccessIndex,
+		EngineCatalogPathFor: input.EngineCatalogPathFor,
+		CADInspector:         p.cadInspector,
+		FormatDetector:       p.formatDetector,
+		ContainerInspector:   p.containerInspector,
+		SourceEngine:         input.Resource,
+		TenantID:             input.TenantID,
 	})
 	if err != nil {
 		if input.StrictDeepEnrich {
@@ -50,7 +50,7 @@ func (p Processor) enrichKnownMultiTable(ctx context.Context, input *input, attr
 		return attrs, nil
 	}
 	clearStaleKnownMultiTableAccessIndex(attrs, input.Detected)
-	enriched, _, err := metaitem.EnrichKnownMultiTableItem(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.CatalogPathFor, input.Detected)
+	enriched, _, err := metaitem.EnrichKnownMultiTableItem(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.EngineCatalogPathFor, input.Detected)
 	if err != nil {
 		if input.StrictDeepEnrich {
 			return nil, err
@@ -74,7 +74,7 @@ func (p Processor) extractDeepContent(ctx context.Context, input *input, attrs m
 	if input.Detected.Layout != format.LayoutSingle {
 		return documentExtractionResult{}, nil
 	}
-	if contentHash, err := computeContentSHA256(ctx, input.ContentReader, input.ConnInfo, input.CatalogPathFor(input.PhysicalPath)); err != nil {
+	if contentHash, err := computeContentSHA256(ctx, input.ContentReader, input.ConnInfo, input.EngineCatalogPathFor(input.PhysicalPath)); err != nil {
 		if input.StrictDeepEnrich {
 			return documentExtractionResult{}, err
 		}

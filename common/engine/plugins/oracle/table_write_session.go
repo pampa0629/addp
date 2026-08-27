@@ -17,7 +17,7 @@ import (
 const oracleTableWriteSessionMarkerProvider = "oracle.table_write_session"
 const oracleTableWriteSessionMarkerPositionUnit = "session_commit"
 
-func (p *OraclePlugin) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
+func (p *OraclePlugin) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
 	if err := resume.RejectUnsupported(opts.ResumeMarker, oracleTableWriteSessionMarkerProvider); err != nil {
 		return nil, err
 	}

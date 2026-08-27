@@ -38,6 +38,8 @@ func main() {
 		log.Fatalf("Service Token Source 初始化失败: %v", err)
 	}
 	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemURL, serviceTokenSource, nil)
+	modelClient := commonClient.NewModelClient(cfg.ModelURL, serviceTokenSource, nil)
+	gateTaskRepo := repository.NewMaterializationGateRepository(db)
 	executor := service.NewCheckExecutor(
 		systemServiceClient,
 		nil,
@@ -46,6 +48,7 @@ func main() {
 		cfg.CheckTimeout,
 		cfg.WorkerConcurrency,
 	)
+	executor.ConfigureMaterializationGate(modelClient, gateTaskRepo)
 	if err := executor.ConfigureWorker(cfg.WorkerLease, cfg.WorkerPoll); err != nil {
 		log.Fatalf("Quality worker 配置无效: %v", err)
 	}
@@ -56,14 +59,14 @@ func main() {
 		ModuleName: commonExecution.ModuleQuality, InstanceID: executor.WorkerID(),
 		Role: commonClient.ModuleRuntimeRoleWorker, RoutePrefix: "/quality",
 		Metadata: map[string]interface{}{
-			"runtime_name": commonExecution.TaskTypeQualityCheck,
+			"runtime_name": "quality-bounded",
 			"capacity":     cfg.WorkerConcurrency,
 		},
 	})
 	modulelifecycle.CancelRuntimeOnFatal(registrationDone, stop)
 	reporter, err := commonRuntimeHealth.NewReporter(commonRuntimeHealth.NewRepository(db), commonRuntimeHealth.ReporterConfig{
 		InstanceID: executor.WorkerID(), Module: commonExecution.ModuleQuality, Role: commonRuntimeHealth.RoleExecutionWorker,
-		RuntimeName: commonExecution.TaskTypeQualityCheck, Capacity: cfg.WorkerConcurrency,
+		RuntimeName: "quality-bounded", Capacity: cfg.WorkerConcurrency,
 		Interval: commonRuntimeHealth.DefaultInterval, TTL: commonRuntimeHealth.DefaultTTL,
 		ActiveCount: executor.ActiveCount, Logger: slog.Default(),
 	})

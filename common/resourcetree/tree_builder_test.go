@@ -243,7 +243,7 @@ func TestBuildFromMetaFallbackRootUsesCatalogRootTermLabel(t *testing.T) {
 	if tree.Type != string(TypeService) {
 		t.Fatalf("root type = %s, want %s", tree.Type, TypeService)
 	}
-	if tree.TypeLabel != enginePlugin.CatalogTermI18nKey(string(TypeService)) {
+	if tree.TypeLabel != enginePlugin.EngineCatalogTermI18nKey(string(TypeService)) {
 		t.Fatalf("root type label = %s", tree.TypeLabel)
 	}
 }
@@ -265,8 +265,8 @@ func TestCatalogRootResourceTypePrefersCatalogModelRootTerm(t *testing.T) {
 		Capabilities: &capabilities,
 	}
 
-	if got := CatalogRootResourceType(engine); got != TypeService {
-		t.Fatalf("CatalogRootResourceType() = %s, want %s", got, TypeService)
+	if got := EngineCatalogRootResourceType(engine); got != TypeService {
+		t.Fatalf("EngineCatalogRootResourceType() = %s, want %s", got, TypeService)
 	}
 }
 

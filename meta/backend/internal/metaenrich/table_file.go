@@ -80,7 +80,7 @@ func (d *tableFileItemResolver) ResolveItems(
 	if !d.Detect(ctx, files, subdirs) {
 		return nil, nil
 	}
-	info, err := d.extractTableDatasetInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.DirPath, files, subdirs, input.CatalogPathFor)
+	info, err := d.extractTableDatasetInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.DirPath, files, subdirs, input.EngineCatalogPathFor)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func (d *tableFileItemResolver) extractTableDatasetInfo(
 	dirPath string,
 	files []metaitem.StorageFileRef,
 	subdirs []metaitem.StorageDirectoryRef,
-	catalogPathFor func(path string) plugin.CatalogPath,
+	catalogPathFor func(path string) plugin.EngineCatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
 	files, err := validateTableFiles(files, dirPath)
 	if err != nil {
@@ -208,7 +208,7 @@ func extractTableFileWholeScopeInfo(
 	dirPath string,
 	files []metaitem.StorageFileRef,
 	subdirs []metaitem.StorageDirectoryRef,
-	catalogPathFor ...func(path string) plugin.CatalogPath,
+	catalogPathFor ...func(path string) plugin.EngineCatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
 	resolver := &tableFileItemResolver{}
 	if !resolver.Detect(ctx, files, subdirs) {

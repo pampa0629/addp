@@ -25,7 +25,7 @@ require_notebook_draft_tool = require_tool_user(
 )
 
 
-class NotebookCatalogCandidate(BaseModel):
+class NotebookEngineCatalogCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     candidate_id: str = Field(min_length=1)
     role: str = Field(min_length=1)
@@ -39,7 +39,7 @@ class NotebookCatalogCandidate(BaseModel):
     path_names: list[str] = Field(default_factory=list, max_length=16)
 
 
-class NotebookResourceFact(NotebookCatalogCandidate):
+class NotebookResourceFact(NotebookEngineCatalogCandidate):
     path_segments: list[dict[str, str]] = Field(min_length=1, max_length=16)
     fields: list[dict[str, Any]] = Field(default_factory=list, max_length=200)
     geometry_column: str | None = None
@@ -57,7 +57,7 @@ class NotebookGenerationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     query: str = Field(min_length=1)
     kernel: Literal["python3"] = "python3"
-    candidates: list[NotebookCatalogCandidate] = Field(default_factory=list, max_length=320)
+    candidates: list[NotebookEngineCatalogCandidate] = Field(default_factory=list, max_length=320)
     resources: list[NotebookResourceFact] = Field(default_factory=list, max_length=8)
     missing_intents: list[NotebookMissingIntent] = Field(
         default_factory=list,

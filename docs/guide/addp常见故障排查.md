@@ -1133,6 +1133,19 @@ System 会在启动时校验数据库迁移版本和已执行 SQL 的 checksum�
 
 不要手工修改 `schema_migrations` 或 `schema_migration_checksums` 来绕过校验；这会伪造迁移历史，并可能让结构或授权数据与声称版本不一致。
 
+### 75 号迁移的定向恢复
+
+`000075_iam_execution_audience_model_materialization` 是已发布的特殊缺陷：存在历史 `audience=addp-quality` 时，其规范化 `UPDATE` 会被 execution authorization 不可变触发器拒绝，从而留下 `75/dirty`。该迁移已在其他环境登记 checksum，不得改写原文件。
+
+只有在日志确认为该错误后，才可停止 System 及其他应用进程，加载当前开发环境配置并执行：
+
+```bash
+cd system/backend
+go run ./cmd/iam-migration-repair --apply
+```
+
+该命令不是通用 force：它只接受 `schema_migrations=(75, dirty)`、checksum 恰好到 74、旧约束与不可变触发器均存在、且至少一条 `addp-quality` 的精确状态。它在单一串行化事务中暂停该触发器、规范化历史 audience、立即恢复触发器，并将已回滚的迁移状态恢复为 `74/clean`；不修改 checksum、不跳过 75。命令成功后正常重启 System，由唯一 Migration Runner 重新执行 75 及后续迁移。
+
 ### 验证
 
 ```bash

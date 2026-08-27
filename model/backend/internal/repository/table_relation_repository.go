@@ -57,7 +57,7 @@ func (r *TableRelationRepository) GetByID(id, sourceTable, tenantID int64) (*mod
 func (r *TableRelationRepository) ListByTable(tableID, tenantID int64) ([]models.TableRelation, error) {
 	var relations []models.TableRelation
 	err := r.db.Where("tenant_id = ? AND (source_table = ? OR target_table = ?)", tenantID, tableID, tableID).
-		Find(&relations).Error
+		Order("id ASC").Find(&relations).Error
 	return relations, commonrepo.WrapDBError(err)
 }
 

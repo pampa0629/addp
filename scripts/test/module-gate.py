@@ -53,6 +53,22 @@ def git_files(repository: Path, *patterns: str) -> list[str]:
     return [path for path in result.stdout.split("\0") if path]
 
 
+def repository_files(repository: Path, *patterns: str) -> list[str]:
+    """Return tracked and untracked worktree files for pre-commit module gates."""
+    result = subprocess.run(
+        ["git", "ls-files", "-z", "-co", "--exclude-standard", "--", *patterns],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return sorted(
+        path
+        for path in result.stdout.split("\0")
+        if path and (repository / path).is_file()
+    )
+
+
 def make_target(makefile: str, target: str) -> re.Match[str] | None:
     logical_makefile = re.sub(r"\\\n\s*", " ", makefile)
     return re.search(
@@ -64,7 +80,7 @@ def make_target(makefile: str, target: str) -> re.Match[str] | None:
 def discover_modules(repository: Path) -> set[str]:
     modules = {
         path.split("/", 1)[0]
-        for path in git_files(
+        for path in repository_files(
             repository,
             "go.mod",
             "*/go.mod",
@@ -76,7 +92,7 @@ def discover_modules(repository: Path) -> set[str]:
         )
         if not path.startswith("scripts/test/")
     }
-    for path in git_files(repository, "scripts/test/*-postgres-gate.sh"):
+    for path in repository_files(repository, "scripts/test/*-postgres-gate.sh"):
         modules.add(Path(path).name.split("-", 1)[0])
     return modules
 
@@ -95,7 +111,7 @@ def plan_module(repository: Path, module: str, include_platform: bool = True) ->
         steps.append(Step("platform T0", ("make", "test-platform"), repository))
 
     go_modules = []
-    for path in git_files(repository, "go.mod", "*/go.mod", "*/*/go.mod"):
+    for path in repository_files(repository, "go.mod", "*/go.mod", "*/*/go.mod"):
         parent = str(Path(path).parent)
         owner = path.split("/", 1)[0] if "/" in path else "."
         if owner == module:
@@ -117,7 +133,7 @@ def plan_module(repository: Path, module: str, include_platform: bool = True) ->
     if eval_match is not None:
         steps.append(Step(f"{module} evaluation T1", ("make", eval_target), repository))
     frontend_path = f"{module}/frontend/package.json"
-    if frontend_path in git_files(repository, "*/frontend/package.json"):
+    if frontend_path in repository_files(repository, "*/frontend/package.json"):
         frontend_match = make_target(makefile, frontend_target)
         if frontend_match is None:
             raise ModuleGateError(f"Makefile target {frontend_target} is missing")
@@ -127,7 +143,7 @@ def plan_module(repository: Path, module: str, include_platform: bool = True) ->
                 Step(f"{module} frontend T1/T3", ("make", frontend_target), repository)
             )
 
-    python_paths = git_files(repository, "*/pyproject.toml", "*/backend/requirements.txt")
+    python_paths = repository_files(repository, "*/pyproject.toml", "*/backend/requirements.txt")
     owns_python = any(path.split("/", 1)[0] == module for path in python_paths)
     if owns_python and eval_match is None:
         python_target = f"test-{module}"
@@ -135,7 +151,7 @@ def plan_module(repository: Path, module: str, include_platform: bool = True) ->
             raise ModuleGateError(f"Makefile target {python_target} is missing")
         steps.append(Step(f"{module} Python T1", ("make", python_target), repository))
 
-    postgres_scripts = git_files(repository, "scripts/test/*-postgres-gate.sh")
+    postgres_scripts = repository_files(repository, "scripts/test/*-postgres-gate.sh")
     for path in postgres_scripts:
         name = Path(path).name.removesuffix("-gate.sh")
         if name.split("-", 1)[0] != module:

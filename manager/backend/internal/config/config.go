@@ -19,9 +19,9 @@ type Config struct {
 	ServiceClientSecret string
 
 	// Meilisearch 配置
-	MeilisearchURL        string
-	MeilisearchMasterKey  string
-	MeilisearchAssetIndex string
+	MeilisearchURL                 string
+	MeilisearchMasterKey           string
+	MeilisearchManagerContentIndex string
 
 	VectorConfig struct {
 		Dimension int // 固定向量维度，仅供数据库结构初始化
@@ -104,7 +104,7 @@ func Load() *Config {
 
 	cfg.MeilisearchURL = resolveMeilisearchURL()
 	cfg.MeilisearchMasterKey = commonConfig.GetEnv("MEILISEARCH_MASTER_KEY", "")
-	cfg.MeilisearchAssetIndex = commonConfig.GetEnv("MEILISEARCH_ASSET_INDEX", "assets")
+	cfg.MeilisearchManagerContentIndex = commonConfig.GetEnv("MEILISEARCH_MANAGER_CONTENT_INDEX", "manager_content_documents")
 
 	// 设置 BaseConfig 字段
 	cfg.SystemServiceURL = systemURL

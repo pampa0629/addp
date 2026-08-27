@@ -24,7 +24,7 @@ func TestEventStreamTopicPreviewReadsTailWithoutCommittedConsumerPosition(t *tes
 
 	enginePlugin := &recordingEventStreamPreviewPlugin{
 		engineType: engineType,
-		facts: &plugin.CatalogFacts{
+		facts: &plugin.EngineCatalogFacts{
 			Kind: "topic",
 			Topic: &plugin.TopicFacts{
 				PartitionCount: 2,
@@ -98,7 +98,7 @@ func TestEventStreamTopicPreviewReadsTailWithoutCommittedConsumerPosition(t *tes
 
 type recordingEventStreamPreviewPlugin struct {
 	engineType  string
-	facts       *plugin.CatalogFacts
+	facts       *plugin.EngineCatalogFacts
 	reader      *recordingEventStreamReader
 	openOptions []plugin.ChangeStreamReadOptions
 }
@@ -123,10 +123,10 @@ func (p *recordingEventStreamPreviewPlugin) Capabilities() plugin.EngineCapabili
 func (p *recordingEventStreamPreviewPlugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (p *recordingEventStreamPreviewPlugin) DescribeCatalogFacts(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *recordingEventStreamPreviewPlugin) DescribeEngineCatalogFacts(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	return p.facts, nil
 }
-func (p *recordingEventStreamPreviewPlugin) OpenChangeStream(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, opts plugin.ChangeStreamReadOptions) (plugin.ChangeStreamReader, error) {
+func (p *recordingEventStreamPreviewPlugin) OpenChangeStream(_ context.Context, _ plugin.ConnectionInfo, _ plugin.EngineCatalogPath, opts plugin.ChangeStreamReadOptions) (plugin.ChangeStreamReader, error) {
 	p.openOptions = append(p.openOptions, opts)
 	return p.reader, nil
 }
@@ -154,15 +154,15 @@ func (r *recordingEventStreamReader) Close(context.Context) error {
 	return nil
 }
 
-func eventStreamPreviewTestPath(engineID uint, topic string) plugin.CatalogPath {
-	model := plugin.CatalogModelSpec{
-		PathVersion: plugin.CatalogPathVersion,
-		RootTerm:    plugin.CatalogTermService,
-		Levels: []plugin.CatalogLevelSpec{{
-			Term: "topic", Kinds: []string{"topic"}, Role: plugin.CatalogRoleLeaf,
+func eventStreamPreviewTestPath(engineID uint, topic string) plugin.EngineCatalogPath {
+	model := plugin.EngineCatalogModelSpec{
+		PathVersion: plugin.EngineCatalogPathVersion,
+		RootTerm:    plugin.EngineCatalogTermService,
+		Levels: []plugin.EngineCatalogLevelSpec{{
+			Term: "topic", Kinds: []string{"topic"}, Role: plugin.EngineCatalogRoleLeaf,
 		}},
 	}
-	path := plugin.CatalogRootPath(model, engineID)
-	path.Segments = append(path.Segments, plugin.CatalogSegment{Term: "topic", Kind: "topic", Name: topic})
+	path := plugin.EngineCatalogRootPath(model, engineID)
+	path.Segments = append(path.Segments, plugin.EngineCatalogSegment{Term: "topic", Kind: "topic", Name: topic})
 	return path
 }

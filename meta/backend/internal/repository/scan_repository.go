@@ -19,12 +19,12 @@ func NewScanRepository(db *gorm.DB) *ScanRepository {
 	return &ScanRepository{db: db}
 }
 
-func EnsureCatalogRootNode(repo *ScanRepository, tenantID uint, resource *commonModels.Engine, p plugin.EnginePlugin) (*models.MetaNode, error) {
-	return EnsureCatalogRootNodeWithNativeName(repo, tenantID, resource, p, "")
+func EnsureEngineCatalogRootNode(repo *ScanRepository, tenantID uint, resource *commonModels.Engine, p plugin.EnginePlugin) (*models.MetaNode, error) {
+	return EnsureEngineCatalogRootNodeWithNativeName(repo, tenantID, resource, p, "")
 }
 
-func EnsureCatalogRootNodeWithNativeName(repo *ScanRepository, tenantID uint, resource *commonModels.Engine, p plugin.EnginePlugin, nativeName string) (*models.MetaNode, error) {
-	rootTerm := scanflow.CatalogRootTermForPlugin(p)
+func EnsureEngineCatalogRootNodeWithNativeName(repo *ScanRepository, tenantID uint, resource *commonModels.Engine, p plugin.EnginePlugin, nativeName string) (*models.MetaNode, error) {
+	rootTerm := scanflow.EngineCatalogRootTermForPlugin(p)
 	fullName := ""
 	attrs := models.JSONMap{
 		"schema_version": 1,

@@ -331,12 +331,12 @@ func oracleApplyIntegrationOptions() plugin.PartitionedTableChangeApplyOptions {
 	}
 }
 
-func oracleApplyIntegrationPath(schema, table string) plugin.CatalogPath {
-	return plugin.CatalogPath{
-		Version: plugin.CatalogPathVersion,
-		Segments: []plugin.CatalogSegment{
-			{Term: plugin.CatalogTermSchema, Kind: plugin.CatalogKindNamespace, Name: schema},
-			{Term: plugin.CatalogTermTable, Kind: plugin.CatalogKindTable, Name: table},
+func oracleApplyIntegrationPath(schema, table string) plugin.EngineCatalogPath {
+	return plugin.EngineCatalogPath{
+		Version: plugin.EngineCatalogPathVersion,
+		Segments: []plugin.EngineCatalogSegment{
+			{Term: plugin.EngineCatalogTermSchema, Kind: plugin.EngineCatalogKindNamespace, Name: schema},
+			{Term: plugin.EngineCatalogTermTable, Kind: plugin.EngineCatalogKindTable, Name: table},
 		},
 	}
 }

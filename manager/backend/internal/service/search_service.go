@@ -2,12 +2,14 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	commonInference "github.com/addp/common/inference"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
@@ -30,7 +32,7 @@ const (
 // HybridSearchService 提供混合检索能力（全文检索 + 向量语义检索）
 type HybridSearchService struct {
 	client                *meilisearch.Client
-	assetIndex            string
+	contentIndex          string
 	enabled               bool
 	log                   *slog.Logger
 	vectorRepo            *repository.EmbeddingRepository
@@ -43,7 +45,6 @@ type HybridSearchService struct {
 // SearchDocument 表示检索结果中的单个文档（混合检索的统一格式）
 type SearchDocument struct {
 	DocumentID     string                 `json:"document_id"`
-	AssetID        string                 `json:"asset_id"`
 	Locator        string                 `json:"locator,omitempty"`
 	Score          float64                `json:"score"`
 	MatchMethods   []string               `json:"match_methods,omitempty"`   // 检索方式: ["keyword", "vector", "hybrid"]
@@ -51,7 +52,7 @@ type SearchDocument struct {
 	EngineID       uint                   `json:"engine_id"`
 	EngineName     string                 `json:"engine_name,omitempty"`
 	EngineType     string                 `json:"engine_type,omitempty"`
-	AssetType      string                 `json:"asset_type,omitempty"`
+	DataItemType   string                 `json:"data_item_type,omitempty"`
 	FullName       string                 `json:"full_name,omitempty"`
 	Bucket         string                 `json:"bucket,omitempty"`
 	Schema         string                 `json:"schema,omitempty"`
@@ -77,7 +78,6 @@ type SearchDocument struct {
 // VectorDocument 表示向量检索结果
 type VectorDocument struct {
 	DocumentID     string                 `json:"document_id"`
-	AssetID        string                 `json:"asset_id,omitempty"`
 	Locator        string                 `json:"locator,omitempty"`
 	TenantID       uint                   `json:"tenant_id,omitempty"`
 	EngineID       uint                   `json:"engine_id,omitempty"`
@@ -107,7 +107,7 @@ type SearchResult struct {
 // NewHybridSearchService 构建混合检索服务（全文检索 + 向量检索）
 func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.EmbeddingRepository, configurationProvider *EmbeddingConfigurationProvider, bindingService *InferenceScenarioBindingService, inferenceClient InferenceEmbeddingClient) (*HybridSearchService, error) {
 	svc := &HybridSearchService{
-		assetIndex:            strings.TrimSpace(cfg.MeilisearchAssetIndex),
+		contentIndex:          strings.TrimSpace(cfg.MeilisearchManagerContentIndex),
 		enabled:               strings.TrimSpace(cfg.MeilisearchURL) != "",
 		log:                   logger.With("component", "manager_hybrid_search"),
 		vectorRepo:            vectorRepo,
@@ -135,7 +135,7 @@ func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.Embedding
 	}
 
 	svc.log.Info("混合检索服务已启用",
-		"asset_index", svc.assetIndex,
+		"content_index", svc.contentIndex,
 		"url", cfg.MeilisearchURL,
 	)
 
@@ -144,21 +144,21 @@ func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.Embedding
 
 // initIndexes 初始化 Meilisearch 索引配置
 func (s *HybridSearchService) initIndexes() error {
-	// 确保资产索引存在（如果 Meta 模块已创建则忽略错误）
+	// Manager 创建并独占技术内容索引。
 	_, err := s.client.CreateIndex(&meilisearch.IndexConfig{
-		Uid:        s.assetIndex,
+		Uid:        s.contentIndex,
 		PrimaryKey: "id",
 	})
 	// 忽略索引已存在的错误
 	if err != nil && !strings.Contains(err.Error(), "index_already_exists") {
-		return fmt.Errorf("failed to create asset index: %w", err)
+		return fmt.Errorf("failed to create Manager content index: %w", err)
 	}
 
-	// 配置统一资产索引（存储表、对象、文档元数据和内容）
-	assetIdx := s.client.Index(s.assetIndex)
+	// 配置技术内容索引（存储表、对象、文档元数据和内容）。
+	contentIdx := s.client.Index(s.contentIndex)
 
 	// 设置可搜索字段（按权重排序，与 Meta 模块保持一致）
-	_, err = assetIdx.UpdateSearchableAttributes(&[]string{
+	_, err = contentIdx.UpdateSearchableAttributes(&[]string{
 		"name",            // 文件名/表名 - 最高权重
 		"title",           // 文档标题
 		"full_name",       // 完整路径名
@@ -176,11 +176,11 @@ func (s *HybridSearchService) initIndexes() error {
 	}
 
 	// 设置可过滤字段
-	_, err = assetIdx.UpdateFilterableAttributes(&[]string{
+	_, err = contentIdx.UpdateFilterableAttributes(&[]string{
 		"tenant_id",
 		"engine_id",
 		"engine_type",
-		"asset_type", // 可过滤表/对象
+		"data_item_type", // 可过滤表/对象
 		"locator",
 		"schema",
 		"bucket",
@@ -192,7 +192,7 @@ func (s *HybridSearchService) initIndexes() error {
 	}
 
 	// 设置可排序字段
-	_, err = assetIdx.UpdateSortableAttributes(&[]string{
+	_, err = contentIdx.UpdateSortableAttributes(&[]string{
 		"data_updated_at",
 		"size_bytes",
 		"row_count",
@@ -203,13 +203,13 @@ func (s *HybridSearchService) initIndexes() error {
 		return fmt.Errorf("failed to update sortable attributes: %w", err)
 	}
 
-	s.log.Info("索引配置已更新", "index", s.assetIndex)
+	s.log.Info("索引配置已更新", "index", s.contentIndex)
 	return nil
 }
 
 // Enabled 返回混合检索是否可用
 func (s *HybridSearchService) Enabled() bool {
-	return s != nil && s.enabled && s.client != nil && s.assetIndex != ""
+	return s != nil && s.enabled && s.client != nil && s.contentIndex != ""
 }
 
 // SearchDocuments 执行混合检索（全文检索 + 向量检索）
@@ -257,8 +257,8 @@ func (s *HybridSearchService) SearchDocuments(
 		ShowMatchesPosition:   false,
 	}
 
-	// 执行搜索 - 使用统一资产索引（包含表、对象、文档元数据和内容）
-	index := s.client.Index(s.assetIndex)
+	// 执行 Manager owner 的技术内容搜索。
+	index := s.client.Index(s.contentIndex)
 	resp, err := index.Search(query, searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute search: %w", err)
@@ -389,7 +389,6 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID, engine
 		emb := item.Embedding
 		doc := VectorDocument{
 			DocumentID:     emb.ItemFingerprint,
-			AssetID:        emb.Locator,
 			Locator:        emb.Locator,
 			TenantID:       emb.TenantID,
 			EngineID:       emb.EngineID,
@@ -436,6 +435,66 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID, engine
 
 // Close 释放底层资源
 func (s *HybridSearchService) Close() {}
+
+func (s *HybridSearchService) UpsertContentDocument(_ context.Context, tenantID uint, document commonClient.ManagerContentDocument) error {
+	if !s.Enabled() {
+		return ErrSearchDisabled
+	}
+	document.DocumentID = strings.TrimSpace(document.DocumentID)
+	if tenantID == 0 || document.DocumentID == "" || document.EngineID == 0 || strings.TrimSpace(document.DataItemType) == "" || strings.TrimSpace(document.Name) == "" {
+		return errors.New("invalid Manager content document")
+	}
+	if document.ProjectionTime.IsZero() {
+		document.ProjectionTime = time.Now().UTC()
+	}
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		return fmt.Errorf("encode Manager content document: %w", err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		return fmt.Errorf("normalize Manager content document: %w", err)
+	}
+	payload["id"] = document.DocumentID
+	payload["tenant_id"] = tenantID
+	if _, err := s.client.Index(s.contentIndex).AddDocuments([]map[string]interface{}{payload}); err != nil {
+		return fmt.Errorf("upsert Manager content document: %w", err)
+	}
+	return nil
+}
+
+type ContentDocumentDeleteScope struct {
+	EngineID     uint
+	DataItemType string
+	Schema       string
+	Bucket       string
+	PathPrefix   string
+}
+
+func (s *HybridSearchService) DeleteContentDocuments(_ context.Context, tenantID uint, scope ContentDocumentDeleteScope) error {
+	if !s.Enabled() {
+		return ErrSearchDisabled
+	}
+	if tenantID == 0 || scope.EngineID == 0 {
+		return errors.New("invalid Manager content document deletion scope")
+	}
+	filters := []string{fmt.Sprintf("tenant_id = %d", tenantID), fmt.Sprintf("engine_id = %d", scope.EngineID)}
+	for field, value := range map[string]string{
+		"data_item_type": scope.DataItemType, "schema": scope.Schema, "bucket": scope.Bucket,
+	} {
+		if value = strings.TrimSpace(value); value != "" {
+			filters = append(filters, fmt.Sprintf("%s = '%s'", field, strings.ReplaceAll(value, "'", "\\'")))
+		}
+	}
+	if value := strings.TrimSpace(scope.PathPrefix); value != "" {
+		filters = append(filters, fmt.Sprintf("path ^= '%s'", strings.ReplaceAll(value, "'", "\\'")))
+	}
+	filter := strings.Join(filters, " AND ")
+	if _, err := s.client.Index(s.contentIndex).DeleteDocumentsByFilter(filter); err != nil {
+		return fmt.Errorf("delete Manager content documents: %w", err)
+	}
+	return nil
+}
 
 func buildSearchFilter(tenantID, engineID *uint) string {
 	filters := make([]string, 0, 2)
@@ -581,14 +640,13 @@ func vectorDocumentToSearchDocument(v VectorDocument) SearchDocument {
 
 	doc := SearchDocument{
 		DocumentID:     v.DocumentID,
-		AssetID:        v.AssetID,
 		Score:          v.Score,
 		MatchMethods:   []string{"vector"}, // 标记为向量匹配
 		VectorDistance: v.Distance,         // 保存向量距离
 		EngineID:       v.EngineID,
 		EngineName:     v.EngineName,
 		EngineType:     v.EngineType,
-		AssetType:      "object",
+		DataItemType:   "object",
 		Bucket:         bucket,
 		Path:           path,
 		Name:           name,
@@ -625,9 +683,6 @@ func mapMeilisearchHit(hit interface{}) SearchDocument {
 	if val, ok := hitMap["document_id"].(string); ok {
 		doc.DocumentID = val
 	}
-	if val, ok := hitMap["asset_id"].(string); ok {
-		doc.AssetID = val
-	}
 	if val, ok := hitMap["locator"].(string); ok {
 		doc.Locator = normalizeSearchResultLocator(val)
 	}
@@ -640,8 +695,8 @@ func mapMeilisearchHit(hit interface{}) SearchDocument {
 	if val, ok := hitMap["engine_type"].(string); ok {
 		doc.EngineType = val
 	}
-	if val, ok := hitMap["asset_type"].(string); ok {
-		doc.AssetType = val
+	if val, ok := hitMap["data_item_type"].(string); ok {
+		doc.DataItemType = val
 	}
 	if val, ok := hitMap["schema"].(string); ok {
 		doc.Schema = val
@@ -656,7 +711,7 @@ func mapMeilisearchHit(hit interface{}) SearchDocument {
 	if val, ok := hitMap["path"].(string); ok {
 		doc.Path = val
 	}
-	// meta-assets 使用 name 字段存储文件名
+	// 内容投影使用 name 字段存储文件名。
 	if val, ok := hitMap["name"].(string); ok {
 		doc.Name = val
 		doc.FileName = val

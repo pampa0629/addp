@@ -13,7 +13,7 @@ import (
 )
 
 // FilesystemCatalogRuntime 文件系统 catalog 扫描运行时。
-// 职责：通过 CatalogProvider 扫描文件系统语义存储，并使用 ContentReadableProvider 读取内容识别复合数据项。
+// 职责：通过 EngineCatalogProvider 扫描文件系统语义存储，并使用 ContentReadableProvider 读取内容识别复合数据项。
 type FilesystemCatalogRuntime struct {
 	db                 *gorm.DB
 	log                *slog.Logger

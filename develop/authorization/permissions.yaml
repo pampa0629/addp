@@ -1,7 +1,15 @@
 schema_version: addp.permission_manifest/v1
 owner_module: develop
-manifest_version: 6
+manifest_version: 7
 permissions:
+  - key: develop.catalog.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.develop.catalog.read.name
+    description_i18n_key: permissions.develop.catalog.read.description
   - key: develop.configuration.read
     allowed_scope_types: [platform, tenant]
     risk_level: low

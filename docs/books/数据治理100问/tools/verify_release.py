@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import posixpath
 import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 from zipfile import ZipFile
@@ -16,6 +19,7 @@ COMBINED_DOCX_NAME = "数据治理100问-合订本.docx"
 PDF_NAME = "数据治理100问.pdf"
 EPUB_NAME = "数据治理100问.epub"
 HTML_NAME = "数据治理100问-html.zip"
+MOBI_NAME = "数据治理100问.mobi"
 ATTRIBUTE = re.compile(r'\b(?:href|src)="([^"]+)"')
 IDENTIFIER = re.compile(r'\bid="([^"]+)"')
 
@@ -202,6 +206,48 @@ def verify_pdf(output_dir: Path) -> tuple[int, int, int]:
     return len(reader.pages), outlines, internal_links + external_links
 
 
+def calibre_executable(name: str) -> str:
+    resolved = shutil.which(name)
+    if resolved:
+        return resolved
+    candidate = Path("/Applications/calibre.app/Contents/MacOS") / name
+    if candidate.is_file():
+        return str(candidate)
+    raise ValueError(f"校验 MOBI 需要 Calibre 命令：{name}")
+
+
+def verify_mobi(output_dir: Path) -> tuple[int, int]:
+    path = output_dir / MOBI_NAME
+    if not path.is_file() or path.stat().st_size < 1_000_000:
+        raise ValueError(f"MOBI 未生成或体积异常：{path}")
+    with path.open("rb") as stream:
+        stream.seek(60)
+        if stream.read(8) != b"BOOKMOBI":
+            raise ValueError(f"MOBI 文件头无效：{path}")
+
+    metadata = subprocess.run(
+        [calibre_executable("ebook-meta"), str(path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    if BOOK_AUTHOR not in metadata or "数据治理100问" not in metadata:
+        raise ValueError("MOBI 缺少正确的书名或作者元数据")
+
+    with tempfile.TemporaryDirectory(prefix="data_governance_mobi_verify_") as temp:
+        roundtrip = Path(temp) / "roundtrip.epub"
+        subprocess.run(
+            [calibre_executable("ebook-convert"), str(path), str(roundtrip)],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        links, resources = verify_archive_links(roundtrip)
+    if links < 100:
+        raise ValueError(f"MOBI 内部链接数量异常：{links}")
+    return links, resources
+
+
 def verify_release(output_dir: Path) -> None:
     docx_targets, docx_anchors = verify_docx(output_dir)
     epub_links, epub_resources = verify_archive_links(output_dir / EPUB_NAME)
@@ -209,11 +255,13 @@ def verify_release(output_dir: Path) -> None:
     verify_archive_author(output_dir / EPUB_NAME, epub=True)
     verify_archive_author(output_dir / HTML_NAME, epub=False)
     pdf_pages, pdf_outlines, pdf_links = verify_pdf(output_dir)
+    mobi_links, mobi_resources = verify_mobi(output_dir)
     print(
         "发行物校验通过："
         f"DOCX 跨文档链接 {docx_targets} 个、合订本内部链接 {docx_anchors} 个；"
         f"EPUB 锚点链接 {epub_links} 个/资源 {epub_resources} 个；"
         f"HTML 锚点链接 {html_links} 个/资源 {html_resources} 个；"
+        f"MOBI 锚点链接 {mobi_links} 个/资源 {mobi_resources} 个；"
         f"PDF {pdf_pages or '未深度解析'} 页、{pdf_outlines or '未深度解析'} 个书签、"
         f"{pdf_links or '未深度解析'} 个链接。"
     )

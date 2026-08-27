@@ -17,13 +17,15 @@ type TableEndpointKind string
 const (
 	TableEndpointNative  TableEndpointKind = "native"
 	TableEndpointEncoded TableEndpointKind = "encoded"
+	TableEndpointQuery   TableEndpointKind = "query"
 )
 
 type TableSourcePlan struct {
 	Kind         TableEndpointKind
 	ConnInfo     engineplugin.ConnectionInfo
-	Path         engineplugin.CatalogPath
+	Path         engineplugin.EngineCatalogPath
 	Query        string
+	RuntimeQuery *engineplugin.QueryRequest
 	ReadOptions  map[string]interface{}
 	ContentRead  engineplugin.ReadOptions
 	Format       format.FormatType
@@ -38,8 +40,9 @@ type TableSourcePlan struct {
 type TableTargetPlan struct {
 	Kind              TableEndpointKind
 	ConnInfo          engineplugin.ConnectionInfo
-	Path              engineplugin.CatalogPath
+	Path              engineplugin.EngineCatalogPath
 	DeleteBeforeWrite bool
+	ManagedExisting   bool
 	ContentWrite      engineplugin.WriteOptions
 	TablePrepare      engineplugin.TableWriteOptions
 	TableWrite        engineplugin.BatchWriteOptions
@@ -116,6 +119,7 @@ type FieldMappingFieldPlan struct {
 type TableTransferExecutor struct {
 	SourceNativeReader         engineplugin.BatchReadableProvider
 	SourceTableSessionProvider engineplugin.TableReadSessionProvider
+	SourceQuerySessionProvider engineplugin.QueryReadSessionProvider
 	SourceContentReader        engineplugin.ContentReadableProvider
 	SourceTableReadProvider    format.TableReaderProvider
 	SourceInfoProvider         format.TableInfoProvider
@@ -149,6 +153,7 @@ func NewTableTransferExecutor(sourceEngineType, targetEngineType string, sourceF
 		executor.SourceNativeReader = reader
 	}
 	executor.SourceTableSessionProvider, _ = sourcePlugin.(engineplugin.TableReadSessionProvider)
+	executor.SourceQuerySessionProvider, _ = sourcePlugin.(engineplugin.QueryReadSessionProvider)
 	if reader, ok := sourcePlugin.(engineplugin.ContentReadableProvider); ok {
 		executor.SourceContentReader = reader
 	}
@@ -208,6 +213,19 @@ func (e *TableTransferExecutor) Execute(ctx context.Context, plan TableTransferP
 
 func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSource, error) {
 	switch plan.Kind {
+	case TableEndpointQuery:
+		if e.SourceQuerySessionProvider == nil {
+			return nil, fmt.Errorf("query source requires query read session provider")
+		}
+		if plan.RuntimeQuery == nil {
+			return nil, fmt.Errorf("query source requires runtime query request")
+		}
+		return &queryTableBatchSource{
+			provider:  e.SourceQuerySessionProvider,
+			connInfo:  plan.ConnInfo,
+			request:   *plan.RuntimeQuery,
+			tableInfo: plan.TableInfo,
+		}, nil
 	case TableEndpointNative:
 		if e.SourceNativeReader == nil && e.SourceTableSessionProvider == nil {
 			return nil, fmt.Errorf("native table source requires batch reader or table read session")
@@ -303,7 +321,10 @@ func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarg
 		if e.TargetNativeWriter == nil && e.TargetTableSessionProvider == nil {
 			return nil, fmt.Errorf("native table target requires batch writer or table write session")
 		}
-		if e.TargetNativePreparer == nil {
+		if plan.ManagedExisting && e.TargetTableSessionProvider == nil {
+			return nil, fmt.Errorf("managed existing table target requires table write session provider")
+		}
+		if !plan.ManagedExisting && e.TargetNativePreparer == nil {
 			return nil, fmt.Errorf("target engine does not implement table write prepare")
 		}
 		return &nativeTableBatchTarget{
@@ -317,13 +338,14 @@ func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarg
 			writeOptions:         plan.TableWrite,
 			resumeMarker:         plan.ResumeMarker,
 			replace:              plan.DeleteBeforeWrite,
+			managedExisting:      plan.ManagedExisting,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported table target kind %q", plan.Kind)
 	}
 }
 
-func encodedTargetRelatedRefMapping(path engineplugin.CatalogPath) (string, contentadapter.RefCatalogPathMapper) {
+func encodedTargetRelatedRefMapping(path engineplugin.EngineCatalogPath) (string, contentadapter.RefCatalogPathMapper) {
 	bucket, objectPath := objectCatalogPathParts(path)
 	if bucket == "" || objectPath == "" {
 		return path.StringPath(), nil
@@ -331,7 +353,7 @@ func encodedTargetRelatedRefMapping(path engineplugin.CatalogPath) (string, cont
 	return objectPath, contentadapter.SameObjectBucketPathMapper(path)
 }
 
-func objectCatalogPathParts(path engineplugin.CatalogPath) (string, string) {
+func objectCatalogPathParts(path engineplugin.EngineCatalogPath) (string, string) {
 	bucket := ""
 	parts := make([]string, 0, len(path.Segments))
 	for _, segment := range path.Segments {
@@ -339,7 +361,7 @@ func objectCatalogPathParts(path engineplugin.CatalogPath) (string, string) {
 		if name == "" {
 			continue
 		}
-		if bucket == "" && (segment.Term == engineplugin.CatalogTermBucket || segment.Kind == engineplugin.CatalogKindBucket) {
+		if bucket == "" && (segment.Term == engineplugin.EngineCatalogTermBucket || segment.Kind == engineplugin.EngineCatalogKindBucket) {
 			bucket = name
 			continue
 		}

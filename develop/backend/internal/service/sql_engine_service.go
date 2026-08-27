@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/develop/backend/internal/config"
@@ -146,8 +148,8 @@ func (s *SQLEngineService) issueExecutionAuthorization(
 		return nil, fmt.Errorf("SQL 执行授权服务未正确初始化")
 	}
 	issued, err := s.executionAuthorizations.Issue(ctx, userAccessToken, commonClient.IssueExecutionAuthorizationRequest{
-		Audience: audience, ExecutionID: executionID.String(), EngineIDs: formatEngineIDs(engineIDs),
-		Effects: formatSQLExecutionEffects(effects), ExpiresIn: expiresIn,
+		Audience: audience, ExecutionID: executionID.String(),
+		Accesses: executionEngineAccessScopes(engineIDs, effects), ExpiresIn: expiresIn,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("签发执行授权失败: %w", err)
@@ -243,6 +245,37 @@ func (s *SQLEngineService) IssueFederatedReadExecutionAuthorizationFromExecution
 	)
 }
 
+func (s *SQLEngineService) IssueExistingTableWriteAuthorizationFromExecution(
+	ctx context.Context,
+	tenantID uint,
+	parentExecutionID uuid.UUID,
+	executionID uuid.UUID,
+	engineID uint,
+	attempt int,
+	leaseToken string,
+	timeout int,
+) (*IssuedSQLExecutionAuthorization, error) {
+	if s == nil || s.cfg == nil || s.systemService == nil || tenantID == 0 || engineID == 0 ||
+		parentExecutionID == uuid.Nil || executionID == uuid.Nil || attempt <= 0 || strings.TrimSpace(leaseToken) == "" {
+		return nil, fmt.Errorf("既有表写入查询授权服务未正确初始化")
+	}
+	timeout = s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
+	effects := []SQLExecutionEffect{SQLExecutionEffectRead, SQLExecutionEffectWrite}
+	issued, err := s.systemService.WithTenantID(tenantID).IssueExecutionAuthorizationFromExecution(
+		ctx,
+		commonClient.IssueExecutionAuthorizationFromExecutionRequest{
+			ParentExecutionID: parentExecutionID.String(), Audience: commonExecution.AudienceDevelop,
+			ExecutionID: executionID.String(), Attempt: attempt, LeaseToken: leaseToken,
+			Accesses:  executionEngineAccessScopes([]uint{engineID}, effects),
+			ExpiresIn: int64(s.normalizedTimeout(timeout) + 30),
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("从父执行签发既有表写入查询授权失败: %w", err)
+	}
+	return issuedSQLExecutionAuthorization(issued, tenantID, effects, []uint{engineID})
+}
+
 func (s *SQLEngineService) issueExecutionAuthorizationFromExecution(
 	ctx context.Context,
 	tenantID uint,
@@ -263,8 +296,7 @@ func (s *SQLEngineService) issueExecutionAuthorizationFromExecution(
 			ParentExecutionID: parentExecutionID.String(),
 			Audience:          audience,
 			ExecutionID:       executionID.String(),
-			EngineIDs:         formatEngineIDs(engineIDs),
-			Effects:           formatSQLExecutionEffects(effects),
+			Accesses:          executionEngineAccessScopes(engineIDs, effects),
 			ExpiresIn:         expiresIn,
 		},
 	)
@@ -274,24 +306,16 @@ func (s *SQLEngineService) issueExecutionAuthorizationFromExecution(
 	return issuedSQLExecutionAuthorization(issued, tenantID, effects, engineIDs)
 }
 
-func (s *SQLEngineService) IssueManagedWriteExecutionAuthorizationFromExecution(
-	ctx context.Context,
-	tenantID uint,
-	parentExecutionID uuid.UUID,
-	executionID uuid.UUID,
-	engineID uint,
-	timeout int,
-) (*IssuedSQLExecutionAuthorization, error) {
-	if s == nil || s.cfg == nil || s.systemService == nil || tenantID == 0 || engineID == 0 ||
-		parentExecutionID == uuid.Nil || executionID == uuid.Nil {
-		return nil, fmt.Errorf("SQL 执行授权服务未正确初始化")
+func executionEngineAccessScopes(engineIDs []uint, effects []SQLExecutionEffect) []commonClient.ExecutionEngineAccessScope {
+	formattedEffects := formatSQLExecutionEffects(effects)
+	accesses := make([]commonClient.ExecutionEngineAccessScope, 0, len(engineIDs))
+	for _, engineID := range engineIDs {
+		accesses = append(accesses, commonClient.ExecutionEngineAccessScope{
+			EngineID: strconv.FormatUint(uint64(engineID), 10),
+			Effects:  append([]string(nil), formattedEffects...),
+		})
 	}
-	timeout = s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
-	return s.issueExecutionAuthorizationFromExecution(
-		ctx, tenantID, parentExecutionID, executionID, []uint{engineID},
-		[]SQLExecutionEffect{SQLExecutionEffectRead, SQLExecutionEffectWrite},
-		int64(s.normalizedTimeout(timeout)+30), "develop",
-	)
+	return accesses
 }
 
 func (s *SQLEngineService) sqlExecutionAuthorizationRequest(
@@ -477,7 +501,7 @@ func (s *SQLEngineService) GenerateAuthorizedSampleQuery(
 	engineID uint,
 	locator *resourcetree.ResourceLocator,
 ) (string, string, error) {
-	var selectedPath *plugin.CatalogPath
+	var selectedPath *plugin.EngineCatalogPath
 	if locator != nil {
 		if locator.EngineID != engineID {
 			return "", "", fmt.Errorf("%w: 引擎 ID 不匹配", ErrSampleQueryResourceInvalid)
@@ -494,11 +518,11 @@ func (s *SQLEngineService) GenerateAuthorizedSampleQuery(
 		return "", "", err
 	}
 	if locator != nil {
-		model, modelErr := dbbridge.CatalogModel(engine.EngineType)
+		model, modelErr := dbbridge.EngineCatalogModel(engine.EngineType)
 		if modelErr != nil {
 			return "", "", fmt.Errorf("%w: %v", ErrSampleQueryResourceInvalid, modelErr)
 		}
-		path, pathErr := resourcetree.ProviderCatalogPathFromLocator(model, locator)
+		path, pathErr := resourcetree.EngineCatalogPathFromLocator(model, locator)
 		if pathErr != nil || len(path.Segments) < 2 {
 			if pathErr == nil {
 				pathErr = fmt.Errorf("资源不是可查询数据项")
@@ -510,7 +534,7 @@ func (s *SQLEngineService) GenerateAuthorizedSampleQuery(
 	return generateExecutableSampleQuery(ctx, engine, selectedPath)
 }
 
-func generateExecutableSampleQuery(ctx context.Context, engine *commonModels.Engine, selectedPath *plugin.CatalogPath) (string, string, error) {
+func generateExecutableSampleQuery(ctx context.Context, engine *commonModels.Engine, selectedPath *plugin.EngineCatalogPath) (string, string, error) {
 	return dbbridge.GenerateExecutableSampleQuery(ctx, engine, "", dbbridge.ExecutableSampleQueryOptions{
 		QueryLimit:      10,
 		ValidationLimit: 10,

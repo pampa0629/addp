@@ -135,43 +135,70 @@ const docTemplate = `{
                 ]
             }
         },
-        "/assets/discoverable": {
+        "/catalog-resources/changes": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回当前租户下可被资产模块发现的开发任务 | List active develop tasks for Asset discovery",
+                "description": "按不透明游标返回 Query / Workflow DevTask 的最小检索摘要变化，仅供 Catalog 服务消费 | Return minimal search-summary changes for Query / Workflow DevTasks by opaque cursor for the Catalog service only",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Develop"
+                    "Catalog Integration"
                 ],
-                "summary": "列出可发现资产 | List discoverable assets",
+                "summary": "拉取 Develop 成果目录变化 | Pull Develop artifact catalog changes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "上次成功提交的不透明游标，空值从历史起点开始 | Opaque cursor committed by the consumer; empty starts from the beginning",
+                        "name": "after_cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "批大小，默认 200，最大 500 | Batch size, default 200 and maximum 500",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": true
-                            }
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.CatalogResourceChangesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "无效游标或批大小 | Invalid cursor or batch size",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "需要认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "非 Catalog 服务或权限不足 | Catalog service or permission required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "读取失败 | Read failed",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
                         }
                     }
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "develop.task.read"
+                    "develop.catalog.read"
                 ]
             }
         },
@@ -757,7 +784,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api.notebookCatalogChildrenRequest"
+                            "$ref": "#/definitions/internal_api.notebookEngineCatalogChildrenRequest"
                         }
                     }
                 ],
@@ -2030,6 +2057,73 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/catalog-references/resolve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按请求顺序动态解析 1 到 200 个 DevTask 引用；跨 Tenant、不在接入范围和不存在统一 found=false，仅供 Catalog 服务消费 | Dynamically resolve 1 to 200 DevTask references in request order; cross-tenant, out-of-scope, and missing references all return found=false; Catalog service only",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Integration"
+                ],
+                "summary": "解析 Develop 成果目录引用 | Resolve Develop artifact catalog references",
+                "parameters": [
+                    {
+                        "description": "DevTask 目录引用 | DevTask catalog references",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ResolveCatalogReferencesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ResolveCatalogReferencesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "需要认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "非 Catalog 服务或权限不足 | Catalog service or permission required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "解析失败 | Resolution failed",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.catalog.read"
+                ]
+            }
+        },
         "/settings/query-policy": {
             "get": {
                 "security": [
@@ -3033,7 +3127,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "storage": {
-                    "$ref": "#/definitions/plugin.CatalogStorageFacts"
+                    "$ref": "#/definitions/plugin.EngineCatalogStorageFacts"
                 },
                 "table": {
                     "$ref": "#/definitions/datatype.TableInfo"
@@ -3264,6 +3358,95 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_develop_backend_internal_models.CatalogReference": {
+            "type": "object",
+            "required": [
+                "source_identity",
+                "source_type"
+            ],
+            "properties": {
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.CatalogReferenceResolution": {
+            "type": "object",
+            "properties": {
+                "detail_path": {
+                    "type": "string"
+                },
+                "found": {
+                    "type": "boolean"
+                },
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.CatalogResourceChange": {
+            "type": "object",
+            "properties": {
+                "change_id": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "operation": {
+                    "type": "string"
+                },
+                "snapshot": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                },
+                "source_version": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.CatalogResourceChangesResponse": {
+            "type": "object",
+            "properties": {
+                "changes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.CatalogResourceChange"
+                    }
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "next_cursor": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_develop_backend_internal_models.CreateDevTaskSwaggerRequest": {
             "type": "object",
             "required": [
@@ -3450,7 +3633,7 @@ const docTemplate = `{
                 },
                 "query": {
                     "type": "string",
-                    "example": "SELECT * FROM cities"
+                    "example": "SELECT * FROM addp_input.source"
                 },
                 "query_parameters": {
                     "type": "array",
@@ -3466,6 +3649,15 @@ const docTemplate = `{
                         "cypher"
                     ],
                     "example": "sql"
+                },
+                "relation_inputs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "source"
+                    ]
                 },
                 "target_locator": {
                     "type": "string",
@@ -3581,9 +3773,6 @@ const docTemplate = `{
                 },
                 "engine_specific": {
                     "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.WorkflowEngineSpecificConfigSwagger"
-                },
-                "materialization_target": {
-                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.MaterializationTargetSwagger"
                 },
                 "type": {
                     "type": "string",
@@ -3937,15 +4126,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_develop_backend_internal_models.MaterializationTargetSwagger": {
-            "type": "object",
-            "properties": {
-                "logical_table_id": {
-                    "type": "integer",
-                    "example": 3
-                }
-            }
-        },
         "github_com_addp_develop_backend_internal_models.NotebookRuntimeBindingSwaggerRequest": {
             "type": "object",
             "required": [
@@ -4204,6 +4384,33 @@ const docTemplate = `{
                 },
                 "task": {
                     "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.ResolveCatalogReferencesRequest": {
+            "type": "object",
+            "required": [
+                "references"
+            ],
+            "properties": {
+                "references": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.CatalogReference"
+                    }
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.ResolveCatalogReferencesResponse": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.CatalogReferenceResolution"
+                    }
                 }
             }
         },
@@ -4809,20 +5016,6 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.notebookCatalogChildrenRequest": {
-            "type": "object",
-            "properties": {
-                "engine_id": {
-                    "type": "integer"
-                },
-                "options": {
-                    "$ref": "#/definitions/client.EngineCatalogListOptions"
-                },
-                "path": {
-                    "$ref": "#/definitions/client.EngineCatalogPath"
-                }
-            }
-        },
         "internal_api.notebookChangeStreamRequest": {
             "type": "object",
             "properties": {
@@ -4860,6 +5053,20 @@ const docTemplate = `{
                 },
                 "range": {
                     "$ref": "#/definitions/internal_api.notebookByteRange"
+                }
+            }
+        },
+        "internal_api.notebookEngineCatalogChildrenRequest": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "options": {
+                    "$ref": "#/definitions/client.EngineCatalogListOptions"
+                },
+                "path": {
+                    "$ref": "#/definitions/client.EngineCatalogPath"
                 }
             }
         },
@@ -5142,7 +5349,7 @@ const docTemplate = `{
                 }
             }
         },
-        "plugin.CatalogStorageFacts": {
+        "plugin.EngineCatalogStorageFacts": {
             "type": "object",
             "properties": {
                 "content_type": {

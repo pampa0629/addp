@@ -1004,6 +1004,22 @@
       "refreshItem": "刷新数据项",
       "lineageTab": "血缘",
       "lineageLoadFailed": "加载数据项血缘失败",
+      "catalogSummaryTitle": "企业目录摘要",
+      "catalogSummaryDescription": "业务语义和责任由 Catalog 维护；此处只按需读取摘要。",
+      "openCatalogEntry": "打开企业目录",
+      "catalogUnnamed": "未命名目录条目",
+      "catalogPending": "该数据项正在等待 Catalog 自动建档或同步追赶。",
+      "catalogUnavailable": "企业目录摘要当前不可用",
+      "catalogGovernance": {
+        "discovered": "已发现",
+        "curated": "已编目",
+        "certified": "已认证",
+        "deprecated": "已弃用"
+      },
+      "catalogSource": {
+        "active": "来源有效",
+        "missing": "来源缺失"
+      },
       "vectorize": "向量化",
       "vectorized": "已向量化",
       "batchVectorize": "批量向量化",

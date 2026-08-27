@@ -5,14 +5,14 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 func (s *FilesystemCatalogRuntime) ensureFilesystemScanRoot(tenantID uint, resource *commonModels.Engine, enginePlugin plugin.EnginePlugin, scanPath string) (*models.MetaNode, *models.MetaNode, error) {
-	rootNode, err := metaRepo.EnsureCatalogRootNodeWithNativeName(s.repo, tenantID, resource, enginePlugin, "/")
+	rootNode, err := metaRepo.EnsureEngineCatalogRootNodeWithNativeName(s.repo, tenantID, resource, enginePlugin, "/")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -34,7 +34,7 @@ func (s *FilesystemCatalogRuntime) ensureFilesystemScanRoot(tenantID uint, resou
 			"dir",
 			part,
 			&fullName,
-			metacatalog.FileDirectoryNodeAttributes(fullName),
+			scanresource.FileDirectoryNodeAttributes(fullName),
 		)
 		if err != nil {
 			return rootNode, nil, err

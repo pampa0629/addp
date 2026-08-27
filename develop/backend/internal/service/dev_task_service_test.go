@@ -18,7 +18,7 @@ func TestValidateDevTaskContentAcceptsCanonicalQuery(t *testing.T) {
 	}
 }
 
-func TestValidateDevTaskContentRejectsLegacyQuerySQL(t *testing.T) {
+func TestValidateDevTaskContentRejectsUndeclaredQueryField(t *testing.T) {
 	err := validateDevTaskContent(commonExecution.TaskTypeQuery, map[string]interface{}{
 		"sql":        "SELECT 1",
 		"query_type": "sql",
@@ -26,8 +26,8 @@ func TestValidateDevTaskContentRejectsLegacyQuerySQL(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected legacy content.sql to be rejected")
 	}
-	if !strings.Contains(err.Error(), "content.query") {
-		t.Fatalf("expected content.query error, got %v", err)
+	if !strings.Contains(err.Error(), "content 包含未声明字段: sql") {
+		t.Fatalf("expected undeclared content field error, got %v", err)
 	}
 }
 
@@ -47,46 +47,67 @@ func TestValidateDevTaskExecutionConfigAcceptsQueryEngineID(t *testing.T) {
 	}
 }
 
-func TestValidateDevTaskExecutionConfigAcceptsManagedMaterializationSelect(t *testing.T) {
+func TestValidateDevTaskExecutionConfigAcceptsRelationInputs(t *testing.T) {
 	err := validateDevTaskExecutionConfig(
 		commonExecution.TaskTypeQuery,
-		map[string]interface{}{"query": "WITH source AS (SELECT 1 AS id) SELECT id FROM source", "query_type": "sql"},
 		map[string]interface{}{
-			"engine_id":              12,
-			"materialization_target": map[string]interface{}{"logical_table_id": 3},
+			"query":      "SELECT person_id, count(*) FROM addp_input.participation GROUP BY person_id",
+			"query_type": "sql", "relation_inputs": []interface{}{"participation"},
 		},
+		map[string]interface{}{"engine_id": 12},
 	)
 	if err != nil {
-		t.Fatalf("expected managed SELECT to pass, got %v", err)
+		t.Fatalf("expected relation-input SELECT to pass, got %v", err)
 	}
 }
 
-func TestValidateDevTaskExecutionConfigRejectsManagedMaterializationWriteSQL(t *testing.T) {
+func TestValidateDevTaskExecutionConfigRejectsRelationInputWriteSQL(t *testing.T) {
 	err := validateDevTaskExecutionConfig(
 		commonExecution.TaskTypeQuery,
-		map[string]interface{}{"query": "DELETE FROM source", "query_type": "sql"},
-		map[string]interface{}{
-			"engine_id":              12,
-			"materialization_target": map[string]interface{}{"logical_table_id": 3},
-		},
+		map[string]interface{}{"query": "DELETE FROM source", "query_type": "sql", "relation_inputs": []interface{}{"source"}},
+		map[string]interface{}{"engine_id": 12},
 	)
 	if err == nil || !strings.Contains(err.Error(), "单条只读 SELECT") {
-		t.Fatalf("expected managed write SQL rejection, got %v", err)
+		t.Fatalf("expected relation-input write SQL rejection, got %v", err)
 	}
 }
 
-func TestValidateDevTaskExecutionConfigRejectsManagedMaterializationExtraFields(t *testing.T) {
+func TestValidateDevTaskExecutionConfigRejectsUndeclaredRelationInput(t *testing.T) {
 	err := validateDevTaskExecutionConfig(
 		commonExecution.TaskTypeQuery,
-		map[string]interface{}{"query": "SELECT 1", "query_type": "sql"},
 		map[string]interface{}{
-			"engine_id":              12,
-			"materialization_target": map[string]interface{}{"logical_table_id": 3, "table": "unsafe"},
+			"query": "SELECT * FROM addp_input.person", "query_type": "sql",
+			"relation_inputs": []interface{}{"participation"},
 		},
+		map[string]interface{}{"engine_id": 12},
 	)
-	if err == nil || !strings.Contains(err.Error(), "只能包含 logical_table_id") {
-		t.Fatalf("expected managed target shape rejection, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "未声明的关系输入") {
+		t.Fatalf("expected undeclared relation input rejection, got %v", err)
 	}
+}
+
+func TestValidateDevTaskExecutionConfigRejectsUndeclaredFields(t *testing.T) {
+	t.Run("content", func(t *testing.T) {
+		err := validateDevTaskContent(commonExecution.TaskTypeQuery, map[string]interface{}{
+			"query": "SELECT 1", "query_type": "sql", "unexpected": true,
+		})
+		if err == nil || !strings.Contains(err.Error(), "content 包含未声明字段: unexpected") {
+			t.Fatalf("expected undeclared content field rejection, got %v", err)
+		}
+	})
+
+	t.Run("execution_config", func(t *testing.T) {
+		err := validateDevTaskExecutionConfig(
+			commonExecution.TaskTypeQuery,
+			map[string]interface{}{"query": "SELECT 1", "query_type": "sql"},
+			map[string]interface{}{
+				"engine_id": 12, "unexpected": true,
+			},
+		)
+		if err == nil || !strings.Contains(err.Error(), "execution_config 包含未声明字段: unexpected") {
+			t.Fatalf("expected undeclared execution config field rejection, got %v", err)
+		}
+	})
 }
 
 func TestValidateDevTaskExecutionConfigRequiresTargetLocatorEngineMatch(t *testing.T) {

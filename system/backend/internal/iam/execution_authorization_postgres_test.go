@@ -9,6 +9,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/testsupport"
 	"github.com/google/uuid"
@@ -44,6 +45,9 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 			module text NOT NULL,
 			parent_execution_id uuid,
 			status text NOT NULL,
+			attempt integer NOT NULL DEFAULT 0,
+			lease_token uuid,
+			lease_expires_at timestamptz,
 			actor_principal_id bigint,
 			actor_tenant_membership_id bigint,
 			issued_authorization_version bigint
@@ -104,34 +108,34 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 	executionID := uuid.New()
 	issued, err := service.Issue(ctx, IssueExecutionAuthorizationInput{
 		SourceAccessToken: selection.Session.AccessToken,
-		Audience:          "develop", ExecutionID: executionID, EngineIDs: []int64{builtinEngineID, tenantEngineID},
-		Effects: []string{"read"}, ExpiresIn: 10 * time.Minute, Audit: audit,
+		Audience:          "develop", ExecutionID: executionID,
+		Accesses: executionAccessScopes([]int64{builtinEngineID, tenantEngineID}, "read"), ExpiresIn: 10 * time.Minute, Audit: audit,
 	})
 	if err != nil {
 		t.Fatalf("issue execution authorization: %v", err)
 	}
 	if issued.ID <= 0 || issued.TenantID != tenant.ID || issued.TenantMembershipID != membership.Membership.ID ||
-		len(issued.EngineIDs) != 2 || issued.EngineIDs[0] != tenantEngineID || issued.EngineIDs[1] != builtinEngineID {
+		len(issued.Accesses) != 2 || issued.Accesses[0].EngineID != tenantEngineID || issued.Accesses[1].EngineID != builtinEngineID {
 		t.Fatalf("issued execution authorization = %#v", issued)
 	}
 	if _, err := service.Issue(ctx, IssueExecutionAuthorizationInput{
 		SourceAccessToken: selection.Session.AccessToken,
-		Audience:          "develop", ExecutionID: executionID, EngineIDs: []int64{tenantEngineID},
-		Effects: []string{"read"}, Audit: audit,
+		Audience:          "develop", ExecutionID: executionID,
+		Accesses: executionAccessScopes([]int64{tenantEngineID}, "read"), Audit: audit,
 	}); !errors.Is(err, ErrExecutionAuthorizationConflict) {
 		t.Fatalf("duplicate execution authorization error = %v", err)
 	}
 	if _, err := service.Issue(ctx, IssueExecutionAuthorizationInput{
 		SourceAccessToken: selection.Session.AccessToken,
-		Audience:          "develop", ExecutionID: uuid.New(), EngineIDs: []int64{foreignEngineID},
-		Effects: []string{"read"}, Audit: audit,
+		Audience:          "develop", ExecutionID: uuid.New(),
+		Accesses: executionAccessScopes([]int64{foreignEngineID}, "read"), Audit: audit,
 	}); !errors.Is(err, commonapi.ErrBadRequest) {
 		t.Fatalf("cross-tenant engine issue error = %v", err)
 	}
 	if _, err := service.Issue(ctx, IssueExecutionAuthorizationInput{
 		SourceAccessToken: selection.Session.AccessToken,
-		Audience:          "develop", ExecutionID: uuid.New(), EngineIDs: []int64{tenantEngineID},
-		Effects: []string{"ddl"}, Audit: audit,
+		Audience:          "develop", ExecutionID: uuid.New(),
+		Accesses: executionAccessScopes([]int64{tenantEngineID}, "ddl"), Audit: audit,
 	}); !errors.Is(err, ErrExecutionAuthorizationPermissionDenied) {
 		t.Fatalf("DDL permission issue error = %v", err)
 	}
@@ -182,7 +186,7 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 	}
 	issuedFromExecution, err := service.IssueFromExecution(ctx, IssueExecutionAuthorizationFromExecutionInput{
 		ParentExecutionID: parentExecutionID, Audience: "develop", ExecutionID: childExecutionID,
-		EngineIDs: []int64{tenantEngineID}, Effects: []string{"read"}, ExpiresIn: 10 * time.Minute,
+		Accesses: executionAccessScopes([]int64{tenantEngineID}, "read"), ExpiresIn: 10 * time.Minute,
 		ServicePrincipalID: developPrincipalID, ServiceClientID: "addp-develop",
 		TenantID: tenant.ID, Audit: consumeAudit,
 	})
@@ -190,6 +194,135 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		issuedFromExecution.TenantMembershipID != issued.TenantMembershipID ||
 		issuedFromExecution.IssuedAuthorizationVersion != issued.IssuedAuthorizationVersion {
 		t.Fatalf("issue authorization from parent execution: result=%#v error=%v", issuedFromExecution, err)
+	}
+
+	var transferPrincipalID int64
+	if err := db.Raw(`
+		SELECT service_principal.id
+		FROM system.service_principals service_principal
+		WHERE service_principal.name = 'addp-transfer'
+	`).Scan(&transferPrincipalID).Error; err != nil || transferPrincipalID <= 0 {
+		t.Fatalf("find addp-transfer principal: id=%d error=%v", transferPrincipalID, err)
+	}
+	transferExecutionID := uuid.New()
+	transferLeaseToken := uuid.New()
+	if err := db.Exec(`
+		INSERT INTO common.task_executions (
+			execution_id, tenant_id, module, parent_execution_id, status, attempt, lease_token, lease_expires_at,
+			actor_principal_id, actor_tenant_membership_id, issued_authorization_version
+		) VALUES (?, ?, 'transfer', ?, 'running', 2, ?, NOW() + INTERVAL '5 minutes', ?, ?, ?)
+	`, transferExecutionID, tenant.ID, parentExecutionID, transferLeaseToken,
+		issued.ActorPrincipalID, issued.TenantMembershipID, issued.IssuedAuthorizationVersion).Error; err != nil {
+		t.Fatalf("create leased Transfer execution provenance: %v", err)
+	}
+	transferAudit := consumeAudit
+	transferAudit.PrincipalID = &transferPrincipalID
+	issuedFromLease, err := service.IssueFromExecution(ctx, IssueExecutionAuthorizationFromExecutionInput{
+		ParentExecutionID: parentExecutionID, Audience: commonExecution.AudienceTransfer,
+		ExecutionID: transferExecutionID, Attempt: 2, LeaseToken: transferLeaseToken,
+		Accesses: []ExecutionEngineAccessScope{
+			{EngineID: tenantEngineID, Effects: []string{"read"}},
+			{EngineID: builtinEngineID, Effects: []string{"write"}},
+		}, ExpiresIn: 10 * time.Minute,
+		ServicePrincipalID: transferPrincipalID, ServiceClientID: "addp-transfer",
+		TenantID: tenant.ID, Audit: transferAudit,
+	})
+	if err != nil || issuedFromLease == nil || issuedFromLease.Audience != commonExecution.AudienceTransfer {
+		t.Fatalf("issue authorization from current Transfer lease: result=%#v error=%v", issuedFromLease, err)
+	}
+	if _, err := service.AuthorizeEngineAccess(ctx, AuthorizeExecutionEngineAccessInput{
+		AuthorizationID: issuedFromLease.ID, ExecutionID: transferExecutionID, EngineID: builtinEngineID,
+		RequiredEffects: []string{"write"}, ServicePrincipalID: transferPrincipalID,
+		ServiceClientID: "addp-transfer", TenantID: tenant.ID, Audit: transferAudit,
+	}); err != nil {
+		t.Fatalf("consume current Transfer attempt authorization: %v", err)
+	}
+	for name, input := range map[string]AuthorizeExecutionEngineAccessInput{
+		"source write expansion": {
+			AuthorizationID: issuedFromLease.ID, ExecutionID: transferExecutionID, EngineID: tenantEngineID,
+			RequiredEffects: []string{"write"}, ServicePrincipalID: transferPrincipalID,
+			ServiceClientID: "addp-transfer", TenantID: tenant.ID, Audit: transferAudit,
+		},
+		"target read expansion": {
+			AuthorizationID: issuedFromLease.ID, ExecutionID: transferExecutionID, EngineID: builtinEngineID,
+			RequiredEffects: []string{"read"}, ServicePrincipalID: transferPrincipalID,
+			ServiceClientID: "addp-transfer", TenantID: tenant.ID, Audit: transferAudit,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, accessErr := service.AuthorizeEngineAccess(ctx, input); !errors.Is(accessErr, ErrExecutionAuthorizationPermissionDenied) {
+				t.Fatalf("error=%v, want permission denied", accessErr)
+			}
+		})
+	}
+	for name, attemptToken := range map[string]struct {
+		attempt int
+		token   uuid.UUID
+	}{
+		"wrong attempt": {attempt: 1, token: transferLeaseToken},
+		"wrong token":   {attempt: 2, token: uuid.New()},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, issueErr := service.IssueFromExecution(ctx, IssueExecutionAuthorizationFromExecutionInput{
+				ParentExecutionID: parentExecutionID, Audience: commonExecution.AudienceTransfer,
+				ExecutionID: transferExecutionID, Attempt: attemptToken.attempt, LeaseToken: attemptToken.token,
+				Accesses: executionAccessScopes([]int64{tenantEngineID}, "read"), ExpiresIn: time.Minute,
+				ServicePrincipalID: transferPrincipalID, ServiceClientID: "addp-transfer",
+				TenantID: tenant.ID, Audit: transferAudit,
+			}); !errors.Is(issueErr, ErrExecutionAuthorizationUnavailable) {
+				t.Fatalf("error=%v, want unavailable", issueErr)
+			}
+		})
+	}
+	transferLeaseToken3 := uuid.New()
+	if err := db.Exec(`
+		UPDATE common.task_executions
+		SET attempt = 3, lease_token = ?, lease_expires_at = NOW() + INTERVAL '5 minutes'
+		WHERE execution_id = ?
+	`, transferLeaseToken3, transferExecutionID).Error; err != nil {
+		t.Fatalf("advance Transfer execution attempt: %v", err)
+	}
+	issuedFromLease3, err := service.IssueFromExecution(ctx, IssueExecutionAuthorizationFromExecutionInput{
+		ParentExecutionID: parentExecutionID, Audience: commonExecution.AudienceTransfer,
+		ExecutionID: transferExecutionID, Attempt: 3, LeaseToken: transferLeaseToken3,
+		Accesses: []ExecutionEngineAccessScope{
+			{EngineID: tenantEngineID, Effects: []string{"read"}},
+			{EngineID: builtinEngineID, Effects: []string{"write"}},
+		}, ExpiresIn: 10 * time.Minute,
+		ServicePrincipalID: transferPrincipalID, ServiceClientID: "addp-transfer",
+		TenantID: tenant.ID, Audit: transferAudit,
+	})
+	if err != nil || issuedFromLease3 == nil || issuedFromLease3.ID == issuedFromLease.ID {
+		t.Fatalf("issue new authorization for next Transfer attempt: result=%#v error=%v", issuedFromLease3, err)
+	}
+	if _, err := service.AuthorizeEngineAccess(ctx, AuthorizeExecutionEngineAccessInput{
+		AuthorizationID: issuedFromLease.ID, ExecutionID: transferExecutionID, EngineID: tenantEngineID,
+		RequiredEffects: []string{"read"}, ServicePrincipalID: transferPrincipalID,
+		ServiceClientID: "addp-transfer", TenantID: tenant.ID, Audit: transferAudit,
+	}); !errors.Is(err, ErrExecutionAuthorizationUnavailable) {
+		t.Fatalf("stale Transfer attempt authorization error=%v, want unavailable", err)
+	}
+	if _, err := service.AuthorizeEngineAccess(ctx, AuthorizeExecutionEngineAccessInput{
+		AuthorizationID: issuedFromLease3.ID, ExecutionID: transferExecutionID, EngineID: tenantEngineID,
+		RequiredEffects: []string{"read"}, ServicePrincipalID: transferPrincipalID,
+		ServiceClientID: "addp-transfer", TenantID: tenant.ID, Audit: transferAudit,
+	}); err != nil {
+		t.Fatalf("consume next Transfer attempt authorization: %v", err)
+	}
+	if err := db.Exec(`
+		UPDATE common.task_executions SET lease_expires_at = NOW() - INTERVAL '1 second'
+		WHERE execution_id = ?
+	`, transferExecutionID).Error; err != nil {
+		t.Fatalf("expire Transfer execution lease: %v", err)
+	}
+	if _, issueErr := service.IssueFromExecution(ctx, IssueExecutionAuthorizationFromExecutionInput{
+		ParentExecutionID: parentExecutionID, Audience: commonExecution.AudienceTransfer,
+		ExecutionID: transferExecutionID, Attempt: 3, LeaseToken: transferLeaseToken3,
+		Accesses: executionAccessScopes([]int64{tenantEngineID}, "read"), ExpiresIn: time.Minute,
+		ServicePrincipalID: transferPrincipalID, ServiceClientID: "addp-transfer",
+		TenantID: tenant.ID, Audit: transferAudit,
+	}); !errors.Is(issueErr, ErrExecutionAuthorizationUnavailable) {
+		t.Fatalf("expired lease error=%v, want unavailable", issueErr)
 	}
 	for name, input := range map[string]AuthorizeExecutionEngineAccessInput{
 		"wrong client": {
@@ -219,8 +352,8 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 			defer wait.Done()
 			_, issueErr := service.Issue(ctx, IssueExecutionAuthorizationInput{
 				SourceAccessToken: selection.Session.AccessToken,
-				Audience:          "develop", ExecutionID: concurrentExecutionID, EngineIDs: []int64{tenantEngineID},
-				Effects: []string{"read"}, Audit: audit,
+				Audience:          "develop", ExecutionID: concurrentExecutionID,
+				Accesses: executionAccessScopes([]int64{tenantEngineID}, "read"), Audit: audit,
 			})
 			results <- issueErr
 		}()
@@ -277,4 +410,12 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 	if issuedAuditCount != 2 || consumedAuditCount != 2 || leakedSecretCount != 0 {
 		t.Fatalf("audit issued=%d consumed=%d leaked=%d", issuedAuditCount, consumedAuditCount, leakedSecretCount)
 	}
+}
+
+func executionAccessScopes(engineIDs []int64, effects ...string) []ExecutionEngineAccessScope {
+	accesses := make([]ExecutionEngineAccessScope, 0, len(engineIDs))
+	for _, engineID := range engineIDs {
+		accesses = append(accesses, ExecutionEngineAccessScope{EngineID: engineID, Effects: append([]string(nil), effects...)})
+	}
+	return accesses
 }

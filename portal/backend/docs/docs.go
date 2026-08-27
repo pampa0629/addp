@@ -228,55 +228,6 @@ const docTemplate = `{
                 ]
             }
         },
-        "/assets/{id}/endpoints": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Portal"
-                ],
-                "summary": "获取资产服务端点 | Get asset service endpoints",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "资产ID | Asset ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "502": {
-                        "description": "下游服务调用失败 | Downstream service request failed",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "asset.entry.read",
-                    "asset.application.read",
-                    "asset.authorization.read"
-                ]
-            }
-        },
         "/assets/{id}/ratings": {
             "get": {
                 "security": [

@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > IAM 概念与平台契约以 `docs/concepts/addp账号与权限体系图.md`、`docs/spec/addp授权上下文规范.md`、`docs/spec/addp权限与角色发布规范.md` 和 `docs/spec/addp OAuth授权规范.md` 为准；System 数据与协议实现以 `system/docs/IAM数据模型与迁移规范.md` 和 `system/docs/OAuth与Fosite实现说明.md` 为准。当前实现已切换为 Principal、Tenant Membership、Role/Permission、Token Family 和 `addp.auth_context/v1`，不得恢复旧账号分级或平行认证路径。
 
+> Enterprise Data Catalog 由独立 Catalog 模块拥有。System 只提供 Tenant、Department、Project Group、User、成员关系、AuthContext、模块注册和 `addp-catalog` 服务身份，不保存 CatalogEntry、业务语义关联、责任关系或企业目录搜索投影。
+
 ## 项目概述
 
 **全域数据平台 (All Domain Data Platform)** 是企业级数据平台的核心能力模块，提供基础系统功能：
@@ -179,7 +181,7 @@ frontend/src/
 | refresh_tokens | system | 轮换 Refresh Token Hash |
 | access_tokens | system | 短期 User Access Token Hash |
 | delegated_access_tokens | system | Agent Tool 短期受委托访问令牌 Hash 与审计绑定 |
-| notebook_session_authorizations | system | Notebook Session 绑定的用户派生短期只读 Catalog 授权事实 |
+| notebook_session_authorizations | system | Notebook Session 绑定的用户派生短期只读 Engine Catalog 授权事实 |
 | resource_access_tickets | system | Owner Path 浏览器资源票据 Hash |
 | iam_security_policy | system | System IAM 平台安全策略及已应用版本 |
 | module_definitions | system | 持久模块身份、路由、管理员启用状态和配置入口声明 |
@@ -365,8 +367,8 @@ frontend/src/
 - `DELETE /api/v1/system/engines/:id` - 删除引擎
 - `POST /api/v1/system/engines/:id/test` - 测试已有引擎连接
 - `POST /api/v1/system/engines/test-connection` - 创建前测试连接
-- `POST /api/v1/system/engines/:id/catalog/children` - 统一列出实时 catalog 子节点，支持数据库、对象存储、文件系统和图数据库等多层目录发现
-- `POST /api/v1/system/engines/:id/catalog/facts` - 按结构化 CatalogPath 读取单个叶子的实时结构事实；列表省略的字段等详情从这里按需读取
+- `POST /api/v1/system/engines/:id/catalog/children` - 统一列出实时 Engine Catalog 子节点，支持数据库、对象存储、文件系统和图数据库等多层目录发现；路由中的 `catalog` 已由 Engine 上下文限定
+- `POST /api/v1/system/engines/:id/catalog/facts` - 按结构化 EngineCatalogPath 读取单个叶子的实时结构事实；列表省略的字段等详情从这里按需读取
 
 `GET /engines` 对 User 和 Service Principal 都返回脱敏列表。`GET /engines/:id` 对 User 返回脱敏连接信息；具有 `system.engine.read` 的 Tenant Service Principal 返回同 Tenant 的解密连接信息，跨 Tenant 返回 403。
 

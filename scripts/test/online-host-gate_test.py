@@ -25,6 +25,7 @@ class OnlineHostGateTest(unittest.TestCase):
         (self.repository / "scripts/test").mkdir(parents=True)
         (self.repository / "scripts/infra").mkdir(parents=True)
         (self.repository / "scripts/dev").mkdir(parents=True)
+        (self.repository / "business/scripts").mkdir(parents=True)
         self.external.mkdir()
         shutil.copy2(SCRIPT, self.repository / "scripts/test/online-host-gate.sh")
         shutil.copy2(PREFLIGHT, self.repository / "scripts/test/online-preflight.py")
@@ -69,8 +70,49 @@ class OnlineHostGateTest(unittest.TestCase):
                 """
             ),
         )
-        for command in ("docker", "go", "node", "npm", "curl", "lsof", "nc"):
+        for command in ("docker", "go", "node", "curl", "lsof", "nc"):
             self._write_executable(command, "#!/bin/bash\nexit 0\n")
+        self._write_executable(
+            "npm",
+            '#!/bin/bash\nprintf "npm:%s\\n" "$*" >> "$ADDP_TEST_COMMAND_LOG"\n',
+        )
+        self._write_executable(
+            "business/scripts/online-engine-fixture.sh",
+            '#!/bin/bash\nprintf "fixture:%s\\n" "$1" >> "$ADDP_TEST_COMMAND_LOG"\n',
+        )
+        self._write_executable(
+            "business/scripts/online-workbench-mysql-fixture.sh",
+            '#!/bin/bash\nprintf "mysql-fixture:%s\\n" "$1" >> "$ADDP_TEST_COMMAND_LOG"\n',
+        )
+        self._write_executable(
+            "scripts/test/consumer-engine-recovery-online.py",
+            textwrap.dedent(
+                """\
+                #!/usr/bin/env python3
+                import json
+                import os
+                import sys
+                if "--restore-only" in sys.argv:
+                    with open(os.environ["ADDP_TEST_COMMAND_LOG"], "a", encoding="utf-8") as log:
+                        log.write("restore-engine\\n")
+                print(json.dumps({"schema_version": "addp.consumer-engine-recovery/v1"}))
+                """
+            ),
+        )
+        self._write_executable(
+            "scripts/test/consumer-process-stability-online.py",
+            textwrap.dedent(
+                """\
+                #!/usr/bin/env python3
+                import os
+                import sys
+                mode = "capture" if "--capture" in sys.argv else "verify"
+                with open(os.environ["ADDP_TEST_COMMAND_LOG"], "a", encoding="utf-8") as log:
+                    log.write(f"stability:{mode}\\n")
+                print('{"schema_version":"addp.consumer-process-stability/v1"}')
+                """
+            ),
+        )
         self._write_executable(
             "scripts/test/module-lifecycle-process-online.py",
             textwrap.dedent(
@@ -105,10 +147,33 @@ class OnlineHostGateTest(unittest.TestCase):
                 SYSTEM_URL=http://127.0.0.1:8180
                 GATEWAY_URL=http://127.0.0.1:8000
                 MANAGER_URL=http://127.0.0.1:8081
+                SERVICE_URL=http://127.0.0.1:8085
+                WORKBENCH_URL=http://127.0.0.1:8095
+                CONSOLE_URL=http://127.0.0.1:5170
                 STANDARD_URL=http://127.0.0.1:8110
                 MODEL_URL=http://127.0.0.1:8181
+                META_URL=http://127.0.0.1:8082
+                CATALOG_URL=http://127.0.0.1:8192
+                ASSET_URL=http://127.0.0.1:8086
+                PORTAL_URL=http://127.0.0.1:8088
                 MANAGER_SERVICE_CLIENT_SECRET=manager-online-secret-0123456789abcdef
                 ADDP_ONLINE_TEST_USER_ACCESS_TOKEN=addp_at_online
+                ADDP_ONLINE_TEST_USER_USERNAME=online-user
+                ADDP_ONLINE_TEST_USER_PASSWORD=online-password
+                ADDP_ONLINE_TEST_ENGINE_ID=7
+                ADDP_ONLINE_TEST_ENGINE_NAME='Online PostgreSQL Fixture'
+                ADDP_ONLINE_TEST_ENGINE_PORT=55433
+                ADDP_ONLINE_TEST_ENGINE_USER=online_engine
+                ADDP_ONLINE_TEST_ENGINE_PASSWORD=online-engine-password
+                ADDP_ONLINE_TEST_ENGINE_DATABASE=online_engine
+                ADDP_ONLINE_TEST_CATALOG_DOMAIN_ID=31
+                ADDP_ONLINE_TEST_CATALOG_DEPARTMENT_ID=41
+                ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID=17
+                ADDP_ONLINE_WORKBENCH_MYSQL_PORT=53306
+                ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE=commerce_fixture
+                ADDP_ONLINE_WORKBENCH_MYSQL_USER=workbench_reader
+                ADDP_ONLINE_WORKBENCH_MYSQL_PASSWORD=reader-password-1234
+                ADDP_ONLINE_WORKBENCH_MYSQL_ROOT_PASSWORD=root-password-1234
                 """
             ),
             encoding="utf-8",
@@ -189,6 +254,68 @@ class OnlineHostGateTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("start:-model", self.command_log.read_text(encoding="utf-8"))
+
+    def test_runs_consumer_engine_fixture_and_verifies_process_stability(self) -> None:
+        result = self._run("consumer-engine-recovery")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.command_log.read_text(encoding="utf-8").splitlines(),
+            [
+                "stop",
+                "infra-up",
+                "fixture:stop",
+                "fixture:start",
+                "start:",
+                "npm:--prefix console/frontend exec -- playwright install chromium",
+                "stability:capture",
+                "make:test-online:ONLINE_SUITE=consumer-engine-recovery",
+                "stability:verify",
+                "fixture:start",
+                "restore-engine",
+                "fixture:stop",
+                "stop",
+            ],
+        )
+        summary = (self.artifacts / "summary.txt").read_text(encoding="utf-8")
+        self.assertIn("process_lifecycle=passed", summary)
+
+    def test_runs_enterprise_catalog_suite_with_seeded_engine_fixture(self) -> None:
+        result = self._run("enterprise-catalog-publishing")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.command_log.read_text(encoding="utf-8").splitlines(),
+            [
+                "stop",
+                "infra-up",
+                "fixture:stop",
+                "fixture:start",
+                "start:-all",
+                "make:test-online:ONLINE_SUITE=enterprise-catalog-publishing",
+                "fixture:stop",
+                "stop",
+            ],
+        )
+
+    def test_runs_workbench_suite_with_read_only_mysql_fixture(self) -> None:
+        result = self._run("workbench-service-consumption")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.command_log.read_text(encoding="utf-8").splitlines(),
+            [
+                "stop",
+                "infra-up",
+                "mysql-fixture:stop",
+                "mysql-fixture:start",
+                "start:-all",
+                "npm:--prefix console/frontend exec -- playwright install chromium",
+                "make:test-online:ONLINE_SUITE=workbench-service-consumption",
+                "mysql-fixture:stop",
+                "stop",
+            ],
+        )
 
     def test_check_only_writes_readiness_without_lifecycle_action(self) -> None:
         result = self._run("module-registry-recovery", "--check-only")

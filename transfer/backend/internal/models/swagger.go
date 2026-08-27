@@ -94,7 +94,14 @@ type TransferSourceEndpointDoc struct {
 	Format         string                   `json:"format,omitempty" example:"shapefile"`
 	Options        map[string]interface{}   `json:"options,omitempty"`
 	Policy         map[string]interface{}   `json:"policy,omitempty"`
+	Query          *TransferQuerySourceDoc  `json:"query,omitempty"`
 	ChangeStream   *TransferChangeStreamDoc `json:"change_stream,omitempty"`
+}
+
+type TransferQuerySourceDoc struct {
+	Language   string                 `json:"language" example:"mql"`
+	Statement  string                 `json:"statement" example:"{\"aggregate\":\"orders\",\"pipeline\":[{\"$project\":{\"customer_id\":\"$customer.id\",\"_id\":0}}]}"`
+	Parameters map[string]interface{} `json:"parameters,omitempty"`
 }
 
 type TransferChangeStreamDoc struct {

@@ -7,10 +7,10 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 func scanObjectPaths(
@@ -31,11 +31,11 @@ func scanObjectPaths(
 		return scanflow.DispatchResult{}, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
 
-	catalogProvider, ok := enginePlugin.(plugin.CatalogProvider)
+	catalogProvider, ok := enginePlugin.(plugin.EngineCatalogProvider)
 	if !ok {
-		return scanflow.DispatchResult{}, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
+		return scanflow.DispatchResult{}, fmt.Errorf("engine %s does not implement EngineCatalogProvider", resource.EngineType)
 	}
-	itemTerm := scanflow.CatalogLeafTermForPlugin(enginePlugin, plugin.CatalogTermObject)
+	itemTerm := scanflow.EngineCatalogLeafTermForPlugin(enginePlugin, plugin.EngineCatalogTermObject)
 
 	paths, err := scanflow.ResolveCatalogScanPaths(
 		ctx,
@@ -68,7 +68,7 @@ func scanObjectCatalogPaths(
 	repo *metaRepo.ScanRepository,
 	resource *commonModels.Engine,
 	tenantID, engineID uint,
-	catalogProvider plugin.CatalogProvider,
+	catalogProvider plugin.EngineCatalogProvider,
 	paths []string,
 	scanDepth string,
 	force bool,
@@ -90,7 +90,7 @@ func scanObjectCatalogPaths(
 	if err != nil {
 		return scanflow.DispatchResult{}, err
 	}
-	rootNode, err := metaRepo.EnsureCatalogRootNode(repo, tenantID, resource, enginePlugin)
+	rootNode, err := metaRepo.EnsureEngineCatalogRootNode(repo, tenantID, resource, enginePlugin)
 	if err != nil {
 		return scanflow.DispatchResult{}, err
 	}
@@ -122,7 +122,7 @@ func scanObjectCatalogPaths(
 			continue
 		}
 
-		var objects []plugin.CatalogEntry
+		var objects []plugin.EngineCatalogEntry
 		if target.Object != "" {
 			objects, err = readObjectCatalogLeaf(ctx, resource, catalogProvider, bucketName, target.Object)
 		} else {
@@ -141,7 +141,7 @@ func scanObjectCatalogPaths(
 
 		bucketNode, ok := bucketNodes[bucketName]
 		if !ok {
-			attrs := metacatalog.ObjectBucketNodeAttributes(bucketName)
+			attrs := scanresource.ObjectBucketNodeAttributes(bucketName)
 			bucketNode, err = repo.UpsertNode(tenantID, engineID, rootNode, "bucket", bucketName, &bucketName, attrs)
 			if err != nil {
 				return result, err
@@ -179,7 +179,7 @@ func scanObjectCatalogPaths(
 
 		scanPathPrefix := prefix
 		if target.Object != "" {
-			scanPathPrefix = metacatalog.ParentObjectPath(target.Object)
+			scanPathPrefix = scanresource.ParentObjectPath(target.Object)
 		}
 		objectCount, pathExtractionStats, err := runtime.persistObjectResources(ctx, resource, tenantID, engineID, bucketNode, resources, nodeStats, fullBucket, scanDepth, force, scanPathPrefix, scannedFingerprints, itemTerm)
 		if err != nil {

@@ -25,6 +25,8 @@ var (
 
 	// 资源定位相关错误
 	ErrInvalidResourceLocator = errors.New("invalid resource locator")
+	ErrInvalidChangeCursor    = errors.New("invalid data item change cursor")
+	ErrInvalidChangeRequest   = errors.New("invalid data item change request")
 
 	// 扫描相关错误
 	ErrScanNotFound     = errors.New("scan task not found")
@@ -48,6 +50,8 @@ func HTTPStatusCode(err error) int {
 		return http.StatusForbidden
 
 	case errors.Is(err, ErrInvalidTenantID),
+		errors.Is(err, ErrInvalidChangeCursor),
+		errors.Is(err, ErrInvalidChangeRequest),
 		errors.Is(err, ErrInvalidResourceLocator):
 		return http.StatusBadRequest
 
@@ -81,6 +85,12 @@ func ErrorMessage(err error) string {
 		return "invalid tenant ID"
 
 	case errors.Is(err, ErrInvalidResourceLocator):
+		return err.Error()
+
+	case errors.Is(err, ErrInvalidChangeCursor):
+		return err.Error()
+
+	case errors.Is(err, ErrInvalidChangeRequest):
 		return err.Error()
 
 	default:

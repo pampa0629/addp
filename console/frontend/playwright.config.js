@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: '**/online/**',
   fullyParallel: false,
   workers: 1,
   reporter: 'line',

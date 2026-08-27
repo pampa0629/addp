@@ -22,7 +22,7 @@ func EnrichSingleDocumentItem(
 	engineID uint,
 	item *metaitem.DetectedItem,
 	path string,
-	catalogPathFor func(path string) plugin.CatalogPath,
+	catalogPathFor func(path string) plugin.EngineCatalogPath,
 ) error {
 	if attrs == nil || contentReader == nil || item == nil || path == "" {
 		return nil
@@ -98,7 +98,7 @@ func EnrichSingleMediaItem(
 	engineID uint,
 	item *metaitem.DetectedItem,
 	path string,
-	catalogPathFor func(path string) plugin.CatalogPath,
+	catalogPathFor func(path string) plugin.EngineCatalogPath,
 ) error {
 	if attrs == nil || contentReader == nil || item == nil || path == "" {
 		return nil
@@ -163,7 +163,7 @@ func EnrichSingleModel3DItem(
 	engineID uint,
 	item *metaitem.DetectedItem,
 	path string,
-	catalogPathFor func(path string) plugin.CatalogPath,
+	catalogPathFor func(path string) plugin.EngineCatalogPath,
 ) error {
 	if attrs == nil || contentReader == nil || item == nil || path == "" {
 		return nil
@@ -232,7 +232,7 @@ func EnrichSingleGaussianSplatItem(
 	item *metaitem.DetectedItem,
 	path string,
 	sizeBytes int64,
-	catalogPathFor func(path string) plugin.CatalogPath,
+	catalogPathFor func(path string) plugin.EngineCatalogPath,
 ) error {
 	if attrs == nil || contentReader == nil || item == nil || path == "" {
 		return nil
@@ -276,7 +276,7 @@ func EnrichSingleGaussianSplatItem(
 		mappedReader := contentadapter.NewMappedReader(
 			contentReader,
 			connInfo,
-			func(contentio.Ref) (plugin.CatalogPath, error) { return catalogPath, nil },
+			func(contentio.Ref) (plugin.EngineCatalogPath, error) { return catalogPath, nil },
 			plugin.ReadOptions{},
 		)
 		if rangeReader, ok := mappedReader.(contentio.RangeReader); ok {
@@ -310,7 +310,7 @@ func EnrichSinglePointCloudItem(
 	engineID uint,
 	item *metaitem.DetectedItem,
 	path string,
-	catalogPathFor func(path string) plugin.CatalogPath,
+	catalogPathFor func(path string) plugin.EngineCatalogPath,
 ) error {
 	if attrs == nil || contentReader == nil || item == nil || path == "" {
 		return nil
@@ -359,7 +359,7 @@ func EnrichSinglePointCloudItem(
 		mappedReader := contentadapter.NewMappedReader(
 			contentReader,
 			connInfo,
-			func(contentio.Ref) (plugin.CatalogPath, error) { return catalogPath, nil },
+			func(contentio.Ref) (plugin.EngineCatalogPath, error) { return catalogPath, nil },
 			plugin.ReadOptions{},
 		)
 		if rangeReader, ok := mappedReader.(contentio.RangeReader); ok {

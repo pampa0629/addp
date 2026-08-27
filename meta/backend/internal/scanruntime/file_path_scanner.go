@@ -26,11 +26,11 @@ func scanFilePaths(
 	if err != nil {
 		return scanflow.DispatchResult{}, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
-	catalogProvider, ok := enginePlugin.(plugin.CatalogProvider)
+	catalogProvider, ok := enginePlugin.(plugin.EngineCatalogProvider)
 	if !ok {
-		return scanflow.DispatchResult{}, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
+		return scanflow.DispatchResult{}, fmt.Errorf("engine %s does not implement EngineCatalogProvider", resource.EngineType)
 	}
-	itemTerm := scanflow.CatalogLeafTermForPlugin(enginePlugin, plugin.CatalogTermFile)
+	itemTerm := scanflow.EngineCatalogLeafTermForPlugin(enginePlugin, plugin.EngineCatalogTermFile)
 	contentReader, ok := enginePlugin.(plugin.ContentReadableProvider)
 	if !ok {
 		return scanflow.DispatchResult{}, fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)

@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 51
+manifest_version: 68
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -27,6 +27,15 @@ roles:
       - audit.event.export
       - audit.event.read
       - iam.platform_identity_change.read
+  - key: platform.catalog_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.catalog_runtime.name
+    description_i18n_key: roles.platform.catalog_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - platform.tenant.read
+      - system.runtime_registry.update
   - key: platform.copilot_runtime
     role_type: platform_builtin
     name_i18n_key: roles.platform.copilot_runtime.name
@@ -252,6 +261,14 @@ roles:
     allowed_principal_types: [service_principal]
     permissions:
       - system.runtime_registry.update
+  - key: platform.workbench_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.workbench_runtime.name
+    description_i18n_key: roles.platform.workbench_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.update
   - key: tenant.administrator
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.administrator.name
@@ -261,8 +278,33 @@ roles:
     permissions:
       - agent.configuration.read
       - agent.configuration.update
+      - catalog.audit.read
+      - catalog.collection.read
+      - catalog.collection.update
+      - catalog.entry.certify
+      - catalog.entry.deprecate
+      - catalog.entry.read
+      - catalog.entry.update
+      - catalog.inventory.read
+      - catalog.source.rebind
       - copilot.configuration.read
       - copilot.configuration.update
+      - iam.department.create
+      - iam.department.read
+      - iam.department.restore
+      - iam.department.update
+      - iam.department_membership.close
+      - iam.department_membership.create
+      - iam.department_membership.read
+      - iam.department_membership.update
+      - iam.project_group.close
+      - iam.project_group.create
+      - iam.project_group.read
+      - iam.project_group.update
+      - iam.project_group_membership.close
+      - iam.project_group_membership.create
+      - iam.project_group_membership.read
+      - iam.project_group_membership.update
       - iam.tenant_invitation.create
       - iam.tenant_invitation.read
       - iam.tenant_invitation.revoke
@@ -293,6 +335,10 @@ roles:
       - inference.provider_credential.update
       - manager.configuration.read
       - manager.configuration.update
+      - workbench.view.create
+      - workbench.view.delete
+      - workbench.view.read
+      - workbench.view.update
   - key: tenant.agent_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.agent_runtime.name
@@ -369,10 +415,7 @@ roles:
     allowed_scope_types: [tenant]
     allowed_principal_types: [service_principal]
     permissions:
-      - develop.task.read
-      - meta.catalog.read
-      - service.definition.read
-      - standard.metric.read
+      - catalog.reference.read
   - key: tenant.auditor
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.auditor.name
@@ -384,6 +427,24 @@ roles:
       - audit.tenant_event.read
       - monitor.execution.read
       - monitor.statistics.read
+  - key: tenant.catalog_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.catalog_runtime.name
+    description_i18n_key: roles.tenant.catalog_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - develop.catalog.read
+      - iam.department.read
+      - iam.tenant_membership.read
+      - meta.catalog.read
+      - model.catalog.read
+      - quality.catalog.read
+      - service.catalog.read
+      - standard.catalog.read
+      - standard.domain.read
+      - standard.element.read
+      - standard.glossary.read
   - key: tenant.copilot_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.copilot_runtime.name
@@ -423,6 +484,10 @@ roles:
       - model.logical_model.read
       - model.logical_model.update
       - model.materialization.execute
+      - model.materialization_group.create
+      - model.materialization_group.delete
+      - model.materialization_group.read
+      - model.materialization_group.update
       - standard.dimension_hierarchy.read
       - standard.domain.read
       - standard.element.read
@@ -502,6 +567,11 @@ roles:
       - manager.search.execute
       - meta.catalog.read
       - meta.lineage.read
+      - service.data_read.execute
+      - workbench.view.create
+      - workbench.view.delete
+      - workbench.view.read
+      - workbench.view.update
   - key: tenant.develop_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.develop_runtime.name
@@ -511,7 +581,6 @@ roles:
     permissions:
       - meta.catalog.read
       - meta.scan_task.execute
-      - model.materialization_context.read
       - system.engine_descriptor.read
       - system.execution_authorization.execute
       - system.notebook_session_authorization.execute
@@ -540,6 +609,10 @@ roles:
       - quality.check_task.update
       - quality.issue.read
       - quality.issue.update
+      - quality.materialization_gate.create
+      - quality.materialization_gate.delete
+      - quality.materialization_gate.read
+      - quality.materialization_gate.update
       - quality.rule_application.create
       - quality.rule_application.delete
       - quality.rule_application.read
@@ -669,6 +742,7 @@ roles:
     allowed_principal_types: [service_principal]
     permissions:
       - audit.tenant_event.create
+      - manager.content_index.update
       - system.engine.read
       - system.engine_descriptor.read
   - key: tenant.model3d_runtime
@@ -735,6 +809,8 @@ roles:
       - develop.task_provider.read
       - model.task_provider.execute
       - model.task_provider.read
+      - quality.task_provider.execute
+      - quality.task_provider.read
       - system.task_authorization.execute
   - key: tenant.pointcloud_runtime
     role_type: tenant_builtin
@@ -744,14 +820,6 @@ roles:
     allowed_principal_types: [service_principal]
     permissions:
       - manager.derived_artifact.create
-  - key: tenant.portal_runtime
-    role_type: tenant_builtin
-    name_i18n_key: roles.tenant.portal_runtime.name
-    description_i18n_key: roles.tenant.portal_runtime.description
-    allowed_scope_types: [tenant]
-    allowed_principal_types: [service_principal]
-    permissions:
-      - service.endpoint.read
   - key: tenant.quality_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.quality_runtime.name
@@ -760,6 +828,8 @@ roles:
     allowed_principal_types: [service_principal]
     permissions:
       - meta.catalog.read
+      - model.materialization_group.read
+      - model.materialization_read.execute
       - standard.element.read
       - system.engine.read
       - system.execution_authorization.execute
@@ -791,6 +861,7 @@ roles:
     allowed_scope_types: [tenant]
     allowed_principal_types: [service_principal]
     permissions:
+      - audit.tenant_event.create
       - meta.catalog.read
       - meta.lineage.create
       - system.engine.read
@@ -824,3 +895,4 @@ roles:
       - meta.scan_task.execute
       - system.engine.read
       - system.engine_descriptor.read
+      - system.execution_authorization.execute

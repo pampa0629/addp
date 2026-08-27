@@ -49,9 +49,6 @@ func ParseExecutionContract(raw interface{}) (*ExecutionContract, error) {
 	if inputSchema["additionalProperties"] != false {
 		return nil, validationError("execution_contract.input_schema must be a closed object schema")
 	}
-	if len(schemaStringSlice(inputSchema["required"])) > 0 {
-		return nil, validationError("execution_contract.input_schema.required must be empty because task definitions are directly executable")
-	}
 	outputSchema, err := executionContractObjectSchema(payload, "output_schema")
 	if err != nil {
 		return nil, err
@@ -77,7 +74,7 @@ func ParseExecutionContract(raw interface{}) (*ExecutionContract, error) {
 			return nil, validationError("execution_contract.input_ui_schema.%s must be an object", name)
 		}
 	}
-	if err := ValidateExecutionParameters(inputSchema, inputDefaults, ParameterValidationOptions{}); err != nil {
+	if err := ValidateExecutionParameters(inputSchema, inputDefaults, ParameterValidationOptions{AllowMissingRequired: true}); err != nil {
 		return nil, validationError("execution_contract.input_defaults is invalid: %v", err)
 	}
 

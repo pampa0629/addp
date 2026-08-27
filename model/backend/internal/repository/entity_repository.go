@@ -24,6 +24,15 @@ func (r *EntityRepository) GetByID(id, tenantID int64) (*models.Entity, error) {
 	return &entity, commonrepo.WrapDBError(err)
 }
 
+func (r *EntityRepository) GetByIDs(ids []int64, tenantID int64) ([]models.Entity, error) {
+	if len(ids) == 0 {
+		return []models.Entity{}, nil
+	}
+	var entities []models.Entity
+	err := r.db.Where("tenant_id = ? AND id IN ?", tenantID, ids).Order("id ASC").Find(&entities).Error
+	return entities, commonrepo.WrapDBError(err)
+}
+
 type ListEntityOptions struct {
 	DomainID *int64
 	Status   string

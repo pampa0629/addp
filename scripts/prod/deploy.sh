@@ -140,8 +140,10 @@ if [ "$SKIP_PUSH" = false ]; then
         "quality-worker"
         "orchestrator-backend"
         "develop-backend"
+        "develop-query-worker"
         "service-backend"
         "quality-backend"
+        "catalog-backend"
         "inference-backend"
         "geopython-workflow-engine"
         "model3d-workflow-engine"
@@ -159,6 +161,7 @@ if [ "$SKIP_PUSH" = false ]; then
         "orchestrator-frontend"
         "develop-frontend"
         "inference-frontend"
+        "catalog-frontend"
     )
     
     failed_pushes=()

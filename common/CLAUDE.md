@@ -14,7 +14,7 @@ common/
 ├── client/         # System、Meta、Asset、Service 等模块客户端
 ├── middleware/auth/ # System AuthContext 消费、Gin 上下文注入和租户隔离 helper
 ├── config/         # .env、部署配置、服务地址、端口检查和时区
-├── resourcetree/    # Meta catalog / item 事实到资源树视图的投影和路径定位纯转换
+├── resourcetree/    # Meta Engine Catalog / item 事实到资源树视图的投影和路径定位纯转换
 ├── contentio/      # 基于 Go io 的内容 Ref、Reader、Writer、Lister、RangeReader
 ├── engine/contentadapter/ # engine provider 到 contentio 的适配
 ├── engine/selection/ # Engine capabilities 解析和跨模块选择 helper
@@ -39,7 +39,7 @@ common/
 - `common/contentio` 只表达内容定位和 I/O，不依赖 engine，不解析 format，不返回上层 DTO。
 - `common/engine/contentadapter` 负责把 engine content provider 适配为 `contentio.Reader` / `Writer`。
 - `common/engine/selection` 只按规范化 Engine capabilities 解析和筛选 Engine Instance，不定义 capabilities Schema，也不保存 Engine 事实。
-- `common/resourcetree` 负责把 Meta 已落库的 catalog / item 事实投影为跨模块资源树视图，并提供 `ResourceLocator` / provider `CatalogPath` 的纯转换能力。
+- `common/resourcetree` 负责把 Meta 已落库的 Engine Catalog / item 事实投影为跨模块资源树视图，并提供 `ResourceLocator` / provider `EngineCatalogPath` 的纯转换能力。
 - `common/resourcetree` 不持有 System / Meta client，不主动读取远程服务，不处理租户权限、token、降级策略、扫描或内容读取。
 - `common/resourcetree` 中 attributes helper 只服务 `TreeNode.Metadata` 展示摘要，不作为通用 attributes 规范 API，也不写入持久 attributes。
 - `common/taskprovider` 只承载 TaskProvider capabilities 的纯解析和规范校验，不访问 System 注册表，不调用 owner 模块，不处理执行调度。

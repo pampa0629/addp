@@ -57,7 +57,7 @@ func TestDorisCatalogFactsDialectDoesNotIncludeEngine(t *testing.T) {
 
 func TestDorisCatalogFieldTypeMapsNativeTypes(t *testing.T) {
 	if dorisCatalogFactsDialect.MapFieldType == nil {
-		t.Fatal("Doris CatalogFacts dialect must declare its field type mapper")
+		t.Fatal("Doris EngineCatalogFacts dialect must declare its field type mapper")
 	}
 	tests := map[string]datatype.FieldType{
 		"int":             datatype.FieldTypeInt,
@@ -188,7 +188,7 @@ func TestDorisSchemaEvolutionStatementsRejectsMissingNonNullColumnWithoutDefault
 }
 
 func TestDorisTablePathPartsRequiresDatabaseAndTable(t *testing.T) {
-	_, _, err := dorisTablePathParts(plugin.CatalogPath{})
+	_, _, err := dorisTablePathParts(plugin.EngineCatalogPath{})
 	if err == nil {
 		t.Fatal("dorisTablePathParts() succeeded, want error")
 	}
@@ -227,7 +227,7 @@ func TestShouldUseDorisInsertWriteMethod(t *testing.T) {
 
 func TestDorisOpenTableWriteSessionRejectsResumeMarker(t *testing.T) {
 	dorisPlugin := &DorisPlugin{}
-	_, err := dorisPlugin.OpenTableWriteSession(nil, nil, plugin.CatalogPath{}, plugin.TableWriteSessionOptions{
+	_, err := dorisPlugin.OpenTableWriteSession(nil, nil, plugin.EngineCatalogPath{}, plugin.TableWriteSessionOptions{
 		ResumeMarker: &resume.Marker{Version: resume.MarkerVersionV1},
 	})
 	if err == nil {

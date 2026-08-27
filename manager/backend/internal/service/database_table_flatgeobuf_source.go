@@ -56,11 +56,11 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) prepareDatabaseTableFlatGeobufS
 	if strings.TrimSpace(e.defaultBucket) == "" {
 		return "", nil, nil, noopCleanup, errors.New("Manager temporary source bucket is required")
 	}
-	catalogProvider, ok := plug.(plugin.CatalogModelProvider)
+	catalogProvider, ok := plug.(plugin.EngineCatalogModelProvider)
 	if !ok {
 		return "", nil, nil, noopCleanup, fmt.Errorf("engine %s does not declare a catalog model", engine.EngineType)
 	}
-	namespaceLevel, ok := plugin.CatalogFirstBusinessBranch(catalogProvider.CatalogModel())
+	namespaceLevel, ok := plugin.EngineCatalogFirstBusinessBranch(catalogProvider.EngineCatalogModel())
 	if !ok || strings.TrimSpace(namespaceLevel.Term) == "" {
 		return "", nil, nil, noopCleanup, fmt.Errorf("engine %s does not declare a tabular namespace", engine.EngineType)
 	}

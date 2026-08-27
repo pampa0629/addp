@@ -14,25 +14,25 @@ import (
 // RefCatalogPathMapper maps a contentio ref to an engine catalog path.
 // It is the explicit boundary between bottom-level content I/O refs and
 // engine-specific catalog addressing.
-type RefCatalogPathMapper func(ref contentio.Ref) (engineplugin.CatalogPath, error)
+type RefCatalogPathMapper func(ref contentio.Ref) (engineplugin.EngineCatalogPath, error)
 
 type engineContentReader struct {
 	provider    engineplugin.ContentReadableProvider
-	catalog     engineplugin.CatalogProvider
+	catalog     engineplugin.EngineCatalogProvider
 	rangeReader engineplugin.RangeReadableProvider
 	connInfo    engineplugin.ConnectionInfo
-	basePath    engineplugin.CatalogPath
+	basePath    engineplugin.EngineCatalogPath
 	mapRef      RefCatalogPathMapper
 	readOptions engineplugin.ReadOptions
 }
 
-func NewReader(provider engineplugin.ContentReadableProvider, connInfo engineplugin.ConnectionInfo, basePath engineplugin.CatalogPath, readOptions engineplugin.ReadOptions) contentio.Reader {
+func NewReader(provider engineplugin.ContentReadableProvider, connInfo engineplugin.ConnectionInfo, basePath engineplugin.EngineCatalogPath, readOptions engineplugin.ReadOptions) contentio.Reader {
 	var rangeReader engineplugin.RangeReadableProvider
 	if typed, ok := provider.(engineplugin.RangeReadableProvider); ok {
 		rangeReader = typed
 	}
-	var catalog engineplugin.CatalogProvider
-	if typed, ok := provider.(engineplugin.CatalogProvider); ok {
+	var catalog engineplugin.EngineCatalogProvider
+	if typed, ok := provider.(engineplugin.EngineCatalogProvider); ok {
 		catalog = typed
 	}
 	return &engineContentReader{
@@ -53,8 +53,8 @@ func NewMappedReader(provider engineplugin.ContentReadableProvider, connInfo eng
 	if typed, ok := provider.(engineplugin.RangeReadableProvider); ok {
 		rangeReader = typed
 	}
-	var catalog engineplugin.CatalogProvider
-	if typed, ok := provider.(engineplugin.CatalogProvider); ok {
+	var catalog engineplugin.EngineCatalogProvider
+	if typed, ok := provider.(engineplugin.EngineCatalogProvider); ok {
 		catalog = typed
 	}
 	return &engineContentReader{
@@ -90,7 +90,7 @@ func (r *engineContentReader) Stat(ctx context.Context, ref contentio.Ref) (*con
 	if err != nil {
 		return nil, err
 	}
-	if node == nil || node.Role != engineplugin.CatalogRoleLeaf {
+	if node == nil || node.Role != engineplugin.EngineCatalogRoleLeaf {
 		return nil, contentio.ErrContentNotFound
 	}
 	stat := &contentio.Stat{
@@ -125,7 +125,7 @@ func (r *engineContentReader) List(ctx context.Context, scope contentio.Ref) ([]
 			continue
 		}
 		role := contentio.RoleMain
-		if node.Role == engineplugin.CatalogRoleBranch {
+		if node.Role == engineplugin.EngineCatalogRoleBranch {
 			role = contentio.RoleScope
 		}
 		refs = append(refs, contentio.NewRef(refPath, role))
@@ -147,22 +147,22 @@ func (r *engineContentReader) OpenRange(ctx context.Context, ref contentio.Ref, 
 	return r.rangeReader.OpenRange(ctx, r.connInfo, path, opts)
 }
 
-func (r *engineContentReader) catalogPath(ref contentio.Ref) (engineplugin.CatalogPath, error) {
+func (r *engineContentReader) catalogPath(ref contentio.Ref) (engineplugin.EngineCatalogPath, error) {
 	if r != nil && r.mapRef != nil {
 		return r.mapRef(ref)
 	}
-	return CatalogPath(r.basePath, ref)
+	return EngineCatalogPath(r.basePath, ref)
 }
 
 type engineContentWriter struct {
 	provider     engineplugin.ContentWritableProvider
 	connInfo     engineplugin.ConnectionInfo
-	basePath     engineplugin.CatalogPath
+	basePath     engineplugin.EngineCatalogPath
 	mapRef       RefCatalogPathMapper
 	writeOptions engineplugin.WriteOptions
 }
 
-func NewWriter(provider engineplugin.ContentWritableProvider, connInfo engineplugin.ConnectionInfo, basePath engineplugin.CatalogPath, writeOptions engineplugin.WriteOptions) contentio.Writer {
+func NewWriter(provider engineplugin.ContentWritableProvider, connInfo engineplugin.ConnectionInfo, basePath engineplugin.EngineCatalogPath, writeOptions engineplugin.WriteOptions) contentio.Writer {
 	return &engineContentWriter{
 		provider:     provider,
 		connInfo:     connInfo,
@@ -192,56 +192,56 @@ func (w *engineContentWriter) Create(ctx context.Context, ref contentio.Ref) (io
 	return w.provider.CreateContent(ctx, w.connInfo, path, w.writeOptions)
 }
 
-func (w *engineContentWriter) catalogPath(ref contentio.Ref) (engineplugin.CatalogPath, error) {
+func (w *engineContentWriter) catalogPath(ref contentio.Ref) (engineplugin.EngineCatalogPath, error) {
 	if w != nil && w.mapRef != nil {
 		return w.mapRef(ref)
 	}
-	return CatalogPath(w.basePath, ref)
+	return EngineCatalogPath(w.basePath, ref)
 }
 
-func catalogEntryContentType(node engineplugin.CatalogEntry) string {
+func catalogEntryContentType(node engineplugin.EngineCatalogEntry) string {
 	if node.Storage == nil {
 		return ""
 	}
 	return node.Storage.ContentType
 }
 
-func catalogEntrySizeBytes(node engineplugin.CatalogEntry) int64 {
+func catalogEntrySizeBytes(node engineplugin.EngineCatalogEntry) int64 {
 	if node.Storage == nil || node.Storage.SizeBytes == nil {
 		return 0
 	}
 	return *node.Storage.SizeBytes
 }
 
-func CatalogPath(base engineplugin.CatalogPath, ref contentio.Ref) (engineplugin.CatalogPath, error) {
+func EngineCatalogPath(base engineplugin.EngineCatalogPath, ref contentio.Ref) (engineplugin.EngineCatalogPath, error) {
 	if len(base.Segments) == 0 {
-		return engineplugin.CatalogPath{}, fmt.Errorf("content base path requires at least one segment")
+		return engineplugin.EngineCatalogPath{}, fmt.Errorf("content base path requires at least one segment")
 	}
 	name := filepath.Base(ref.Path)
 	if name == "." || name == "/" || name == "" {
-		return engineplugin.CatalogPath{}, fmt.Errorf("content path %q has no file name", ref.Path)
+		return engineplugin.EngineCatalogPath{}, fmt.Errorf("content path %q has no file name", ref.Path)
 	}
-	next := engineplugin.CatalogPath{
+	next := engineplugin.EngineCatalogPath{
 		Version:  base.Version,
 		EngineID: base.EngineID,
-		Segments: append([]engineplugin.CatalogSegment(nil), base.Segments...),
+		Segments: append([]engineplugin.EngineCatalogSegment(nil), base.Segments...),
 	}
 	if next.Version == "" {
-		next.Version = engineplugin.CatalogPathVersion
+		next.Version = engineplugin.EngineCatalogPathVersion
 	}
 	last := &next.Segments[len(next.Segments)-1]
 	last.Name = name
 	if strings.TrimSpace(last.Term) == "" {
-		last.Term = engineplugin.CatalogTermFile
+		last.Term = engineplugin.EngineCatalogTermFile
 	}
 	if strings.TrimSpace(last.Kind) == "" {
-		last.Kind = engineplugin.CatalogKindFile
+		last.Kind = engineplugin.EngineCatalogKindFile
 	}
 	return next, nil
 }
 
 func ObjectPathMapper(engineID uint) RefCatalogPathMapper {
-	return func(ref contentio.Ref) (engineplugin.CatalogPath, error) {
+	return func(ref contentio.Ref) (engineplugin.EngineCatalogPath, error) {
 		return engineplugin.ObjectItemPathFromRefPath(engineID, ref.Path)
 	}
 }
@@ -251,12 +251,12 @@ func ObjectPathMapper(engineID uint) RefCatalogPathMapper {
 // bucket is known outside the content ref, for example infra MinIO locators.
 func ObjectPathMapperForBucket(engineID uint, bucket string) RefCatalogPathMapper {
 	bucket = strings.Trim(bucket, "/")
-	return func(ref contentio.Ref) (engineplugin.CatalogPath, error) {
+	return func(ref contentio.Ref) (engineplugin.EngineCatalogPath, error) {
 		if bucket == "" {
-			return engineplugin.CatalogPath{}, fmt.Errorf("object content bucket is required")
+			return engineplugin.EngineCatalogPath{}, fmt.Errorf("object content bucket is required")
 		}
 		if strings.Trim(ref.Path, "/") == "" {
-			return engineplugin.CatalogPath{}, fmt.Errorf("object content ref path is empty")
+			return engineplugin.EngineCatalogPath{}, fmt.Errorf("object content ref path is empty")
 		}
 		return engineplugin.ObjectItemPathFromBucketRef(engineID, bucket, ref.Path), nil
 	}
@@ -265,24 +265,24 @@ func ObjectPathMapperForBucket(engineID uint, bucket string) RefCatalogPathMappe
 // SameObjectBucketPathMapper maps refs as object keys under the bucket of base.
 // It keeps related-ref paths bucketless while preserving a fixed target bucket
 // at the engine boundary.
-func SameObjectBucketPathMapper(base engineplugin.CatalogPath) RefCatalogPathMapper {
+func SameObjectBucketPathMapper(base engineplugin.EngineCatalogPath) RefCatalogPathMapper {
 	bucket, _ := objectBaseParts(base)
 	return ObjectPathMapperForBucket(base.EngineID, bucket)
 }
 
 // FixedPathMapper maps every content ref to the same catalog path. It is for
 // single-content endpoints where the endpoint path is already exact.
-func FixedPathMapper(path engineplugin.CatalogPath) RefCatalogPathMapper {
-	return func(contentio.Ref) (engineplugin.CatalogPath, error) {
+func FixedPathMapper(path engineplugin.EngineCatalogPath) RefCatalogPathMapper {
+	return func(contentio.Ref) (engineplugin.EngineCatalogPath, error) {
 		return cloneCatalogPath(path), nil
 	}
 }
 
 // ScopePathMapper maps whole-scope refs back to engine catalog paths.
-// Unlike CatalogPath, it preserves nested paths under the scope instead of
+// Unlike EngineCatalogPath, it preserves nested paths under the scope instead of
 // replacing only the basename, which is required for partitioned datasets.
-func ScopePathMapper(base engineplugin.CatalogPath) RefCatalogPathMapper {
-	return func(ref contentio.Ref) (engineplugin.CatalogPath, error) {
+func ScopePathMapper(base engineplugin.EngineCatalogPath) RefCatalogPathMapper {
+	return func(ref contentio.Ref) (engineplugin.EngineCatalogPath, error) {
 		path := strings.Trim(ref.Path, "/")
 		if isObjectCatalogPath(base) {
 			bucket, objectPath, ok := strings.Cut(path, "/")
@@ -304,18 +304,18 @@ func ScopePathMapper(base engineplugin.CatalogPath) RefCatalogPathMapper {
 	}
 }
 
-func isObjectCatalogPath(path engineplugin.CatalogPath) bool {
+func isObjectCatalogPath(path engineplugin.EngineCatalogPath) bool {
 	for _, segment := range path.Segments {
-		if segment.Term == engineplugin.CatalogTermBucket || segment.Kind == engineplugin.CatalogKindBucket ||
-			segment.Term == engineplugin.CatalogTermObject || segment.Kind == engineplugin.CatalogKindObject ||
-			segment.Term == engineplugin.CatalogTermPrefix || segment.Kind == engineplugin.CatalogKindPrefix {
+		if segment.Term == engineplugin.EngineCatalogTermBucket || segment.Kind == engineplugin.EngineCatalogKindBucket ||
+			segment.Term == engineplugin.EngineCatalogTermObject || segment.Kind == engineplugin.EngineCatalogKindObject ||
+			segment.Term == engineplugin.EngineCatalogTermPrefix || segment.Kind == engineplugin.EngineCatalogKindPrefix {
 			return true
 		}
 	}
 	return false
 }
 
-func objectBaseParts(path engineplugin.CatalogPath) (string, string) {
+func objectBaseParts(path engineplugin.EngineCatalogPath) (string, string) {
 	bucket := ""
 	parts := make([]string, 0, len(path.Segments))
 	for _, segment := range path.Segments {
@@ -323,7 +323,7 @@ func objectBaseParts(path engineplugin.CatalogPath) (string, string) {
 		if name == "" {
 			continue
 		}
-		if bucket == "" && (segment.Term == engineplugin.CatalogTermBucket || segment.Kind == engineplugin.CatalogKindBucket) {
+		if bucket == "" && (segment.Term == engineplugin.EngineCatalogTermBucket || segment.Kind == engineplugin.EngineCatalogKindBucket) {
 			bucket = name
 			continue
 		}
@@ -334,10 +334,10 @@ func objectBaseParts(path engineplugin.CatalogPath) (string, string) {
 	return bucket, strings.Join(parts, "/")
 }
 
-func cloneCatalogPath(path engineplugin.CatalogPath) engineplugin.CatalogPath {
-	return engineplugin.CatalogPath{
+func cloneCatalogPath(path engineplugin.EngineCatalogPath) engineplugin.EngineCatalogPath {
+	return engineplugin.EngineCatalogPath{
 		Version:  path.Version,
 		EngineID: path.EngineID,
-		Segments: append([]engineplugin.CatalogSegment(nil), path.Segments...),
+		Segments: append([]engineplugin.EngineCatalogSegment(nil), path.Segments...),
 	}
 }

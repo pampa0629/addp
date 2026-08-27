@@ -1,5 +1,9 @@
 <template>
-  <div class="data-explorer">
+  <div
+    class="data-explorer"
+    data-testid="data-explorer"
+    :data-engine-load-state="engineLoadState"
+  >
     <div class="split-container" :style="{ gridTemplateColumns: treeWidth + 'px 8px 1fr' }">
       <!-- 左侧资源树区域 -->
       <div class="tree-container">
@@ -77,6 +81,7 @@
           @page-change="handlePageChange"
           @child-change="handleChildChange"
           @tab-change="handleTabChange"
+          @open-catalog="handleOpenCatalog"
         />
       </div>
     </div>
@@ -95,7 +100,7 @@ import EnginePanel from '@/components/explorer/EnginePanel.vue'
 import NodePanel from '@/components/explorer/NodePanel.vue'
 import ItemPanel from '@/components/explorer/ItemPanel.vue'
 import Splitter from '@/components/explorer/Splitter.vue'
-import { useResizable } from '@common-ui'
+import { navigateConsoleModuleRoute, useResizable } from '@common-ui'
 import { useExplorerStore } from '@/stores/explorer'
 import {
   buildDataExplorerQuery,
@@ -116,7 +121,10 @@ const activeTab = ref(resolveDataExplorerRouteState(route.query).tab)
 const ENGINE_STATUS_REFRESH_INTERVAL_MS = 15000
 let engineStatusTimer = 0
 let engineInitializationPromise = null
-let engineInitializationErrorShown = false
+const engineInitializationErrorShown = ref(false)
+const engineLoadState = computed(() => store.loadingEngines
+  ? 'loading'
+  : (engineInitializationErrorShown.value ? 'error' : 'loaded'))
 
 // 引用
 const treeRef = ref(null)
@@ -311,6 +319,11 @@ const handleTabChange = async (tab) => {
   await replaceDataExplorerRoute(store.selectedLocator, normalizedTab)
 }
 
+const handleOpenCatalog = async (entryId) => {
+  if (!entryId) return
+  await navigateConsoleModuleRoute(router, 'catalog', { path: `/entries/${entryId}` })
+}
+
 const handleOpenNode = async (locator) => {
   if (!locator) return
   store.selectNodeContext(nodeContextFromLocator(locator), locator)
@@ -342,12 +355,12 @@ const ensureEnginesLoaded = () => {
   }
   const task = store.loadEngines()
     .then(engines => {
-      engineInitializationErrorShown = false
+      engineInitializationErrorShown.value = false
       return engines
     })
     .catch(error => {
-      if (!engineInitializationErrorShown) {
-        engineInitializationErrorShown = true
+      if (!engineInitializationErrorShown.value) {
+        engineInitializationErrorShown.value = true
         ElMessage.error(t('manager.explorer.initFailed', { error: error.message }))
       }
       throw error

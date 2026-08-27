@@ -4,8 +4,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 // SanitizeObjectPath 清理对象路径（去除前后空格和斜杠）。
@@ -116,13 +116,13 @@ func SanitizeFSPath(path string) string {
 	return strings.Join(parts, "/")
 }
 
-func FilterObjectResourcesForDepth(resources []metacatalog.StorageResource, basePath string) []metacatalog.StorageResource {
+func FilterObjectResourcesForDepth(resources []scanresource.StorageResource, basePath string) []scanresource.StorageResource {
 	base := SanitizeObjectPath(basePath)
 	if len(resources) == 0 {
 		return resources
 	}
 
-	filtered := make([]metacatalog.StorageResource, 0, len(resources))
+	filtered := make([]scanresource.StorageResource, 0, len(resources))
 	for _, resource := range resources {
 		if resource.NodeType == "bucket" {
 			filtered = append(filtered, resource)

@@ -145,6 +145,31 @@ func TestFinalizeResultUsesLimitPlusOneAndRemovesHiddenFields(t *testing.T) {
 	}
 }
 
+func TestNormalizePublishedResultRowsCoercesMySQLBooleanScalars(t *testing.T) {
+	t.Parallel()
+
+	table := &datatype.TableInfo{Fields: []datatype.FieldInfo{
+		{Name: "active", Type: datatype.FieldTypeBool},
+		{Name: "name", Type: datatype.FieldTypeString},
+	}}
+	rows := []map[string]interface{}{
+		{"active": int8(1), "name": "one"},
+		{"active": []byte("0"), "name": "two"},
+		{"active": nil, "name": "three"},
+	}
+	if err := normalizePublishedResultRows(rows, table); err != nil {
+		t.Fatalf("normalizePublishedResultRows() error = %v", err)
+	}
+	if rows[0]["active"] != true || rows[1]["active"] != false || rows[2]["active"] != nil {
+		t.Fatalf("normalized rows = %#v", rows)
+	}
+	if err := normalizePublishedResultRows(
+		[]map[string]interface{}{{"active": int8(2)}}, table,
+	); err == nil {
+		t.Fatal("normalizePublishedResultRows() accepted non-boolean TINYINT")
+	}
+}
+
 func TestPublishedSQLStableKeyBecomesNonNullOutputContract(t *testing.T) {
 	t.Parallel()
 

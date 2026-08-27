@@ -13,49 +13,70 @@ import (
 
 func TestNormalizeExecutionAuthorizationRequestCanonicalizesBoundary(t *testing.T) {
 	executionID := uuid.MustParse("9a21ab1a-2900-42a5-ae91-821339b3fcdd")
-	audience, engineIDs, effects, ttl, err := normalizeExecutionAuthorizationRequest(
-		"develop", executionID, []int64{12, 3}, []string{"external_effect", "read"}, 20*time.Minute,
+	audience, accesses, effects, ttl, err := normalizeExecutionAuthorizationRequest(
+		"develop", executionID, []ExecutionEngineAccessScope{
+			{EngineID: 12, Effects: []string{"external_effect", "read"}},
+			{EngineID: 3, Effects: []string{"read"}},
+		}, 20*time.Minute,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if audience != "develop" || !reflect.DeepEqual(engineIDs, []int64{3, 12}) ||
+	if audience != "develop" || !reflect.DeepEqual(accesses, []ExecutionEngineAccessScope{
+		{EngineID: 3, Effects: []string{"read"}},
+		{EngineID: 12, Effects: []string{"read", "external_effect"}},
+	}) ||
 		!reflect.DeepEqual(effects, []string{"read", "external_effect"}) || ttl != 20*time.Minute {
-		t.Fatalf("normalized boundary audience=%q engines=%v effects=%v ttl=%v", audience, engineIDs, effects, ttl)
+		t.Fatalf("normalized boundary audience=%q accesses=%v effects=%v ttl=%v", audience, accesses, effects, ttl)
 	}
 }
 
 func TestNormalizeExecutionAuthorizationRequestAcceptsQualityAudience(t *testing.T) {
 	executionID := uuid.MustParse("2bc80c2c-1ca7-479c-b6bb-b0d9d57ca226")
-	audience, engineIDs, effects, ttl, err := normalizeExecutionAuthorizationRequest(
-		commonExecution.AudienceQuality, executionID, []int64{2}, []string{"read"}, time.Hour,
+	audience, accesses, effects, ttl, err := normalizeExecutionAuthorizationRequest(
+		commonExecution.AudienceQuality, executionID,
+		[]ExecutionEngineAccessScope{{EngineID: 2, Effects: []string{"read"}}}, time.Hour,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if audience != commonExecution.AudienceQuality || !reflect.DeepEqual(engineIDs, []int64{2}) ||
+	if audience != commonExecution.AudienceQuality || !reflect.DeepEqual(accesses, []ExecutionEngineAccessScope{{EngineID: 2, Effects: []string{"read"}}}) ||
 		!reflect.DeepEqual(effects, []string{"read"}) || ttl != time.Hour {
-		t.Fatalf("normalized quality boundary audience=%q engines=%v effects=%v ttl=%v", audience, engineIDs, effects, ttl)
+		t.Fatalf("normalized quality boundary audience=%q accesses=%v effects=%v ttl=%v", audience, accesses, effects, ttl)
+	}
+}
+
+func TestNormalizeExecutionAuthorizationRequestAcceptsTransferAudience(t *testing.T) {
+	executionID := uuid.New()
+	audience, _, effects, _, err := normalizeExecutionAuthorizationRequest(
+		commonExecution.AudienceTransfer, executionID, []ExecutionEngineAccessScope{
+			{EngineID: 2, Effects: []string{"write"}}, {EngineID: 1, Effects: []string{"read"}},
+		}, time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if audience != commonExecution.AudienceTransfer || !reflect.DeepEqual(effects, []string{"read", "write"}) {
+		t.Fatalf("normalized transfer boundary audience=%q effects=%v", audience, effects)
 	}
 }
 
 func TestNormalizeExecutionAuthorizationRequestRejectsUnknownOrDuplicateBoundary(t *testing.T) {
 	executionID := uuid.New()
 	testCases := []struct {
-		name      string
-		audience  string
-		engineIDs []int64
-		effects   []string
+		name     string
+		audience string
+		accesses []ExecutionEngineAccessScope
 	}{
-		{name: "unknown audience", audience: "meta", engineIDs: []int64{1}, effects: []string{"read"}},
-		{name: "duplicate engine", audience: "develop", engineIDs: []int64{1, 1}, effects: []string{"read"}},
-		{name: "duplicate effect", audience: "develop", engineIDs: []int64{1}, effects: []string{"read", "read"}},
-		{name: "unknown effect", audience: "develop", engineIDs: []int64{1}, effects: []string{"admin"}},
+		{name: "unknown audience", audience: "meta", accesses: []ExecutionEngineAccessScope{{EngineID: 1, Effects: []string{"read"}}}},
+		{name: "duplicate engine", audience: "develop", accesses: []ExecutionEngineAccessScope{{EngineID: 1, Effects: []string{"read"}}, {EngineID: 1, Effects: []string{"write"}}}},
+		{name: "duplicate effect", audience: "develop", accesses: []ExecutionEngineAccessScope{{EngineID: 1, Effects: []string{"read", "read"}}}},
+		{name: "unknown effect", audience: "develop", accesses: []ExecutionEngineAccessScope{{EngineID: 1, Effects: []string{"admin"}}}},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			_, _, _, _, err := normalizeExecutionAuthorizationRequest(
-				testCase.audience, executionID, testCase.engineIDs, testCase.effects, time.Minute,
+				testCase.audience, executionID, testCase.accesses, time.Minute,
 			)
 			if !errors.Is(err, commonapi.ErrBadRequest) {
 				t.Fatalf("error = %v, want bad request", err)
@@ -132,5 +153,25 @@ func TestContainsAllExecutionPermissionsRequiresQualityExecuteAndDataRead(t *tes
 	}
 	if containsAllExecutionPermissions(rows, commonExecution.AudienceQuality, []string{"write"}) {
 		t.Fatal("quality audience accepted a non-read effect")
+	}
+}
+
+func TestContainsAllExecutionPermissionsRestrictsTransferToReadWrite(t *testing.T) {
+	rows := []RoleAssignmentPermissionProjection{
+		{PermissionKey: transferExecutionPermission},
+		{PermissionKey: executionEffectPermissions["read"]},
+		{PermissionKey: executionEffectPermissions["write"]},
+		{PermissionKey: executionEffectPermissions["ddl"]},
+		{PermissionKey: executionEffectPermissions["external_effect"]},
+	}
+	if !containsAllExecutionPermissions(rows, commonExecution.AudienceTransfer, []string{"read", "write"}) {
+		t.Fatal("complete Transfer read/write boundary was rejected")
+	}
+	if containsAllExecutionPermissions(rows[1:], commonExecution.AudienceTransfer, []string{"read"}) {
+		t.Fatal("Transfer data effect without task execution permission was accepted")
+	}
+	if containsAllExecutionPermissions(rows, commonExecution.AudienceTransfer, []string{"ddl"}) ||
+		containsAllExecutionPermissions(rows, commonExecution.AudienceTransfer, []string{"external_effect"}) {
+		t.Fatal("Transfer audience accepted DDL or external effect")
 	}
 }

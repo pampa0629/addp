@@ -22,8 +22,8 @@ type DatabaseRuntime struct {
 }
 
 type databaseScanCatalog struct {
-	catalogProvider plugin.CatalogProvider
-	factsProvider   plugin.CatalogFactsProvider
+	catalogProvider plugin.EngineCatalogProvider
+	factsProvider   plugin.EngineCatalogFactsProvider
 	namespaceTerm   string
 	itemTerm        string
 }
@@ -44,7 +44,7 @@ func NewDatabaseRuntime(db *gorm.DB, log *slog.Logger, repo *metaRepo.ScanReposi
 // 1. Schema节点管理：创建/更新Schema节点，管理扫描状态
 // 2. 表迭代处理：扫描所有表，判断是否需要更新
 // 3. 字段扫描：深度扫描时获取表字段信息
-// 4. 空间事实：消费 engine CatalogFacts 中的 spatial facts
+// 4. 空间事实：消费 engine EngineCatalogFacts 中的 spatial facts
 // 5. 搜索索引：将表资产信息同步到Meilisearch
 // 6. 软删除处理：清理已删除的表
 //
@@ -62,23 +62,23 @@ func (s *DatabaseRuntime) ScanNamespace(ctx context.Context, p plugin.EnginePlug
 		return 0, 0, 0, fmt.Errorf("engine plugin is required for %s", resource.EngineType)
 	}
 
-	catalogProvider, ok := p.(plugin.CatalogProvider)
+	catalogProvider, ok := p.(plugin.EngineCatalogProvider)
 	if !ok {
-		return 0, 0, 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
+		return 0, 0, 0, fmt.Errorf("engine %s does not implement EngineCatalogProvider", resource.EngineType)
 	}
-	factsProvider, ok := p.(plugin.CatalogFactsProvider)
+	factsProvider, ok := p.(plugin.EngineCatalogFactsProvider)
 	if !ok {
-		return 0, 0, 0, fmt.Errorf("engine %s does not implement CatalogFactsProvider", resource.EngineType)
+		return 0, 0, 0, fmt.Errorf("engine %s does not implement EngineCatalogFactsProvider", resource.EngineType)
 	}
 	scanCatalog := databaseScanCatalog{
 		catalogProvider: catalogProvider,
 		factsProvider:   factsProvider,
 		namespaceTerm:   scanflow.NamespaceTermForPlugin(p),
-		itemTerm:        scanflow.CatalogLeafTermForPlugin(p, plugin.CatalogTermTable),
+		itemTerm:        scanflow.EngineCatalogLeafTermForPlugin(p, plugin.EngineCatalogTermTable),
 	}
 
 	// 2. 创建/更新 Schema/Database 节点
-	rootNode, err := metaRepo.EnsureCatalogRootNode(s.repo, tenantID, resource, p)
+	rootNode, err := metaRepo.EnsureEngineCatalogRootNode(s.repo, tenantID, resource, p)
 	if err != nil {
 		return 0, 0, 0, err
 	}

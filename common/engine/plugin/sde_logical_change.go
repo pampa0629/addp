@@ -59,7 +59,7 @@ type SDELogicalChangeBatch struct {
 // Oracle Store capability. The first implementation supports traditional
 // versioning only and feeds Transfer's existing Kafka continuous pipeline.
 type SDELogicalChangeSourceProvider interface {
-	OpenSDELogicalChangeSource(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts SDELogicalChangeOpenOptions) (SDELogicalChangeSource, error)
+	OpenSDELogicalChangeSource(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts SDELogicalChangeOpenOptions) (SDELogicalChangeSource, error)
 }
 
 type SDELogicalChangeSource interface {

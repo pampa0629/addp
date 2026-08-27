@@ -264,7 +264,7 @@ def test_postgresql_facade_navigates_with_native_terms_and_only_caches_paths(
 
 def test_client_uses_exact_engine_type_registration(monkeypatch, notebook_session):
     monkeypatch.setattr(engines, "list", lambda **_kwargs: [{"id": 7, "engine_type": "postgres"}])
-    with pytest.raises(engines.NotebookCatalogUnsupportedError):
+    with pytest.raises(engines.NotebookEngineCatalogUnsupportedError):
         engines.client(7)
 
 
@@ -334,7 +334,7 @@ def test_mysql_facade_navigates_database_and_table(monkeypatch, notebook_session
 
 def test_duckdb_runtime_is_not_a_native_data_engine(monkeypatch, notebook_session):
     monkeypatch.setattr(engines, "list", lambda **_kwargs: [{"id": 18, "engine_type": "duckdb"}])
-    with pytest.raises(engines.NotebookCatalogUnsupportedError):
+    with pytest.raises(engines.NotebookEngineCatalogUnsupportedError):
         engines.client(18)
 
 
@@ -342,22 +342,22 @@ def test_client_rejects_incompatible_postgresql_catalog_model(monkeypatch, noteb
     descriptor = postgresql_descriptor()
     descriptor["capabilities"]["storage"]["catalog_model"]["levels"][1]["term"] = "relation"
     monkeypatch.setattr(engines, "list", lambda **_kwargs: [descriptor])
-    with pytest.raises(engines.NotebookCatalogUnsupportedError):
+    with pytest.raises(engines.NotebookEngineCatalogUnsupportedError):
         engines.client(21)
 
 
 @pytest.mark.parametrize(
     ("status", "code", "error_type"),
     [
-        (400, "catalog_request_invalid", engines.NotebookCatalogRequestError),
-        (403, "notebook_catalog_forbidden", engines.NotebookCatalogForbiddenError),
+        (400, "engine_catalog_request_invalid", engines.NotebookEngineCatalogRequestError),
+        (403, "notebook_engine_catalog_forbidden", engines.NotebookEngineCatalogForbiddenError),
         (404, "engine_not_found", engines.NotebookEngineNotFoundError),
-        (404, "catalog_entry_not_found", engines.NotebookCatalogEntryNotFoundError),
-        (422, "catalog_operation_unsupported", engines.NotebookCatalogUnsupportedError),
-        (502, "catalog_control_plane_failed", engines.NotebookCatalogControlPlaneError),
-        (502, "catalog_provider_failed", engines.NotebookCatalogProviderError),
+        (404, "engine_catalog_entry_not_found", engines.NotebookEngineCatalogEntryNotFoundError),
+        (422, "engine_catalog_operation_unsupported", engines.NotebookEngineCatalogUnsupportedError),
+        (502, "engine_catalog_control_plane_failed", engines.NotebookEngineCatalogControlPlaneError),
+        (502, "engine_catalog_provider_failed", engines.NotebookEngineCatalogProviderError),
         (503, "engine_unavailable", engines.NotebookEngineUnavailableError),
-        (504, "catalog_timeout", engines.NotebookCatalogTimeoutError),
+        (504, "engine_catalog_timeout", engines.NotebookEngineCatalogTimeoutError),
     ],
 )
 def test_catalog_error_codes_map_to_stable_exception_types(

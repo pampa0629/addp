@@ -11,7 +11,6 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	qualityMigration "github.com/addp/quality/internal/migration"
 	"github.com/addp/quality/internal/models"
-	"github.com/lib/pq"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -72,8 +71,8 @@ func TestIntegrationPostgresQualityConcurrentPendingClaim(t *testing.T) {
 	}
 	if err := repo.AttachExecutionAuthorization(context.Background(), tenantID, execution.ExecutionID, map[string]interface{}{
 		"actor_principal_id": int64(1), "actor_tenant_membership_id": int64(1), "issued_authorization_version": int64(1),
-		"execution_authorization_id": int64(1), "authorization_effects": pq.StringArray{"read"},
-		"authorization_expires_at": createdAt.Add(time.Hour),
+		"execution_authorization_id": int64(1),
+		"authorization_expires_at":   createdAt.Add(time.Hour),
 	}); err != nil {
 		t.Fatalf("attach authorization: %v", err)
 	}

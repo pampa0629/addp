@@ -90,3 +90,119 @@ func TestMaterializationPhysicalTargetMigrationBindsActiveBatch(t *testing.T) {
 		}
 	}
 }
+
+func TestMaterializationSealMigrationRemovesWriterCoupling(t *testing.T) {
+	content, err := fs.ReadFile(migrationFiles, "sql/014_replace_write_attempt_with_seal.up.sql")
+	if err != nil {
+		t.Fatalf("read materialization seal migration: %v", err)
+	}
+	sql := string(content)
+	for _, fragment := range []string{
+		"DROP TABLE model.materialization_write_attempts",
+		"DROP COLUMN completed_write_attempt_id",
+		"ADD COLUMN writer_execution_id VARCHAR(255)",
+		"ADD COLUMN seal_execution_id VARCHAR(255)",
+		"'sealed'",
+		"status = 'aborted'",
+		"uq_model_materialization_seal_execution",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("materialization seal migration missing %s", fragment)
+		}
+	}
+}
+
+func TestMaterializationPartitionNormalizationMigrationRemovesEmptyDesign(t *testing.T) {
+	content, err := fs.ReadFile(migrationFiles, "sql/015_normalize_empty_partition_materialization.up.sql")
+	if err != nil {
+		t.Fatalf("read materialization partition normalization migration: %v", err)
+	}
+	sql := string(content)
+	for _, fragment := range []string{
+		"materialization - 'partition_by' - 'partition_type'",
+		"btrim(materialization->>'partition_by') = ''",
+		"materialization->'partition_by' = 'null'::jsonb",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("partition normalization migration missing %s", fragment)
+		}
+	}
+}
+
+func TestMaterializationExecutionIDMigrationUsesCommonExecutionIdentityType(t *testing.T) {
+	content, err := fs.ReadFile(migrationFiles, "sql/010_normalize_materialization_execution_ids.up.sql")
+	if err != nil {
+		t.Fatalf("read execution ID migration: %v", err)
+	}
+	sql := string(content)
+	for _, fragment := range []string{
+		"prepare_execution_id TYPE VARCHAR(255)",
+		"publish_execution_id TYPE VARCHAR(255)",
+		"writer_execution_id TYPE VARCHAR(255)",
+		"model_execution_id TYPE VARCHAR(255)",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("execution ID migration missing %s", fragment)
+		}
+	}
+}
+
+func TestMaterializationGroupMigrationDefinesVersionedAggregate(t *testing.T) {
+	content, err := fs.ReadFile(migrationFiles, "sql/011_add_materialization_groups.up.sql")
+	if err != nil {
+		t.Fatalf("read materialization group migration: %v", err)
+	}
+	sql := string(content)
+	for _, fragment := range []string{
+		"model.materialization_groups",
+		"model.materialization_group_members",
+		"UNIQUE (tenant_id, code)",
+		"CHECK (version > 0)",
+		"FOREIGN KEY (logical_table_id, tenant_id)",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("materialization group migration missing %s", fragment)
+		}
+	}
+}
+
+func TestMaterializationGroupPublishMigrationAllowsOneExecutionToOwnAllBatches(t *testing.T) {
+	content, err := fs.ReadFile(migrationFiles, "sql/012_allow_group_publish_execution_batches.up.sql")
+	if err != nil {
+		t.Fatalf("read materialization group publish migration: %v", err)
+	}
+	sql := string(content)
+	for _, fragment := range []string{
+		"DROP CONSTRAINT IF EXISTS materialization_batches_publish_execution_id_key",
+		"idx_model_materialization_batches_publish_execution",
+		"tenant_id, publish_execution_id",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("materialization group publish migration missing %s", fragment)
+		}
+	}
+}
+
+func TestCatalogResourceChangeMigrationUsesRootTriggersAndMinimalProjection(t *testing.T) {
+	content, err := fs.ReadFile(migrationFiles, "sql/013_add_catalog_resource_changes.up.sql")
+	if err != nil {
+		t.Fatalf("read catalog resource change migration: %v", err)
+	}
+	sql := string(content)
+	for _, fragment := range []string{
+		"model.catalog_resource_changes",
+		"trg_model_entity_catalog_change",
+		"trg_model_logical_table_catalog_change",
+		"'object_kind'",
+		"'model_status'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("catalog resource change migration missing %s", fragment)
+		}
+	}
+	for _, forbidden := range []string{"materialization'", "entity_attributes", "logical_fields", "fact_metric_mappings"} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("catalog resource change migration copies forbidden professional fact %s", forbidden)
+		}
+	}
+}

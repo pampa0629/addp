@@ -8,31 +8,31 @@ import (
 )
 
 const (
-	CatalogTermGraph = "graph"
+	EngineCatalogTermGraph = "graph"
 
-	CatalogKindGraph = "graph"
+	EngineCatalogKindGraph = "graph"
 )
 
-func GraphCatalogModel() CatalogModelSpec {
-	return CatalogModelSpec{
-		PathVersion: CatalogPathVersion,
-		RootTerm:    CatalogTermServer,
-		Levels: []CatalogLevelSpec{
-			{Term: CatalogTermDatabase, Kinds: []string{CatalogKindNamespace}, Role: CatalogRoleBranch, I18nKey: CatalogTermI18nKey(CatalogTermDatabase)},
-			{Term: CatalogTermGraph, Kinds: []string{CatalogKindGraph}, Role: CatalogRoleLeaf, I18nKey: CatalogTermI18nKey(CatalogTermGraph)},
+func GraphCatalogModel() EngineCatalogModelSpec {
+	return EngineCatalogModelSpec{
+		PathVersion: EngineCatalogPathVersion,
+		RootTerm:    EngineCatalogTermServer,
+		Levels: []EngineCatalogLevelSpec{
+			{Term: EngineCatalogTermDatabase, Kinds: []string{EngineCatalogKindNamespace}, Role: EngineCatalogRoleBranch, I18nKey: EngineCatalogTermI18nKey(EngineCatalogTermDatabase)},
+			{Term: EngineCatalogTermGraph, Kinds: []string{EngineCatalogKindGraph}, Role: EngineCatalogRoleLeaf, I18nKey: EngineCatalogTermI18nKey(EngineCatalogTermGraph)},
 		},
 	}
 }
 
 type GraphCatalogCallbacks struct {
-	ListNamespacesFunc   func(ctx context.Context, connInfo ConnectionInfo, root CatalogPath) ([]CatalogEntry, error)
-	DescribeGraphFunc    func(ctx context.Context, connInfo ConnectionInfo, database string, opts CatalogFactsOptions) (*datatype.GraphInfo, error)
+	ListNamespacesFunc   func(ctx context.Context, connInfo ConnectionInfo, root EngineCatalogPath) ([]EngineCatalogEntry, error)
+	DescribeGraphFunc    func(ctx context.Context, connInfo ConnectionInfo, database string, opts EngineCatalogFactsOptions) (*datatype.GraphInfo, error)
 	IsSystemDatabaseFunc func(databaseName string) bool
 }
 
-func ListGraphCatalogChildren(ctx context.Context, callbacks GraphCatalogCallbacks, engineID uint, connInfo ConnectionInfo, parent CatalogPath, opts ListOptions) ([]CatalogEntry, error) {
+func ListGraphCatalogChildren(ctx context.Context, callbacks GraphCatalogCallbacks, engineID uint, connInfo ConnectionInfo, parent EngineCatalogPath, opts ListOptions) ([]EngineCatalogEntry, error) {
 	model := GraphCatalogModel()
-	if IsCatalogRootPath(parent) {
+	if IsEngineCatalogRootPath(parent) {
 		if err := requireCatalogRootPath(parent, model); err != nil {
 			return nil, err
 		}
@@ -43,7 +43,7 @@ func ListGraphCatalogChildren(ctx context.Context, callbacks GraphCatalogCallbac
 		if err != nil {
 			return nil, err
 		}
-		nodes := make([]CatalogEntry, 0, len(namespaces))
+		nodes := make([]EngineCatalogEntry, 0, len(namespaces))
 		for _, namespace := range namespaces {
 			if callbacks.isSystemDatabase(namespace.Name) {
 				continue
@@ -56,12 +56,12 @@ func ListGraphCatalogChildren(ctx context.Context, callbacks GraphCatalogCallbac
 		return nil, err
 	}
 
-	return []CatalogEntry{{
-		Name: CatalogKindGraph,
-		Path: appendCatalogSegment(parent, engineID, CatalogTermGraph, CatalogKindGraph, CatalogKindGraph),
-		Term: CatalogTermGraph,
-		Kind: CatalogKindGraph,
-		Role: CatalogRoleLeaf,
+	return []EngineCatalogEntry{{
+		Name: EngineCatalogKindGraph,
+		Path: appendCatalogSegment(parent, engineID, EngineCatalogTermGraph, EngineCatalogKindGraph, EngineCatalogKindGraph),
+		Term: EngineCatalogTermGraph,
+		Kind: EngineCatalogKindGraph,
+		Role: EngineCatalogRoleLeaf,
 	}}, nil
 }
 
@@ -72,13 +72,13 @@ func (a GraphCatalogCallbacks) isSystemDatabase(databaseName string) bool {
 	return a.IsSystemDatabaseFunc(databaseName)
 }
 
-func ResolveGraphCatalogPath(ctx context.Context, callbacks GraphCatalogCallbacks, engineID uint, connInfo ConnectionInfo, path CatalogPath) (*CatalogEntry, error) {
+func ResolveGraphCatalogPath(ctx context.Context, callbacks GraphCatalogCallbacks, engineID uint, connInfo ConnectionInfo, path EngineCatalogPath) (*EngineCatalogEntry, error) {
 	model := GraphCatalogModel()
-	if IsCatalogRootPath(path) {
+	if IsEngineCatalogRootPath(path) {
 		if err := requireCatalogRootPath(path, model); err != nil {
 			return nil, err
 		}
-		return &CatalogEntry{Name: "", Path: path, Term: model.RootTerm, Kind: model.RootTerm, Role: CatalogRoleBranch}, nil
+		return &EngineCatalogEntry{Name: "", Path: path, Term: model.RootTerm, Kind: model.RootTerm, Role: EngineCatalogRoleBranch}, nil
 	}
 	segments, err := requireCatalogBusinessPath(path, model)
 	if err != nil {
@@ -86,12 +86,12 @@ func ResolveGraphCatalogPath(ctx context.Context, callbacks GraphCatalogCallback
 	}
 	last := segments[len(segments)-1]
 	if len(segments) == 1 {
-		return &CatalogEntry{Name: last.Name, Path: path, Term: CatalogTermDatabase, Kind: CatalogKindNamespace, Role: CatalogRoleBranch}, nil
+		return &EngineCatalogEntry{Name: last.Name, Path: path, Term: EngineCatalogTermDatabase, Kind: EngineCatalogKindNamespace, Role: EngineCatalogRoleBranch}, nil
 	}
-	return &CatalogEntry{Name: last.Name, Path: path, Term: CatalogTermGraph, Kind: CatalogKindGraph, Role: CatalogRoleLeaf}, nil
+	return &EngineCatalogEntry{Name: last.Name, Path: path, Term: EngineCatalogTermGraph, Kind: EngineCatalogKindGraph, Role: EngineCatalogRoleLeaf}, nil
 }
 
-func DescribeGraphCatalogFacts(ctx context.Context, callbacks GraphCatalogCallbacks, engineID uint, connInfo ConnectionInfo, path CatalogPath, opts CatalogFactsOptions) (*CatalogFacts, error) {
+func DescribeGraphCatalogFacts(ctx context.Context, callbacks GraphCatalogCallbacks, engineID uint, connInfo ConnectionInfo, path EngineCatalogPath, opts EngineCatalogFactsOptions) (*EngineCatalogFacts, error) {
 	segments, err := requireCatalogBusinessPath(path, GraphCatalogModel())
 	if err != nil {
 		return nil, err
@@ -107,9 +107,9 @@ func DescribeGraphCatalogFacts(ctx context.Context, callbacks GraphCatalogCallba
 	if err != nil {
 		return nil, err
 	}
-	return &CatalogFacts{
+	return &EngineCatalogFacts{
 		Path:  path,
-		Kind:  CatalogKindGraph,
+		Kind:  EngineCatalogKindGraph,
 		Graph: graph.Clone(),
 	}, nil
 }

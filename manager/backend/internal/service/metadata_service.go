@@ -17,12 +17,12 @@ import (
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
-	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
 	"github.com/addp/manager/internal/preview"
 	"github.com/addp/manager/internal/repository"
+	"github.com/addp/manager/internal/resourceutil"
 )
 
 type MetadataService struct {
@@ -207,7 +207,7 @@ func (s *MetadataService) StreamStorageContent(
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
-	factsProvider, _ := pl.(plugin.CatalogFactsProvider)
+	factsProvider, _ := pl.(plugin.EngineCatalogFactsProvider)
 	contentReader, _ := pl.(plugin.ContentReadableProvider)
 	rangeReader, _ := pl.(plugin.RangeReadableProvider)
 	if contentReader == nil {
@@ -221,7 +221,7 @@ func (s *MetadataService) StreamStorageContent(
 		return nil, 0, "", "", err
 	}
 
-	meta, err := streamCatalogFacts(ctx, factsProvider, connInfo, itemPath, displayPath)
+	meta, err := streamEngineCatalogFacts(ctx, factsProvider, connInfo, itemPath, displayPath)
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("failed to stat storage content: %w", err)
 	}
@@ -338,10 +338,10 @@ func storageRefFromLocator(engineType string, loc *resourcetree.ResourceLocator)
 	if loc == nil {
 		return ""
 	}
-	if catalogutil.ItemTermMatches(engineType, plugin.CatalogTermObject) {
+	if resourceutil.ItemTermMatches(engineType, plugin.EngineCatalogTermObject) {
 		return strings.Join(loc.Path, "/")
 	}
-	if catalogutil.ItemTermMatches(engineType, plugin.CatalogTermFile) {
+	if resourceutil.ItemTermMatches(engineType, plugin.EngineCatalogTermFile) {
 		return strings.Join(loc.Path, "/")
 	}
 	return strings.Join(loc.Path, "/")
@@ -518,7 +518,7 @@ func normalizeDownloadRefs(engineType, primaryStorageRef string, refs []models.D
 		if storageRef == "" {
 			continue
 		}
-		if catalogutil.ItemTermMatches(engineType, plugin.CatalogTermObject) {
+		if resourceutil.ItemTermMatches(engineType, plugin.EngineCatalogTermObject) {
 			storageRef = normalizeObjectDownloadRef(primaryStorageRef, storageRef)
 		}
 		if seen[storageRef] {
@@ -675,36 +675,36 @@ func parseStorageRange(rangeHeader string, size int64) (plugin.ReadOptions, int6
 	return plugin.ReadOptions{Offset: start, Length: length}, length, contentRange, nil
 }
 
-func streamStorageRefPath(engineType string, engineID uint, storageRef string) (plugin.CatalogPath, string, error) {
+func streamStorageRefPath(engineType string, engineID uint, storageRef string) (plugin.EngineCatalogPath, string, error) {
 	storageRef = strings.Trim(strings.ReplaceAll(storageRef, "\\", "/"), "/")
 	if storageRef == "" {
-		return plugin.CatalogPath{}, "", fmt.Errorf("storage ref is empty")
+		return plugin.EngineCatalogPath{}, "", fmt.Errorf("storage ref is empty")
 	}
 	for _, segment := range strings.Split(storageRef, "/") {
 		if segment == "" || segment == "." || segment == ".." || strings.ContainsRune(segment, '\x00') {
-			return plugin.CatalogPath{}, "", fmt.Errorf("invalid storage ref: %s", storageRef)
+			return plugin.EngineCatalogPath{}, "", fmt.Errorf("invalid storage ref: %s", storageRef)
 		}
 	}
-	if catalogutil.ItemTermMatches(engineType, plugin.CatalogTermObject) {
+	if resourceutil.ItemTermMatches(engineType, plugin.EngineCatalogTermObject) {
 		parts := strings.SplitN(storageRef, "/", 2)
 		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
-			return plugin.CatalogPath{}, "", fmt.Errorf("invalid storage ref for object catalog: %s", storageRef)
+			return plugin.EngineCatalogPath{}, "", fmt.Errorf("invalid storage ref for object catalog: %s", storageRef)
 		}
 		return plugin.ObjectItemPath(engineID, parts[0], parts[1]), storageRef, nil
 	}
-	if catalogutil.ItemTermMatches(engineType, plugin.CatalogTermFile) {
+	if resourceutil.ItemTermMatches(engineType, plugin.EngineCatalogTermFile) {
 		return plugin.FileItemPath(engineID, storageRef), storageRef, nil
 	}
-	return plugin.CatalogPath{}, "", fmt.Errorf("resource type %s does not support storage streaming", engineType)
+	return plugin.EngineCatalogPath{}, "", fmt.Errorf("resource type %s does not support storage streaming", engineType)
 }
 
-func streamCatalogFacts(ctx context.Context, factsProvider plugin.CatalogFactsProvider, connInfo plugin.ConnectionInfo, itemPath plugin.CatalogPath, fallbackPath string) (*plugin.StorageObjectFacts, error) {
+func streamEngineCatalogFacts(ctx context.Context, factsProvider plugin.EngineCatalogFactsProvider, connInfo plugin.ConnectionInfo, itemPath plugin.EngineCatalogPath, fallbackPath string) (*plugin.StorageObjectFacts, error) {
 	if factsProvider == nil {
 		return &plugin.StorageObjectFacts{Name: path.Base(fallbackPath), Path: fallbackPath}, nil
 	}
-	item, err := factsProvider.DescribeCatalogFacts(ctx, connInfo, itemPath, plugin.CatalogFactsOptions{})
+	item, err := factsProvider.DescribeEngineCatalogFacts(ctx, connInfo, itemPath, plugin.EngineCatalogFactsOptions{})
 	if err != nil {
 		return nil, err
 	}
-	return catalogutil.CatalogFactsToStorageObjectFacts(item, fallbackPath), nil
+	return resourceutil.EngineCatalogFactsToStorageObjectFacts(item, fallbackPath), nil
 }

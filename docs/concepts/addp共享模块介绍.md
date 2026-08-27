@@ -14,14 +14,14 @@
 - `common/jsonmap` - decoded JSON map 的通用读取工具,不承载 `meta_item.attributes` 业务规范
 - `common/taskprovider` - `task.capabilities/v2`、标准任务列表响应、任务级 `execution_contract` 和执行输入实例校验；校验失败返回包含稳定 rule、path 和约束值的结构化错误。任务类型能力不再保存静态 `execution_schema`，Orchestrator 必须从具体任务详情取得精确输入/输出契约
 - `common/runtimehealth` - ADDP 应用层后台运行实例的公共心跳模型、发布器和查询仓库；只发布进程活性、角色、容量与当前占用，不承载 execution/runtime/delivery 的领取权或 fencing token
-- `common/query` - 查询参数绑定、SQL 副作用分析和跨 SQL 引擎的基础方言能力；不承载 catalog facts 或 PostGIS 空间扩展语义
+- `common/query` - 查询参数绑定、SQL 副作用分析和跨 SQL 引擎的基础方言能力；不承载 Engine Catalog facts 或 PostGIS 空间扩展语义
 - `common/engine/selection` - 基于规范化 Engine capabilities 的 Engine Instance 解析和筛选 helper
 - `common/middleware/ratelimit` - Redis 原子固定窗口限流能力，供认证等多实例安全边界复用；Redis 不可用时由调用方定义失败关闭响应，不提供进程内存回退路径
 - `common/contentio` - 基于 Go `io` 的内容定位与读写抽象，负责 `Ref`、`Reader`、`Writer`、`Lister`、`RangeReader` 和 `Stat`
 - `common/format` - 通用文件格式、FormatDescriptor、格式信息、format plugin、info provider、content reader 和 writer/provider
 - `common/format/pmtiles`、`common/format/rastermosaic` - 格式域内的 PMTiles v3 归档和 Raster Mosaic Schema 实现
 - `common/dataitem` - 候选内容集合到 data item 组织结果的通用解析能力，供 Meta 扫描和 Manager 容器动态预览复用；当前已落地 `ResolveItems()`、single / multi / whole 规则派生、related refs 还原 helper 和基础忽略策略
-- `common/resourcetree` - Meta 已落库 catalog / item 事实到跨模块资源树视图的投影层，提供 `TreeNode`、`TreeBuilder`、`ResourceLocator` 和 provider `CatalogPath` 纯转换能力；不持有 System / Meta client，不主动读取远程服务，不处理租户权限、token、降级策略、扫描或内容读取
+- `common/resourcetree` - Meta 已落库 Engine Catalog / item 事实到跨模块资源树视图的投影层，提供 `TreeNode`、`TreeBuilder`、`ResourceLocator` 和 provider `EngineCatalogPath` 纯转换能力；不持有 System / Meta client，不主动读取远程服务，不处理租户权限、token、降级策略、扫描或内容读取
 - [client/meta.go](common/client/meta.go) - MetaClient 是跨模块调用 Meta API 的唯一共享 Client；只接受 `ServiceTokenProvider`，按 Tenant 获取短期 Service Access Token 并只发送 Bearer，Manager 等模块不得保留私有 Meta Client、代传 User Token 或恢复 Internal API Key / Tenant Header
 - [client/service_token.go](common/client/service_token.go) - OAuthServiceTokenSource 按 `tenant_id` 或显式 `context_type=platform` 向 System 换取短期 Service Access Token，并按 Context 独立缓存
 - [client/system_service.go](../../common/client/system_service.go) - SystemServiceClient 是 Service Principal 调用 System 的 Bearer-only Client；Tenant 请求使用不可变 `WithTenantID`，平台模块注册、心跳以及随模块注册发布 TaskProvider 声明使用 Platform Context。模块注册返回可查询快照和完成信号的生命周期对象，状态固定为 `starting|registered|recovering|failed|stopped`，供 `common/modulelifecycle` 执行就绪判断。实例首次注册成功后，无论生命周期 Context 从心跳等待、请求或重试阶段取消，Client 都必须使用独立的限时 Context 注销该实例。Go 进程入口必须传入信号 Context，并在退出前等待生命周期完成信号。`SystemAPIError` 必须保留 System 错误的方法、路径、HTTP 状态、稳定错误码、错误文案和受限长度的原始响应正文，与 `common-python` 的模块注册客户端共用同一诊断语义

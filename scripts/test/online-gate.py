@@ -44,6 +44,15 @@ class Suite:
 # Only executable owner-maintained Online suites belong here. Do not register
 # placeholders: an entry means the suite is ready for real Online acceptance.
 SUITES: Mapping[str, Suite] = {
+    "consumer-engine-recovery": Suite(
+        command=(sys.executable, "scripts/test/consumer-engine-recovery-online.py"),
+        services=(
+            ("gateway", "GATEWAY_URL"),
+            ("system", "SYSTEM_URL"),
+            ("manager", "MANAGER_URL"),
+            ("service", "SERVICE_URL"),
+        ),
+    ),
     "module-registry-recovery": Suite(
         command=(sys.executable, "scripts/test/module-registry-recovery-online.py"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL")),
@@ -55,6 +64,26 @@ SUITES: Mapping[str, Suite] = {
             ("system", "SYSTEM_URL"),
             ("standard", "STANDARD_URL"),
             ("model", "MODEL_URL"),
+        ),
+    ),
+    "enterprise-catalog-publishing": Suite(
+        command=(sys.executable, "scripts/test/enterprise-catalog-publishing-online.py"),
+        services=(
+            ("gateway", "GATEWAY_URL"),
+            ("system", "SYSTEM_URL"),
+            ("meta", "META_URL"),
+            ("catalog", "CATALOG_URL"),
+            ("asset", "ASSET_URL"),
+            ("portal", "PORTAL_URL"),
+        ),
+    ),
+    "workbench-service-consumption": Suite(
+        command=(sys.executable, "scripts/test/workbench-service-consumption-online.py"),
+        services=(
+            ("gateway", "GATEWAY_URL"),
+            ("system", "SYSTEM_URL"),
+            ("service", "SERVICE_URL"),
+            ("workbench", "WORKBENCH_URL"),
         ),
     ),
 }

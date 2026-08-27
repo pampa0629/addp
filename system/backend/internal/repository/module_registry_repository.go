@@ -47,16 +47,17 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 	now := time.Now()
 	changed := false
 	err = r.db.Transaction(func(tx *gorm.DB) error {
-		definition := models.ModuleDefinition{
+		candidate := models.ModuleDefinition{
 			ModuleName: req.ModuleName, RoutePrefix: req.RoutePrefix, Enabled: true,
 			Version: 1, ConfigurationManagement: configuration, TaskProvider: taskProvider,
 		}
 		if err := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "module_name"}},
 			DoNothing: true,
-		}).Create(&definition).Error; err != nil {
+		}).Create(&candidate).Error; err != nil {
 			return err
 		}
+		var definition models.ModuleDefinition
 		if err := tx.Where("module_name = ?", req.ModuleName).First(&definition).Error; err != nil {
 			return err
 		}

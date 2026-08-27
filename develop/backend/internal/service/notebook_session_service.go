@@ -150,24 +150,24 @@ func (s *NotebookSessionService) Create(ctx context.Context, userAccessToken str
 	ownerContentReadAPIEndpoint := ownerSessionBase + "/content-reads"
 	ownerChangeStreamAPIEndpoint := ownerSessionBase + "/change-streams"
 	runtimeSession, controlURL, err := s.jupyter.OpenInteractiveSession(ctx, tenantID, *engineID, plugin.InteractiveScriptSessionRequest{
-		SessionID:                    sessionID,
-		TenantID:                     tenantID,
-		UserID:                       userID,
-		TaskID:                       taskID,
-		NotebookPath:                 notebookPath,
-		Kernel:                       kernel,
-		BasePath:                     basePath,
-		TTLSeconds:                   int(s.ttl.Seconds()),
-		OwnerAPIEndpoint:             ownerAPIEndpoint,
-		OwnerCatalogAPIEndpoint:      ownerCatalogAPIEndpoint,
-		OwnerTableScanAPIEndpoint:    ownerTableScanAPIEndpoint,
-		OwnerRecordScanAPIEndpoint:   ownerRecordScanAPIEndpoint,
-		OwnerQueryAPIEndpoint:        ownerQueryAPIEndpoint,
-		OwnerGraphSampleAPIEndpoint:  ownerGraphSampleAPIEndpoint,
-		OwnerGraphQueryAPIEndpoint:   ownerGraphQueryAPIEndpoint,
-		OwnerContentReadAPIEndpoint:  ownerContentReadAPIEndpoint,
-		OwnerChangeStreamAPIEndpoint: ownerChangeStreamAPIEndpoint,
-		OwnerCapabilityToken:         kernelCapabilityToken,
+		SessionID:                     sessionID,
+		TenantID:                      tenantID,
+		UserID:                        userID,
+		TaskID:                        taskID,
+		NotebookPath:                  notebookPath,
+		Kernel:                        kernel,
+		BasePath:                      basePath,
+		TTLSeconds:                    int(s.ttl.Seconds()),
+		OwnerAPIEndpoint:              ownerAPIEndpoint,
+		OwnerEngineCatalogAPIEndpoint: ownerCatalogAPIEndpoint,
+		OwnerTableScanAPIEndpoint:     ownerTableScanAPIEndpoint,
+		OwnerRecordScanAPIEndpoint:    ownerRecordScanAPIEndpoint,
+		OwnerQueryAPIEndpoint:         ownerQueryAPIEndpoint,
+		OwnerGraphSampleAPIEndpoint:   ownerGraphSampleAPIEndpoint,
+		OwnerGraphQueryAPIEndpoint:    ownerGraphQueryAPIEndpoint,
+		OwnerContentReadAPIEndpoint:   ownerContentReadAPIEndpoint,
+		OwnerChangeStreamAPIEndpoint:  ownerChangeStreamAPIEndpoint,
+		OwnerCapabilityToken:          kernelCapabilityToken,
 	})
 	if err != nil {
 		return nil, "", err
@@ -209,10 +209,10 @@ func (s *NotebookSessionService) Create(ctx context.Context, userAccessToken str
 	return publicNotebookSession(session), secret, nil
 }
 
-func (s *NotebookSessionService) ListCatalogChildren(
+func (s *NotebookSessionService) ListEngineCatalogChildren(
 	ctx context.Context,
 	sessionID, token string,
-	request commonClient.NotebookCatalogChildrenRequest,
+	request commonClient.NotebookEngineCatalogChildrenRequest,
 ) ([]commonClient.EngineCatalogEntry, error) {
 	session, err := s.ResolveKernelCapability(sessionID, token)
 	if err != nil {
@@ -237,7 +237,7 @@ func (s *NotebookSessionService) StreamTable(
 	ready func(),
 ) error {
 	if request.EngineID == 0 || request.BatchSize <= 0 || request.BatchSize > 1_000_000 || request.MaxRows < 0 ||
-		request.Path.EngineID != request.EngineID || request.Path.Version != plugin.CatalogPathVersion ||
+		request.Path.EngineID != request.EngineID || request.Path.Version != plugin.EngineCatalogPathVersion ||
 		len(request.Path.Segments) == 0 || destination == nil {
 		return ErrNotebookTableScanInvalid
 	}
@@ -461,12 +461,12 @@ func trimNotebookBatchRows(batch *plugin.BatchData, maxRows int64) {
 	batch.Rows = batch.Rows[:maxRows]
 }
 
-func notebookPluginCatalogPath(path commonClient.EngineCatalogPath) plugin.CatalogPath {
-	segments := make([]plugin.CatalogSegment, len(path.Segments))
+func notebookPluginCatalogPath(path commonClient.EngineCatalogPath) plugin.EngineCatalogPath {
+	segments := make([]plugin.EngineCatalogSegment, len(path.Segments))
 	for index, segment := range path.Segments {
-		segments[index] = plugin.CatalogSegment{Term: segment.Term, Kind: segment.Kind, Name: segment.Name}
+		segments[index] = plugin.EngineCatalogSegment{Term: segment.Term, Kind: segment.Kind, Name: segment.Name}
 	}
-	return plugin.CatalogPath{Version: path.Version, EngineID: path.EngineID, Segments: segments}
+	return plugin.EngineCatalogPath{Version: path.Version, EngineID: path.EngineID, Segments: segments}
 }
 
 func notebookScanBatchLimit(batchSize int, maxRows, rowsRead int64) int {

@@ -1,0 +1,37 @@
+[workbench.error.invalid_request]
+other = "The Workbench view configuration is invalid"
+
+[workbench.error.view_not_found]
+other = "The Workbench view does not exist"
+
+[workbench.error.version_conflict]
+other = "The Workbench view was updated by another operation; refresh and try again"
+
+[workbench.error.service_access_denied]
+other = "The data service does not exist or the current user cannot access it"
+
+[workbench.error.service_unavailable]
+other = "The data service is currently unavailable"
+
+[workbench.error.operation_failed]
+other = "The Workbench view operation failed"
+
+[workbench.message.delete_succeeded]
+other = "The Workbench view was deleted"
+
+[permissions.workbench.view.create.name]
+other = "Create Workbench views"
+[permissions.workbench.view.create.description]
+other = "Create private Workbench views owned by the current user"
+[permissions.workbench.view.read.name]
+other = "Read Workbench views"
+[permissions.workbench.view.read.description]
+other = "Read private Workbench views owned by the current user"
+[permissions.workbench.view.update.name]
+other = "Update Workbench views"
+[permissions.workbench.view.update.description]
+other = "Update private Workbench views owned by the current user"
+[permissions.workbench.view.delete.name]
+other = "Delete Workbench views"
+[permissions.workbench.view.delete.description]
+other = "Delete private Workbench views owned by the current user"

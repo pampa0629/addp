@@ -14,6 +14,8 @@ Transfer 模块是 ADDP 的数据传输中枢，统一负责 `sync` 任务、任
 
 table 类型 Transfer 主链路已经稳定：native table、encoded single file/object、encoded multi refs 和 encoded whole scope 都统一走 planner + executor + common provider，不按具体引擎组合建立专用通道。后续新增 table 能力应优先补 `common/engine` 或 `common/format`，不要在 Transfer 内恢复私有 reader / writer。
 
+只读原生查询结果到 table 的 bounded 搬运属于同一主链路：source 必须消费 `common/engine.QueryReadSessionProvider`，target 继续消费 table write session。MongoDB 嵌套 BSON 的路径投影、数组展开、去重和关系合并由只读 MQL 在源端完成；Transfer 只搬运最终扁平行、执行显式字段映射和严格类型转换，不提供递归 JSON 自动摊平器。
+
 ## 技术栈与端口
 
 - 后端：Go + Gin + GORM，默认端口 `8083`，环境变量 `TRANSFER_BACKEND_PORT`。
@@ -77,6 +79,7 @@ Transfer 是 `transfer.task.*` 的 Permission owner；定义只存在于 `author
 - checkpoint 当前只用于进度展示、故障定位和 provider marker 观测；失败执行 retry 按 restartable 从头重新入队，append 任务 retry 会被拒绝。不得宣称 table Transfer 已支持 checkpoint resumable。
 - 大数据传输要优先考虑批大小、连续读取 / 写入 session、进度日志和 restartable retry。
 - bounded Worker 不使用消息载荷；以 `common.task_executions` 中冻结的执行配置为唯一输入，并通过 `lease_token` 条件写入。
+- bounded query-source 可声明通用“写入已存在表”目标：任务定义只保存 source、字段映射和转换，TaskProvider 将 `target_locator` 声明为必填运行时输入。Worker 通过通用 Engine capability 校验已存在表结构，严格校验 field mapping 的目标列名称、顺序和类型，再仅用 `TableWriteSessionProvider` append 本 execution 结果；不得调用 delete、truncate、prepare 或 DDL。稳定输出为 `execution_id + target_locator + row_count`。该模式 lease 过期后不自动重试，由上层重新发起完整编排。Transfer 不保存 LogicalTable ID，不调用 Model API，不持有 Model Permission。
 - 工作包 2B/2C 已实现业务 Kafka keyed JSON record -> PostgreSQL/MySQL monotonic upsert；数据库 CDC 已在同一 continuous worker 主循环中实现 PostgreSQL/MySQL/Oracle Debezium envelope -> PostgreSQL/MySQL/Oracle snapshot/upsert/delete。两条路线共用 `ChangeStreamReaderProvider`、partition position、目标 ledger、Infra state CAS、runtime lease/fencing 和 retention 防护；不得新增第二套 CDC consumer。
 - continuous resume 前必须验证 committed `next_offset` 仍在 Kafka 保留范围内；低于 earliest offset 时明确失败，不能静默跳到 earliest。PostgreSQL/MySQL/Oracle 目标被锁时必须响应 context 取消并回滚业务写入与 apply ledger；Oracle 通过 `FOR UPDATE NOWAIT` 有界重试检查 runtime context。
 - 工作包 4B 已完成：业务 Kafka DLQ 按确定性 record error -> Infra Kafka payload -> `transfer.dead_letters` -> 目标 `skip` ledger -> Infra CAS 运行；公开任务 API 接受显式 `runtime.record_failure.mode=block|dead_letter`，Console 默认显式发送 `block`。唯一 replay API 为 `POST /task-definitions/:id/replay`，只接受显式 partition offset ranges 与不存在的新 PostgreSQL `parent_locator + name`，并通过独立 bounded execution/apply identity 写隔离目标，不能触碰主任务状态、水位或目标。

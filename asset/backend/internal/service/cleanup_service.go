@@ -31,6 +31,7 @@ type AssetCleanupStats struct {
 	TypeFieldSchemas      int      `json:"type_field_schemas"`
 	Catalogs              int      `json:"catalogs"`
 	Assets                int      `json:"assets"`
+	AssetComponents       int      `json:"asset_components"`
 	AssetExtFields        int      `json:"asset_ext_fields"`
 	Applications          int      `json:"applications"`
 	Authorizations        int      `json:"authorizations"`
@@ -201,6 +202,7 @@ type assetCleanupCandidates struct {
 	typeFieldSchemas []models.TypeFieldSchema
 	catalogs         []models.Catalog
 	assets           []models.Asset
+	assetComponents  []models.AssetComponent
 	assetExtFields   []models.AssetExtField
 	applications     []models.Application
 	authorizations   []models.Authorization
@@ -213,6 +215,7 @@ func (c assetCleanupCandidates) stats() *AssetCleanupStats {
 		TypeFieldSchemas: len(c.typeFieldSchemas),
 		Catalogs:         len(c.catalogs),
 		Assets:           len(c.assets),
+		AssetComponents:  len(c.assetComponents),
 		AssetExtFields:   len(c.assetExtFields),
 		Applications:     len(c.applications),
 		Authorizations:   len(c.authorizations),
@@ -259,6 +262,9 @@ func (s *CleanupService) listTenantCandidates(ctx context.Context, tenantID int6
 		assetIDs = append(assetIDs, item.ID)
 	}
 	if len(assetIDs) > 0 {
+		if err := s.db.WithContext(ctx).Where("tenant_id = ? AND asset_id IN ?", tenantID, assetIDs).Find(&candidates.assetComponents).Error; err != nil {
+			return candidates, err
+		}
 		if err := s.db.WithContext(ctx).Where("asset_id IN ?", assetIDs).Find(&candidates.assetExtFields).Error; err != nil {
 			return candidates, err
 		}
@@ -277,10 +283,7 @@ func (s *CleanupService) listTenantCandidates(ctx context.Context, tenantID int6
 
 func (s *CleanupService) logicalCleanup(ctx context.Context, candidates assetCleanupCandidates, stats *AssetCleanupStats) {
 	for _, asset := range candidates.assets {
-		updates := map[string]interface{}{
-			"status":           "offline",
-			"source_available": false,
-		}
+		updates := map[string]interface{}{"status": "offline"}
 		if err := s.db.WithContext(ctx).Model(&models.Asset{}).Where("id = ?", asset.ID).Updates(updates).Error; err != nil {
 			stats.Errors = append(stats.Errors, fmt.Sprintf("offline asset %d failed: %v", asset.ID, err))
 			continue
@@ -314,6 +317,7 @@ func (s *CleanupService) physicalCleanup(ctx context.Context, candidates assetCl
 		{model: &models.Authorization{}, ids: authorizationIDs(candidates.authorizations), name: "authorizations"},
 		{model: &models.Application{}, ids: applicationIDs(candidates.applications), name: "applications"},
 		{model: &models.AssetExtField{}, ids: assetExtFieldIDs(candidates.assetExtFields), name: "asset ext fields"},
+		{model: &models.AssetComponent{}, ids: assetComponentIDs(candidates.assetComponents), name: "asset components"},
 		{model: &models.Asset{}, ids: assetIDs(candidates.assets), name: "assets"},
 		{model: &models.Catalog{}, ids: catalogIDs(candidates.catalogs), name: "catalogs"},
 		{model: &models.TypeFieldSchema{}, ids: typeFieldSchemaIDs(candidates.typeFieldSchemas), name: "type field schemas"},
@@ -328,6 +332,14 @@ func (s *CleanupService) physicalCleanup(ctx context.Context, candidates assetCl
 		}
 		stats.DeletedRecords += len(batch.ids)
 	}
+}
+
+func assetComponentIDs(items []models.AssetComponent) []int64 {
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	return ids
 }
 
 func assetCleanupContextUint(cleanupContext map[string]interface{}, key string) (uint, bool) {
@@ -483,6 +495,7 @@ func assetCandidateRecordCount(stats *AssetCleanupStats) int {
 		stats.TypeFieldSchemas +
 		stats.Catalogs +
 		stats.Assets +
+		stats.AssetComponents +
 		stats.AssetExtFields +
 		stats.Applications +
 		stats.Authorizations +

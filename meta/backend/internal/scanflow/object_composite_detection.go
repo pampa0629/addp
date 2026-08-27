@@ -7,7 +7,7 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	"github.com/addp/meta/internal/metacatalog"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 type ObjectCatalogCompositeDetectionError struct {
@@ -21,21 +21,21 @@ func DetectObjectCatalogCompositeItems(
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
-	resources []metacatalog.StorageResource,
+	resources []scanresource.StorageResource,
 	includeWholeScope bool,
-) (map[string]bool, []metacatalog.ObjectCatalogCompositeItem, []ObjectCatalogCompositeDetectionError) {
+) (map[string]bool, []scanresource.ObjectCompositeItem, []ObjectCatalogCompositeDetectionError) {
 	skipPaths := map[string]bool{}
 	if contentReader == nil {
 		return skipPaths, nil, nil
 	}
 
-	groups := metacatalog.ObjectResourcesByParentPrefix(resources)
+	groups := scanresource.ObjectResourcesByParentPrefix(resources)
 	if includeWholeScope {
-		for key, group := range metacatalog.ObjectResourcesByPartitionRootPrefix(resources) {
+		for key, group := range scanresource.ObjectResourcesByPartitionRootPrefix(resources) {
 			groups[key] = append(groups[key], group...)
 		}
 	}
-	items := make([]metacatalog.ObjectCatalogCompositeItem, 0)
+	items := make([]scanresource.ObjectCompositeItem, 0)
 	warnings := make([]ObjectCatalogCompositeDetectionError, 0)
 	rasterMosaicItems, rasterMosaicWarnings := detectRasterMosaicCompositeItems(ctx, contentReader, connInfo, engineID, resources, skipPaths)
 	items = append(items, rasterMosaicItems...)
@@ -45,8 +45,8 @@ func DetectObjectCatalogCompositeItems(
 		groupKeys = append(groupKeys, groupKey)
 	}
 	sort.Slice(groupKeys, func(i, j int) bool {
-		_, leftPrefix := metacatalog.SplitObjectCompositeGroupKey(groupKeys[i])
-		_, rightPrefix := metacatalog.SplitObjectCompositeGroupKey(groupKeys[j])
+		_, leftPrefix := scanresource.SplitObjectCompositeGroupKey(groupKeys[i])
+		_, rightPrefix := scanresource.SplitObjectCompositeGroupKey(groupKeys[j])
 		leftDepth := strings.Count(strings.Trim(leftPrefix, "/"), "/")
 		rightDepth := strings.Count(strings.Trim(rightPrefix, "/"), "/")
 		if leftDepth != rightDepth {
@@ -56,15 +56,15 @@ func DetectObjectCatalogCompositeItems(
 	})
 
 	for _, groupKey := range groupKeys {
-		group := metacatalog.UnclaimedObjectResources(groups[groupKey], skipPaths)
+		group := scanresource.UnclaimedObjectResources(groups[groupKey], skipPaths)
 		if len(group) < 2 {
 			continue
 		}
-		bucket, prefix := metacatalog.SplitObjectCompositeGroupKey(groupKey)
+		bucket, prefix := scanresource.SplitObjectCompositeGroupKey(groupKey)
 		detection, err := ResolveContentCandidates(ctx, contentReader, connInfo, engineID, ContentCandidateSet{
-			DirPath:        prefix,
-			Files:          metacatalog.StorageResourcesToFileRefs(group),
-			CatalogPathFor: plugin.ObjectItemPathForBucket(engineID, bucket),
+			DirPath:              prefix,
+			Files:                scanresource.StorageResourcesToFileRefs(group),
+			EngineCatalogPathFor: plugin.ObjectItemPathForBucket(engineID, bucket),
 		})
 		if err != nil {
 			warnings = append(warnings, ObjectCatalogCompositeDetectionError{
@@ -86,10 +86,10 @@ func DetectObjectCatalogCompositeItems(
 				continue
 			}
 			for _, path := range detected.RefFilePaths() {
-				skipPaths[metacatalog.ObjectPathFromClaim(bucket, path)] = true
+				skipPaths[scanresource.ObjectPathFromClaim(bucket, path)] = true
 			}
 			acceptedAny = true
-			items = append(items, metacatalog.ObjectCatalogCompositeItem{
+			items = append(items, scanresource.ObjectCompositeItem{
 				Bucket: bucket,
 				Prefix: prefix,
 				Item:   detected,
@@ -99,7 +99,7 @@ func DetectObjectCatalogCompositeItems(
 		if includeWholeScope && acceptedAny {
 			for path, claimed := range detection.Claims {
 				if claimed {
-					skipPaths[metacatalog.ObjectPathFromClaim(bucket, path)] = true
+					skipPaths[scanresource.ObjectPathFromClaim(bucket, path)] = true
 				}
 			}
 		}

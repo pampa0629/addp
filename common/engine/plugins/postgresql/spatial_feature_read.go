@@ -11,7 +11,7 @@ import (
 	commonquery "github.com/addp/common/query"
 )
 
-func (p *PostgreSQLPlugin) ReadSpatialFeature(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.SpatialFeatureReadOptions) (*plugin.SpatialFeatureData, error) {
+func (p *PostgreSQLPlugin) ReadSpatialFeature(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.SpatialFeatureReadOptions) (*plugin.SpatialFeatureData, error) {
 	schema, table, err := tablePathParts(path)
 	if err != nil {
 		return nil, err

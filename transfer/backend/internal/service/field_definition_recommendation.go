@@ -86,12 +86,12 @@ func (s *FieldDefinitionRecommendationService) Recommend(
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrFieldRecommendationUnsupported, err)
 	}
-	modelProvider, modelOK := plug.(plugin.CatalogModelProvider)
+	modelProvider, modelOK := plug.(plugin.EngineCatalogModelProvider)
 	reader, readOK := plug.(plugin.TableReadSessionProvider)
 	if !modelOK || !readOK {
 		return nil, fmt.Errorf("%w: source engine has no table read session", ErrFieldRecommendationUnsupported)
 	}
-	path, err := resourcetree.ProviderCatalogPathFromLocator(modelProvider.CatalogModel(), locator)
+	path, err := resourcetree.EngineCatalogPathFromLocator(modelProvider.EngineCatalogModel(), locator)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrFieldRecommendationInvalid, err)
 	}

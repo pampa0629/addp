@@ -8,7 +8,6 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jonas-p/go-shp v0.1.1
 	github.com/mattn/go-sqlite3 v1.14.32
-	github.com/meilisearch/meilisearch-go v0.26.0
 	github.com/parquet-go/parquet-go v0.25.1
 	github.com/redis/go-redis/v9 v9.17.2
 	github.com/swaggo/files v1.0.1
@@ -62,7 +61,6 @@ require (
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/godoes/gorm-oracle v1.6.20 // indirect
 	github.com/gogama/flatgeobuf v1.0.1 // indirect
-	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/hashicorp/go-version v1.7.0 // indirect
@@ -113,8 +111,6 @@ require (
 	github.com/twmb/franz-go/pkg/kmsg v1.12.0 // indirect
 	github.com/twpayne/go-geom v1.6.1 // indirect
 	github.com/ugorji/go/codec v1.3.1 // indirect
-	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	github.com/valyala/fasthttp v1.47.0 // indirect
 	github.com/vmware/go-nfs-client v0.0.0-20190605212624-d43b92724c1b // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.1.1 // indirect

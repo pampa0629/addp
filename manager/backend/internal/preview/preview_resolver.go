@@ -536,7 +536,7 @@ func isPreviewItemLocator(loc *resourcetree.ResourceLocator) bool {
 	return isPreviewItemType(strings.ToLower(strings.TrimSpace(string(loc.Type))))
 }
 
-func isContentCatalogEngine(engineType string) bool {
+func isEngineCatalogContentEngine(engineType string) bool {
 	return IsContentCatalogEngine(engineType)
 }
 
@@ -586,7 +586,7 @@ func (r *PreviewResolver) DetectPreviewType(loc *resourcetree.ResourceLocator, e
 func (r *PreviewResolver) buildProviderRequest(ctx context.Context, req *PreviewResolverRequest) (*PreviewRequest, error) {
 	schema := ""
 	table := ""
-	providerPath := plugin.CatalogPath{}
+	providerPath := plugin.EngineCatalogPath{}
 
 	// 对于对象存储类型，schema 是根名称，table 是完整的子路径
 	// 对于文件系统类型，根目录下文件需要映射为 schema="" + table="文件名"，避免被识别为目录
@@ -636,11 +636,11 @@ func (r *PreviewResolver) buildProviderRequest(ctx context.Context, req *Preview
 	if err != nil {
 		return nil, err
 	}
-	modelProvider, ok := plug.(plugin.CatalogModelProvider)
+	modelProvider, ok := plug.(plugin.EngineCatalogModelProvider)
 	if !ok {
-		return nil, fmt.Errorf("engine %s does not implement CatalogModelProvider", req.Engine.EngineType)
+		return nil, fmt.Errorf("engine %s does not implement EngineCatalogModelProvider", req.Engine.EngineType)
 	}
-	providerPath, err = resourcetree.ProviderCatalogPathFromLocator(modelProvider.CatalogModel(), req.Locator)
+	providerPath, err = resourcetree.EngineCatalogPathFromLocator(modelProvider.EngineCatalogModel(), req.Locator)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build provider catalog path: %w", err)
 	}
@@ -998,7 +998,8 @@ func (r *PreviewResolver) attachItemMeta(preview *models.TablePreview, req *Prev
 		itemType = req.Metadata.NodeType
 	}
 
-	meta := &models.CatalogFacts{
+	meta := &models.EngineCatalogFacts{
+		Fingerprint:     strings.TrimSpace(req.ItemFingerprint),
 		ItemType:        itemType,
 		ItemTypeI18nKey: "engine.term." + itemType,
 		FullName:        req.Metadata.FullName,

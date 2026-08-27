@@ -104,7 +104,7 @@ func (p *MySQLPlugin) Capabilities() plugin.EngineCapabilities {
 	})
 }
 
-func (p *MySQLPlugin) CatalogModel() plugin.CatalogModelSpec {
+func (p *MySQLPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.TabularCatalogModel("database")
 }
 
@@ -124,15 +124,15 @@ func (p *MySQLPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks {
 	}
 }
 
-func (p *MySQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+func (p *MySQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath, opts plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
 	return plugin.ListTabularCatalogChildren(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
 }
 
-func (p *MySQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p *MySQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	return plugin.ResolveTabularCatalogPath(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
 }
 
-func (p *MySQLPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *MySQLPlugin) DescribeEngineCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	return plugin.DescribeTabularCatalogFacts(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
 }
 
@@ -141,7 +141,7 @@ func (p *MySQLPlugin) QueryLanguages() []string {
 }
 
 func (p *MySQLPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
-	return plugin.SampleSQLForCatalogPath(p.Type(), opts.Path, 10), "sql"
+	return plugin.SampleSQLForEngineCatalogPath(p.Type(), opts.Path, 10), "sql"
 }
 
 func (p *MySQLPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
@@ -160,7 +160,7 @@ func (p *MySQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.Connection
 	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)
 }
 
-func (p *MySQLPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
+func (p *MySQLPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
 	return p.readBatch(ctx, connInfo, path, opts)
 }
 
@@ -202,10 +202,10 @@ func (p *MySQLPlugin) GetDialect() string {
 	return "mysql"
 }
 
-// === CatalogProvider / CatalogFactsProvider 回调实现 ===
+// === EngineCatalogProvider / EngineCatalogFactsProvider 回调实现 ===
 
 // listNamespaces 列出所有 Database。
-func (p *MySQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB, root plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
+func (p *MySQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB, root plugin.EngineCatalogPath) ([]plugin.EngineCatalogEntry, error) {
 	return mysqlCatalogFactsDialect.ListNamespaces(ctx, db, root, "database")
 }
 

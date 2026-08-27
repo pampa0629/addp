@@ -18,7 +18,7 @@ const dorisMaxBindParams = 65535
 const dorisTableWriteSessionMarkerProvider = "doris.table_write_session"
 const dorisTableWriteSessionMarkerPositionUnit = "session_commit"
 
-func (p *DorisPlugin) WriteBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, batch *plugin.BatchData, opts plugin.BatchWriteOptions) error {
+func (p *DorisPlugin) WriteBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.BatchData, opts plugin.BatchWriteOptions) error {
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
@@ -36,7 +36,7 @@ func (p *DorisPlugin) WriteBatch(ctx context.Context, connInfo plugin.Connection
 	return session.Close(ctx)
 }
 
-func (p *DorisPlugin) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
+func (p *DorisPlugin) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
 	if err := resume.RejectUnsupported(opts.ResumeMarker, "doris.table_write_session"); err != nil {
 		return nil, err
 	}

@@ -11,8 +11,8 @@ func TestEmbeddedCatalogContainsQualityQueryIndexes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog: %v", err)
 	}
-	if catalog.LatestVersion != 6 {
-		t.Fatalf("latest migration version = %d, want 6", catalog.LatestVersion)
+	if catalog.LatestVersion != 7 {
+		t.Fatalf("latest migration version = %d, want 7", catalog.LatestVersion)
 	}
 	queryIndexes := catalog.Files[2]
 	if queryIndexes.Name != "000003_quality_query_indexes.up.sql" {
@@ -71,6 +71,10 @@ func TestEmbeddedCatalogContainsQualityQueryIndexes(t *testing.T) {
 		if !strings.Contains(ruleKeyIdentityV2.Contents, required) {
 			t.Fatalf("rule key identity v2 migration missing %q", required)
 		}
+	}
+	gateTasks := catalog.Files[6]
+	if gateTasks.Name != "000007_materialization_gate_tasks.up.sql" || !strings.Contains(gateTasks.Contents, "quality.materialization_gate_tasks") {
+		t.Fatalf("materialization gate migration = %#v", gateTasks)
 	}
 }
 

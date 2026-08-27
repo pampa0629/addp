@@ -29,7 +29,7 @@ func TestIntegrationOracleCatalogAndRead(t *testing.T) {
 		t.Fatalf("TestConnection() error = %v", err)
 	}
 
-	root := plugin.CatalogRootPath(p.CatalogModel(), 92001)
+	root := plugin.EngineCatalogRootPath(p.EngineCatalogModel(), 92001)
 	schemas, err := p.ListChildren(ctx, connInfo, root, plugin.ListOptions{})
 	if err != nil {
 		t.Fatalf("ListChildren(root) error = %v", err)
@@ -47,20 +47,20 @@ func TestIntegrationOracleCatalogAndRead(t *testing.T) {
 		t.Fatalf("ListChildren(schema) error = %v", err)
 	}
 	orders := findOracleCatalogEntry(items, "ORDERS")
-	if orders == nil || orders.Kind != plugin.CatalogKindTable {
+	if orders == nil || orders.Kind != plugin.EngineCatalogKindTable {
 		t.Fatalf("ORDERS table not found in %#v", oracleCatalogEntryNames(items))
 	}
 	if summary := findOracleCatalogEntry(items, "ORDER_SUMMARY"); summary == nil || summary.Kind != "view" {
 		t.Fatalf("ORDER_SUMMARY view not found in %#v", oracleCatalogEntryNames(items))
 	}
 
-	facts, err := p.DescribeCatalogFacts(ctx, connInfo, orders.Path, plugin.CatalogFactsOptions{
+	facts, err := p.DescribeEngineCatalogFacts(ctx, connInfo, orders.Path, plugin.EngineCatalogFactsOptions{
 		IncludeStatistics:  true,
 		IncludeIndexes:     true,
 		IncludeConstraints: true,
 	})
 	if err != nil {
-		t.Fatalf("DescribeCatalogFacts() error = %v", err)
+		t.Fatalf("DescribeEngineCatalogFacts() error = %v", err)
 	}
 	if facts.Table == nil || facts.Table.RowCount == nil || *facts.Table.RowCount != 2 {
 		t.Fatalf("ORDERS facts = %#v, want row_count=2", facts.Table)
@@ -80,9 +80,9 @@ func TestIntegrationOracleCatalogAndRead(t *testing.T) {
 	if orderEvents == nil {
 		t.Fatalf("ORDER_EVENTS partitioned table not found in %#v", oracleCatalogEntryNames(items))
 	}
-	partitionFacts, err := p.DescribeCatalogFacts(ctx, connInfo, orderEvents.Path, plugin.CatalogFactsOptions{IncludePartitioning: true})
+	partitionFacts, err := p.DescribeEngineCatalogFacts(ctx, connInfo, orderEvents.Path, plugin.EngineCatalogFactsOptions{IncludePartitioning: true})
 	if err != nil {
-		t.Fatalf("DescribeCatalogFacts(ORDER_EVENTS) error = %v", err)
+		t.Fatalf("DescribeEngineCatalogFacts(ORDER_EVENTS) error = %v", err)
 	}
 	if partitionFacts.Partitioning == nil || partitionFacts.Partitioning.Strategy != "range" || strings.Join(partitionFacts.Partitioning.KeyFields, ",") != "EVENT_TIME" || partitionFacts.Partitioning.PartitionCount != 2 {
 		t.Fatalf("ORDER_EVENTS partitioning = %#v", partitionFacts.Partitioning)
@@ -146,7 +146,7 @@ func TestIntegrationOracleSpatialFactsAndRead(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	root := plugin.CatalogRootPath(p.CatalogModel(), 92001)
+	root := plugin.EngineCatalogRootPath(p.EngineCatalogModel(), 92001)
 	schemas, err := p.ListChildren(ctx, connInfo, root, plugin.ListOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -168,12 +168,12 @@ func TestIntegrationOracleSpatialFactsAndRead(t *testing.T) {
 	if locations == nil {
 		t.Fatalf("CUSTOMER_LOCATIONS not found in %#v", oracleCatalogEntryNames(items))
 	}
-	facts, err := p.DescribeCatalogFacts(ctx, connInfo, locations.Path, plugin.CatalogFactsOptions{
+	facts, err := p.DescribeEngineCatalogFacts(ctx, connInfo, locations.Path, plugin.EngineCatalogFactsOptions{
 		IncludeSpatialFacts: true,
 		IncludeIndexes:      true,
 	})
 	if err != nil {
-		t.Fatalf("DescribeCatalogFacts(CUSTOMER_LOCATIONS) error = %v", err)
+		t.Fatalf("DescribeEngineCatalogFacts(CUSTOMER_LOCATIONS) error = %v", err)
 	}
 	assertOracleIntegrationField(t, facts.Table.Fields, "SHAPE", datatype.FieldTypeGeometry, false)
 	if facts.Spatial == nil || facts.Spatial.PrimaryGeometryName() != "SHAPE" || facts.Spatial.PrimaryGeometryType() != "Point" || facts.Spatial.PrimarySRIDValue() != 4326 {
@@ -218,9 +218,9 @@ func TestIntegrationOracleSpatialFactsAndRead(t *testing.T) {
 	if spatialFeatures == nil {
 		t.Fatalf("SPATIAL_FEATURES not found in %#v", oracleCatalogEntryNames(items))
 	}
-	spatialFeatureFacts, err := p.DescribeCatalogFacts(ctx, connInfo, spatialFeatures.Path, plugin.CatalogFactsOptions{IncludeSpatialFacts: true})
+	spatialFeatureFacts, err := p.DescribeEngineCatalogFacts(ctx, connInfo, spatialFeatures.Path, plugin.EngineCatalogFactsOptions{IncludeSpatialFacts: true})
 	if err != nil {
-		t.Fatalf("DescribeCatalogFacts(SPATIAL_FEATURES) error = %v", err)
+		t.Fatalf("DescribeEngineCatalogFacts(SPATIAL_FEATURES) error = %v", err)
 	}
 	if spatialFeatureFacts.Spatial == nil || spatialFeatureFacts.Spatial.PrimaryGeometryType() != string(datatype.GeometryTypeGeometry) || spatialFeatureFacts.Spatial.PrimarySRIDValue() != 4326 {
 		t.Fatalf("SPATIAL_FEATURES spatial facts = %#v", spatialFeatureFacts.Spatial)
@@ -360,7 +360,7 @@ func oracleIntegrationEnv(primary, secondary, fallback string) string {
 	return fallback
 }
 
-func findOracleCatalogEntry(entries []plugin.CatalogEntry, name string) *plugin.CatalogEntry {
+func findOracleCatalogEntry(entries []plugin.EngineCatalogEntry, name string) *plugin.EngineCatalogEntry {
 	for index := range entries {
 		if strings.EqualFold(entries[index].Name, name) {
 			return &entries[index]
@@ -369,7 +369,7 @@ func findOracleCatalogEntry(entries []plugin.CatalogEntry, name string) *plugin.
 	return nil
 }
 
-func oracleCatalogEntryNames(entries []plugin.CatalogEntry) []string {
+func oracleCatalogEntryNames(entries []plugin.EngineCatalogEntry) []string {
 	names := make([]string, len(entries))
 	for index := range entries {
 		names[index] = entries[index].Name

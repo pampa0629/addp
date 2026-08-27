@@ -46,6 +46,18 @@ func (r *TaskExecutionRepository) UpdateFields(ctx context.Context, executionID 
 	return nil
 }
 
+// UpdateWithLease updates a running bounded execution only while the exact
+// attempt-scoped lease in ctx still owns it.
+func (r *TaskExecutionRepository) UpdateWithLease(ctx context.Context, lease Lease, fields map[string]interface{}) error {
+	return UpdateWithLease(ctx, r.db, lease, fields)
+}
+
+// CompleteWithLease writes a terminal state only while the exact bounded
+// execution attempt still owns its lease.
+func (r *TaskExecutionRepository) CompleteWithLease(ctx context.Context, lease Lease, status string, completedAt time.Time, fields map[string]interface{}) error {
+	return CompleteWithLease(ctx, r.db, lease, status, completedAt, fields)
+}
+
 // GetByID 根据 ID 查询
 func (r *TaskExecutionRepository) GetByID(ctx context.Context, id int64, tenantID int) (*TaskExecution, error) {
 	var exec TaskExecution

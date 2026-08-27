@@ -14,24 +14,24 @@ import (
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaenrich"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
+	"github.com/addp/meta/internal/scanresource"
 	"gorm.io/gorm"
 )
 
 func TestDetectObjectCatalogResourceFormatUsesCommonFormatSniffing(t *testing.T) {
 	t.Parallel()
 
-	resource := metacatalog.StorageResource{
-		RootName:    "addp",
-		Path:        "datasets/lake3",
-		FullPath:    "addp/datasets/lake3",
-		NodeType:    "object",
-		SizeBytes:   8,
-		CatalogPath: plugin.ObjectItemPath(7, "addp", "datasets/lake3"),
+	resource := scanresource.StorageResource{
+		RootName:          "addp",
+		Path:              "datasets/lake3",
+		FullPath:          "addp/datasets/lake3",
+		NodeType:          "object",
+		SizeBytes:         8,
+		EngineCatalogPath: plugin.ObjectItemPath(7, "addp", "datasets/lake3"),
 	}
 
 	detected, err := detectObjectCatalogResourceFormat(
@@ -53,13 +53,13 @@ func TestObjectCatalogEntriesToStorageResourcesIgnoresSystemFiles(t *testing.T) 
 
 	readmeSize := int64(12)
 	systemSize := int64(1)
-	entries := []plugin.CatalogEntry{
+	entries := []plugin.EngineCatalogEntry{
 		{
 			Name: ".DS_Store",
 			Path: plugin.ObjectItemPath(7, "addp", "docs/.DS_Store"),
-			Role: plugin.CatalogRoleLeaf,
-			Kind: plugin.CatalogKindObject,
-			Storage: &plugin.CatalogStorageFacts{
+			Role: plugin.EngineCatalogRoleLeaf,
+			Kind: plugin.EngineCatalogKindObject,
+			Storage: &plugin.EngineCatalogStorageFacts{
 				Path:      "addp/docs/.DS_Store",
 				SizeBytes: &systemSize,
 			},
@@ -67,9 +67,9 @@ func TestObjectCatalogEntriesToStorageResourcesIgnoresSystemFiles(t *testing.T) 
 		{
 			Name: "README.md",
 			Path: plugin.ObjectItemPath(7, "addp", "docs/README.md"),
-			Role: plugin.CatalogRoleLeaf,
-			Kind: plugin.CatalogKindObject,
-			Storage: &plugin.CatalogStorageFacts{
+			Role: plugin.EngineCatalogRoleLeaf,
+			Kind: plugin.EngineCatalogKindObject,
+			Storage: &plugin.EngineCatalogStorageFacts{
 				Path:      "addp/docs/README.md",
 				SizeBytes: &readmeSize,
 			},
@@ -85,13 +85,13 @@ func TestObjectCatalogEntriesToStorageResourcesIgnoresSystemFiles(t *testing.T) 
 func TestDetectObjectCatalogResourceFormatPromotesUnknownText(t *testing.T) {
 	t.Parallel()
 
-	resource := metacatalog.StorageResource{
-		RootName:    "addp",
-		Path:        "docs/README",
-		FullPath:    "addp/docs/README",
-		NodeType:    "object",
-		SizeBytes:   12,
-		CatalogPath: plugin.ObjectItemPath(7, "addp", "docs/README"),
+	resource := scanresource.StorageResource{
+		RootName:          "addp",
+		Path:              "docs/README",
+		FullPath:          "addp/docs/README",
+		NodeType:          "object",
+		SizeBytes:         12,
+		EngineCatalogPath: plugin.ObjectItemPath(7, "addp", "docs/README"),
 	}
 
 	detected, err := detectObjectCatalogResourceFormat(
@@ -111,13 +111,13 @@ func TestDetectObjectCatalogResourceFormatPromotesUnknownText(t *testing.T) {
 func TestDetectObjectCatalogResourceFormatKeepsUnknownBinary(t *testing.T) {
 	t.Parallel()
 
-	resource := metacatalog.StorageResource{
-		RootName:    "addp",
-		Path:        "docs/blob.binx",
-		FullPath:    "addp/docs/blob.binx",
-		NodeType:    "object",
-		SizeBytes:   3,
-		CatalogPath: plugin.ObjectItemPath(7, "addp", "docs/blob.binx"),
+	resource := scanresource.StorageResource{
+		RootName:          "addp",
+		Path:              "docs/blob.binx",
+		FullPath:          "addp/docs/blob.binx",
+		NodeType:          "object",
+		SizeBytes:         3,
+		EngineCatalogPath: plugin.ObjectItemPath(7, "addp", "docs/blob.binx"),
 	}
 
 	detected, err := detectObjectCatalogResourceFormat(
@@ -139,7 +139,7 @@ func TestEnsureObjectCatalogPrefixNodesUsesCompositeItemParentPath(t *testing.T)
 	repo := metaRepo.NewScanRepository(db)
 	runtime := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 
-	bucketNode, err := repo.UpsertNode(1, 9, nil, "bucket", "addp", strPtr("addp"), metacatalog.ObjectBucketNodeAttributes("addp"))
+	bucketNode, err := repo.UpsertNode(1, 9, nil, "bucket", "addp", strPtr("addp"), scanresource.ObjectBucketNodeAttributes("addp"))
 	if err != nil {
 		t.Fatalf("create bucket node: %v", err)
 	}
@@ -170,12 +170,12 @@ func TestObjectCatalogBasicScanGroupsShapefileRefsWithoutSidecarItems(t *testing
 	repo := metaRepo.NewScanRepository(db)
 	runtime := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 
-	bucketNode, err := repo.UpsertNode(1, 9, nil, "bucket", "manager", strPtr("manager"), metacatalog.ObjectBucketNodeAttributes("manager"))
+	bucketNode, err := repo.UpsertNode(1, 9, nil, "bucket", "manager", strPtr("manager"), scanresource.ObjectBucketNodeAttributes("manager"))
 	if err != nil {
 		t.Fatalf("create bucket node: %v", err)
 	}
 
-	resources := []metacatalog.StorageResource{
+	resources := []scanresource.StorageResource{
 		shapefileObjectResource(9, "manager", "a5.shp", 10),
 		shapefileObjectResource(9, "manager", "a5.shx", 11),
 		shapefileObjectResource(9, "manager", "a5.dbf", 12),
@@ -230,12 +230,12 @@ func TestObjectCatalogBasicScanGroupsGeoTIFFRefsWithoutSidecarItems(t *testing.T
 	repo := metaRepo.NewScanRepository(db)
 	runtime := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 
-	bucketNode, err := repo.UpsertNode(1, 9, nil, "bucket", "addp", strPtr("addp"), metacatalog.ObjectBucketNodeAttributes("addp"))
+	bucketNode, err := repo.UpsertNode(1, 9, nil, "bucket", "addp", strPtr("addp"), scanresource.ObjectBucketNodeAttributes("addp"))
 	if err != nil {
 		t.Fatalf("create bucket node: %v", err)
 	}
 
-	resources := []metacatalog.StorageResource{
+	resources := []scanresource.StorageResource{
 		geotiffObjectResource(9, "addp", "image/srtm_40_01.tif", 100),
 		geotiffObjectResource(9, "addp", "image/srtm_40_01.tfw", 10),
 		geotiffObjectResource(9, "addp", "image/srtm_40_01.hdr", 20),
@@ -311,12 +311,12 @@ func TestObjectCatalogDeepScanDetectsRasterMosaicDatasetItem(t *testing.T) {
 	repo := metaRepo.NewScanRepository(db)
 	runtime := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 
-	bucketNode, err := repo.UpsertNode(1, 9, nil, "bucket", "addp", strPtr("addp"), metacatalog.ObjectBucketNodeAttributes("addp"))
+	bucketNode, err := repo.UpsertNode(1, 9, nil, "bucket", "addp", strPtr("addp"), scanresource.ObjectBucketNodeAttributes("addp"))
 	if err != nil {
 		t.Fatalf("create bucket node: %v", err)
 	}
 
-	resources := []metacatalog.StorageResource{
+	resources := []scanresource.StorageResource{
 		objectResourceForTest(9, "addp", "mosaics/srtm-test/srtm-test/mosaic.addp.json", 1200, "json"),
 		objectResourceForTest(9, "addp", "mosaics/srtm-test/srtm-test/index/source-index.json", 2400, "json"),
 		geotiffObjectResource(9, "addp", "mosaics/srtm-test/srtm-test/overviews/overview.cog.tif", 3000),
@@ -406,12 +406,12 @@ func TestObjectCatalogDeepScanDetectsGLBModel3DItem(t *testing.T) {
 	repo := metaRepo.NewScanRepository(db)
 	runtime := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 
-	bucketNode, err := repo.UpsertNode(1, 9, nil, "bucket", "addp", strPtr("addp"), metacatalog.ObjectBucketNodeAttributes("addp"))
+	bucketNode, err := repo.UpsertNode(1, 9, nil, "bucket", "addp", strPtr("addp"), scanresource.ObjectBucketNodeAttributes("addp"))
 	if err != nil {
 		t.Fatalf("create bucket node: %v", err)
 	}
 
-	resources := []metacatalog.StorageResource{
+	resources := []scanresource.StorageResource{
 		objectResourceForTest(9, "addp", "models/building.glb", int64(len(content)), ""),
 	}
 	count, _, err := runtime.persistObjectResources(context.Background(),
@@ -475,12 +475,12 @@ func TestObjectCatalogDeepScanDetects3DTilesModel3DItem(t *testing.T) {
 	repo := metaRepo.NewScanRepository(db)
 	runtime := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 
-	bucketNode, err := repo.UpsertNode(1, 9, nil, "bucket", "addp", strPtr("addp"), metacatalog.ObjectBucketNodeAttributes("addp"))
+	bucketNode, err := repo.UpsertNode(1, 9, nil, "bucket", "addp", strPtr("addp"), scanresource.ObjectBucketNodeAttributes("addp"))
 	if err != nil {
 		t.Fatalf("create bucket node: %v", err)
 	}
 
-	resources := []metacatalog.StorageResource{
+	resources := []scanresource.StorageResource{
 		objectResourceForTest(9, "addp", "models/city/tileset.json", 1200, ""),
 		objectResourceForTest(9, "addp", "models/city/root.b3dm", 2400, ""),
 	}
@@ -541,12 +541,12 @@ func TestObjectCatalogDeepScanDetectsLASPointCloudItem(t *testing.T) {
 	repo := metaRepo.NewScanRepository(db)
 	runtime := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 
-	bucketNode, err := repo.UpsertNode(1, 9, nil, "bucket", "addp", strPtr("addp"), metacatalog.ObjectBucketNodeAttributes("addp"))
+	bucketNode, err := repo.UpsertNode(1, 9, nil, "bucket", "addp", strPtr("addp"), scanresource.ObjectBucketNodeAttributes("addp"))
 	if err != nil {
 		t.Fatalf("create bucket node: %v", err)
 	}
 
-	resources := []metacatalog.StorageResource{
+	resources := []scanresource.StorageResource{
 		objectResourceForTest(9, "addp", "point-cloud/site.las", int64(len(content)), ""),
 	}
 	count, _, err := runtime.persistObjectResources(context.Background(),
@@ -606,11 +606,11 @@ func TestObjectCatalogPrefixScanDeletesLegacyGeoTIFFSidecarItems(t *testing.T) {
 	runtime := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 	resource := &commonModels.Engine{ID: 9, Name: "Object Store", EngineType: reader.Type()}
 
-	rootNode, err := metaRepo.EnsureCatalogRootNode(repo, 1, resource, reader)
+	rootNode, err := metaRepo.EnsureEngineCatalogRootNode(repo, 1, resource, reader)
 	if err != nil {
 		t.Fatalf("create root node: %v", err)
 	}
-	bucketNode, err := repo.UpsertNode(1, 9, rootNode, "bucket", "addp", strPtr("addp"), metacatalog.ObjectBucketNodeAttributes("addp"))
+	bucketNode, err := repo.UpsertNode(1, 9, rootNode, "bucket", "addp", strPtr("addp"), scanresource.ObjectBucketNodeAttributes("addp"))
 	if err != nil {
 		t.Fatalf("create bucket node: %v", err)
 	}
@@ -689,11 +689,11 @@ func TestObjectCatalogPrefixScanDeletesStalePrefixConflictingWithWholeItem(t *te
 	runtime := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 	resource := &commonModels.Engine{ID: 9, Name: "Object Store", EngineType: reader.Type()}
 
-	rootNode, err := metaRepo.EnsureCatalogRootNode(repo, 1, resource, reader)
+	rootNode, err := metaRepo.EnsureEngineCatalogRootNode(repo, 1, resource, reader)
 	if err != nil {
 		t.Fatalf("create root node: %v", err)
 	}
-	bucketNode, err := repo.UpsertNode(1, 9, rootNode, "bucket", "addp", strPtr("addp"), metacatalog.ObjectBucketNodeAttributes("addp"))
+	bucketNode, err := repo.UpsertNode(1, 9, rootNode, "bucket", "addp", strPtr("addp"), scanresource.ObjectBucketNodeAttributes("addp"))
 	if err != nil {
 		t.Fatalf("create bucket node: %v", err)
 	}
@@ -711,7 +711,7 @@ func TestObjectCatalogPrefixScanDeletesStalePrefixConflictingWithWholeItem(t *te
 	}
 	insertObjectItemForTest(t, repo, 1, 9, staleChild, "addp", "mosaics/bigmosaic/bigmosaic/mosaics/bigmosaic/old.cog.tif", 20)
 
-	resources := []metacatalog.StorageResource{
+	resources := []scanresource.StorageResource{
 		objectResourceForTest(9, "addp", "mosaics/bigmosaic/bigmosaic/mosaic.addp.json", 10, "json"),
 		objectResourceForTest(9, "addp", "mosaics/bigmosaic/bigmosaic/index/source-index.json", 10, "json"),
 		objectResourceForTest(9, "addp", "mosaics/bigmosaic/bigmosaic/overviews/overview.cog.tif", 10, "tiff"),
@@ -791,11 +791,11 @@ func TestObjectCatalogPrefixScanKeepsWholeItemAtScanRoot(t *testing.T) {
 	runtime := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 	resource := &commonModels.Engine{ID: 9, Name: "Object Store", EngineType: reader.Type()}
 
-	rootNode, err := metaRepo.EnsureCatalogRootNode(repo, 1, resource, reader)
+	rootNode, err := metaRepo.EnsureEngineCatalogRootNode(repo, 1, resource, reader)
 	if err != nil {
 		t.Fatalf("create root node: %v", err)
 	}
-	bucketNode, err := repo.UpsertNode(1, 9, rootNode, "bucket", "addp", strPtr("addp"), metacatalog.ObjectBucketNodeAttributes("addp"))
+	bucketNode, err := repo.UpsertNode(1, 9, rootNode, "bucket", "addp", strPtr("addp"), scanresource.ObjectBucketNodeAttributes("addp"))
 	if err != nil {
 		t.Fatalf("create bucket node: %v", err)
 	}
@@ -804,7 +804,7 @@ func TestObjectCatalogPrefixScanKeepsWholeItemAtScanRoot(t *testing.T) {
 		t.Fatalf("create mosaic parent: %v", err)
 	}
 
-	resources := []metacatalog.StorageResource{
+	resources := []scanresource.StorageResource{
 		objectResourceForTest(9, "addp", "mosaics/srtm-e2e/mosaic.addp.json", 10, "json"),
 		objectResourceForTest(9, "addp", "mosaics/srtm-e2e/index/source-index.json", 10, "json"),
 		objectResourceForTest(9, "addp", "mosaics/srtm-e2e/overviews/overview.cog.tif", 10, "tiff"),
@@ -844,31 +844,31 @@ func TestObjectCatalogPrefixScanKeepsWholeItemAtScanRoot(t *testing.T) {
 	}
 }
 
-func shapefileObjectResource(engineID uint, bucket, objectPath string, sizeBytes int64) metacatalog.StorageResource {
-	return metacatalog.StorageResource{
-		RootName:    bucket,
-		Path:        objectPath,
-		FullPath:    bucket + "/" + objectPath,
-		NodeType:    plugin.CatalogKindObject,
-		SizeBytes:   sizeBytes,
-		Format:      strings.TrimPrefix(strings.ToLower(objectPath[strings.LastIndex(objectPath, "."):]), "."),
-		CatalogPath: plugin.ObjectItemPath(engineID, bucket, objectPath),
+func shapefileObjectResource(engineID uint, bucket, objectPath string, sizeBytes int64) scanresource.StorageResource {
+	return scanresource.StorageResource{
+		RootName:          bucket,
+		Path:              objectPath,
+		FullPath:          bucket + "/" + objectPath,
+		NodeType:          plugin.EngineCatalogKindObject,
+		SizeBytes:         sizeBytes,
+		Format:            strings.TrimPrefix(strings.ToLower(objectPath[strings.LastIndex(objectPath, "."):]), "."),
+		EngineCatalogPath: plugin.ObjectItemPath(engineID, bucket, objectPath),
 	}
 }
 
-func geotiffObjectResource(engineID uint, bucket, objectPath string, sizeBytes int64) metacatalog.StorageResource {
+func geotiffObjectResource(engineID uint, bucket, objectPath string, sizeBytes int64) scanresource.StorageResource {
 	return objectResourceForTest(engineID, bucket, objectPath, sizeBytes, "")
 }
 
-func objectResourceForTest(engineID uint, bucket, objectPath string, sizeBytes int64, formatName string) metacatalog.StorageResource {
-	return metacatalog.StorageResource{
-		RootName:    bucket,
-		Path:        objectPath,
-		FullPath:    bucket + "/" + objectPath,
-		NodeType:    plugin.CatalogKindObject,
-		SizeBytes:   sizeBytes,
-		Format:      formatName,
-		CatalogPath: plugin.ObjectItemPath(engineID, bucket, objectPath),
+func objectResourceForTest(engineID uint, bucket, objectPath string, sizeBytes int64, formatName string) scanresource.StorageResource {
+	return scanresource.StorageResource{
+		RootName:          bucket,
+		Path:              objectPath,
+		FullPath:          bucket + "/" + objectPath,
+		NodeType:          plugin.EngineCatalogKindObject,
+		SizeBytes:         sizeBytes,
+		Format:            formatName,
+		EngineCatalogPath: plugin.ObjectItemPath(engineID, bucket, objectPath),
 	}
 }
 
@@ -886,7 +886,7 @@ func jsonMapAt(attrs models.JSONMap, section string, keys ...string) map[string]
 
 func insertObjectItemForTest(t *testing.T, repo *metaRepo.ScanRepository, tenantID, engineID uint, node *models.MetaNode, bucket, objectPath string, sizeBytes int64) {
 	t.Helper()
-	dir := metacatalog.ParentObjectPath(objectPath)
+	dir := scanresource.ParentObjectPath(objectPath)
 	name := path.Base(strings.Trim(objectPath, "/"))
 	attrs := models.JSONMap{
 		"storage": map[string]interface{}{
@@ -918,22 +918,22 @@ func (p objectCatalogScanTestProvider) EngineOrigin() string { return "general" 
 func (p objectCatalogScanTestProvider) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewObjectCapabilities(p.Type())
 }
-func (p objectCatalogScanTestProvider) CatalogModel() plugin.CatalogModelSpec {
+func (p objectCatalogScanTestProvider) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.ObjectCatalogModel()
 }
-func (p objectCatalogScanTestProvider) ListChildren(_ context.Context, _ plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+func (p objectCatalogScanTestProvider) ListChildren(_ context.Context, _ plugin.ConnectionInfo, parent plugin.EngineCatalogPath, opts plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
 	switch parent.StringPath() {
 	case "":
-		return []plugin.CatalogEntry{plugin.ObjectBucketCatalogEntry(plugin.ObjectRootPath(9), "addp")}, nil
+		return []plugin.EngineCatalogEntry{plugin.ObjectBucketCatalogEntry(plugin.ObjectRootPath(9), "addp")}, nil
 	case "addp/image":
 		return geotiffCatalogEntriesForTest(9, "addp"), nil
 	default:
 		return nil, nil
 	}
 }
-func (p objectCatalogScanTestProvider) ResolvePath(_ context.Context, _ plugin.ConnectionInfo, pathValue plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p objectCatalogScanTestProvider) ResolvePath(_ context.Context, _ plugin.ConnectionInfo, pathValue plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	if pathValue.StringPath() == "addp/image" {
-		entry := plugin.CatalogEntry{Name: "image", Path: plugin.ObjectDirectoryPath(9, "addp", "image"), Kind: plugin.CatalogKindPrefix, Term: plugin.CatalogTermPrefix, Role: plugin.CatalogRoleBranch}
+		entry := plugin.EngineCatalogEntry{Name: "image", Path: plugin.ObjectDirectoryPath(9, "addp", "image"), Kind: plugin.EngineCatalogKindPrefix, Term: plugin.EngineCatalogTermPrefix, Role: plugin.EngineCatalogRoleBranch}
 		return &entry, nil
 	}
 	for _, entry := range geotiffCatalogEntriesForTest(9, "addp") {
@@ -944,7 +944,7 @@ func (p objectCatalogScanTestProvider) ResolvePath(_ context.Context, _ plugin.C
 	}
 	return nil, nil
 }
-func (p objectCatalogScanTestProvider) OpenContent(_ context.Context, _ plugin.ConnectionInfo, pathValue plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+func (p objectCatalogScanTestProvider) OpenContent(_ context.Context, _ plugin.ConnectionInfo, pathValue plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	if p.contentByPath != nil {
 		if content, ok := p.contentByPath[pathValue.StringPath()]; ok {
 			return io.NopCloser(strings.NewReader(content)), nil
@@ -953,8 +953,8 @@ func (p objectCatalogScanTestProvider) OpenContent(_ context.Context, _ plugin.C
 	return io.NopCloser(strings.NewReader(p.content)), nil
 }
 
-func geotiffCatalogEntriesForTest(engineID uint, bucket string) []plugin.CatalogEntry {
-	entries := make([]plugin.CatalogEntry, 0, 4)
+func geotiffCatalogEntriesForTest(engineID uint, bucket string) []plugin.EngineCatalogEntry {
+	entries := make([]plugin.EngineCatalogEntry, 0, 4)
 	for _, item := range []struct {
 		path string
 		size int64
@@ -966,13 +966,13 @@ func geotiffCatalogEntriesForTest(engineID uint, bucket string) []plugin.Catalog
 	} {
 		name := path.Base(item.path)
 		size := item.size
-		entries = append(entries, plugin.CatalogEntry{
+		entries = append(entries, plugin.EngineCatalogEntry{
 			Name: name,
 			Path: plugin.ObjectItemPath(engineID, bucket, item.path),
-			Kind: plugin.CatalogKindObject,
-			Term: plugin.CatalogTermObject,
-			Role: plugin.CatalogRoleLeaf,
-			Storage: &plugin.CatalogStorageFacts{
+			Kind: plugin.EngineCatalogKindObject,
+			Term: plugin.EngineCatalogTermObject,
+			Role: plugin.EngineCatalogRoleLeaf,
+			Storage: &plugin.EngineCatalogStorageFacts{
 				Path:      bucket + "/" + item.path,
 				SizeBytes: &size,
 			},

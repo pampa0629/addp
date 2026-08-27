@@ -23,7 +23,7 @@ type kafkaChangeStreamReader struct {
 	blocked     bool
 }
 
-func (p *KafkaPlugin) OpenChangeStream(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ChangeStreamReadOptions) (plugin.ChangeStreamReader, error) {
+func (p *KafkaPlugin) OpenChangeStream(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.ChangeStreamReadOptions) (plugin.ChangeStreamReader, error) {
 	topic, err := kafkaTopicFromPath(path)
 	if err != nil {
 		return nil, err

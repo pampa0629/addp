@@ -113,7 +113,7 @@ func (s *DatabaseRuntime) scanTables(
 		)
 
 		if isDeepScan && s.tableIndexer != nil {
-			s.tableIndexer.IndexTableAsset(ctx, resource, tenantID, schemaName, tableInfo, fields, item)
+			s.tableIndexer.IndexTableContent(ctx, resource, tenantID, schemaName, tableInfo, fields, item)
 		}
 
 		totalTables++
@@ -144,7 +144,7 @@ func (s *DatabaseRuntime) listTables(
 	}
 	tables := make([]datatype.TableInfo, 0, len(nodes))
 	for _, node := range nodes {
-		if node.Role != plugin.CatalogRoleLeaf {
+		if node.Role != plugin.EngineCatalogRoleLeaf {
 			continue
 		}
 		if node.Table != nil {
@@ -164,7 +164,7 @@ func (s *DatabaseRuntime) resolveTableRowCount(ctx context.Context, resource *co
 		return tableInfo.RowCount
 	}
 	path := plugin.TabularItemPath(resource.ID, scanCatalog.namespaceTerm, schemaName, tableInfo.Name)
-	facts, err := scanCatalog.factsProvider.DescribeCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.CatalogFactsOptions{IncludeStatistics: true})
+	facts, err := scanCatalog.factsProvider.DescribeEngineCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.EngineCatalogFactsOptions{IncludeStatistics: true})
 	if err != nil || facts == nil {
 		s.log.Debug("表行数精确查询失败，保留 catalog 统计值",
 			"engine_id", resource.ID,
@@ -174,7 +174,7 @@ func (s *DatabaseRuntime) resolveTableRowCount(ctx context.Context, resource *co
 		)
 		return tableInfo.RowCount
 	}
-	described := plugin.CatalogFactsTableInfo(facts)
+	described := plugin.EngineCatalogFactsTableInfo(facts)
 	if described == nil || described.RowCount == nil || *described.RowCount < 0 {
 		return tableInfo.RowCount
 	}

@@ -110,3 +110,34 @@ func TestPreviewMaterializationDoesNotMutateStoredTable(t *testing.T) {
 		t.Fatalf("stored materialization mutated: %#v", stored.Materialization)
 	}
 }
+
+func TestNormalizeMaterializationOmitsEmptyPartitionDesign(t *testing.T) {
+	input := map[string]interface{}{
+		"target_parent_locator": " addp://engine/2/path/public?type=schema ",
+		"target_name":           " fact_order ",
+		"partition_by":          " ",
+		"partition_type":        "range",
+	}
+	normalized := normalizeMaterialization(input)
+	if _, exists := normalized["partition_by"]; exists {
+		t.Fatalf("partition_by must be omitted: %#v", normalized)
+	}
+	if _, exists := normalized["partition_type"]; exists {
+		t.Fatalf("partition_type must be omitted: %#v", normalized)
+	}
+	if normalized["target_parent_locator"] != "addp://engine/2/path/public?type=schema" || normalized["target_name"] != "fact_order" {
+		t.Fatalf("target fields were not normalized: %#v", normalized)
+	}
+	if input["partition_by"] != " " {
+		t.Fatalf("input was mutated: %#v", input)
+	}
+}
+
+func TestNormalizeMaterializationKeepsExplicitPartitionDesign(t *testing.T) {
+	normalized := normalizeMaterialization(map[string]interface{}{
+		"partition_by": " occurred_at ", "partition_type": "RANGE",
+	})
+	if normalized["partition_by"] != "occurred_at" || normalized["partition_type"] != "range" {
+		t.Fatalf("partition design = %#v", normalized)
+	}
+}

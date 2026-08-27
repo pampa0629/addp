@@ -4,7 +4,7 @@ import {
   List, Timer, Connection, Search, Document, Share, DataBoard, Odometer,
   TrendCharts, SortDown, FolderOpened, Warning, Monitor, Notebook,
   Files, Tickets, Key, Refresh, Lock, SetUp,
-  MapLocation,
+  MapLocation, Collection, View,
 } from '@element-plus/icons-vue'
 import { splitConsoleRoute } from '../utils/consoleNavigation'
 
@@ -14,8 +14,8 @@ import { splitConsoleRoute } from '../utils/consoleNavigation'
 export const MODULE_GROUPS = [
   { key: 'data-prepare', label: 'console.groups.dataPrepare', icon: Coin,         modules: ['transfer', 'meta', 'manager'] },
   { key: 'data-govern',  label: 'console.groups.dataGovern',  icon: Reading,      modules: ['standard', 'modeling', 'quality'] },
-  { key: 'dev-monitor',  label: 'console.groups.devMonitor',  icon: Tools,        modules: ['develop', 'service', 'orchestrator', 'monitor'] },
-  { key: 'asset',        label: 'console.groups.asset',       icon: Folder,       modules: ['asset'] },
+  { key: 'dev-monitor',  label: 'console.groups.devMonitor',  icon: Tools,        modules: ['develop', 'service', 'workbench', 'orchestrator', 'monitor'] },
+  { key: 'asset',        label: 'console.groups.asset',       icon: Folder,       modules: ['catalog', 'asset'] },
   { key: 'portal',       label: 'console.groups.portal',      icon: Shop,         modules: [], isPortal: true },
   { key: 'agent',        label: 'console.groups.agent',       icon: ChatDotRound, modules: ['agent'] },
   { key: 'graph',        label: 'console.groups.graph',       icon: Share,        modules: ['graph'] },
@@ -35,8 +35,10 @@ export const ALL_HOME_CARDS = [
   { module: 'quality',      label: 'console.modules.quality.label',      icon: CircleCheck,  cssVar: '--addp-module-quality',       desc: 'console.modules.quality.desc' },
   { module: 'develop',      label: 'console.modules.develop.label',      icon: Edit,         cssVar: '--addp-module-develop',       desc: 'console.modules.develop.desc' },
   { module: 'service',      label: 'console.modules.service.label',      icon: Link,         cssVar: '--addp-module-service',       desc: 'console.modules.service.desc' },
+  { module: 'workbench',    label: 'console.modules.workbench.label',    icon: DataBoard,    cssVar: '--addp-module-workbench',     desc: 'console.modules.workbench.desc' },
   { module: 'orchestrator', label: 'console.modules.orchestrator.label', icon: Operation,    cssVar: '--addp-module-orchestrator',  desc: 'console.modules.orchestrator.desc' },
   { module: 'monitor',      label: 'console.modules.monitor.label',      icon: DataLine,     cssVar: '--addp-module-monitor',       desc: 'console.modules.monitor.desc' },
+  { module: 'catalog',      label: 'console.modules.catalog.label',      icon: Collection,   cssVar: '--addp-module-catalog',       desc: 'console.modules.catalog.desc' },
   { module: 'asset',        label: 'console.modules.asset.label',        icon: Folder,       cssVar: '--addp-module-asset',         desc: 'console.modules.asset.desc' },
   { module: 'system',       label: 'console.modules.system.label',       icon: Setting,      cssVar: '--addp-module-system',        desc: 'console.modules.system.desc' },
   { module: 'agent',        label: 'console.modules.agent.label',        icon: ChatDotRound, cssVar: '--addp-module-agent',         desc: 'console.modules.agent.desc' },
@@ -61,10 +63,12 @@ export const MODULE_URLS = {
   orchestrator: _url(5177, 'orchestrator'),
   develop:      _url(5178, 'develop'),
   service:      _url(5180, 'service'),
+  workbench:    _url(5190, 'workbench'),
   monitor:      _url(5179, 'monitor'),
   standard:     _url(5181, 'standard'),
   modeling:     _url(5182, 'model'),
   quality:      _url(5183, 'quality'),
+  catalog:      _url(5189, 'catalog'),
   asset:        _url(5184, 'asset'),
   agent:        _url(5186, 'agent'),
   graph:        _url(5187, 'graph'),
@@ -124,6 +128,9 @@ export const PAGE_MAPS = {
     'tile': 'tile',
     '': 'query-services',
   },
+  workbench: {
+    '': 'views',
+  },
   monitor: {
     'dashboard': 'dashboard',
     'executions': 'executions',
@@ -139,6 +146,9 @@ export const PAGE_MAPS = {
   },
   quality: {
     '': 'check-tasks',
+  },
+  catalog: {
+    '': 'entries',
   },
   asset: {
     '': 'assets',
@@ -167,10 +177,12 @@ export const DEFAULT_ROUTES = {
   orchestrator: '/orchestrator/orchestrations',
   develop:      '/develop/sql',
   service:      '/service/query-services',
+  workbench:    '/workbench/views',
   monitor:      '/monitor/dashboard',
   standard:     '/standard/domains',
   modeling:     '/modeling/dw-layers',
   quality:      '/quality/check-tasks',
+  catalog:      '/catalog/entries',
   asset:        '/asset/assets',
   agent:        '/agent',
   graph:        '/graph/ontologies',
@@ -249,6 +261,7 @@ export const SIDEBAR_MENUS = {
       { index: '/modeling/entities',       icon: DataBoard,  label: 'console.menus.modeling.entities' },
       { index: '/modeling/er-diagram',     icon: Share,      label: 'console.menus.modeling.erDiagram' },
       { index: '/modeling/logical-tables', icon: Connection, label: 'console.menus.modeling.logicalTables' },
+      { index: '/modeling/materialization-groups', icon: SetUp, label: 'console.menus.modeling.materializationGroups' },
       { index: '/modeling/star-schema',    icon: Grid,       label: 'console.menus.modeling.starSchema' },
     ],
   },
@@ -257,6 +270,7 @@ export const SIDEBAR_MENUS = {
     items: [
       { index: '/quality/rule-applications', icon: Setting, label: 'console.menus.quality.ruleApplications', recentLabel: 'console.menus.quality.recentRuleApplications' },
       { index: '/quality/check-tasks',       icon: List,    label: 'console.menus.quality.checkTasks', recentLabel: 'console.menus.quality.recentCheckTasks' },
+      { index: '/quality/materialization-gate-tasks', icon: Lock, label: 'console.menus.quality.materializationGateTasks', recentLabel: 'console.menus.quality.recentMaterializationGateTasks' },
       { index: '/quality/executions',        icon: Timer,   label: 'console.menus.quality.executions', recentLabel: 'console.menus.quality.recentExecutions' },
       { index: '/quality/issues',            icon: Warning, label: 'console.menus.quality.issues', recentLabel: 'console.menus.quality.recentIssues' },
     ],
@@ -281,6 +295,12 @@ export const SIDEBAR_MENUS = {
       { index: '/service/catalog',         icon: FolderOpened, label: 'console.menus.service.catalog', recentLabel: 'console.menus.service.recentCatalog' },
     ],
   },
+  workbench: {
+    label: 'console.menus.workbench.label', icon: DataBoard,
+    items: [
+      { index: '/workbench/views', icon: View, label: 'console.menus.workbench.views' },
+    ],
+  },
   orchestrator: {
     label: 'console.menus.orchestrator.label', icon: Operation,
     items: [
@@ -295,6 +315,12 @@ export const SIDEBAR_MENUS = {
       { index: '/monitor/executions', icon: List,    label: 'console.menus.monitor.executions', recentLabel: 'console.menus.monitor.recentExecutions' },
       { index: '/monitor/alerts',     icon: Warning, label: 'console.menus.monitor.alerts', recentLabel: 'console.menus.monitor.recentAlerts' },
       { index: '/monitor/notifications', icon: Connection, label: 'console.menus.monitor.notifications', recentLabel: 'console.menus.monitor.recentNotifications' },
+    ],
+  },
+  catalog: {
+    label: 'console.menus.catalog.label', icon: Collection,
+    items: [
+      { index: '/catalog/entries', icon: List, label: 'console.menus.catalog.entries' },
     ],
   },
   asset: {

@@ -8,8 +8,11 @@ on:
         required: true
         type: choice
         options:
+          - consumer-engine-recovery
+          - enterprise-catalog-publishing
           - module-registry-recovery
           - standard-model-reference-deletion
+          - workbench-service-consumption
 
 permissions:
   contents: read

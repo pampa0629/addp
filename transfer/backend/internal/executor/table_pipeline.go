@@ -53,7 +53,7 @@ type targetResourceDeleter interface {
 type engineTargetResourceDeleter struct {
 	provider engineplugin.ResourceDeleteProvider
 	connInfo engineplugin.ConnectionInfo
-	path     engineplugin.CatalogPath
+	path     engineplugin.EngineCatalogPath
 }
 
 func (d *engineTargetResourceDeleter) DeleteTarget(ctx context.Context) error {
@@ -66,7 +66,7 @@ func (d *engineTargetResourceDeleter) DeleteTarget(ctx context.Context) error {
 type multiTargetResourceDeleter struct {
 	provider engineplugin.ResourceDeleteProvider
 	connInfo engineplugin.ConnectionInfo
-	basePath engineplugin.CatalogPath
+	basePath engineplugin.EngineCatalogPath
 	mapRef   contentadapter.RefCatalogPathMapper
 	refs     []format.RelatedRef
 }
@@ -78,8 +78,8 @@ func (d *multiTargetResourceDeleter) DeleteTarget(ctx context.Context) error {
 	for _, ref := range d.refs {
 		mapRef := d.mapRef
 		if mapRef == nil {
-			mapRef = func(ref contentio.Ref) (engineplugin.CatalogPath, error) {
-				return contentadapter.CatalogPath(d.basePath, ref)
+			mapRef = func(ref contentio.Ref) (engineplugin.EngineCatalogPath, error) {
+				return contentadapter.EngineCatalogPath(d.basePath, ref)
 			}
 		}
 		path, err := mapRef(ref.Ref)
@@ -234,13 +234,67 @@ type nativeTableBatchSource struct {
 	reader               engineplugin.BatchReadableProvider
 	tableSessionProvider engineplugin.TableReadSessionProvider
 	connInfo             engineplugin.ConnectionInfo
-	path                 engineplugin.CatalogPath
+	path                 engineplugin.EngineCatalogPath
 	query                string
 	readOptions          map[string]interface{}
 	resumeMarker         *resume.Marker
 	tableInfo            *datatype.TableInfo
 	spatialInfo          *datatype.SpatialInfo
 }
+
+type queryTableBatchSource struct {
+	provider  engineplugin.QueryReadSessionProvider
+	connInfo  engineplugin.ConnectionInfo
+	request   engineplugin.QueryRequest
+	tableInfo *datatype.TableInfo
+}
+
+func (s *queryTableBatchSource) Open(ctx context.Context) (TableBatchReader, error) {
+	session, err := s.provider.OpenQueryReadSession(ctx, s.connInfo, s.request)
+	if err != nil {
+		return nil, fmt.Errorf("open query read session: %w", err)
+	}
+	return &queryTableBatchReader{session: session, tableInfo: s.tableInfo}, nil
+}
+
+type queryTableBatchReader struct {
+	session   engineplugin.QueryReadSession
+	tableInfo *datatype.TableInfo
+	closed    bool
+}
+
+func (r *queryTableBatchReader) TableInfo() *datatype.TableInfo { return r.tableInfo }
+
+func (r *queryTableBatchReader) SpatialInfo() *datatype.SpatialInfo {
+	return spatialInfoFromTableInfoOrFields(r.tableInfo)
+}
+
+func (r *queryTableBatchReader) ReadBatch(ctx context.Context, limit int) (*engineplugin.BatchData, error) {
+	if r.closed {
+		return &engineplugin.BatchData{}, nil
+	}
+	batch, err := r.session.ReadBatch(ctx, limit)
+	if err != nil {
+		_ = r.Close(ctx)
+		return nil, err
+	}
+	if batch == nil || len(batch.Rows) == 0 || len(batch.Rows) < limit {
+		if err := r.Close(ctx); err != nil {
+			return batch, err
+		}
+	}
+	return batch, nil
+}
+
+func (r *queryTableBatchReader) Close(ctx context.Context) error {
+	if r.closed {
+		return nil
+	}
+	r.closed = true
+	return r.session.Close(ctx)
+}
+
+func (r *queryTableBatchReader) ResumeMarker() *resume.Marker { return nil }
 
 func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, error) {
 	if s.tableSessionProvider != nil {
@@ -327,7 +381,7 @@ func (r *nativeTableSessionBatchReader) ResumeMarker() *resume.Marker {
 type nativeOffsetBatchReader struct {
 	reader      engineplugin.BatchReadableProvider
 	connInfo    engineplugin.ConnectionInfo
-	path        engineplugin.CatalogPath
+	path        engineplugin.EngineCatalogPath
 	query       string
 	readOptions map[string]interface{}
 	offset      int64
@@ -387,7 +441,7 @@ type encodedContentTableSource struct {
 	scopeReaderProvider format.ScopeTableReaderProvider
 	infoProvider        format.TableInfoProvider
 	connInfo            engineplugin.ConnectionInfo
-	path                engineplugin.CatalogPath
+	path                engineplugin.EngineCatalogPath
 	readOptions         engineplugin.ReadOptions
 	parseOptions        *format.ParseOptions
 	resumeMarker        *resume.Marker
@@ -668,21 +722,27 @@ type nativeTableBatchTarget struct {
 	writer               engineplugin.BatchWritableProvider
 	tableSessionProvider engineplugin.TableWriteSessionProvider
 	connInfo             engineplugin.ConnectionInfo
-	path                 engineplugin.CatalogPath
+	path                 engineplugin.EngineCatalogPath
 	prepareOptions       engineplugin.TableWriteOptions
 	writeOptions         engineplugin.BatchWriteOptions
 	resumeMarker         *resume.Marker
 	replace              bool
+	managedExisting      bool
 }
 
 func (t *nativeTableBatchTarget) Open(ctx context.Context, tableInfo *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (TableBatchWriter, error) {
-	if t.deleter != nil {
+	if t.managedExisting && t.deleter != nil {
+		return nil, fmt.Errorf("managed existing table target must not delete the target")
+	}
+	if !t.managedExisting && t.deleter != nil {
 		if err := t.deleter.DeleteTarget(ctx); err != nil {
 			return nil, fmt.Errorf("delete native table target before write: %w", err)
 		}
 	}
-	if err := t.prepare(ctx, tableInfo, spatialInfo); err != nil {
-		return nil, err
+	if !t.managedExisting {
+		if err := t.prepare(ctx, tableInfo, spatialInfo); err != nil {
+			return nil, err
+		}
 	}
 	fields := tableInfoFields(tableInfo)
 	if t.tableSessionProvider != nil && isCopyWriteMethod(t.writeOptions.Method) {
@@ -691,7 +751,7 @@ func (t *nativeTableBatchTarget) Open(ctx context.Context, tableInfo *datatype.T
 			Fields:       fields,
 			SpatialInfo:  spatialInfo,
 			ResumeMarker: cloneResumeMarker(t.resumeMarker),
-			Replace:      t.replace,
+			Replace:      t.replace && !t.managedExisting,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("open native table write session: %w", err)
@@ -728,7 +788,7 @@ func (t *nativeTableBatchTarget) prepare(ctx context.Context, tableInfo *datatyp
 type nativeDirectBatchWriter struct {
 	writer       engineplugin.BatchWritableProvider
 	connInfo     engineplugin.ConnectionInfo
-	path         engineplugin.CatalogPath
+	path         engineplugin.EngineCatalogPath
 	writeOptions engineplugin.BatchWriteOptions
 	fields       []datatype.FieldInfo
 	spatialInfo  *datatype.SpatialInfo
@@ -835,7 +895,7 @@ type encodedContentTableTarget struct {
 	multiProvider       format.MultiTableWriterProvider
 	scopeWriterProvider format.ScopeTableWriterProvider
 	connInfo            engineplugin.ConnectionInfo
-	path                engineplugin.CatalogPath
+	path                engineplugin.EngineCatalogPath
 	refBasePath         string
 	refPathMapper       contentadapter.RefCatalogPathMapper
 	writeOptions        engineplugin.WriteOptions

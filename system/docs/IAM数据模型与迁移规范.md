@@ -58,6 +58,36 @@ TOTP 登记完成和 Browser step-up 都创建新的 AAL2 Token Family，再撤�
 
 `departments` 和 `project_groups` 都严格属于单个 Tenant。Department 是稳定组织结构，Project Group 是跨部门协作集合，二者不得互相替代。成员关系变化必须推进受影响 Principal 的授权版本。
 
+### 4.1 组织管理聚合与公开 API
+
+Department、Project Group、Department Membership 和 Project Group Membership 都是可独立读取、具有独立生命周期的主资源，统一使用非空正整数 `version` 作为乐观并发版本。所有更新、停用、关闭和成员关系结束操作必须在同一事务中按 `tenant_id + id + version` 原子校验、写入并递增版本；版本冲突不得产生组织事实、授权版本或审计副作用。
+
+Department 使用 `active` / `disabled` 生命周期。Department 是可被 Catalog 等 owner 软引用的稳定组织身份，不提供物理删除 API；停用后不允许建立新的成员关系或责任引用，既有历史仍可解析，允许管理员显式恢复。Department code 在创建后不可修改，层级更新必须继续满足同 Tenant、无循环约束。部门结构变更必须持有当前 Tenant 的结构级事务锁，生命周期变更与成员关系写入必须锁定同一 Department 聚合根，避免并发创建循环或在停用过程中新增成员。
+
+Project Group 使用 `planned` / `active` / `closed` 生命周期。`planned` 可以推进为 `active`，`planned` 或 `active` 可以关闭；`closed` 是不可逆终态。关闭后不允许新增或恢复成员关系，既有临时授权按授权上下文规则失效。`starts_at` / `ends_at` 只表达计划周期，关闭动作不得用实际关闭时间覆盖 `ends_at`；实际关闭时间和原因保存在审计事实中。Project Group code 在创建后不可修改，第一阶段不支持嵌套。生命周期变更与成员关系写入必须锁定同一 Project Group 聚合根。
+
+Department Membership 的 `membership_type` 使用 `primary` / `additional`，`relation_role` 使用 `member` / `leader`；同一 Tenant Membership 最多一个有效主部门。Project Group Membership 的 `relation_role` 使用 `member` / `leader` / `coordinator`。两类成员关系都使用 `active` / `ended`，`ended` 是历史终态；成员身份、所属组织和 Tenant Membership 创建后不可变，需要调整时必须结束旧关系并创建新关系。
+
+公开管理 API 只存在于当前 Tenant Context，固定使用以下单一路由，不接受 `tenant_id`：
+
+| Method | Path | 语义 |
+| --- | --- | --- |
+| GET / POST | `/api/v1/system/tenant/departments` | 分页查询或创建 Department |
+| GET / PUT | `/api/v1/system/tenant/departments/:id` | 读取或完整更新 Department |
+| POST | `/api/v1/system/tenant/departments/:id/disable` | 停用 Department |
+| POST | `/api/v1/system/tenant/departments/:id/restore` | 恢复 Department |
+| GET / POST | `/api/v1/system/tenant/departments/:id/memberships` | 查询或创建 Department Membership |
+| PUT | `/api/v1/system/tenant/departments/:id/memberships/:membership_id` | 更新成员关系类型和组织角色 |
+| POST | `/api/v1/system/tenant/departments/:id/memberships/:membership_id/close` | 结束 Department Membership |
+| GET / POST | `/api/v1/system/tenant/project_groups` | 分页查询或创建 Project Group |
+| GET / PUT | `/api/v1/system/tenant/project_groups/:id` | 读取或完整更新 Project Group |
+| POST | `/api/v1/system/tenant/project_groups/:id/close` | 关闭 Project Group |
+| GET / POST | `/api/v1/system/tenant/project_groups/:id/memberships` | 查询或创建 Project Group Membership |
+| PUT | `/api/v1/system/tenant/project_groups/:id/memberships/:membership_id` | 更新项目组内角色 |
+| POST | `/api/v1/system/tenant/project_groups/:id/memberships/:membership_id/close` | 结束 Project Group Membership |
+
+列表和详情只返回当前 Tenant 内对象，跨 Tenant ID 与不存在统一返回 `404`。成员创建只接受当前 Tenant 的 `tenant_membership_id`，不能由前端提交 User ID 猜测 Membership。所有写接口使用具体请求 DTO，并返回更新后的完整资源；生命周期动作必须携带 `version` 和非空 `reason`。
+
 ## 五、Permission、Role 与高权限治理
 
 `permissions`、`roles`、`role_permissions`、`role_assignments` 和 `role_conflicts` 保存运行时 RBAC 事实。Permission 和内置 Role 的发布规则见 `docs/spec/addp权限与角色发布规范.md`。
@@ -159,6 +189,7 @@ System 启动顺序固定为：
 - 破坏性模型切换不保留旧字段、双写、双读或兼容 query；
 - 需要保留的外部数据必须另行批准离线导入方案，不进入 System Runtime；
 - migration 内不得访问 Redis、HTTP、外部 IdP、密钥服务或其他模块数据库。
+- 已发布 75 号迁移的历史不可变 audience 冲突是唯一已登记定向恢复；只能使用 `cmd/iam-migration-repair --apply`，且必须通过其精确状态、checksum、约束和触发器校验。不得将其扩展为通用 dirty force、跳过版本或 checksum 改写能力。
 
 ## 十二、验证
 

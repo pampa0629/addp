@@ -21,44 +21,48 @@ import (
 )
 
 type IAMIssueExecutionAuthorizationRequest struct {
-	Audience    string   `json:"audience"`
-	ExecutionID string   `json:"execution_id"`
-	EngineIDs   []string `json:"engine_ids"`
-	Effects     []string `json:"effects"`
-	ExpiresIn   int64    `json:"expires_in"`
+	Audience    string                          `json:"audience"`
+	ExecutionID string                          `json:"execution_id"`
+	Accesses    []IAMExecutionEngineAccessScope `json:"accesses"`
+	ExpiresIn   int64                           `json:"expires_in"`
+}
+
+type IAMExecutionEngineAccessScope struct {
+	EngineID string   `json:"engine_id"`
+	Effects  []string `json:"effects"`
 }
 
 type IAMIssueExecutionAuthorizationFromExecutionRequest struct {
-	ParentExecutionID string   `json:"parent_execution_id"`
-	Audience          string   `json:"audience"`
-	ExecutionID       string   `json:"execution_id"`
-	EngineIDs         []string `json:"engine_ids"`
-	Effects           []string `json:"effects"`
-	ExpiresIn         int64    `json:"expires_in"`
+	ParentExecutionID string                          `json:"parent_execution_id"`
+	Audience          string                          `json:"audience"`
+	ExecutionID       string                          `json:"execution_id"`
+	Attempt           int                             `json:"attempt,omitempty"`
+	LeaseToken        string                          `json:"lease_token,omitempty"`
+	Accesses          []IAMExecutionEngineAccessScope `json:"accesses"`
+	ExpiresIn         int64                           `json:"expires_in"`
 }
 
 type IAMIssueExecutionAuthorizationFromServiceDefinitionRequest struct {
-	ExecutionID       string   `json:"execution_id"`
-	EngineIDs         []string `json:"engine_ids"`
-	DefinitionID      string   `json:"definition_id"`
-	DefinitionVersion string   `json:"definition_version"`
-	ExpiresIn         int64    `json:"expires_in"`
+	ExecutionID       string                          `json:"execution_id"`
+	Accesses          []IAMExecutionEngineAccessScope `json:"accesses"`
+	DefinitionID      string                          `json:"definition_id"`
+	DefinitionVersion string                          `json:"definition_version"`
+	ExpiresIn         int64                           `json:"expires_in"`
 }
 
 type IAMExecutionAuthorizationResponse struct {
-	ID                         string    `json:"id"`
-	ExecutionID                string    `json:"execution_id"`
-	Audience                   string    `json:"audience"`
-	EngineIDs                  []string  `json:"engine_ids"`
-	Effects                    []string  `json:"effects"`
-	ExpiresAt                  time.Time `json:"expires_at"`
-	ActorPrincipalID           string    `json:"actor_principal_id"`
-	TenantID                   string    `json:"tenant_id"`
-	TenantMembershipID         string    `json:"tenant_membership_id"`
-	IssuedAuthorizationVersion string    `json:"issued_authorization_version"`
-	SourceType                 string    `json:"source_type"`
-	SourceDefinitionID         *string   `json:"source_definition_id,omitempty"`
-	SourceDefinitionVersion    *string   `json:"source_definition_version,omitempty"`
+	ID                         string                          `json:"id"`
+	ExecutionID                string                          `json:"execution_id"`
+	Audience                   string                          `json:"audience"`
+	Accesses                   []IAMExecutionEngineAccessScope `json:"accesses"`
+	ExpiresAt                  time.Time                       `json:"expires_at"`
+	ActorPrincipalID           string                          `json:"actor_principal_id"`
+	TenantID                   string                          `json:"tenant_id"`
+	TenantMembershipID         string                          `json:"tenant_membership_id"`
+	IssuedAuthorizationVersion string                          `json:"issued_authorization_version"`
+	SourceType                 string                          `json:"source_type"`
+	SourceDefinitionID         *string                         `json:"source_definition_id,omitempty"`
+	SourceDefinitionVersion    *string                         `json:"source_definition_version,omitempty"`
 }
 
 type IAMExecutionEngineAccessRequest struct {
@@ -111,7 +115,7 @@ func (h *IAMExecutionAuthorizationHandler) IssueFromServiceDefinition(c *gin.Con
 		respondExecutionAuthorizationError(c, err)
 		return
 	}
-	engineIDs, err := parseExecutionEngineIDs(request.EngineIDs)
+	accesses, err := parseExecutionEngineAccesses(request.Accesses)
 	if err != nil {
 		respondExecutionAuthorizationError(c, err)
 		return
@@ -135,7 +139,7 @@ func (h *IAMExecutionAuthorizationHandler) IssueFromServiceDefinition(c *gin.Con
 		return
 	}
 	issued, err := h.service.IssueFromServiceDefinition(c.Request.Context(), iam.IssueExecutionAuthorizationFromServiceDefinitionInput{
-		ExecutionID: executionID, EngineIDs: engineIDs,
+		ExecutionID: executionID, Accesses: accesses,
 		DefinitionID: definitionID, DefinitionVersion: request.DefinitionVersion,
 		ServicePrincipalID: int64(principalID), ServiceClientID: *authContext.Client.ClientID,
 		TenantID: int64(tenantID), ExpiresIn: time.Duration(request.ExpiresIn) * time.Second,
@@ -190,7 +194,7 @@ func (h *IAMExecutionAuthorizationHandler) Issue(c *gin.Context) {
 		respondExecutionAuthorizationError(c, fmt.Errorf("%w: invalid execution authorization request", commonapi.ErrBadRequest))
 		return
 	}
-	executionID, engineIDs, expiresIn, err := parseExecutionAuthorizationRequest(request)
+	executionID, accesses, expiresIn, err := parseExecutionAuthorizationRequest(request)
 	if err != nil {
 		respondExecutionAuthorizationError(c, err)
 		return
@@ -206,8 +210,7 @@ func (h *IAMExecutionAuthorizationHandler) Issue(c *gin.Context) {
 		SourceAccessToken: sourceAccessToken,
 		Audience:          request.Audience,
 		ExecutionID:       executionID,
-		EngineIDs:         engineIDs,
-		Effects:           append([]string(nil), request.Effects...),
+		Accesses:          accesses,
 		ExpiresIn:         expiresIn,
 		Audit:             audit,
 	})
@@ -220,7 +223,7 @@ func (h *IAMExecutionAuthorizationHandler) Issue(c *gin.Context) {
 
 // IssueFromExecution godoc
 // @Summary      从父子执行来源签发执行授权 | Issue execution authorization from execution provenance
-// @Description  仅匹配 audience 的 Tenant Runtime Service Principal 可基于可验证的 Orchestrator 父 execution 与 owner 子 execution 来源链签发授权 | Only the tenant runtime service principal matching the audience may issue from a verified Orchestrator parent and owner child execution chain
+// @Description  仅匹配 audience 的 Tenant Runtime Service Principal 可基于可验证的 Orchestrator 父 execution 与 owner 子 execution 来源链签发授权；子 execution 必须处于 pending，或由请求中精确的 attempt 与 lease_token 持有未过期的 running 租约 | Only the tenant runtime service principal matching the audience may issue from a verified Orchestrator parent and owner child execution chain; the child must be pending or hold the exact unexpired running lease identified by attempt and lease_token
 // @Tags         Runtime 执行授权 | Runtime Execution Authorization
 // @Accept       json
 // @Produce      json
@@ -233,6 +236,7 @@ func (h *IAMExecutionAuthorizationHandler) Issue(c *gin.Context) {
 // @Failure      409 {object} IAMErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.execution_authorization.execute"]
+// @x-addp-conditional-permissions ["transfer.task.execute","develop.data_read.execute","develop.data_write.execute"]
 // @Router       /runtime/execution-authorizations [post]
 func (h *IAMExecutionAuthorizationHandler) IssueFromExecution(c *gin.Context) {
 	var request IAMIssueExecutionAuthorizationFromExecutionRequest
@@ -245,10 +249,15 @@ func (h *IAMExecutionAuthorizationHandler) IssueFromExecution(c *gin.Context) {
 		respondExecutionAuthorizationError(c, err)
 		return
 	}
-	executionID, engineIDs, expiresIn, err := parseExecutionAuthorizationRequest(IAMIssueExecutionAuthorizationRequest{
+	executionID, accesses, expiresIn, err := parseExecutionAuthorizationRequest(IAMIssueExecutionAuthorizationRequest{
 		Audience: request.Audience, ExecutionID: request.ExecutionID,
-		EngineIDs: request.EngineIDs, Effects: request.Effects, ExpiresIn: request.ExpiresIn,
+		Accesses: request.Accesses, ExpiresIn: request.ExpiresIn,
 	})
+	if err != nil {
+		respondExecutionAuthorizationError(c, err)
+		return
+	}
+	attempt, leaseToken, err := parseExecutionLeaseBoundary(request.Attempt, request.LeaseToken)
 	if err != nil {
 		respondExecutionAuthorizationError(c, err)
 		return
@@ -268,7 +277,8 @@ func (h *IAMExecutionAuthorizationHandler) IssueFromExecution(c *gin.Context) {
 	}
 	issued, err := h.service.IssueFromExecution(c.Request.Context(), iam.IssueExecutionAuthorizationFromExecutionInput{
 		ParentExecutionID: parentExecutionID, Audience: request.Audience,
-		ExecutionID: executionID, EngineIDs: engineIDs, Effects: append([]string(nil), request.Effects...),
+		ExecutionID: executionID, Attempt: attempt, LeaseToken: leaseToken,
+		Accesses:  accesses,
 		ExpiresIn: expiresIn, ServicePrincipalID: int64(principalID),
 		ServiceClientID: *authContext.Client.ClientID, TenantID: int64(tenantID),
 		Audit: iamAuditMetadataWithStatus(c, http.StatusCreated),
@@ -278,6 +288,23 @@ func (h *IAMExecutionAuthorizationHandler) IssueFromExecution(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, mapIssuedExecutionAuthorization(issued))
+}
+
+func parseExecutionLeaseBoundary(attempt int, rawLeaseToken string) (int, uuid.UUID, error) {
+	rawLeaseToken = strings.TrimSpace(rawLeaseToken)
+	hasAttempt := attempt != 0
+	hasLeaseToken := rawLeaseToken != ""
+	if hasAttempt != hasLeaseToken || attempt < 0 {
+		return 0, uuid.Nil, fmt.Errorf("%w: lease attempt and token must be provided together", commonapi.ErrBadRequest)
+	}
+	if !hasAttempt {
+		return 0, uuid.Nil, nil
+	}
+	leaseToken, err := uuid.Parse(rawLeaseToken)
+	if err != nil || leaseToken == uuid.Nil || leaseToken.String() != rawLeaseToken {
+		return 0, uuid.Nil, fmt.Errorf("%w: lease token must be a canonical UUID", commonapi.ErrBadRequest)
+	}
+	return attempt, leaseToken, nil
 }
 
 // AuthorizeEngineAccess godoc
@@ -357,35 +384,34 @@ func (h *IAMExecutionAuthorizationHandler) AuthorizeEngineAccess(c *gin.Context)
 
 func parseExecutionAuthorizationRequest(
 	request IAMIssueExecutionAuthorizationRequest,
-) (uuid.UUID, []int64, time.Duration, error) {
+) (uuid.UUID, []iam.ExecutionEngineAccessScope, time.Duration, error) {
 	executionID, err := parseCanonicalExecutionUUID(request.ExecutionID)
 	if err != nil {
 		return uuid.Nil, nil, 0, err
 	}
-	engineIDs := make([]int64, 0, len(request.EngineIDs))
-	for _, value := range request.EngineIDs {
-		engineID, err := parseCanonicalIAMInt64(value)
-		if err != nil {
-			return uuid.Nil, nil, 0, fmt.Errorf("%w: invalid engine ID", commonapi.ErrBadRequest)
-		}
-		engineIDs = append(engineIDs, engineID)
+	accesses, err := parseExecutionEngineAccesses(request.Accesses)
+	if err != nil {
+		return uuid.Nil, nil, 0, err
 	}
 	if request.ExpiresIn < 0 || request.ExpiresIn > int64(time.Hour/time.Second) {
 		return uuid.Nil, nil, 0, fmt.Errorf("%w: invalid execution authorization expiry", commonapi.ErrBadRequest)
 	}
-	return executionID, engineIDs, time.Duration(request.ExpiresIn) * time.Second, nil
+	return executionID, accesses, time.Duration(request.ExpiresIn) * time.Second, nil
 }
 
-func parseExecutionEngineIDs(values []string) ([]int64, error) {
-	engineIDs := make([]int64, 0, len(values))
+func parseExecutionEngineAccesses(values []IAMExecutionEngineAccessScope) ([]iam.ExecutionEngineAccessScope, error) {
+	accesses := make([]iam.ExecutionEngineAccessScope, 0, len(values))
 	for _, value := range values {
-		engineID, err := parseCanonicalIAMInt64(value)
+		engineID, err := parseCanonicalIAMInt64(value.EngineID)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid engine ID", commonapi.ErrBadRequest)
 		}
-		engineIDs = append(engineIDs, engineID)
+		accesses = append(accesses, iam.ExecutionEngineAccessScope{
+			EngineID: engineID,
+			Effects:  append([]string(nil), value.Effects...),
+		})
 	}
-	return engineIDs, nil
+	return accesses, nil
 }
 
 func parseCanonicalExecutionUUID(value string) (uuid.UUID, error) {
@@ -410,13 +436,16 @@ func parseCanonicalIAMInt64(value string) (int64, error) {
 func mapIssuedExecutionAuthorization(
 	issued *iam.IssuedExecutionAuthorization,
 ) IAMExecutionAuthorizationResponse {
-	engineIDs := make([]string, 0, len(issued.EngineIDs))
-	for _, engineID := range issued.EngineIDs {
-		engineIDs = append(engineIDs, strconv.FormatInt(engineID, 10))
+	accesses := make([]IAMExecutionEngineAccessScope, 0, len(issued.Accesses))
+	for _, access := range issued.Accesses {
+		accesses = append(accesses, IAMExecutionEngineAccessScope{
+			EngineID: strconv.FormatInt(access.EngineID, 10),
+			Effects:  append([]string(nil), access.Effects...),
+		})
 	}
 	response := IAMExecutionAuthorizationResponse{
 		ID: strconv.FormatInt(issued.ID, 10), ExecutionID: issued.ExecutionID.String(),
-		Audience: issued.Audience, EngineIDs: engineIDs, Effects: append([]string(nil), issued.Effects...),
+		Audience: issued.Audience, Accesses: accesses,
 		ExpiresAt: issued.ExpiresAt.UTC(), ActorPrincipalID: strconv.FormatInt(issued.ActorPrincipalID, 10),
 		TenantID:                   strconv.FormatInt(issued.TenantID, 10),
 		TenantMembershipID:         strconv.FormatInt(issued.TenantMembershipID, 10),

@@ -36,7 +36,7 @@ func TestConsumerProjectionFiltersVisibilityAndDerivesCurrentUser(t *testing.T) 
 	}
 	authServer := authtest.NewTenantUserAuthContextServer(t, "7", map[string][]string{"Bearer consumer": permissions})
 	defer authServer.Close()
-	assetSvc := assetservice.NewAssetService(db, nil, nil, nil)
+	assetSvc := assetservice.NewAssetService(db, nil, nil)
 	router := SetupRouter(db, authServer.URL, nil, assetSvc, modulelifecycle.NewStandalone("asset"))
 
 	list := consumerRequest(t, router, http.MethodGet, "/api/v1/asset/consumer/assets", "")
@@ -111,7 +111,7 @@ func consumerTestDB(t *testing.T) *gorm.DB {
 	statements := []string{
 		`CREATE TABLE asset.type_definitions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL, code TEXT NOT NULL,
-			source_module TEXT, auth_handler TEXT, entry_type TEXT, discovery_path TEXT, icon_url TEXT,
+			auth_handler TEXT, entry_type TEXT, icon_url TEXT,
 			description TEXT, enabled BOOLEAN, sort_order INTEGER, created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE asset.catalogs (
@@ -121,8 +121,13 @@ func consumerTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE asset.assets (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL, description TEXT,
 			type_id INTEGER NOT NULL, catalog_id INTEGER, tags TEXT, status TEXT, owner_id INTEGER,
-			source_module TEXT, source_reference TEXT, fingerprint TEXT, source_available BOOLEAN, published_at DATETIME,
+			version INTEGER NOT NULL DEFAULT 1, published_at DATETIME,
 			created_by INTEGER, updated_by INTEGER, created_at DATETIME, updated_at DATETIME
+		)`,
+		`CREATE TABLE asset.asset_components (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, asset_id INTEGER NOT NULL,
+			catalog_entry_id TEXT NOT NULL, role TEXT NOT NULL, sort_order INTEGER NOT NULL,
+			created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE asset.asset_ext_fields (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, asset_id INTEGER NOT NULL, field_key TEXT, value TEXT,

@@ -90,6 +90,23 @@ addp_go_build_is_current() {
   [ "$current_fingerprint" = "$recorded_fingerprint" ]
 }
 
+addp_wait_for_parallel_builds() {
+  local failed=0
+  local pid exit_code
+
+  for pid in "$@"; do
+    if wait "$pid"; then
+      continue
+    else
+      exit_code=$?
+    fi
+    echo "  ✗ 并行构建任务失败 (PID: ${pid}, 退出码: ${exit_code})" >&2
+    failed=1
+  done
+
+  return "$failed"
+}
+
 addp_atomic_go_build() (
   local module_name="$1"
   local source_dir="$2"

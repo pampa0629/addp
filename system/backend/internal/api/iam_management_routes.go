@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 
+	systemauthorization "github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/middleware"
 	"github.com/gin-gonic/gin"
 )
@@ -10,7 +11,7 @@ import (
 func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime, moduleHandler *ModuleRegistryHandler) error {
 	if api == nil || runtime == nil || runtime.Authentication == nil || runtime.FirstPartyCredential == nil ||
 		runtime.PlatformTenantHandler == nil || runtime.PlatformUserHandler == nil ||
-		runtime.TenantMembershipHandler == nil || runtime.AuditHandler == nil ||
+		runtime.TenantMembershipHandler == nil || runtime.OrganizationHandler == nil || runtime.AuditHandler == nil ||
 		runtime.TenantInvitationHandler == nil ||
 		runtime.TenantRoleHandler == nil ||
 		runtime.PrivilegedIdentityChangeHandler == nil || runtime.SecurityPolicyHandler == nil || moduleHandler == nil {
@@ -155,9 +156,47 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime, modu
 	if err != nil {
 		return err
 	}
+	organizationPermissions, err := permissionGuards(permission, []string{
+		systemauthorization.PermissionIamDepartmentCreate, systemauthorization.PermissionIamDepartmentRead,
+		systemauthorization.PermissionIamDepartmentRestore, systemauthorization.PermissionIamDepartmentUpdate,
+		systemauthorization.PermissionIamDepartmentMembershipClose, systemauthorization.PermissionIamDepartmentMembershipCreate,
+		systemauthorization.PermissionIamDepartmentMembershipRead, systemauthorization.PermissionIamDepartmentMembershipUpdate,
+		systemauthorization.PermissionIamProjectGroupClose, systemauthorization.PermissionIamProjectGroupCreate,
+		systemauthorization.PermissionIamProjectGroupRead, systemauthorization.PermissionIamProjectGroupUpdate,
+		systemauthorization.PermissionIamProjectGroupMembershipClose, systemauthorization.PermissionIamProjectGroupMembershipCreate,
+		systemauthorization.PermissionIamProjectGroupMembershipRead, systemauthorization.PermissionIamProjectGroupMembershipUpdate,
+	})
+	if err != nil {
+		return err
+	}
 	tenant := api.Group("/tenant")
 	tenant.Use(runtime.Authentication, runtime.FirstPartyCredential, tenantContext)
 	{
+		departments := tenant.Group("/departments")
+		{
+			departments.GET("", organizationPermissions[systemauthorization.PermissionIamDepartmentRead], runtime.OrganizationHandler.ListDepartments)
+			departments.POST("", organizationPermissions[systemauthorization.PermissionIamDepartmentCreate], runtime.OrganizationHandler.CreateDepartment)
+			departments.GET("/:id", organizationPermissions[systemauthorization.PermissionIamDepartmentRead], runtime.OrganizationHandler.GetDepartment)
+			departments.PUT("/:id", organizationPermissions[systemauthorization.PermissionIamDepartmentUpdate], runtime.OrganizationHandler.UpdateDepartment)
+			departments.POST("/:id/disable", organizationPermissions[systemauthorization.PermissionIamDepartmentUpdate], runtime.OrganizationHandler.DisableDepartment)
+			departments.POST("/:id/restore", organizationPermissions[systemauthorization.PermissionIamDepartmentRestore], runtime.OrganizationHandler.RestoreDepartment)
+			departments.GET("/:id/memberships", organizationPermissions[systemauthorization.PermissionIamDepartmentMembershipRead], runtime.OrganizationHandler.ListDepartmentMemberships)
+			departments.POST("/:id/memberships", organizationPermissions[systemauthorization.PermissionIamDepartmentMembershipCreate], runtime.OrganizationHandler.CreateDepartmentMembership)
+			departments.PUT("/:id/memberships/:membership_id", organizationPermissions[systemauthorization.PermissionIamDepartmentMembershipUpdate], runtime.OrganizationHandler.UpdateDepartmentMembership)
+			departments.POST("/:id/memberships/:membership_id/close", organizationPermissions[systemauthorization.PermissionIamDepartmentMembershipClose], runtime.OrganizationHandler.CloseDepartmentMembership)
+		}
+		projectGroups := tenant.Group("/project_groups")
+		{
+			projectGroups.GET("", organizationPermissions[systemauthorization.PermissionIamProjectGroupRead], runtime.OrganizationHandler.ListProjectGroups)
+			projectGroups.POST("", organizationPermissions[systemauthorization.PermissionIamProjectGroupCreate], runtime.OrganizationHandler.CreateProjectGroup)
+			projectGroups.GET("/:id", organizationPermissions[systemauthorization.PermissionIamProjectGroupRead], runtime.OrganizationHandler.GetProjectGroup)
+			projectGroups.PUT("/:id", organizationPermissions[systemauthorization.PermissionIamProjectGroupUpdate], runtime.OrganizationHandler.UpdateProjectGroup)
+			projectGroups.POST("/:id/close", organizationPermissions[systemauthorization.PermissionIamProjectGroupClose], runtime.OrganizationHandler.CloseProjectGroup)
+			projectGroups.GET("/:id/memberships", organizationPermissions[systemauthorization.PermissionIamProjectGroupMembershipRead], runtime.OrganizationHandler.ListProjectGroupMemberships)
+			projectGroups.POST("/:id/memberships", organizationPermissions[systemauthorization.PermissionIamProjectGroupMembershipCreate], runtime.OrganizationHandler.CreateProjectGroupMembership)
+			projectGroups.PUT("/:id/memberships/:membership_id", organizationPermissions[systemauthorization.PermissionIamProjectGroupMembershipUpdate], runtime.OrganizationHandler.UpdateProjectGroupMembership)
+			projectGroups.POST("/:id/memberships/:membership_id/close", organizationPermissions[systemauthorization.PermissionIamProjectGroupMembershipClose], runtime.OrganizationHandler.CloseProjectGroupMembership)
+		}
 		tenant.GET("/role_permissions", tenantRolePermissions["iam.tenant_role.read"], runtime.TenantRoleHandler.ListAssignablePermissions)
 		roles := tenant.Group("/roles")
 		{

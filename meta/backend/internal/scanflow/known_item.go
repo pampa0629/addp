@@ -77,15 +77,15 @@ func KnownItemObjectPath(descriptor dataitem.ItemDescriptor, physicalPath string
 	return objectPath
 }
 
-func KnownItemCatalogPathResolver(engineID uint, provider plugin.EnginePlugin, descriptor dataitem.ItemDescriptor) func(string) plugin.CatalogPath {
+func KnownItemCatalogPathResolver(engineID uint, provider plugin.EnginePlugin, descriptor dataitem.ItemDescriptor) func(string) plugin.EngineCatalogPath {
 	bucket := descriptor.StorageBucket
 	itemTerm := knownItemCatalogModelItemTerm(provider)
-	return func(rawPath string) plugin.CatalogPath {
+	return func(rawPath string) plugin.EngineCatalogPath {
 		pathValue := strings.Trim(rawPath, "/")
 		if bucket != "" {
 			return plugin.ObjectItemPathFromBucketRef(engineID, bucket, pathValue)
 		}
-		if b, objectPath, err := plugin.SplitObjectRefPath(pathValue); err == nil && itemTerm == plugin.CatalogTermObject {
+		if b, objectPath, err := plugin.SplitObjectRefPath(pathValue); err == nil && itemTerm == plugin.EngineCatalogTermObject {
 			return plugin.ObjectItemPath(engineID, b, objectPath)
 		}
 		return plugin.FileItemPath(engineID, pathValue)
@@ -103,11 +103,11 @@ func KnownItemSize(descriptor dataitem.ItemDescriptor, item *models.MetaItem) in
 }
 
 func knownItemCatalogModelItemTerm(provider plugin.EnginePlugin) string {
-	modelProvider, ok := provider.(plugin.CatalogModelProvider)
+	modelProvider, ok := provider.(plugin.EngineCatalogModelProvider)
 	if !ok {
 		return ""
 	}
-	return plugin.CatalogLeafTerm(modelProvider.CatalogModel())
+	return plugin.EngineCatalogLeafTerm(modelProvider.EngineCatalogModel())
 }
 
 func knownItemPathFromStorage(descriptor dataitem.ItemDescriptor) string {

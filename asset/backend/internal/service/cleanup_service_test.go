@@ -6,6 +6,7 @@ import (
 
 	"github.com/addp/asset/internal/models"
 	"github.com/addp/common/events"
+	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -25,10 +26,8 @@ func setupAssetCleanupTestDB(t *testing.T) *gorm.DB {
 			tenant_id INTEGER NOT NULL,
 			name TEXT NOT NULL,
 			code TEXT NOT NULL,
-			source_module TEXT,
 			auth_handler TEXT,
 			entry_type TEXT,
-			discovery_path TEXT,
 			icon_url TEXT,
 			description TEXT,
 			enabled BOOLEAN DEFAULT TRUE,
@@ -67,13 +66,20 @@ func setupAssetCleanupTestDB(t *testing.T) *gorm.DB {
 			tags TEXT,
 			status TEXT NOT NULL DEFAULT 'draft',
 			owner_id INTEGER NOT NULL,
-			source_module TEXT,
-			source_reference TEXT,
-			fingerprint TEXT,
-			source_available BOOLEAN NOT NULL DEFAULT TRUE,
+			version INTEGER NOT NULL DEFAULT 1,
 			published_at DATETIME,
 			created_by INTEGER NOT NULL,
 			updated_by INTEGER,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE asset.asset_components (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			tenant_id INTEGER NOT NULL,
+			asset_id INTEGER NOT NULL,
+			catalog_entry_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			sort_order INTEGER NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -165,8 +171,8 @@ func TestAssetCleanupTenantDeletedLogicalOfflinesAssetsAndRevokesAuthorizations(
 	if err := db.First(&asset, assetID).Error; err != nil {
 		t.Fatalf("load asset: %v", err)
 	}
-	if asset.Status != "offline" || asset.SourceAvailable {
-		t.Fatalf("expected asset offline and source unavailable, got status=%s source_available=%v", asset.Status, asset.SourceAvailable)
+	if asset.Status != "offline" {
+		t.Fatalf("expected asset offline, got status=%s", asset.Status)
 	}
 	var auth models.Authorization
 	if err := db.First(&auth, authID).Error; err != nil {
@@ -188,7 +194,7 @@ func TestAssetCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 		t.Fatalf("ScanReclaimCandidates: %v", err)
 	}
 	if stats.TypeDefinitions != 1 || stats.TypeFieldSchemas != 1 || stats.Catalogs != 1 || stats.Assets != 1 ||
-		stats.AssetExtFields != 1 || stats.Applications != 1 || stats.Authorizations != 1 || stats.Ratings != 1 {
+		stats.AssetComponents != 1 || stats.AssetExtFields != 1 || stats.Applications != 1 || stats.Authorizations != 1 || stats.Ratings != 1 {
 		t.Fatalf("unexpected tenant scan stats: %+v", stats)
 	}
 
@@ -196,8 +202,8 @@ func TestAssetCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteCleanup: %v", err)
 	}
-	if stats.DeletedRecords != 8 {
-		t.Fatalf("expected 8 deleted records, got %+v", stats)
+	if stats.DeletedRecords != 9 {
+		t.Fatalf("expected 9 deleted records, got %+v", stats)
 	}
 	assertAssetCleanupCount(t, db, 1, 0)
 	assertAssetCleanupCount(t, db, 2, 1)
@@ -218,19 +224,24 @@ func seedAssetCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64) (int
 		t.Fatalf("create catalog: %v", err)
 	}
 	asset := models.Asset{
-		TenantID:        tenantID,
-		Name:            "Asset",
-		TypeID:          typeDef.ID,
-		CatalogID:       &catalog.ID,
-		Status:          "published",
-		OwnerID:         1,
-		SourceModule:    "meta",
-		SourceReference: "item-1",
-		SourceAvailable: true,
-		CreatedBy:       1,
+		TenantID:  tenantID,
+		Name:      "Asset",
+		TypeID:    typeDef.ID,
+		CatalogID: &catalog.ID,
+		Status:    "published",
+		OwnerID:   1,
+		Version:   1,
+		CreatedBy: 1,
 	}
 	if err := db.Create(&asset).Error; err != nil {
 		t.Fatalf("create asset: %v", err)
+	}
+	component := models.AssetComponent{
+		TenantID: tenantID, AssetID: asset.ID, CatalogEntryID: uuid.New(),
+		Role: models.AssetComponentRolePrimary, SortOrder: 0,
+	}
+	if err := db.Create(&component).Error; err != nil {
+		t.Fatalf("create asset component: %v", err)
 	}
 	ext := models.AssetExtField{AssetID: asset.ID, FieldKey: "path", Value: models.JSONBMap{"value": "table"}}
 	if err := db.Create(&ext).Error; err != nil {

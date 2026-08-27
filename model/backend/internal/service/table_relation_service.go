@@ -11,8 +11,15 @@ import (
 )
 
 type TableRelationService struct {
-	repo      *repository.TableRelationRepository
-	tableRepo *repository.LogicalTableRepository
+	repo           *repository.TableRelationRepository
+	tableRepo      *repository.LogicalTableRepository
+	entityRepo     *repository.EntityRepository
+	factMetricRepo *repository.FactMetricRepository
+}
+
+func (s *TableRelationService) SetProfessionalRelationSources(entityRepo *repository.EntityRepository, factMetricRepo *repository.FactMetricRepository) {
+	s.entityRepo = entityRepo
+	s.factMetricRepo = factMetricRepo
 }
 
 func lockLogicalTables(tx *gorm.DB, tenantID int64, ids ...int64) (map[int64]*models.LogicalTable, error) {

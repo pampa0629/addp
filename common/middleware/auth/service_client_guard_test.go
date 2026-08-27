@@ -53,3 +53,26 @@ func TestNewServiceClientGuardRejectsEmptyClientID(t *testing.T) {
 		t.Fatal("NewServiceClientGuard() error = nil")
 	}
 }
+
+func TestServiceClientGuardAcceptsExactAllowlistMember(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, clientID := range []string{"addp-transfer", "addp-develop"} {
+		router := gin.New()
+		router.Use(func(c *gin.Context) {
+			value := clientID
+			c.Set(canonicalAuthContextKey, commonauth.AuthContext{
+				Principal: commonauth.AuthPrincipal{Type: "service_principal", ID: "9"},
+				Client:    commonauth.ClientConstraints{ClientID: &value},
+			})
+			c.Next()
+		})
+		router.GET("/resource", MustNewServiceClientGuard("addp-transfer", "addp-develop"), func(c *gin.Context) {
+			c.Status(http.StatusNoContent)
+		})
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/resource", nil))
+		if response.Code != http.StatusNoContent {
+			t.Fatalf("client %s status=%d, want=%d", clientID, response.Code, http.StatusNoContent)
+		}
+	}
+}

@@ -87,7 +87,7 @@ func TestIntegrationTransferOracleSpatialToFileGDBRoundTrip(t *testing.T) {
 		t.Fatalf("bind FileGDB target writer: %v", err)
 	}
 
-	facts, err := target.oraclePlugin.DescribeCatalogFacts(ctx, target.oracleConn, target.path, plugin.CatalogFactsOptions{IncludeSpatialFacts: true})
+	facts, err := target.oraclePlugin.DescribeEngineCatalogFacts(ctx, target.oracleConn, target.path, plugin.EngineCatalogFactsOptions{IncludeSpatialFacts: true})
 	if err != nil {
 		t.Fatalf("describe Oracle round-trip source: %v", err)
 	}
@@ -187,7 +187,7 @@ type pgeoOracleTarget struct {
 	oracleConn   plugin.ConnectionInfo
 	schema       string
 	table        string
-	path         plugin.CatalogPath
+	path         plugin.EngineCatalogPath
 }
 
 func runPGeoOracleCase(t *testing.T, fixture, child, geometryColumn string, expectedRows, expectedNonNull int, expectedGeometry string, expectedSRID int) {
@@ -273,7 +273,7 @@ func executePGeoToOracle(t *testing.T, ctx context.Context, fixture, child, geom
 	}
 	targetSchema := pgeoIntegrationEnv("ADDP_TEST_ORACLE_SCHEMA", "BUSINESS")
 	targetTable := "ADDP_PGEO_" + strings.ToUpper(uuid.NewString()[:8])
-	targetPath := plugin.TabularItemPath(22, plugin.CatalogTermSchema, targetSchema, targetTable)
+	targetPath := plugin.TabularItemPath(22, plugin.EngineCatalogTermSchema, targetSchema, targetTable)
 	parseOptions := format.DefaultParseOptions()
 	parseOptions.GeometryEncoding = format.GeometryEncodingEWKB
 	parseOptions.ExtraParams = map[string]interface{}{format.ChildNameParam: child}

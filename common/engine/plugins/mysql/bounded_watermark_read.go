@@ -28,7 +28,7 @@ type mysqlBoundedWatermarkSession struct {
 func (p *MySQLPlugin) OpenBoundedWatermarkRead(
 	ctx context.Context,
 	connInfo plugin.ConnectionInfo,
-	path plugin.CatalogPath,
+	path plugin.EngineCatalogPath,
 	opts plugin.BoundedWatermarkReadOptions,
 ) (plugin.BoundedWatermarkReadSession, error) {
 	database, table, err := mysqlTablePathParts(path)

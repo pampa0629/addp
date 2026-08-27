@@ -1,7 +1,15 @@
 schema_version: addp.permission_manifest/v1
 owner_module: standard
-manifest_version: 3
+manifest_version: 4
 permissions:
+  - key: standard.catalog.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.standard.catalog.read.name
+    description_i18n_key: permissions.standard.catalog.read.description
   - key: standard.classification.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium

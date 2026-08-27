@@ -10,32 +10,32 @@ import (
 )
 
 const (
-	CatalogTermSchema   = "schema"
-	CatalogTermDatabase = "database"
-	CatalogTermTable    = "table"
+	EngineCatalogTermSchema   = "schema"
+	EngineCatalogTermDatabase = "database"
+	EngineCatalogTermTable    = "table"
 
-	CatalogKindNamespace = "namespace"
-	CatalogKindTable     = "table"
+	EngineCatalogKindNamespace = "namespace"
+	EngineCatalogKindTable     = "table"
 )
 
 // TabularCatalogModel describes a tabular engine hierarchy.
-func TabularCatalogModel(namespaceTerm string) CatalogModelSpec {
+func TabularCatalogModel(namespaceTerm string) EngineCatalogModelSpec {
 	if namespaceTerm == "" {
-		namespaceTerm = CatalogTermDatabase
+		namespaceTerm = EngineCatalogTermDatabase
 	}
-	return CatalogModelSpec{
-		PathVersion: CatalogPathVersion,
-		RootTerm:    CatalogTermServer,
-		Levels: []CatalogLevelSpec{
-			{Term: namespaceTerm, Kinds: []string{CatalogKindNamespace}, Role: CatalogRoleBranch, I18nKey: CatalogTermI18nKey(namespaceTerm)},
-			{Term: CatalogTermTable, Kinds: []string{CatalogKindTable, "view", "materialized_view", "external_table"}, Role: CatalogRoleLeaf, I18nKey: CatalogTermI18nKey(CatalogTermTable)},
+	return EngineCatalogModelSpec{
+		PathVersion: EngineCatalogPathVersion,
+		RootTerm:    EngineCatalogTermServer,
+		Levels: []EngineCatalogLevelSpec{
+			{Term: namespaceTerm, Kinds: []string{EngineCatalogKindNamespace}, Role: EngineCatalogRoleBranch, I18nKey: EngineCatalogTermI18nKey(namespaceTerm)},
+			{Term: EngineCatalogTermTable, Kinds: []string{EngineCatalogKindTable, "view", "materialized_view", "external_table"}, Role: EngineCatalogRoleLeaf, I18nKey: EngineCatalogTermI18nKey(EngineCatalogTermTable)},
 		},
 	}
 }
 
 type TabularCatalogCallbacks struct {
 	NamespaceTerm         string
-	ListNamespaces        func(ctx context.Context, db *gorm.DB, root CatalogPath) ([]CatalogEntry, error)
+	ListNamespaces        func(ctx context.Context, db *gorm.DB, root EngineCatalogPath) ([]EngineCatalogEntry, error)
 	ListTables            func(ctx context.Context, db *gorm.DB, namespace string) ([]datatype.TableInfo, error)
 	ListColumns           func(ctx context.Context, db *gorm.DB, namespace, table string) ([]datatype.FieldInfo, error)
 	ListIndexes           func(ctx context.Context, db *gorm.DB, namespace, table string) ([]IndexFacts, error)
@@ -46,26 +46,26 @@ type TabularCatalogCallbacks struct {
 	IsSystemNamespaceFunc func(namespace string) bool
 }
 
-// ListTabularCatalogChildren maps tabular callbacks to CatalogProvider.
-func ListTabularCatalogChildren(ctx context.Context, callbacks TabularCatalogCallbacks, engine *Engine, parent CatalogPath, opts ListOptions) ([]CatalogEntry, error) {
+// ListTabularCatalogChildren maps tabular callbacks to EngineCatalogProvider.
+func ListTabularCatalogChildren(ctx context.Context, callbacks TabularCatalogCallbacks, engine *Engine, parent EngineCatalogPath, opts ListOptions) ([]EngineCatalogEntry, error) {
 	if err := callbacks.validate(); err != nil {
 		return nil, err
 	}
 	namespaceTerm := callbacks.namespaceTerm()
 	model := TabularCatalogModel(namespaceTerm)
-	if IsCatalogRootPath(parent) {
+	if IsEngineCatalogRootPath(parent) {
 		if err := requireCatalogRootPath(parent, model); err != nil {
 			return nil, err
 		}
 		db, err := GetOrCreatePoolFromFactory(engine, DefaultPoolConfig())
 		if err != nil {
-			return nil, WrapCatalogError(CatalogErrorUnavailable, fmt.Errorf("create catalog connection pool: %w", err))
+			return nil, WrapEngineCatalogError(EngineCatalogErrorUnavailable, fmt.Errorf("create catalog connection pool: %w", err))
 		}
 		namespaces, err := callbacks.ListNamespaces(ctx, db, parent)
 		if err != nil {
 			return nil, err
 		}
-		nodes := make([]CatalogEntry, 0, len(namespaces))
+		nodes := make([]EngineCatalogEntry, 0, len(namespaces))
 		for _, namespace := range namespaces {
 			if callbacks.isSystemNamespace(namespace.Name) {
 				continue
@@ -82,21 +82,21 @@ func ListTabularCatalogChildren(ctx context.Context, callbacks TabularCatalogCal
 	namespace := segments[0].Name
 	db, err := GetOrCreatePoolFromFactory(engine, DefaultPoolConfig())
 	if err != nil {
-		return nil, WrapCatalogError(CatalogErrorUnavailable, fmt.Errorf("create catalog connection pool: %w", err))
+		return nil, WrapEngineCatalogError(EngineCatalogErrorUnavailable, fmt.Errorf("create catalog connection pool: %w", err))
 	}
 	tables, err := callbacks.ListTables(ctx, db, namespace)
 	if err != nil {
 		return nil, err
 	}
-	nodes := make([]CatalogEntry, 0, len(tables))
+	nodes := make([]EngineCatalogEntry, 0, len(tables))
 	for _, table := range tables {
-		tableInfo := CatalogEntryTableSummary(&table)
-		nodes = append(nodes, CatalogEntry{
+		tableInfo := EngineCatalogEntryTableSummary(&table)
+		nodes = append(nodes, EngineCatalogEntry{
 			Name:      table.Name,
-			Path:      appendCatalogSegment(parent, engine.ID, CatalogTermTable, CatalogKindTable, table.Name),
-			Term:      CatalogTermTable,
+			Path:      appendCatalogSegment(parent, engine.ID, EngineCatalogTermTable, EngineCatalogKindTable, table.Name),
+			Term:      EngineCatalogTermTable,
 			Kind:      tableCatalogKind(table),
-			Role:      CatalogRoleLeaf,
+			Role:      EngineCatalogRoleLeaf,
 			Table:     tableInfo,
 			UpdatedAt: table.UpdatedAt,
 		})
@@ -105,17 +105,17 @@ func ListTabularCatalogChildren(ctx context.Context, callbacks TabularCatalogCal
 }
 
 // ResolveTabularCatalogPath resolves a namespace or table node.
-func ResolveTabularCatalogPath(ctx context.Context, callbacks TabularCatalogCallbacks, engine *Engine, path CatalogPath) (*CatalogEntry, error) {
+func ResolveTabularCatalogPath(ctx context.Context, callbacks TabularCatalogCallbacks, engine *Engine, path EngineCatalogPath) (*EngineCatalogEntry, error) {
 	if err := callbacks.validate(); err != nil {
 		return nil, err
 	}
 	namespaceTerm := callbacks.namespaceTerm()
 	model := TabularCatalogModel(namespaceTerm)
-	if IsCatalogRootPath(path) {
+	if IsEngineCatalogRootPath(path) {
 		if err := requireCatalogRootPath(path, model); err != nil {
 			return nil, err
 		}
-		return &CatalogEntry{Name: "", Path: path, Term: model.RootTerm, Kind: model.RootTerm, Role: CatalogRoleBranch}, nil
+		return &EngineCatalogEntry{Name: "", Path: path, Term: model.RootTerm, Kind: model.RootTerm, Role: EngineCatalogRoleBranch}, nil
 	}
 
 	segments, err := requireCatalogBusinessPath(path, model)
@@ -124,28 +124,28 @@ func ResolveTabularCatalogPath(ctx context.Context, callbacks TabularCatalogCall
 	}
 	last := segments[len(segments)-1]
 	if len(segments) == 1 {
-		return &CatalogEntry{
+		return &EngineCatalogEntry{
 			Name: last.Name,
 			Path: path,
 			Term: namespaceTerm,
-			Kind: CatalogKindNamespace,
-			Role: CatalogRoleBranch,
+			Kind: EngineCatalogKindNamespace,
+			Role: EngineCatalogRoleBranch,
 		}, nil
 	}
 
-	facts, err := DescribeTabularCatalogFacts(ctx, callbacks, engine, path, CatalogFactsOptions{})
+	facts, err := DescribeTabularCatalogFacts(ctx, callbacks, engine, path, EngineCatalogFactsOptions{})
 	if err != nil {
 		return nil, err
 	}
 	kind := facts.Kind
 	if kind == "" {
-		kind = CatalogKindTable
+		kind = EngineCatalogKindTable
 	}
 	return tabularCatalogEntryFromFacts(path, last.Name, kind, facts), nil
 }
 
-// DescribeTabularCatalogFacts maps tabular column callbacks and table stats to CatalogFactsProvider.
-func DescribeTabularCatalogFacts(ctx context.Context, callbacks TabularCatalogCallbacks, engine *Engine, path CatalogPath, opts CatalogFactsOptions) (*CatalogFacts, error) {
+// DescribeTabularCatalogFacts maps tabular column callbacks and table stats to EngineCatalogFactsProvider.
+func DescribeTabularCatalogFacts(ctx context.Context, callbacks TabularCatalogCallbacks, engine *Engine, path EngineCatalogPath, opts EngineCatalogFactsOptions) (*EngineCatalogFacts, error) {
 	if err := callbacks.validate(); err != nil {
 		return nil, err
 	}
@@ -172,7 +172,7 @@ func DescribeTabularCatalogFacts(ctx context.Context, callbacks TabularCatalogCa
 	fields := NormalizeFieldInfos(columns)
 
 	tableInfo, hasTableInfo := findTableInfo(ctx, callbacks, db, namespace, table)
-	kind := CatalogKindTable
+	kind := EngineCatalogKindTable
 	var updatedAt *time.Time
 	if hasTableInfo {
 		kind = tableCatalogKind(tableInfo)
@@ -226,34 +226,34 @@ func primaryKeyFields(fields []datatype.FieldInfo) []string {
 	return keys
 }
 
-func tabularCatalogEntryFromFacts(path CatalogPath, name, kind string, facts *CatalogFacts) *CatalogEntry {
+func tabularCatalogEntryFromFacts(path EngineCatalogPath, name, kind string, facts *EngineCatalogFacts) *EngineCatalogEntry {
 	if kind == "" {
-		kind = CatalogKindTable
+		kind = EngineCatalogKindTable
 	}
 	if facts == nil {
-		return &CatalogEntry{
+		return &EngineCatalogEntry{
 			Name: name,
 			Path: path,
-			Term: CatalogTermTable,
+			Term: EngineCatalogTermTable,
 			Kind: kind,
-			Role: CatalogRoleLeaf,
+			Role: EngineCatalogRoleLeaf,
 		}
 	}
-	return &CatalogEntry{
+	return &EngineCatalogEntry{
 		Name:      name,
 		Path:      path,
-		Term:      CatalogTermTable,
+		Term:      EngineCatalogTermTable,
 		Kind:      kind,
-		Role:      CatalogRoleLeaf,
-		Table:     CatalogEntryTableInfo(facts),
+		Role:      EngineCatalogRoleLeaf,
+		Table:     EngineCatalogEntryTableInfo(facts),
 		UpdatedAt: facts.UpdatedAt,
 	}
 }
 
-func buildTabularCatalogFacts(path CatalogPath, namespace, table string, fields []datatype.FieldInfo, tableInfo datatype.TableInfo, hasTableInfo bool, kind string, updatedAt *time.Time, spatialInfo *datatype.SpatialInfo) *CatalogFacts {
+func buildTabularCatalogFacts(path EngineCatalogPath, namespace, table string, fields []datatype.FieldInfo, tableInfo datatype.TableInfo, hasTableInfo bool, kind string, updatedAt *time.Time, spatialInfo *datatype.SpatialInfo) *EngineCatalogFacts {
 	fields = NormalizeFieldInfos(fields)
 	if kind == "" {
-		kind = CatalogKindTable
+		kind = EngineCatalogKindTable
 	}
 	if hasTableInfo {
 		if tableInfo.Kind != "" {
@@ -276,7 +276,7 @@ func buildTabularCatalogFacts(path CatalogPath, namespace, table string, fields 
 		tableInfo.Native["namespace"] = namespace
 	}
 
-	return &CatalogFacts{
+	return &EngineCatalogFacts{
 		Path:      path,
 		Kind:      kind,
 		Table:     tableInfo.Clone(),
@@ -285,16 +285,16 @@ func buildTabularCatalogFacts(path CatalogPath, namespace, table string, fields 
 	}
 }
 
-func TabularNamespaceCatalogEntry(root CatalogPath, namespaceTerm, name string, leafCount int) CatalogEntry {
+func TabularNamespaceCatalogEntry(root EngineCatalogPath, namespaceTerm, name string, leafCount int) EngineCatalogEntry {
 	if namespaceTerm == "" {
-		namespaceTerm = CatalogTermDatabase
+		namespaceTerm = EngineCatalogTermDatabase
 	}
-	return CatalogEntry{
+	return EngineCatalogEntry{
 		Name:      name,
-		Path:      appendCatalogSegment(root, root.EngineID, namespaceTerm, CatalogKindNamespace, name),
+		Path:      appendCatalogSegment(root, root.EngineID, namespaceTerm, EngineCatalogKindNamespace, name),
 		Term:      namespaceTerm,
-		Kind:      CatalogKindNamespace,
-		Role:      CatalogRoleBranch,
+		Kind:      EngineCatalogKindNamespace,
+		Role:      EngineCatalogRoleBranch,
 		LeafCount: &leafCount,
 	}
 }
@@ -318,7 +318,7 @@ func findTableInfo(ctx context.Context, callbacks TabularCatalogCallbacks, db *g
 func tableCatalogKind(table datatype.TableInfo) string {
 	kind := table.Kind
 	if kind == "" {
-		kind = CatalogKindTable
+		kind = EngineCatalogKindTable
 	}
 	return kind
 }
@@ -334,7 +334,7 @@ func (a TabularCatalogCallbacks) namespaceTerm() string {
 	if a.NamespaceTerm != "" {
 		return a.NamespaceTerm
 	}
-	return CatalogTermDatabase
+	return EngineCatalogTermDatabase
 }
 
 func (a TabularCatalogCallbacks) isSystemNamespace(namespace string) bool {

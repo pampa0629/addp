@@ -56,9 +56,6 @@
           <el-descriptions-item :label="t('portal.assetDetail.assetType')">
             {{ getTypeName(asset.type_code, asset.type_name) }}
           </el-descriptions-item>
-          <el-descriptions-item :label="t('portal.assetDetail.sourceModule')">
-            {{ sourceModuleName(asset.source_module) }}
-          </el-descriptions-item>
           <el-descriptions-item :label="t('portal.assetDetail.catalog')">
             {{ asset.catalog_name || t('portal.assetDetail.uncategorized') }}
           </el-descriptions-item>
@@ -88,31 +85,6 @@
             {{ formatExtValue(value) }}
           </el-descriptions-item>
         </el-descriptions>
-      </el-card>
-
-      <!-- 服务地址（已授权时展示） -->
-      <el-card class="detail-section" shadow="never" v-if="applyStatus === 'approved'" v-loading="endpointsLoading">
-        <template #header>
-          <span class="section-title">{{ t('portal.assetDetail.serviceAddress') }}</span>
-        </template>
-        <template v-if="serviceEndpoints">
-          <div
-            v-for="(url, protocol) in serviceEndpoints.endpoints"
-            :key="protocol"
-            class="endpoint-item"
-          >
-            <div class="endpoint-label">{{ protocolLabel(protocol) }}</div>
-            <div class="endpoint-url-row">
-              <el-input :value="url" readonly class="endpoint-url-input" />
-              <el-button size="small" @click="copyUrl(url)">{{ t('portal.common.copied') }}</el-button>
-            </div>
-          </div>
-          <el-empty
-            v-if="!serviceEndpoints.endpoints || Object.keys(serviceEndpoints.endpoints).length === 0"
-            :description="t('portal.assetDetail.noEndpoints')"
-            :image-size="60"
-          />
-        </template>
       </el-card>
 
       <!-- 评价区 -->
@@ -253,9 +225,6 @@ const applyRules = computed(() => ({
   duration_day: [{ required: true, message: t('portal.assetDetail.durationRequired'), trigger: 'change' }]
 }))
 
-const endpointsLoading = ref(false)
-const serviceEndpoints = ref(null)
-
 const ratingsLoading = ref(false)
 const ratings = ref([])
 const myRating = ref(null)
@@ -268,58 +237,10 @@ const hasExtFields = computed(() => {
   return asset.value?.ext_fields && Object.keys(asset.value.ext_fields).length > 0
 })
 
-const moduleNameMap = computed(() => ({
-  meta: t('portal.assetDetail.moduleMeta'),
-  service: t('portal.assetDetail.moduleService'),
-  standard: t('portal.assetDetail.moduleStandard'),
-  develop: t('portal.assetDetail.moduleDevelop'),
-  manager: t('portal.assetDetail.moduleManager'),
-}))
-
-const protocolLabelMap = {
-  rest_api: 'REST API',
-  wfs: 'WFS',
-  ogc_features: 'OGC API Features',
-  xyz: 'XYZ',
-  wmts: 'WMTS',
-  ogc_tiles: 'OGC Tiles'
-}
-
-function sourceModuleName(code) {
-  return moduleNameMap.value[code] || code || '-'
-}
-
-function protocolLabel(key) {
-  if (key === 'proxy') return t('portal.assetDetail.protocolProxy')
-  if (key === 'original') return t('portal.assetDetail.protocolOriginal')
-  if (key === 'xyz') return t('portal.assetDetail.protocolXyz')
-  return protocolLabelMap[key] || key
-}
-
 function formatExtValue(value) {
   if (value === null || value === undefined) return '-'
   if (typeof value === 'object') return JSON.stringify(value)
   return String(value)
-}
-
-async function copyUrl(url) {
-  try {
-    await navigator.clipboard.writeText(url)
-    ElMessage.success(t('portal.common.copied'))
-  } catch {
-    ElMessage.error(t('portal.common.copyFailed'))
-  }
-}
-
-async function fetchEndpoints() {
-  endpointsLoading.value = true
-  try {
-    serviceEndpoints.value = await assetAPI.getEndpoints(route.params.id)
-  } catch {
-    serviceEndpoints.value = { endpoints: {} }
-  } finally {
-    endpointsLoading.value = false
-  }
 }
 
 async function fetchRatings() {
@@ -397,7 +318,6 @@ async function fetchApplyStatus() {
     const data = await assetAPI.getApplyStatus(route.params.id)
     applyStatus.value = data.status || 'none'
     if (applyStatus.value === 'approved') {
-      fetchEndpoints()
     }
   } catch {
     applyStatus.value = 'none'
@@ -426,7 +346,6 @@ async function submitApply() {
 watch(() => route.params.id, async () => {
   asset.value = null
   applyStatus.value = 'none'
-  serviceEndpoints.value = null
   ratings.value = []
   myRating.value = null
   ratingStats.value = { avg_score: 0, count: 0 }
@@ -539,35 +458,6 @@ watch(() => route.params.id, async () => {
   line-height: 1.7;
   margin: 0;
   white-space: pre-wrap;
-}
-
-.endpoint-item {
-  margin-bottom: 16px;
-}
-
-.endpoint-item:last-child {
-  margin-bottom: 0;
-}
-
-.endpoint-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--el-text-color-regular);
-  margin-bottom: 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.endpoint-url-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.endpoint-url-input {
-  flex: 1;
-  font-family: monospace;
-  font-size: 13px;
 }
 
 .rating-list {

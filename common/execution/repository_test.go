@@ -204,7 +204,6 @@ func newTaskExecutionRepositoryTestDB(t *testing.T) *gorm.DB {
 		actor_tenant_membership_id INTEGER,
 		issued_authorization_version INTEGER,
 		execution_authorization_id INTEGER,
-		authorization_effects TEXT,
 		authorization_expires_at DATETIME,
 		execution_config JSON,
 		error_details JSON,

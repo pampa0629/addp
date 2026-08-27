@@ -8,29 +8,20 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
-	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/metatext"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanresource"
 )
-
-func itemFingerprintForExtraction(engineID uint, catalogResource metacatalog.StorageResource) string {
-	fullName := catalogResource.FullPath
-	if fullName == "" {
-		fullName = commonModels.JoinObjectPath(catalogResource.RootName, "", catalogResource.Path)
-	}
-	return commonModels.GenerateItemFingerprint(engineID, fullName)
-}
 
 func extractCatalogDocumentText(
 	ctx context.Context,
 	attrs models.JSONMap,
 	readableProvider plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
-	engineID uint,
-	catalogResource metacatalog.StorageResource,
+	_ uint,
+	catalogResource scanresource.StorageResource,
 	item *metaitem.DetectedItem,
 ) documentExtractionResult {
 	result := documentExtractionResult{}
@@ -64,7 +55,7 @@ func extractCatalogDocumentText(
 		result.Counts.Unsupported = 1
 		return result
 	}
-	rc, err := readableProvider.OpenContent(ctx, connInfo, catalogResource.CatalogPath, plugin.ReadOptions{})
+	rc, err := readableProvider.OpenContent(ctx, connInfo, catalogResource.EngineCatalogPath, plugin.ReadOptions{})
 	if err != nil {
 		metaattr.SetExtraction(attrs, "text_extracted", false)
 		metaattr.SetExtraction(attrs, "extractor_available", true)
@@ -92,7 +83,6 @@ func extractCatalogDocumentText(
 	metaattr.SetExtraction(attrs, "extractor", "common_format:"+string(formatType))
 	metaattr.SetExtraction(attrs, "plain_text_preview", preview)
 	metaattr.SetExtraction(attrs, "text_truncated", truncated)
-	metaattr.SetExtraction(attrs, "index_ref", "meilisearch:assets:"+itemFingerprintForExtraction(engineID, catalogResource))
 	result.Text = text
 	result.Counts.Extracted = 1
 	return result

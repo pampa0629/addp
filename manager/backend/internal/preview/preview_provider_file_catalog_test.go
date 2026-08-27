@@ -707,7 +707,7 @@ type recordingFileCatalogPreviewPlugin struct {
 	engineType        string
 	listChildrenCalls int
 	openContentCalls  int
-	describedItemPath plugin.CatalogPath
+	describedItemPath plugin.EngineCatalogPath
 	contentType       string
 	sizeBytes         int64
 	expectedPath      string
@@ -732,14 +732,14 @@ func (p *recordingFileCatalogPreviewPlugin) Capabilities() plugin.EngineCapabili
 func (p *recordingFileCatalogPreviewPlugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (p *recordingFileCatalogPreviewPlugin) ListChildren(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+func (p *recordingFileCatalogPreviewPlugin) ListChildren(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
 	p.listChildrenCalls++
 	return nil, nil
 }
-func (p *recordingFileCatalogPreviewPlugin) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p *recordingFileCatalogPreviewPlugin) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	return nil, nil
 }
-func (p *recordingFileCatalogPreviewPlugin) DescribeCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *recordingFileCatalogPreviewPlugin) DescribeEngineCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	p.describedItemPath = path
 	now := time.Now()
 	sizeBytes := int64(1024)
@@ -754,10 +754,10 @@ func (p *recordingFileCatalogPreviewPlugin) DescribeCatalogFacts(_ context.Conte
 	if p.expectedPath != "" {
 		storagePath = p.expectedPath
 	}
-	return &plugin.CatalogFacts{
+	return &plugin.EngineCatalogFacts{
 		Path: path,
-		Kind: plugin.CatalogKindFile,
-		Storage: &plugin.CatalogStorageFacts{
+		Kind: plugin.EngineCatalogKindFile,
+		Storage: &plugin.EngineCatalogStorageFacts{
 			Path:        storagePath,
 			ContentType: contentType,
 			SizeBytes:   &sizeBytes,
@@ -765,7 +765,7 @@ func (p *recordingFileCatalogPreviewPlugin) DescribeCatalogFacts(_ context.Conte
 		UpdatedAt: &now,
 	}, nil
 }
-func (p *recordingFileCatalogPreviewPlugin) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
+func (p *recordingFileCatalogPreviewPlugin) OpenContent(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
 	p.openContentCalls++
 	if len(p.content) > 0 {
 		return io.NopCloser(strings.NewReader(string(p.content))), nil

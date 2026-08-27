@@ -19,18 +19,18 @@ func TestIntegrationSampleDynamicSchemaPersistsPersonsNestedFacts(t *testing.T) 
 	provider := &MongoDBPlugin{}
 	facts, err := provider.SampleDynamicSchema(t.Context(), plugin.ConnectionInfo{
 		"host": "localhost", "port": 27017, "user": "admin", "password": "admin_password", "auth_source": "admin",
-	}, plugin.CatalogPath{
+	}, plugin.EngineCatalogPath{
 		Version:  "v1",
 		EngineID: 11,
-		Segments: []plugin.CatalogSegment{
-			{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: "Outdoor"},
-			{Term: plugin.CatalogTermCollection, Kind: plugin.CatalogKindCollection, Name: "Persons"},
+		Segments: []plugin.EngineCatalogSegment{
+			{Term: plugin.EngineCatalogTermDatabase, Kind: plugin.EngineCatalogKindNamespace, Name: "Outdoor"},
+			{Term: plugin.EngineCatalogTermCollection, Kind: plugin.EngineCatalogKindCollection, Name: "Persons"},
 		},
-	}, plugin.CatalogFactsOptions{IncludeStatistics: true, IncludeIndexes: true, SampleSize: 100})
+	}, plugin.EngineCatalogFactsOptions{IncludeStatistics: true, IncludeIndexes: true, SampleSize: 100})
 	if err != nil {
 		t.Fatalf("SampleDynamicSchema() error = %v", err)
 	}
-	table := plugin.CatalogFactsTableInfo(facts)
+	table := plugin.EngineCatalogFactsTableInfo(facts)
 	if table == nil {
 		t.Fatal("SampleDynamicSchema() returned no table facts")
 	}

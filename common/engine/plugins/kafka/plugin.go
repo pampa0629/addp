@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	CatalogTermTopic = "topic"
-	CatalogKindTopic = "topic"
+	EngineCatalogTermTopic = "topic"
+	EngineCatalogKindTopic = "topic"
 )
 
 type KafkaPlugin struct{}
@@ -67,13 +67,13 @@ func (p *KafkaPlugin) Capabilities() plugin.EngineCapabilities {
 		EngineType:    p.Type(),
 		EngineFamily:  "event_stream",
 		Storage: &plugin.StorageCapabilities{
-			CatalogModel: plugin.PtrCatalogModel(p.CatalogModel()),
-			Catalog: &plugin.CatalogCapability{
+			CatalogModel: plugin.PtrEngineCatalogModel(p.EngineCatalogModel()),
+			Catalog: &plugin.EngineCatalogCapability{
 				Supported: true,
 				RealTime:  true,
-				NodeKinds: []string{CatalogKindTopic},
+				NodeKinds: []string{EngineCatalogKindTopic},
 			},
-			Facts: &plugin.CatalogFactsCapability{Supported: true, NativeFacts: true},
+			Facts: &plugin.EngineCatalogFactsCapability{Supported: true, NativeFacts: true},
 			Store: &plugin.StoreCapability{
 				ChangeStreamRead: &plugin.ChangeStreamReadCapability{
 					Supported:     true,
@@ -91,12 +91,12 @@ func (p *KafkaPlugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
 
-func (p *KafkaPlugin) CatalogModel() plugin.CatalogModelSpec {
-	return plugin.CatalogModelSpec{
-		PathVersion: plugin.CatalogPathVersion,
-		RootTerm:    plugin.CatalogTermService,
-		Levels: []plugin.CatalogLevelSpec{
-			{Term: CatalogTermTopic, Kinds: []string{CatalogKindTopic}, Role: plugin.CatalogRoleLeaf, I18nKey: plugin.CatalogTermI18nKey(CatalogTermTopic)},
+func (p *KafkaPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
+	return plugin.EngineCatalogModelSpec{
+		PathVersion: plugin.EngineCatalogPathVersion,
+		RootTerm:    plugin.EngineCatalogTermService,
+		Levels: []plugin.EngineCatalogLevelSpec{
+			{Term: EngineCatalogTermTopic, Kinds: []string{EngineCatalogKindTopic}, Role: plugin.EngineCatalogRoleLeaf, I18nKey: plugin.EngineCatalogTermI18nKey(EngineCatalogTermTopic)},
 		},
 	}
 }

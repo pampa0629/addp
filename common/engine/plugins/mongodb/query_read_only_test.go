@@ -9,13 +9,13 @@ import (
 )
 
 func TestMongoCollectionFromCatalogPath(t *testing.T) {
-	database, collection, ok := mongoCollectionFromCatalogPath(plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
+	database, collection, ok := mongoCollectionFromCatalogPath(plugin.EngineCatalogPath{
+		Version:  plugin.EngineCatalogPathVersion,
 		EngineID: 9,
-		Segments: []plugin.CatalogSegment{
-			{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer},
-			{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: "business"},
-			{Term: plugin.CatalogTermCollection, Kind: plugin.CatalogKindCollection, Name: "orders"},
+		Segments: []plugin.EngineCatalogSegment{
+			{Term: plugin.EngineCatalogTermServer, Kind: plugin.EngineCatalogTermServer},
+			{Term: plugin.EngineCatalogTermDatabase, Kind: plugin.EngineCatalogKindNamespace, Name: "business"},
+			{Term: plugin.EngineCatalogTermCollection, Kind: plugin.EngineCatalogKindCollection, Name: "orders"},
 		},
 	})
 	if !ok || database != "business" || collection != "orders" {
@@ -24,12 +24,12 @@ func TestMongoCollectionFromCatalogPath(t *testing.T) {
 }
 
 func TestMongoDatabaseFromCatalogPathAllowsDatabaseSelection(t *testing.T) {
-	database, ok := mongoDatabaseFromCatalogPath(plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
+	database, ok := mongoDatabaseFromCatalogPath(plugin.EngineCatalogPath{
+		Version:  plugin.EngineCatalogPathVersion,
 		EngineID: 9,
-		Segments: []plugin.CatalogSegment{
-			{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer},
-			{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: "Outdoor"},
+		Segments: []plugin.EngineCatalogSegment{
+			{Term: plugin.EngineCatalogTermServer, Kind: plugin.EngineCatalogTermServer},
+			{Term: plugin.EngineCatalogTermDatabase, Kind: plugin.EngineCatalogKindNamespace, Name: "Outdoor"},
 		},
 	})
 	if !ok || database != "Outdoor" {
@@ -56,13 +56,13 @@ func TestMongoRegistrationSeparatesIdentityFromDefaultDatabase(t *testing.T) {
 
 func TestGenerateSampleQueryAllowsCatalogDatabaseDifferentFromDefault(t *testing.T) {
 	provider := &MongoDBPlugin{}
-	path := plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
+	path := plugin.EngineCatalogPath{
+		Version:  plugin.EngineCatalogPathVersion,
 		EngineID: 11,
-		Segments: []plugin.CatalogSegment{
-			{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer},
-			{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: "Outdoor"},
-			{Term: plugin.CatalogTermCollection, Kind: plugin.CatalogKindCollection, Name: "Persons"},
+		Segments: []plugin.EngineCatalogSegment{
+			{Term: plugin.EngineCatalogTermServer, Kind: plugin.EngineCatalogTermServer},
+			{Term: plugin.EngineCatalogTermDatabase, Kind: plugin.EngineCatalogKindNamespace, Name: "Outdoor"},
+			{Term: plugin.EngineCatalogTermCollection, Kind: plugin.EngineCatalogKindCollection, Name: "Persons"},
 		},
 	}
 	query, language := provider.GenerateSampleQuery(t.Context(), plugin.ConnectionInfo{"database": "business"}, plugin.SampleQueryOptions{Path: path})

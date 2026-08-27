@@ -222,9 +222,9 @@ type EngineCapabilities struct {
 }
 
 type StorageCapabilities struct {
-    CatalogModel *CatalogModelSpec   `json:"catalog_model,omitempty"`
-    Catalog      *CatalogCapability  `json:"catalog,omitempty"`
-    Facts        *CatalogFactsCapability `json:"facts,omitempty"`
+    CatalogModel *EngineCatalogModelSpec   `json:"catalog_model,omitempty"`
+    Catalog      *EngineCatalogCapability  `json:"catalog,omitempty"`
+    Facts        *EngineCatalogFactsCapability `json:"facts,omitempty"`
     Store        *StoreCapability    `json:"store,omitempty"`
     Semantics    []string            `json:"semantics,omitempty"`
     NotSupported []string            `json:"not_supported,omitempty"`

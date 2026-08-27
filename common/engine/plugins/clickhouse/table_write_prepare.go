@@ -11,7 +11,7 @@ import (
 	commonquery "github.com/addp/common/query"
 )
 
-func (p *ClickHousePlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteOptions) error {
+func (p *ClickHousePlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteOptions) error {
 	database, table, err := clickhouseTablePathParts(path)
 	if err != nil {
 		return err
@@ -29,7 +29,7 @@ func (p *ClickHousePlugin) PrepareTableWrite(ctx context.Context, connInfo plugi
 	return createClickHouseTableIfNotExists(ctx, db, database, table, opts.Fields)
 }
 
-func (p *ClickHousePlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) error {
+func (p *ClickHousePlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) error {
 	database, table, err := clickhouseTablePathParts(path)
 	if err != nil {
 		return err
@@ -298,7 +298,7 @@ func clickhouseNormalizeTypeName(nativeType string) string {
 	}
 }
 
-func clickhouseTablePathParts(path plugin.CatalogPath) (string, string, error) {
+func clickhouseTablePathParts(path plugin.EngineCatalogPath) (string, string, error) {
 	if len(path.Segments) < 2 {
 		return "", "", fmt.Errorf("clickhouse table write requires database/table catalog path")
 	}

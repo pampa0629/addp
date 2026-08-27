@@ -17,9 +17,9 @@ import (
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/resourcetree"
 	commonSpatial "github.com/addp/common/spatial"
-	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
+	"github.com/addp/manager/internal/resourceutil"
 )
 
 // FileTablePreviewProvider 通用文件表预览 Provider。
@@ -40,7 +40,7 @@ func (p *FileTablePreviewProvider) Name() string {
 	return "builtin:file-table"
 }
 
-func contentReaderContextForPreview(req *PreviewRequest) (plugin.ConnectionInfo, plugin.ContentReadableProvider, plugin.CatalogProvider, error) {
+func contentReaderContextForPreview(req *PreviewRequest) (plugin.ConnectionInfo, plugin.ContentReadableProvider, plugin.EngineCatalogProvider, error) {
 	if req == nil || req.Engine == nil {
 		return nil, nil, nil, fmt.Errorf("engine is required")
 	}
@@ -52,7 +52,7 @@ func contentReaderContextForPreview(req *PreviewRequest) (plugin.ConnectionInfo,
 	if !ok {
 		return nil, nil, nil, fmt.Errorf("engine %s does not implement ContentReadableProvider", req.Engine.EngineType)
 	}
-	catalogProvider, _ := pl.(plugin.CatalogProvider)
+	catalogProvider, _ := pl.(plugin.EngineCatalogProvider)
 	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
 	return connInfo, contentReader, catalogProvider, nil
 }
@@ -404,7 +404,7 @@ func (p *FileTablePreviewProvider) openIndexedRangeReader(
 	if !usableTableAccessIndex(index) {
 		return nil, nil, false
 	}
-	anchor, length := rangeForTableWindow(index, int64(offset), int64(pageSize), catalogutil.Int64Attribute(req.Attributes, "total_size"))
+	anchor, length := rangeForTableWindow(index, int64(offset), int64(pageSize), resourceutil.Int64Attribute(req.Attributes, "total_size"))
 	if length <= 0 {
 		return nil, nil, false
 	}

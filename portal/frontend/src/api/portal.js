@@ -21,7 +21,6 @@ export const assetAPI = {
   get: (id) => client.get(`/portal/assets/${id}`),
   apply: (id, data) => client.post(`/portal/assets/${id}/apply`, data),
   getApplyStatus: (id) => client.get(`/portal/assets/${id}/apply-status`),
-  getEndpoints: (id) => client.get(`/portal/assets/${id}/endpoints`),
   getRatings: (id) => client.get(`/portal/assets/${id}/ratings`),
   addRating: (id, data) => client.post(`/portal/assets/${id}/ratings`, data)
 }

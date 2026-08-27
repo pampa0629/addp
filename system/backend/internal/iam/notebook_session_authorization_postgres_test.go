@@ -91,8 +91,8 @@ func TestNotebookSessionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		ContextType: &tenantContext, TenantID: &tenant.ID,
 		RequestID: stringPointer("notebook-catalog-authorization-consume"),
 	}
-	serviceActor := func(authorizationID, sessionID uuid.UUID) AuthorizeNotebookCatalogInput {
-		return AuthorizeNotebookCatalogInput{
+	serviceActor := func(authorizationID, sessionID uuid.UUID) AuthorizeNotebookEngineCatalogInput {
+		return AuthorizeNotebookEngineCatalogInput{
 			AuthorizationID: authorizationID, SessionID: sessionID,
 			ServicePrincipalID: developPrincipalID, ServiceClientID: "addp-develop",
 			TenantID: tenant.ID, Audit: consumeAudit,

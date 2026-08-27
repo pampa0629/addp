@@ -13,11 +13,7 @@ type Config struct {
 	ServerPort          string
 	DBSchema            string
 	ServiceClientSecret string
-
-	// Meilisearch 配置
-	MeilisearchURL        string
-	MeilisearchMasterKey  string
-	MeilisearchAssetIndex string
+	ManagerServiceURL   string
 
 	// Redis 配置（用于资源变更事件同步和扫描范围锁）
 	RedisHost     string
@@ -38,10 +34,6 @@ type Config struct {
 	BuiltinMinioUseSSL    bool
 }
 
-func resolveMeilisearchURL() string {
-	return commonConfig.GetEnv("MEILISEARCH_URL", "")
-}
-
 func LoadConfig() *Config {
 	systemURL := commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180")
 
@@ -49,16 +41,13 @@ func LoadConfig() *Config {
 		ServerPort:          commonConfig.GetEnv("META_BACKEND_PORT", "8082"),
 		DBSchema:            commonConfig.GetEnv("DB_SCHEMA", "meta"),
 		ServiceClientSecret: commonConfig.GetEnv("META_SERVICE_CLIENT_SECRET", ""),
+		ManagerServiceURL:   commonConfig.GetEnv("MANAGER_URL", "http://localhost:8081"),
 	}
 
 	// Meta 不再调用使用 Internal API Key 的共享配置接口。部署配置来自
 	// 环境，System 业务事实只通过 Service Access Token 读取。
 	commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)
 	cfg.SystemServiceURL = systemURL
-
-	cfg.MeilisearchURL = resolveMeilisearchURL()
-	cfg.MeilisearchMasterKey = commonConfig.GetEnv("MEILISEARCH_MASTER_KEY", "")
-	cfg.MeilisearchAssetIndex = commonConfig.GetEnv("MEILISEARCH_ASSET_INDEX", "assets")
 
 	// Redis 配置
 	cfg.RedisHost = commonConfig.GetEnv("REDIS_HOST", "localhost")

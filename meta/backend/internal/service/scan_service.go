@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -16,24 +17,22 @@ import (
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scanresolver"
 	"github.com/addp/meta/internal/scanruntime"
-	"github.com/addp/meta/internal/search"
 	"gorm.io/gorm"
 )
 
 // ScanService 统一扫描服务
 type ScanService struct {
-	db                 *gorm.DB
-	repo               *metaRepo.ScanRepository // 数据访问层
-	runtimes           *scanruntime.Runtimes
-	catalogDispatcher  *scanadapter.CatalogDispatcher // catalog 扫描分发主链路
-	scopeResolver      *scanresolver.Resolver         // 扫描入口 scope 解析器
-	engineService      *EngineService
-	config             *config.Config
-	log                *slog.Logger
-	indexer            *search.Indexer
-	indexerService     *IndexerService            // 索引服务（独立）
-	scanEventPublisher *events.ScanEventPublisher // 扫描事件发布器
-	dedupService       *ScanDedupService          // 扫描去重服务（可选）
+	db                          *gorm.DB
+	repo                        *metaRepo.ScanRepository // 数据访问层
+	runtimes                    *scanruntime.Runtimes
+	engineCatalogScanDispatcher *scanadapter.EngineCatalogScanDispatcher // catalog 扫描分发主链路
+	scopeResolver               *scanresolver.Resolver                   // 扫描入口 scope 解析器
+	engineService               *EngineService
+	config                      *config.Config
+	log                         *slog.Logger
+	indexerService              *IndexerService            // 索引服务（独立）
+	scanEventPublisher          *events.ScanEventPublisher // 扫描事件发布器
+	dedupService                *ScanDedupService          // 扫描去重服务（可选）
 }
 
 func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
@@ -60,25 +59,22 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 		scopeResolver:  scanresolver.New(db),
 	}
 
-	s.catalogDispatcher = scanadapter.NewCatalogDispatcher(
+	s.engineCatalogScanDispatcher = scanadapter.NewEngineCatalogScanDispatcher(
 		db,
 		repo,
 		log,
 		s.runtimes.Database,
 		s.runtimes.BranchLeaf,
 		s.runtimes.DirectLeaf,
-		s.runtimes.ContentCatalogScanner,
+		s.runtimes.EngineCatalogContentScanner,
 	)
 
 	return s
 }
 
-// SetIndexer 注入搜索索引器
-func (s *ScanService) SetIndexer(indexer *search.Indexer) {
-	s.indexer = indexer
-	// 同时注入到独立服务
+func (s *ScanService) SetContentIndexClient(client *commonClient.ManagerContentClient) {
 	if s.indexerService != nil {
-		s.indexerService.indexer = indexer
+		s.indexerService.contentIndex = client
 	}
 }
 
@@ -95,8 +91,8 @@ func (s *ScanService) SetScanEventPublisher(publisher *events.ScanEventPublisher
 // SetDedupService 注入扫描去重服务
 func (s *ScanService) SetDedupService(dedupService *ScanDedupService) {
 	s.dedupService = dedupService
-	if s.catalogDispatcher != nil {
-		s.catalogDispatcher.SetLocker(dedupService)
+	if s.engineCatalogScanDispatcher != nil {
+		s.engineCatalogScanDispatcher.SetLocker(dedupService)
 	}
 
 	// 启动时清理所有残留的扫描锁（防止上次服务异常退出时的锁未清理）
@@ -178,7 +174,7 @@ func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.Scan
 		return resp, nil
 	}
 
-	result, err := s.catalogDispatcher.Dispatch(scanflow.DispatchRequest{
+	result, err := s.engineCatalogScanDispatcher.Dispatch(scanflow.DispatchRequest{
 		Context:      ctx,
 		Resource:     resource,
 		EnginePlugin: enginePlugin,

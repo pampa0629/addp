@@ -4,6 +4,10 @@
 
 数据元 `quality_rules` 的结构和校验必须遵守 [ADDP 数据质量规范](../docs/spec/addp数据质量规范.md)。每条规则必须有由 Standard 首次创建时生成且编辑过程中保持不变的 `rule_key`；Standard 只拥有规则定义，不拥有物理字段应用、规则执行、评分或质量问题。
 
+Standard 定义 Domain、Glossary、Element、Metric、CodeSet、Classification 和 GradingLevel 等可复用业务语义，但不拥有这些语义与具体 DataItem、CatalogEntry 或 CatalogComponent 的应用关系。具体资源的语义关联只由独立 Catalog 模块保存；Standard 不依赖 Meta 或 Catalog，不保存 `catalog_entry_id` 或反向资源列表。Standard 向 Catalog 提供两类互不混用的同 Tenant 契约：Domain、Glossary、Element 精确语义引用校验，以及 Metric 的 owner-local 变化流和当前专业摘要动态解析。Metric 定义、公式、状态、Domain、分类、单位、数据元映射和依赖关系始终只归 Standard。
+
+Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /metrics/:id/relations` 一跳图；它要求 `standard.metric.read`，只读 Standard 本地事实，不调用 Catalog 或 Model，也不使用 `standard.catalog.read` 机器权限替代用户权限。数据元、Domain、分类和单位继续留在 Metric 专业详情中，本阶段不伪造为企业目录节点。
+
 ## 模块概述
 
 **Standard 模块** 是 ADDP 平台的数据标准和治理中心，负责：
@@ -305,6 +309,9 @@ GET/POST /api/standard/metrics
 GET/PUT/DELETE /api/standard/metrics/:id
 POST /api/standard/metrics/:id/approve
 POST /api/standard/metrics/:id/deprecate
+
+GET /api/v1/standard/catalog-resources/changes
+POST /api/v1/standard/runtime/catalog-references/resolve
 ```
 
 ### 标准文档
@@ -352,7 +359,7 @@ GET/POST/PUT/DELETE /api/standard/dimension-hierarchies/:id/levels
 **被依赖**（其他模块调用 Standard 的 API）:
 - **Model 模块**: 验证 domain_id、element_id、hierarchy_id、metric_id；代理标准对象查询
 
-资产发现固定使用 `/api/v1/standard/assets/discoverable`，只接受 `addp-asset` Tenant Service Access Token，并校验 `standard.metric.read`；Tenant 只来自 canonical AuthContext。其他 `/api/v1/standard` 路由同样只接受 canonical Bearer Tenant AuthContext；文档下载还可使用 Standard owner 的 Browser Resource Ticket。
+`/api/v1/standard` 路由只接受 canonical Bearer Tenant AuthContext；文档下载还可使用 Standard owner 的 Browser Resource Ticket。Catalog 对 Domain、Glossary、Element 语义引用的校验只走 `/api/v1/standard/references/resolve`；Metric 目录来源只走 `/catalog-resources/changes` 与 `/runtime/catalog-references/resolve`，两类契约不可混用，也不提供面向 Asset 的自动发现接口。
 
 ## IAM Permission 所有权
 
@@ -361,6 +368,7 @@ Standard 是以下第一批 Permission 的唯一 owner：
 - `standard.domain.*`
 - `standard.element.*`
 - `standard.metric.*`
+- `standard.catalog.read`（仅 `addp-catalog` 的 `tenant.catalog_runtime`）
 - `standard.code_set.*`
 - `standard.document.*`
 - `standard.glossary.*`

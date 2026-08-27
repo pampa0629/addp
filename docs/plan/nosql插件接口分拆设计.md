@@ -9,8 +9,8 @@
 - MongoDB 是动态 schema 记录集合型存储，Catalog Model 为 `database -> collection`，其中 `collection` 是 catalog leaf。
 - Neo4j 是图存储，Catalog Model 为 `database -> graph`，其中 `graph` 是 catalog leaf；label、relationship type 和 endpoint pattern 属于 `type_info.graph` 结构事实，不作为 catalog leaf。
 - 上层模块不再通过统一的 NoSQL `ListCollections` 语义处理 MongoDB 与 Neo4j。
-- 目录发现统一走 `CatalogProvider.ListChildren`。
-- Catalog leaf facts 统一走 `CatalogFactsProvider.DescribeCatalogFacts`。
+- 目录发现统一走 `EngineCatalogProvider.ListChildren`。
+- Catalog leaf facts 统一走 `EngineCatalogFactsProvider.DescribeEngineCatalogFacts`。
 - MongoDB 动态字段推断可使用 `DynamicSchemaSamplingProvider`。
 - Neo4j 图查询和预览走 `GraphQueryProvider`。
 

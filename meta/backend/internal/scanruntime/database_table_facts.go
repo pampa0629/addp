@@ -14,9 +14,9 @@ func (s *DatabaseRuntime) describeTableFacts(
 	scanCatalog databaseScanCatalog,
 	schemaName string,
 	tableName string,
-) (*plugin.CatalogFacts, error) {
+) (*plugin.EngineCatalogFacts, error) {
 	path := plugin.TabularItemPath(resource.ID, scanCatalog.namespaceTerm, schemaName, tableName)
-	item, err := scanCatalog.factsProvider.DescribeCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.CatalogFactsOptions{
+	item, err := scanCatalog.factsProvider.DescribeEngineCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.EngineCatalogFactsOptions{
 		IncludeIndexes:      true,
 		IncludeConstraints:  true,
 		IncludePartitioning: true,

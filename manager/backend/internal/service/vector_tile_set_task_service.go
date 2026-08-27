@@ -42,8 +42,8 @@ type VectorTileSetExecutionRequest struct {
 }
 
 type VectorTileSetExecutionResult struct {
-	CatalogPath string
-	Metadata    commonModels.JSONMap
+	EngineCatalogPath string
+	Metadata          commonModels.JSONMap
 }
 
 type VectorTileSetExecutor interface {
@@ -253,13 +253,13 @@ func (s *VectorTileSetTaskService) run(ctx context.Context, task *models.VectorT
 		if metadata == nil {
 			metadata = commonModels.JSONMap{}
 		}
-		metadata["catalog_path"] = result.CatalogPath
+		metadata["catalog_path"] = result.EngineCatalogPath
 		metadata["source_version"] = cfg.SourceVersion
 		if s.metaScanSubmitter == nil {
 			err = errors.New("vector tile set meta scan submitter is not configured")
 		} else {
 			var scan *commonExecution.TaskExecution
-			scan, err = s.metaScanSubmitter.CreateManualScanRunForTenant(task.TenantID, vectorTileSetMetaScanOptions(cfg, result.CatalogPath))
+			scan, err = s.metaScanSubmitter.CreateManualScanRunForTenant(task.TenantID, vectorTileSetMetaScanOptions(cfg, result.EngineCatalogPath))
 			if err == nil && scan != nil {
 				metadata["meta_scan_execution_id"] = scan.ExecutionID
 			}

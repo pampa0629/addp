@@ -61,6 +61,35 @@ class ModuleGateTest(unittest.TestCase):
             steps[1].excluded_environment,
         )
 
+    def test_discovers_untracked_module_before_first_commit(self) -> None:
+        for relative_path in (
+            "fresh/backend/go.mod",
+            "fresh/frontend/package.json",
+            "scripts/test/fresh-postgres-gate.sh",
+        ):
+            path = self.repository / relative_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{}\n", encoding="utf-8")
+        makefile = self.repository / "Makefile"
+        makefile.write_text(
+            makefile.read_text(encoding="utf-8")
+            + "test-fresh-frontend:\n\t@true\n"
+            + "test-fresh-postgres:\n\t@true\n",
+            encoding="utf-8",
+        )
+
+        steps = MODULE.plan_module(self.repository, "fresh")
+
+        self.assertEqual(
+            [
+                ("make", "test-platform"),
+                ("go", "test", "./..."),
+                ("make", "test-fresh-frontend"),
+                ("make", "test-fresh-postgres"),
+            ],
+            [step.command for step in steps],
+        )
+
     def test_go_t1_environment_excludes_postgres_integration_opt_ins(self) -> None:
         step = MODULE.Step(
             "sample Go T1",

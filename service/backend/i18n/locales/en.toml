@@ -19,6 +19,15 @@ other = "Invalid ID in ref"
 [service.err.not_found]
 other = "Service not found"
 
+[service.err.lookup_failed]
+other = "Failed to read service"
+
+[service.err.inactive]
+other = "Service is not active"
+
+[service.err.rest_api_disabled]
+other = "REST API is not enabled for this service"
+
 [service.success.deleted]
 other = "Deleted successfully"
 
@@ -49,6 +58,9 @@ other = "Invalid query request"
 [service.err.invalid_query_format]
 other = "Invalid query response format"
 
+[service.err.invalid_query_intent]
+other = "Invalid query intent"
+
 [service.err.invalid_structured_query]
 other = "Invalid structured query"
 
@@ -60,6 +72,15 @@ other = "Failed to format query result"
 
 [service.err.invalid_feature_id]
 other = "Feature ID is invalid or expired"
+
+[service.consumer.filter_invalid]
+other = "Invalid service consumer catalog filter"
+
+[service.consumer.reference_invalid]
+other = "Invalid service consumer reference"
+
+[service.consumer.catalog_failed]
+other = "Failed to read service consumer catalog"
 
 [service.configuration.load_failed]
 other = "Failed to load service runtime policy"

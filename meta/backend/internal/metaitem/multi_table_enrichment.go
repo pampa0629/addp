@@ -19,7 +19,7 @@ import (
 	"github.com/addp/meta/internal/metaattr"
 )
 
-func resolveCatalogPath(engineID uint, path string, catalogPathFor func(path string) plugin.CatalogPath) plugin.CatalogPath {
+func resolveCatalogPath(engineID uint, path string, catalogPathFor func(path string) plugin.EngineCatalogPath) plugin.EngineCatalogPath {
 	if catalogPathFor != nil {
 		return catalogPathFor(path)
 	}
@@ -132,7 +132,7 @@ func appendResolvedCommonItems(ctx context.Context, input DirectoryResolveInput,
 			detected.Attributes = itemAttributes
 		}
 		if item.Layout == format.LayoutMulti {
-			enrichRefTableInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.CatalogPathFor, item, detected)
+			enrichRefTableInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.EngineCatalogPathFor, item, detected)
 		}
 		result.Items = append(result.Items, detected)
 		if item.Layout == format.LayoutWhole && resolved.Exclusive {
@@ -161,8 +161,8 @@ func scopeModel3DAttributes(ctx context.Context, input DirectoryResolveInput, it
 	if err != nil {
 		return nil, false
 	}
-	reader := contentadapter.NewMappedReader(input.ContentReader, input.ConnInfo, func(ref contentio.Ref) (plugin.CatalogPath, error) {
-		return resolveCatalogPath(input.EngineID, ref.Path, input.CatalogPathFor), nil
+	reader := contentadapter.NewMappedReader(input.ContentReader, input.ConnInfo, func(ref contentio.Ref) (plugin.EngineCatalogPath, error) {
+		return resolveCatalogPath(input.EngineID, ref.Path, input.EngineCatalogPathFor), nil
 	}, plugin.ReadOptions{})
 	info, err := provider.DescribeModel3DScope(ctx, reader, contentio.NewRef(item.ScopePath, contentio.RoleScope), nil)
 	if err != nil || info == nil {
@@ -196,8 +196,8 @@ func scopePointCloudAttributes(ctx context.Context, input DirectoryResolveInput,
 	if err != nil {
 		return nil, false
 	}
-	reader := contentadapter.NewMappedReader(input.ContentReader, input.ConnInfo, func(ref contentio.Ref) (plugin.CatalogPath, error) {
-		return resolveCatalogPath(input.EngineID, ref.Path, input.CatalogPathFor), nil
+	reader := contentadapter.NewMappedReader(input.ContentReader, input.ConnInfo, func(ref contentio.Ref) (plugin.EngineCatalogPath, error) {
+		return resolveCatalogPath(input.EngineID, ref.Path, input.EngineCatalogPathFor), nil
 	}, plugin.ReadOptions{})
 	info, err := provider.DescribePointCloudScope(ctx, reader, contentio.NewRef(item.ScopePath, contentio.RoleScope), nil)
 	if err != nil || info == nil {
@@ -260,7 +260,7 @@ func resolveOBJResourceItems(ctx context.Context, input DirectoryResolveInput, f
 }
 
 func resolveSingleOBJResourceItem(ctx context.Context, input DirectoryResolveInput, objFile StorageFileRef, byPath map[string]StorageFileRef) (dataitem.ResolvedItem, bool) {
-	reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, resolveCatalogPath(input.EngineID, objFile.Path, input.CatalogPathFor), plugin.ReadOptions{Length: maxOBJResourceManifestBytes})
+	reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, resolveCatalogPath(input.EngineID, objFile.Path, input.EngineCatalogPathFor), plugin.ReadOptions{Length: maxOBJResourceManifestBytes})
 	if err != nil {
 		return dataitem.ResolvedItem{}, false
 	}
@@ -348,7 +348,7 @@ func scanOBJMaterialLibraryRefs(reader io.Reader) []string {
 }
 
 func scanMTLTextureRefs(ctx context.Context, input DirectoryResolveInput, materialPath string) []string {
-	reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, resolveCatalogPath(input.EngineID, materialPath, input.CatalogPathFor), plugin.ReadOptions{Length: maxOBJResourceManifestBytes})
+	reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, resolveCatalogPath(input.EngineID, materialPath, input.EngineCatalogPathFor), plugin.ReadOptions{Length: maxOBJResourceManifestBytes})
 	if err != nil {
 		return nil
 	}
@@ -468,7 +468,7 @@ func resolveGLTFManifestItems(ctx context.Context, input DirectoryResolveInput, 
 }
 
 func resolveSingleGLTFManifestItem(ctx context.Context, input DirectoryResolveInput, manifest StorageFileRef, byPath map[string]StorageFileRef) (dataitem.ResolvedItem, bool) {
-	reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, resolveCatalogPath(input.EngineID, manifest.Path, input.CatalogPathFor), plugin.ReadOptions{Length: format.MaxGLTFManifestBytes + 1})
+	reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, resolveCatalogPath(input.EngineID, manifest.Path, input.EngineCatalogPathFor), plugin.ReadOptions{Length: format.MaxGLTFManifestBytes + 1})
 	if err != nil {
 		return dataitem.ResolvedItem{}, false
 	}
@@ -566,7 +566,7 @@ func rasterMosaicManifestAttributes(ctx context.Context, input DirectoryResolveI
 	if manifestPath == "" {
 		return nil, false
 	}
-	reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, resolveCatalogPath(input.EngineID, manifestPath, input.CatalogPathFor), plugin.ReadOptions{Length: 1 << 20})
+	reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, resolveCatalogPath(input.EngineID, manifestPath, input.EngineCatalogPathFor), plugin.ReadOptions{Length: 1 << 20})
 	if err != nil {
 		return nil, false
 	}
@@ -707,7 +707,7 @@ func enrichRefTableInfo(
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
-	catalogPathFor func(path string) plugin.CatalogPath,
+	catalogPathFor func(path string) plugin.EngineCatalogPath,
 	item dataitem.ResolvedItem,
 	detected *DetectedItem,
 ) {
@@ -737,10 +737,10 @@ type metaRefReader struct {
 	contentReader  plugin.ContentReadableProvider
 	connInfo       plugin.ConnectionInfo
 	engineID       uint
-	catalogPathFor func(path string) plugin.CatalogPath
+	catalogPathFor func(path string) plugin.EngineCatalogPath
 }
 
-func newMetaRefReader(contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, catalogPathFor func(path string) plugin.CatalogPath) *metaRefReader {
+func newMetaRefReader(contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, catalogPathFor func(path string) plugin.EngineCatalogPath) *metaRefReader {
 	return &metaRefReader{
 		contentReader:  contentReader,
 		connInfo:       connInfo,
@@ -779,7 +779,7 @@ func EnrichKnownMultiTableItem(
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
-	catalogPathFor func(path string) plugin.CatalogPath,
+	catalogPathFor func(path string) plugin.EngineCatalogPath,
 	item *DetectedItem,
 ) (*DetectedItem, bool, error) {
 	if contentReader == nil || item == nil || item.Layout != format.LayoutMulti || item.Format == "" || len(item.RefList) == 0 {

@@ -13,14 +13,15 @@ import (
 )
 
 type Handler struct {
-	engineService        *service.EngineService
-	scanService          *service.ScanService
-	taskService          *service.ScanTaskService
-	executionService     *service.ScanExecutionService
-	metadataQueryService *service.MetadataQueryService
-	lineageService       *service.LineageService
-	resourceTreeService  *service.ResourceTreeService
-	inspectService       *service.InspectService
+	engineService         *service.EngineService
+	scanService           *service.ScanService
+	taskService           *service.ScanTaskService
+	executionService      *service.ScanExecutionService
+	metadataQueryService  *service.MetadataQueryService
+	lineageService        *service.LineageService
+	resourceTreeService   *service.ResourceTreeService
+	inspectService        *service.InspectService
+	dataItemChangeService *service.DataItemChangeService
 }
 
 func NewHandler(

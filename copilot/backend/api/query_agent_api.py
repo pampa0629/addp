@@ -54,7 +54,7 @@ class QueryGenerationRequest(BaseModel):
         default=None,
         min_length=1,
         max_length=4096,
-        description="仅用于资源发现的 Owner Catalog 容器 locator，不是输入资源或查询执行范围",
+        description="仅用于资源发现的 Owner Engine Catalog 容器 locator，不是输入资源或查询执行范围",
     )
     engine_context: Optional[dict[str, Any]] = Field(
         default=None,

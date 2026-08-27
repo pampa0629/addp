@@ -21,7 +21,7 @@ const mysqlMaxBindParams = 65535
 const mysqlTableWriteSessionMarkerProvider = "mysql.table_write_session"
 const mysqlTableWriteSessionMarkerPositionUnit = "session_commit"
 
-func (p *MySQLPlugin) WriteBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, batch *plugin.BatchData, opts plugin.BatchWriteOptions) error {
+func (p *MySQLPlugin) WriteBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.BatchData, opts plugin.BatchWriteOptions) error {
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
@@ -40,7 +40,7 @@ func (p *MySQLPlugin) WriteBatch(ctx context.Context, connInfo plugin.Connection
 	return session.Close(ctx)
 }
 
-func (p *MySQLPlugin) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
+func (p *MySQLPlugin) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
 	if err := resume.RejectUnsupported(opts.ResumeMarker, "mysql.table_write_session"); err != nil {
 		return nil, err
 	}

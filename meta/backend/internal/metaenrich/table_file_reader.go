@@ -15,7 +15,7 @@ type tableFileContentReader struct {
 	contentReader  plugin.ContentReadableProvider
 	connInfo       plugin.ConnectionInfo
 	engineID       uint
-	catalogPathFor func(path string) plugin.CatalogPath
+	catalogPathFor func(path string) plugin.EngineCatalogPath
 	files          []metaitem.StorageFileRef
 	subdirs        []metaitem.StorageDirectoryRef
 }

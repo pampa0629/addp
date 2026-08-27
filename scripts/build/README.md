@@ -65,7 +65,8 @@ dist/
 │   ├── transfer-continuous-worker # Transfer 持续运行时 Worker
 │   ├── quality-worker           # Quality Worker
 │   ├── orchestrator-backend     # Orchestrator 后端
-│   └── develop-backend          # Develop 后端
+│   ├── develop-backend          # Develop 后端
+│   └── develop-query-worker     # Develop 编排查询 Worker
 │
 ├── release-linux-arm64/        # 容器构建（Linux + ARM64）
 │   └── (同上)
@@ -189,11 +190,12 @@ Platform CI 通过 `make select-image-services` 保留 System Backend、Agent Ba
 - `graph-backend` - Graph 后端
 - `gateway` - API Gateway
 
-**Worker 服务** (4 个):
+**Worker 服务** (5 个):
 - `meta-worker` - Meta Worker
 - `quality-worker` - Quality Worker
 - `transfer-bounded-worker` - Transfer Bounded Worker
 - `transfer-continuous-worker` - Transfer Continuous Worker
+- `develop-query-worker` - Develop 编排查询 Worker
 
 **Engine/Runtime 服务** (6 个):
 - `geopython-workflow-engine` - GeoPython Workflow
@@ -413,11 +415,12 @@ harbor.example.com:5001/project/addp-manager-backend:latest
 - `addp-graph-backend`
 - `addp-gateway`
 
-**Worker 服务** (4 个):
+**Worker 服务** (5 个):
 - `addp-meta-worker`
 - `addp-quality-worker`
 - `addp-transfer-bounded-worker`
 - `addp-transfer-continuous-worker`
+- `addp-develop-query-worker`
 
 **Engine/Runtime 服务** (6 个):
 - `addp-geopython-workflow-engine`

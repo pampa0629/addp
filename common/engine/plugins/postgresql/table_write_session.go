@@ -15,7 +15,7 @@ import (
 const postgresTableWriteSessionMarkerProvider = "postgresql.table_write_session"
 const postgresTableWriteSessionMarkerPositionUnit = "session_commit"
 
-func (p *PostgreSQLPlugin) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
+func (p *PostgreSQLPlugin) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
 	if err := resume.RejectUnsupported(opts.ResumeMarker, "postgresql.table_write_session"); err != nil {
 		return nil, err
 	}

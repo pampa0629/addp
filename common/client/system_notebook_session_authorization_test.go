@@ -55,7 +55,7 @@ func TestSystemNotebookSessionAuthorizationClientsKeepUserAndServiceCredentialsS
 			if r.Header.Get("Authorization") != "Bearer addp_at_develop_service" {
 				t.Fatalf("consume Authorization = %q", r.Header.Get("Authorization"))
 			}
-			var request NotebookCatalogChildrenRequest
+			var request NotebookEngineCatalogChildrenRequest
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				t.Fatal(err)
 			}
@@ -93,13 +93,13 @@ func TestSystemNotebookSessionAuthorizationClientsKeepUserAndServiceCredentialsS
 	}
 
 	serviceClient := NewSystemServiceClient(server.URL, notebookSessionAuthorizationTestTokenSource{}, server.Client()).WithTenantID(5)
-	nodes, err := serviceClient.ListNotebookCatalogChildren(context.Background(), authorizationID, NotebookCatalogChildrenRequest{
+	nodes, err := serviceClient.ListNotebookEngineCatalogChildren(context.Background(), authorizationID, NotebookEngineCatalogChildrenRequest{
 		SessionID: sessionID, EngineID: 21,
 		Path:    EngineCatalogPath{Version: "catalog.path/v1", EngineID: 21, Segments: []EngineCatalogSegment{}},
 		Options: EngineCatalogListOptions{Limit: 1000},
 	})
 	if err != nil || len(nodes) != 1 || nodes[0].Name != "public" {
-		t.Fatalf("ListNotebookCatalogChildren() nodes=%#v error=%v", nodes, err)
+		t.Fatalf("ListNotebookEngineCatalogChildren() nodes=%#v error=%v", nodes, err)
 	}
 	if err := serviceClient.RevokeNotebookSessionAuthorization(context.Background(), authorizationID,
 		RevokeNotebookSessionAuthorizationRequest{SessionID: sessionID}); err != nil {
@@ -121,8 +121,8 @@ func TestSystemNotebookSessionAuthorizationClientPreservesStableErrorCode(t *tes
 	t.Cleanup(server.Close)
 
 	client := NewSystemServiceClient(server.URL, notebookSessionAuthorizationTestTokenSource{}, server.Client()).WithTenantID(5)
-	_, err := client.ListNotebookCatalogChildren(context.Background(),
-		"00000000-0000-0000-0000-000000000010", NotebookCatalogChildrenRequest{
+	_, err := client.ListNotebookEngineCatalogChildren(context.Background(),
+		"00000000-0000-0000-0000-000000000010", NotebookEngineCatalogChildrenRequest{
 			SessionID: "00000000-0000-0000-0000-000000000011", EngineID: 21,
 		})
 	if code, ok := SystemAPIErrorCode(err); !ok || code != "notebook_session_authorization_forbidden" {

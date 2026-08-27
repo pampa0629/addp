@@ -77,6 +77,7 @@ func (e *ParameterValidationError) Error() string {
 // orchestration definitions and resolved runtime parameters.
 type ParameterValidationOptions struct {
 	AllowTemplateStrings bool
+	AllowMissingRequired bool
 }
 
 // ValidateExecutionParameters validates one execution's parameter overrides
@@ -165,9 +166,11 @@ func validateSchemaType(schemaType string, value interface{}, path string) error
 
 func validateObjectValue(schema map[string]interface{}, value map[string]interface{}, path string, options ParameterValidationOptions) error {
 	properties, _ := schema["properties"].(map[string]interface{})
-	for _, requiredName := range schemaStringSlice(schema["required"]) {
-		if _, exists := value[requiredName]; !exists {
-			return &ParameterValidationError{Rule: ParameterRuleRequired, Path: path + "." + requiredName}
+	if !options.AllowMissingRequired {
+		for _, requiredName := range schemaStringSlice(schema["required"]) {
+			if _, exists := value[requiredName]; !exists {
+				return &ParameterValidationError{Rule: ParameterRuleRequired, Path: path + "." + requiredName}
+			}
 		}
 	}
 

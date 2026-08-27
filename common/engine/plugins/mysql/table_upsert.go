@@ -10,11 +10,11 @@ import (
 	"github.com/addp/common/engine/plugin"
 )
 
-func (p *MySQLPlugin) PrepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableUpsertOptions) error {
+func (p *MySQLPlugin) PrepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableUpsertOptions) error {
 	return p.prepareTableUpsert(ctx, connInfo, path, opts, false)
 }
 
-func (p *MySQLPlugin) prepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableUpsertOptions, requireTargetAbsent bool) error {
+func (p *MySQLPlugin) prepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableUpsertOptions, requireTargetAbsent bool) error {
 	keys, err := validateMySQLUpsertOptions(opts)
 	if err != nil {
 		return err
@@ -62,7 +62,7 @@ func (p *MySQLPlugin) prepareTableUpsert(ctx context.Context, connInfo plugin.Co
 	return nil
 }
 
-func (p *MySQLPlugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, batch *plugin.BatchData, opts plugin.TableUpsertOptions) error {
+func (p *MySQLPlugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.BatchData, opts plugin.TableUpsertOptions) error {
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}

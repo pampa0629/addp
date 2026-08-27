@@ -5186,6 +5186,106 @@
                 ]
             }
         },
+        "/runtime/content-documents": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-meta 可删除当前 Tenant 指定 Engine 的全部内容文档 | Only addp-meta may delete all content documents for an engine in the current tenant",
+                "tags": [
+                    "Manager Runtime"
+                ],
+                "summary": "删除 Engine 内容检索投影 | Delete engine content search projections",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Engine ID",
+                        "name": "engine_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "DataItem type",
+                        "name": "data_item_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Database schema",
+                        "name": "schema",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Object bucket",
+                        "name": "bucket",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Object path prefix",
+                        "name": "path_prefix",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.content_index.update"
+                ]
+            }
+        },
+        "/runtime/content-documents/{document_id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-meta 可按当前 Tenant 幂等覆盖一个 DataItem 内容文档 | Only addp-meta may idempotently replace a DataItem content document in the current tenant",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager Runtime"
+                ],
+                "summary": "写入技术内容检索投影 | Upsert technical content search projection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "DataItem fingerprint",
+                        "name": "document_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "内容文档 | Content document",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.ManagerContentDocument"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.content_index.update"
+                ]
+            }
+        },
         "/search": {
             "get": {
                 "security": [
@@ -7041,6 +7141,146 @@
         }
     },
     "definitions": {
+        "client.ManagerContentDocument": {
+            "type": "object",
+            "properties": {
+                "author": {
+                    "type": "string"
+                },
+                "bucket": {
+                    "type": "string"
+                },
+                "content": {
+                    "type": "string"
+                },
+                "content_hash": {
+                    "type": "string"
+                },
+                "content_preview": {
+                    "type": "string"
+                },
+                "content_type": {
+                    "type": "string"
+                },
+                "created_date": {
+                    "type": "string"
+                },
+                "data_item_type": {
+                    "type": "string"
+                },
+                "data_updated_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "document_id": {
+                    "type": "string"
+                },
+                "document_type": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "engine_name": {
+                    "type": "string"
+                },
+                "engine_type": {
+                    "type": "string"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.ManagerContentField"
+                    }
+                },
+                "full_name": {
+                    "type": "string"
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "modified_date": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "page_count": {
+                    "type": "integer"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "projection_time": {
+                    "type": "string"
+                },
+                "row_count": {
+                    "type": "integer"
+                },
+                "schema": {
+                    "type": "string"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "table_kind": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "title": {
+                    "type": "string"
+                },
+                "word_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "client.ManagerContentField": {
+            "type": "object",
+            "properties": {
+                "column_type": {
+                    "type": "string"
+                },
+                "comment": {
+                    "type": "string"
+                },
+                "data_type": {
+                    "type": "string"
+                },
+                "is_nullable": {
+                    "type": "boolean"
+                },
+                "is_primary_key": {
+                    "type": "boolean"
+                },
+                "is_unique_key": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "ordinal_position": {
+                    "type": "integer"
+                }
+            }
+        },
         "datatype.Bounds3D": {
             "type": "object",
             "properties": {
@@ -7187,12 +7427,6 @@
                 },
                 "attempt": {
                     "type": "integer"
-                },
-                "authorization_effects": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 },
                 "authorization_expires_at": {
                     "type": "string"
@@ -9335,12 +9569,6 @@
         "github_com_addp_manager_internal_service.SearchDocument": {
             "type": "object",
             "properties": {
-                "asset_id": {
-                    "type": "string"
-                },
-                "asset_type": {
-                    "type": "string"
-                },
                 "author": {
                     "type": "string"
                 },
@@ -9354,6 +9582,9 @@
                     "type": "string"
                 },
                 "created_date": {
+                    "type": "string"
+                },
+                "data_item_type": {
                     "type": "string"
                 },
                 "document_id": {
@@ -9609,9 +9840,6 @@
         "github_com_addp_manager_internal_service.VectorDocument": {
             "type": "object",
             "properties": {
-                "asset_id": {
-                    "type": "string"
-                },
                 "bucket": {
                     "type": "string"
                 },

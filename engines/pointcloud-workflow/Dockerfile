@@ -42,6 +42,7 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
 # PointCloud 只打包其运行时实际使用的 common-python 子包，避免无关公共能力变化触发镜像重建。
 COPY common-python/README.md /common-python/README.md
 COPY common-python/addp_common/__init__.py /common-python/addp_common/__init__.py
+COPY common-python/addp_common/module_lifecycle.py /common-python/addp_common/module_lifecycle.py
 COPY common-python/addp_common/client /common-python/addp_common/client
 COPY common-python/addp_common/workflow_access.py /common-python/addp_common/workflow_access.py
 COPY common-python/addp_common/workflow_runtime /common-python/addp_common/workflow_runtime

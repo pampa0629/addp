@@ -50,14 +50,101 @@ func Migrate(db *gorm.DB) error {
 			&models.DimensionHierarchy{},
 			&models.DimensionHierarchyLevel{},
 			&models.StandardReferenceDeletion{},
+			&models.CatalogResourceChangeRow{},
 		); err != nil {
 			return fmt.Errorf("auto migrate standard schema: %w", err)
 		}
 		if err := migrateStandardQualityRuleKeys(tx); err != nil {
 			return err
 		}
+		if err := migrateStandardCatalogMetricChanges(tx); err != nil {
+			return err
+		}
 		return applyStandardSchemaStatements(tx)
 	})
+}
+
+func migrateStandardCatalogMetricChanges(db *gorm.DB) error {
+	if db.Dialector.Name() != "postgres" {
+		return nil
+	}
+	statements := []string{
+		`CREATE INDEX IF NOT EXISTS idx_standard_catalog_changes_tenant_id
+			ON standard.catalog_resource_changes (tenant_id, id)`,
+		`CREATE INDEX IF NOT EXISTS idx_standard_catalog_changes_source
+			ON standard.catalog_resource_changes (tenant_id, source_type, source_identity, id DESC)`,
+		`INSERT INTO standard.catalog_resource_changes (
+			tenant_id, source_type, source_identity, operation, resource_version, snapshot, observed_at
+		)
+		SELECT
+			metric.tenant_id,
+			'metric',
+			metric.id,
+			'upsert',
+			metric.version,
+			jsonb_strip_nulls(jsonb_build_object(
+				'name', metric.name,
+				'code', metric.code,
+				'object_kind', 'metric',
+				'metric_type', metric.type,
+				'metric_status', metric.status,
+				'lifecycle_state', metric.lifecycle_state,
+				'domain_id', CASE WHEN metric.domain_id IS NULL THEN NULL ELSE metric.domain_id::TEXT END,
+				'category_id', CASE WHEN metric.category_id IS NULL THEN NULL ELSE metric.category_id::TEXT END,
+				'unit_id', CASE WHEN metric.unit_id IS NULL THEN NULL ELSE metric.unit_id::TEXT END
+			)),
+			COALESCE(metric.updated_at, metric.created_at, NOW())
+		FROM standard.metrics AS metric
+		WHERE NOT EXISTS (
+			SELECT 1 FROM standard.data_migrations WHERE version = 2026082601
+		)
+		ORDER BY metric.id`,
+		`INSERT INTO standard.data_migrations (version, name)
+		VALUES (2026082601, 'catalog_metric_change_feed_v1')
+		ON CONFLICT (version) DO NOTHING`,
+		`CREATE OR REPLACE FUNCTION standard.capture_metric_catalog_change()
+		RETURNS TRIGGER
+		LANGUAGE plpgsql
+		AS $function$
+		DECLARE
+			changed standard.metrics%ROWTYPE;
+		BEGIN
+			changed := CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+			INSERT INTO standard.catalog_resource_changes (
+				tenant_id, source_type, source_identity, operation, resource_version, snapshot, observed_at
+			) VALUES (
+				changed.tenant_id,
+				'metric',
+				changed.id,
+				CASE WHEN TG_OP = 'DELETE' THEN 'missing' ELSE 'upsert' END,
+				changed.version,
+				jsonb_strip_nulls(jsonb_build_object(
+					'name', changed.name,
+					'code', changed.code,
+					'object_kind', 'metric',
+					'metric_type', changed.type,
+					'metric_status', changed.status,
+					'lifecycle_state', changed.lifecycle_state,
+					'domain_id', CASE WHEN changed.domain_id IS NULL THEN NULL ELSE changed.domain_id::TEXT END,
+					'category_id', CASE WHEN changed.category_id IS NULL THEN NULL ELSE changed.category_id::TEXT END,
+					'unit_id', CASE WHEN changed.unit_id IS NULL THEN NULL ELSE changed.unit_id::TEXT END
+				)),
+				NOW()
+			);
+			RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+		END;
+		$function$`,
+		`DROP TRIGGER IF EXISTS trg_standard_metric_catalog_change ON standard.metrics`,
+		`CREATE TRIGGER trg_standard_metric_catalog_change
+		AFTER INSERT OR UPDATE OR DELETE ON standard.metrics
+		FOR EACH ROW EXECUTE FUNCTION standard.capture_metric_catalog_change()`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return fmt.Errorf("migrate Standard catalog Metric changes: %w", err)
+		}
+	}
+	return nil
 }
 
 func migrateStandardQualityRuleKeys(db *gorm.DB) error {

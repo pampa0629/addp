@@ -109,6 +109,28 @@ func TestValidateExecutionParametersValidatesAdditionalPropertiesSchema(t *testi
 	}
 }
 
+func TestValidateExecutionParametersAllowsMissingRequiredOnlyForPartialValues(t *testing.T) {
+	schema := executionParameterSchemaForTest()
+	partial := map[string]interface{}{
+		"config": map[string]interface{}{},
+		"limit":  10,
+	}
+	if err := ValidateExecutionParameters(schema, partial, ParameterValidationOptions{AllowMissingRequired: true}); err != nil {
+		t.Fatalf("partial validation error = %v, want nil", err)
+	}
+
+	err := ValidateExecutionParameters(schema, partial, ParameterValidationOptions{})
+	var validationErr *ParameterValidationError
+	if !errors.As(err, &validationErr) || validationErr.Rule != ParameterRuleRequired || validationErr.Path != "parameters.mode" {
+		t.Fatalf("strict validation error = %#v, want parameters.mode required", validationErr)
+	}
+
+	err = ValidateExecutionParameters(schema, map[string]interface{}{"limit": 0}, ParameterValidationOptions{AllowMissingRequired: true})
+	if !errors.As(err, &validationErr) || validationErr.Rule != ParameterRuleMinimum || validationErr.Path != "parameters.limit" {
+		t.Fatalf("partial constraint error = %#v, want parameters.limit minimum", validationErr)
+	}
+}
+
 func executionParameterSchemaForTest() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",

@@ -3,6 +3,25 @@
 
 set -euo pipefail
 
+PACKAGE_FILTER=""
+TEST_FILTER=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --package)
+            PACKAGE_FILTER="${2:-}"
+            shift 2
+            ;;
+        --test)
+            TEST_FILTER="${2:-}"
+            shift 2
+            ;;
+        *)
+            echo "usage: $0 [--package iam|oauth|api|migration] [--test execution-audience|portal-runtime-removal|service-execution-audit|workbench-runtime|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|quality-catalog-read|model-writer-decoupling|catalog-engine-descriptor-read]" >&2
+            exit 2
+            ;;
+    esac
+done
+
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-system-iam-postgres.XXXXXX")
 
@@ -32,6 +51,102 @@ run_without_skips() {
 }
 
 run_without_skips ./internal/testsupport '^TestResetDisposablePostgresForGate$'
-for package in ./internal/iam ./internal/iam/oauth ./internal/api ./internal/migration; do
-    run_without_skips "$package" 'AgainstPostgres$'
+case "$PACKAGE_FILTER" in
+    "") packages=(./internal/iam ./internal/iam/oauth ./internal/api ./internal/migration) ;;
+    iam) packages=(./internal/iam) ;;
+    oauth) packages=(./internal/iam/oauth) ;;
+    api) packages=(./internal/api) ;;
+    migration) packages=(./internal/migration) ;;
+    *)
+        echo "unsupported System IAM PostgreSQL gate package: $PACKAGE_FILTER" >&2
+        exit 2
+        ;;
+esac
+test_pattern='AgainstPostgres$'
+case "$TEST_FILTER" in
+    "") ;;
+    execution-audience)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "execution-audience test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestExecutionAudienceForwardMigrationAgainstPostgres$'
+        ;;
+    portal-runtime-removal)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "portal-runtime-removal test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestPortalTenantRuntimeRemovalForwardMigrationAgainstPostgres$'
+        ;;
+    service-execution-audit)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "service-execution-audit test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestServiceExecutionAuditForwardMigrationAgainstPostgres$'
+        ;;
+    workbench-runtime)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "workbench-runtime test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestWorkbenchRuntimeForwardMigrationAgainstPostgres$'
+        ;;
+    model-catalog-read)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "model-catalog-read test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestModelCatalogReadForwardMigrationAgainstPostgres$'
+        ;;
+    standard-catalog-read)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "standard-catalog-read test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestStandardCatalogReadForwardMigrationAgainstPostgres$'
+        ;;
+    service-catalog-read)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "service-catalog-read test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestServiceCatalogReadForwardMigrationAgainstPostgres$'
+        ;;
+    develop-catalog-read)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "develop-catalog-read test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestDevelopCatalogReadForwardMigrationAgainstPostgres$'
+        ;;
+    quality-catalog-read)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "quality-catalog-read test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestQualityCatalogReadForwardMigrationAgainstPostgres$'
+        ;;
+    model-writer-decoupling)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "model-writer-decoupling test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestModelWriterDecouplingForwardMigrationAgainstPostgres$'
+        ;;
+    catalog-engine-descriptor-read)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "catalog-engine-descriptor-read test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestCatalogEngineDescriptorReadForwardMigrationAgainstPostgres$'
+        ;;
+    *)
+        echo "unsupported System IAM PostgreSQL gate test: $TEST_FILTER" >&2
+        exit 2
+        ;;
+esac
+for package in "${packages[@]}"; do
+    run_without_skips "$package" "$test_pattern"
 done

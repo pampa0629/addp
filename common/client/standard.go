@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/addp/common/dataquality"
 )
@@ -32,6 +33,172 @@ func (c *StandardClient) WithTenantID(tenantID uint) *StandardClient {
 		return nil
 	}
 	return &StandardClient{tenantHTTPClient: c.tenantHTTPClient.withTenantID(tenantID)}
+}
+
+const StandardCatalogResourceChangesSchemaVersion = "standard.catalog_resource_changes/v1"
+
+type StandardCatalogResourceChange struct {
+	ChangeID       string         `json:"change_id"`
+	SourceType     string         `json:"source_type"`
+	SourceIdentity string         `json:"source_identity"`
+	Operation      string         `json:"operation"`
+	SourceVersion  string         `json:"source_version"`
+	ObservedAt     time.Time      `json:"observed_at"`
+	Snapshot       map[string]any `json:"snapshot"`
+}
+
+type StandardCatalogResourceChangesResponse struct {
+	SchemaVersion string                          `json:"schema_version"`
+	Changes       []StandardCatalogResourceChange `json:"changes"`
+	NextCursor    string                          `json:"next_cursor"`
+	HasMore       bool                            `json:"has_more"`
+}
+
+type StandardCatalogReference struct {
+	SourceType     string `json:"source_type"`
+	SourceIdentity string `json:"source_identity"`
+}
+
+type StandardCatalogReferenceResolution struct {
+	SourceType     string         `json:"source_type"`
+	SourceIdentity string         `json:"source_identity"`
+	Found          bool           `json:"found"`
+	Status         string         `json:"status,omitempty"`
+	Version        int64          `json:"version,omitempty"`
+	Summary        map[string]any `json:"summary,omitempty"`
+	DetailPath     string         `json:"detail_path,omitempty"`
+}
+
+type ResolveStandardCatalogReferencesResponse struct {
+	Results []StandardCatalogReferenceResolution `json:"results"`
+}
+
+func (c *StandardClient) ListCatalogResourceChanges(ctx context.Context, afterCursor string, limit int) (*StandardCatalogResourceChangesResponse, error) {
+	if c == nil || c.tenantID == nil || *c.tenantID == 0 || limit < 1 || limit > 500 {
+		return nil, errors.New("Standard catalog resource changes require tenant context and limit between 1 and 500")
+	}
+	query := url.Values{"limit": []string{strconv.Itoa(limit)}}
+	if strings.TrimSpace(afterCursor) != "" {
+		query.Set("after_cursor", afterCursor)
+	}
+	var response StandardCatalogResourceChangesResponse
+	if err := c.doJSON(ctx, http.MethodGet, "/api/v1/standard/catalog-resources/changes?"+query.Encode(), nil, &response); err != nil {
+		return nil, fmt.Errorf("Standard list catalog resource changes: %w", err)
+	}
+	if err := validateStandardCatalogChanges(&response); err != nil {
+		return nil, fmt.Errorf("Standard list catalog resource changes: %w", err)
+	}
+	return &response, nil
+}
+
+func (c *StandardClient) ResolveCatalogReferences(ctx context.Context, references []StandardCatalogReference) (*ResolveStandardCatalogReferencesResponse, error) {
+	if c == nil || c.tenantID == nil || *c.tenantID == 0 || len(references) == 0 || len(references) > 200 {
+		return nil, errors.New("Standard catalog reference resolution requires tenant context and 1 to 200 references")
+	}
+	for _, reference := range references {
+		if !validStandardCatalogReference(reference) {
+			return nil, errors.New("Standard catalog reference resolution contains an invalid reference")
+		}
+	}
+	var response ResolveStandardCatalogReferencesResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/standard/runtime/catalog-references/resolve", map[string]any{"references": references}, &response); err != nil {
+		return nil, fmt.Errorf("Standard resolve catalog references: %w", err)
+	}
+	if len(response.Results) != len(references) {
+		return nil, errors.New("Standard catalog reference resolution returned a result count mismatch")
+	}
+	for index, result := range response.Results {
+		requested := references[index]
+		if result.SourceType != requested.SourceType || result.SourceIdentity != requested.SourceIdentity {
+			return nil, errors.New("Standard catalog reference resolution returned results out of request order")
+		}
+		if result.Found && (result.Version <= 0 || (result.Status != "draft" && result.Status != "approved" && result.Status != "deprecated") || len(result.Summary) == 0 || strings.TrimSpace(result.DetailPath) == "") {
+			return nil, errors.New("Standard catalog reference resolution returned an invalid found result")
+		}
+	}
+	return &response, nil
+}
+
+func validateStandardCatalogChanges(response *StandardCatalogResourceChangesResponse) error {
+	if response == nil || response.SchemaVersion != StandardCatalogResourceChangesSchemaVersion || strings.TrimSpace(response.NextCursor) == "" {
+		return errors.New("Standard returned an invalid catalog resource change batch")
+	}
+	for _, change := range response.Changes {
+		if strings.TrimSpace(change.ChangeID) == "" || !validStandardCatalogReference(StandardCatalogReference{SourceType: change.SourceType, SourceIdentity: change.SourceIdentity}) ||
+			(change.Operation != "upsert" && change.Operation != "missing") || len(change.SourceVersion) != 20 || len(change.Snapshot) == 0 || change.ObservedAt.IsZero() {
+			return errors.New("Standard returned an invalid catalog resource change")
+		}
+		if _, err := strconv.ParseUint(change.SourceVersion, 10, 64); err != nil {
+			return errors.New("Standard returned an invalid catalog source version")
+		}
+	}
+	return nil
+}
+
+func validStandardCatalogReference(reference StandardCatalogReference) bool {
+	if reference.SourceType != "metric" {
+		return false
+	}
+	id, err := strconv.ParseInt(reference.SourceIdentity, 10, 64)
+	return err == nil && id > 0 && strconv.FormatInt(id, 10) == reference.SourceIdentity
+}
+
+type StandardReference struct {
+	ObjectType string `json:"object_type"`
+	ID         int64  `json:"id"`
+}
+
+type StandardReferenceResolution struct {
+	ObjectType     string `json:"object_type"`
+	ID             int64  `json:"id"`
+	Found          bool   `json:"found"`
+	Referenceable  bool   `json:"referenceable"`
+	Name           string `json:"name,omitempty"`
+	Code           string `json:"code,omitempty"`
+	Status         string `json:"status,omitempty"`
+	LifecycleState string `json:"lifecycle_state,omitempty"`
+	Version        int64  `json:"version,omitempty"`
+}
+
+type standardReferenceResolutionRequest struct {
+	References []StandardReference `json:"references"`
+}
+
+type standardReferenceResolutionResponse struct {
+	Results []StandardReferenceResolution `json:"results"`
+}
+
+func (c *StandardClient) ResolveReferences(
+	ctx context.Context,
+	references []StandardReference,
+) ([]StandardReferenceResolution, error) {
+	if len(references) == 0 || len(references) > 200 {
+		return nil, errors.New("standard resolve references requires 1 to 200 references")
+	}
+	for _, reference := range references {
+		if reference.ID <= 0 || (reference.ObjectType != "domain" && reference.ObjectType != "glossary" && reference.ObjectType != "element") {
+			return nil, errors.New("standard resolve references contains an invalid reference")
+		}
+	}
+	var response standardReferenceResolutionResponse
+	if err := c.doJSON(
+		ctx,
+		http.MethodPost,
+		"/api/v1/standard/references/resolve",
+		standardReferenceResolutionRequest{References: references},
+		&response,
+	); err != nil {
+		return nil, fmt.Errorf("standard resolve references: %w", err)
+	}
+	if len(response.Results) != len(references) {
+		return nil, errors.New("standard resolve references returned a result count mismatch")
+	}
+	for index, result := range response.Results {
+		if result.ObjectType != references[index].ObjectType || result.ID != references[index].ID {
+			return nil, errors.New("standard resolve references returned results out of request order")
+		}
+	}
+	return response.Results, nil
 }
 
 type ElementResponse struct {

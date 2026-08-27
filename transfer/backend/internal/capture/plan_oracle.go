@@ -158,14 +158,14 @@ func validateOracleSourceFields(ctx context.Context, plan *CapturePlan) error {
 }
 
 func loadOracleCDCSpatialInfo(ctx context.Context, plan *CapturePlan, geometryFields []string) (*datatype.SpatialInfo, error) {
-	path := engineplugin.TabularItemPath(plan.SourceEngineID, engineplugin.CatalogTermSchema, plan.SourceSchema, plan.SourceTable)
-	facts, err := engineplugin.DescribeCatalogFacts(ctx, &engineplugin.Engine{
+	path := engineplugin.TabularItemPath(plan.SourceEngineID, engineplugin.EngineCatalogTermSchema, plan.SourceSchema, plan.SourceTable)
+	facts, err := engineplugin.DescribeEngineCatalogFacts(ctx, &engineplugin.Engine{
 		ID: plan.SourceEngineID, EngineType: "oracle", ConnectionInfo: plan.SourceConnInfo,
-	}, path, engineplugin.CatalogFactsOptions{IncludeSpatialFacts: true})
+	}, path, engineplugin.EngineCatalogFactsOptions{IncludeSpatialFacts: true})
 	if err != nil {
 		return nil, fmt.Errorf("describe Oracle CDC spatial facts: %w", err)
 	}
-	spatialInfo := engineplugin.CatalogFactsSpatialInfo(facts)
+	spatialInfo := engineplugin.EngineCatalogFactsSpatialInfo(facts)
 	if spatialInfo == nil || len(spatialInfo.GeometryColumns) != len(geometryFields) {
 		return nil, fmt.Errorf("Oracle Spatial CDC requires complete spatial metadata for fields %v", geometryFields)
 	}

@@ -1,0 +1,30 @@
+package service
+
+import "errors"
+
+var (
+	ErrEntryNotFound                   = errors.New("catalog entry not found")
+	ErrInvalidPage                     = errors.New("invalid catalog page")
+	ErrInvalidSourceChange             = errors.New("invalid source change")
+	ErrInvalidEntryUpdate              = errors.New("invalid catalog entry update")
+	ErrEntryVersionConflict            = errors.New("catalog entry version conflict")
+	ErrEntryNotEditable                = errors.New("catalog entry is not editable")
+	ErrInvalidGovernanceTransition     = errors.New("invalid catalog governance transition")
+	ErrCertificationPermissionRequired = errors.New("catalog certification permission required")
+	ErrDeprecationPermissionRequired   = errors.New("catalog deprecation permission required")
+	ErrDeprecationReasonRequired       = errors.New("catalog deprecation reason required")
+	ErrInvalidRecommendedSuccessor     = errors.New("catalog recommended successor is invalid")
+	ErrCurationRequirementsNotMet      = errors.New("catalog curation requirements not met")
+	ErrReferenceValidationUnavailable  = errors.New("catalog reference validation unavailable")
+	ErrReferenceNotReferenceable       = errors.New("catalog reference is not referenceable")
+	ErrInvalidSourceRebind             = errors.New("invalid catalog source rebind")
+	ErrSourceRebindConflict            = errors.New("catalog source rebind conflict")
+	ErrSearchUnavailable               = errors.New("catalog search projection unavailable")
+	ErrInventoryPermissionRequired     = errors.New("catalog inventory permission required")
+	ErrUserPrincipalRequired           = errors.New("catalog user principal required")
+	ErrInvalidPersonalRelation         = errors.New("invalid catalog personal relation")
+	ErrCollectionNotFound              = errors.New("catalog collection not found")
+	ErrCollectionVersionConflict       = errors.New("catalog collection version conflict")
+	ErrCollectionNameConflict          = errors.New("catalog collection name conflict")
+	ErrInvalidCollection               = errors.New("invalid catalog collection")
+)

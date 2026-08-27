@@ -1,6 +1,9 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -59,7 +62,7 @@ type materializationExecutionResponse struct {
 
 // ListTasks godoc
 // @Summary 列出 Model 物化任务 | List Model materialization tasks
-// @Description 列出由已审批逻辑表派生的物化准备和物化发布任务。| List materialization prepare and publish tasks derived from approved logical tables.
+// @Description 列出由已审批逻辑表派生的准备任务、未分组逻辑表发布任务和 Model 物化组原子发布任务。| List prepare tasks derived from approved logical tables, publish tasks for ungrouped logical tables, and Model-owned atomic materialization group publish tasks.
 // @Tags Materialization
 // @Produce json
 // @Param task_type query string false "任务类型 | Task type"
@@ -77,7 +80,7 @@ func (h *MaterializationTaskProviderHandler) ListTasks(c *gin.Context) {
 	taskType := strings.TrimSpace(c.Query("task_type"))
 	page := boundedPositiveInt(c.Query("page"), 1, 1_000_000)
 	pageSize := boundedPositiveInt(c.Query("page_size"), 20, 100)
-	items, total, err := h.materialization.ListTaskDefinitions(getTenantID(c), taskType, page, pageSize)
+	items, total, err := h.materialization.ListTaskDefinitions(c.Request.Context(), getTenantID(c), taskType, page, pageSize)
 	if err != nil {
 		writeServiceError(c, err)
 		return
@@ -111,7 +114,7 @@ func (h *MaterializationTaskProviderHandler) TaskDetail(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
 		return
 	}
-	item, err := h.materialization.GetTaskDefinition(id, getTenantID(c), c.Param("task_type"))
+	item, err := h.materialization.GetTaskDefinition(c.Request.Context(), id, getTenantID(c), c.Param("task_type"))
 	if err != nil {
 		writeServiceError(c, err)
 		return
@@ -150,7 +153,7 @@ func (h *MaterializationTaskProviderHandler) TaskExecute(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
 		return
 	}
-	if len(req.Parameters) != 0 || strings.TrimSpace(req.Source) != commonExecution.ModuleOrchestrator {
+	if strings.TrimSpace(req.Source) != commonExecution.ModuleOrchestrator {
 		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
 		return
 	}
@@ -164,13 +167,39 @@ func (h *MaterializationTaskProviderHandler) TaskExecute(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
 		return
 	}
+	definition, err := h.materialization.GetTaskDefinition(c.Request.Context(), id, getTenantID(c), c.Param("task_type"))
+	if err != nil {
+		writeServiceError(c, err)
+		return
+	}
+	if err := taskprovider.ValidateExecutionParameters(definition.ExecutionContract.InputSchema, req.Parameters, taskprovider.ParameterValidationOptions{}); err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
 	parentExecutionID := parent
 	var executionID string
 	switch c.Param("task_type") {
 	case commonExecution.TaskTypeMaterializationPrepare:
 		executionID, _, err = h.materialization.Prepare(c.Request.Context(), id, getTenantID(c), getUserID(c), trigger, commonExecution.ModuleOrchestrator, &parentExecutionID)
+	case commonExecution.TaskTypeMaterializationSeal:
+		batchID, writerExecutionID, targetLocator, parseErr := materializationSealParameters(req.Parameters)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+			return
+		}
+		executionID, err = h.materialization.Seal(
+			c.Request.Context(), id, getTenantID(c), getUserID(c), batchID, writerExecutionID,
+			targetLocator, trigger, commonExecution.ModuleOrchestrator, &parentExecutionID,
+		)
 	case commonExecution.TaskTypeMaterializationPublish:
 		executionID, err = h.materialization.Publish(c.Request.Context(), id, getTenantID(c), getUserID(c), trigger, commonExecution.ModuleOrchestrator, &parentExecutionID)
+	case commonExecution.TaskTypeMaterializationGroupPublish:
+		expectedGroupID, expectedGroupVersion, parseErr := materializationGroupExpectation(req.Parameters)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+			return
+		}
+		executionID, err = h.materialization.PublishGroup(c.Request.Context(), id, getTenantID(c), getUserID(c), expectedGroupID, expectedGroupVersion, trigger, commonExecution.ModuleOrchestrator, &parentExecutionID)
 	default:
 		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
 		return
@@ -180,6 +209,33 @@ func (h *MaterializationTaskProviderHandler) TaskExecute(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusAccepted, materializationExecuteResponse{ExecutionID: executionID, Status: commonExecution.ExecutionStatusPending})
+}
+
+func materializationSealParameters(parameters map[string]interface{}) (string, string, string, error) {
+	batchID, batchOK := parameters["batch_id"].(string)
+	writerExecutionID, writerOK := parameters["writer_execution_id"].(string)
+	targetLocator, targetOK := parameters["target_locator"].(string)
+	if !batchOK || !writerOK || !targetOK {
+		return "", "", "", fmt.Errorf("materialization seal parameters are invalid")
+	}
+	return strings.TrimSpace(batchID), strings.TrimSpace(writerExecutionID), strings.TrimSpace(targetLocator), nil
+}
+
+func materializationGroupExpectation(parameters map[string]interface{}) (int64, int64, error) {
+	raw, err := json.Marshal(parameters)
+	if err != nil {
+		return 0, 0, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var expectation struct {
+		ExpectedGroupID      int64 `json:"expected_group_id"`
+		ExpectedGroupVersion int64 `json:"expected_group_version"`
+	}
+	if err := decoder.Decode(&expectation); err != nil || expectation.ExpectedGroupID <= 0 || expectation.ExpectedGroupVersion <= 0 {
+		return 0, 0, fmt.Errorf("materialization group expectation is invalid")
+	}
+	return expectation.ExpectedGroupID, expectation.ExpectedGroupVersion, nil
 }
 
 // ExecutionStatus godoc
@@ -211,6 +267,8 @@ func (h *MaterializationTaskProviderHandler) ExecutionStatus(c *gin.Context) {
 	if execution.Metadata != nil {
 		if raw, ok := execution.Metadata["outputs"].(map[string]interface{}); ok {
 			outputs = commonModels.JSONMap(raw)
+		} else if raw, ok := execution.Metadata["outputs"].(commonModels.JSONMap); ok {
+			outputs = raw
 		}
 	}
 	c.JSON(http.StatusOK, materializationExecutionResponse{TaskExecution: execution, Outputs: outputs})
@@ -232,5 +290,5 @@ func boundedPositiveInt(raw string, fallback, maximum int) int {
 }
 
 func isMaterializationExecutionTaskType(taskType string) bool {
-	return taskType == commonExecution.TaskTypeMaterializationPrepare || taskType == commonExecution.TaskTypeMaterializationPublish
+	return taskType == commonExecution.TaskTypeMaterializationPrepare || taskType == commonExecution.TaskTypeMaterializationSeal || taskType == commonExecution.TaskTypeMaterializationPublish || taskType == commonExecution.TaskTypeMaterializationGroupPublish
 }

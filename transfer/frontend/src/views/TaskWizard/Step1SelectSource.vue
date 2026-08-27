@@ -76,6 +76,46 @@
         </el-select>
       </el-form-item>
 
+      <el-form-item
+        v-if="querySourceAvailable"
+        :label="t('transfer.taskWizard.querySourceLabel')"
+      >
+        <div class="query-source-config">
+          <el-switch
+            v-model="querySourceEnabled"
+            :active-text="t('transfer.taskWizard.querySourceEnabled')"
+            @change="syncQuerySource"
+          />
+          <el-alert
+            v-if="querySourceEnabled"
+            type="info"
+            :closable="false"
+            :title="t('transfer.taskWizard.querySourceHint')"
+          />
+          <template v-if="querySourceEnabled">
+            <el-select v-model="queryLanguage" @change="syncQuerySource">
+              <el-option label="MQL" value="mql" />
+              <el-option label="SQL" value="sql" />
+            </el-select>
+            <el-input
+              v-model="queryStatement"
+              type="textarea"
+              :rows="10"
+              :placeholder="t('transfer.taskWizard.queryStatementPlaceholder')"
+              @input="syncQuerySource"
+            />
+            <el-input
+              v-model="queryParametersText"
+              type="textarea"
+              :rows="3"
+              :placeholder="t('transfer.taskWizard.queryParametersPlaceholder')"
+              @input="syncQuerySource"
+            />
+            <div v-if="queryParametersError" class="query-error">{{ queryParametersError }}</div>
+          </template>
+        </div>
+      </el-form-item>
+
     </el-form>
   </div>
 </template>
@@ -117,6 +157,11 @@ const formData = reactive({
 const selectedNode = ref(null)
 const pickerSelection = ref(null)
 const containerChildName = ref('')
+const querySourceEnabled = ref(props.wizardState.sourceQueryEnabled.value)
+const queryLanguage = ref(props.wizardState.sourceQueryLanguage.value || 'mql')
+const queryStatement = ref(props.wizardState.sourceQueryStatement.value || '')
+const queryParametersText = ref(JSON.stringify(props.wizardState.sourceQueryParameters.value || {}, null, 2))
+const queryParametersError = ref('')
 
 const supportedEncodedSourceFormats = ref(new Set())
 const supportedRawCopyFormats = ref(new Map())
@@ -140,6 +185,24 @@ const selectedContainerChild = computed(() => {
 const selectedTransferDataType = computed(() => {
   return selectedContainerChild.value ? 'table' : selectedDataType.value
 })
+const querySourceAvailable = computed(() => {
+  return !!selectedNode.value &&
+    props.wizardState.runtimeBoundary.value === 'bounded' &&
+    selectedTransferDataType.value === 'table' &&
+    representationForSelection(selectedNode.value, selectedEngine.value) === 'native'
+})
+
+watch(
+  () => props.wizardState.sourceQueryStatement.value,
+  (statement) => {
+    if (statement === queryStatement.value) return
+    querySourceEnabled.value = props.wizardState.sourceQueryEnabled.value
+    queryLanguage.value = props.wizardState.sourceQueryLanguage.value || 'mql'
+    queryStatement.value = statement || ''
+    queryParametersText.value = JSON.stringify(props.wizardState.sourceQueryParameters.value || {}, null, 2)
+  },
+  { flush: 'post' }
+)
 
 watch(selectedNode, async (node) => {
   if (!node) {
@@ -157,6 +220,27 @@ watch(selectedNode, async (node) => {
   syncSource(node)
   await loadFieldsForNode(node)
 })
+
+function syncQuerySource() {
+  let parameters = {}
+  queryParametersError.value = ''
+  try {
+    parameters = JSON.parse(queryParametersText.value.trim() || '{}')
+    if (!parameters || Array.isArray(parameters) || typeof parameters !== 'object') {
+      throw new Error(t('transfer.taskWizard.queryParametersObjectRequired'))
+    }
+  } catch (error) {
+    queryParametersError.value = error.message || t('transfer.taskWizard.queryParametersInvalid')
+    parameters = {}
+  }
+  props.wizardState.updateSourceQuery({
+    enabled: querySourceEnabled.value,
+    language: queryLanguage.value,
+    statement: queryStatement.value,
+    parameters,
+    valid: !queryParametersError.value
+  })
+}
 
 watch(containerChildName, () => {
   if (!selectedNode.value || !isContainerSource.value) return
@@ -757,6 +841,17 @@ onMounted(async () => {
 .step-description {
   color: var(--addp-text-secondary);
   margin-bottom: 30px;
+}
+
+.query-source-config {
+  width: min(960px, 100%);
+  display: grid;
+  gap: 12px;
+}
+
+.query-error {
+  color: var(--addp-color-danger);
+  font-size: 12px;
 }
 
 .source-resource-tree {

@@ -15,7 +15,7 @@ import (
 
 const oracleSpatialMinimumTolerance = 1e-9
 
-func (p *OraclePlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteOptions) error {
+func (p *OraclePlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteOptions) error {
 	schema, table, err := oracleTablePathParts(path)
 	if err != nil {
 		return err
@@ -51,7 +51,7 @@ func (p *OraclePlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.Co
 	return ensureOracleSpatialMetadataAndIndexes(ctx, db, schema, table, fields, opts.SpatialInfo)
 }
 
-func (p *OraclePlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) error {
+func (p *OraclePlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) error {
 	schema, table, err := oracleTablePathParts(path)
 	if err != nil {
 		return err

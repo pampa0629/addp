@@ -26,6 +26,7 @@ mindmap
       核心数据流转模块
         transfer:数据传输
         meta:元数据
+        catalog:企业数据目录
         manager:数据管理
         develop:数据开发
         service:数据服务
@@ -41,8 +42,8 @@ mindmap
     引擎体系
       Provider 化引擎插件接口
         EnginePlugin 基础
-        CatalogProvider
-        CatalogFactsProvider
+        EngineCatalogProvider
+        EngineCatalogFactsProvider
         ChangeStreamReaderProvider
         QueryRuntimeProvider
       引擎分类
@@ -89,9 +90,16 @@ mindmap
         DocumentTextReader
         MediaInfoProvider
         ContainerChildResolver
-        CatalogFactsProvider
+        EngineCatalogFactsProvider
         GraphSampleProvider
         Spatial 横切能力
+    企业数据目录
+      CatalogEntry 企业稳定身份
+      SourceBinding 专业来源绑定
+      CatalogComponent 字段或组件
+      业务语义关联与责任
+      目录可见性与企业元数据搜索
+      Meta → Catalog → Asset → Portal
     数据开发
       开发方式（capabilities.compute）
         Query → 查询工作台
@@ -167,7 +175,7 @@ mindmap
 
 **引擎系统架构、分类体系和能力声明机制**
 
-- Provider 化引擎插件架构 (EnginePlugin、CatalogProvider、CatalogFactsProvider、StoreProvider、QueryRuntimeProvider)
+- Provider 化引擎插件架构 (EnginePlugin、EngineCatalogProvider、EngineCatalogFactsProvider、StoreProvider、QueryRuntimeProvider)
 - 引擎分类体系 (按功能、按来源、按注册方式)
 - 当前支持的引擎列表
 - 结构化能力声明 (`engine.capabilities/v1`)
@@ -300,7 +308,21 @@ mindmap
 
 ---
 
-### 12. [认证与路由](addp登录认证的原理说明.md)
+### 12. [企业数据目录](addp企业数据目录体系图.md)
+
+**企业资源稳定身份、业务语义关联、责任和权限感知发现**
+
+- CatalogEntry 与 Meta DataItem fingerprint 的身份分离
+- Meta、Standard、Catalog、Manager、Asset、Portal 的事实边界
+- DataItem 自动建档、来源失效和显式重绑
+- Department / Project Group / User 与目录身份的关系
+- 技术资源、企业元数据、内容和资产搜索的所有权
+
+📄 **[阅读完整文档 →](addp企业数据目录体系图.md)**
+
+---
+
+### 13. [认证与路由](addp登录认证的原理说明.md)
 
 **Browser AuthSession、登录恢复、静默刷新和 Console iframe 认证机制**
 
@@ -336,6 +358,7 @@ mindmap
 - **[元数据体系图](addp元数据体系图.md)** - 元数据层次、扫描流程、attributes 结构
 - **[数据项体系图](addp数据项体系图.md)** - engine、node、data item 链条和模块职责边界
 - **[数据类型和格式体系图](addp数据类型和格式体系图.md)** - 数据类型、文件格式、能力分层、provider / reader 体系
+- **[企业数据目录体系图](addp企业数据目录体系图.md)** - CatalogEntry、来源绑定、业务语义、责任和企业目录搜索边界
 
 ### 数据开发与编排
 
@@ -366,6 +389,11 @@ graph TB
 
     元数据 --> 类型[数据类型与格式]
     元数据 --> 开发
+    元数据 --> 目录[企业数据目录]
+    标准[数据标准] --> 目录
+    账号[账号与权限] --> 目录
+    目录 --> 资产[数据资产]
+    资产 --> 门户[资产门户]
 
     开发 --> 编排[任务编排]
     编排 --> 监控[统一监控]
@@ -374,7 +402,7 @@ graph TB
     服务 --> 血缘
     元数据 --> 血缘
 
-    账号[账号与权限] --> 隔离[基础设施隔离]
+    账号 --> 隔离[基础设施隔离]
     账号 --> 认证[认证与路由]
 
     模块[模块架构] --> 引擎

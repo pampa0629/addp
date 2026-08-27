@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	engineplugin "github.com/addp/common/engine/plugin"
+	_ "github.com/addp/common/engine/plugins/mongodb"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/plugins/csv"
 	_ "github.com/addp/common/format/plugins/filegdb"
@@ -18,6 +19,72 @@ import (
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/transfer/internal/executor"
 )
+
+func TestBuildTableTransferPlanForMongoQuerySource(t *testing.T) {
+	nullable := false
+	spec := TableExportTaskSpec{
+		Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},
+		Load:    LoadSpec{Mode: loadModeSnapshot},
+		Source: EndpointSpec{
+			Locator:        "addp://engine/11/path/Outdoor/Outdoors?type=collection",
+			DataType:       dataTypeTable,
+			Representation: representationNative,
+			Query: &QuerySourceSpec{
+				Language:  "mql",
+				Statement: `{"aggregate":"Outdoors","pipeline":[{"$unwind":"$members"},{"$project":{"person_id":"$members.personid","activity_id":"$_id","_id":0}}]}`,
+			},
+		},
+		Target: EndpointSpec{
+			ParentLocator:  schemaLocator(12, "public"),
+			Name:           "dwd_outdoor_participation_staging",
+			DataType:       dataTypeTable,
+			Representation: representationNative,
+			Policy:         map[string]interface{}{"apply_mode": "replace"},
+		},
+		Transforms: []TransformSpec{{
+			Type: "field_mapping", Mode: "project",
+			Fields: []FieldMappingSpec{
+				{Source: "person_id", Target: "person_id", TargetType: "string", Nullable: &nullable},
+				{Source: "activity_id", Target: "activity_id", TargetType: "string", Nullable: &nullable},
+			},
+		}},
+		BatchSize: 512,
+	}
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		11: {Type: "mongodb", EngineID: 11},
+		12: {Type: "postgresql", EngineID: 12},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan() error = %v", err)
+	}
+	if result.Plan.Source.Kind != executor.TableEndpointQuery || result.Plan.Source.RuntimeQuery == nil {
+		t.Fatalf("query source plan = %#v", result.Plan.Source)
+	}
+	if result.Plan.Source.RuntimeQuery.Language != "mql" || !result.Plan.Source.RuntimeQuery.Options.ReadOnly {
+		t.Fatalf("runtime query = %#v", result.Plan.Source.RuntimeQuery)
+	}
+	if got := result.Plan.Source.RuntimeQuery.TargetPath.StringPath(); got != "Outdoor/Outdoors" {
+		t.Fatalf("query target path = %q", got)
+	}
+}
+
+func TestQuerySourceRequiresExplicitTypedProjectMapping(t *testing.T) {
+	spec := minimalEncodedToNativeSpec()
+	spec.Source = EndpointSpec{
+		Locator:        "addp://engine/11/path/Outdoor?type=database",
+		DataType:       dataTypeTable,
+		Representation: representationNative,
+		Query:          &QuerySourceSpec{Language: "mql", Statement: `{"aggregate":"Outdoors","pipeline":[]}`},
+	}
+	_, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		11: {Type: "mongodb", EngineID: 11},
+		2:  {Type: "postgresql", EngineID: 2},
+	})
+	if err == nil || !strings.Contains(err.Error(), "project field_mapping") {
+		t.Fatalf("BuildTableTransferPlan() error = %v, want typed project mapping error", err)
+	}
+}
 
 func TestParseInfraLocatorURIForMinioObject(t *testing.T) {
 	loc, err := ParseInfraLocatorURI("addp-infra://minio/manager/tenant_7/import/20260619/upload/roads.shp?type=object")
@@ -31,9 +98,9 @@ func TestParseInfraLocatorURIForMinioObject(t *testing.T) {
 		t.Fatalf("locator path = %q, want tenant_7/import/20260619/upload/roads.shp", got)
 	}
 
-	catalogPath, err := loc.CatalogPath()
+	catalogPath, err := loc.EngineCatalogPath()
 	if err != nil {
-		t.Fatalf("CatalogPath failed: %v", err)
+		t.Fatalf("EngineCatalogPath failed: %v", err)
 	}
 	if catalogPath.EngineID != 0 {
 		t.Fatalf("catalog engine id = %d, want 0 for infra resolver path", catalogPath.EngineID)
@@ -1279,9 +1346,9 @@ func TestBuildTableTransferPlanForEncodedObjectToEncodedObject(t *testing.T) {
 }
 
 func TestTabularNamespaceTermUsesCatalogModel(t *testing.T) {
-	caps := engineplugin.NewTabularCapabilities("oracle", engineplugin.CatalogTermSchema, engineplugin.TabularCapabilityOptions{})
+	caps := engineplugin.NewTabularCapabilities("oracle", engineplugin.EngineCatalogTermSchema, engineplugin.TabularCapabilityOptions{})
 	binding := EngineBinding{Type: "oracle", Capabilities: &caps}
-	if got := tabularNamespaceTerm(binding); got != engineplugin.CatalogTermSchema {
+	if got := tabularNamespaceTerm(binding); got != engineplugin.EngineCatalogTermSchema {
 		t.Fatalf("Oracle namespace term = %q, want schema", got)
 	}
 	path, err := nativeTableTargetPath(EndpointSpec{
@@ -1291,7 +1358,7 @@ func TestTabularNamespaceTermUsesCatalogModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(path.Segments) < 2 || path.Segments[len(path.Segments)-2].Term != engineplugin.CatalogTermSchema {
+	if len(path.Segments) < 2 || path.Segments[len(path.Segments)-2].Term != engineplugin.EngineCatalogTermSchema {
 		t.Fatalf("Oracle target path = %#v", path)
 	}
 }

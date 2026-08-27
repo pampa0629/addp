@@ -48,5 +48,5 @@ run_without_skips() {
 }
 
 cd "$ROOT_DIR/standard/backend"
-run_without_skips ./internal/repository '^(TestMigrateAgainstPostgres|TestMigrateRenamesLegacyDocumentVersion|TestPostgresDeletePolicies)$'
-run_without_skips ./internal/service '^TestPostgresStandardReferenceDeletion'
+run_without_skips ./internal/repository '^(TestMigrateAgainstPostgres|TestMigrateRenamesLegacyDocumentVersion|TestPostgresDeletePolicies|TestPostgresCatalogMetricChangeFeedCapturesOwnerLifecycle)$'
+run_without_skips ./internal/service '^TestPostgres(StandardReferenceDeletion|MetricProfessionalRelations)'

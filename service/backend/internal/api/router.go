@@ -31,7 +31,8 @@ func SetupRouter(
 	wmtsHandler *WMTSHandler,
 	ogcTilesHandler *OGCTilesHandler,
 	resourceCapabilityHandler *ResourceCapabilityHandler,
-	serviceEndpointHandler *ServiceEndpointHandler,
+	consumerCatalogHandler *ConsumerCatalogHandler,
+	catalogResourceHandler *CatalogResourceHandler,
 	graphQueryHandler *GraphQueryHandler,
 	systemClient *commonClient.SystemClient,
 	systemServiceClient *commonClient.SystemServiceClient,
@@ -104,23 +105,27 @@ func SetupRouter(
 		return authMiddleware.MustNewPermissionGuard(keys...)
 	}
 	{
-		assetDiscHandler := newAssetDiscoverableHandler(db)
-		api.GET(
-			"/assets/discoverable",
-			authMiddleware.MustNewServiceClientGuard("addp-asset"),
-			permission(serviceauthorization.PermissionServiceDefinitionRead),
-			assetDiscHandler.listDiscoverableAssets,
-		)
-		api.GET(
-			"/endpoints",
-			authMiddleware.MustNewServiceClientGuard("addp-portal"),
-			permission(serviceauthorization.PermissionServiceEndpointRead),
-			serviceEndpointHandler.GetEndpoints,
-		)
-
 		// 审计日志中间件（记录到 System 模块）
 		if systemClient != nil {
 			api.Use(audit.ServiceAuditMiddleware("service", systemServiceClient))
+		}
+
+		// Service Consumer Catalog 只返回当前调用者可执行的只读消费投影。
+		if consumerCatalogHandler != nil {
+			consumerAPI := api.Group("/consumer/services")
+			consumerAPI.Use(
+				permission(serviceauthorization.PermissionServiceDataReadExecute),
+				RequireTenantQueryExecutionPermission,
+			)
+			consumerAPI.GET("", consumerCatalogHandler.ListServices)
+			consumerAPI.GET("/:service_type/:service_id", consumerCatalogHandler.GetService)
+		}
+
+		if catalogResourceHandler != nil {
+			catalogResources := api.Group("")
+			catalogResources.Use(authMiddleware.MustNewServiceClientGuard("addp-catalog"))
+			catalogResources.GET("/catalog-resources/changes", permission(serviceauthorization.PermissionServiceCatalogRead), catalogResourceHandler.ListChanges)
+			catalogResources.POST("/runtime/catalog-references/resolve", permission(serviceauthorization.PermissionServiceCatalogRead), catalogResourceHandler.ResolveReferences)
 		}
 
 		// 查询服务管理 API

@@ -13,7 +13,7 @@ definitions:
       role:
         type: string
       storage:
-        $ref: '#/definitions/plugin.CatalogStorageFacts'
+        $ref: '#/definitions/plugin.EngineCatalogStorageFacts'
       table:
         $ref: '#/definitions/datatype.TableInfo'
       term:
@@ -175,6 +175,65 @@ definitions:
       status:
         type: string
     type: object
+  github_com_addp_develop_backend_internal_models.CatalogReference:
+    properties:
+      source_identity:
+        type: string
+      source_type:
+        type: string
+    required:
+    - source_identity
+    - source_type
+    type: object
+  github_com_addp_develop_backend_internal_models.CatalogReferenceResolution:
+    properties:
+      detail_path:
+        type: string
+      found:
+        type: boolean
+      source_identity:
+        type: string
+      source_type:
+        type: string
+      status:
+        type: string
+      summary:
+        additionalProperties: {}
+        type: object
+      version:
+        type: integer
+    type: object
+  github_com_addp_develop_backend_internal_models.CatalogResourceChange:
+    properties:
+      change_id:
+        type: string
+      observed_at:
+        type: string
+      operation:
+        type: string
+      snapshot:
+        additionalProperties: {}
+        type: object
+      source_identity:
+        type: string
+      source_type:
+        type: string
+      source_version:
+        type: string
+    type: object
+  github_com_addp_develop_backend_internal_models.CatalogResourceChangesResponse:
+    properties:
+      changes:
+        items:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.CatalogResourceChange'
+        type: array
+      has_more:
+        type: boolean
+      next_cursor:
+        type: string
+      schema_version:
+        type: string
+    type: object
   github_com_addp_develop_backend_internal_models.CreateDevTaskSwaggerRequest:
     properties:
       content:
@@ -307,7 +366,7 @@ definitions:
       parameters:
         type: object
       query:
-        example: SELECT * FROM cities
+        example: SELECT * FROM addp_input.source
         type: string
       query_parameters:
         items:
@@ -320,6 +379,12 @@ definitions:
         - cypher
         example: sql
         type: string
+      relation_inputs:
+        example:
+        - source
+        items:
+          type: string
+        type: array
       target_locator:
         example: addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657
         type: string
@@ -403,8 +468,6 @@ definitions:
         type: integer
       engine_specific:
         $ref: '#/definitions/github_com_addp_develop_backend_internal_models.WorkflowEngineSpecificConfigSwagger'
-      materialization_target:
-        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.MaterializationTargetSwagger'
       type:
         example: workflow
         type: string
@@ -658,12 +721,6 @@ definitions:
         example: 1
         type: integer
     type: object
-  github_com_addp_develop_backend_internal_models.MaterializationTargetSwagger:
-    properties:
-      logical_table_id:
-        example: 3
-        type: integer
-    type: object
   github_com_addp_develop_backend_internal_models.NotebookRuntimeBindingSwaggerRequest:
     properties:
       engine_id:
@@ -848,6 +905,24 @@ definitions:
         type: integer
       task:
         $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger'
+    type: object
+  github_com_addp_develop_backend_internal_models.ResolveCatalogReferencesRequest:
+    properties:
+      references:
+        items:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.CatalogReference'
+        maxItems: 200
+        minItems: 1
+        type: array
+    required:
+    - references
+    type: object
+  github_com_addp_develop_backend_internal_models.ResolveCatalogReferencesResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.CatalogReferenceResolution'
+        type: array
     type: object
   github_com_addp_develop_backend_internal_models.StorageEngineDescriptorSwagger:
     properties:
@@ -1257,15 +1332,6 @@ definitions:
       offset:
         type: integer
     type: object
-  internal_api.notebookCatalogChildrenRequest:
-    properties:
-      engine_id:
-        type: integer
-      options:
-        $ref: '#/definitions/client.EngineCatalogListOptions'
-      path:
-        $ref: '#/definitions/client.EngineCatalogPath'
-    type: object
   internal_api.notebookChangeStreamRequest:
     properties:
       batch_size:
@@ -1291,6 +1357,15 @@ definitions:
         $ref: '#/definitions/client.EngineCatalogPath'
       range:
         $ref: '#/definitions/internal_api.notebookByteRange'
+    type: object
+  internal_api.notebookEngineCatalogChildrenRequest:
+    properties:
+      engine_id:
+        type: integer
+      options:
+        $ref: '#/definitions/client.EngineCatalogListOptions'
+      path:
+        $ref: '#/definitions/client.EngineCatalogPath'
     type: object
   internal_api.notebookGraphQueryRequest:
     properties:
@@ -1483,7 +1558,7 @@ definitions:
         description: UI 组件类型 (resource_tree_picker 等)
         type: string
     type: object
-  plugin.CatalogStorageFacts:
+  plugin.EngineCatalogStorageFacts:
     properties:
       content_type:
         type: string
@@ -1657,32 +1732,52 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.task.execute
-  /assets/discoverable:
+  /catalog-resources/changes:
     get:
-      description: 返回当前租户下可被资产模块发现的开发任务 | List active develop tasks for Asset discovery
+      description: 按不透明游标返回 Query / Workflow DevTask 的最小检索摘要变化，仅供 Catalog 服务消费 | Return
+        minimal search-summary changes for Query / Workflow DevTasks by opaque cursor
+        for the Catalog service only
+      parameters:
+      - description: 上次成功提交的不透明游标，空值从历史起点开始 | Opaque cursor committed by the consumer;
+          empty starts from the beginning
+        in: query
+        name: after_cursor
+        type: string
+      - description: 批大小，默认 200，最大 500 | Batch size, default 200 and maximum 500
+        in: query
+        name: limit
+        type: integer
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            items:
-              additionalProperties: true
-              type: object
-            type: array
-        "500":
-          description: Internal Server Error
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.CatalogResourceChangesResponse'
+        "400":
+          description: 无效游标或批大小 | Invalid cursor or batch size
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "401":
+          description: 需要认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "403":
+          description: 非 Catalog 服务或权限不足 | Catalog service or permission required
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "500":
+          description: 读取失败 | Read failed
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 列出可发现资产 | List discoverable assets
+      summary: 拉取 Develop 成果目录变化 | Pull Develop artifact catalog changes
       tags:
-      - Develop
+      - Catalog Integration
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - develop.task.read
+      - develop.catalog.read
   /engines:
     get:
       description: 返回 active 且声明 compute.query 能力的注册引擎；非 online 项由前端展示并禁选 | Return
@@ -2090,7 +2185,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/internal_api.notebookCatalogChildrenRequest'
+          $ref: '#/definitions/internal_api.notebookEngineCatalogChildrenRequest'
       produces:
       - application/json
       responses:
@@ -2952,6 +3047,52 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.task.execute
+  /runtime/catalog-references/resolve:
+    post:
+      consumes:
+      - application/json
+      description: 按请求顺序动态解析 1 到 200 个 DevTask 引用；跨 Tenant、不在接入范围和不存在统一 found=false，仅供
+        Catalog 服务消费 | Dynamically resolve 1 to 200 DevTask references in request
+        order; cross-tenant, out-of-scope, and missing references all return found=false;
+        Catalog service only
+      parameters:
+      - description: DevTask 目录引用 | DevTask catalog references
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ResolveCatalogReferencesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ResolveCatalogReferencesResponse'
+        "400":
+          description: 请求无效 | Invalid request
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "401":
+          description: 需要认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "403":
+          description: 非 Catalog 服务或权限不足 | Catalog service or permission required
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "500":
+          description: 解析失败 | Resolution failed
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 解析 Develop 成果目录引用 | Resolve Develop artifact catalog references
+      tags:
+      - Catalog Integration
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.catalog.read
   /settings/query-policy:
     get:
       produces:

@@ -6,7 +6,6 @@ import (
 
 	"github.com/addp/common/execution"
 	"github.com/addp/common/models"
-	"github.com/lib/pq"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -33,7 +32,6 @@ func TestEnsureSQLiteStoreCreatesCanonicalTaskExecutionSchema(t *testing.T) {
 		"actor_tenant_membership_id",
 		"issued_authorization_version",
 		"execution_authorization_id",
-		"authorization_effects",
 		"authorization_expires_at",
 	} {
 		var count int
@@ -67,7 +65,6 @@ func TestEnsureSQLiteStoreCreatesCanonicalTaskExecutionSchema(t *testing.T) {
 		ActorTenantMembershipID:    &membershipID,
 		IssuedAuthorizationVersion: &authorizationVersion,
 		ExecutionAuthorizationID:   &authorizationID,
-		AuthorizationEffects:       pq.StringArray{"manager.data.read"},
 		AuthorizationExpiresAt:     &now,
 		ExecutionConfig:            models.JSONMap{"sample": true},
 		ErrorDetails:               models.JSONMap{},

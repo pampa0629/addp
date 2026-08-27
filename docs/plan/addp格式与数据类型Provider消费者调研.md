@@ -70,7 +70,7 @@ Manager 现在主要依赖两类信号：
 
 2. **少量直接引擎能力**
    - `plugin.ContentReadableProvider`
-   - `plugin.CatalogProvider`
+   - `plugin.EngineCatalogProvider`
    - `plugin.GraphQueryProvider`
 
 典型代码：

@@ -2,7 +2,7 @@
 
 ## 模块定位
 
-Asset 模块负责数据资产管理，包括资产类型、资产目录、资产上下架、授权申请、授权有效期、评价反馈以及跨 Meta、Service、Standard、Develop 的资产自动发现。
+Asset 模块负责数据资产管理，包括资产类型、资产分类、一个或多个企业 CatalogEntry 的资产组合、资产上下架、授权申请、授权有效期、评价反馈和运营。Asset 不再跨 Meta、Service、Standard、Develop 自动发现并直接创建资产草稿，CatalogEntry 是唯一资源组合入口。
 
 ## 技术栈与端口
 
@@ -40,7 +40,8 @@ asset/
 - 每个公开 Operation 必须在 Swagger 中声明 `x-addp-auth-mode`，Permission 模式使用 Asset Manifest 中的精确 Key。
 - 管理路由必须同时要求 `asset.management.read` 和对应资源 Permission；消费路由位于唯一的 `/consumer` 子资源下，只允许已发布资产，并把申请、授权和评价主体固定为当前 User AuthContext。
 - Portal 仅在同步请求栈内向 Asset 消费路由转发当前 User Bearer；Asset 不接受调用方提交的 `applicant_id`、`user_id`、Tenant Header 或内部密钥。
-- 资产自动发现会调用 `META_URL`、`SERVICE_URL`、`STANDARD_URL`、`DEVELOP_URL`；Asset 必须以 `addp-asset` Client Credentials 按当前 Tenant 即时获取 Service Access Token，只发送 Bearer，不发送内部密钥或客户端 Tenant Header。
+- 目标来源模型是 `Asset -> AssetComponent[] -> catalog_entry_id`。Asset 不复制 Catalog 的来源绑定、语义关联或责任事实；发布时校验 CatalogEntry 有效性，发布承诺和需要冻结的说明由 Asset 自己版本化。
+- Asset 只通过 Catalog 选择和组合目录对象，不调用 Meta、Service、Standard 或 Develop 自动创建草稿，也不保留 `{source_module, source_reference}` 或 fallback。
 - 资产发布、授权和评价均按租户隔离，认证信息通过 `common/middleware/auth` 获取。
 
 ## 开发与验证
@@ -68,6 +69,6 @@ bash scripts/swagger/check-route-coverage.sh asset
 ## 前端公开路由
 
 - 模块内 Router 使用 `/assets`、`/applications`、`/categories` 等无模块前缀路径；Console 公开 URL 统一加 `/asset` 前缀。
-- 资产只允许后端真实支持的 `/assets/:id` 详情和 `/assets/:id/edit` 编目编辑；资产由 owner 模块自动发现，不提供手工创建路由。
+- 资产公开路由为 `/assets/new`、`/assets/:id` 和 `/assets/:id/edit`；创建与编辑都基于 CatalogEntry 选择和组合。
 - 资产列表当前目录使用 `catalog_id`；申请与授权默认 `applications` Tab 省略，问题反馈使用 `?tab=feedbacks`。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`；编辑保存和取消均用 `replace` 回到详情。

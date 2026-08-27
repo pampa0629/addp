@@ -34,11 +34,11 @@ type IAMNotebookSessionAuthorizationResponse struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-type IAMNotebookCatalogChildrenRequest struct {
-	SessionID string                    `json:"session_id"`
-	EngineID  uint                      `json:"engine_id"`
-	Path      models.CatalogPath        `json:"path"`
-	Options   models.CatalogListOptions `json:"options,omitempty"`
+type IAMNotebookEngineCatalogChildrenRequest struct {
+	SessionID string                          `json:"session_id"`
+	EngineID  uint                            `json:"engine_id"`
+	Path      models.EngineCatalogPath        `json:"path"`
+	Options   models.EngineCatalogListOptions `json:"options,omitempty"`
 }
 
 type IAMRevokeNotebookSessionAuthorizationRequest struct {
@@ -54,30 +54,30 @@ type IAMNotebookExecutionEngineAccessRequest struct {
 
 type iamNotebookSessionAuthorizationService interface {
 	Issue(context.Context, iam.IssueNotebookSessionAuthorizationInput) (*iam.IssuedNotebookSessionAuthorization, error)
-	Authorize(context.Context, iam.AuthorizeNotebookCatalogInput) (*iam.AuthorizedNotebookCatalog, error)
+	Authorize(context.Context, iam.AuthorizeNotebookEngineCatalogInput) (*iam.AuthorizedNotebookEngineCatalog, error)
 	DeriveExecutionEngineAccess(context.Context, iam.DeriveNotebookExecutionEngineAccessInput) (*iam.AuthorizedExecutionEngineAccess, error)
 	Revoke(context.Context, iam.RevokeNotebookSessionAuthorizationInput) error
 }
 
-type notebookCatalogEngineResolver interface {
+type notebookEngineCatalogEngineResolver interface {
 	GetForExecution(id, tenantID uint) (*models.Engine, error)
 	ListRuntimeDescriptors(page, pageSize int, filter systemservice.EngineListFilter, tenantID uint) ([]models.EngineRuntimeDescriptor, int64, error)
 }
 
-type notebookCatalogChildrenLister interface {
-	ListCatalogChildren(context.Context, *models.Engine, models.CatalogListChildrenRequest) ([]models.CatalogEntry, error)
+type notebookEngineCatalogChildrenLister interface {
+	ListEngineCatalogChildren(context.Context, *models.Engine, models.EngineCatalogListChildrenRequest) ([]models.EngineCatalogEntry, error)
 }
 
 type IAMNotebookSessionAuthorizationHandler struct {
 	service iamNotebookSessionAuthorizationService
-	engines notebookCatalogEngineResolver
-	catalog notebookCatalogChildrenLister
+	engines notebookEngineCatalogEngineResolver
+	catalog notebookEngineCatalogChildrenLister
 }
 
 func NewIAMNotebookSessionAuthorizationHandler(
 	authorizationService iamNotebookSessionAuthorizationService,
-	engines notebookCatalogEngineResolver,
-	catalog notebookCatalogChildrenLister,
+	engines notebookEngineCatalogEngineResolver,
+	catalog notebookEngineCatalogChildrenLister,
 ) (*IAMNotebookSessionAuthorizationHandler, error) {
 	if authorizationService == nil || engines == nil || catalog == nil {
 		return nil, fmt.Errorf("%w: notebook session authorization handler dependencies are required", commonapi.ErrBadRequest)
@@ -106,17 +106,17 @@ func NewIAMNotebookSessionAuthorizationHandler(
 func (h *IAMNotebookSessionAuthorizationHandler) Issue(c *gin.Context) {
 	var request IAMIssueNotebookSessionAuthorizationRequest
 	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil {
-		respondNotebookCatalogError(c, fmt.Errorf("%w: invalid notebook session authorization request", commonapi.ErrBadRequest))
+		respondNotebookEngineCatalogError(c, fmt.Errorf("%w: invalid notebook session authorization request", commonapi.ErrBadRequest))
 		return
 	}
-	sessionID, err := parseCanonicalNotebookCatalogUUID(request.SessionID)
+	sessionID, err := parseCanonicalNotebookEngineCatalogUUID(request.SessionID)
 	if err != nil || request.TaskID == 0 || request.ExpiresIn <= 0 || request.ExpiresIn > 3600 {
-		respondNotebookCatalogError(c, fmt.Errorf("%w: invalid notebook session authorization request", commonapi.ErrBadRequest))
+		respondNotebookEngineCatalogError(c, fmt.Errorf("%w: invalid notebook session authorization request", commonapi.ErrBadRequest))
 		return
 	}
 	sourceAccessToken := iamBearerToken(c.GetHeader("Authorization"))
 	if sourceAccessToken == "" {
-		respondNotebookCatalogError(c, commonapi.ErrUnauthorized)
+		respondNotebookEngineCatalogError(c, commonapi.ErrUnauthorized)
 		return
 	}
 	issued, err := h.service.Issue(c.Request.Context(), iam.IssueNotebookSessionAuthorizationInput{
@@ -125,7 +125,7 @@ func (h *IAMNotebookSessionAuthorizationHandler) Issue(c *gin.Context) {
 		Audit:     iamAuditMetadataWithStatus(c, http.StatusCreated),
 	})
 	if err != nil {
-		respondNotebookCatalogError(c, err)
+		respondNotebookEngineCatalogError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, IAMNotebookSessionAuthorizationResponse{
@@ -134,16 +134,16 @@ func (h *IAMNotebookSessionAuthorizationHandler) Issue(c *gin.Context) {
 	})
 }
 
-// ListCatalogChildren godoc
+// ListEngineCatalogChildren godoc
 // @Summary      使用 Notebook 会话授权列出实时 Catalog 子节点 | List live Catalog children with Notebook session authorization
-// @Description  仅 addp-develop Tenant Service Principal 可消费绑定 Session 的用户派生授权；授权复核与 CatalogProvider.ListChildren 在同一请求完成 | Only the addp-develop tenant service principal may consume the session-bound user-derived authorization; authorization review and CatalogProvider.ListChildren complete in one request
+// @Description  仅 addp-develop Tenant Service Principal 可消费绑定 Session 的用户派生授权；授权复核与 EngineCatalogProvider.ListChildren 在同一请求完成 | Only the addp-develop tenant service principal may consume the session-bound user-derived authorization; authorization review and EngineCatalogProvider.ListChildren complete in one request
 // @Tags         Notebook 会话授权 | Notebook Session Authorization
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id path string true "Notebook 会话授权 ID | Notebook session authorization ID"
-// @Param        request body IAMNotebookCatalogChildrenRequest true "Session、Engine 与 Catalog 路径 | Session, Engine, and Catalog path"
-// @Success      200 {object} models.CatalogListChildrenResponse
+// @Param        request body IAMNotebookEngineCatalogChildrenRequest true "Session、Engine 与 Catalog 路径 | Session, Engine, and Catalog path"
+// @Success      200 {object} models.EngineCatalogListChildrenResponse
 // @Failure      400 {object} IAMErrorResponse
 // @Failure      403 {object} IAMErrorResponse
 // @Failure      404 {object} IAMErrorResponse
@@ -154,59 +154,59 @@ func (h *IAMNotebookSessionAuthorizationHandler) Issue(c *gin.Context) {
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.notebook_session_authorization.execute"]
 // @Router       /notebook-session-authorizations/{id}/catalog/children [post]
-func (h *IAMNotebookSessionAuthorizationHandler) ListCatalogChildren(c *gin.Context) {
-	authorizationID, err := parseCanonicalNotebookCatalogUUID(c.Param("id"))
+func (h *IAMNotebookSessionAuthorizationHandler) ListEngineCatalogChildren(c *gin.Context) {
+	authorizationID, err := parseCanonicalNotebookEngineCatalogUUID(c.Param("id"))
 	if err != nil {
-		respondNotebookCatalogError(c, fmt.Errorf("%w: invalid notebook session authorization ID", commonapi.ErrBadRequest))
+		respondNotebookEngineCatalogError(c, fmt.Errorf("%w: invalid notebook session authorization ID", commonapi.ErrBadRequest))
 		return
 	}
-	var request IAMNotebookCatalogChildrenRequest
+	var request IAMNotebookEngineCatalogChildrenRequest
 	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil {
-		respondNotebookCatalogError(c, fmt.Errorf("%w: invalid notebook catalog request", commonapi.ErrBadRequest))
+		respondNotebookEngineCatalogError(c, fmt.Errorf("%w: invalid notebook catalog request", commonapi.ErrBadRequest))
 		return
 	}
-	sessionID, err := parseCanonicalNotebookCatalogUUID(request.SessionID)
-	if err != nil || validateNotebookCatalogRequest(request) != nil {
-		respondNotebookCatalogError(c, fmt.Errorf("%w: invalid notebook catalog request", commonapi.ErrBadRequest))
+	sessionID, err := parseCanonicalNotebookEngineCatalogUUID(request.SessionID)
+	if err != nil || validateNotebookEngineCatalogRequest(request) != nil {
+		respondNotebookEngineCatalogError(c, fmt.Errorf("%w: invalid notebook catalog request", commonapi.ErrBadRequest))
 		return
 	}
 	principalID, tenantID, principalType, err := iamTenantActor(c)
 	if err != nil || principalType != string(iam.PrincipalTypeServicePrincipal) {
-		respondNotebookCatalogError(c, iam.ErrNotebookSessionAuthorizationForbidden)
+		respondNotebookEngineCatalogError(c, iam.ErrNotebookSessionAuthorizationForbidden)
 		return
 	}
 	authContext, exists := middleware.IAMAuthContextFromGin(c)
 	if !exists || authContext.Client.ClientID == nil {
-		respondNotebookCatalogError(c, commonapi.ErrUnauthorized)
+		respondNotebookEngineCatalogError(c, commonapi.ErrUnauthorized)
 		return
 	}
-	authorized, err := h.service.Authorize(c.Request.Context(), iam.AuthorizeNotebookCatalogInput{
+	authorized, err := h.service.Authorize(c.Request.Context(), iam.AuthorizeNotebookEngineCatalogInput{
 		AuthorizationID: authorizationID, SessionID: sessionID,
 		ServicePrincipalID: int64(principalID), ServiceClientID: *authContext.Client.ClientID,
 		TenantID: int64(tenantID), Audit: iamAuditMetadataWithStatus(c, http.StatusOK),
 	})
 	if err != nil {
-		respondNotebookCatalogError(c, err)
+		respondNotebookEngineCatalogError(c, err)
 		return
 	}
 	engine, err := h.engines.GetForExecution(request.EngineID, uint(authorized.TenantID))
 	if err != nil {
-		respondNotebookCatalogError(c, err)
+		respondNotebookEngineCatalogError(c, err)
 		return
 	}
-	if err := requireNotebookCatalogCapability(engine); err != nil {
-		respondNotebookCatalogError(c, err)
+	if err := requireNotebookEngineCatalogCapability(engine); err != nil {
+		respondNotebookEngineCatalogError(c, err)
 		return
 	}
-	nodes, err := h.catalog.ListCatalogChildren(c.Request.Context(), engine, models.CatalogListChildrenRequest{
+	nodes, err := h.catalog.ListEngineCatalogChildren(c.Request.Context(), engine, models.EngineCatalogListChildrenRequest{
 		Path: request.Path, Options: request.Options,
 	})
 	if err != nil {
-		respondNotebookCatalogProviderError(c, err)
+		respondNotebookEngineCatalogProviderError(c, err)
 		return
 	}
 	c.Header("Cache-Control", "no-store")
-	c.JSON(http.StatusOK, models.CatalogListChildrenResponse{Nodes: nodes})
+	c.JSON(http.StatusOK, models.EngineCatalogListChildrenResponse{Nodes: nodes})
 }
 
 // ListEngineDescriptors godoc
@@ -225,32 +225,32 @@ func (h *IAMNotebookSessionAuthorizationHandler) ListCatalogChildren(c *gin.Cont
 // @x-addp-required-permissions ["system.notebook_session_authorization.execute"]
 // @Router       /notebook-session-authorizations/{id}/engine-descriptors [get]
 func (h *IAMNotebookSessionAuthorizationHandler) ListEngineDescriptors(c *gin.Context) {
-	authorizationID, err := parseCanonicalNotebookCatalogUUID(c.Param("id"))
+	authorizationID, err := parseCanonicalNotebookEngineCatalogUUID(c.Param("id"))
 	if err != nil {
-		respondNotebookCatalogError(c, fmt.Errorf("%w: invalid notebook session authorization ID", commonapi.ErrBadRequest))
+		respondNotebookEngineCatalogError(c, fmt.Errorf("%w: invalid notebook session authorization ID", commonapi.ErrBadRequest))
 		return
 	}
-	sessionID, err := parseCanonicalNotebookCatalogUUID(c.Query("session_id"))
+	sessionID, err := parseCanonicalNotebookEngineCatalogUUID(c.Query("session_id"))
 	if err != nil {
-		respondNotebookCatalogError(c, fmt.Errorf("%w: invalid notebook session ID", commonapi.ErrBadRequest))
+		respondNotebookEngineCatalogError(c, fmt.Errorf("%w: invalid notebook session ID", commonapi.ErrBadRequest))
 		return
 	}
 	principalID, tenantID, principalType, err := iamTenantActor(c)
 	if err != nil || principalType != string(iam.PrincipalTypeServicePrincipal) {
-		respondNotebookCatalogError(c, iam.ErrNotebookSessionAuthorizationForbidden)
+		respondNotebookEngineCatalogError(c, iam.ErrNotebookSessionAuthorizationForbidden)
 		return
 	}
 	authContext, exists := middleware.IAMAuthContextFromGin(c)
 	if !exists || authContext.Client.ClientID == nil {
-		respondNotebookCatalogError(c, commonapi.ErrUnauthorized)
+		respondNotebookEngineCatalogError(c, commonapi.ErrUnauthorized)
 		return
 	}
-	if _, err := h.service.Authorize(c.Request.Context(), iam.AuthorizeNotebookCatalogInput{
+	if _, err := h.service.Authorize(c.Request.Context(), iam.AuthorizeNotebookEngineCatalogInput{
 		AuthorizationID: authorizationID, SessionID: sessionID,
 		ServicePrincipalID: int64(principalID), ServiceClientID: *authContext.Client.ClientID,
 		TenantID: int64(tenantID), Audit: iamAuditMetadataWithStatus(c, http.StatusOK),
 	}); err != nil {
-		respondNotebookCatalogError(c, err)
+		respondNotebookEngineCatalogError(c, err)
 		return
 	}
 
@@ -261,7 +261,7 @@ func (h *IAMNotebookSessionAuthorizationHandler) ListEngineDescriptors(c *gin.Co
 			IncludeBuiltin: true, LifecycleStates: []string{models.EngineLifecycleActive},
 		}, tenantID)
 		if err != nil {
-			respondNotebookCatalogError(c, err)
+			respondNotebookEngineCatalogError(c, err)
 			return
 		}
 		for index := range descriptors {
@@ -306,35 +306,35 @@ func notebookDataEngineDescriptor(descriptor *models.EngineRuntimeDescriptor) bo
 // @x-addp-required-permissions ["system.notebook_session_authorization.execute"]
 // @Router       /notebook-session-authorizations/{id}/execution-engine-accesses [post]
 func (h *IAMNotebookSessionAuthorizationHandler) DeriveExecutionEngineAccess(c *gin.Context) {
-	authorizationID, err := parseCanonicalNotebookCatalogUUID(c.Param("id"))
+	authorizationID, err := parseCanonicalNotebookEngineCatalogUUID(c.Param("id"))
 	if err != nil {
-		respondNotebookCatalogError(c, fmt.Errorf("%w: invalid notebook session authorization ID", commonapi.ErrBadRequest))
+		respondNotebookEngineCatalogError(c, fmt.Errorf("%w: invalid notebook session authorization ID", commonapi.ErrBadRequest))
 		return
 	}
 	var request IAMNotebookExecutionEngineAccessRequest
 	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil || request.EngineID == 0 ||
 		request.ExpiresIn <= 0 {
-		respondNotebookCatalogError(c, fmt.Errorf("%w: invalid notebook execution engine access request", commonapi.ErrBadRequest))
+		respondNotebookEngineCatalogError(c, fmt.Errorf("%w: invalid notebook execution engine access request", commonapi.ErrBadRequest))
 		return
 	}
-	sessionID, err := parseCanonicalNotebookCatalogUUID(request.SessionID)
+	sessionID, err := parseCanonicalNotebookEngineCatalogUUID(request.SessionID)
 	if err != nil {
-		respondNotebookCatalogError(c, fmt.Errorf("%w: invalid notebook execution engine access request", commonapi.ErrBadRequest))
+		respondNotebookEngineCatalogError(c, fmt.Errorf("%w: invalid notebook execution engine access request", commonapi.ErrBadRequest))
 		return
 	}
 	executionID, err := parseCanonicalExecutionUUID(request.ExecutionID)
 	if err != nil {
-		respondNotebookCatalogError(c, err)
+		respondNotebookEngineCatalogError(c, err)
 		return
 	}
 	principalID, tenantID, principalType, err := iamTenantActor(c)
 	if err != nil || principalType != string(iam.PrincipalTypeServicePrincipal) {
-		respondNotebookCatalogError(c, iam.ErrNotebookSessionAuthorizationForbidden)
+		respondNotebookEngineCatalogError(c, iam.ErrNotebookSessionAuthorizationForbidden)
 		return
 	}
 	authContext, exists := middleware.IAMAuthContextFromGin(c)
 	if !exists || authContext.Client.ClientID == nil {
-		respondNotebookCatalogError(c, commonapi.ErrUnauthorized)
+		respondNotebookEngineCatalogError(c, commonapi.ErrUnauthorized)
 		return
 	}
 	access, err := h.service.DeriveExecutionEngineAccess(c.Request.Context(), iam.DeriveNotebookExecutionEngineAccessInput{
@@ -344,12 +344,12 @@ func (h *IAMNotebookSessionAuthorizationHandler) DeriveExecutionEngineAccess(c *
 		TenantID: int64(tenantID), Audit: iamAuditMetadataWithStatus(c, http.StatusCreated),
 	})
 	if err != nil {
-		respondNotebookCatalogError(c, err)
+		respondNotebookEngineCatalogError(c, err)
 		return
 	}
 	engine, err := h.engines.GetForExecution(uint(access.EngineID), uint(access.TenantID))
 	if err != nil {
-		respondNotebookCatalogError(c, err)
+		respondNotebookEngineCatalogError(c, err)
 		return
 	}
 	c.Header("Cache-Control", "no-store")
@@ -376,29 +376,29 @@ func (h *IAMNotebookSessionAuthorizationHandler) DeriveExecutionEngineAccess(c *
 // @x-addp-required-permissions ["system.notebook_session_authorization.execute"]
 // @Router       /notebook-session-authorizations/{id}/revocations [post]
 func (h *IAMNotebookSessionAuthorizationHandler) Revoke(c *gin.Context) {
-	authorizationID, err := parseCanonicalNotebookCatalogUUID(c.Param("id"))
+	authorizationID, err := parseCanonicalNotebookEngineCatalogUUID(c.Param("id"))
 	if err != nil {
-		respondNotebookCatalogError(c, fmt.Errorf("%w: invalid notebook session authorization ID", commonapi.ErrBadRequest))
+		respondNotebookEngineCatalogError(c, fmt.Errorf("%w: invalid notebook session authorization ID", commonapi.ErrBadRequest))
 		return
 	}
 	var request IAMRevokeNotebookSessionAuthorizationRequest
 	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil {
-		respondNotebookCatalogError(c, fmt.Errorf("%w: invalid notebook catalog revocation", commonapi.ErrBadRequest))
+		respondNotebookEngineCatalogError(c, fmt.Errorf("%w: invalid notebook catalog revocation", commonapi.ErrBadRequest))
 		return
 	}
-	sessionID, err := parseCanonicalNotebookCatalogUUID(request.SessionID)
+	sessionID, err := parseCanonicalNotebookEngineCatalogUUID(request.SessionID)
 	if err != nil {
-		respondNotebookCatalogError(c, fmt.Errorf("%w: invalid notebook catalog revocation", commonapi.ErrBadRequest))
+		respondNotebookEngineCatalogError(c, fmt.Errorf("%w: invalid notebook catalog revocation", commonapi.ErrBadRequest))
 		return
 	}
 	principalID, tenantID, principalType, err := iamTenantActor(c)
 	if err != nil || principalType != string(iam.PrincipalTypeServicePrincipal) {
-		respondNotebookCatalogError(c, iam.ErrNotebookSessionAuthorizationForbidden)
+		respondNotebookEngineCatalogError(c, iam.ErrNotebookSessionAuthorizationForbidden)
 		return
 	}
 	authContext, exists := middleware.IAMAuthContextFromGin(c)
 	if !exists || authContext.Client.ClientID == nil {
-		respondNotebookCatalogError(c, commonapi.ErrUnauthorized)
+		respondNotebookEngineCatalogError(c, commonapi.ErrUnauthorized)
 		return
 	}
 	if err := h.service.Revoke(c.Request.Context(), iam.RevokeNotebookSessionAuthorizationInput{
@@ -406,13 +406,13 @@ func (h *IAMNotebookSessionAuthorizationHandler) Revoke(c *gin.Context) {
 		ServicePrincipalID: int64(principalID), ServiceClientID: *authContext.Client.ClientID,
 		TenantID: int64(tenantID), Audit: iamAuditMetadataWithStatus(c, http.StatusNoContent),
 	}); err != nil {
-		respondNotebookCatalogError(c, err)
+		respondNotebookEngineCatalogError(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
 
-func validateNotebookCatalogRequest(request IAMNotebookCatalogChildrenRequest) error {
+func validateNotebookEngineCatalogRequest(request IAMNotebookEngineCatalogChildrenRequest) error {
 	if request.EngineID == 0 || request.Options.Limit <= 0 || request.Options.Limit > 1000 ||
 		request.Options.Offset < 0 || request.Options.Recursive {
 		return commonapi.ErrBadRequest
@@ -420,25 +420,25 @@ func validateNotebookCatalogRequest(request IAMNotebookCatalogChildrenRequest) e
 	if request.Path.EngineID != 0 && request.Path.EngineID != request.EngineID {
 		return commonapi.ErrBadRequest
 	}
-	if len(request.Path.Segments) > 0 && request.Path.Version != engineplugin.CatalogPathVersion {
+	if len(request.Path.Segments) > 0 && request.Path.Version != engineplugin.EngineCatalogPathVersion {
 		return commonapi.ErrBadRequest
 	}
 	return nil
 }
 
-func requireNotebookCatalogCapability(engine *models.Engine) error {
+func requireNotebookEngineCatalogCapability(engine *models.Engine) error {
 	if engine == nil || engine.Capabilities == nil {
-		return engineplugin.WrapCatalogError(engineplugin.CatalogErrorUnsupported, errors.New("engine has no catalog capability"))
+		return engineplugin.WrapEngineCatalogError(engineplugin.EngineCatalogErrorUnsupported, errors.New("engine has no catalog capability"))
 	}
 	capabilities, err := engineplugin.ParseEngineCapabilities(string(*engine.Capabilities))
 	if err != nil || capabilities.Storage == nil || capabilities.Storage.Catalog == nil ||
 		!capabilities.Storage.Catalog.Supported || capabilities.Storage.CatalogModel == nil {
-		return engineplugin.WrapCatalogError(engineplugin.CatalogErrorUnsupported, errors.New("engine has no supported catalog model"))
+		return engineplugin.WrapEngineCatalogError(engineplugin.EngineCatalogErrorUnsupported, errors.New("engine has no supported catalog model"))
 	}
 	return nil
 }
 
-func parseCanonicalNotebookCatalogUUID(value string) (uuid.UUID, error) {
+func parseCanonicalNotebookEngineCatalogUUID(value string) (uuid.UUID, error) {
 	parsed, err := uuid.Parse(value)
 	if err != nil || parsed == uuid.Nil || parsed.String() != value {
 		return uuid.Nil, fmt.Errorf("%w: invalid UUID", commonapi.ErrBadRequest)
@@ -446,19 +446,19 @@ func parseCanonicalNotebookCatalogUUID(value string) (uuid.UUID, error) {
 	return parsed, nil
 }
 
-func respondNotebookCatalogError(c *gin.Context, err error) {
-	respondNotebookCatalogErrorWithDefault(
-		c, err, sysi18n.MsgCatalogControlPlaneFailed, "catalog_control_plane_failed",
+func respondNotebookEngineCatalogError(c *gin.Context, err error) {
+	respondNotebookEngineCatalogErrorWithDefault(
+		c, err, sysi18n.MsgEngineCatalogControlPlaneFailed, "engine_catalog_control_plane_failed",
 	)
 }
 
-func respondNotebookCatalogProviderError(c *gin.Context, err error) {
-	respondNotebookCatalogErrorWithDefault(
-		c, err, sysi18n.MsgCatalogProviderFailed, "catalog_provider_failed",
+func respondNotebookEngineCatalogProviderError(c *gin.Context, err error) {
+	respondNotebookEngineCatalogErrorWithDefault(
+		c, err, sysi18n.MsgEngineCatalogProviderFailed, "engine_catalog_provider_failed",
 	)
 }
 
-func respondNotebookCatalogErrorWithDefault(c *gin.Context, err error, defaultMessageID, defaultErrorCode string) {
+func respondNotebookEngineCatalogErrorWithDefault(c *gin.Context, err error, defaultMessageID, defaultErrorCode string) {
 	status := http.StatusBadGateway
 	messageID := defaultMessageID
 	errorCode := defaultErrorCode
@@ -481,12 +481,12 @@ func respondNotebookCatalogErrorWithDefault(c *gin.Context, err error, defaultMe
 		errorCode = "execution_access_forbidden"
 	case errors.Is(err, iam.ErrExecutionAuthorizationUnavailable):
 		status = http.StatusServiceUnavailable
-		messageID = sysi18n.MsgCatalogEngineUnavailable
+		messageID = sysi18n.MsgEngineCatalogEngineUnavailable
 		errorCode = "engine_unavailable"
-	case errors.Is(err, commonapi.ErrBadRequest), engineplugin.IsCatalogErrorKind(err, engineplugin.CatalogErrorInvalidPath):
+	case errors.Is(err, commonapi.ErrBadRequest), engineplugin.IsEngineCatalogErrorKind(err, engineplugin.EngineCatalogErrorInvalidPath):
 		status = http.StatusBadRequest
 		messageID = commoni18n.MsgInvalidParams
-		errorCode = "catalog_request_invalid"
+		errorCode = "engine_catalog_request_invalid"
 	case errors.Is(err, commonapi.ErrUnauthorized):
 		status = http.StatusUnauthorized
 		messageID = commoni18n.MsgUnauthorized
@@ -497,24 +497,24 @@ func respondNotebookCatalogErrorWithDefault(c *gin.Context, err error, defaultMe
 		errorCode = "permission_denied"
 	case errors.Is(err, systemservice.ErrResourceNotFound), errors.Is(err, systemservice.ErrResourceForbidden):
 		status = http.StatusNotFound
-		messageID = sysi18n.MsgCatalogEngineNotFound
+		messageID = sysi18n.MsgEngineCatalogEngineNotFound
 		errorCode = "engine_not_found"
-	case engineplugin.IsCatalogErrorKind(err, engineplugin.CatalogErrorNotFound):
+	case engineplugin.IsEngineCatalogErrorKind(err, engineplugin.EngineCatalogErrorNotFound):
 		status = http.StatusNotFound
-		messageID = sysi18n.MsgCatalogEntryNotFound
-		errorCode = "catalog_entry_not_found"
-	case engineplugin.IsCatalogErrorKind(err, engineplugin.CatalogErrorUnsupported):
+		messageID = sysi18n.MsgEngineCatalogEntryNotFound
+		errorCode = "engine_catalog_entry_not_found"
+	case engineplugin.IsEngineCatalogErrorKind(err, engineplugin.EngineCatalogErrorUnsupported):
 		status = http.StatusUnprocessableEntity
-		messageID = sysi18n.MsgCatalogOperationUnsupported
-		errorCode = "catalog_operation_unsupported"
-	case engineplugin.IsCatalogErrorKind(err, engineplugin.CatalogErrorUnavailable):
+		messageID = sysi18n.MsgEngineCatalogOperationUnsupported
+		errorCode = "engine_catalog_operation_unsupported"
+	case engineplugin.IsEngineCatalogErrorKind(err, engineplugin.EngineCatalogErrorUnavailable):
 		status = http.StatusServiceUnavailable
-		messageID = sysi18n.MsgCatalogEngineUnavailable
+		messageID = sysi18n.MsgEngineCatalogEngineUnavailable
 		errorCode = "engine_unavailable"
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		status = http.StatusGatewayTimeout
-		messageID = sysi18n.MsgCatalogTimeout
-		errorCode = "catalog_timeout"
+		messageID = sysi18n.MsgEngineCatalogTimeout
+		errorCode = "engine_catalog_timeout"
 	}
 	c.JSON(status, IAMErrorResponse{Error: commoni18n.T(c, messageID), ErrorCode: &errorCode})
 }

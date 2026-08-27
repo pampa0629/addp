@@ -21,10 +21,11 @@ type SuccessResponse struct {
 // DevTaskContentSwagger 开发任务内容 Swagger 摘要。
 // 实际运行时仍由 DevTaskService 按 dev_type 做强校验；此结构用于让 Swagger 展示 query/workflow/script 的规范字段。
 type DevTaskContentSwagger struct {
-	Query              string                     `json:"query,omitempty" example:"SELECT * FROM cities"`
+	Query              string                     `json:"query,omitempty" example:"SELECT * FROM addp_input.source"`
 	QueryType          string                     `json:"query_type,omitempty" enums:"sql,mql,cypher" example:"sql"`
 	TargetLocator      string                     `json:"target_locator,omitempty" example:"addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657"`
 	QueryParameters    []QueryParameterSwagger    `json:"query_parameters,omitempty"`
+	RelationInputs     []string                   `json:"relation_inputs,omitempty" example:"source"`
 	WorkflowDefinition *WorkflowDefinitionSwagger `json:"workflow_definition,omitempty"`
 	Inputs             map[string]interface{}     `json:"inputs,omitempty" swaggertype:"object"`
 	NotebookPath       string                     `json:"notebook_path,omitempty" example:"demo.ipynb"`
@@ -55,15 +56,9 @@ type WorkflowTaskDefinitionSwagger struct {
 
 // DevTaskExecutionConfigSwagger 开发任务执行配置 Swagger 摘要。
 type DevTaskExecutionConfigSwagger struct {
-	Type                  string                               `json:"type,omitempty" example:"workflow"`
-	EngineID              uint                                 `json:"engine_id,omitempty" example:"12"`
-	EngineSpecific        *WorkflowEngineSpecificConfigSwagger `json:"engine_specific,omitempty"`
-	MaterializationTarget *MaterializationTargetSwagger        `json:"materialization_target,omitempty"`
-}
-
-// MaterializationTargetSwagger 将已保存的 SQL 查询静态绑定到 Model 逻辑表。
-type MaterializationTargetSwagger struct {
-	LogicalTableID int64 `json:"logical_table_id" example:"3"`
+	Type           string                               `json:"type,omitempty" example:"workflow"`
+	EngineID       uint                                 `json:"engine_id,omitempty" example:"12"`
+	EngineSpecific *WorkflowEngineSpecificConfigSwagger `json:"engine_specific,omitempty"`
 }
 
 // WorkflowEngineSpecificConfigSwagger 工作流引擎特定执行配置。

@@ -287,10 +287,10 @@ func (s *NotebookCopilotService) generateCode(
 			"path": selection.Path, "path_names": notebookPathNames(selection.Path), "path_segments": selection.Path.Segments,
 			"fields": []interface{}{},
 		}
-		if table := plugin.CatalogFactsTableInfo(facts); table != nil {
+		if table := plugin.EngineCatalogFactsTableInfo(facts); table != nil {
 			resource["fields"] = table.Fields
 		}
-		if spatial := plugin.CatalogFactsSpatialInfo(facts); spatial != nil {
+		if spatial := plugin.EngineCatalogFactsSpatialInfo(facts); spatial != nil {
 			resource["geometry_column"] = spatial.PrimaryGeometryName()
 			resource["geometry_type"] = spatial.PrimaryGeometryType()
 			resource["crs"] = spatial.PrimaryCRSRef()
@@ -482,13 +482,13 @@ func (s *NotebookSessionService) listCatalogLeavesForSession(
 	if session == nil || engineID == 0 || maxLeaves <= 0 {
 		return nil, ErrNotebookCopilotInvalidRequest
 	}
-	queue := []commonClient.EngineCatalogPath{{Version: plugin.CatalogPathVersion, EngineID: engineID, Segments: []commonClient.EngineCatalogSegment{}}}
+	queue := []commonClient.EngineCatalogPath{{Version: plugin.EngineCatalogPathVersion, EngineID: engineID, Segments: []commonClient.EngineCatalogSegment{}}}
 	leaves := make([]commonClient.EngineCatalogEntry, 0)
 	for len(queue) > 0 && len(leaves) < maxLeaves {
 		parent := queue[0]
 		queue = queue[1:]
 		for offset := 0; ; offset += notebookCopilotCatalogPageSize {
-			nodes, err := s.catalog.ListChildren(ctx, session.TenantID, session.SessionAuthorizationID, commonClient.NotebookCatalogChildrenRequest{
+			nodes, err := s.catalog.ListChildren(ctx, session.TenantID, session.SessionAuthorizationID, commonClient.NotebookEngineCatalogChildrenRequest{
 				SessionID: session.ID, EngineID: engineID, Path: parent,
 				Options: commonClient.EngineCatalogListOptions{Limit: notebookCopilotCatalogPageSize, Offset: offset},
 			})
@@ -516,7 +516,7 @@ func (s *NotebookSessionService) listCatalogLeavesForSession(
 
 func (s *NotebookSessionService) describeCatalogFactsForSession(
 	ctx context.Context, session *NotebookSession, engineID uint, path commonClient.EngineCatalogPath,
-) (*plugin.CatalogFacts, error) {
+) (*plugin.EngineCatalogFacts, error) {
 	executionID := uuid.NewString()
 	executionCtx, cancel, err := s.registerNotebookExecution(ctx, session.ID, executionID)
 	if err != nil {
@@ -538,8 +538,8 @@ func (s *NotebookSessionService) describeCatalogFactsForSession(
 	if access.Engine == nil || access.Engine.ID != engineID {
 		return nil, ErrNotebookCopilotForbidden
 	}
-	return plugin.DescribeCatalogFacts(executionCtx, &plugin.Engine{
+	return plugin.DescribeEngineCatalogFacts(executionCtx, &plugin.Engine{
 		ID: access.Engine.ID, EngineType: access.Engine.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(access.Engine.ConnectionInfo),
-	}, notebookPluginCatalogPath(path), plugin.CatalogFactsOptions{IncludeSpatialFacts: true})
+	}, notebookPluginCatalogPath(path), plugin.EngineCatalogFactsOptions{IncludeSpatialFacts: true})
 }

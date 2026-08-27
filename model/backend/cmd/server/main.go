@@ -84,6 +84,8 @@ func main() {
 	tableRelationRepo := repository.NewTableRelationRepository(db)
 	standardReferenceGuardRepo := repository.NewStandardReferenceGuardRepository(db)
 	materializationRepo := repository.NewMaterializationBatchRepository(db)
+	materializationGroupRepo := repository.NewMaterializationGroupRepository(db)
+	catalogResourceRepo := repository.NewCatalogResourceRepository(db)
 
 	// 创建 Services（仅 Model 相关，传入 standardURL 用于验证 element_id）
 	entitySvc := service.NewEntityService(entityRepo, entityRelationRepo)
@@ -95,9 +97,13 @@ func main() {
 	factMetricSvc := service.NewFactMetricService(factMetricRepo, logicalTableRepo)
 	factMetricSvc.SetStandardClient(standardClient)
 	tableRelationSvc := service.NewTableRelationService(tableRelationRepo, logicalTableRepo)
+	tableRelationSvc.SetProfessionalRelationSources(entityRepo, factMetricRepo)
 	standardReferenceGuardSvc := service.NewStandardReferenceGuardService(standardReferenceGuardRepo)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 	materializationSvc := service.NewMaterializationService(systemClient, materializationRepo, logicalTableRepo, logicalTableSvc)
+	materializationGroupSvc := service.NewMaterializationGroupService(materializationGroupRepo, materializationSvc)
+	catalogResourceSvc := service.NewCatalogResourceService(catalogResourceRepo)
+	materializationSvc.SetGroupService(materializationGroupSvc)
 	materializationSvc.Start(runtimeContext)
 	defer materializationSvc.Stop()
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
@@ -117,6 +123,8 @@ func main() {
 		tableRelationSvc,
 		standardReferenceGuardSvc,
 		materializationSvc,
+		materializationGroupSvc,
+		catalogResourceSvc,
 		taskExecutionRepo,
 		cfg.SystemURL,
 		redisClient,

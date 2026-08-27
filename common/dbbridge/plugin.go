@@ -85,17 +85,17 @@ func ListAllTypes() []string {
 	return plugin.List()
 }
 
-// CatalogModel 获取引擎插件声明的 catalog model。
-func CatalogModel(engineType string) (plugin.CatalogModelSpec, error) {
+// EngineCatalogModel 获取引擎插件声明的 Engine Catalog Model。
+func EngineCatalogModel(engineType string) (plugin.EngineCatalogModelSpec, error) {
 	p, err := plugin.Get(engineType)
 	if err != nil {
-		return plugin.CatalogModelSpec{}, err
+		return plugin.EngineCatalogModelSpec{}, err
 	}
-	modelProvider, ok := p.(plugin.CatalogModelProvider)
+	modelProvider, ok := p.(plugin.EngineCatalogModelProvider)
 	if !ok {
-		return plugin.CatalogModelSpec{}, fmt.Errorf("plugin %s does not implement CatalogModelProvider", engineType)
+		return plugin.EngineCatalogModelSpec{}, fmt.Errorf("plugin %s does not implement EngineCatalogModelProvider", engineType)
 	}
-	return modelProvider.CatalogModel(), nil
+	return modelProvider.EngineCatalogModel(), nil
 }
 
 // GetAllPlugins 获取所有插件信息（用于前端API）

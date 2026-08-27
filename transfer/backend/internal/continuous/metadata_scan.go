@@ -111,10 +111,10 @@ func preparedTargetMetadataScope(plan *planner.ContinuousPlan) (uint, []string, 
 	if len(plan.Target.Path.Segments) < 2 {
 		return 0, nil, fmt.Errorf("continuous target metadata scan requires a target parent catalog path")
 	}
-	parent := engineplugin.CatalogPath{
+	parent := engineplugin.EngineCatalogPath{
 		Version:  plan.Target.Path.Version,
 		EngineID: engineID,
-		Segments: append([]engineplugin.CatalogSegment(nil), plan.Target.Path.Segments[:len(plan.Target.Path.Segments)-1]...),
+		Segments: append([]engineplugin.EngineCatalogSegment(nil), plan.Target.Path.Segments[:len(plan.Target.Path.Segments)-1]...),
 	}
 	path := parent.StringPath()
 	if path == "" {

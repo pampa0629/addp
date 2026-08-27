@@ -14,7 +14,7 @@ import (
 const postgresDefaultInsertChunkSize = 1000
 const postgresMaxBindParams = 65535
 
-func (p *PostgreSQLPlugin) WriteBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, batch *plugin.BatchData, opts plugin.BatchWriteOptions) error {
+func (p *PostgreSQLPlugin) WriteBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.BatchData, opts plugin.BatchWriteOptions) error {
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
@@ -87,7 +87,7 @@ func shouldUseCopyBatchWrite(opts plugin.BatchWriteOptions, batch *plugin.BatchD
 	return method == "" || method == "copy" || method == "postgres_copy"
 }
 
-func tablePathParts(path plugin.CatalogPath) (string, string, error) {
+func tablePathParts(path plugin.EngineCatalogPath) (string, string, error) {
 	if len(path.Segments) < 2 {
 		return "", "", fmt.Errorf("postgresql batch write requires schema/table catalog path")
 	}

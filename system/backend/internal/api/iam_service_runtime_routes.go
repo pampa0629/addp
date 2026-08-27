@@ -19,6 +19,7 @@ func RegisterIAMServiceRuntimeRoutes(
 	if api == nil || runtime == nil || runtime.Authentication == nil || runtime.ServiceCredential == nil ||
 		runtime.InternalAuditHandler == nil || runtime.ExecutionAuthorizationHandler == nil ||
 		runtime.TaskAuthorizationSubjectHandler == nil || moduleHandler == nil ||
+		runtime.CatalogReferenceHandler == nil || runtime.PlatformTenantHandler == nil ||
 		taskProviderHandler == nil || engineHandler == nil {
 		return errors.New("IAM Service Runtime 路由依赖不完整")
 	}
@@ -38,6 +39,10 @@ func RegisterIAMServiceRuntimeRoutes(
 	if err != nil {
 		return err
 	}
+	platformTenantRead, err := middleware.NewIAMPermissionGuard("platform.tenant.read")
+	if err != nil {
+		return err
+	}
 	tenantAuditCreate, err := middleware.NewIAMPermissionGuard("audit.tenant_event.create")
 	if err != nil {
 		return err
@@ -51,6 +56,10 @@ func RegisterIAMServiceRuntimeRoutes(
 		return err
 	}
 	taskAuthorizationResolve, err := middleware.NewIAMPermissionGuard("system.task_authorization.execute")
+	if err != nil {
+		return err
+	}
+	catalogReferenceRead, err := middleware.NewIAMPermissionGuard("iam.department.read", "iam.tenant_membership.read")
 	if err != nil {
 		return err
 	}
@@ -74,6 +83,11 @@ func RegisterIAMServiceRuntimeRoutes(
 		platformReadRoutes.GET("/modules/watch", moduleHandler.WatchModulesService)
 		platformReadRoutes.GET("/modules/:module_name", moduleHandler.GetModuleService)
 	}
+	platformTenantRoutes := runtimeRoutes.Group("")
+	platformTenantRoutes.Use(platformContext, platformTenantRead)
+	{
+		platformTenantRoutes.GET("/tenants", runtime.PlatformTenantHandler.ListRuntime)
+	}
 	tenantEngineRoutes := runtimeRoutes.Group("/engine-descriptors")
 	tenantEngineRoutes.Use(tenantContext, engineDescriptorRead)
 	{
@@ -83,6 +97,7 @@ func RegisterIAMServiceRuntimeRoutes(
 	runtimeRoutes.POST("/execution-authorizations", tenantContext, executionAuthorizationIssue, runtime.ExecutionAuthorizationHandler.IssueFromExecution)
 	runtimeRoutes.POST("/execution-authorizations/service-definitions", tenantContext, executionAuthorizationIssue, runtime.ExecutionAuthorizationHandler.IssueFromServiceDefinition)
 	runtimeRoutes.POST("/task-authorization-subjects/:id/resolve", tenantContext, taskAuthorizationResolve, runtime.TaskAuthorizationSubjectHandler.Resolve)
+	runtimeRoutes.POST("/catalog-references/resolve", tenantContext, catalogReferenceRead, runtime.CatalogReferenceHandler.Resolve)
 
 	api.POST("/tenant/audit/events", runtime.Authentication, runtime.ServiceCredential, tenantContext, tenantAuditCreate, runtime.InternalAuditHandler.CreateService)
 	return nil

@@ -13,21 +13,23 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 353 {
-		t.Fatalf("descriptor count = %d, want 353", len(descriptors))
+	if len(descriptors) != 382 {
+		t.Fatalf("descriptor count = %d, want 382", len(descriptors))
 	}
-	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "transfer.task.update" {
+	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "workbench.view.update" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
 	}
 
 	roles := report.Roles
-	if len(roles) != 58 {
-		t.Fatalf("role count = %d, want 58", len(roles))
+	if len(roles) != 60 {
+		t.Fatalf("role count = %d, want 60", len(roles))
 	}
 	if roles[0].Key != "platform.agent_runtime" || roles[len(roles)-1].Key != "tenant.transfer_runtime" {
 		t.Fatalf("role boundary keys = %q, %q", roles[0].Key, roles[len(roles)-1].Key)
 	}
 	assertRepositoryRolePermissions(t, roles, "platform.inference_runtime", []string{"system.runtime_registry.update"})
+	assertRepositoryRolePermissions(t, roles, "platform.catalog_runtime", []string{"platform.tenant.read", "system.runtime_registry.update"})
+	assertRepositoryRolePermissions(t, roles, "tenant.catalog_runtime", []string{"develop.catalog.read", "iam.department.read", "iam.tenant_membership.read", "meta.catalog.read", "model.catalog.read", "quality.catalog.read", "service.catalog.read", "standard.catalog.read", "standard.domain.read", "standard.element.read", "standard.glossary.read"})
 	assertRepositoryRolePermissions(t, roles, "platform.duckdb_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "tenant.agent_runtime", []string{"inference.runtime.execute", "system.engine_descriptor.read"})
 	assertRepositoryRolePermissions(t, roles, "tenant.copilot_runtime", []string{"develop.task.read", "inference.runtime.execute", "system.engine_descriptor.read"})
@@ -56,6 +58,10 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"model.logical_model.read",
 		"model.logical_model.update",
 		"model.materialization.execute",
+		"model.materialization_group.create",
+		"model.materialization_group.delete",
+		"model.materialization_group.read",
+		"model.materialization_group.update",
 		"standard.dimension_hierarchy.read",
 		"standard.domain.read",
 		"standard.element.read",
@@ -75,6 +81,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.meta_runtime", []string{
 		"audit.tenant_event.create",
+		"manager.content_index.update",
 		"system.engine.read",
 		"system.engine_descriptor.read",
 	})
@@ -92,6 +99,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"develop.task_provider.read",
 		"model.task_provider.execute",
 		"model.task_provider.read",
+		"quality.task_provider.execute",
+		"quality.task_provider.read",
 		"system.task_authorization.execute",
 	})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.standard_runtime", []string{"service_principal"})
@@ -104,6 +113,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"meta.scan_task.execute",
 		"system.engine.read",
 		"system.engine_descriptor.read",
+		"system.execution_authorization.execute",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.graph_runtime", []string{
 		"copilot.knowledge_graph.execute",
@@ -121,6 +131,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.quality_runtime", []string{
 		"meta.catalog.read",
+		"model.materialization_group.read",
+		"model.materialization_read.execute",
 		"standard.element.read",
 		"system.engine.read",
 		"system.execution_authorization.execute",
@@ -152,16 +164,12 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "platform.transfer_runtime", []string{
 		"system.runtime_registry.update",
 	})
+	assertRepositoryRolePermissions(t, roles, "platform.workbench_runtime", []string{
+		"system.runtime_registry.update",
+	})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.asset_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "tenant.asset_runtime", []string{
-		"develop.task.read",
-		"meta.catalog.read",
-		"service.definition.read",
-		"standard.metric.read",
-	})
-	assertRepositoryRolePrincipalTypes(t, roles, "tenant.portal_runtime", []string{"service_principal"})
-	assertRepositoryRolePermissions(t, roles, "tenant.portal_runtime", []string{
-		"service.endpoint.read",
+		"catalog.reference.read",
 	})
 	assertRepositoryRolePermissions(t, roles, "platform.develop_runtime", []string{
 		"system.runtime_registry.update",
@@ -177,6 +185,11 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"manager.search.execute",
 		"meta.catalog.read",
 		"meta.lineage.read",
+		"service.data_read.execute",
+		"workbench.view.create",
+		"workbench.view.delete",
+		"workbench.view.read",
+		"workbench.view.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.ai_user", []string{
 		"agent.run.cancel",
@@ -245,7 +258,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "tenant.develop_runtime", []string{
 		"meta.catalog.read",
 		"meta.scan_task.execute",
-		"model.materialization_context.read",
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
 		"system.notebook_session_authorization.execute",
@@ -267,6 +279,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"system.execution_authorization.create",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.service_runtime", []string{
+		"audit.tenant_event.create",
 		"meta.catalog.read",
 		"meta.lineage.create",
 		"system.engine.read",
@@ -316,6 +329,10 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"quality.check_task.update",
 		"quality.issue.read",
 		"quality.issue.update",
+		"quality.materialization_gate.create",
+		"quality.materialization_gate.delete",
+		"quality.materialization_gate.read",
+		"quality.materialization_gate.update",
 		"quality.rule_application.create",
 		"quality.rule_application.delete",
 		"quality.rule_application.read",

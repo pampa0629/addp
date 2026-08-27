@@ -10,13 +10,13 @@ import (
 )
 
 type Runtimes struct {
-	Database              *DatabaseRuntime
-	BranchLeaf            *BranchLeafRuntime
-	DirectLeaf            *DirectLeafRuntime
-	ObjectCatalog         *ObjectStorageCatalogRuntime
-	FilesystemCatalog     *FilesystemCatalogRuntime
-	ItemRefresh           *ItemRefreshRuntime
-	ContentCatalogScanner *scanadapter.ContentCatalogScanner
+	Database                    *DatabaseRuntime
+	BranchLeaf                  *BranchLeafRuntime
+	DirectLeaf                  *DirectLeafRuntime
+	ObjectCatalog               *ObjectStorageCatalogRuntime
+	FilesystemCatalog           *FilesystemCatalogRuntime
+	ItemRefresh                 *ItemRefreshRuntime
+	EngineCatalogContentScanner *scanadapter.EngineCatalogContentScanner
 }
 
 func (r *Runtimes) SetCADInspector(inspector metaenrich.CADInspector) {
@@ -63,6 +63,6 @@ func NewRuntimes(
 		FilesystemCatalog: NewFilesystemCatalogRuntime(db, log, repo, indexer),
 		ItemRefresh:       NewItemRefreshRuntime(repo, indexer, log),
 	}
-	runtimes.ContentCatalogScanner = NewRuntimeContentCatalogScanner(runtimes.ObjectCatalog, runtimes.FilesystemCatalog)
+	runtimes.EngineCatalogContentScanner = NewRuntimeEngineCatalogContentScanner(runtimes.ObjectCatalog, runtimes.FilesystemCatalog)
 	return runtimes
 }

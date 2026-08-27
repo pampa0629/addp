@@ -14,7 +14,7 @@ var _ plugin.TableReadSessionProvider = (*DorisPlugin)(nil)
 func (p *DorisPlugin) OpenTableReadSession(
 	ctx context.Context,
 	connInfo plugin.ConnectionInfo,
-	path plugin.CatalogPath,
+	path plugin.EngineCatalogPath,
 	opts plugin.TableReadSessionOptions,
 ) (plugin.TableReadSession, error) {
 	if err := resume.RejectUnsupported(opts.ResumeMarker, "doris.table_read_session"); err != nil {
@@ -27,7 +27,7 @@ func (p *DorisPlugin) OpenTableReadSession(
 	if err != nil {
 		return nil, err
 	}
-	facts, err := p.DescribeCatalogFacts(ctx, connInfo, path, plugin.CatalogFactsOptions{})
+	facts, err := p.DescribeEngineCatalogFacts(ctx, connInfo, path, plugin.EngineCatalogFactsOptions{})
 	if err != nil {
 		return nil, err
 	}

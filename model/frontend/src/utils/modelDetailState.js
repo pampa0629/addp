@@ -10,13 +10,21 @@ export const canPerformDraftAction = (status, hasActionPermission) =>
 
 export const snapshotUnsavedState = state => JSON.stringify(state ?? null)
 
-export const buildDDLPreviewRequest = materialization => ({
-  materialization: {
+const buildMaterializationRequest = materialization => {
+  const partitionBy = String(materialization?.partition_by || '').trim()
+  const normalized = {
     target_parent_locator: String(materialization?.target_parent_locator || '').trim(),
-    target_name: String(materialization?.target_name || '').trim(),
-    partition_by: String(materialization?.partition_by || '').trim(),
-    partition_type: String(materialization?.partition_type || '').trim().toLowerCase()
+    target_name: String(materialization?.target_name || '').trim()
   }
+  if (partitionBy) {
+    normalized.partition_by = partitionBy
+    normalized.partition_type = String(materialization?.partition_type || 'range').trim().toLowerCase()
+  }
+  return normalized
+}
+
+export const buildDDLPreviewRequest = materialization => ({
+  materialization: buildMaterializationRequest(materialization)
 })
 
 export const buildLogicalTableUpdateRequest = (form, table, materialization) => ({
@@ -24,12 +32,7 @@ export const buildLogicalTableUpdateRequest = (form, table, materialization) => 
   version: table?.version,
   domain_id: form.domain_id ?? null,
   entity_id: table?.entity_id ?? null,
-  materialization: {
-    target_parent_locator: String(materialization?.target_parent_locator || '').trim(),
-    target_name: String(materialization?.target_name || '').trim(),
-    partition_by: String(materialization?.partition_by || '').trim(),
-    partition_type: String(materialization?.partition_type || '').trim().toLowerCase()
-  }
+  materialization: buildMaterializationRequest(materialization)
 })
 
 export const buildEntityAttributeUpdateRequest = (form, version) => ({

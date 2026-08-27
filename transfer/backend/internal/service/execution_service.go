@@ -562,6 +562,9 @@ func (s *ExecutionService) RetryExecution(ctx context.Context, id, tenantID, use
 	if task.Status == models.TaskStatusBlocked && planner.IsDatabaseCDCTaskConfig(task.Config) {
 		return nil, ErrCDCSchemaChangeBlocked
 	}
+	if planner.IsRuntimeExistingTargetTaskConfig(task.Config) {
+		return nil, fmt.Errorf("runtime-target executions require a fresh Orchestrator run and target binding")
+	}
 	if mode := taskApplyMode(task); mode != "replace" && mode != "upsert" {
 		return nil, fmt.Errorf("retry execution only supports replace snapshot or resumable upsert tasks; got apply_mode %q", mode)
 	}

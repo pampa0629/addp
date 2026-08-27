@@ -169,6 +169,29 @@ func NewIAMPlatformTenantHandler(service iamPlatformTenantService) (*IAMPlatform
 // @x-addp-required-permissions ["platform.tenant.read"]
 // @Router       /platform/tenants [get]
 func (h *IAMPlatformTenantHandler) List(c *gin.Context) {
+	h.list(c)
+}
+
+// ListRuntime godoc
+// @Summary      发现运行时租户 | Discover runtime tenants
+// @Description  供平台 Service Principal 发现已初始化的 active Tenant | Allows platform Service Principals to discover initialized active tenants
+// @Tags         服务运行时 | Service Runtime
+// @Produce      json
+// @Security     BearerAuth
+// @Param        page query int false "页码 | Page number"
+// @Param        page_size query int false "每页数量 | Page size"
+// @Param        status query string false "状态 | Status"
+// @Success      200 {object} object{data=[]IAMTenantResponse,total=int64,page=int,page_size=int,total_pages=int}
+// @Failure      400 {object} IAMErrorResponse
+// @Failure      403 {object} IAMErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["platform.tenant.read"]
+// @Router       /runtime/tenants [get]
+func (h *IAMPlatformTenantHandler) ListRuntime(c *gin.Context) {
+	h.list(c)
+}
+
+func (h *IAMPlatformTenantHandler) list(c *gin.Context) {
 	page, pageSize := commonapi.ParsePagination(c)
 	status, err := parseTenantStatusFilter(c.Query("status"))
 	if err != nil {

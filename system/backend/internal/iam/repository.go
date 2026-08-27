@@ -408,17 +408,97 @@ func (r *Repository) CreateDelegatedAccessToken(
 func (r *Repository) CreateExecutionAuthorization(
 	ctx context.Context,
 	authorization *ExecutionAuthorization,
+	accesses []ExecutionAuthorizationEngineAccess,
 ) error {
-	if authorization == nil {
+	if authorization == nil || len(accesses) == 0 {
 		return fmt.Errorf("%w: execution authorization is required", commonapi.ErrBadRequest)
 	}
-	err := r.db.WithContext(ctx).Create(authorization).Error
-	var postgresError *pgconn.PgError
-	if errors.As(err, &postgresError) && postgresError.Code == "23505" &&
-		postgresError.ConstraintName == "execution_authorizations_audience_execution_id_key" {
-		return ErrExecutionAuthorizationConflict
-	}
+	err := r.db.WithContext(ctx).Transaction(func(db *gorm.DB) error {
+		if createErr := db.Create(authorization).Error; createErr != nil {
+			var postgresError *pgconn.PgError
+			if errors.As(createErr, &postgresError) && postgresError.Code == "23505" &&
+				(postgresError.ConstraintName == "execution_authorizations_audience_execution_id_key" ||
+					postgresError.ConstraintName == "uq_execution_authorizations_static_execution" ||
+					postgresError.ConstraintName == "uq_execution_authorizations_execution_attempt") {
+				return ErrExecutionAuthorizationConflict
+			}
+			return createErr
+		}
+		for index := range accesses {
+			accesses[index].AuthorizationID = authorization.ID
+		}
+		if createErr := db.Create(&accesses).Error; createErr != nil {
+			return createErr
+		}
+		sealedAt := authorization.CreatedAt
+		result := db.Model(&ExecutionAuthorization{}).
+			Where("id = ? AND sealed_at IS NULL", authorization.ID).
+			Update("sealed_at", sealedAt)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("%w: execution authorization sealing failed", commonapi.ErrConflict)
+		}
+		authorization.SealedAt = &sealedAt
+		return nil
+	})
 	return wrapRepositoryError(err)
+}
+
+func (r *Repository) GetExecutionAuthorizationEngineAccess(
+	ctx context.Context,
+	authorizationID int64,
+	engineID int64,
+) (*ExecutionAuthorizationEngineAccess, error) {
+	var access ExecutionAuthorizationEngineAccess
+	if authorizationID <= 0 || engineID <= 0 {
+		return nil, commonapi.ErrNotFound
+	}
+	err := r.db.WithContext(ctx).
+		Where("authorization_id = ? AND engine_id = ?", authorizationID, engineID).
+		First(&access).Error
+	if err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	return &access, nil
+}
+
+func (r *Repository) ExecutionAuthorizationLeaseCurrent(
+	ctx context.Context,
+	authorization *ExecutionAuthorization,
+) (bool, error) {
+	if authorization == nil || authorization.ExecutionID == uuid.Nil || authorization.SourceExecutionAttempt == nil ||
+		authorization.SourceExecutionLeaseToken == nil || *authorization.SourceExecutionAttempt <= 0 ||
+		*authorization.SourceExecutionLeaseToken == uuid.Nil || strings.TrimSpace(authorization.Audience) == "" {
+		return false, commonapi.ErrBadRequest
+	}
+	var current bool
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM common.task_executions child
+			JOIN common.task_executions parent
+			  ON parent.execution_id = child.parent_execution_id
+			 AND parent.tenant_id = child.tenant_id
+			WHERE child.execution_id = ?
+			  AND child.tenant_id = ?
+			  AND child.module = ?
+			  AND child.status = 'running'
+			  AND child.attempt = ?
+			  AND child.lease_token = ?
+			  AND child.lease_expires_at > NOW()
+			  AND parent.module = 'orchestrator'
+			  AND parent.status = 'running'
+			  AND child.actor_principal_id = ?
+			  AND child.actor_tenant_membership_id = ?
+			  AND child.issued_authorization_version = ?
+		)
+	`, authorization.ExecutionID, authorization.TenantID, authorization.Audience,
+		*authorization.SourceExecutionAttempt, *authorization.SourceExecutionLeaseToken,
+		authorization.ActorPrincipalID, authorization.TenantMembershipID,
+		authorization.IssuedAuthorizationVersion).Scan(&current).Error
+	return current, wrapRepositoryError(err)
 }
 
 func (r *Repository) GetExecutionAuthorization(
@@ -577,12 +657,23 @@ func (r *Repository) GetExecutionAuthorizationProvenance(
 	parentExecutionID uuid.UUID,
 	executionID uuid.UUID,
 	audience string,
+	attempt int,
+	leaseToken uuid.UUID,
 ) (*ExecutionAuthorizationProvenance, error) {
-	if parentExecutionID == uuid.Nil || executionID == uuid.Nil || strings.TrimSpace(audience) == "" {
+	hasAttempt := attempt != 0
+	hasLeaseToken := leaseToken != uuid.Nil
+	if parentExecutionID == uuid.Nil || executionID == uuid.Nil || strings.TrimSpace(audience) == "" ||
+		hasAttempt != hasLeaseToken || attempt < 0 {
 		return nil, commonapi.ErrBadRequest
 	}
+	executionStatePredicate := "child.status = 'pending'"
+	queryArgs := []interface{}{parentExecutionID, executionID, audience}
+	if hasAttempt {
+		executionStatePredicate = "child.status = 'running' AND child.attempt = ? AND child.lease_token = ? AND child.lease_expires_at > NOW()"
+		queryArgs = append(queryArgs, attempt, leaseToken)
+	}
 	var provenance ExecutionAuthorizationProvenance
-	err := r.db.WithContext(ctx).Raw(`
+	err := r.db.WithContext(ctx).Raw(fmt.Sprintf(`
 		SELECT parent.execution_id AS parent_execution_id,
 		       child.execution_id,
 		       child.tenant_id,
@@ -598,14 +689,14 @@ func (r *Repository) GetExecutionAuthorizationProvenance(
 		  AND parent.module = 'orchestrator'
 		  AND child.module = ?
 		  AND parent.status = 'running'
-		  AND child.status = 'pending'
+		  AND %s
 		  AND parent.actor_principal_id = child.actor_principal_id
 		  AND parent.actor_tenant_membership_id = child.actor_tenant_membership_id
 		  AND parent.issued_authorization_version = child.issued_authorization_version
 		  AND child.actor_principal_id IS NOT NULL
 		  AND child.actor_tenant_membership_id IS NOT NULL
 		  AND child.issued_authorization_version IS NOT NULL
-	`, parentExecutionID, executionID, audience).Take(&provenance).Error
+	`, executionStatePredicate), queryArgs...).Take(&provenance).Error
 	if err != nil {
 		return nil, wrapRepositoryError(err)
 	}

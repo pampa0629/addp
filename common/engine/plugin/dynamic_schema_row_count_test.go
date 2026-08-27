@@ -5,7 +5,7 @@ import "testing"
 func TestDynamicCollectionCatalogEntryUsesEstimatedRowCount(t *testing.T) {
 	estimatedRowCount := int64(42)
 	entry := DynamicCollectionCatalogEntry(
-		CatalogRootPath(DynamicSchemaCatalogModel(), 7),
+		EngineCatalogRootPath(DynamicSchemaCatalogModel(), 7),
 		"analytics",
 		"events",
 		DynamicCollectionFacts{DocumentCount: &estimatedRowCount},
@@ -21,7 +21,7 @@ func TestDynamicCollectionCatalogEntryUsesEstimatedRowCount(t *testing.T) {
 
 func TestDynamicCollectionCatalogEntryKeepsUnknownRowCountEmpty(t *testing.T) {
 	entry := DynamicCollectionCatalogEntry(
-		CatalogRootPath(DynamicSchemaCatalogModel(), 7),
+		EngineCatalogRootPath(DynamicSchemaCatalogModel(), 7),
 		"analytics",
 		"events",
 		DynamicCollectionFacts{},

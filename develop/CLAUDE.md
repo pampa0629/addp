@@ -66,9 +66,13 @@ Develop 在模块定义中声明 TaskProvider 角色，发布 `query`、`workflo
 
 Develop 任务编辑器遵守 `docs/spec/addp前端路由与可恢复状态规范.md`。Console URL 必须能够恢复当前 `dev_tasks.id`，canonical 路由固定为 `/develop/{sql|workflow|notebook}?action={create|edit}&id={id}`：创建动作不带 `id`，编辑动作只使用 `id`。`/develop/tasks` 只表示任务列表，`taskId` 旧参数不得保留。
 
-查询工作台固定使用左侧 Meta Catalog、右侧编辑器与结果上下分栏。Catalog 直接消费 Meta resource-tree，不新增 Develop 私有 Catalog API；native query engine 同时是 Runtime Engine 与 Source Engine，因此只展示当前 Engine 的原生路径；声明 `compute.query.federation.supported=true` 的共享 Runtime 不拥有 Catalog，工作台必须按 `federation.source_engine_types` 过滤并展示当前 Tenant 的 Source Engine 资源树。查询语言、默认语言和结果类型从 `capabilities.compute.query` 读取。即时查询只调用 `POST /api/v1/develop/executions` 创建 `task_type=query`、`source_task_id=null` 的 execution，再按 execution ID 回查结果；不保留 `/develop/execute`。查询任务统一在 `/develop/tasks` 管理，不保留 `/develop/sql-tasks`。
+查询工作台固定使用左侧 Meta 技术资源树、右侧编辑器与结果上下分栏。资源树直接消费 Meta resource-tree，不新增 Develop 私有 Engine Catalog API；native query engine 同时是 Runtime Engine 与 Source Engine，因此只展示当前 Engine 的原生路径；声明 `compute.query.federation.supported=true` 的共享 Runtime 不拥有可导航的 Engine Catalog，工作台必须按 `federation.source_engine_types` 过滤并展示当前 Tenant 的 Source Engine 资源树。查询语言、默认语言和结果类型从 `capabilities.compute.query` 读取。即时查询只调用 `POST /api/v1/develop/executions` 创建 `task_type=query`、`source_task_id=null` 的 execution，再按 execution ID 回查结果；不保留 `/develop/execute`。查询任务统一在 `/develop/tasks` 管理，不保留 `/develop/sql-tasks`。
 
-Model staging 托管写入只适用于保存的 `query` 任务：任务在 `execution_config.materialization_target.logical_table_id` 静态绑定已审批 LogicalTable，`content.query` 只保存单条 `SELECT`。Orchestrator 触发时，Develop 通过 `common/client` Model Client 按父 execution 解析 `batch_id + engine_id + staging_locator + write_columns`，校验任务 Engine 与 staging Engine 相同，并在服务端安全引用标识符后编译 `INSERT INTO ... SELECT ...`。staging、Schema、表名和 DDL 不得进入任务定义、查询参数或 Orchestrator Step 参数；ad-hoc 查询不支持该模式。执行授权从父 execution 派生 `read + write`，不向 Develop 授予 DDL effect。
+保存的 `query` 任务可以声明通用“关系输入 -> 已存在表结果”模式，且输入、查询 Runtime 与目标必须位于同一 PostgreSQL Engine。任务只在 `content.relation_inputs[]` 保存唯一小写 alias 和业务展示信息，不保存 ResourceLocator 或其他模块的专有 ID；`content.query` 只保存单条只读 `SELECT`，并且只能用未加引号的 `addp_input.<alias>` 引用已声明关系。TaskProvider 契约在 `input_locators` 中为每个 alias 声明必填 ResourceLocator，并声明必填 `target_locator`；两者由手动执行或 Orchestrator 上游输出绑定提供。
+
+Worker 使用 PostgreSQL AST 验证关系作用域，只把 `addp_input.<alias>` 关系节点改写为执行期输入 locator，再安全编译为 `INSERT INTO <target> SELECT ...`。CTE、子查询和 JOIN 可以使用，但未声明 alias、未使用声明、真实物理关系、表函数数据源、非 PostgreSQL 查询或跨 Engine 输入必须拒绝。Develop 只使用当前父 execution 派生的精确 Engine `read + write` 授权，不获得 DDL effect；稳定输出为 `execution_id + target_locator + row_count`。Develop 不调用 Model API，不持有 Model Permission。
+
+独立 `develop-query-worker` 固定领取 `module=develop + task_type=query + source=orchestrator` 的 bounded execution；Backend 不得同时启动这些查询。Worker 只消费 execution 中冻结的解析后 `content`、`engine_id`、timeout 和已解析运行时参数，不在领取后重读可变任务定义。所有 Orchestrator 查询在租约失效后都收敛失败，动态目标不进行跨 lease 重放。查询工作台和 `source=develop` 的手动查询继续由 Backend 即时异步执行，不进入该 Worker 队列。
 
 查询工作台 Copilot 只在当前选中的 Query Runtime 范围内生成候选查询语言。前端必须提交当前 Runtime `engine_id` 和 capability 声明的 `query_language`；已有具体 data item 选择时直接提交其 locator（联邦 Runtime 下 locator 保留 Source Engine ID），已有明确容器范围但尚未确定具体 data item 时通过 `resource_scope_locator` 提交 discovery scope，未选择范围时 Copilot 通过带该 Runtime `engine_id` 的共享 `data.search` 粗筛。范围枚举统一走 `resource.children.list → resource.facts.get`，全局发现统一走 `data.search → resource.ancestors.get → resource.facts.get`。同一输入角色存在多个候选时由用户确认一个。Copilot 不得扫描其他工作台 Runtime、拼接 locator、假定字段名或直接执行生成结果；生成的 `query` 和 `query_parameters[]` 必须作为同一查询草稿原子回填编辑器与参数面板，之后仍走同一 preflight 和 execution 主路径。
 
@@ -90,25 +94,31 @@ Copilot ResourceFact 必须保留 Owner 提供的 `source_engine_type`、`full_n
 - 异步执行只保存 Execution Authorization ID、发起 Principal、Tenant Membership、签发授权版本和脱敏效果/资源摘要，不保存 User Token、Service Token、明文连接或 Workflow Access Plan。
 - Jupyter 只通过 Develop 受控会话使用数据访问能力，不直接返回共享 Lab 数据访问入口，不注入长期明文 Engine 连接。
 - Notebook 交互编辑只允许 `POST /notebooks/{id}/sessions` 创建的短期隔离会话。Develop 返回同源 `/notebook-sessions/{session_id}/...` 路径并设置仅限该路径的 HttpOnly 能力 Cookie；浏览器不得获得 Runtime 地址、Jupyter Token、Service Token 或 URL Token。Develop 在代理 HTTP/WebSocket 前校验会话、Tenant、User、Task 和到期时间；会话关闭、过期或 Develop 重启后 fail-closed。
-- Notebook Kernel 获取当前可用查询 Engine 及其实时 Catalog 时，只允许使用 Develop 为同一交互会话签发的短期 Notebook Kernel Capability Token 调用该 Session 的只读 Engine Runtime Descriptor 与 Catalog 代理。Token 绑定 Session、Tenant、User、Task 与 TTL，Develop 只保存 Hash；Runtime 只注入隔离 Kernel process，不写入 Notebook、日志或公开会话响应。接口不得返回 `connection_info`，也不得把 Notebook Script Engine 或长期数据连接伪装成当前可用查询 Engine。
-- Notebook Session 创建时，Develop 必须在同步请求栈内使用当前 User Bearer 向 System 签发 Notebook Session Authorization，随后丢弃 User Bearer；只在内存 Session 保存授权 ID。后续 Catalog 以及每次查询/扫描的独立只读 Execution Authorization 派生，都由 `addp-develop` Service Principal 消费该授权，不能依赖自身通用 `system.engine.read`。连接仅在 Develop 受控 Runtime 内使用，不返回 Kernel；关闭、过期、撤权、登出或 Develop 重启后取消活动查询并 fail-closed。
-- Notebook Native Engine Facade 只存在于 `common-python`，按具体 Engine 原生术语把 `schemas()`、`tables()`、`collections()` 等调用编译为统一 Catalog 请求。Develop 不新增 PostgreSQL/MySQL/MongoDB/MinIO 专用目录 API，不自行拼接 `CatalogPath`，不为未知引擎提供暴露内部 Catalog 术语的 fallback。
+- Notebook Kernel 获取当前可用查询 Engine 及其实时 Engine Catalog 时，只允许使用 Develop 为同一交互会话签发的短期 Notebook Kernel Capability Token 调用该 Session 的只读 Engine Runtime Descriptor 与 Engine Catalog 代理。Token 绑定 Session、Tenant、User、Task 与 TTL，Develop 只保存 Hash；Runtime 只注入隔离 Kernel process，不写入 Notebook、日志或公开会话响应。接口不得返回 `connection_info`，也不得把 Notebook Script Engine 或长期数据连接伪装成当前可用查询 Engine。
+- Notebook Session 创建时，Develop 必须在同步请求栈内使用当前 User Bearer 向 System 签发 Notebook Session Authorization，随后丢弃 User Bearer；只在内存 Session 保存授权 ID。后续 Engine Catalog 以及每次查询/扫描的独立只读 Execution Authorization 派生，都由 `addp-develop` Service Principal 消费该授权，不能依赖自身通用 `system.engine.read`。连接仅在 Develop 受控 Runtime 内使用，不返回 Kernel；关闭、过期、撤权、登出或 Develop 重启后取消活动查询并 fail-closed。
+- Notebook Native Engine Facade 只存在于 `common-python`，按具体 Engine 原生术语把 `schemas()`、`tables()`、`collections()` 等调用编译为统一 Engine Catalog 请求。Develop 不新增 PostgreSQL/MySQL/MongoDB/MinIO 专用目录 API，不自行拼接 `EngineCatalogPath`，不为未知引擎提供暴露内部 Engine Catalog 术语的 fallback。
 - Notebook 数据读取统一进入当前 Kernel Session 下的 `table-scans`、`record-scans`、`queries`、`graph-samples`、`graph-queries`、`content-reads`、`change-streams` 代理。Develop 每次派生独立只读 Execution Authorization，并按 `common` Provider 契约选择表游标、动态记录游标、图、内容、range 或 change stream；不得为具体引擎增加旁路端点。
 - Runtime 在交互会话创建时从任务绑定的 Notebook owner 路径装载文件，在关闭和 TTL 清理时原子保存回同一路径并终止 kernel/process。新建空白 Notebook 与上传 Notebook 都创建同一种 `script` 任务和 MinIO 对象，随后进入同一交互会话；不得恢复共享 Lab、直连 Runtime 或第二套 Notebook 实体。
 - Notebook 任务允许用户显式重绑定原任务的 Script Engine 和 Kernel。重绑定只更新任务定义并影响后续执行；历史执行保留创建时的 `execution_config` 快照，不复制任务或 Notebook 文件，也不自动选择替代引擎。
-- Notebook Copilot 只允许通过 `/notebook-copilot-sessions/{session_id}/generate` 使用当前 Session Authorization。首次请求由 Copilot 理解输入角色和跨语言检索词，Develop 只在 Session 实时 Catalog 内粗筛；所有推断数据源都必须展示给用户逐角色确认。确认后 Develop 重新验证路径并通过只读 Execution Authorization 获取 Catalog facts，再调用 `notebook.draft.generate` 生成 Python。生成代码以受控表扫描后的 Pandas/GeoPandas 分析为唯一主路径，不生成 `engine.sql(...)` 查询；SQL 等查询语言生成属于查询工作台。最终 DataFrame 列名、图例和坐标轴等用户可见标签必须跟随用户请求语言，并在面积、距离等指标中标明单位。不得调用租户级 `data.search`、信任前端路径或把 Query Workbench 的单引擎范围套到 Notebook。
+- Notebook Copilot 只允许通过 `/notebook-copilot-sessions/{session_id}/generate` 使用当前 Session Authorization。首次请求由 Copilot 理解输入角色和跨语言检索词，Develop 只在 Session 实时 Engine Catalog 内粗筛；所有推断数据源都必须展示给用户逐角色确认。确认后 Develop 重新验证路径并通过只读 Execution Authorization 获取 Engine Catalog facts，再调用 `notebook.draft.generate` 生成 Python。生成代码以受控表扫描后的 Pandas/GeoPandas 分析为唯一主路径，不生成 `engine.sql(...)` 查询；SQL 等查询语言生成属于查询工作台。最终 DataFrame 列名、图例和坐标轴等用户可见标签必须跟随用户请求语言，并在面积、距离等指标中标明单位。不得调用租户级 `data.search`、信任前端路径或把 Query Workbench 的单引擎范围套到 Notebook。
 - Notebook Copilot 生成结果只允许通过同源 JupyterLab bridge 插入当前 Session 的新代码单元。Bridge 必须校验父窗口来源和 Session ID，不得执行单元、覆盖 `.ipynb` 文件或操作其他 Session。
 - 算子工作流的存储 Engine 绑定来自 `content` 中的标准 ResourceLocator（主要位于 `workflow_definition`），不是 `execution_config.engine_id` 的工作流运行时绑定。Engine 删除后任务定义和旧 Locator 保留；用户在 Develop 显式选择新存储 Engine 后，Develop 原子改写该旧 Engine 的全部 Locator，保留 path/type 并清除旧 Meta `node_id/item_id`。System 不跨模块回写任务，也不按名称自动匹配新旧 Engine。
 - DuckDB 联邦查询先从 SQL 中解析已注册的 Source Engine 引用，为本次 execution 一次性签发只读 Execution Authorization，再由独立 DuckDB Runtime 按 Engine 逐个消费执行期连接；当前联邦查询必须至少引用一个 Source Engine。普通引擎的可执行样例查询也必须先签发并消费单 Engine 的只读 Execution Authorization，再实时发现真实表。两条路径都不得用 `tenant.develop_runtime` 的通用 Engine 明文读取权限替代。
-- DuckDB 查询工作台的 `execution_config.engine_id` 始终保存平台共享 Runtime ID，Catalog selection 的 ResourceLocator 与 Copilot resource fact 始终保存真实 Source Engine ID。联邦 SQL 使用 Source Engine 名称的规范标识符作为首段；不得向 Meta 请求 DuckDB Runtime 的 resource-tree，也不得把 Source Engine ID 改写为 Runtime ID。
-- 查询样例只允许来自当前 Engine Instance 的实时 Catalog 且必须指向确认有数据的 leaf；DuckDB 对象表还必须通过只读 Execution Authorization 取得执行期连接并真实读取成功，不能仅凭 Meta 条目存在就返回。Catalog 失败、对象已失效、无数据或无法构造查询时返回明确错误，前后端都不得回退到 `SELECT 1`、版本查询或占位集合名。
-- 查询任务必须在 `content.target_locator` 保存所选资源的标准 ResourceLocator；模板生成、即时执行、异步任务重载都必须将其解析为同一 `CatalogPath`。MongoDB Engine Instance 只绑定服务端点与认证主体，`connection_info.database` 仅作为工作台初始选择，数据库和集合授权以 MongoDB 用户 roles 为准。
+- DuckDB 查询工作台的 `execution_config.engine_id` 始终保存平台共享 Runtime ID，数据源选择结果的 ResourceLocator 与 Copilot resource fact 始终保存真实 Source Engine ID。联邦 SQL 使用 Source Engine 名称的规范标识符作为首段；不得向 Meta 请求 DuckDB Runtime 的 resource-tree，也不得把 Source Engine ID 改写为 Runtime ID。
+- 查询样例只允许来自当前 Engine Instance 的实时 Engine Catalog 且必须指向确认有数据的 leaf；DuckDB 对象表还必须通过只读 Execution Authorization 取得执行期连接并真实读取成功，不能仅凭 Meta 条目存在就返回。Engine Catalog 发现失败、对象已失效、无数据或无法构造查询时返回明确错误，前后端都不得回退到 `SELECT 1`、版本查询或占位集合名。
+- 查询任务必须在 `content.target_locator` 保存所选资源的标准 ResourceLocator；模板生成、即时执行、异步任务重载都必须将其解析为同一 `EngineCatalogPath`。MongoDB Engine Instance 只绑定服务端点与认证主体，`connection_info.database` 仅作为工作台初始选择，数据库和集合授权以 MongoDB 用户 roles 为准。
 - 查询编辑器必须把样例返回的真实语言（如 `sql`、`mql`、`cypher`）原样带入执行和任务定义。非 SQL 查询不得进入 SQL 效果分类器；各 Query Runtime 必须在 `QueryOptions.ReadOnly=true` 时建立等价只读边界。
 - Notebook 数据源注入在接入同一 Execution Authorization 消费路径前必须 fail-closed。
 
 ### IAM Permission
 
-Develop 是 `develop.task.*` 和 `develop.notebook.*` 的 Permission owner；定义只存在于 `authorization/permissions.yaml`，通过 `common/authorization` 发布期聚合，不在服务启动时动态注册。`develop.task.cancel` 是 IAM 目标目录能力，当前真实执行取消入口仍待路由覆盖阶段确认。
+Develop 是 `develop.task.*`、`develop.notebook.*` 和 `develop.catalog.read` 的 Permission owner；定义只存在于 `authorization/permissions.yaml`，通过 `common/authorization` 发布期聚合，不在服务启动时动态注册。`develop.catalog.read` 不可委派、不可定制，只授予内置 `tenant.catalog_runtime`，且两个 Catalog owner 路由同时固定校验 `addp-catalog` Service Client。`develop.task.cancel` 是 IAM 目标目录能力，当前真实执行取消入口仍待路由覆盖阶段确认。
+
+### 企业 Catalog 发布边界
+
+Develop 只对已持久化且可重复使用的 `dev_tasks.dev_type=query|workflow` 发布 owner-local 变化流和当前摘要动态解析，由 Catalog 建立 `development_artifact` 企业目录身份。`script` / Notebook、即时查询、`common.task_executions`、执行结果、Notebook Session 和 ToolApproval 均不发布为企业目录资源。
+
+`develop.catalog_resource_changes` 只是可恢复的变化传输事实；Catalog 保存的名称、说明、任务类型、专业状态和必要 Engine ID 是最小已观察投影，不是 Develop 数据备份。`content`、查询文本、工作流 DAG、参数、物化输入、执行配置、Engine 绑定和执行契约始终只归 Develop，Catalog 当前详情通过 `/api/v1/develop/runtime/catalog-references/resolve` 动态解析。
 
 ## 数据库文档
 

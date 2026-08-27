@@ -16,7 +16,7 @@ import (
 )
 
 // listDatabases lists all non-system databases for the catalog callbacks.
-func (p *MongoDBPlugin) listDatabases(ctx context.Context, connInfo plugin.ConnectionInfo, root plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
+func (p *MongoDBPlugin) listDatabases(ctx context.Context, connInfo plugin.ConnectionInfo, root plugin.EngineCatalogPath) ([]plugin.EngineCatalogEntry, error) {
 	client, err := p.openClient(ctx, connInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client: %w", err)
@@ -32,7 +32,7 @@ func (p *MongoDBPlugin) listDatabases(ctx context.Context, connInfo plugin.Conne
 		return nil, fmt.Errorf("failed to list databases: %w", err)
 	}
 
-	result := make([]plugin.CatalogEntry, 0, len(databases.Databases))
+	result := make([]plugin.EngineCatalogEntry, 0, len(databases.Databases))
 	for _, db := range databases.Databases {
 		// 过滤系统数据库
 		if p.IsSystemDatabase(db.Name) {
@@ -40,21 +40,21 @@ func (p *MongoDBPlugin) listDatabases(ctx context.Context, connInfo plugin.Conne
 		}
 
 		sizeBytes := db.SizeOnDisk
-		result = append(result, plugin.CatalogEntry{
+		result = append(result, plugin.EngineCatalogEntry{
 			Name: db.Name,
-			Path: plugin.CatalogPath{
+			Path: plugin.EngineCatalogPath{
 				Version:  root.Version,
 				EngineID: root.EngineID,
-				Segments: append(append([]plugin.CatalogSegment(nil), root.Segments...), plugin.CatalogSegment{
-					Term: plugin.CatalogTermDatabase,
-					Kind: plugin.CatalogKindNamespace,
+				Segments: append(append([]plugin.EngineCatalogSegment(nil), root.Segments...), plugin.EngineCatalogSegment{
+					Term: plugin.EngineCatalogTermDatabase,
+					Kind: plugin.EngineCatalogKindNamespace,
 					Name: db.Name,
 				}),
 			},
-			Term: plugin.CatalogTermDatabase,
-			Kind: plugin.CatalogKindNamespace,
-			Role: plugin.CatalogRoleBranch,
-			Storage: &plugin.CatalogStorageFacts{
+			Term: plugin.EngineCatalogTermDatabase,
+			Kind: plugin.EngineCatalogKindNamespace,
+			Role: plugin.EngineCatalogRoleBranch,
+			Storage: &plugin.EngineCatalogStorageFacts{
 				SizeBytes: &sizeBytes,
 			},
 		})
@@ -64,7 +64,7 @@ func (p *MongoDBPlugin) listDatabases(ctx context.Context, connInfo plugin.Conne
 }
 
 // listCollections lists collections for the dynamic schema catalog callbacks.
-func (p *MongoDBPlugin) listCollections(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, database string) ([]plugin.CatalogEntry, error) {
+func (p *MongoDBPlugin) listCollections(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath, database string) ([]plugin.EngineCatalogEntry, error) {
 	client, err := p.openClient(ctx, connInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client: %w", err)
@@ -79,7 +79,7 @@ func (p *MongoDBPlugin) listCollections(ctx context.Context, connInfo plugin.Con
 		return nil, fmt.Errorf("failed to list collections: %w", err)
 	}
 
-	result := make([]plugin.CatalogEntry, 0, len(collections))
+	result := make([]plugin.EngineCatalogEntry, 0, len(collections))
 	for _, collName := range collections {
 		// 获取 collection 的 engine 原生事实。
 		stats, err := p.describeCollectionFacts(ctx, connInfo, database, collName)
@@ -162,8 +162,8 @@ func (p *MongoDBPlugin) describeCollectionFacts(ctx context.Context, connInfo pl
 }
 
 // SampleDynamicSchema samples a collection and returns inferred dynamic field info.
-func (p *MongoDBPlugin) SampleDynamicSchema(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
-	segments := plugin.CatalogPathWithoutRoot(path).Segments
+func (p *MongoDBPlugin) SampleDynamicSchema(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
+	segments := plugin.EngineCatalogPathWithoutRoot(path).Segments
 	if len(segments) < 2 {
 		return nil, fmt.Errorf("dynamic schema item path requires database and collection segments")
 	}
@@ -248,7 +248,7 @@ func (p *MongoDBPlugin) SampleDynamicSchema(ctx context.Context, connInfo plugin
 
 	tableInfo := &datatype.TableInfo{
 		Name:              collection,
-		Kind:              plugin.CatalogKindCollection,
+		Kind:              plugin.EngineCatalogKindCollection,
 		Fields:            fields,
 		EstimatedRowCount: stats.DocumentCount,
 		SizeBytes:         &stats.SizeBytes,
@@ -269,9 +269,9 @@ func (p *MongoDBPlugin) SampleDynamicSchema(ctx context.Context, connInfo plugin
 		tableInfo.RowCount = &count
 	}
 
-	return &plugin.CatalogFacts{
+	return &plugin.EngineCatalogFacts{
 		Path:    path,
-		Kind:    plugin.CatalogKindCollection,
+		Kind:    plugin.EngineCatalogKindCollection,
 		Table:   tableInfo,
 		Indexes: append([]plugin.IndexFacts{}, stats.Indexes...),
 	}, nil

@@ -244,8 +244,8 @@ func TestCatalogModelForEmbeddingItemSupportsObjectAndFileCatalogs(t *testing.T)
 		itemType string
 		wantRoot string
 	}{
-		{name: "object storage item", itemType: "object", wantRoot: enginePlugin.CatalogTermService},
-		{name: "file storage item", itemType: "file", wantRoot: enginePlugin.CatalogTermRoot},
+		{name: "object storage item", itemType: "object", wantRoot: enginePlugin.EngineCatalogTermService},
+		{name: "file storage item", itemType: "file", wantRoot: enginePlugin.EngineCatalogTermRoot},
 	}
 
 	for _, tt := range tests {

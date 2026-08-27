@@ -619,11 +619,11 @@ func TestCommonDataItemResolverEnrichesRefTableViaFormatPlugin(t *testing.T) {
 	}
 
 	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
-		ContentReader:  refMapContentReader{content: content},
-		EngineID:       1,
-		CatalogPathFor: plugin.ObjectItemPathForBucket(1, "bucket"),
-		DirPath:        "bucket/gis",
-		Files:          files,
+		ContentReader:        refMapContentReader{content: content},
+		EngineID:             1,
+		EngineCatalogPathFor: plugin.ObjectItemPathForBucket(1, "bucket"),
+		DirPath:              "bucket/gis",
+		Files:                files,
 	})
 	if err != nil {
 		t.Fatalf("ResolveItems() error = %v", err)
@@ -673,11 +673,11 @@ func TestCommonDataItemResolverEnrichesObjectRefsWithBucketRelativePaths(t *test
 	}
 
 	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
-		ContentReader:  refMapContentReader{content: content},
-		EngineID:       1,
-		CatalogPathFor: plugin.ObjectItemPathForBucket(1, "bucket"),
-		DirPath:        "gis",
-		Files:          files,
+		ContentReader:        refMapContentReader{content: content},
+		EngineID:             1,
+		EngineCatalogPathFor: plugin.ObjectItemPathForBucket(1, "bucket"),
+		DirPath:              "gis",
+		Files:                files,
 	})
 	if err != nil {
 		t.Fatalf("ResolveItems() error = %v", err)
@@ -712,9 +712,9 @@ func (r refMapContentReader) Capabilities() plugin.EngineCapabilities {
 func (r refMapContentReader) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (r refMapContentReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+func (r refMapContentReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	key := path.StringPath()
-	businessPath := plugin.CatalogPathWithoutRoot(path)
+	businessPath := plugin.EngineCatalogPathWithoutRoot(path)
 	if len(businessPath.Segments) > 0 && businessPath.Segments[0].Name == "bucket" {
 		key = strings.TrimPrefix(key, "bucket/")
 	}

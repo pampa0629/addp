@@ -133,7 +133,9 @@
         "orchestrator": "Orchestrator - 工作流编排",
         "portal": "Portal - 资产门户",
         "quality": "Quality - 数据质量",
+        "catalog": "Catalog - 企业数据目录",
         "service": "Service - 数据服务",
+        "workbench": "Workbench - 数据服务消费工作台",
         "standard": "Standard - 数据标准",
         "system": "System - 系统模块",
         "transfer": "Transfer - 数据传输"
@@ -143,7 +145,7 @@
       "dataPrepare": "数据准备",
       "dataGovern": "数据治理",
       "devMonitor": "开发与监控",
-      "asset": "资产管理",
+      "asset": "目录与资产",
       "portal": "资产门户",
       "agent": "智能体",
       "graph": "知识图谱",
@@ -255,6 +257,10 @@
         "label": "数据服务",
         "desc": "外部服务注册、OGC 服务、查询服务"
       },
+      "workbench": {
+        "label": "工作台",
+        "desc": "动态查询、可视化并保存数据服务消费视图"
+      },
       "orchestrator": {
         "label": "任务编排",
         "desc": "工作流编排、任务调度、执行管理"
@@ -262,6 +268,10 @@
       "monitor": {
         "label": "执行监控",
         "desc": "任务执行监控、统计分析、健康检查"
+      },
+      "catalog": {
+        "label": "企业数据目录",
+        "desc": "企业资源盘点、业务编目、语义关联与治理"
       },
       "asset": {
         "label": "资产管理",
@@ -335,16 +345,19 @@
         "entities": "业务实体",
         "erDiagram": "实体关系图",
         "logicalTables": "逻辑表设计",
+        "materializationGroups": "物化组",
         "starSchema": "星型建模视图"
       },
       "quality": {
         "label": "数据质量",
         "ruleApplications": "规则应用配置",
         "checkTasks": "检查任务",
+        "materializationGateTasks": "物化门禁任务",
         "executions": "执行记录",
         "issues": "问题工单",
         "recentRuleApplications": "质量规则应用配置",
         "recentCheckTasks": "质量检查任务",
+        "recentMaterializationGateTasks": "物化门禁任务",
         "recentExecutions": "质量检查执行记录",
         "recentIssues": "质量问题工单"
       },
@@ -367,6 +380,10 @@
         "catalog": "服务目录",
         "recentCatalog": "数据服务目录"
       },
+      "workbench": {
+        "label": "工作台",
+        "views": "工作台视图"
+      },
       "orchestrator": {
         "label": "任务编排",
         "orchestrations": "编排任务",
@@ -383,6 +400,10 @@
         "recentExecutions": "全域执行记录",
         "recentAlerts": "执行告警事件",
         "recentNotifications": "执行告警通知"
+      },
+      "catalog": {
+        "label": "企业数据目录",
+        "entries": "目录浏览"
       },
       "asset": {
         "label": "资产管理",

@@ -59,7 +59,7 @@ func (p *Neo4jPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewGraphCapabilities(p.Type())
 }
 
-func (p *Neo4jPlugin) CatalogModel() plugin.CatalogModelSpec {
+func (p *Neo4jPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.GraphCatalogModel()
 }
 
@@ -75,15 +75,15 @@ func (p *Neo4jPlugin) graphCatalogCallbacks() plugin.GraphCatalogCallbacks {
 	}
 }
 
-func (p *Neo4jPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+func (p *Neo4jPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath, opts plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
 	return plugin.ListGraphCatalogChildren(ctx, p.graphCatalogCallbacks(), parent.EngineID, connInfo, parent, opts)
 }
 
-func (p *Neo4jPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p *Neo4jPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	return plugin.ResolveGraphCatalogPath(ctx, p.graphCatalogCallbacks(), path.EngineID, connInfo, path)
 }
 
-func (p *Neo4jPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *Neo4jPlugin) DescribeEngineCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	return plugin.DescribeGraphCatalogFacts(ctx, p.graphCatalogCallbacks(), path.EngineID, connInfo, path, opts)
 }
 
@@ -98,10 +98,10 @@ func (p *Neo4jPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.C
 	return p.generateSampleQuery(ctx, connInfo)
 }
 
-func neo4jDatabaseFromCatalogPath(path plugin.CatalogPath) (string, bool) {
-	segments := plugin.CatalogPathWithoutRoot(path).Segments
-	if len(segments) != 2 || segments[0].Term != plugin.CatalogTermDatabase ||
-		segments[1].Term != plugin.CatalogTermGraph || segments[0].Name == "" {
+func neo4jDatabaseFromCatalogPath(path plugin.EngineCatalogPath) (string, bool) {
+	segments := plugin.EngineCatalogPathWithoutRoot(path).Segments
+	if len(segments) != 2 || segments[0].Term != plugin.EngineCatalogTermDatabase ||
+		segments[1].Term != plugin.EngineCatalogTermGraph || segments[0].Name == "" {
 		return "", false
 	}
 	return segments[0].Name, true
@@ -121,7 +121,7 @@ func (p *Neo4jPlugin) ExecuteGraphQuery(ctx context.Context, connInfo plugin.Con
 	return p.executeGraphQuery(ctx, connInfo, cypher, opts)
 }
 
-func (p *Neo4jPlugin) ExecuteGraphQueryAtPath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, cypher string, opts plugin.QueryOptions) (*plugin.GraphQueryResult, error) {
+func (p *Neo4jPlugin) ExecuteGraphQueryAtPath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, cypher string, opts plugin.QueryOptions) (*plugin.GraphQueryResult, error) {
 	database, ok := neo4jDatabaseFromCatalogPath(path)
 	if !ok {
 		return nil, fmt.Errorf("无效的 Neo4j 查询目标路径")
@@ -131,9 +131,9 @@ func (p *Neo4jPlugin) ExecuteGraphQueryAtPath(ctx context.Context, connInfo plug
 	return p.executeGraphQuery(ctx, sampleConn, cypher, opts)
 }
 
-func (p *Neo4jPlugin) SampleGraph(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.GraphSampleOptions) (*plugin.GraphData, error) {
+func (p *Neo4jPlugin) SampleGraph(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.GraphSampleOptions) (*plugin.GraphData, error) {
 	database := getDatabase(connInfo)
-	segments := plugin.CatalogPathWithoutRoot(path).Segments
+	segments := plugin.EngineCatalogPathWithoutRoot(path).Segments
 	if len(segments) > 0 && segments[0].Name != "" {
 		database = segments[0].Name
 	}
@@ -285,7 +285,7 @@ func getDatabase(connInfo plugin.ConnectionInfo) string {
 
 // listDatabases lists databases for the catalog callbacks.
 // Neo4j CE 只有一个默认数据库 "neo4j"
-func (p *Neo4jPlugin) listDatabases(ctx context.Context, connInfo plugin.ConnectionInfo, root plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
+func (p *Neo4jPlugin) listDatabases(ctx context.Context, connInfo plugin.ConnectionInfo, root plugin.EngineCatalogPath) ([]plugin.EngineCatalogEntry, error) {
 	driver, err := p.createDriver(ctx, connInfo)
 	if err != nil {
 		return nil, err
@@ -302,16 +302,16 @@ func (p *Neo4jPlugin) listDatabases(ctx context.Context, connInfo plugin.Connect
 	if err != nil {
 		// CE 版可能不支持 SHOW DATABASES，直接返回默认数据库
 		dbName := getDatabase(connInfo)
-		return []plugin.CatalogEntry{neo4jDatabaseCatalogEntry(root, dbName)}, nil
+		return []plugin.EngineCatalogEntry{neo4jDatabaseCatalogEntry(root, dbName)}, nil
 	}
 
 	records, err := result.Collect(ctx)
 	if err != nil || len(records) == 0 {
 		dbName := getDatabase(connInfo)
-		return []plugin.CatalogEntry{neo4jDatabaseCatalogEntry(root, dbName)}, nil
+		return []plugin.EngineCatalogEntry{neo4jDatabaseCatalogEntry(root, dbName)}, nil
 	}
 
-	databases := make([]plugin.CatalogEntry, 0, len(records))
+	databases := make([]plugin.EngineCatalogEntry, 0, len(records))
 	for _, record := range records {
 		name, ok := record.Get("name")
 		if !ok {
@@ -326,27 +326,27 @@ func (p *Neo4jPlugin) listDatabases(ctx context.Context, connInfo plugin.Connect
 
 	if len(databases) == 0 {
 		dbName := getDatabase(connInfo)
-		databases = []plugin.CatalogEntry{neo4jDatabaseCatalogEntry(root, dbName)}
+		databases = []plugin.EngineCatalogEntry{neo4jDatabaseCatalogEntry(root, dbName)}
 	}
 
 	return databases, nil
 }
 
-func neo4jDatabaseCatalogEntry(root plugin.CatalogPath, name string) plugin.CatalogEntry {
-	return plugin.CatalogEntry{
+func neo4jDatabaseCatalogEntry(root plugin.EngineCatalogPath, name string) plugin.EngineCatalogEntry {
+	return plugin.EngineCatalogEntry{
 		Name: name,
-		Path: plugin.CatalogPath{
+		Path: plugin.EngineCatalogPath{
 			Version:  root.Version,
 			EngineID: root.EngineID,
-			Segments: append(append([]plugin.CatalogSegment(nil), root.Segments...), plugin.CatalogSegment{
-				Term: plugin.CatalogTermDatabase,
-				Kind: plugin.CatalogKindNamespace,
+			Segments: append(append([]plugin.EngineCatalogSegment(nil), root.Segments...), plugin.EngineCatalogSegment{
+				Term: plugin.EngineCatalogTermDatabase,
+				Kind: plugin.EngineCatalogKindNamespace,
 				Name: name,
 			}),
 		},
-		Term: plugin.CatalogTermDatabase,
-		Kind: plugin.CatalogKindNamespace,
-		Role: plugin.CatalogRoleBranch,
+		Term: plugin.EngineCatalogTermDatabase,
+		Kind: plugin.EngineCatalogKindNamespace,
+		Role: plugin.EngineCatalogRoleBranch,
 	}
 }
 
@@ -362,7 +362,7 @@ func (p *Neo4jPlugin) IsSystemDatabase(databaseName string) bool {
 	return false
 }
 
-func (p *Neo4jPlugin) describeGraph(ctx context.Context, connInfo plugin.ConnectionInfo, database string, opts plugin.CatalogFactsOptions) (*datatype.GraphInfo, error) {
+func (p *Neo4jPlugin) describeGraph(ctx context.Context, connInfo plugin.ConnectionInfo, database string, opts plugin.EngineCatalogFactsOptions) (*datatype.GraphInfo, error) {
 	driver, err := p.createDriver(ctx, connInfo)
 	if err != nil {
 		return nil, err

@@ -40,43 +40,43 @@ class NotebookEngineDiscoveryError(RuntimeError):
     """当前 Notebook 会话未能读取可用 Engine 描述。"""
 
 
-class NotebookCatalogError(RuntimeError):
+class NotebookEngineCatalogError(RuntimeError):
     """Notebook 原生引擎门面的 Catalog 基础错误。"""
 
 
-class NotebookCatalogRequestError(NotebookCatalogError):
+class NotebookEngineCatalogRequestError(NotebookEngineCatalogError):
     pass
 
 
-class NotebookCatalogForbiddenError(NotebookCatalogError):
+class NotebookEngineCatalogForbiddenError(NotebookEngineCatalogError):
     pass
 
 
-class NotebookEngineNotFoundError(NotebookCatalogError):
+class NotebookEngineNotFoundError(NotebookEngineCatalogError):
     pass
 
 
-class NotebookCatalogEntryNotFoundError(NotebookCatalogError):
+class NotebookEngineCatalogEntryNotFoundError(NotebookEngineCatalogError):
     pass
 
 
-class NotebookCatalogUnsupportedError(NotebookCatalogError):
+class NotebookEngineCatalogUnsupportedError(NotebookEngineCatalogError):
     pass
 
 
-class NotebookCatalogControlPlaneError(NotebookCatalogError):
+class NotebookEngineCatalogControlPlaneError(NotebookEngineCatalogError):
     pass
 
 
-class NotebookCatalogProviderError(NotebookCatalogError):
+class NotebookEngineCatalogProviderError(NotebookEngineCatalogError):
     pass
 
 
-class NotebookEngineUnavailableError(NotebookCatalogError):
+class NotebookEngineUnavailableError(NotebookEngineCatalogError):
     pass
 
 
-class NotebookCatalogTimeoutError(NotebookCatalogError):
+class NotebookEngineCatalogTimeoutError(NotebookEngineCatalogError):
     pass
 
 
@@ -130,14 +130,14 @@ def list(*, timeout: float = 10.0) -> builtins.list[dict[str, Any]]:
 def client(engine_id: int, *, timeout: float = 10.0) -> Any:
     """按精确 engine_type 返回已注册的原生只读引擎客户端。"""
     if isinstance(engine_id, bool) or not isinstance(engine_id, int) or engine_id <= 0:
-        raise NotebookCatalogRequestError("engine_id 必须是正整数")
+        raise NotebookEngineCatalogRequestError("engine_id 必须是正整数")
     descriptor = next((item for item in list(timeout=timeout) if item.get("id") == engine_id), None)
     if descriptor is None:
         raise NotebookEngineNotFoundError(f"Engine {engine_id} 不存在或当前不可用")
     engine_type = descriptor.get("engine_type")
     client_type = _CLIENT_TYPES.get(engine_type)
     if client_type is None:
-        raise NotebookCatalogUnsupportedError(f"当前 SDK 尚未注册 engine_type={engine_type!r} 的原生门面")
+        raise NotebookEngineCatalogUnsupportedError(f"当前 SDK 尚未注册 engine_type={engine_type!r} 的原生门面")
     client_type.validate_descriptor(descriptor)
     return client_type(engine_id=engine_id, descriptor=descriptor, timeout=timeout)
 
@@ -171,7 +171,7 @@ class PostgreSQLTable:
         estimated = self._facts.get("size_bytes")
         if isinstance(estimated, int) and not isinstance(estimated, bool) and estimated > limit:
             raise NotebookMemoryLimitError(
-                f"表的 Catalog 估算大小 {estimated} bytes 超过 memory_limit={limit} bytes"
+                f"表的 Engine Catalog 估算大小 {estimated} bytes 超过 memory_limit={limit} bytes"
             )
         import pyarrow as pa
 
@@ -231,7 +231,7 @@ class PostgreSQLEngine:
 
     def __init__(self, *, engine_id: int, descriptor: dict[str, Any], timeout: float) -> None:
         if timeout <= 0:
-            raise NotebookCatalogRequestError("timeout 必须大于 0")
+            raise NotebookEngineCatalogRequestError("timeout 必须大于 0")
         self.engine_id = engine_id
         self.descriptor = dict(descriptor)
         self.timeout = float(timeout)
@@ -254,12 +254,12 @@ class PostgreSQLEngine:
             self._schemas(deadline)
             schema_path = self._schema_paths.get(schema)
         if schema_path is None:
-            raise NotebookCatalogEntryNotFoundError(f"PostgreSQL schema {schema!r} 不存在")
+            raise NotebookEngineCatalogEntryNotFoundError(f"PostgreSQL schema {schema!r} 不存在")
         entries = self._all_children(schema_path, deadline)
         tables: builtins.list[PostgreSQLTable] = []
         for entry in entries:
             if entry["term"] != "table" or entry["role"] != "leaf":
-                raise NotebookCatalogControlPlaneError("PostgreSQL Catalog 返回了不符合模型的 table 条目")
+                raise NotebookEngineCatalogControlPlaneError("PostgreSQL Engine Catalog 返回了不符合模型的 table 条目")
             tables.append(
                 PostgreSQLTable(
                     name=entry["name"], schema=schema, kind=entry["kind"], _client=self,
@@ -273,7 +273,7 @@ class PostgreSQLEngine:
         for table_resource in self.tables(schema=schema):
             if table_resource.name == name:
                 return table_resource
-        raise NotebookCatalogEntryNotFoundError(
+        raise NotebookEngineCatalogEntryNotFoundError(
             f"PostgreSQL table {schema!r}.{name!r} 不存在"
         )
 
@@ -345,14 +345,14 @@ class PostgreSQLEngine:
                 deadline,
             )
             if len(roots) != 1 or roots[0]["role"] != "branch" or roots[0]["term"] != "server":
-                raise NotebookCatalogControlPlaneError("PostgreSQL Catalog 未返回唯一 server root")
+                raise NotebookEngineCatalogControlPlaneError("PostgreSQL Engine Catalog 未返回唯一 server root")
             root_path = roots[0]["path"]
             self._root_path = root_path
         entries = self._all_children(root_path, deadline)
         schemas: builtins.list[PostgreSQLSchema] = []
         for entry in entries:
             if entry["term"] != "schema" or entry["role"] != "branch":
-                raise NotebookCatalogControlPlaneError("PostgreSQL Catalog 返回了不符合模型的 schema 条目")
+                raise NotebookEngineCatalogControlPlaneError("PostgreSQL Engine Catalog 返回了不符合模型的 schema 条目")
             self._schema_paths[entry["name"]] = entry["path"]
             schemas.append(PostgreSQLSchema(name=entry["name"], _client=self, _path=entry["path"]))
         return schemas
@@ -374,7 +374,7 @@ class PostgreSQLEngine:
     ) -> builtins.list[dict[str, Any]]:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise NotebookCatalogTimeoutError("Notebook Catalog 请求超时")
+            raise NotebookEngineCatalogTimeoutError("Notebook Engine Catalog 请求超时")
         endpoint, token = _session_endpoint_and_token(_CATALOG_ENDPOINT_ENV)
         response = _request(
             "POST",
@@ -396,21 +396,21 @@ class PostgreSQLEngine:
         try:
             payload = response.json()
         except ValueError as exc:
-            raise NotebookCatalogControlPlaneError("Notebook Catalog 返回了无效 JSON") from exc
+            raise NotebookEngineCatalogControlPlaneError("Notebook Engine Catalog 返回了无效 JSON") from exc
         nodes = payload.get("nodes") if isinstance(payload, dict) else None
         if not isinstance(nodes, builtins.list):
-            raise NotebookCatalogControlPlaneError("Notebook Catalog 返回了无效节点列表")
+            raise NotebookEngineCatalogControlPlaneError("Notebook Engine Catalog 返回了无效节点列表")
         return [_validate_catalog_entry(node, self.engine_id) for node in nodes]
 
 
-class _NativeCatalogEngine:
+class _NativeEngineCatalog:
     engine_type = ""
     root_term = ""
     model_levels: tuple[tuple[str, str], ...] = ()
 
     def __init__(self, *, engine_id: int, descriptor: dict[str, Any], timeout: float) -> None:
         if timeout <= 0:
-            raise NotebookCatalogRequestError("timeout 必须大于 0")
+            raise NotebookEngineCatalogRequestError("timeout 必须大于 0")
         self.engine_id = engine_id
         self.descriptor = dict(descriptor)
         self.timeout = float(timeout)
@@ -428,8 +428,8 @@ class _NativeCatalogEngine:
                 deadline,
             )
             if len(roots) != 1 or roots[0]["role"] != "branch" or roots[0]["term"] != self.root_term:
-                raise NotebookCatalogControlPlaneError(
-                    f"{self.engine_type} Catalog 未返回唯一 {self.root_term} root"
+                raise NotebookEngineCatalogControlPlaneError(
+                    f"{self.engine_type} Engine Catalog 未返回唯一 {self.root_term} root"
                 )
             self._root_path = roots[0]["path"]
         return self._root_path
@@ -445,8 +445,8 @@ class _NativeCatalogEngine:
         entries = self._all_children(parent, deadline)
         for entry in entries:
             if entry["term"] != term or entry["role"] != "branch":
-                raise NotebookCatalogControlPlaneError(
-                    f"{self.engine_type} Catalog 返回了不符合模型的 {term} 条目"
+                raise NotebookEngineCatalogControlPlaneError(
+                    f"{self.engine_type} Engine Catalog 返回了不符合模型的 {term} 条目"
                 )
             self._branch_paths[(*cache_prefix, entry["name"])] = entry["path"]
         return entries
@@ -466,7 +466,7 @@ class _NativeCatalogEngine:
             self._branches(parent, term=term, deadline=deadline, cache_prefix=cache_prefix)
             path = self._branch_paths.get(key)
         if path is None:
-            raise NotebookCatalogEntryNotFoundError(f"{self.engine_type} {term} {name!r} 不存在")
+            raise NotebookEngineCatalogEntryNotFoundError(f"{self.engine_type} {term} {name!r} 不存在")
         return path
 
     def _leaves(
@@ -475,8 +475,8 @@ class _NativeCatalogEngine:
         entries = self._all_children(parent, deadline)
         for entry in entries:
             if entry["term"] != term or entry["role"] != "leaf":
-                raise NotebookCatalogControlPlaneError(
-                    f"{self.engine_type} Catalog 返回了不符合模型的 {term} 条目"
+                raise NotebookEngineCatalogControlPlaneError(
+                    f"{self.engine_type} Engine Catalog 返回了不符合模型的 {term} 条目"
                 )
         return entries
 
@@ -497,7 +497,7 @@ class _NativeCatalogEngine:
     ) -> builtins.list[dict[str, Any]]:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise NotebookCatalogTimeoutError("Notebook Catalog 请求超时")
+            raise NotebookEngineCatalogTimeoutError("Notebook Engine Catalog 请求超时")
         endpoint, token = _session_endpoint_and_token(_CATALOG_ENDPOINT_ENV)
         response = _request(
             "POST",
@@ -519,10 +519,10 @@ class _NativeCatalogEngine:
         try:
             payload = response.json()
         except ValueError as exc:
-            raise NotebookCatalogControlPlaneError("Notebook Catalog 返回了无效 JSON") from exc
+            raise NotebookEngineCatalogControlPlaneError("Notebook Engine Catalog 返回了无效 JSON") from exc
         nodes = payload.get("nodes") if isinstance(payload, dict) else None
         if not isinstance(nodes, builtins.list):
-            raise NotebookCatalogControlPlaneError("Notebook Catalog 返回了无效节点列表")
+            raise NotebookEngineCatalogControlPlaneError("Notebook Engine Catalog 返回了无效节点列表")
         return [_validate_catalog_entry(node, self.engine_id) for node in nodes]
 
     def _open_content(self, path: dict[str, Any], *, byte_range: dict[str, int] | None = None):
@@ -578,7 +578,7 @@ class DatabaseNamespace:
         return self._client.table(database=self.name, name=name)
 
 
-class _DatabaseTabularEngine(_NativeCatalogEngine):
+class _DatabaseTabularEngine(_NativeEngineCatalog):
     root_term = "server"
     model_levels = (("database", "branch"), ("table", "leaf"))
 
@@ -606,7 +606,7 @@ class _DatabaseTabularEngine(_NativeCatalogEngine):
         for resource in self.tables(database=database):
             if resource.name == name:
                 return resource
-        raise NotebookCatalogEntryNotFoundError(
+        raise NotebookEngineCatalogEntryNotFoundError(
             f"{self.engine_type} table {database!r}.{name!r} 不存在"
         )
 
@@ -699,7 +699,7 @@ class MongoDBDatabase:
         return self._client.collection(database=self.name, name=name)
 
 
-class MongoDBEngine(_NativeCatalogEngine):
+class MongoDBEngine(_NativeEngineCatalog):
     engine_type = "mongodb"
     root_term = "server"
     model_levels = (("database", "branch"), ("collection", "leaf"))
@@ -726,7 +726,7 @@ class MongoDBEngine(_NativeCatalogEngine):
         for resource in self.collections(database=database):
             if resource.name == name:
                 return resource
-        raise NotebookCatalogEntryNotFoundError(
+        raise NotebookEngineCatalogEntryNotFoundError(
             f"MongoDB collection {database!r}.{name!r} 不存在"
         )
 
@@ -793,7 +793,7 @@ class Neo4jDatabase:
         return self._client.graph(database=self.name, name=name)
 
 
-class Neo4jEngine(_NativeCatalogEngine):
+class Neo4jEngine(_NativeEngineCatalog):
     engine_type = "neo4j"
     root_term = "server"
     model_levels = (("database", "branch"), ("graph", "leaf"))
@@ -820,7 +820,7 @@ class Neo4jEngine(_NativeCatalogEngine):
         for resource in self.graphs(database=database):
             if resource.name == name:
                 return resource
-        raise NotebookCatalogEntryNotFoundError(f"Neo4j graph {database!r}.{name!r} 不存在")
+        raise NotebookEngineCatalogEntryNotFoundError(f"Neo4j graph {database!r}.{name!r} 不存在")
 
     def cypher(self, query: str, *, max_rows: int, timeout: int) -> dict[str, Any]:
         query, max_rows, timeout = _bounded_query_arguments(
@@ -895,7 +895,7 @@ class ObjectStorageBucket:
         return self._client.object(bucket=self.name, prefix=prefix, name=name)
 
 
-class _ObjectStorageEngine(_NativeCatalogEngine):
+class _ObjectStorageEngine(_NativeEngineCatalog):
     root_term = "service"
     model_levels = (("bucket", "branch"), ("prefix", "branch"), ("object", "leaf"))
 
@@ -923,8 +923,8 @@ class _ObjectStorageEngine(_NativeCatalogEngine):
                 self._branch_paths[(bucket, *resolved, entry["name"])] = entry["path"]
                 continue
             if entry["term"] != "object" or entry["role"] != "leaf":
-                raise NotebookCatalogControlPlaneError(
-                    f"{self.engine_type} Catalog 返回了不符合模型的 object 条目"
+                raise NotebookEngineCatalogControlPlaneError(
+                    f"{self.engine_type} Engine Catalog 返回了不符合模型的 object 条目"
                 )
             objects.append(ObjectStorageObject(
                 name=entry["name"], bucket=bucket, prefix="/".join(resolved), kind=entry["kind"],
@@ -937,7 +937,7 @@ class _ObjectStorageEngine(_NativeCatalogEngine):
         for resource in self.objects(bucket=bucket, prefix=prefix):
             if resource.name == name:
                 return resource
-        raise NotebookCatalogEntryNotFoundError(
+        raise NotebookEngineCatalogEntryNotFoundError(
             f"{self.engine_type} object {bucket!r}/{prefix!r}/{name!r} 不存在"
         )
 
@@ -987,7 +987,7 @@ class NFSDirectory:
         return self._client.files(path=self.path)
 
 
-class NFSEngine(_NativeCatalogEngine):
+class NFSEngine(_NativeEngineCatalog):
     engine_type = "nfs"
     root_term = "root"
     model_levels = (("directory", "branch"), ("file", "leaf"))
@@ -1013,7 +1013,7 @@ class NFSEngine(_NativeCatalogEngine):
             if entry["term"] == "file" and entry["role"] == "leaf":
                 continue
             if entry["term"] != "directory" or entry["role"] != "branch":
-                raise NotebookCatalogControlPlaneError("NFS Catalog 返回了不符合模型的 directory 条目")
+                raise NotebookEngineCatalogControlPlaneError("NFS Engine Catalog 返回了不符合模型的 directory 条目")
             child_parts = [*parts, entry["name"]]
             self._branch_paths[tuple(child_parts)] = entry["path"]
             result.append(NFSDirectory(
@@ -1029,7 +1029,7 @@ class NFSEngine(_NativeCatalogEngine):
             if entry["term"] == "directory" and entry["role"] == "branch":
                 continue
             if entry["term"] != "file" or entry["role"] != "leaf":
-                raise NotebookCatalogControlPlaneError("NFS Catalog 返回了不符合模型的 file 条目")
+                raise NotebookEngineCatalogControlPlaneError("NFS Engine Catalog 返回了不符合模型的 file 条目")
             result.append(NFSFile(
                 name=entry["name"], directory="/".join(_path_parts(path, "path")), kind=entry["kind"],
                 _client=self, _path=entry["path"], _facts=entry.get("storage") or {},
@@ -1041,7 +1041,7 @@ class NFSEngine(_NativeCatalogEngine):
         for resource in self.files(path=path):
             if resource.name == name:
                 return resource
-        raise NotebookCatalogEntryNotFoundError(f"NFS file {path!r}/{name!r} 不存在")
+        raise NotebookEngineCatalogEntryNotFoundError(f"NFS file {path!r}/{name!r} 不存在")
 
 
 @dataclass(frozen=True)
@@ -1090,7 +1090,7 @@ class KafkaTopic:
         )
 
 
-class KafkaEngine(_NativeCatalogEngine):
+class KafkaEngine(_NativeEngineCatalog):
     engine_type = "kafka"
     root_term = "service"
     model_levels = (("topic", "leaf"),)
@@ -1107,7 +1107,7 @@ class KafkaEngine(_NativeCatalogEngine):
         for resource in self.topics():
             if resource.name == name:
                 return resource
-        raise NotebookCatalogEntryNotFoundError(f"Kafka topic {name!r} 不存在")
+        raise NotebookEngineCatalogEntryNotFoundError(f"Kafka topic {name!r} 不存在")
 
 
 def _session_endpoint_and_token(endpoint_env: str) -> tuple[str, str]:
@@ -1140,11 +1140,11 @@ def _request(method: str, endpoint: str, token: str, *, timeout: float, json: An
                 json=json,
             )
     except httpx.TimeoutException as exc:
-        raise NotebookCatalogTimeoutError("Notebook Catalog 请求超时") from exc
+        raise NotebookEngineCatalogTimeoutError("Notebook Engine Catalog 请求超时") from exc
     except httpx.HTTPError as exc:
         if method == "GET":
             raise NotebookEngineDiscoveryError("无法连接 ADDP Notebook Engine 发现接口") from exc
-        raise NotebookCatalogControlPlaneError("无法连接 ADDP Notebook Catalog 接口") from exc
+        raise NotebookEngineCatalogControlPlaneError("无法连接 ADDP Notebook Engine Catalog 接口") from exc
 
 
 class _IteratorReader(io.RawIOBase):
@@ -1398,7 +1398,7 @@ def _table_to_pandas(batches, facts: dict[str, Any], memory_limit: str | int):
     estimated = facts.get("size_bytes")
     if isinstance(estimated, int) and not isinstance(estimated, bool) and estimated > limit:
         raise NotebookMemoryLimitError(
-            f"表的 Catalog 估算大小 {estimated} bytes 超过 memory_limit={limit} bytes"
+            f"表的 Engine Catalog 估算大小 {estimated} bytes 超过 memory_limit={limit} bytes"
         )
     import pyarrow as pa
 
@@ -1518,7 +1518,7 @@ def _validate_native_descriptor(
 ) -> None:
     capabilities = descriptor.get("capabilities")
     if not isinstance(capabilities, dict) or capabilities.get("engine_type") != engine_type:
-        raise NotebookCatalogUnsupportedError(
+        raise NotebookEngineCatalogUnsupportedError(
             f"{engine_type} Engine capabilities 与 engine_type 不一致"
         )
     storage = capabilities.get("storage") if isinstance(capabilities, dict) else None
@@ -1540,12 +1540,12 @@ def _validate_native_descriptor(
             for level, expected in zip(levels, expected_levels)
         )
     ):
-        raise NotebookCatalogUnsupportedError(f"{engine_type} Engine 未声明兼容的 CatalogModel")
+        raise NotebookEngineCatalogUnsupportedError(f"{engine_type} Engine 未声明兼容的 Engine Catalog Model")
 
 
 def _validate_catalog_entry(value: Any, engine_id: int) -> dict[str, Any]:
     if not isinstance(value, dict):
-        raise NotebookCatalogControlPlaneError("Notebook Catalog 返回了无效条目")
+        raise NotebookEngineCatalogControlPlaneError("Notebook Engine Catalog 返回了无效条目")
     path = value.get("path")
     segments = path.get("segments") if isinstance(path, dict) else None
     if (
@@ -1563,7 +1563,7 @@ def _validate_catalog_entry(value: Any, engine_id: int) -> dict[str, Any]:
             for segment in segments
         )
     ):
-        raise NotebookCatalogControlPlaneError("Notebook Catalog 返回了无效规范路径")
+        raise NotebookEngineCatalogControlPlaneError("Notebook Engine Catalog 返回了无效规范路径")
     return value
 
 
@@ -1573,38 +1573,38 @@ def _raise_catalog_http_error(response: httpx.Response) -> None:
     except ValueError:
         payload = {}
     code = payload.get("error_code") if isinstance(payload, dict) else None
-    mapping: dict[str, type[NotebookCatalogError]] = {
-        "catalog_request_invalid": NotebookCatalogRequestError,
-        "notebook_catalog_forbidden": NotebookCatalogForbiddenError,
+    mapping: dict[str, type[NotebookEngineCatalogError]] = {
+        "engine_catalog_request_invalid": NotebookEngineCatalogRequestError,
+        "notebook_engine_catalog_forbidden": NotebookEngineCatalogForbiddenError,
         "engine_not_found": NotebookEngineNotFoundError,
-        "catalog_entry_not_found": NotebookCatalogEntryNotFoundError,
-        "catalog_operation_unsupported": NotebookCatalogUnsupportedError,
-        "catalog_control_plane_failed": NotebookCatalogControlPlaneError,
-        "catalog_provider_failed": NotebookCatalogProviderError,
+        "engine_catalog_entry_not_found": NotebookEngineCatalogEntryNotFoundError,
+        "engine_catalog_operation_unsupported": NotebookEngineCatalogUnsupportedError,
+        "engine_catalog_control_plane_failed": NotebookEngineCatalogControlPlaneError,
+        "engine_catalog_provider_failed": NotebookEngineCatalogProviderError,
         "engine_unavailable": NotebookEngineUnavailableError,
-        "catalog_timeout": NotebookCatalogTimeoutError,
+        "engine_catalog_timeout": NotebookEngineCatalogTimeoutError,
     }
     if response.status_code == httpx.codes.UNAUTHORIZED and code == "notebook_session_unavailable":
         raise NotebookSessionUnavailableError("Notebook 会话已失效，请重新打开")
-    error_type = mapping.get(code, NotebookCatalogControlPlaneError)
-    raise error_type(f"Notebook Catalog 接口返回 HTTP {response.status_code} ({code or 'unknown'})")
+    error_type = mapping.get(code, NotebookEngineCatalogControlPlaneError)
+    raise error_type(f"Notebook Engine Catalog 接口返回 HTTP {response.status_code} ({code or 'unknown'})")
 
 
 def _required_name(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value or value.strip() != value:
-        raise NotebookCatalogRequestError(f"{field_name} 必须是非空规范名称")
+        raise NotebookEngineCatalogRequestError(f"{field_name} 必须是非空规范名称")
     return value
 
 
 def _path_parts(value: str, field_name: str) -> builtins.list[str]:
     if not isinstance(value, str) or value.strip() != value or "\\" in value:
-        raise NotebookCatalogRequestError(f"{field_name} 必须是规范相对路径")
+        raise NotebookEngineCatalogRequestError(f"{field_name} 必须是规范相对路径")
     if value in {"", "/"}:
         return []
     normalized = value.strip("/")
     parts = normalized.split("/")
     if any(not part or part in {".", ".."} for part in parts):
-        raise NotebookCatalogRequestError(f"{field_name} 必须是规范相对路径")
+        raise NotebookEngineCatalogRequestError(f"{field_name} 必须是规范相对路径")
     return parts
 
 
@@ -1624,14 +1624,14 @@ _CLIENT_TYPES: dict[str, type[Any]] = {
 
 
 __all__ = [
-    "NotebookCatalogControlPlaneError",
-    "NotebookCatalogEntryNotFoundError",
-    "NotebookCatalogError",
-    "NotebookCatalogForbiddenError",
-    "NotebookCatalogProviderError",
-    "NotebookCatalogRequestError",
-    "NotebookCatalogTimeoutError",
-    "NotebookCatalogUnsupportedError",
+    "NotebookEngineCatalogControlPlaneError",
+    "NotebookEngineCatalogEntryNotFoundError",
+    "NotebookEngineCatalogError",
+    "NotebookEngineCatalogForbiddenError",
+    "NotebookEngineCatalogProviderError",
+    "NotebookEngineCatalogRequestError",
+    "NotebookEngineCatalogTimeoutError",
+    "NotebookEngineCatalogUnsupportedError",
     "NotebookEngineDiscoveryError",
     "NotebookEngineNotFoundError",
     "NotebookEngineUnavailableError",

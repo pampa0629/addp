@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -47,10 +46,7 @@ func TestPortalForwardsCurrentUserBearerWithoutIdentityFields(t *testing.T) {
 
 	cfg := &config.Config{SystemURL: authServer.URL, AssetURL: assetServer.URL}
 	assetClient := commonClient.NewAssetClient(assetServer.URL)
-	serviceClient := commonClient.NewServiceClient("http://service.invalid", commonClient.ServiceTokenProviderFunc(
-		func(context.Context, uint) (string, error) { return "service-token", nil },
-	), nil)
-	router := SetupRouter(cfg, nil, assetClient, serviceClient, modulelifecycle.NewStandalone("portal"))
+	router := SetupRouter(cfg, nil, assetClient, modulelifecycle.NewStandalone("portal"))
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/portal/assets/12/apply", strings.NewReader(`{"reason":"research","duration_day":7}`))
 	request.Header.Set("Authorization", "Bearer user-token")
@@ -71,9 +67,7 @@ func TestPortalApplyRouteRequiresApplicationCreatePermission(t *testing.T) {
 	})
 	defer authServer.Close()
 	cfg := &config.Config{SystemURL: authServer.URL}
-	router := SetupRouter(cfg, nil, commonClient.NewAssetClient("http://asset.invalid"), commonClient.NewServiceClient(
-		"http://service.invalid", commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) { return "token", nil }), nil,
-	), modulelifecycle.NewStandalone("portal"))
+	router := SetupRouter(cfg, nil, commonClient.NewAssetClient("http://asset.invalid"), modulelifecycle.NewStandalone("portal"))
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/portal/assets/12/apply", strings.NewReader(`{"reason":"research"}`))
 	request.Header.Set("Authorization", "Bearer reader")
@@ -82,47 +76,6 @@ func TestPortalApplyRouteRequiresApplicationCreatePermission(t *testing.T) {
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403; body=%s", response.Code, response.Body.String())
-	}
-}
-
-func TestPortalEndpointAuthorizationDependencyFailureIsBadGateway(t *testing.T) {
-	assetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/asset/consumer/assets/12/application-status" {
-			t.Fatalf("path = %q", r.URL.Path)
-		}
-		http.Error(w, "Asset unavailable", http.StatusInternalServerError)
-	}))
-	defer assetServer.Close()
-
-	authServer := authtest.NewTenantUserAuthContextServer(t, "7", map[string][]string{
-		"Bearer user-token": {"asset.entry.read", "asset.application.read", "asset.authorization.read"},
-	})
-	defer authServer.Close()
-
-	serviceCalled := false
-	serviceServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		serviceCalled = true
-	}))
-	defer serviceServer.Close()
-
-	router := SetupRouter(
-		&config.Config{SystemURL: authServer.URL}, nil,
-		commonClient.NewAssetClient(assetServer.URL),
-		commonClient.NewServiceClient(serviceServer.URL, commonClient.ServiceTokenProviderFunc(
-			func(context.Context, uint) (string, error) { return "service-token", nil },
-		), nil),
-		modulelifecycle.NewStandalone("portal"),
-	)
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/portal/assets/12/endpoints", nil)
-	request.Header.Set("Authorization", "Bearer user-token")
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, request)
-
-	if response.Code != http.StatusBadGateway {
-		t.Fatalf("status = %d, want 502; body=%s", response.Code, response.Body.String())
-	}
-	if serviceCalled {
-		t.Fatal("Service endpoint was called after Asset authorization lookup failed")
 	}
 }
 
@@ -148,9 +101,6 @@ func TestPortalAssetDetailPreservesDownstreamClientStatus(t *testing.T) {
 			router := SetupRouter(
 				&config.Config{SystemURL: authServer.URL}, nil,
 				commonClient.NewAssetClient(assetServer.URL),
-				commonClient.NewServiceClient("http://service.invalid", commonClient.ServiceTokenProviderFunc(
-					func(context.Context, uint) (string, error) { return "service-token", nil },
-				), nil),
 				modulelifecycle.NewStandalone("portal"),
 			)
 			request := httptest.NewRequest(http.MethodGet, "/api/v1/portal/assets/12", nil)

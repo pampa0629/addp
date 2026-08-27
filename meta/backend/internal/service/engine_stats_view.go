@@ -36,7 +36,7 @@ func loadEngineScanStats(db *gorm.DB, resources []*commonModels.Engine) (*engine
 		engineIDs = append(engineIDs, resource.ID)
 		enginePlugin, err := plugin.Get(resource.EngineType)
 		if err == nil {
-			if plan, ok := scanflow.CatalogScanPlanForPlugin(enginePlugin); ok && plan.Strategy == scanflow.CatalogScanDirectLeaves {
+			if plan, ok := scanflow.EngineCatalogScanPlanForPlugin(enginePlugin); ok && plan.Strategy == scanflow.EngineCatalogScanDirectLeaves {
 				directLeafEngineIDs = append(directLeafEngineIDs, resource.ID)
 				continue
 			}
@@ -170,7 +170,7 @@ func buildResourceWithStats(resource *commonModels.Engine, stats *engineScanStat
 		CatalogRootTerm:       catalogRootTerm,
 		CatalogTopTerm:        catalogTopTerm,
 		CatalogTopI18nKey:     catalogTopI18nKey,
-		CatalogLeafTerm:       catalogLeafTerm,
+		EngineCatalogLeafTerm: catalogLeafTerm,
 		CatalogLeafI18nKey:    catalogLeafI18nKey,
 		TotalCatalogNodes:     totalCatalogNodes,
 		ScannedCatalogNodes:   scannedCatalogNodes,
@@ -192,23 +192,23 @@ func catalogViewTerms(engineType string) (engineFamily, rootTerm, topTerm, topI1
 	capabilities := enginePlugin.Capabilities()
 	engineFamily = capabilities.EngineFamily
 
-	model := scanflow.CatalogModelForPlugin(enginePlugin)
+	model := scanflow.EngineCatalogModelForPlugin(enginePlugin)
 	if model == nil {
 		return engineFamily, "", "", "", "", ""
 	}
 
 	rootTerm = model.RootTerm
-	if len(model.Levels) == 1 && model.Levels[0].Role == plugin.CatalogRoleLeaf {
+	if len(model.Levels) == 1 && model.Levels[0].Role == plugin.EngineCatalogRoleLeaf {
 		topTerm = model.Levels[0].Term
-		topI18nKey = plugin.CatalogLevelI18nKey(*model, topTerm)
-	} else if level, ok := plugin.CatalogFirstBusinessBranch(*model); ok {
+		topI18nKey = plugin.EngineCatalogLevelI18nKey(*model, topTerm)
+	} else if level, ok := plugin.EngineCatalogFirstBusinessBranch(*model); ok {
 		topTerm = level.Term
 		topI18nKey = level.I18nKey
 		if topI18nKey == "" {
-			topI18nKey = plugin.CatalogLevelI18nKey(*model, level.Term)
+			topI18nKey = plugin.EngineCatalogLevelI18nKey(*model, level.Term)
 		}
 	}
-	leafTerm = plugin.CatalogLeafTerm(*model)
-	leafI18nKey = plugin.CatalogLevelI18nKey(*model, leafTerm)
+	leafTerm = plugin.EngineCatalogLeafTerm(*model)
+	leafI18nKey = plugin.EngineCatalogLevelI18nKey(*model, leafTerm)
 	return engineFamily, rootTerm, topTerm, topI18nKey, leafTerm, leafI18nKey
 }

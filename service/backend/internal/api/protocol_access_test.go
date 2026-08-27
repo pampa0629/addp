@@ -78,6 +78,7 @@ func TestProtocolRoutesEnforcePrivateServiceTenant(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 		modulelifecycle.NewStandalone("service"),
 	)
 

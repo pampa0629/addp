@@ -13,7 +13,7 @@
   -> Meta 物理字段绑定
   -> Model 逻辑实体与关系
   -> Model 准备 DIM/DWD/DWS 物化批次
-  -> Develop 计算并写入受限 staging
+  -> Transfer 执行只读 MongoDB MQL 并流式写入 DIM/DWD staging
   -> Develop 基于 DIM/DWD 计算 DWS 指标
   -> Quality 数据门禁
   -> Orchestrator 统一重算
@@ -25,7 +25,8 @@
 - `Standard` 拥有 Outdoor 业务域、术语、数据元、码值、单位、指标和定义文档；
 - `Meta` 拥有 MongoDB collection、字段路径、动态 schema 采样事实和资源定位；
 - `Model` 拥有租户级实体、实体关系、逻辑表、Standard 指标引用和逻辑表物化结构控制面，负责受控 DDL、staging 准备、结构校验与原子发布；
-- `Develop` 通过查询任务计算维度、明细事实和指标汇总数据，只写入 Model 为本次物化批次签发的受限 staging 目标；生产指标只能读取已物化的 DIM/DWD，不能旁路直查 MongoDB；
+- `Transfer` 通过 bounded query-source 任务执行只读 MongoDB MQL，将嵌套 BSON 整形成扁平 DIM/DWD 行并流式写入 Model 为本次物化批次签发的 PostgreSQL staging；
+- `Develop` 只在 PostgreSQL 内通过保存的 SQL 查询任务读取同批次 DIM/DWD staging 并计算指标汇总数据；生产指标不能旁路直查 MongoDB；
 - `Quality` 负责物化结果的主键、引用完整性、业务关系和指标结果门禁；
 - `Orchestrator` 只引用各 owner 模块的持久任务，形成支持手动执行和定时调度的唯一全量重算 DAG；
 - `Copilot` 只消费经过验证的资源事实、已审核语义上下文和已发布指标结果；MongoDB MQL 编译结果只保留为指标金样和开发期回归工具，不作为生产指标计算路线；
@@ -196,13 +197,13 @@ erDiagram
 
 ```text
 Model 准备物化批次与 staging
-  -> Develop 查询任务读取 Business MongoDB 并计算 DIM/DWD
+  -> Transfer bounded query-source 任务使用只读 MongoDB MQL 计算并搬运 DIM/DWD
   -> Develop SQL 查询任务只读本批次 DIM/DWD 并计算 DWS
   -> Quality 门禁
   -> Model 原子发布本次完整重算结果
 ```
 
-Model 拥有物化结构和发布边界，只根据已审批模型生成受控 DDL；不接受任意 DDL。Develop 只负责查询计算和数据写入，不创建、删除或修改正式逻辑表。Orchestrator 只控制依赖、触发和执行追踪，不复制任务实现。所有 DWS 指标计算必须只读取本批次的 DIM/DWD staging，禁止直接读取 `Outdoor.Outdoors` 或 `Outdoor.Persons`。
+Model 拥有物化结构和发布边界，只根据已审批模型生成受控 DDL；不接受任意 DDL。Transfer 负责 MongoDB 到 PostgreSQL staging 的跨引擎流式搬运，Develop 只负责 PostgreSQL 内的 DWS 查询计算；两者都不创建、删除或修改正式逻辑表。Orchestrator 只控制依赖、触发和执行追踪，不复制任务实现。所有 DWS 指标计算必须只读取本批次的 DIM/DWD staging，禁止直接读取 `Outdoor.Outdoors` 或 `Outdoor.Persons`。
 
 第一批物理表如下：
 
@@ -216,9 +217,11 @@ Model 拥有物化结构和发布边界，只根据已审批模型生成受控 D
 
 `dwd_outdoor_participation` 必须以 `person_id + activity_id` 为复合主键，至少包含 `is_signup`、`is_actual_participant` 和 `is_current_leader`。同一人员在同一活动中的多种关系合并为一行布尔事实；当前主领队即使不在 `members[]` 中，也要进入该事实表。人员侧摘要数组不参与事实生成。
 
-两张 DWS 都属于指标事实表，不是业务实体表。人员对统一按稳定人员标识排序为 `person_id_a < person_id_b`，一对人员只存一行，同时保存 A→B 和 B→A 两个方向结果。Top 10 固定取同一次重算中 `outdoor_responsible_or_actual_activity_count` 降序、人员标识升序的前十名。
+两张 DWS 都属于指标事实表，不是业务实体表。人员对统一按稳定人员标识排序为 `person_id_a < person_id_b`，一对人员只存一行，同时保存 A→B 和 B→A 两个方向结果。Top 10 固定取同一次重算中 `outdoor_responsible_or_actual_activity_count` 降序、人员标识升序的前十名。DWS 不重复保存 `run_id`：重算 lineage 由 `common.task_executions` 和 Model MaterializationBatch 统一表达；结果表保留 `calculated_at` 作为业务消费时间事实。
 
-### 8.1 Develop 持久查询任务
+MongoDB `title.level` 的真实值包含 `1.9`、`2.2` 等小数。`dim_outdoor_activity.activity_intensity` 和 `dwd_outdoor_participation.activity_intensity` 必须统一使用 `decimal`，由源端 MQL 显式转换，转换失败写 `NULL` 并交给 Quality 观测；不得使用 `int` 截断业务值。
+
+### 8.1 Transfer 与 Develop 持久任务
 
 第一批建立五个可独立审计和重试的持久任务：
 
@@ -228,7 +231,9 @@ Model 拥有物化结构和发布边界，只根据已审批模型生成受控 D
 4. `outdoor_dws_person_metric_full_refresh`；
 5. `outdoor_dws_person_pair_metric_full_refresh`。
 
-每个任务只能通过物化批次标识和逻辑表标识获取本次 staging 写入目标，不允许用户自行填写正式物理表名。查询任务不承担模型 DDL 或正式表替换；失败不能把半成品标记为成功。若现有查询执行 Runtime 缺少受限 staging 写入能力，应先形成 Develop 模块通用能力设计并确认，不能加入 Outdoor 专用脚本或通用 DDL 旁路。
+前三个任务属于 Transfer bounded query-source：MongoDB MQL 的最后阶段必须输出与 Model 逻辑字段同名的扁平字段；普通对象子字段通过 `$project` 投影，成员数组通过 `$unwind` 展开，多关系事实通过 `$group` / `$unionWith` 合并。Transfer 不提供递归 JSON 自动摊平。后两个任务属于 Develop PostgreSQL SQL 查询，只读取同一父编排下已完成的 DIM/DWD staging。
+
+五个 writer 任务定义均不保存物化批次标识、逻辑表标识或物理目标名。Orchestrator 先执行对应 Model prepare，再把其 `staging_locator` 作为 writer 的 `target_locator`；Develop 的关系输入同样只绑定同一父编排中已 sealed 上游批次的 locator。Transfer 与 Develop 都不承担模型 DDL 或正式表替换；失败不能把半成品标记为成功。
 
 ### 8.2 Quality 门禁
 
@@ -247,7 +252,7 @@ flowchart LR
     O --> Q[Quality 完整性门禁]
 ```
 
-Orchestrator 的父执行 ID 作为同一次重算的稳定 `run_id` 贯穿子任务和 DWS 结果。下游任务只能在依赖任务成功后启动，任一节点失败时终止后续节点。
+Orchestrator 的父执行 ID 作为同一次重算的稳定执行 lineage 贯穿所有子 execution 和 MaterializationBatch，不复制进 DWS 业务行。下游任务只能在依赖任务成功后启动，任一节点失败时终止后续节点。
 
 ## 9. 阶段七：Copilot 语义上下文与结果消费
 
@@ -335,7 +340,8 @@ MongoDB MQL 编译器继续用于金样生成、源事实核验和开发期回�
 | Standard | 术语、数据元、码值、指标公式和生命周期校验 |
 | Model | 实体粒度、关系方向、指标引用、物化批次和受控发布 |
 | Copilot | 语义计划、澄清、敏感信息过滤和资源事实引用 |
-| Develop | DIM/DWD/DWS 查询计算和受限 staging 写入 |
+| Transfer | 只读 MongoDB MQL、流式查询读取、DIM/DWD 跨引擎搬运和受限 staging 写入 |
+| Develop | 只读同批次 DIM/DWD，在 PostgreSQL 内计算 DWS 并写入受限 staging |
 | Quality | 主键、引用、关系口径和指标结果门禁 |
 | Orchestrator | 单一 DAG、手动执行、定时执行和失败传播 |
 | Query/MQL | 仅作为源事实金样，结果与 DWS 可复现一致 |
@@ -362,10 +368,11 @@ MongoDB MQL 编译器继续用于金样生成、源事实核验和开发期回�
 | 3 | Quality | 关系一致性、状态分布、失效引用质量检查 |
 | 4 | Standard | 建立 Outdoor 域、术语、数据元、码值、指标和绑定入口 |
 | 5 | Model | 建立逻辑模型和指标引用，准备受控物化批次 |
-| 6 | Develop | 计算 DIM/DWD，并只基于 DIM/DWD 生成 DWS 数据 |
-| 7 | Quality | 执行物化和指标结果门禁 |
-| 8 | Orchestrator | 建立唯一的手动/定时全量重算 DAG |
-| 9 | Copilot/Service/Monitor | 消费已发布结果、提供解释并统一观测执行 |
+| 6 | Transfer | 执行只读 MongoDB MQL，将扁平 DIM/DWD 结果流式搬运到 Model 受管 staging |
+| 7 | Develop | 只基于同批次 DIM/DWD，在 PostgreSQL 内生成 DWS 数据 |
+| 8 | Quality | 执行物化和指标结果门禁 |
+| 9 | Orchestrator | 建立唯一的手动/定时全量重算 DAG |
+| 10 | Copilot/Service/Monitor | 消费已发布结果、提供解释并统一观测执行 |
 
 不能先在 Copilot 中硬编码 Outdoor 规则，再反向补 Standard；也不能在 Model 中复制一套独立指标定义。每次实现必须同步对应测试入口和 CI 门禁，至少覆盖受影响模块的标准测试。
 
@@ -388,8 +395,8 @@ MongoDB MQL 编译器继续用于金样生成、源事实核验和开发期回�
  -> Standard 术语/数据元/指标
  -> Model Person/Activity/Participation
  -> Model 准备物化批次
- -> Develop 计算 DIM/DWD 并写入 staging
- -> Develop 计算 DWS
+ -> Transfer 通过只读 MQL 生成并搬运 DIM/DWD 到 staging
+ -> Develop 基于同批次 DIM/DWD 计算 DWS
  -> Quality 门禁
  -> Orchestrator 统一重算
  -> 金样回归与结果消费
@@ -445,7 +452,7 @@ MongoDB MQL 编译器继续用于金样生成、源事实核验和开发期回�
 
 ### 13.4 首个指标的真实数据验算
 
-使用 `Outdoor.Outdoors` 的真实数据按已审批口径独立验算：排除 `拟定中`、`已取消` 和缺少 `title.date` 的活动；展开 `members[]`；仅保留 `报名中`、`领队`、`领队组`；按 `Outdoors._id` 去重。当前快照得到 681 个有效活动、1,099 个出现实际参加关系的人员、6,799 个去重后的人员-活动关系。示例最高值为人员 `W7cw8J25dhqgDMHA`（昵称“攀爬”）实际参加 286 个活动。
+使用 `Outdoor.Outdoors` 的真实数据按已审批口径独立验算：排除 `拟定中`、`已取消` 和缺少 `title.date` 的活动；展开 `members[]`；仅保留 `报名中`、`领队`、`领队组`；按 `members.personid + Outdoors._id` 复合去重。2026-08-26 当前快照得到 681 个有效活动、583 个出现实际参加关系的人员、4,886 个去重后的人员-活动关系。示例最高值为人员 `W7cw8J25dhqgDMHA`（昵称“攀爬”）实际参加 286 个活动。此前记录的 1,099 人和 6,799 条关系混入了未应用有效活动过滤的结果，不能作为该指标口径的回归基线。
 
 该结果证明业务口径和物理字段可以闭合；当前 Standard 指标已绑定 `户外域`，但尚未绑定可执行 MQL/查询计划，下一步要补确定性编译和结果回归，而不是继续增加指标数量。
 
@@ -567,7 +574,7 @@ B 视角的 A 重叠率 = |A 实际参加活动 ∩ B 实际参加活动| / |B �
 
 ### 13.13 维度建模生产路线决策（2026-08-25）
 
-经确认，第一批指标的生产计算统一改为基于维度建模成果：Model 准备物化批次和受限 staging，Develop 查询任务计算 DIM/DWD/DWS 数据，Quality 执行门禁后由 Model 原子发布，最终由一个 Orchestrator DAG 完成手动或定时全量重算。现有直接读取 MongoDB 的指标 MQL 只保留为金样和回归证据，不再作为生产路线。
+经确认，第一批指标的生产计算统一改为基于维度建模成果：Model 准备物化批次和受限 staging，Transfer bounded query-source 任务使用只读 MongoDB MQL 生成并流式搬运 DIM/DWD，Develop PostgreSQL 查询任务基于同批次 DIM/DWD 计算 DWS，Quality 执行门禁后由 Model 原子发布，最终由一个 Orchestrator DAG 完成手动或定时全量重算。现有直接从 MongoDB 产出最终指标的 MQL 只保留为金样和回归证据，不再作为生产路线。
 
 实施前的模型修订项为：
 
@@ -575,10 +582,132 @@ B 视角的 A 重叠率 = |A 实际参加活动 ∩ B 实际参加活动| / |B �
 - `dws_outdoor_person_metric` 和 `dws_outdoor_person_pair_metric` 统一为 `fact`；
 - 为两张 DWS 补齐能表达人员、人员对、指标版本和统计范围的复合业务键；
 - 五项 Standard 指标全部建立到对应事实表的指标映射；
-- 建立五个 Develop 持久查询任务、Model 物化批次任务、Quality 门禁和唯一的 `outdoor_governance_full_refresh` 总编排；
+- 建立三个 Transfer bounded query-source 任务、两个 Develop PostgreSQL 持久查询任务、Model 物化批次任务、Quality 门禁和唯一的 `outdoor_governance_full_refresh` 总编排；
 - 替代任务验证通过后删除旧的“户外活动重叠度”直算任务，禁止保留双轨生产路线。
 
 如果实施过程中发现现有模块缺少通用多输入关联、安全物化、跨表质量断言或共享批次上下文能力，必须先给出模块职责内的通用设计并确认，再修改代码。
+
+### 13.14 当前改造进度与接力点（2026-08-26）
+
+当前生产路线已经进一步收敛：MongoDB 文档中的嵌套 BSON/JSON 由只读 MQL 在源端确定性整形，普通对象子字段使用 `$project` 投影，数组使用 `$unwind` 展开，多来源关系按需要使用 `$unionWith` / `$group` 合并和去重，最后一个 `$project` 必须输出与 Model 逻辑表字段同名的扁平结果。Transfer 不提供通用递归 JSON 自动摊平，避免猜测数组粒度、字段命名、缺失值和目标类型。
+
+本轮已经完成：
+
+- 在通用 Engine Provider 中新增 `QueryReadSessionProvider` / `QueryReadSession`，并在能力声明中增加 `compute.query.read_session`；
+- MongoDB Provider 已实现只读 `find` / `aggregate` 的流式游标读取，不附加工作台预览上限，并拒绝 `$out`、`$merge` 等写入阶段；
+- Transfer planner/executor 已支持 bounded query-source，要求显式声明查询语言、查询文本、参数、输出字段映射和目标类型，并能逐批读取查询结果；
+- 文档已同步明确：Transfer 负责跨引擎 DIM/DWD 搬运，Develop 只负责 PostgreSQL 内 DWS 计算；
+- 局部验证已经通过：
+
+```bash
+cd common && GOWORK=off go test ./engine/plugin ./engine/plugins/mongodb
+cd transfer/backend && GOWORK=off go test ./internal/planner ./internal/executor ./internal/models
+git diff --check
+```
+
+2026-08-26 的模块边界复盘否定了上述 write-attempt 路线：即使调用收口位于 `common/client`，Transfer/Develop 保存 LogicalTable ID、调用 Model API 和持有 Model Permission 仍然构成业务语义强依赖。经确认后，唯一生产路线改为：
+
+1. Model `materialization_prepare` 冻结逻辑表结构并创建本批唯一 staging，稳定输出 `batch_id + staging_locator`；
+2. Transfer 使用通用 bounded query-source “写入已存在表”能力，Develop 使用通用“关系输入 -> 已存在表结果”能力；两者的 `target_locator` 及 Develop `input_locators` 均由 Orchestrator 从上游稳定输出绑定；
+3. writer 只使用自身的通用 Engine read/write 授权，不认识 Model，稳定输出 `execution_id + target_locator + row_count`；
+4. Model `materialization_seal` 根据 `batch_id + writer_execution_id + target_locator` 验证 writer 成功终态、同父编排和 Actor 血缘、staging 身份、字段结构与管理标记，成功后把批次置为 `sealed`；Model 不校验 writer 来自哪个业务模块；
+5. Quality 门禁和 Model publish 只消费 sealed 批次；动态目标 writer 失败时整个编排失败，下次重算从新 prepare 开始，Model 回收失败或过期 staging。
+
+因此当前改造必须删除 `materialization-write-attempts` 路由、实体、数据表、Common Client 方法、`model.materialization_write.execute`、Transfer/Develop 的 `MODEL_URL` 与全部 Model 字段/分支。本节记录的是已确认目标；在代码、迁移、Swagger 和门禁全部收敛前，不将该改造标记为完成。
+
+Model PostgreSQL 标准门禁入口为：
+
+```bash
+ADDP_TEST_MODEL_POSTGRES_DSN='postgres://.../addp_test?sslmode=disable' make test-model-postgres
+```
+
+`develop-query-worker` 的独立进程与部署登记继续保留，但数据面要改为只消费 execution 中冻结的通用 `relation_inputs/input_locators/target_locator`，不创建 Model attempt、不读 Model context。所有 Orchestrator 查询租约过期都收敛失败，不为 Model 场景保留特例。
+
+经讨论确认后，Model 已完成 `materialization-read-context/v1`、MaterializationGroup 主资源、`materialization_group_publish` TaskProvider 任务以及同一 PostgreSQL 事务内的多表原子交换；旧单表 publish 只保留给不属于任何物化组的逻辑表。组发布 PostgreSQL 门禁已覆盖组 CRUD 版本控制、多批次同一 execution、任一 staging 标记异常时全部旧目标保持不变、修复后一次性切换以及提交后幂等重试。
+
+Develop 的同批次上游读取采用通用受控关系单路线：保存任务只在 `content.relation_inputs[]` 声明小写 alias，SQL 只引用 `addp_input.<alias>`；Orchestrator 将已 sealed 的 DIM/DWD locator 绑定到 `input_locators.<alias>`，将 DWS prepare locator 绑定到 `target_locator`。Query Worker 校验全部 locator 同属目标 PostgreSQL Engine，再通过 PostgreSQL AST 拒绝物理表、未声明输入和越界 CTE，并仅改写受控关系节点。ResourceLocator 只是 execution 参数，不进入 Develop 任务定义。
+
+Quality 类型化 `materialization_gate`、MaterializationGroup 发布交接和真实 PostgreSQL 五类断言门禁已经完成。门禁成功稳定输出物化组 ID/版本，Model 组发布在入队和实际 DDL 发布前双重校验 `expected_group_id + expected_group_version`；该策略只约束本 Outdoor 总编排，不扩大为其他物化组的全局强制政策。
+
+真实数据复核后进一步收敛模型：活动维度与参与事实的 `activity_intensity` 已从 `int` 修订为 `decimal`，避免截断 MongoDB 中的小数最终强度；两张 DWS 的重复 `run_id` 已删除并重新审批。执行 lineage 只保留在统一 execution 和 Model MaterializationBatch 控制事实中，不进入 DWS 业务行，不新增 Orchestrator 上下文注入功能。
+
+三条源端 MQL 已使用 MongoDB 当前快照完成全量只读回归：人员维度 2,188 行，活动维度 681 行，活动参与事实 4,946 行；其中 `is_actual_participant = true` 为 4,888 行、报名关系 4,946 行、当前主领队关系 577 行。三个输出的日期和强度转换均无空值。活动参与事实中有 19 个不同人员标识在 `Persons` 中不存在，这是待治理的真实数据异常；当前正式 Quality 门禁将人员外键也设为阻断级 `error`，不得为了让首轮重算通过而静默降级为 `warning`。这些数字仅作为 2026-08-26 当前快照的迁移回归证据，不进入业务定义。
+
+2026-08-27 已建立待统一编排的正式任务与门禁：Transfer 任务 `74/75/76` 分别生成人员维度、活动维度和参与事实；Develop 任务 `49/50` 分别计算人员指标和 Top 10 人员对指标；Model 物化组 `outdoor_governed_refresh` 的 ID 为 `1`、版本为 `1`，成员为逻辑表 `3/4/5/6/7`；Quality 门禁 `outdoor_governed_materialization_gate` 已配置 9 项断言。旧 Develop 任务 `47/48` 只能在新编排真实重算验证通过后删除，不保留双轨生产路线。
+
+Model 另已修复“空 `partition_by` 被误判为分区表”的配置语义分裂：未分区物化在前端请求与后端持久化中都同时省略 `partition_by/partition_type`，TaskProvider 和 prepare 只按非空 `partition_by` 识别分区设计，`015_normalize_empty_partition_materialization` migration 负责清理已有空值配置。Model Go 全量测试、前端单测/E2E/构建及 PostgreSQL 标准门禁已通过；待 Model 服务重启应用 migration 后，继续创建 `outdoor_governance_full_refresh` 唯一 DAG 并执行真实全量回归。
+
+### 13.15 会话接力清单（2026-08-27）
+
+#### 不可回退的架构决策
+
+- Transfer 和 Develop 都不认识、不调用、不依赖 Model，任务定义不保存 LogicalTable ID、MaterializationBatch ID 或 Model 业务上下文。
+- Model 是逻辑表结构和物化生命周期的唯一 owner，负责 prepare、受控 DDL、seal、结构校验、组原子 publish 和 staging 回收。
+- Transfer/Develop 只执行通用“读取 ResourceLocator -> 写入已存在 ResourceLocator”数据面能力；不执行 DDL、truncate、drop 或正式表替换。
+- Orchestrator 通过 TaskProvider 稳定 `outputs` 和运行时 `parameters` 显式绑定不同 owner 的任务，是唯一跨模块组合层；禁止回到 Common Client 中的 owner-specific 写协议。
+- Quality 仅通过受限 Model Client 读取同一父编排中的 sealed staging；组发布必须绑定门禁输出的物化组 ID 和版本。
+- 生产路线只允许一条。新 DAG 真实重算和校验通过后删除旧 Develop 任务 `47/48`，不保留兼容分支或双轨入口。
+
+#### 当前已持久事实
+
+| Owner | 资源 | ID/版本 | 关键契约 |
+| --- | --- | --- | --- |
+| Model | `dwd_outdoor_participation` / `dim_outdoor_activity` / `dim_outdoor_person` | `3/4/5` | DIM/DWD 逻辑表，已审批 |
+| Model | `dws_outdoor_person_metric` / `dws_outdoor_person_pair_metric` | `6/7` | DWS 逻辑表，已删除 `run_id` 并重新审批 |
+| Transfer | `outdoor_dim_person_refresh` / `outdoor_dim_activity_refresh` / `outdoor_dwd_participation_refresh` | `74/75/76` | bounded MQL query-source，runtime `target_locator`，append 到已存在 staging |
+| Develop | `outdoor_dws_person_metric_refresh` | `49` | `relation_inputs=[person,participation]`，只读 `addp_input.*` |
+| Develop | `outdoor_dws_person_pair_metric_refresh` | `50` | `relation_inputs=[person_metric,participation]`，只读 `addp_input.*` |
+| Model | `outdoor_governed_refresh` | 组 `1`，版本 `1` | 成员顺序 `5,4,3,6,7`，同一 PostgreSQL Engine 原子发布 |
+| Quality | `outdoor_governed_materialization_gate` | 任务 `1`，版本 `1` | 绑定物化组 `1@1`，9 项 `severity=error` 断言 |
+
+Quality 当前 9 项断言是：人员主键唯一、活动主键唯一、参与事实的人员/活动标识非空、参与复合键唯一、参与到人员/活动的两项外键、人员指标粒度唯一、人员对指标粒度唯一。当前未配置 `predicate_implication` 或 Top 10 结果 45 行的 `row_count` 断言；Quality 模块已具备这些通用能力，但是否加入本门禁应在首轮运行证据出来后明确决定，不由接力会话自行扩展。
+
+#### 当前运行态（接力前必须重新核验）
+
+- 代码已新增 Model migration `015_normalize_empty_partition_materialization.up.sql`，但当前运行库的最新 migration 仍是 `014_replace_write_attempt_with_seal.up.sql`。
+- 逻辑表 `3/4/5/6/7` 的当前运行库记录仍带有空 `partition_by` 和 `partition_type=range`，因而旧 Model 进程不会把它们发布为 prepare/seal 任务。
+- System 中 Model TaskProvider 声明已正常持久（`module_definitions.version=3`），包含 prepare/seal/single publish/group publish 四类能力。
+- `outdoor_governance_full_refresh` 还没有持久化，当前 Orchestrator 同名记录数为 `0`。
+- 工作区包含多模块未提交改动，均视为用户和前续会话的有效成果；接力时不得 reset、checkout 或覆盖无关改动，也不得未经授权提交。
+
+Model 重启后先执行三项只读验证：
+
+1. `model.schema_migrations` 最新版本为 `015_normalize_empty_partition_materialization.up.sql`；
+2. 逻辑表 `3/4/5/6/7` 的 `materialization` 均已省略两个分区键；
+3. Orchestrator 任务库中 Model prepare 和 seal 各出现 `5` 个可用任务，group publish 出现物化组 `1`。逻辑表 `2` 没有完整物化目标，不应出现在 prepare/seal 列表中。
+
+#### 待创建的唯一 DAG
+
+Orchestrator 内部绑定必须使用完整字符串 `{{step_id.outputs.path}}`，且被引用步骤必须同时出现在当前步骤的直接 `depends_on` 中。按下表创建：
+
+| Step ID | Provider / Task | `depends_on` | 运行时 parameters |
+| --- | --- | --- | --- |
+| `prepare_person` | `model/materialization_prepare/5` | 无 | `{}` |
+| `write_person` | `transfer/sync/74` | `prepare_person` | `target_locator={{prepare_person.outputs.staging_locator}}` |
+| `seal_person` | `model/materialization_seal/5` | `prepare_person,write_person` | `batch_id={{prepare_person.outputs.batch_id}}`; `writer_execution_id={{write_person.outputs.execution_id}}`; `target_locator={{write_person.outputs.target_locator}}` |
+| `prepare_activity` | `model/materialization_prepare/4` | 无 | `{}` |
+| `write_activity` | `transfer/sync/75` | `prepare_activity` | `target_locator={{prepare_activity.outputs.staging_locator}}` |
+| `seal_activity` | `model/materialization_seal/4` | `prepare_activity,write_activity` | 同上，绑定本链 prepare/write 输出 |
+| `prepare_participation` | `model/materialization_prepare/3` | 无 | `{}` |
+| `write_participation` | `transfer/sync/76` | `prepare_participation` | `target_locator={{prepare_participation.outputs.staging_locator}}` |
+| `seal_participation` | `model/materialization_seal/3` | `prepare_participation,write_participation` | 同上，绑定本链 prepare/write 输出 |
+| `prepare_person_metric` | `model/materialization_prepare/6` | 无 | `{}` |
+| `write_person_metric` | `develop/query/49` | `prepare_person_metric,seal_person,seal_participation` | `target_locator={{prepare_person_metric.outputs.staging_locator}}`; `input_locators.person={{seal_person.outputs.staging_locator}}`; `input_locators.participation={{seal_participation.outputs.staging_locator}}` |
+| `seal_person_metric` | `model/materialization_seal/6` | `prepare_person_metric,write_person_metric` | 绑定 `prepare_person_metric` 的 batch 与 `write_person_metric` 的 execution/target |
+| `prepare_pair_metric` | `model/materialization_prepare/7` | 无 | `{}` |
+| `write_pair_metric` | `develop/query/50` | `prepare_pair_metric,seal_person_metric,seal_participation` | `target_locator={{prepare_pair_metric.outputs.staging_locator}}`; `input_locators.person_metric={{seal_person_metric.outputs.staging_locator}}`; `input_locators.participation={{seal_participation.outputs.staging_locator}}` |
+| `seal_pair_metric` | `model/materialization_seal/7` | `prepare_pair_metric,write_pair_metric` | 绑定 `prepare_pair_metric` 的 batch 与 `write_pair_metric` 的 execution/target |
+| `quality_gate` | `quality/materialization_gate/1` | `seal_person,seal_activity,seal_participation,seal_person_metric,seal_pair_metric` | `{}` |
+| `publish_group` | `model/materialization_group_publish/1` | `quality_gate` | `expected_group_id={{quality_gate.outputs.materialization_group_id}}`; `expected_group_version={{quality_gate.outputs.materialization_group_version}}` |
+
+编排创建后先保存为未定时状态，手动执行一次；第一轮必须从 Monitor 核对所有子 execution 共用同一父 execution、五个 batch 均进入 sealed、Quality 结果与组发布是否按门禁结果停止或继续。当前 19 个悬空人员引用很可能使 `quality_gate` 失败；这是预期的治理证据，应停下讨论“修正源数据、补齐人员维度，还是显式改变门禁政策”，不得为追求绿色执行而无证据降级。
+
+#### 验证与收尾
+
+- Model 空分区修复已通过：`cd model/backend && go test ./... -count=1`、`make test-model-frontend`、`ADDP_TEST_MODEL_POSTGRES_DSN='postgres://addp:addp_password@localhost:15432/addp_test?sslmode=disable' make test-model-postgres`、`make test-platform`。
+- 真实 DAG 成功后，必须查验五张正式表的行数、结构指纹、Model 管理标记、指标粒度和 45 对 Top 10 结果，并记录 execution ID 作为回归证据。
+- 只有新路线端到端通过后才删除 Develop `47/48`；删除前再根据当时数据状态向用户确认精确目标，删除后重跑受影响的 Develop/Orchestrator 门禁。
+- 最后把编排 ID、首次成功 execution ID、实际行数、Quality 结果、旧任务删除结果和是否启用 Cron 补回本节，再将本专题标记为完成。
 
 ### 13.6 Model 逻辑表与星型关系（2026-08-25）
 

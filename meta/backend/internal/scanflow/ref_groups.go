@@ -7,10 +7,10 @@ import (
 
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 func FileRefGroupCandidateSet(engineID uint, primary string, group models.ScanRefGroup) ContentCandidateSet {
@@ -28,7 +28,7 @@ func FileRefGroupCandidateSet(engineID uint, primary string, group models.ScanRe
 		Files:          FileRefsFromScanRefGroup(engineID, group),
 		Subdirs:        directories,
 		ResolveOptions: metaitem.ResolveOptions{IncludeSingleResources: true},
-		CatalogPathFor: func(rawPath string) plugin.CatalogPath {
+		EngineCatalogPathFor: func(rawPath string) plugin.EngineCatalogPath {
 			normalized := metapath.SanitizeFSPath(rawPath)
 			if directoryPaths[normalized] {
 				return plugin.FileDirectoryPath(engineID, normalized)
@@ -38,17 +38,17 @@ func FileRefGroupCandidateSet(engineID uint, primary string, group models.ScanRe
 	}
 }
 
-func ObjectRefGroupCandidateSet(engineID uint, bucket, objectPath string, resources []metacatalog.StorageResource) ContentCandidateSet {
+func ObjectRefGroupCandidateSet(engineID uint, bucket, objectPath string, resources []scanresource.StorageResource) ContentCandidateSet {
 	prefix := objectRefGroupPrefix(objectPath)
-	files := metacatalog.ObjectResourcesByParentPrefix(resources)[bucket+"\x00"+prefix]
+	files := scanresource.ObjectResourcesByParentPrefix(resources)[bucket+"\x00"+prefix]
 	if len(files) == 0 {
 		files = resources
 	}
 	return ContentCandidateSet{
-		DirPath:        prefix,
-		Files:          objectStorageFileRefs(files),
-		ResolveOptions: metaitem.ResolveOptions{IncludeSingleResources: true},
-		CatalogPathFor: objectRefCatalogPathForBucket(engineID, bucket),
+		DirPath:              prefix,
+		Files:                objectStorageFileRefs(files),
+		ResolveOptions:       metaitem.ResolveOptions{IncludeSingleResources: true},
+		EngineCatalogPathFor: objectRefEngineCatalogPathForBucket(engineID, bucket),
 	}
 }
 
@@ -61,9 +61,9 @@ func FileRefsFromScanRefGroup(engineID uint, group models.ScanRefGroup) []metait
 		}
 		filePath := metapath.SanitizeFSPath(ref.Path)
 		files = append(files, metaitem.StorageFileRef{
-			Name:        path.Base(filePath),
-			Path:        filePath,
-			CatalogPath: plugin.FileItemPath(engineID, filePath),
+			Name:              path.Base(filePath),
+			Path:              filePath,
+			EngineCatalogPath: plugin.FileItemPath(engineID, filePath),
 		})
 	}
 	return files
@@ -78,17 +78,17 @@ func FileDirectoryRefsFromScanRefGroup(engineID uint, group models.ScanRefGroup)
 		}
 		directoryPath := metapath.SanitizeFSPath(ref.Path)
 		directories = append(directories, metaitem.StorageDirectoryRef{
-			Name:        path.Base(directoryPath),
-			Path:        directoryPath,
-			CatalogPath: plugin.FileDirectoryPath(engineID, directoryPath),
+			Name:              path.Base(directoryPath),
+			Path:              directoryPath,
+			EngineCatalogPath: plugin.FileDirectoryPath(engineID, directoryPath),
 		})
 	}
 	return directories
 }
 
-func ObjectResourcesFromScanRefGroup(engineID uint, bucket string, group models.ScanRefGroup) ([]metacatalog.StorageResource, error) {
+func ObjectResourcesFromScanRefGroup(engineID uint, bucket string, group models.ScanRefGroup) ([]scanresource.StorageResource, error) {
 	refs := NormalizedScanRefs(group)
-	resources := make([]metacatalog.StorageResource, 0, len(refs))
+	resources := make([]scanresource.StorageResource, 0, len(refs))
 	for _, ref := range refs {
 		refBucket, objectPath, err := plugin.SplitObjectRefPath(ref.Path)
 		if err != nil {
@@ -99,13 +99,13 @@ func ObjectResourcesFromScanRefGroup(engineID uint, bucket string, group models.
 		}
 		objectPath = strings.Trim(objectPath, "/")
 		fullPath := strings.Trim(refBucket+"/"+objectPath, "/")
-		resources = append(resources, metacatalog.StorageResource{
-			RootName:    bucket,
-			Path:        objectPath,
-			FullPath:    fullPath,
-			NodeType:    plugin.CatalogKindObject,
-			ObjectCount: 1,
-			CatalogPath: plugin.ObjectItemPath(engineID, bucket, objectPath),
+		resources = append(resources, scanresource.StorageResource{
+			RootName:          bucket,
+			Path:              objectPath,
+			FullPath:          fullPath,
+			NodeType:          plugin.EngineCatalogKindObject,
+			ObjectCount:       1,
+			EngineCatalogPath: plugin.ObjectItemPath(engineID, bucket, objectPath),
 		})
 	}
 	return resources, nil
@@ -158,22 +158,22 @@ func ScanRefGroupPrimaryPath(group models.ScanRefGroup) string {
 }
 
 func objectRefGroupPrefix(objectPath string) string {
-	return strings.Trim(metacatalog.ParentObjectPath(objectPath), "/")
+	return strings.Trim(scanresource.ParentObjectPath(objectPath), "/")
 }
 
-func objectRefCatalogPathForBucket(engineID uint, bucket string) func(string) plugin.CatalogPath {
+func objectRefEngineCatalogPathForBucket(engineID uint, bucket string) func(string) plugin.EngineCatalogPath {
 	return plugin.ObjectItemPathForBucketRef(engineID, bucket)
 }
 
-func objectStorageFileRefs(resources []metacatalog.StorageResource) []metaitem.StorageFileRef {
+func objectStorageFileRefs(resources []scanresource.StorageResource) []metaitem.StorageFileRef {
 	files := make([]metaitem.StorageFileRef, 0, len(resources))
 	for _, resource := range resources {
 		files = append(files, metaitem.StorageFileRef{
-			Name:        path.Base(resource.Path),
-			Path:        strings.Trim(resource.Path, "/"),
-			CatalogPath: resource.CatalogPath,
-			Size:        resource.SizeBytes,
-			ContentType: resource.ContentType,
+			Name:              path.Base(resource.Path),
+			Path:              strings.Trim(resource.Path, "/"),
+			EngineCatalogPath: resource.EngineCatalogPath,
+			Size:              resource.SizeBytes,
+			ContentType:       resource.ContentType,
 		})
 	}
 	return files

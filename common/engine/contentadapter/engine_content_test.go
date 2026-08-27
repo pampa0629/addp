@@ -155,7 +155,7 @@ type contentProviderStub struct {
 	modifiedAt time.Time
 }
 
-func (p *contentProviderStub) OpenContent(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath, _ engineplugin.ReadOptions) (io.ReadCloser, error) {
+func (p *contentProviderStub) OpenContent(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.EngineCatalogPath, _ engineplugin.ReadOptions) (io.ReadCloser, error) {
 	value := p.data[path.StringPath()]
 	return io.NopCloser(bytes.NewBufferString(value)), nil
 }
@@ -187,7 +187,7 @@ func (p *contentProviderStub) StoreSemantics() engineplugin.StoreSemantics {
 	return engineplugin.StoreSemantics{}
 }
 
-func (p *contentProviderStub) OpenRange(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath, opts engineplugin.ReadOptions) (io.ReadCloser, error) {
+func (p *contentProviderStub) OpenRange(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.EngineCatalogPath, opts engineplugin.ReadOptions) (io.ReadCloser, error) {
 	value := p.data[path.StringPath()]
 	end := opts.Offset + opts.Length
 	if end > int64(len(value)) {
@@ -196,11 +196,11 @@ func (p *contentProviderStub) OpenRange(_ context.Context, _ engineplugin.Connec
 	return io.NopCloser(bytes.NewBufferString(value[opts.Offset:end])), nil
 }
 
-func (p *contentProviderStub) ListChildren(context.Context, engineplugin.ConnectionInfo, engineplugin.CatalogPath, engineplugin.ListOptions) ([]engineplugin.CatalogEntry, error) {
+func (p *contentProviderStub) ListChildren(context.Context, engineplugin.ConnectionInfo, engineplugin.EngineCatalogPath, engineplugin.ListOptions) ([]engineplugin.EngineCatalogEntry, error) {
 	return nil, nil
 }
 
-func (p *contentProviderStub) ResolvePath(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath) (*engineplugin.CatalogEntry, error) {
+func (p *contentProviderStub) ResolvePath(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.EngineCatalogPath) (*engineplugin.EngineCatalogEntry, error) {
 	value, ok := p.data[path.StringPath()]
 	if !ok {
 		return nil, contentio.ErrContentNotFound
@@ -211,11 +211,11 @@ func (p *contentProviderStub) ResolvePath(_ context.Context, _ engineplugin.Conn
 		updatedAt = &modifiedAt
 	}
 	sizeBytes := int64(len(value))
-	return &engineplugin.CatalogEntry{
+	return &engineplugin.EngineCatalogEntry{
 		Name: path.StringPath(),
 		Path: path,
-		Role: engineplugin.CatalogRoleLeaf,
-		Storage: &engineplugin.CatalogStorageFacts{
+		Role: engineplugin.EngineCatalogRoleLeaf,
+		Storage: &engineplugin.EngineCatalogStorageFacts{
 			ContentType: "application/octet-stream",
 			SizeBytes:   &sizeBytes,
 		},
@@ -223,7 +223,7 @@ func (p *contentProviderStub) ResolvePath(_ context.Context, _ engineplugin.Conn
 	}, nil
 }
 
-func (p *contentProviderStub) CreateContent(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath, _ engineplugin.WriteOptions) (io.WriteCloser, error) {
+func (p *contentProviderStub) CreateContent(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.EngineCatalogPath, _ engineplugin.WriteOptions) (io.WriteCloser, error) {
 	return &captureWriter{
 		close: func(data string) {
 			p.data[path.StringPath()] = data
@@ -241,12 +241,12 @@ func (w *captureWriter) Close() error {
 	return nil
 }
 
-func baseCatalogPath() engineplugin.CatalogPath {
-	return engineplugin.CatalogPath{
-		Version: engineplugin.CatalogPathVersion,
-		Segments: []engineplugin.CatalogSegment{
-			{Name: "bucket", Term: engineplugin.CatalogTermBucket, Kind: engineplugin.CatalogKindBucket},
-			{Name: "source.shp", Term: engineplugin.CatalogTermFile, Kind: engineplugin.CatalogKindFile},
+func baseCatalogPath() engineplugin.EngineCatalogPath {
+	return engineplugin.EngineCatalogPath{
+		Version: engineplugin.EngineCatalogPathVersion,
+		Segments: []engineplugin.EngineCatalogSegment{
+			{Name: "bucket", Term: engineplugin.EngineCatalogTermBucket, Kind: engineplugin.EngineCatalogKindBucket},
+			{Name: "source.shp", Term: engineplugin.EngineCatalogTermFile, Kind: engineplugin.EngineCatalogKindFile},
 		},
 	}
 }

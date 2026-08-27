@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	commonapi "github.com/addp/common/api"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	servicei18n "github.com/addp/service/i18n"
 	"github.com/addp/service/internal/models"
@@ -20,8 +21,13 @@ import (
 
 // QueryServiceHandler 处理查询服务相关的 HTTP 请求
 type QueryServiceHandler struct {
-	svc         *svc.QueryServiceService
-	executorSvc *svc.QueryExecutorService
+	svc                  *svc.QueryServiceService
+	executorSvc          *svc.QueryExecutorService
+	executionAuditWriter QueryExecutionAuditWriter
+}
+
+func (h *QueryServiceHandler) SetExecutionAuditWriter(writer QueryExecutionAuditWriter) {
+	h.executionAuditWriter = writer
 }
 
 // NewQueryServiceHandler 创建新的查询服务处理器
@@ -74,7 +80,7 @@ func (h *QueryServiceHandler) CreateService(c *gin.Context) {
 	result, err := h.svc.CreateService(&req, tenantID, userID)
 	if err != nil {
 		// 区分不同的错误类型
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		} else {
 			// 验证错误和业务错误都返回 400
@@ -329,6 +335,7 @@ func (h *QueryServiceHandler) RefreshSourceSnapshot(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param serviceName path string true "服务名称 | Service name"
+// @Param X-ADDP-Query-Intent header string false "查询用途 | Query intent" Enums(query,export) default(query)
 // @Param request body models.QueryExecutionRequest true "结构化查询请求 | Structured query request"
 // @Success 200 {object} models.QueryExecutionResult
 // @Failure 400 {object} map[string]string
@@ -339,6 +346,7 @@ func (h *QueryServiceHandler) RefreshSourceSnapshot(c *gin.Context) {
 // @x-addp-auth-mode "public"
 // @Router /api/query/{serviceName}/query [post]
 func (h *QueryServiceHandler) QueryData(c *gin.Context) {
+	ensureQueryRequestID(c)
 	serviceName := c.Param("serviceName")
 
 	// 从 JWT token 中获取租户 ID（如果是公开服务则可能没有）
@@ -347,17 +355,38 @@ func (h *QueryServiceHandler) QueryData(c *gin.Context) {
 	// 先通过服务名称查找服务(不过滤租户),然后检查权限
 	service, err := h.svc.GetServiceModelByNameOnly(serviceName)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, commonapi.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, servicei18n.MsgServiceNotFound), "error_code": "service_not_found"})
 		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get service: " + err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, servicei18n.MsgServiceLookupFailed), "error_code": "service_lookup_failed"})
 		}
+		return
+	}
+	auditState := &queryExecutionAuditState{
+		service: service, intent: "query", serviceVersion: svc.QueryServiceVersion(service),
+	}
+	defer h.writeQueryExecutionAudit(c, auditState)
+	intentHeaders := c.Request.Header.Values(svc.ConsumerQueryIntentHeader)
+	intent := ""
+	if len(intentHeaders) == 1 {
+		intent = strings.ToLower(strings.TrimSpace(intentHeaders[0]))
+	}
+	if intent == "" {
+		intent = "query"
+	}
+	auditState.intent = intent
+	if len(intentHeaders) > 1 || (intent != "query" && intent != "export") {
+		auditState.errorCode = "invalid_query_intent"
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": commoni18n.T(c, servicei18n.MsgInvalidQueryIntent), "error_code": auditState.errorCode,
+		})
 		return
 	}
 
 	// 检查服务状态
 	if service.Status != "active" {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Service is not active"})
+		auditState.errorCode = "service_inactive"
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, servicei18n.MsgServiceInactive), "error_code": auditState.errorCode})
 		return
 	}
 
@@ -365,18 +394,28 @@ func (h *QueryServiceHandler) QueryData(c *gin.Context) {
 	if !service.PublicAccess {
 		// 非公开服务需要认证且租户匹配
 		if tenantID == 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
+			auditState.errorCode = "authentication_required"
+			c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, commoni18n.MsgUnauthorized), "error_code": auditState.errorCode})
 			return
 		}
 		if service.TenantID != tenantID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+			auditState.errorCode = "service_access_denied"
+			c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, commoni18n.MsgForbidden), "error_code": auditState.errorCode})
+			return
+		}
+		if !hasTenantQueryExecutionPermission(c, tenantID) {
+			auditState.errorCode = "permission_denied"
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": commoni18n.T(c, commoni18n.MsgForbidden), "error_code": auditState.errorCode,
+			})
 			return
 		}
 	}
 
 	// 检查 REST API 是否启用
 	if !service.IsRESTAPIEnabled() {
-		c.JSON(http.StatusNotImplemented, gin.H{"error": "REST API is not enabled for this service"})
+		auditState.errorCode = "rest_api_disabled"
+		c.JSON(http.StatusNotImplemented, gin.H{"error": commoni18n.T(c, servicei18n.MsgRESTAPIDisabled), "error_code": auditState.errorCode})
 		return
 	}
 
@@ -385,35 +424,44 @@ func (h *QueryServiceHandler) QueryData(c *gin.Context) {
 	decoder.DisallowUnknownFields()
 	decoder.UseNumber()
 	if err := decoder.Decode(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgInvalidQueryRequest, err.Error())})
+		auditState.errorCode = "invalid_query_request"
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgInvalidQueryRequest, err.Error()), "error_code": auditState.errorCode})
 		return
 	}
+	auditState.request = &request
 	var trailing interface{}
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidQueryRequest)})
+		auditState.errorCode = "invalid_query_request"
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidQueryRequest), "error_code": auditState.errorCode})
 		return
 	}
 	request.Format = strings.ToLower(strings.TrimSpace(request.Format))
 	if request.Format == "" {
 		request.Format = "json"
 	}
-	if request.Format != "json" && request.Format != "csv" && request.Format != "geojson" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidQueryFormat)})
+	if !svc.QueryServiceSupportsRESTFormat(service, request.Format) {
+		auditState.errorCode = "invalid_query_format"
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidQueryFormat), "error_code": auditState.errorCode})
 		return
 	}
 
 	result, err := h.executorSvc.ExecuteQuery(c.Request.Context(), service, &request)
 	if err != nil {
 		log.Printf("[QueryService] Query execution failed: %v", err)
+		auditState.errorCode = queryExecutionErrorCode(err)
 		writeQueryExecutionError(c, err)
 		return
 	}
+	auditState.serviceVersion = result.ServiceVersion
+	auditState.rowCount = len(result.Data)
+	auditState.hasMore = result.Page.HasMore
 
 	switch request.Format {
 	case "csv":
 		csvData, err := h.executorSvc.FormatAsCSV(result)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgQueryFormatFailed, err.Error())})
+			auditState.errorCode = "query_format_failed"
+			c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgQueryFormatFailed, err.Error()), "error_code": auditState.errorCode})
 			return
 		}
 		c.Header("Content-Type", "text/csv")
@@ -426,21 +474,34 @@ func (h *QueryServiceHandler) QueryData(c *gin.Context) {
 	case "geojson":
 		geojsonData, err := h.executorSvc.FormatAsGeoJSON(result, service)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgQueryFormatFailed, err.Error())})
+			auditState.errorCode = "query_format_failed"
+			c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgQueryFormatFailed, err.Error()), "error_code": auditState.errorCode})
 			return
 		}
 		c.Header("Content-Type", "application/geo+json")
+		c.Header("X-ADDP-Has-More", strconv.FormatBool(result.Page.HasMore))
+		c.Header("X-ADDP-Next-Cursor", result.Page.NextCursor)
+		c.Header("X-ADDP-Service-Version", result.ServiceVersion)
 		c.Data(http.StatusOK, "application/geo+json", geojsonData)
 
 	default: // json
 		c.JSON(http.StatusOK, result)
 	}
+	auditState.result = "succeeded"
 }
 
 func writeQueryExecutionError(c *gin.Context, err error) {
+	errorCode := queryExecutionErrorCode(err)
 	if errors.Is(err, svc.ErrInvalidStructuredQuery) || errors.Is(err, svc.ErrInvalidQueryCursor) || errors.Is(err, svc.ErrInvalidFeatureID) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgInvalidStructuredQuery, err.Error())})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgInvalidStructuredQuery, err.Error()), "error_code": errorCode})
 		return
 	}
-	c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgQueryExecutionFailed, err.Error())})
+	c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgQueryExecutionFailed, err.Error()), "error_code": errorCode})
+}
+
+func queryExecutionErrorCode(err error) string {
+	if errors.Is(err, svc.ErrInvalidStructuredQuery) || errors.Is(err, svc.ErrInvalidQueryCursor) || errors.Is(err, svc.ErrInvalidFeatureID) {
+		return "invalid_structured_query"
+	}
+	return "query_execution_failed"
 }

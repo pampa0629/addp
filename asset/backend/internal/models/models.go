@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // JSONBMap 用于 GORM 存储 JSONB 字段（对象类型）
@@ -66,20 +68,18 @@ func (j *JSONBArray) Scan(value interface{}) error {
 // TypeDefinition 资产类型注册表
 // 每种资产类型（数据集、数据服务、指标等）在此表注册
 type TypeDefinition struct {
-	ID            int64     `gorm:"primaryKey"                                          json:"id"`
-	TenantID      int64     `gorm:"not null;index"                                      json:"tenant_id"`
-	Name          string    `gorm:"size:100;not null"                                   json:"name"`
-	Code          string    `gorm:"size:50;not null;uniqueIndex:uidx_type_code_tenant"  json:"code"`
-	SourceModule  string    `gorm:"size:50"                                             json:"source_module"`  // meta/service/standard/develop/manual
-	AuthHandler   string    `gorm:"size:100"                                            json:"auth_handler"`   // soft/token
-	EntryType     string    `gorm:"size:50"                                             json:"entry_type"`     // preview/link/iframe/token
-	DiscoveryPath string    `gorm:"size:255"                                            json:"discovery_path"` // 可发现资产的 canonical API 路径
-	IconURL       string    `gorm:"size:500"                                            json:"icon_url"`
-	Description   string    `gorm:"size:500"                                            json:"description"`
-	Enabled       bool      `gorm:"default:true"                                        json:"enabled"`
-	SortOrder     int       `gorm:"default:0"                                           json:"sort_order"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID          int64     `gorm:"primaryKey"                                          json:"id"`
+	TenantID    int64     `gorm:"not null;index"                                      json:"tenant_id"`
+	Name        string    `gorm:"size:100;not null"                                   json:"name"`
+	Code        string    `gorm:"size:50;not null;uniqueIndex:uidx_type_code_tenant"  json:"code"`
+	AuthHandler string    `gorm:"size:100"                                            json:"auth_handler"` // soft/token
+	EntryType   string    `gorm:"size:50"                                             json:"entry_type"`   // preview/link/iframe/token
+	IconURL     string    `gorm:"size:500"                                            json:"icon_url"`
+	Description string    `gorm:"size:500"                                            json:"description"`
+	Enabled     bool      `gorm:"default:true"                                        json:"enabled"`
+	SortOrder   int       `gorm:"default:0"                                           json:"sort_order"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func (TypeDefinition) TableName() string { return "asset.type_definitions" }
@@ -117,27 +117,44 @@ func (Catalog) TableName() string { return "asset.catalogs" }
 
 // Asset 资产主表
 type Asset struct {
-	ID              int64      `gorm:"primaryKey"                                json:"id"`
-	TenantID        int64      `gorm:"not null;index"                            json:"tenant_id"`
-	Name            string     `gorm:"size:500;not null"                         json:"name"`
-	Description     string     `gorm:"size:2000"                                 json:"description"`
-	TypeID          int64      `gorm:"not null;index"                            json:"type_id"`
-	CatalogID       *int64     `gorm:"index"                                     json:"catalog_id,omitempty"`
-	Tags            JSONBArray `gorm:"type:jsonb;default:'[]'"                   json:"tags"`
-	Status          string     `gorm:"size:50;not null;default:'draft';index"    json:"status"` // draft/published/offline
-	OwnerID         int64      `gorm:"not null;index"                            json:"owner_id"`
-	SourceModule    string     `gorm:"size:50"                                   json:"source_module"`                               // 来源模块
-	SourceReference string     `gorm:"size:500"                                  json:"source_reference"`                            // 来源引用
-	Fingerprint     string     `gorm:"size:64;uniqueIndex:uidx_asset_fingerprint_tenant,where:fingerprint != ''" json:"fingerprint"` // 去重指纹
-	SourceAvailable bool       `gorm:"not null;default:true"                     json:"source_available"`                            // 来源资源是否仍然存在
-	PublishedAt     *time.Time `json:"published_at,omitempty"`
-	CreatedBy       int64      `gorm:"not null"                                  json:"created_by"`
-	UpdatedBy       *int64     `json:"updated_by,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	ID          int64      `gorm:"primaryKey"                                json:"id"`
+	TenantID    int64      `gorm:"not null;index"                            json:"tenant_id"`
+	Name        string     `gorm:"size:500;not null"                         json:"name"`
+	Description string     `gorm:"size:2000"                                 json:"description"`
+	TypeID      int64      `gorm:"not null;index"                            json:"type_id"`
+	CatalogID   *int64     `gorm:"index"                                     json:"catalog_id,omitempty"`
+	Tags        JSONBArray `gorm:"type:jsonb;default:'[]'"                   json:"tags"`
+	Status      string     `gorm:"size:50;not null;default:'draft';index"    json:"status"` // draft/published/offline
+	OwnerID     int64      `gorm:"not null;index"                            json:"owner_id"`
+	Version     int64      `gorm:"not null;default:1"                        json:"version"`
+	PublishedAt *time.Time `json:"published_at,omitempty"`
+	CreatedBy   int64      `gorm:"not null"                                  json:"created_by"`
+	UpdatedBy   *int64     `json:"updated_by,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
 func (Asset) TableName() string { return "asset.assets" }
+
+const (
+	AssetComponentRolePrimary    = "primary"
+	AssetComponentRoleSupporting = "supporting"
+)
+
+// AssetComponent is an Asset-owned composition reference to a CatalogEntry.
+// Catalog remains the owner of entry validity, source, semantics, and responsibility.
+type AssetComponent struct {
+	ID             int64     `gorm:"primaryKey" json:"id"`
+	TenantID       int64     `gorm:"not null;index" json:"-"`
+	AssetID        int64     `gorm:"not null;index" json:"asset_id"`
+	CatalogEntryID uuid.UUID `gorm:"type:uuid;not null" json:"catalog_entry_id"`
+	Role           string    `gorm:"size:16;not null" json:"role"`
+	SortOrder      int       `gorm:"not null;default:0" json:"sort_order"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+func (AssetComponent) TableName() string { return "asset.asset_components" }
 
 // AssetExtField 资产扩展字段值（按类型动态存储）
 type AssetExtField struct {

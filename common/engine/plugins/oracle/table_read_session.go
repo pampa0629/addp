@@ -17,11 +17,11 @@ import (
 	"github.com/twpayne/go-geom/encoding/wkb"
 )
 
-func (p *OraclePlugin) OpenTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
+func (p *OraclePlugin) OpenTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
 	return p.openTableReadSession(ctx, connInfo, path, opts, 0, 0)
 }
 
-func (p *OraclePlugin) readBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
+func (p *OraclePlugin) readBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
 	session, err := p.openTableReadSession(ctx, connInfo, path, plugin.TableReadSessionOptions{
 		Query: opts.Query,
 		Args:  opts.Args,
@@ -34,7 +34,7 @@ func (p *OraclePlugin) readBatch(ctx context.Context, connInfo plugin.Connection
 	return session.ReadBatch(ctx, opts.Limit)
 }
 
-func (p *OraclePlugin) openTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (plugin.TableReadSession, error) {
+func (p *OraclePlugin) openTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (plugin.TableReadSession, error) {
 	if err := resume.RejectUnsupported(opts.ResumeMarker, "oracle.table_read_session"); err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func (p *OraclePlugin) openTableReadSession(ctx context.Context, connInfo plugin
 	return &oracleTableReadSession{db: db, tx: tx, rows: rows, fields: fields, spatialInfo: spatialInfo, geometryEncoding: encoding, offset: offset}, nil
 }
 
-func (p *OraclePlugin) oracleReadQuery(ctx context.Context, db *sql.DB, path plugin.CatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (string, []datatype.FieldInfo, *datatype.SpatialInfo, format.GeometryEncoding, error) {
+func (p *OraclePlugin) oracleReadQuery(ctx context.Context, db *sql.DB, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (string, []datatype.FieldInfo, *datatype.SpatialInfo, format.GeometryEncoding, error) {
 	encoding := oracleGeometryEncodingHint(opts.Hints)
 	encodingHint := ""
 	if opts.Hints != nil && opts.Hints[plugin.TableReadHintGeometryEncoding] != nil {
@@ -101,14 +101,14 @@ func (p *OraclePlugin) oracleReadQuery(ctx context.Context, db *sql.DB, path plu
 		}
 		return query, nil, nil, "", nil
 	}
-	segments := plugin.CatalogPathWithoutRoot(path).Segments
+	segments := plugin.EngineCatalogPathWithoutRoot(path).Segments
 	if len(segments) < 2 {
 		return "", nil, nil, "", fmt.Errorf("Oracle table read requires a schema/table path or query")
 	}
 	schema := segments[len(segments)-2].Name
 	table := segments[len(segments)-1].Name
 	if p.isSystemSchema(schema) {
-		return "", nil, nil, "", plugin.WrapCatalogError(plugin.CatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
+		return "", nil, nil, "", plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
 	}
 	fields, err := p.listColumnsWithSQL(ctx, db, schema, table)
 	if err != nil {

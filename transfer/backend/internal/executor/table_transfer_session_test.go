@@ -15,7 +15,7 @@ func TestOpenNativeSourceAcceptsSessionOnlyProvider(t *testing.T) {
 
 	if _, err := executor.openSource(TableSourcePlan{
 		Kind: TableEndpointNative,
-		Path: engineplugin.CatalogPath{},
+		Path: engineplugin.EngineCatalogPath{},
 	}); err != nil {
 		t.Fatalf("openSource() error = %v", err)
 	}
@@ -64,7 +64,7 @@ func TestOpenNativeTargetAcceptsSessionOnlyProvider(t *testing.T) {
 
 	if _, err := executor.openTarget(TableTargetPlan{
 		Kind: TableEndpointNative,
-		Path: engineplugin.CatalogPath{},
+		Path: engineplugin.EngineCatalogPath{},
 	}); err != nil {
 		t.Fatalf("openTarget() error = %v", err)
 	}

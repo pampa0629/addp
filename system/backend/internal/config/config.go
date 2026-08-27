@@ -115,6 +115,8 @@ func Load() *Config {
 		ServiceClientSecrets: map[string]string{
 			"addp-agent":        getEnv("AGENT_SERVICE_CLIENT_SECRET", ""),
 			"addp-asset":        getEnv("ASSET_SERVICE_CLIENT_SECRET", ""),
+			"addp-catalog":      getEnv("CATALOG_SERVICE_CLIENT_SECRET", ""),
+			"addp-workbench":    getEnv("WORKBENCH_SERVICE_CLIENT_SECRET", ""),
 			"addp-copilot":      getEnv("COPILOT_SERVICE_CLIENT_SECRET", ""),
 			"addp-develop":      getEnv("DEVELOP_SERVICE_CLIENT_SECRET", ""),
 			"addp-duckdb":       getEnv("DUCKDB_SERVICE_CLIENT_SECRET", ""),

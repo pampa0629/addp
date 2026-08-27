@@ -21,8 +21,8 @@ var (
 	keyPartPattern    = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 	allowedActions = map[string]struct{}{
-		"approve": {}, "cancel": {}, "close": {}, "create": {}, "delete": {},
-		"execute": {}, "export": {}, "initialize": {}, "link": {}, "offline": {}, "publish": {},
+		"approve": {}, "cancel": {}, "certify": {}, "close": {}, "create": {}, "delete": {}, "deprecate": {},
+		"execute": {}, "export": {}, "initialize": {}, "link": {}, "offline": {}, "publish": {}, "rebind": {},
 		"reactivate": {}, "read": {}, "reject": {}, "reset": {}, "restore": {}, "retry": {},
 		"revoke": {}, "suspend": {}, "unlink": {}, "update": {},
 	}

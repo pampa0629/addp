@@ -5,47 +5,91 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"strconv"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/models"
-	"github.com/addp/meta/internal/search"
 )
 
-// IndexerService 负责管理 Meilisearch 索引
-// 提取自 ScanService，消除循环依赖
+// IndexerService 将扫描事实投影到 Manager owner 的内容索引。
 type IndexerService struct {
-	indexer *search.Indexer
-	log     *slog.Logger
+	contentIndex *commonClient.ManagerContentClient
+	log          *slog.Logger
 }
 
-// NewIndexerService 创建索引服务
-func NewIndexerService(indexer *search.Indexer, log *slog.Logger) *IndexerService {
+func NewIndexerService(contentIndex *commonClient.ManagerContentClient, log *slog.Logger) *IndexerService {
 	return &IndexerService{
-		indexer: indexer,
-		log:     log,
+		contentIndex: contentIndex,
+		log:          log,
 	}
 }
 
 // DeleteTablesFromIndex 从索引中删除表
 func (s *IndexerService) DeleteTablesFromIndex(tenantID, engineID uint, schemaName string) {
-	if s.indexer == nil || !s.indexer.Enabled() || schemaName == "" {
+	if s.contentIndex == nil || schemaName == "" {
 		return
 	}
-	if err := s.indexer.DeleteTables(context.Background(), tenantID, engineID, schemaName); err != nil {
+	if err := s.contentIndex.WithTenantID(tenantID).DeleteDocuments(context.Background(), commonClient.ManagerContentDeleteScope{
+		EngineID: engineID, DataItemType: "table", Schema: schemaName,
+	}); err != nil {
 		s.log.Warn("删除表索引失败", "schema", schemaName, "engine_id", engineID, "error", err)
 	}
 }
 
 // DeleteObjectsFromIndex 从索引中删除对象
 func (s *IndexerService) DeleteObjectsFromIndex(tenantID, engineID uint, bucketName, path string) {
-	if s.indexer == nil || !s.indexer.Enabled() || bucketName == "" {
+	if s.contentIndex == nil || bucketName == "" {
 		return
 	}
-	if err := s.indexer.DeleteObjects(context.Background(), tenantID, engineID, bucketName, path); err != nil {
+	if err := s.contentIndex.WithTenantID(tenantID).DeleteDocuments(context.Background(), commonClient.ManagerContentDeleteScope{
+		EngineID: engineID, DataItemType: "object", Bucket: bucketName, PathPrefix: path,
+	}); err != nil {
 		s.log.Warn("删除对象索引失败", "bucket", bucketName, "path", path, "error", err)
 	}
+}
+
+func normalizeContentMap(input map[string]interface{}) map[string]interface{} {
+	if input == nil {
+		return nil
+	}
+	output := make(map[string]interface{}, len(input))
+	for key, value := range input {
+		output[key] = normalizeContentValue(value)
+	}
+	return output
+}
+
+func normalizeContentValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case time.Time:
+		return typed.UTC()
+	case *time.Time:
+		if typed == nil {
+			return nil
+		}
+		return typed.UTC()
+	case map[string]interface{}:
+		return normalizeContentMap(typed)
+	case []interface{}:
+		result := make([]interface{}, len(typed))
+		for index, item := range typed {
+			result[index] = normalizeContentValue(item)
+		}
+		return result
+	}
+	reflected := reflect.ValueOf(value)
+	if reflected.IsValid() && reflected.Kind() == reflect.Map && reflected.Type().Key().Kind() == reflect.String {
+		result := make(map[string]interface{}, reflected.Len())
+		iterator := reflected.MapRange()
+		for iterator.Next() {
+			result[iterator.Key().String()] = normalizeContentValue(iterator.Value().Interface())
+		}
+		return result
+	}
+	return value
 }
 
 // 辅助函数（从 scan_service.go 复制）

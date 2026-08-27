@@ -32,9 +32,9 @@ var (
 	_ plugin.InstanceCapabilitiesResolver         = (*OraclePlugin)(nil)
 	_ plugin.DSNProvider                          = (*OraclePlugin)(nil)
 	_ plugin.ConnectionPoolPlugin                 = (*OraclePlugin)(nil)
-	_ plugin.CatalogModelProvider                 = (*OraclePlugin)(nil)
-	_ plugin.CatalogProvider                      = (*OraclePlugin)(nil)
-	_ plugin.CatalogFactsProvider                 = (*OraclePlugin)(nil)
+	_ plugin.EngineCatalogModelProvider           = (*OraclePlugin)(nil)
+	_ plugin.EngineCatalogProvider                = (*OraclePlugin)(nil)
+	_ plugin.EngineCatalogFactsProvider           = (*OraclePlugin)(nil)
 	_ plugin.SQLQueryRuntimeProvider              = (*OraclePlugin)(nil)
 	_ plugin.ParameterizedSQLQueryRuntimeProvider = (*OraclePlugin)(nil)
 	_ plugin.BatchReadableProvider                = (*OraclePlugin)(nil)
@@ -91,7 +91,7 @@ func (p *OraclePlugin) ConnectionIdentityFields() []string {
 }
 
 func (p *OraclePlugin) Capabilities() plugin.EngineCapabilities {
-	caps := plugin.NewTabularCapabilities(p.Type(), plugin.CatalogTermSchema, plugin.TabularCapabilityOptions{
+	caps := plugin.NewTabularCapabilities(p.Type(), plugin.EngineCatalogTermSchema, plugin.TabularCapabilityOptions{
 		TableReadSession:   true,
 		TableWriteSession:  true,
 		TableWritePrepare:  true,
@@ -115,8 +115,8 @@ func (p *OraclePlugin) Capabilities() plugin.EngineCapabilities {
 	return caps
 }
 
-func (p *OraclePlugin) CatalogModel() plugin.CatalogModelSpec {
-	return plugin.TabularCatalogModel(plugin.CatalogTermSchema)
+func (p *OraclePlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
+	return plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema)
 }
 
 func (p *OraclePlugin) StoreSemantics() plugin.StoreSemantics {
@@ -171,7 +171,7 @@ func (p *OraclePlugin) QueryLanguages() []string {
 }
 
 func (p *OraclePlugin) GenerateSampleQuery(_ context.Context, _ plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
-	return plugin.SampleSQLForCatalogPath(p.Type(), opts.Path, 10), "sql"
+	return plugin.SampleSQLForEngineCatalogPath(p.Type(), opts.Path, 10), "sql"
 }
 
 func (p *OraclePlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
@@ -190,13 +190,13 @@ func (p *OraclePlugin) ExecuteSQL(ctx context.Context, connInfo plugin.Connectio
 	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, query, opts)
 }
 
-func (p *OraclePlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
+func (p *OraclePlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
 	return p.readBatch(ctx, connInfo, path, opts)
 }
 
 func (p *OraclePlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks {
 	return plugin.TabularCatalogCallbacks{
-		NamespaceTerm:         plugin.CatalogTermSchema,
+		NamespaceTerm:         plugin.EngineCatalogTermSchema,
 		ListNamespaces:        p.listNamespaces,
 		ListTables:            p.listTables,
 		ListColumns:           p.listColumns,
@@ -209,17 +209,17 @@ func (p *OraclePlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks 
 	}
 }
 
-func (p *OraclePlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+func (p *OraclePlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath, opts plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
 	engine := &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}
 	return plugin.ListTabularCatalogChildren(ctx, p.tabularCatalogCallbacks(), engine, parent, opts)
 }
 
-func (p *OraclePlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p *OraclePlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	engine := &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}
 	return plugin.ResolveTabularCatalogPath(ctx, p.tabularCatalogCallbacks(), engine, path)
 }
 
-func (p *OraclePlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *OraclePlugin) DescribeEngineCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	engine := &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}
 	return plugin.DescribeTabularCatalogFacts(ctx, p.tabularCatalogCallbacks(), engine, path, opts)
 }
@@ -229,7 +229,7 @@ type oracleNamespaceRow struct {
 	LeafCount int
 }
 
-func (p *OraclePlugin) listNamespaces(ctx context.Context, db *gorm.DB, root plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
+func (p *OraclePlugin) listNamespaces(ctx context.Context, db *gorm.DB, root plugin.EngineCatalogPath) ([]plugin.EngineCatalogEntry, error) {
 	var rows []oracleNamespaceRow
 	err := db.WithContext(ctx).Raw(`
 		SELECT u.username AS name,
@@ -261,12 +261,12 @@ func (p *OraclePlugin) listNamespaces(ctx context.Context, db *gorm.DB, root plu
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Oracle schemas: %w", err)
 	}
-	result := make([]plugin.CatalogEntry, 0, len(rows))
+	result := make([]plugin.EngineCatalogEntry, 0, len(rows))
 	for _, row := range rows {
 		if p.isSystemSchema(row.Name) {
 			continue
 		}
-		result = append(result, plugin.TabularNamespaceCatalogEntry(root, plugin.CatalogTermSchema, row.Name, row.LeafCount))
+		result = append(result, plugin.TabularNamespaceCatalogEntry(root, plugin.EngineCatalogTermSchema, row.Name, row.LeafCount))
 	}
 	return result, nil
 }
@@ -283,7 +283,7 @@ type oracleTableRow struct {
 
 func (p *OraclePlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
 	if p.isSystemSchema(schema) {
-		return nil, plugin.WrapCatalogError(plugin.CatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
+		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
 	}
 	var rows []oracleTableRow
 	err := db.WithContext(ctx).Raw(`
@@ -360,7 +360,7 @@ type oracleColumnRow struct {
 
 func (p *OraclePlugin) listColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]datatype.FieldInfo, error) {
 	if p.isSystemSchema(schema) {
-		return nil, plugin.WrapCatalogError(plugin.CatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
+		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
 	}
 	var rows []oracleColumnRow
 	err := db.WithContext(ctx).Raw(`
@@ -468,7 +468,7 @@ type oracleIndexRow struct {
 
 func (p *OraclePlugin) listIndexes(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.IndexFacts, error) {
 	if p.isSystemSchema(schema) {
-		return nil, plugin.WrapCatalogError(plugin.CatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
+		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
 	}
 	var rows []oracleIndexRow
 	err := db.WithContext(ctx).Raw(`
@@ -534,7 +534,7 @@ type oracleConstraintRow struct {
 
 func (p *OraclePlugin) listConstraints(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ConstraintFacts, error) {
 	if p.isSystemSchema(schema) {
-		return nil, plugin.WrapCatalogError(plugin.CatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
+		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
 	}
 	var rows []oracleConstraintRow
 	err := db.WithContext(ctx).Raw(`
@@ -623,7 +623,7 @@ type oraclePartitionKeyRow struct {
 
 func (p *OraclePlugin) describePartitioning(ctx context.Context, db *gorm.DB, schema, table string) (*plugin.TablePartitioningFacts, error) {
 	if p.isSystemSchema(schema) {
-		return nil, plugin.WrapCatalogError(plugin.CatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
+		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
 	}
 	var rows []oraclePartitioningRow
 	err := db.WithContext(ctx).Raw(`
@@ -694,7 +694,7 @@ func normalizeOraclePartitionStrategy(value string) string {
 
 func (p *OraclePlugin) getTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
 	if p.isSystemSchema(schema) {
-		return 0, plugin.WrapCatalogError(plugin.CatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
+		return 0, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
 	}
 	var count int64
 	query := commonquery.ForEngine(p.Type()).CountTableSQL(schema, table, "")

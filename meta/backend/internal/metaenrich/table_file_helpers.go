@@ -315,14 +315,14 @@ func filePaths(files []metaitem.StorageFileRef) []string {
 	return paths
 }
 
-func resolveTableFileCatalogPath(engineID uint, path string, catalogPathFor func(path string) plugin.CatalogPath) plugin.CatalogPath {
+func resolveTableFileCatalogPath(engineID uint, path string, catalogPathFor func(path string) plugin.EngineCatalogPath) plugin.EngineCatalogPath {
 	if catalogPathFor != nil {
 		return catalogPathFor(path)
 	}
 	return plugin.FileItemPath(engineID, path)
 }
 
-func firstCatalogPathResolver(resolvers []func(path string) plugin.CatalogPath) func(path string) plugin.CatalogPath {
+func firstCatalogPathResolver(resolvers []func(path string) plugin.EngineCatalogPath) func(path string) plugin.EngineCatalogPath {
 	if len(resolvers) == 0 {
 		return nil
 	}

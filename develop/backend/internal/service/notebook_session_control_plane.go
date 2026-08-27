@@ -10,7 +10,7 @@ import (
 
 type NotebookSessionControlPlane interface {
 	Issue(context.Context, string, commonClient.IssueNotebookSessionAuthorizationRequest) (*commonClient.IssuedNotebookSessionAuthorization, error)
-	ListChildren(context.Context, uint, string, commonClient.NotebookCatalogChildrenRequest) ([]commonClient.EngineCatalogEntry, error)
+	ListChildren(context.Context, uint, string, commonClient.NotebookEngineCatalogChildrenRequest) ([]commonClient.EngineCatalogEntry, error)
 	ListEngineDescriptors(context.Context, uint, string, string) ([]commonModels.EngineRuntimeDescriptor, error)
 	DeriveExecutionEngineAccess(context.Context, uint, string, commonClient.NotebookExecutionEngineAccessRequest) (*commonClient.ExecutionEngineAccess, error)
 	ValidateExecutionEngineAccess(context.Context, uint, string, commonClient.ExecutionEngineAccessRequest) (*commonClient.ExecutionEngineAccess, error)
@@ -44,9 +44,9 @@ func (c *systemNotebookSessionControlPlane) ListChildren(
 	ctx context.Context,
 	tenantID uint,
 	authorizationID string,
-	request commonClient.NotebookCatalogChildrenRequest,
+	request commonClient.NotebookEngineCatalogChildrenRequest,
 ) ([]commonClient.EngineCatalogEntry, error) {
-	return c.system.WithTenantID(tenantID).ListNotebookCatalogChildren(ctx, authorizationID, request)
+	return c.system.WithTenantID(tenantID).ListNotebookEngineCatalogChildren(ctx, authorizationID, request)
 }
 
 func (c *systemNotebookSessionControlPlane) ListEngineDescriptors(

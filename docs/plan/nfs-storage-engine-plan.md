@@ -13,9 +13,9 @@
 
 ## 当前接口
 
-- 目录发现：`CatalogProvider.ListChildren`
-- 路径解析：`CatalogProvider.ResolvePath`
-- 文件 catalog leaf facts：`CatalogFactsProvider.DescribeCatalogFacts`
+- 目录发现：`EngineCatalogProvider.ListChildren`
+- 路径解析：`EngineCatalogProvider.ResolvePath`
+- 文件 catalog leaf facts：`EngineCatalogFactsProvider.DescribeEngineCatalogFacts`
 - 内容读取：`ContentReadableProvider.OpenContent`
 
 旧的专用文件系统接口方案不再作为上层接口边界。

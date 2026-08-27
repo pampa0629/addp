@@ -119,21 +119,21 @@ func (p *SDXPostgreSQLTableProvider) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
 
-func (p *SDXPostgreSQLTableProvider) CatalogModel() plugin.CatalogModelSpec {
-	return p.postgresql.CatalogModel()
+func (p *SDXPostgreSQLTableProvider) EngineCatalogModel() plugin.EngineCatalogModelSpec {
+	return p.postgresql.EngineCatalogModel()
 }
 
-func (p *SDXPostgreSQLTableProvider) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+func (p *SDXPostgreSQLTableProvider) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath, opts plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
 	return p.postgresql.ListChildren(ctx, connInfo, parent, opts)
 }
 
-func (p *SDXPostgreSQLTableProvider) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p *SDXPostgreSQLTableProvider) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	return p.postgresql.ResolvePath(ctx, connInfo, path)
 }
 
-func (p *SDXPostgreSQLTableProvider) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *SDXPostgreSQLTableProvider) DescribeEngineCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	if !IsSDXPostgreSQLTablePath(path) {
-		return p.postgresql.DescribeCatalogFacts(ctx, connInfo, path, opts)
+		return p.postgresql.DescribeEngineCatalogFacts(ctx, connInfo, path, opts)
 	}
 	params, err := p.tableParams(connInfo, path)
 	if err != nil {
@@ -178,12 +178,12 @@ func (p *SDXPostgreSQLTableProvider) DescribeCatalogFacts(ctx context.Context, c
 	if err != nil {
 		return nil, err
 	}
-	return &plugin.CatalogFacts{
+	return &plugin.EngineCatalogFacts{
 		Path: path,
-		Kind: plugin.CatalogKindTable,
+		Kind: plugin.EngineCatalogKindTable,
 		Table: &datatype.TableInfo{
 			Name:     table,
-			Kind:     plugin.CatalogKindTable,
+			Kind:     plugin.EngineCatalogKindTable,
 			RowCount: &rowCount,
 			Fields:   fields,
 		},
@@ -191,7 +191,7 @@ func (p *SDXPostgreSQLTableProvider) DescribeCatalogFacts(ctx context.Context, c
 	}, nil
 }
 
-func (p *SDXPostgreSQLTableProvider) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) error {
+func (p *SDXPostgreSQLTableProvider) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) error {
 	if !IsSDXPostgreSQLTablePath(path) {
 		return p.postgresql.DeleteResource(ctx, connInfo, path)
 	}
@@ -203,7 +203,7 @@ func (p *SDXPostgreSQLTableProvider) DeleteResource(ctx context.Context, connInf
 	return err
 }
 
-func (p *SDXPostgreSQLTableProvider) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteOptions) error {
+func (p *SDXPostgreSQLTableProvider) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteOptions) error {
 	if !IsSDXPostgreSQLTablePath(path) {
 		return p.postgresql.PrepareTableWrite(ctx, connInfo, path, opts)
 	}
@@ -218,7 +218,7 @@ func (p *SDXPostgreSQLTableProvider) PrepareTableWrite(ctx context.Context, conn
 	return err
 }
 
-func (p *SDXPostgreSQLTableProvider) OpenTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
+func (p *SDXPostgreSQLTableProvider) OpenTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
 	if !IsSDXPostgreSQLTablePath(path) {
 		return p.postgresql.OpenTableReadSession(ctx, connInfo, path, opts)
 	}
@@ -243,7 +243,7 @@ func (p *SDXPostgreSQLTableProvider) OpenTableReadSession(ctx context.Context, c
 	return &sdxPostgreSQLReadSession{provider: p, sessionID: sessionID}, nil
 }
 
-func (p *SDXPostgreSQLTableProvider) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
+func (p *SDXPostgreSQLTableProvider) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
 	if !IsSDXPostgreSQLTablePath(path) {
 		return p.postgresql.OpenTableWriteSession(ctx, connInfo, path, opts)
 	}
@@ -269,7 +269,7 @@ func (p *SDXPostgreSQLTableProvider) OpenTableWriteSession(ctx context.Context, 
 	return &sdxPostgreSQLWriteSession{provider: p, sessionID: sessionID}, nil
 }
 
-func (p *SDXPostgreSQLTableProvider) tableParams(connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (map[string]interface{}, error) {
+func (p *SDXPostgreSQLTableProvider) tableParams(connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) (map[string]interface{}, error) {
 	if err := p.ValidateConnectionInfo(connInfo); err != nil {
 		return nil, err
 	}
@@ -376,7 +376,7 @@ func (s *sdxPostgreSQLWriteSession) Abort(ctx context.Context) error {
 	return err
 }
 
-func superMapTablePath(path plugin.CatalogPath) (string, string, error) {
+func superMapTablePath(path plugin.EngineCatalogPath) (string, string, error) {
 	parts := make([]string, 0, len(path.Segments))
 	for _, segment := range path.Segments {
 		if name := strings.TrimSpace(segment.Name); name != "" {
@@ -396,7 +396,7 @@ func superMapTablePath(path plugin.CatalogPath) (string, string, error) {
 // IsSDXPostgreSQLTablePath reports whether a catalog path points at the
 // default SuperMap SDX+ for PostgreSQL business schema. The caller must still
 // resolve the engine instance capability before using this predicate.
-func IsSDXPostgreSQLTablePath(path plugin.CatalogPath) bool {
+func IsSDXPostgreSQLTablePath(path plugin.EngineCatalogPath) bool {
 	parts := make([]string, 0, len(path.Segments))
 	for _, segment := range path.Segments {
 		if name := strings.TrimSpace(segment.Name); name != "" {
@@ -465,13 +465,13 @@ func cloneConnectionInfo(value plugin.ConnectionInfo) plugin.ConnectionInfo {
 }
 
 var (
-	_ plugin.CatalogModelProvider      = (*SDXPostgreSQLTableProvider)(nil)
-	_ plugin.CatalogProvider           = (*SDXPostgreSQLTableProvider)(nil)
-	_ plugin.CatalogFactsProvider      = (*SDXPostgreSQLTableProvider)(nil)
-	_ plugin.TableReadSessionProvider  = (*SDXPostgreSQLTableProvider)(nil)
-	_ plugin.TableWritePreparer        = (*SDXPostgreSQLTableProvider)(nil)
-	_ plugin.TableWriteSessionProvider = (*SDXPostgreSQLTableProvider)(nil)
-	_ plugin.ResourceDeleteProvider    = (*SDXPostgreSQLTableProvider)(nil)
-	_ plugin.TableReadSession          = (*sdxPostgreSQLReadSession)(nil)
-	_ plugin.TableWriteSession         = (*sdxPostgreSQLWriteSession)(nil)
+	_ plugin.EngineCatalogModelProvider = (*SDXPostgreSQLTableProvider)(nil)
+	_ plugin.EngineCatalogProvider      = (*SDXPostgreSQLTableProvider)(nil)
+	_ plugin.EngineCatalogFactsProvider = (*SDXPostgreSQLTableProvider)(nil)
+	_ plugin.TableReadSessionProvider   = (*SDXPostgreSQLTableProvider)(nil)
+	_ plugin.TableWritePreparer         = (*SDXPostgreSQLTableProvider)(nil)
+	_ plugin.TableWriteSessionProvider  = (*SDXPostgreSQLTableProvider)(nil)
+	_ plugin.ResourceDeleteProvider     = (*SDXPostgreSQLTableProvider)(nil)
+	_ plugin.TableReadSession           = (*sdxPostgreSQLReadSession)(nil)
+	_ plugin.TableWriteSession          = (*sdxPostgreSQLWriteSession)(nil)
 )

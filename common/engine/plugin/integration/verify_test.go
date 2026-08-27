@@ -49,15 +49,15 @@ func TestPluginInterfaceImplementation(t *testing.T) {
 				// 如果支持元数据，验证 provider 能力。
 				if capabilities.Storage.Facts != nil && capabilities.Storage.Facts.Supported {
 					if capabilities.Storage.Catalog != nil && capabilities.Storage.Catalog.Supported {
-						if _, ok := p.(plugin.CatalogProvider); !ok {
-							t.Errorf("%s declares catalog but doesn't implement CatalogProvider", dbType)
+						if _, ok := p.(plugin.EngineCatalogProvider); !ok {
+							t.Errorf("%s declares catalog but doesn't implement EngineCatalogProvider", dbType)
 						}
-						if _, ok := p.(plugin.CatalogModelProvider); !ok {
-							t.Errorf("%s declares catalog but doesn't implement CatalogModelProvider", dbType)
+						if _, ok := p.(plugin.EngineCatalogModelProvider); !ok {
+							t.Errorf("%s declares catalog but doesn't implement EngineCatalogModelProvider", dbType)
 						}
 					}
-					if _, ok := p.(plugin.CatalogFactsProvider); !ok {
-						t.Errorf("%s declares catalog facts but doesn't implement CatalogFactsProvider", dbType)
+					if _, ok := p.(plugin.EngineCatalogFactsProvider); !ok {
+						t.Errorf("%s declares catalog facts but doesn't implement EngineCatalogFactsProvider", dbType)
 					}
 					if capabilities.Storage.Store != nil && capabilities.Storage.Store.StreamRead {
 						if _, ok := p.(plugin.ContentReadableProvider); !ok {
@@ -102,11 +102,11 @@ func TestTabularDBPlugins(t *testing.T) {
 				t.Errorf("%s should support catalog facts query", dbType)
 			}
 
-			if _, ok := p.(plugin.CatalogProvider); !ok {
-				t.Fatalf("%s should implement CatalogProvider", dbType)
+			if _, ok := p.(plugin.EngineCatalogProvider); !ok {
+				t.Fatalf("%s should implement EngineCatalogProvider", dbType)
 			}
-			if _, ok := p.(plugin.CatalogFactsProvider); !ok {
-				t.Fatalf("%s should implement CatalogFactsProvider", dbType)
+			if _, ok := p.(plugin.EngineCatalogFactsProvider); !ok {
+				t.Fatalf("%s should implement EngineCatalogFactsProvider", dbType)
 			}
 			if _, ok := p.(plugin.SQLQueryRuntimeProvider); !ok {
 				t.Fatalf("%s should implement SQLQueryRuntimeProvider", dbType)
@@ -146,9 +146,9 @@ func TestObjectStoragePlugins(t *testing.T) {
 				t.Errorf("%s should support catalog facts query", storageType)
 			}
 
-			catalogProvider, ok := p.(plugin.CatalogProvider)
+			catalogProvider, ok := p.(plugin.EngineCatalogProvider)
 			if !ok {
-				t.Fatalf("%s should implement CatalogProvider", storageType)
+				t.Fatalf("%s should implement EngineCatalogProvider", storageType)
 			}
 			_ = catalogProvider
 

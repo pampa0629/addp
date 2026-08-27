@@ -21,15 +21,15 @@
 
 | 引擎类型 | 必选接口 | 常用可选接口 |
 | --- | --- | --- |
-| 关系型 / SQL 表格型 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider`、`SQLQueryRuntimeProvider` | `ConnectionPoolPlugin` |
-| 动态 schema 记录集合型 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider`、`QueryRuntimeProvider` | `DynamicSchemaSamplingProvider` |
-| 图数据库 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider`、`QueryRuntimeProvider` | `GraphSampleProvider`、`GraphQueryProvider` |
-| 对象存储 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider` | `ContentReadableProvider`、`ContentWritableProvider` |
-| 文件系统 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider` | `ContentReadableProvider`、`ContentWritableProvider` |
+| 关系型 / SQL 表格型 | `EnginePlugin`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider`、`SQLQueryRuntimeProvider` | `ConnectionPoolPlugin` |
+| 动态 schema 记录集合型 | `EnginePlugin`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider`、`QueryRuntimeProvider` | `DynamicSchemaSamplingProvider` |
+| 图数据库 | `EnginePlugin`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider`、`QueryRuntimeProvider` | `GraphSampleProvider`、`GraphQueryProvider` |
+| 对象存储 | `EnginePlugin`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider` | `ContentReadableProvider`、`ContentWritableProvider` |
+| 文件系统 | `EnginePlugin`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider` | `ContentReadableProvider`、`ContentWritableProvider` |
 | 工作流 | `EnginePlugin` | `WorkflowRuntimeProvider` |
 | Notebook / 脚本 | `EnginePlugin` | `ScriptRuntimeProvider` |
 
-旧 `ListSchemas/ListTables/ListColumns/ListBuckets/ListObjects/ListCollections` 不作为上层接口扩展点。若需要，可作为插件内部 helper，再通过 `CatalogProvider` 适配为统一目录。
+旧 `ListSchemas/ListTables/ListColumns/ListBuckets/ListObjects/ListCollections` 不作为上层接口扩展点。若需要，可作为插件内部 helper，再通过 `EngineCatalogProvider` 适配为统一目录。
 
 ---
 
@@ -45,8 +45,8 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
         EngineFamily:  "tabular",
         Storage: &plugin.StorageCapabilities{
             CatalogModel: plugin.TabularCatalogModel("database"),
-            Catalog:      &plugin.CatalogCapability{Supported: true, RealTime: true},
-            Facts:        &plugin.CatalogFactsCapability{Supported: true, FieldInfo: true},
+            Catalog:      &plugin.EngineCatalogCapability{Supported: true, RealTime: true},
+            Facts:        &plugin.EngineCatalogFactsCapability{Supported: true, FieldInfo: true},
             Store:        &plugin.StoreCapability{BatchRead: true},
         },
     }
@@ -55,8 +55,8 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
 
 声明和实现必须一致：
 
-- `storage.catalog.supported=true` 时必须实现 `CatalogProvider`。
-- `storage.facts.supported=true` 时必须实现 `CatalogFactsProvider` 或采样 provider。
+- `storage.catalog.supported=true` 时必须实现 `EngineCatalogProvider`。
+- `storage.facts.supported=true` 时必须实现 `EngineCatalogFactsProvider` 或采样 provider。
 - `storage.store.stream_read=true` 时必须实现 `ContentReadableProvider`。
 - `storage.store.stream_write=true` 时必须实现 `ContentWritableProvider`。
 - `storage.store.range_read=true` 时必须实现 `RangeReadableProvider` 或在 `OpenContent` 中明确支持 offset / length。
@@ -75,11 +75,11 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
 
 ## 四、路径和目录
 
-新增存储引擎必须先定义 Catalog Model：
+新增存储引擎必须先定义 Engine Catalog Model：
 
 - root 术语是什么：server、service、root 等。
 - root 下第一层业务术语是什么：schema、database、bucket、directory 等。
-- Catalog leaf 术语是什么：table、collection、graph、object、file 等。
+- Engine Catalog leaf 术语是什么：table、collection、graph、object、file 等。
 - full_name 如何计算。
 - ResourceLocator 的 path segments 如何由 full_name 转换。
 
@@ -90,7 +90,7 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
 - 对象存储：`service(root) -> bucket -> prefix -> object`，`Levels` 只包含 `bucket -> prefix -> object`。
 - 文件系统：`root -> directory -> file`，`Levels` 只包含 `directory -> file`。
 
-二者不得共享 CatalogModel 或 catalog 拼装实现；最多共享内容流接口、MIME 推断、格式解析等底层 helper。所有存储引擎都必须有显性结构 root；NFS 的 root `name` 使用引擎实例名称，`full_name` 使用空字符串，原生挂载根 `/` 写入 `meta_node.attributes.catalog.native_name`，`.` 不得进入 catalog path 或元数据路径。
+二者不得共享 Engine Catalog Model 或 Engine Catalog 拼装实现；最多共享内容流接口、MIME 推断、格式解析等底层 helper。所有存储引擎都必须有显性结构 root；NFS 的 root `name` 使用引擎实例名称，`full_name` 使用空字符串，原生挂载根 `/` 写入 `meta_node.attributes.catalog.native_name`，`.` 不得进入 Engine Catalog path 或元数据路径。
 
 ---
 

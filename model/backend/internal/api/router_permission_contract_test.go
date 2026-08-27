@@ -24,6 +24,7 @@ func TestModelRoutesEnforcePermissions(t *testing.T) {
 		{name: "entity list", method: http.MethodGet, path: "/api/v1/model/entities", permissions: []string{"model.entity.read"}},
 		{name: "entity create", method: http.MethodPost, path: "/api/v1/model/entities", permissions: []string{"model.entity.create"}, testAllowed: true},
 		{name: "entity read", method: http.MethodGet, path: "/api/v1/model/entities/invalid", permissions: []string{"model.entity.read"}, testAllowed: true},
+		{name: "entity professional relations", method: http.MethodGet, path: "/api/v1/model/entities/invalid/relations", permissions: []string{"model.entity.read", "model.entity_relation.read"}, testAllowed: true},
 		{name: "entity update", method: http.MethodPut, path: "/api/v1/model/entities/1", permissions: []string{"model.entity.update"}, testAllowed: true},
 		{name: "entity delete", method: http.MethodDelete, path: "/api/v1/model/entities/1", permissions: []string{"model.entity.delete"}, testAllowed: true},
 		{name: "entity approve", method: http.MethodPost, path: "/api/v1/model/entities/1/approve", permissions: []string{"model.entity.approve"}, testAllowed: true},
@@ -42,6 +43,7 @@ func TestModelRoutesEnforcePermissions(t *testing.T) {
 		{name: "logical table list", method: http.MethodGet, path: "/api/v1/model/logical-tables", permissions: []string{"model.logical_model.read"}},
 		{name: "logical table create", method: http.MethodPost, path: "/api/v1/model/logical-tables", permissions: []string{"model.logical_model.create"}, testAllowed: true},
 		{name: "logical table read", method: http.MethodGet, path: "/api/v1/model/logical-tables/invalid", permissions: []string{"model.logical_model.read"}, testAllowed: true},
+		{name: "logical table professional relations", method: http.MethodGet, path: "/api/v1/model/logical-tables/invalid/relations", permissions: []string{"model.logical_model.read"}, testAllowed: true},
 		{name: "logical table update", method: http.MethodPut, path: "/api/v1/model/logical-tables/1", permissions: []string{"model.logical_model.update"}, testAllowed: true},
 		{name: "logical table delete", method: http.MethodDelete, path: "/api/v1/model/logical-tables/1", permissions: []string{"model.logical_model.delete"}, testAllowed: true},
 		{name: "logical table approve", method: http.MethodPost, path: "/api/v1/model/logical-tables/1/approve", permissions: []string{"model.logical_model.update"}, testAllowed: true},
@@ -62,6 +64,11 @@ func TestModelRoutesEnforcePermissions(t *testing.T) {
 		{name: "dw layer read", method: http.MethodGet, path: "/api/v1/model/dw-layers/invalid", permissions: []string{"model.dw_layer.read"}, testAllowed: true},
 		{name: "dw layer update", method: http.MethodPut, path: "/api/v1/model/dw-layers/1", permissions: []string{"model.dw_layer.update"}, testAllowed: true},
 		{name: "dw layer delete", method: http.MethodDelete, path: "/api/v1/model/dw-layers/1", permissions: []string{"model.dw_layer.delete"}, testAllowed: true},
+		{name: "materialization group list", method: http.MethodGet, path: "/api/v1/model/materialization-groups", permissions: []string{"model.materialization_group.read"}},
+		{name: "materialization group create", method: http.MethodPost, path: "/api/v1/model/materialization-groups", permissions: []string{"model.materialization_group.create"}, testAllowed: true},
+		{name: "materialization group read", method: http.MethodGet, path: "/api/v1/model/materialization-groups/invalid", permissions: []string{"model.materialization_group.read"}, testAllowed: true},
+		{name: "materialization group update", method: http.MethodPut, path: "/api/v1/model/materialization-groups/invalid", permissions: []string{"model.materialization_group.update"}, testAllowed: true},
+		{name: "materialization group delete", method: http.MethodDelete, path: "/api/v1/model/materialization-groups/invalid", permissions: []string{"model.materialization_group.delete"}, testAllowed: true},
 	}
 	authContexts := map[string][]string{
 		"Bearer no-model-permissions": {"standard.domain.read"},
@@ -77,7 +84,7 @@ func TestModelRoutesEnforcePermissions(t *testing.T) {
 	authServer := authtest.NewTenantUserAuthContextServer(t, "7", authContexts)
 	defer authServer.Close()
 
-	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, authServer.URL, nil, modulelifecycle.NewStandalone("model"))
+	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, authServer.URL, nil, modulelifecycle.NewStandalone("model"))
 
 	for index, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

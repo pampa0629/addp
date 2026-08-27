@@ -78,7 +78,7 @@ func (s *StaticTileService) GetStaticTile(
 	if err != nil {
 		return nil, err
 	}
-	modelProvider, ok := pl.(enginePlugin.CatalogModelProvider)
+	modelProvider, ok := pl.(enginePlugin.EngineCatalogModelProvider)
 	if !ok {
 		return nil, fmt.Errorf("engine %s does not expose a catalog model", engine.EngineType)
 	}
@@ -86,7 +86,7 @@ func (s *StaticTileService) GetStaticTile(
 	if !ok {
 		return nil, fmt.Errorf("engine %s does not support range reads", engine.EngineType)
 	}
-	providerPath, err := resourcetree.ProviderCatalogPathFromLocator(modelProvider.CatalogModel(), loc)
+	providerPath, err := resourcetree.EngineCatalogPathFromLocator(modelProvider.EngineCatalogModel(), loc)
 	if err != nil {
 		return nil, fmt.Errorf("build static PMTiles provider path: %w", err)
 	}
@@ -143,7 +143,7 @@ func emptyStaticVectorTile() *StaticTile {
 	}
 }
 
-func readStaticPMTilesRange(ctx context.Context, reader enginePlugin.RangeReadableProvider, connInfo enginePlugin.ConnectionInfo, path enginePlugin.CatalogPath, offset, length int64) ([]byte, error) {
+func readStaticPMTilesRange(ctx context.Context, reader enginePlugin.RangeReadableProvider, connInfo enginePlugin.ConnectionInfo, path enginePlugin.EngineCatalogPath, offset, length int64) ([]byte, error) {
 	rc, err := reader.OpenRange(ctx, connInfo, path, enginePlugin.ReadOptions{Offset: offset, Length: length})
 	if err != nil {
 		return nil, err

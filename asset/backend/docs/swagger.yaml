@@ -6,6 +6,40 @@ definitions:
         description: 可选备注
         type: string
     type: object
+  github_com_addp_asset_internal_service.AssetCatalogTreeNode:
+    properties:
+      children:
+        items:
+          $ref: '#/definitions/github_com_addp_asset_internal_service.AssetCatalogTreeNode'
+        type: array
+      count:
+        type: integer
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      parent_id:
+        type: integer
+      sort_order:
+        type: integer
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_asset_internal_service.AssetComponentInput:
+    properties:
+      catalog_entry_id:
+        type: string
+      role:
+        type: string
+      sort_order:
+        type: integer
+    type: object
   github_com_addp_asset_internal_service.BatchCatalogReq:
     properties:
       catalog_id:
@@ -29,30 +63,29 @@ definitions:
     required:
     - ids
     type: object
-  github_com_addp_asset_internal_service.CatalogEntry:
+  github_com_addp_asset_internal_service.CreateAssetReq:
     properties:
-      children:
-        items:
-          $ref: '#/definitions/github_com_addp_asset_internal_service.CatalogEntry'
-        type: array
-      count:
+      catalog_id:
         type: integer
-      created_at:
-        type: string
+      components:
+        items:
+          $ref: '#/definitions/github_com_addp_asset_internal_service.AssetComponentInput'
+        minItems: 1
+        type: array
       description:
         type: string
-      id:
-        type: integer
       name:
         type: string
-      parent_id:
+      tags:
+        items:
+          type: string
+        type: array
+      type_id:
         type: integer
-      sort_order:
-        type: integer
-      tenant_id:
-        type: integer
-      updated_at:
-        type: string
+    required:
+    - components
+    - name
+    - type_id
     type: object
   github_com_addp_asset_internal_service.CreateCatalogReq:
     properties:
@@ -79,6 +112,11 @@ definitions:
     properties:
       catalog_id:
         type: integer
+      components:
+        items:
+          $ref: '#/definitions/github_com_addp_asset_internal_service.AssetComponentInput'
+        minItems: 1
+        type: array
       description:
         type: string
       name:
@@ -87,6 +125,16 @@ definitions:
         items:
           type: string
         type: array
+      type_id:
+        type: integer
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - components
+    - name
+    - type_id
+    - version
     type: object
   github_com_addp_asset_internal_service.UpdateCatalogReq:
     properties:
@@ -287,8 +335,48 @@ paths:
       x-addp-required-permissions:
       - asset.management.read
       - asset.entry.read
+    post:
+      consumes:
+      - application/json
+      description: 选择一个或多个 CatalogEntry 原子创建资产草稿 | Atomically create an asset draft
+        by selecting one or more CatalogEntry references
+      parameters:
+      - description: 完整资产聚合 | Complete asset aggregate
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_asset_internal_service.CreateAssetReq'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建资产 | Create asset
+      tags:
+      - Asset
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.management.read
+      - asset.entry.update
   /assets/{id}:
     delete:
+      description: 已发布资产必须先下架再删除 | Published assets must be offlined before deletion
       parameters:
       - description: 资产 ID | Asset ID
         in: path
@@ -305,7 +393,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 删除资产 | Delete asset
+      summary: 删除草稿或已下架资产 | Delete draft or offline asset
       tags:
       - Asset
       x-addp-auth-mode: permission
@@ -540,25 +628,6 @@ paths:
       x-addp-required-permissions:
       - asset.management.read
       - asset.entry.read
-  /assets/sync:
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 同步资产 | Sync assets
-      tags:
-      - Asset
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - asset.management.read
-      - asset.entry.update
   /assets/type-fields/{type_id}:
     get:
       parameters:
@@ -1012,7 +1081,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/github_com_addp_asset_internal_service.CatalogEntry'
+              $ref: '#/definitions/github_com_addp_asset_internal_service.AssetCatalogTreeNode'
             type: array
       security:
       - BearerAuth: []

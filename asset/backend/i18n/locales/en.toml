@@ -28,6 +28,21 @@ other = "Asset published"
 [asset.asset.offlined]
 other = "Asset taken offline"
 
+[asset.asset.catalog_unavailable]
+other = "The enterprise data catalog is currently unavailable; try again later"
+
+[asset.asset.version_conflict]
+other = "The asset was updated by another user; refresh and try again"
+
+[asset.asset.not_editable]
+other = "A published asset cannot be edited; take it offline first"
+
+[asset.asset.reference_not_selectable]
+other = "A selected enterprise catalog entry is unavailable or cannot be composed"
+
+[asset.asset.reference_not_publishable]
+other = "A selected enterprise catalog entry has not completed business curation and cannot be published"
+
 [asset.application.approve_success]
 other = "Approved"
 

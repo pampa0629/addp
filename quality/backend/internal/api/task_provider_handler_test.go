@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/taskprovider"
 	"github.com/addp/quality/internal/models"
 	"github.com/addp/quality/internal/repository"
 	"github.com/addp/quality/internal/service"
@@ -52,7 +53,7 @@ func TestQualityTaskDetailResponseUsesStandardTaskShape(t *testing.T) {
 func TestTaskExecuteRejectsUnknownFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/tasks/:task_type/:id/execute", NewTaskProviderHandler(nil, nil).TaskExecute)
+	router.POST("/tasks/:task_type/:id/execute", NewTaskProviderHandler(nil, nil, nil).TaskExecute)
 
 	req := httptest.NewRequest(http.MethodPost, "/tasks/check/1/execute", strings.NewReader(`{"legacy":true}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -72,7 +73,7 @@ func TestTaskProviderListRejectsUnsupportedTypeAndScopesTenant(t *testing.T) {
 	db := newTaskProviderHandlerTestDB(t)
 	createTaskProviderHandlerTask(t, db, models.CheckTask{TenantID: 7, Name: "tenant-7", EngineID: 2, SchemaName: "public", Table: "orders", CreatedBy: 1})
 	createTaskProviderHandlerTask(t, db, models.CheckTask{TenantID: 8, Name: "tenant-8", EngineID: 2, SchemaName: "public", Table: "orders", CreatedBy: 1})
-	handler := NewTaskProviderHandler(service.NewCheckTaskService(repository.NewCheckTaskRepository(db), nil), nil)
+	handler := NewTaskProviderHandler(service.NewCheckTaskService(repository.NewCheckTaskRepository(db), nil), nil, nil)
 
 	invalidRouter := gin.New()
 	invalidRouter.GET("/tasks", withIssueHandlerAuth(7, 11), handler.ListTasks)
@@ -105,7 +106,7 @@ func TestTaskProviderDetailRejectsInvalidRouteAndCrossTenant(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newTaskProviderHandlerTestDB(t)
 	task := createTaskProviderHandlerTask(t, db, models.CheckTask{TenantID: 7, Name: "tenant-7", EngineID: 2, SchemaName: "public", Table: "orders", CreatedBy: 1})
-	handler := NewTaskProviderHandler(service.NewCheckTaskService(repository.NewCheckTaskRepository(db), nil), nil)
+	handler := NewTaskProviderHandler(service.NewCheckTaskService(repository.NewCheckTaskRepository(db), nil), nil, nil)
 
 	invalidTypeRouter := gin.New()
 	invalidTypeRouter.GET("/tasks/:task_type/:id", withIssueHandlerAuth(7, 11), handler.TaskDetail)
@@ -133,7 +134,7 @@ func TestTaskProviderDetailRejectsInvalidRouteAndCrossTenant(t *testing.T) {
 func TestTaskProviderExecuteRejectsUnsupportedRequestBeforeExecutor(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/tasks/:task_type/:id/execute", withIssueHandlerAuth(7, 11), NewTaskProviderHandler(nil, nil).TaskExecute)
+	router.POST("/tasks/:task_type/:id/execute", withIssueHandlerAuth(7, 11), NewTaskProviderHandler(nil, nil, nil).TaskExecute)
 
 	cases := []struct {
 		name string
@@ -155,6 +156,21 @@ func TestTaskProviderExecuteRejectsUnsupportedRequestBeforeExecutor(t *testing.T
 				t.Fatalf("status = %d, want %d, body=%s", response.Code, http.StatusBadRequest, response.Body.String())
 			}
 		})
+	}
+}
+
+func TestMaterializationGateExecutionContractDeclaresVersionHandoff(t *testing.T) {
+	contract := materializationGateExecutionContract()
+	raw := map[string]interface{}{
+		"input_schema": contract.InputSchema, "input_defaults": contract.InputDefaults,
+		"input_ui_schema": contract.InputUISchema, "output_schema": contract.OutputSchema,
+	}
+	if err := taskprovider.ValidateExecutionContract(raw); err != nil {
+		t.Fatal(err)
+	}
+	properties := contract.OutputSchema["properties"].(map[string]interface{})
+	if properties["materialization_group_id"] == nil || properties["materialization_group_version"] == nil {
+		t.Fatalf("output schema = %#v", contract.OutputSchema)
 	}
 }
 

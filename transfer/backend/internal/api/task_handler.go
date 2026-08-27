@@ -10,7 +10,6 @@ import (
 	"github.com/addp/common/logger"
 	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
-	"github.com/addp/common/taskprovider"
 	transferI18n "github.com/addp/transfer/i18n"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
@@ -95,7 +94,7 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 	}
 
 	if strings.TrimSpace(c.Param("task_type")) == commonExecution.TaskTypeSync {
-		task.ExecutionContract = taskprovider.EmptyExecutionContract()
+		task.ExecutionContract = service.TransferTaskExecutionContract(task.Config)
 	}
 	c.JSON(http.StatusOK, task)
 }
@@ -151,6 +150,11 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 	if err != nil {
 		respondTaskServiceError(c, err)
 		return
+	}
+	if req.TaskType == commonExecution.TaskTypeSync {
+		for index := range tasks {
+			tasks[index].ExecutionContract = service.TransferTaskExecutionContract(tasks[index].Config)
+		}
 	}
 
 	c.JSON(http.StatusOK, models.ListProviderTasksResponse{
@@ -486,7 +490,7 @@ func (h *TaskHandler) ProviderGetTask(c *gin.Context) {
 
 // ProviderExecuteTask 使用 TaskProvider 标准协议启动 Transfer 任务。
 // @Summary 执行 TaskProvider Transfer 任务 | Execute TaskProvider Transfer task
-// @Description 按标准 TaskProvider 协议启动 Transfer 任务；task_type 仅支持 sync，parameters 当前不支持覆盖。| Start a Transfer task through the standard TaskProvider protocol; task_type only supports sync and parameters overrides are not supported.
+// @Description 按标准 TaskProvider 协议启动 Transfer 任务；runtime target 任务要求由 Orchestrator 绑定 target_locator。| Start a Transfer task through the standard TaskProvider protocol; runtime-target tasks require Orchestrator to bind target_locator.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
@@ -517,11 +521,6 @@ func (h *TaskHandler) ProviderExecuteTask(c *gin.Context) {
 		commonAPI.BadRequestError(c, err.Error())
 		return
 	}
-	if len(req.Parameters) > 0 {
-		commonAPI.BadRequestError(c, "Transfer task provider does not support execution parameter overrides")
-		return
-	}
-
 	triggerType, err := commonExecution.NormalizeTriggerType(req.TriggerType)
 	if err != nil {
 		commonAPI.BadRequestError(c, err.Error())
@@ -553,7 +552,7 @@ func (h *TaskHandler) ProviderExecuteTask(c *gin.Context) {
 		return
 	}
 
-	execution, err := h.taskService.StartTaskWithContext(c.Request.Context(), id, tenantID, userID, triggerType, source, parentExecutionID)
+	execution, err := h.taskService.StartTaskWithExecutionParameters(c.Request.Context(), id, tenantID, userID, triggerType, source, parentExecutionID, req.Parameters)
 	if err != nil {
 		respondTaskServiceError(c, err)
 		return

@@ -107,7 +107,7 @@
 **职责定位**：元数据扫描、索引、搜索和管理
 
 **核心能力**：
-- 元数据扫描（统一通过 `CatalogProvider` 和 `CatalogFactsProvider`）：
+- 元数据扫描（统一通过 `EngineCatalogProvider` 和 `EngineCatalogFactsProvider`）：
   - 关系型：schema/database → table/view → field
   - 文档/图数据库：database → collection/graph
   - 对象存储/文件系统：bucket/root → prefix/dir → object/file
@@ -302,6 +302,53 @@
 
 ---
 
+### 15. Catalog（企业数据目录）
+
+**职责定位**：在专业模块事实之上建立企业级稳定目录身份、业务语义关联、责任、治理状态和权限感知发现
+
+**核心能力**：
+- 为所有正式持久化的 Meta DataItem 自动创建最小 CatalogEntry
+- 保存 CatalogEntry 与专业资源的来源绑定和历史
+- 关联 Standard Domain、Glossary Term 和 Element
+- 管理责任部门、业务责任人和数据管理员
+- 管理来源失效、治理成熟度、目录可见性和显式来源重绑
+- 提供独立企业元数据搜索和分面导航
+- 为 Asset 提供一个或多个目录对象的选择入口
+
+Catalog 不拥有 DataItem 技术元数据、Standard 语义定义、Manager 内容预览或 Asset 发布事实。除 System 和自身必需 Infra 外，其他业务模块均为运行软依赖。
+
+**端口**：
+- Backend：8192
+- Frontend：5189 (dev)
+
+**详细文档**：`docs/concepts/addp企业数据目录体系图.md`、`docs/spec/addp企业数据目录实现规范.md`
+
+---
+
+### 16. Asset（数据资产）
+
+**职责定位**：选择和组合一个或多个 CatalogEntry，形成可发布、申请、授权、评价和运营的数据资产
+
+Asset 不承担企业资源自动盘点，也不复制 Catalog 的来源绑定和语义关联。当前跨专业模块自动发现路线将在 Catalog 迁移阶段删除。
+
+**端口**：Backend 8183；Frontend 5184 (dev)
+
+**详细文档**：`asset/CLAUDE.md`
+
+---
+
+### 17. Portal（资产门户）
+
+**职责定位**：面向数据消费者展示和申请 Asset 已发布对象
+
+Portal 不直接搜索 Catalog 全量目录，也不绕过 Asset 的申请、授权和运营边界。
+
+**端口**：Backend 8184；Frontend 5185 (dev)
+
+**详细文档**：`portal/CLAUDE.md`
+
+---
+
 ## 扩展运行时
 
 ### GeoPython Workflow 运行时
@@ -448,11 +495,14 @@ import { TablePreview, GeoJsonPreview } from '@common-ui-map'
 - Model: `model/CLAUDE.md`
 - Quality: `quality/CLAUDE.md`
 - Monitor: `monitor/docs/Monitor模块实施报告.md`
+- Catalog: `docs/concepts/addp企业数据目录体系图.md`、`docs/spec/addp企业数据目录实现规范.md`
+- Asset: `asset/CLAUDE.md`
+- Portal: `portal/CLAUDE.md`
 
 ---
 
 ## 文档版本
 
-- **版本**: v2.2
-- **更新日期**: 2026-02-22
-- **更新内容**: 新增 Quality（数据质量）模块介绍，Monitor 模块编号调整为 14
+- **版本**: v2.3
+- **更新日期**: 2026-08-26
+- **更新内容**: 增加 Catalog、Asset、Portal 的企业目录主线和模块边界

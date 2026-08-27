@@ -14,8 +14,277 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 78 {
-		t.Fatalf("LatestVersion = %d, want 78", catalog.LatestVersion)
+	if catalog.LatestVersion != 101 {
+		t.Fatalf("LatestVersion = %d, want 101", catalog.LatestVersion)
+	}
+}
+
+func TestQualityMaterializationGateMigrationPublishesPermissions(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000093_iam_quality_materialization_gate.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 93: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{"'quality.materialization_gate.read'", "'quality.task_provider.execute'", "'tenant.orchestrator_runtime'", "'tenant.quality_runtime'", "'model.materialization_group.read'"} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 93 missing %q", fragment)
+		}
+	}
+}
+
+func TestWorkbenchRuntimeMigrationPublishesConsumerBoundary(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000092_iam_workbench_runtime.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 92: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'workbench.view.create'", "'workbench.view.delete'",
+		"'workbench.view.read'", "'workbench.view.update'",
+		"'platform.workbench_runtime'", "'addp-workbench'",
+		"'tenant.data_viewer'", "'service.data_read.execute'",
+		"'system.runtime_registry.update'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 92 missing %q", fragment)
+		}
+	}
+}
+
+func TestOrganizationManagementMigrationAddsVersionsAndPublishesPermissions(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000091_iam_organization_management.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 91: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"ALTER TABLE system.departments", "ALTER TABLE system.department_memberships",
+		"ALTER TABLE system.project_groups", "ALTER TABLE system.project_group_memberships",
+		"ADD COLUMN version bigint NOT NULL DEFAULT 1 CHECK (version > 0)",
+		"DROP CONSTRAINT project_group_memberships_project_group_id_tenant_membershi_key",
+		"'iam.department.restore'", "'tenant.administrator'",
+		"permission.permission_key = 'iam.department.delete'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 91 missing %q", fragment)
+		}
+	}
+}
+
+func TestServiceExecutionAuditMigrationGrantsTenantAuditAppend(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000090_iam_service_execution_audit.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 90: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{"'audit.tenant_event.create'", "'tenant.service_runtime'", "ON CONFLICT (role_id, permission_id) DO NOTHING"} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 90 missing %q", fragment)
+		}
+	}
+}
+
+func TestExecutionAuthorizationEngineAccessScopesMigrationIsExactAndImmutable(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000084_iam_execution_authorization_engine_access_scopes.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 84: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"system.execution_authorization_engine_accesses",
+		"PRIMARY KEY (authorization_id, engine_id)",
+		"DROP COLUMN effects",
+		"DROP COLUMN engine_ids",
+		"execution authorization access boundary is immutable",
+		"execution authorization sealing requires a non-empty immutable access boundary",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 84 missing %q", fragment)
+		}
+	}
+}
+
+func TestPortalTenantRuntimeRemovalMigrationRevokesAssignmentAndDisablesRole(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000085_iam_remove_portal_tenant_runtime.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 85: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{"'tenant.portal_runtime'", "'addp-portal'", "UPDATE system.role_assignments", "status = 'revoked'", "revoked_at", "status = 'disabled'"} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 85 missing %q", fragment)
+		}
+	}
+}
+
+func TestLegacyServiceEndpointProjectionPermissionIsDisabled(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000086_iam_remove_service_endpoint_projection.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 86: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{"'service.endpoint.read'", "DELETE FROM system.role_permissions", "status = 'disabled'"} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 86 missing %q", fragment)
+		}
+	}
+}
+
+func TestManagerContentProjectionPermissionIsAssignedToMetaRuntimeAndTenantAdministrator(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000087_iam_manager_content_index_projection.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 87: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{"'manager.content_index.update'", "'tenant.meta_runtime'", "'tenant.administrator'"} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 87 missing %q", fragment)
+		}
+	}
+}
+
+func TestAssetCatalogReferenceResolutionMigrationUsesSingleCatalogPermission(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000083_iam_asset_catalog_reference_resolution.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 83: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'catalog.reference.read'", "'tenant.asset_runtime'", "'tenant.administrator'",
+		"'develop.task.read'", "'meta.catalog.read'", "'service.definition.read'", "'standard.metric.read'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 83 missing %q", fragment)
+		}
+	}
+}
+
+func TestCatalogReferenceResolutionMigrationPublishesTenantPermissions(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000082_iam_catalog_reference_resolution.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 82: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'iam.department.read'", "'iam.tenant_membership.read'", "'tenant.catalog_runtime'",
+		"'catalog.entry.update'", "'catalog.entry.certify'", "'catalog.entry.deprecate'",
+		"'catalog.audit.read'", "'catalog.source.rebind'",
+		"'tenant.administrator'", "'platform.system_administrator'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 82 missing %q", fragment)
+		}
+	}
+}
+
+func TestCatalogCollaborationMigrationPublishesScopedPermissions(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000094_iam_catalog_collaboration.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 94: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'catalog.collection.read'", "'catalog.collection.update'", "'catalog.entry.read'",
+		"'project_group'", "'tenant.administrator'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 94 missing %q", fragment)
+		}
+	}
+}
+
+func TestModelCatalogReadMigrationGrantsCatalogRuntime(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000095_iam_model_catalog_read.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 95: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{"'model.catalog.read'", "'tenant.catalog_runtime'", "ARRAY['tenant']::text[]"} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 95 missing %q", fragment)
+		}
+	}
+}
+
+func TestStandardCatalogReadMigrationGrantsCatalogRuntime(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000096_iam_standard_catalog_read.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 96: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{"'standard.catalog.read'", "'tenant.catalog_runtime'", "ARRAY['tenant']::text[]"} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 96 missing %q", fragment)
+		}
+	}
+}
+
+func TestServiceCatalogReadMigrationGrantsCatalogRuntime(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000097_iam_service_catalog_read.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 97: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{"'service.catalog.read'", "'tenant.catalog_runtime'", "ARRAY['tenant']::text[]"} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 97 missing %q", fragment)
+		}
+	}
+}
+
+func TestDevelopCatalogReadMigrationGrantsCatalogRuntime(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000098_iam_develop_catalog_read.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 98: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{"'develop.catalog.read'", "'tenant.catalog_runtime'", "ARRAY['tenant']::text[]"} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 98 missing %q", fragment)
+		}
+	}
+}
+
+func TestQualityCatalogReadMigrationGrantsCatalogRuntime(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000099_iam_quality_catalog_read.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 99: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{"'quality.catalog.read'", "'tenant.catalog_runtime'", "ARRAY['tenant']::text[]"} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 99 missing %q", fragment)
+		}
+	}
+}
+
+func TestCatalogEngineDescriptorReadMigrationGrantsCatalogRuntime(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000101_iam_catalog_engine_descriptor_read.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 101: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{"'system.engine_descriptor.read'", "'tenant.catalog_runtime'", "ON CONFLICT (role_id, permission_id) DO NOTHING"} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 101 missing %q", fragment)
+		}
+	}
+}
+
+func TestCatalogRuntimeMigrationPublishesIdentityAndLeastPrivilegeRoles(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000081_iam_catalog_runtime.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 81: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'addp-catalog'", "'platform.catalog_runtime'", "'tenant.catalog_runtime'",
+		"'platform.tenant.read'", "'system.runtime_registry.update'", "'meta.catalog.read'",
+		"'catalog.inventory.read'", "'catalog.entry.read'", "'catalog.source.rebind'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 81 missing %q", fragment)
+		}
 	}
 }
 
@@ -79,6 +348,57 @@ func TestDataArchitectManagedMaterializationWriteMigration(t *testing.T) {
 	for _, fragment := range []string{"'tenant.data_architect'", "'develop.task.execute'", "'develop.data_write.execute'"} {
 		if !strings.Contains(sql, fragment) {
 			t.Fatalf("migration 78 missing %q", fragment)
+		}
+	}
+}
+
+func TestModelMaterializationWriteAttemptMigration(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000079_iam_model_materialization_write_attempt.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 79: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'model.materialization_write.execute'", "'tenant.develop_runtime'", "'tenant.transfer_runtime'",
+		"permission_key = 'model.materialization_context.read'", "status = 'disabled'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 79 missing %q", fragment)
+		}
+	}
+}
+
+func TestRemoveModelWriterCouplingMigration(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000100_iam_remove_model_writer_coupling.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 100: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'tenant.develop_runtime'", "'tenant.transfer_runtime'",
+		"'model.materialization_read.execute'", "'model.materialization_write.execute'",
+		"status = 'disabled'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 100 missing %q", fragment)
+		}
+	}
+}
+
+func TestTransferExecutionAuthorizationMigration(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000080_iam_transfer_execution_authorization.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 80: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'transfer'", "'tenant.transfer_runtime'", "'system.execution_authorization.execute'",
+		"execution_authorizations_audience_check", "source_execution_attempt", "source_execution_lease_token",
+		"uq_execution_authorizations_static_execution", "uq_execution_authorizations_execution_attempt",
+		"execution authorization identity and boundary are immutable",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 80 missing %q", fragment)
 		}
 	}
 }

@@ -6,7 +6,7 @@ import (
 	"github.com/addp/meta/internal/metaattr"
 )
 
-func dynamicSchemaAttributesInput(catalogFacts *plugin.CatalogFacts) metaattr.DynamicSchemaAttributesInput {
+func dynamicSchemaAttributesInput(catalogFacts *plugin.EngineCatalogFacts) metaattr.DynamicSchemaAttributesInput {
 	if catalogFacts == nil {
 		return metaattr.DynamicSchemaAttributesInput{}
 	}
@@ -26,8 +26,8 @@ func dynamicSchemaAttributesInput(catalogFacts *plugin.CatalogFacts) metaattr.Dy
 	}
 }
 
-func dynamicSchemaAttributes(catalogFacts *plugin.CatalogFacts) map[string]interface{} {
-	tableInfo := plugin.CatalogFactsTableInfo(catalogFacts)
+func dynamicSchemaAttributes(catalogFacts *plugin.EngineCatalogFacts) map[string]interface{} {
+	tableInfo := plugin.EngineCatalogFactsTableInfo(catalogFacts)
 	if tableInfo == nil {
 		return nil
 	}
@@ -63,8 +63,8 @@ func dynamicSchemaAttributes(catalogFacts *plugin.CatalogFacts) map[string]inter
 	return attrs
 }
 
-func dynamicSchemaFields(catalogFacts *plugin.CatalogFacts) []datatype.FieldInfo {
-	tableInfo := plugin.CatalogFactsTableInfo(catalogFacts)
+func dynamicSchemaFields(catalogFacts *plugin.EngineCatalogFacts) []datatype.FieldInfo {
+	tableInfo := plugin.EngineCatalogFactsTableInfo(catalogFacts)
 	if tableInfo == nil || len(tableInfo.Fields) == 0 {
 		return nil
 	}

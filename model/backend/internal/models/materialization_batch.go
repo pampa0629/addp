@@ -5,6 +5,7 @@ import "time"
 const (
 	MaterializationBatchPreparing  = "preparing"
 	MaterializationBatchPrepared   = "prepared"
+	MaterializationBatchSealed     = "sealed"
 	MaterializationBatchPublishing = "publishing"
 	MaterializationBatchPublished  = "published"
 	MaterializationBatchFailed     = "failed"
@@ -25,8 +26,10 @@ type MaterializationBatch struct {
 	StagingName         string     `gorm:"size:63;not null" json:"staging_name"`
 	SchemaFingerprint   string     `gorm:"size:64;not null" json:"schema_fingerprint"`
 	Status              string     `gorm:"size:20;not null;index" json:"status"`
-	PrepareExecutionID  string     `gorm:"type:uuid;not null;uniqueIndex" json:"prepare_execution_id"`
-	PublishExecutionID  *string    `gorm:"type:uuid;uniqueIndex" json:"publish_execution_id,omitempty"`
+	PrepareExecutionID  string     `gorm:"size:255;not null;uniqueIndex" json:"prepare_execution_id"`
+	WriterExecutionID   *string    `gorm:"size:255;index" json:"writer_execution_id,omitempty"`
+	SealExecutionID     *string    `gorm:"size:255;uniqueIndex" json:"seal_execution_id,omitempty"`
+	PublishExecutionID  *string    `gorm:"size:255;index" json:"publish_execution_id,omitempty"`
 	PublishedAt         *time.Time `json:"published_at,omitempty"`
 	CreatedAt           time.Time  `gorm:"not null" json:"created_at"`
 	UpdatedAt           time.Time  `gorm:"not null" json:"updated_at"`

@@ -115,7 +115,7 @@ func TestApplyCatalogFactsCapabilitiesWritesRelationalFacts(t *testing.T) {
 	t.Parallel()
 
 	attrs := models.JSONMap{}
-	ApplyCatalogFactsCapabilities(attrs, &plugin.CatalogFacts{
+	ApplyEngineCatalogFactsCapabilities(attrs, &plugin.EngineCatalogFacts{
 		Indexes: []plugin.IndexFacts{{
 			Name: "orders_customer_idx", Fields: []string{"customer_id", "ordered_at"}, IndexType: "normal",
 		}},
@@ -146,7 +146,7 @@ func TestApplyCatalogFactsCapabilitiesWritesRelationalFacts(t *testing.T) {
 		t.Fatalf("partitioning = %#v", partitioning)
 	}
 
-	ApplyCatalogFactsCapabilities(attrs, &plugin.CatalogFacts{})
+	ApplyEngineCatalogFactsCapabilities(attrs, &plugin.EngineCatalogFacts{})
 	if attrs["capabilities"] != nil {
 		t.Fatalf("stale relational facts survived authoritative refresh: %#v", attrs["capabilities"])
 	}

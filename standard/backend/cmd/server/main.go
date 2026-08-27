@@ -87,6 +87,8 @@ func main() {
 	documentRepo := repository.NewDocumentRepository(db)
 	dimHierarchyRepo := repository.NewDimensionHierarchyRepository(db)
 	tenantReferenceRepo := repository.NewTenantReferenceRepository(db)
+	referenceResolutionRepo := repository.NewReferenceResolutionRepository(db)
+	catalogResourceRepo := repository.NewCatalogResourceRepository(db)
 	standardReferenceDeletionSvc := service.NewStandardReferenceDeletionService(db, modelClient)
 	standardReferenceDeletionSvc.RegisterLocalDelete("domain", func(tx *gorm.DB, resourceID, tenantID int64) error {
 		return domainRepo.DeleteTx(tx, resourceID, tenantID)
@@ -127,6 +129,8 @@ func main() {
 	})
 	defer documentSvc.Stop()
 	dimHierarchySvc := service.NewDimensionHierarchyService(dimHierarchyRepo, tenantReferenceRepo, standardReferenceDeletionSvc)
+	referenceResolutionSvc := service.NewReferenceResolutionService(referenceResolutionRepo)
+	catalogResourceSvc := service.NewCatalogResourceService(catalogResourceRepo)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo, minioClient)
 	if err := cleanupSvc.Start(runtimeContext); err != nil {
@@ -148,6 +152,8 @@ func main() {
 		metricSvc,
 		documentSvc,
 		dimHierarchySvc,
+		referenceResolutionSvc,
+		catalogResourceSvc,
 		cfg.SystemURL,
 		lifecycleController,
 	)

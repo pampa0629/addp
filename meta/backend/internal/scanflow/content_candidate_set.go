@@ -8,13 +8,13 @@ import (
 )
 
 type ContentCandidateSet struct {
-	DirPath          string
-	Files            []metaitem.StorageFileRef
-	Subdirs          []metaitem.StorageDirectoryRef
-	RecursiveFiles   []metaitem.StorageFileRef
-	RecursiveSubdirs []metaitem.StorageDirectoryRef
-	ResolveOptions   metaitem.ResolveOptions
-	CatalogPathFor   func(string) plugin.CatalogPath
+	DirPath              string
+	Files                []metaitem.StorageFileRef
+	Subdirs              []metaitem.StorageDirectoryRef
+	RecursiveFiles       []metaitem.StorageFileRef
+	RecursiveSubdirs     []metaitem.StorageDirectoryRef
+	ResolveOptions       metaitem.ResolveOptions
+	EngineCatalogPathFor func(string) plugin.EngineCatalogPath
 }
 
 func ResolveContentCandidates(
@@ -25,16 +25,16 @@ func ResolveContentCandidates(
 	candidates ContentCandidateSet,
 ) (*metaitem.DetectionResult, error) {
 	return metaitem.ResolveItems(ctx, metaitem.DirectoryResolveInput{
-		ContentReader:    contentReader,
-		ConnInfo:         connInfo,
-		EngineID:         engineID,
-		CatalogPathFor:   candidates.CatalogPathFor,
-		DirPath:          candidates.DirPath,
-		Files:            candidates.Files,
-		Subdirs:          candidates.Subdirs,
-		Options:          candidates.ResolveOptions,
-		RecursiveFiles:   candidates.RecursiveFiles,
-		RecursiveSubdirs: candidates.RecursiveSubdirs,
+		ContentReader:        contentReader,
+		ConnInfo:             connInfo,
+		EngineID:             engineID,
+		EngineCatalogPathFor: candidates.EngineCatalogPathFor,
+		DirPath:              candidates.DirPath,
+		Files:                candidates.Files,
+		Subdirs:              candidates.Subdirs,
+		Options:              candidates.ResolveOptions,
+		RecursiveFiles:       candidates.RecursiveFiles,
+		RecursiveSubdirs:     candidates.RecursiveSubdirs,
 	})
 }
 
@@ -46,13 +46,13 @@ func ResolveNonExclusiveContentCandidates(
 	candidates ContentCandidateSet,
 ) (*metaitem.DetectionResult, error) {
 	return metaitem.ResolveNonExclusiveItems(ctx, metaitem.DirectoryResolveInput{
-		ContentReader:  contentReader,
-		ConnInfo:       connInfo,
-		EngineID:       engineID,
-		CatalogPathFor: candidates.CatalogPathFor,
-		DirPath:        candidates.DirPath,
-		Files:          candidates.Files,
-		Subdirs:        candidates.Subdirs,
-		Options:        candidates.ResolveOptions,
+		ContentReader:        contentReader,
+		ConnInfo:             connInfo,
+		EngineID:             engineID,
+		EngineCatalogPathFor: candidates.EngineCatalogPathFor,
+		DirPath:              candidates.DirPath,
+		Files:                candidates.Files,
+		Subdirs:              candidates.Subdirs,
+		Options:              candidates.ResolveOptions,
 	})
 }

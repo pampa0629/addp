@@ -22,7 +22,6 @@ import (
 	"github.com/addp/quality/internal/models"
 	"github.com/addp/quality/internal/repository"
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 )
 
 const (
@@ -69,6 +68,8 @@ type CheckExecutor struct {
 	systemClient           *commonClient.SystemServiceClient
 	executionAuthorization *commonClient.SystemExecutionAuthorizationClient
 	checkTaskRepo          *repository.CheckTaskRepository
+	gateTaskRepo           *repository.MaterializationGateRepository
+	modelClient            *commonClient.ModelClient
 	issueRepo              *repository.IssueRepository
 	sqlGen                 *SQLGenerator
 	checkTimeout           time.Duration
@@ -80,6 +81,11 @@ type CheckExecutor struct {
 	workerDone             chan struct{}
 	workerStartOnce        sync.Once
 	workerActive           atomic.Int64
+}
+
+func (e *CheckExecutor) ConfigureMaterializationGate(modelClient *commonClient.ModelClient, gateTaskRepo *repository.MaterializationGateRepository) {
+	e.modelClient = modelClient
+	e.gateTaskRepo = gateTaskRepo
 }
 
 func (e *CheckExecutor) WorkerID() string { return e.workerID }
@@ -203,7 +209,7 @@ func (e *CheckExecutor) RunCheckWithContext(
 	if err := e.checkTaskRepo.AttachExecutionAuthorization(ctx, tenantID, executionID, map[string]interface{}{
 		"actor_principal_id": authorization.actorPrincipalID, "actor_tenant_membership_id": authorization.tenantMembershipID,
 		"issued_authorization_version": authorization.authorizationVersion, "execution_authorization_id": authorization.authorizationID,
-		"authorization_effects": pq.StringArray(authorization.effects), "authorization_expires_at": authorization.expiresAt,
+		"authorization_expires_at": authorization.expiresAt,
 	}); err != nil {
 		e.checkTaskRepo.FailPendingExecution(ctx, taskID, tenantID, executionID, "quality.authorization.persist_failed", time.Now().UTC())
 		return "", fmt.Errorf("persist quality execution authorization: %w", err)
@@ -221,7 +227,7 @@ type executionAuthorizationFacts struct {
 }
 
 func (e *CheckExecutor) issueExecutionAuthorization(ctx context.Context, tenantID int64, executionID string, engineID int64, userAccessToken string, parentExecutionID *string) (*executionAuthorizationFacts, error) {
-	engineIDs := []string{strconv.FormatInt(engineID, 10)}
+	accesses := []commonClient.ExecutionEngineAccessScope{{EngineID: strconv.FormatInt(engineID, 10), Effects: []string{"read"}}}
 	var issued *commonClient.IssuedExecutionAuthorization
 	var err error
 	if parentExecutionID != nil {
@@ -229,8 +235,7 @@ func (e *CheckExecutor) issueExecutionAuthorization(ctx context.Context, tenantI
 			ParentExecutionID: *parentExecutionID,
 			Audience:          commonExecution.AudienceQuality,
 			ExecutionID:       executionID,
-			EngineIDs:         engineIDs,
-			Effects:           []string{"read"},
+			Accesses:          accesses,
 			ExpiresIn:         3600,
 		})
 	} else {
@@ -238,13 +243,13 @@ func (e *CheckExecutor) issueExecutionAuthorization(ctx context.Context, tenantI
 			return nil, fmt.Errorf("user execution authorization client is not configured")
 		}
 		issued, err = e.executionAuthorization.Issue(ctx, userAccessToken, commonClient.IssueExecutionAuthorizationRequest{
-			Audience: commonExecution.AudienceQuality, ExecutionID: executionID, EngineIDs: engineIDs, Effects: []string{"read"}, ExpiresIn: 3600,
+			Audience: commonExecution.AudienceQuality, ExecutionID: executionID, Accesses: accesses, ExpiresIn: 3600,
 		})
 	}
 	if err != nil {
 		return nil, err
 	}
-	facts := &executionAuthorizationFacts{effects: append([]string(nil), issued.Effects...), expiresAt: &issued.ExpiresAt}
+	facts := &executionAuthorizationFacts{effects: []string{"read"}, expiresAt: &issued.ExpiresAt}
 	facts.authorizationID, err = parsePositiveID(issued.ID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid authorization id: %w", err)
@@ -349,6 +354,11 @@ func (e *CheckExecutor) executionWorkerLoop(ctx context.Context, workerID string
 }
 
 func (e *CheckExecutor) processExpired(ctx context.Context) {
+	if e.gateTaskRepo != nil {
+		if err := e.gateTaskRepo.RecoverExpiredExecutions(ctx, time.Now().UTC()); err != nil && ctx.Err() == nil {
+			log.Printf("quality materialization gate lease recovery failed: %v", err)
+		}
+	}
 	if err := e.checkTaskRepo.RecoverExpiredExecutions(ctx, time.Now().UTC()); err != nil {
 		if ctx.Err() == nil {
 			log.Printf("quality execution lease recovery failed: %v", err)
@@ -357,6 +367,9 @@ func (e *CheckExecutor) processExpired(ctx context.Context) {
 }
 
 func (e *CheckExecutor) processPending(ctx context.Context, workerID string) bool {
+	if e.gateTaskRepo != nil && e.processPendingMaterializationGate(ctx, workerID) {
+		return true
+	}
 	execution, task, err := e.checkTaskRepo.ClaimPendingExecution(ctx, workerID, time.Now().UTC(), e.workerLease)
 	if err != nil {
 		if ctx.Err() == nil {

@@ -48,7 +48,7 @@ func TestBuildResourceWithStatsProjectsScanStats(t *testing.T) {
 	if view.LifecycleState != commonModels.EngineLifecycleActive {
 		t.Fatalf("LifecycleState = %q, want %q", view.LifecycleState, commonModels.EngineLifecycleActive)
 	}
-	if view.EngineFamily == "" || view.CatalogRootTerm == "" || view.CatalogLeafTerm == "" {
+	if view.EngineFamily == "" || view.CatalogRootTerm == "" || view.EngineCatalogLeafTerm == "" {
 		t.Fatalf("catalog terms not projected: %#v", view)
 	}
 }
@@ -58,17 +58,17 @@ func TestLoadEngineScanStatsUsesCatalogModelTopLevel(t *testing.T) {
 	repo := metaRepo.NewScanRepository(db)
 	directPlugin := engineStatsTestPlugin{
 		engineType: "engine-stats-direct-leaf-test",
-		model: plugin.CatalogModelSpec{
-			PathVersion: plugin.CatalogPathVersion,
-			RootTerm:    plugin.CatalogTermService,
-			Levels: []plugin.CatalogLevelSpec{
-				{Term: "topic", Kinds: []string{"topic"}, Role: plugin.CatalogRoleLeaf},
+		model: plugin.EngineCatalogModelSpec{
+			PathVersion: plugin.EngineCatalogPathVersion,
+			RootTerm:    plugin.EngineCatalogTermService,
+			Levels: []plugin.EngineCatalogLevelSpec{
+				{Term: "topic", Kinds: []string{"topic"}, Role: plugin.EngineCatalogRoleLeaf},
 			},
 		},
 	}
 	branchPlugin := engineStatsTestPlugin{
 		engineType: "engine-stats-branch-test",
-		model:      plugin.TabularCatalogModel(plugin.CatalogTermSchema),
+		model:      plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema),
 	}
 	plugin.Register(directPlugin)
 	plugin.Register(branchPlugin)
@@ -78,7 +78,7 @@ func TestLoadEngineScanStatsUsesCatalogModelTopLevel(t *testing.T) {
 	})
 
 	directResource := &commonModels.Engine{ID: 41, Name: "Kafka", EngineType: directPlugin.Type()}
-	directRoot, err := metaRepo.EnsureCatalogRootNode(repo, 1, directResource, directPlugin)
+	directRoot, err := metaRepo.EnsureEngineCatalogRootNode(repo, 1, directResource, directPlugin)
 	if err != nil {
 		t.Fatalf("ensure direct root: %v", err)
 	}
@@ -87,11 +87,11 @@ func TestLoadEngineScanStatsUsesCatalogModelTopLevel(t *testing.T) {
 	}
 
 	branchResource := &commonModels.Engine{ID: 42, Name: "PostgreSQL", EngineType: branchPlugin.Type()}
-	branchRoot, err := metaRepo.EnsureCatalogRootNode(repo, 1, branchResource, branchPlugin)
+	branchRoot, err := metaRepo.EnsureEngineCatalogRootNode(repo, 1, branchResource, branchPlugin)
 	if err != nil {
 		t.Fatalf("ensure branch root: %v", err)
 	}
-	branchNode, err := repo.UpsertNode(1, 42, branchRoot, plugin.CatalogTermSchema, "public", nil, nil)
+	branchNode, err := repo.UpsertNode(1, 42, branchRoot, plugin.EngineCatalogTermSchema, "public", nil, nil)
 	if err != nil {
 		t.Fatalf("create branch node: %v", err)
 	}
@@ -111,14 +111,14 @@ func TestLoadEngineScanStatsUsesCatalogModelTopLevel(t *testing.T) {
 	}
 
 	view := buildResourceWithStats(directResource, stats)
-	if view.CatalogTopTerm != "topic" || view.CatalogLeafTerm != "topic" {
-		t.Fatalf("direct leaf top/leaf terms = %q/%q, want topic/topic", view.CatalogTopTerm, view.CatalogLeafTerm)
+	if view.CatalogTopTerm != "topic" || view.EngineCatalogLeafTerm != "topic" {
+		t.Fatalf("direct leaf top/leaf terms = %q/%q, want topic/topic", view.CatalogTopTerm, view.EngineCatalogLeafTerm)
 	}
 }
 
 type engineStatsTestPlugin struct {
 	engineType string
-	model      plugin.CatalogModelSpec
+	model      plugin.EngineCatalogModelSpec
 }
 
 func (p engineStatsTestPlugin) Type() string         { return p.engineType }
@@ -140,8 +140,8 @@ func (p engineStatsTestPlugin) TestConnection(context.Context, plugin.Connection
 func (p engineStatsTestPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{}
 }
-func (p engineStatsTestPlugin) CatalogModel() plugin.CatalogModelSpec {
+func (p engineStatsTestPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return p.model
 }
 
-var _ plugin.CatalogModelProvider = engineStatsTestPlugin{}
+var _ plugin.EngineCatalogModelProvider = engineStatsTestPlugin{}

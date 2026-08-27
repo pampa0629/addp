@@ -26,7 +26,6 @@ import (
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -42,17 +41,126 @@ type MaterializationService struct {
 	repo             *repository.MaterializationBatchRepository
 	logicalTableRepo *repository.LogicalTableRepository
 	logicalTableSvc  *LogicalTableService
+	groupService     *MaterializationGroupService
 	workerID         string
 	workerCancel     context.CancelFunc
 	workerDone       chan struct{}
 	startOnce        sync.Once
 }
 
-type MaterializationWriteContext struct {
-	BatchID        string   `json:"batch_id"`
-	EngineID       int64    `json:"engine_id"`
-	StagingLocator string   `json:"staging_locator"`
-	WriteColumns   []string `json:"write_columns"`
+func (s *MaterializationService) SetGroupService(groupService *MaterializationGroupService) {
+	s.groupService = groupService
+}
+
+type MaterializationReadColumn struct {
+	Name     string `json:"name"`
+	DataType string `json:"data_type"`
+	Nullable bool   `json:"nullable"`
+}
+
+type MaterializationReadItem struct {
+	LogicalTableID    int64                       `json:"logical_table_id"`
+	BatchID           string                      `json:"batch_id"`
+	EngineID          int64                       `json:"engine_id"`
+	StagingLocator    string                      `json:"staging_locator"`
+	Columns           []MaterializationReadColumn `json:"columns"`
+	SchemaFingerprint string                      `json:"schema_fingerprint"`
+}
+
+type MaterializationReadContext struct {
+	SchemaVersion string                    `json:"schema_version"`
+	Items         []MaterializationReadItem `json:"items"`
+}
+
+func (s *MaterializationService) ResolveReadContext(
+	ctx context.Context,
+	tenantID int64,
+	parentExecutionID, readerExecutionID string,
+	readerAttempt int,
+	readerLeaseToken string,
+	logicalTableIDs []int64,
+	serviceClientID string,
+) (*MaterializationReadContext, error) {
+	if tenantID <= 0 || readerAttempt <= 0 || len(logicalTableIDs) == 0 || len(logicalTableIDs) > 100 {
+		return nil, apperrors.Validation("materialization_read_context_invalid", modeli18n.MsgMaterializationInvalid)
+	}
+	parentID, err := uuid.Parse(strings.TrimSpace(parentExecutionID))
+	if err != nil {
+		return nil, apperrors.Validation("materialization_parent_execution_invalid", modeli18n.MsgMaterializationInvalid)
+	}
+	readerExecutionID = strings.TrimSpace(readerExecutionID)
+	if readerExecutionID == "" || len(readerExecutionID) > 255 {
+		return nil, apperrors.Validation("materialization_reader_execution_invalid", modeli18n.MsgMaterializationInvalid)
+	}
+	leaseToken, err := uuid.Parse(strings.TrimSpace(readerLeaseToken))
+	if err != nil {
+		return nil, apperrors.Validation("materialization_reader_lease_invalid", modeli18n.MsgMaterializationInvalid)
+	}
+	readerModule, err := materializationReaderModule(serviceClientID)
+	if err != nil {
+		return nil, err
+	}
+	unique := make(map[int64]struct{}, len(logicalTableIDs))
+	for _, id := range logicalTableIDs {
+		if id <= 0 {
+			return nil, apperrors.Validation("materialization_read_context_invalid", modeli18n.MsgMaterializationInvalid)
+		}
+		if _, exists := unique[id]; exists {
+			return nil, apperrors.Validation("materialization_read_context_duplicate", modeli18n.MsgMaterializationInvalid)
+		}
+		unique[id] = struct{}{}
+	}
+	batches, err := s.repo.ResolveMaterializationRead(ctx, repository.ResolveMaterializationReadInput{
+		TenantID: tenantID, ParentExecutionID: parentID.String(), ReaderExecutionID: readerExecutionID,
+		ReaderAttempt: readerAttempt, ReaderLeaseToken: leaseToken.String(), ReaderModule: readerModule,
+		LogicalTableIDs: logicalTableIDs,
+	})
+	if err != nil {
+		return nil, materializationResourceError(err)
+	}
+	byID := make(map[int64]models.MaterializationBatch, len(batches))
+	for _, batch := range batches {
+		byID[batch.LogicalTableID] = batch
+	}
+	result := &MaterializationReadContext{SchemaVersion: "model.materialization-read-context/v1", Items: make([]MaterializationReadItem, 0, len(logicalTableIDs))}
+	var engineID int64
+	for _, logicalTableID := range logicalTableIDs {
+		batch := byID[logicalTableID]
+		table, fields, parentLocator, _, fingerprint, loadErr := s.loadApprovedDefinition(logicalTableID, tenantID)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		if table.Version != batch.LogicalTableVersion || fingerprint != batch.SchemaFingerprint ||
+			int64(parentLocator.EngineID) != batch.EngineID || parentLocator.ToURI() != batch.TargetParentLocator ||
+			batch.Status != models.MaterializationBatchSealed || batch.WriterExecutionID == nil ||
+			batch.SealExecutionID == nil || strings.TrimSpace(batch.StagingName) == "" {
+			return nil, apperrors.Conflict("materialization_read_context_stale", modeli18n.MsgMaterializationConflict)
+		}
+		if engineID == 0 {
+			engineID = batch.EngineID
+		} else if engineID != batch.EngineID {
+			return nil, apperrors.Conflict("materialization_read_context_cross_engine", modeli18n.MsgMaterializationConflict)
+		}
+		columns := make([]MaterializationReadColumn, 0, len(fields))
+		for _, field := range fields {
+			columns = append(columns, MaterializationReadColumn{Name: field.ColumnName, DataType: field.DataType, Nullable: field.Nullable})
+		}
+		locator := (&resourcetree.ResourceLocator{EngineID: parentLocator.EngineID, Path: append(append([]string(nil), parentLocator.Path...), batch.StagingName), Type: resourcetree.TypeTable}).ToURI()
+		result.Items = append(result.Items, MaterializationReadItem{
+			LogicalTableID: logicalTableID, BatchID: batch.ID, EngineID: batch.EngineID,
+			StagingLocator: locator, Columns: columns, SchemaFingerprint: batch.SchemaFingerprint,
+		})
+	}
+	return result, nil
+}
+
+func materializationReaderModule(serviceClientID string) (string, error) {
+	switch strings.TrimSpace(serviceClientID) {
+	case "addp-quality":
+		return commonExecution.ModuleQuality, nil
+	default:
+		return "", apperrors.Conflict("materialization_reader_client_invalid", modeli18n.MsgMaterializationConflict)
+	}
 }
 
 func NewMaterializationService(
@@ -100,7 +208,7 @@ func (s *MaterializationService) Prepare(
 	if err != nil {
 		return "", "", err
 	}
-	if _, partitioned := table.Materialization["partition_by"]; partitioned {
+	if materializationHasPartitioning(table.Materialization) {
 		return "", "", apperrors.Validation("materialization_partition_unsupported", modeli18n.MsgMaterializationInvalid)
 	}
 	batchID := uuid.NewString()
@@ -161,42 +269,119 @@ func (s *MaterializationService) Publish(
 	return executionID, nil
 }
 
-func (s *MaterializationService) ResolveWriteContext(
+func (s *MaterializationService) PublishGroup(
 	ctx context.Context,
-	tenantID, logicalTableID int64,
-	parentExecutionID string,
-) (*MaterializationWriteContext, error) {
-	if tenantID <= 0 || logicalTableID <= 0 {
-		return nil, apperrors.Validation("materialization_context_invalid", modeli18n.MsgMaterializationInvalid)
+	groupID, tenantID, userID int64,
+	expectedGroupID, expectedGroupVersion int64,
+	triggerType, source string,
+	parentExecutionID *string,
+) (string, error) {
+	if groupID <= 0 || expectedGroupID != groupID || expectedGroupVersion <= 0 || parentExecutionID == nil || strings.TrimSpace(*parentExecutionID) == "" {
+		return "", apperrors.Validation("materialization_parent_execution_required", modeli18n.MsgMaterializationInvalid)
 	}
-	parsedParent, err := uuid.Parse(strings.TrimSpace(parentExecutionID))
+	parentID, err := uuid.Parse(strings.TrimSpace(*parentExecutionID))
 	if err != nil {
-		return nil, apperrors.Validation("materialization_parent_execution_invalid", modeli18n.MsgMaterializationInvalid)
+		return "", apperrors.Validation("materialization_parent_execution_invalid", modeli18n.MsgMaterializationInvalid)
 	}
-	batch, err := s.repo.ResolvePreparedByParentExecution(ctx, tenantID, logicalTableID, parsedParent.String())
+	triggerType, source, err = normalizeMaterializationTrigger(triggerType, source)
 	if err != nil {
-		return nil, materializationResourceError(err)
+		return "", err
 	}
-	table, fields, parentLocator, _, fingerprint, err := s.loadApprovedDefinition(logicalTableID, tenantID)
+	executionID := uuid.NewString()
+	parent := parentID.String()
+	execution := newMaterializationExecution(
+		executionID, tenantID, userID, groupID, "",
+		commonExecution.TaskTypeMaterializationGroupPublish, triggerType, source, &parent,
+		commonModels.JSONMap{"schema_version": "model.materialization-group/v1"},
+	)
+	_, batches, err := s.repo.CreateGroupPublishExecution(ctx, tenantID, groupID, expectedGroupVersion, parent, execution)
 	if err != nil {
-		return nil, err
+		return "", materializationResourceError(err)
 	}
-	if table.Version != batch.LogicalTableVersion || fingerprint != batch.SchemaFingerprint ||
-		int64(parentLocator.EngineID) != batch.EngineID || parentLocator.ToURI() != batch.TargetParentLocator {
-		return nil, apperrors.Conflict("materialization_context_stale", modeli18n.MsgMaterializationConflict)
+	batchIDs := make([]string, 0, len(batches))
+	for _, batch := range batches {
+		batchIDs = append(batchIDs, batch.ID)
 	}
-	writeColumns := make([]string, 0, len(fields))
-	for _, field := range fields {
-		writeColumns = append(writeColumns, field.ColumnName)
+	if err := s.authorizeExecution(ctx, tenantID, executionID, uint(batches[0].EngineID), parent); err != nil {
+		_ = s.repo.FailPendingGroupExecution(ctx, tenantID, executionID, batchIDs, "model.materialization.authorization_issue_failed")
+		return "", apperrors.Wrap(apperrors.KindUnavailable, "materialization_authorization_failed", modeli18n.MsgMaterializationUnavailable, err)
 	}
-	stagingLocator := (&resourcetree.ResourceLocator{
+	return executionID, nil
+}
+
+func (s *MaterializationService) Seal(
+	ctx context.Context,
+	logicalTableID, tenantID, userID int64,
+	batchID, writerExecutionID, targetLocator string,
+	triggerType, source string,
+	parentExecutionID *string,
+) (string, error) {
+	if logicalTableID <= 0 || tenantID <= 0 || parentExecutionID == nil {
+		return "", apperrors.Validation("materialization_seal_invalid", modeli18n.MsgMaterializationInvalid)
+	}
+	parsedParent, err := uuid.Parse(strings.TrimSpace(*parentExecutionID))
+	if err != nil {
+		return "", apperrors.Validation("materialization_parent_execution_invalid", modeli18n.MsgMaterializationInvalid)
+	}
+	parsedBatch, err := uuid.Parse(strings.TrimSpace(batchID))
+	if err != nil {
+		return "", apperrors.Validation("materialization_batch_invalid", modeli18n.MsgMaterializationInvalid)
+	}
+	parsedWriter, err := uuid.Parse(strings.TrimSpace(writerExecutionID))
+	if err != nil {
+		return "", apperrors.Validation("materialization_writer_execution_invalid", modeli18n.MsgMaterializationInvalid)
+	}
+	target, err := resourcetree.ParseURI(strings.TrimSpace(targetLocator))
+	if err != nil || target.Type != resourcetree.TypeTable {
+		return "", apperrors.Validation("materialization_target_invalid", modeli18n.MsgMaterializationInvalid)
+	}
+	triggerType, source, err = normalizeMaterializationTrigger(triggerType, source)
+	if err != nil {
+		return "", err
+	}
+	batch, err := s.repo.GetByID(ctx, parsedBatch.String(), tenantID)
+	if err != nil {
+		return "", materializationResourceError(err)
+	}
+	if batch.LogicalTableID != logicalTableID || batch.Status != models.MaterializationBatchPrepared {
+		return "", apperrors.Conflict("materialization_batch_not_prepared", modeli18n.MsgMaterializationConflict)
+	}
+	parentLocator, err := resourcetree.ParseURI(batch.TargetParentLocator)
+	if err != nil {
+		return "", apperrors.Conflict("materialization_batch_target_invalid", modeli18n.MsgMaterializationConflict)
+	}
+	expectedTarget := (&resourcetree.ResourceLocator{
 		EngineID: parentLocator.EngineID,
 		Path:     append(append([]string(nil), parentLocator.Path...), batch.StagingName),
 		Type:     resourcetree.TypeTable,
 	}).ToURI()
-	return &MaterializationWriteContext{
-		BatchID: batch.ID, EngineID: batch.EngineID, StagingLocator: stagingLocator, WriteColumns: writeColumns,
-	}, nil
+	if target.ToURI() != expectedTarget {
+		return "", apperrors.Conflict("materialization_seal_target_mismatch", modeli18n.MsgMaterializationConflict)
+	}
+	executionID := uuid.NewString()
+	parent := parsedParent.String()
+	execution := newMaterializationExecution(
+		executionID, tenantID, userID, logicalTableID, "",
+		commonExecution.TaskTypeMaterializationSeal, triggerType, source, &parent,
+		commonModels.JSONMap{
+			"schema_version":      "model.materialization/v1",
+			"batch_id":            batch.ID,
+			"writer_execution_id": parsedWriter.String(),
+			"target_locator":      expectedTarget,
+		},
+	)
+	batch, err = s.repo.CreateSealExecution(ctx, repository.CreateSealExecutionInput{
+		TenantID: tenantID, LogicalTableID: logicalTableID, BatchID: batch.ID,
+		ParentExecutionID: parent, WriterExecutionID: parsedWriter.String(), TargetLocator: expectedTarget,
+	}, execution)
+	if err != nil {
+		return "", materializationResourceError(err)
+	}
+	if err := s.authorizeExecution(ctx, tenantID, executionID, uint(batch.EngineID), parent); err != nil {
+		_ = s.repo.FailPendingExecution(ctx, tenantID, executionID, batch.ID, commonExecution.TaskTypeMaterializationSeal, "model.materialization.authorization_issue_failed")
+		return "", apperrors.Wrap(apperrors.KindUnavailable, "materialization_authorization_failed", modeli18n.MsgMaterializationUnavailable, err)
+	}
+	return executionID, nil
 }
 
 func newMaterializationExecution(
@@ -244,16 +429,16 @@ func (s *MaterializationService) authorizeExecution(
 	engineID uint,
 	parentExecutionID string,
 ) error {
-	engineIDs := []string{strconv.FormatUint(uint64(engineID), 10)}
-	effects := []string{"read", "ddl"}
 	issued, err := s.systemClient.WithTenantID(uint(tenantID)).IssueExecutionAuthorizationFromExecution(ctx, commonClient.IssueExecutionAuthorizationFromExecutionRequest{
 		ParentExecutionID: parentExecutionID, Audience: commonExecution.AudienceModel,
-		ExecutionID: executionID, EngineIDs: engineIDs, Effects: effects, ExpiresIn: materializationAuthorizationTTL,
+		ExecutionID: executionID, Accesses: []commonClient.ExecutionEngineAccessScope{{
+			EngineID: strconv.FormatUint(uint64(engineID), 10), Effects: []string{"read", "ddl"},
+		}}, ExpiresIn: materializationAuthorizationTTL,
 	})
 	if err != nil {
 		return err
 	}
-	fields, err := executionAuthorizationFields(issued)
+	fields, err := commonClient.TaskExecutionAuthorizationFields(issued)
 	if err != nil {
 		return err
 	}
@@ -261,43 +446,6 @@ func (s *MaterializationService) authorizeExecution(
 		return err
 	}
 	return nil
-}
-
-func executionAuthorizationFields(issued *commonClient.IssuedExecutionAuthorization) (map[string]interface{}, error) {
-	if issued == nil {
-		return nil, errors.New("execution authorization is empty")
-	}
-	parse := func(value string) (*int64, error) {
-		parsed, err := strconv.ParseInt(value, 10, 64)
-		if err != nil || parsed <= 0 {
-			return nil, fmt.Errorf("invalid IAM ID %q", value)
-		}
-		return &parsed, nil
-	}
-	authorizationID, err := parse(issued.ID)
-	if err != nil {
-		return nil, err
-	}
-	actorID, err := parse(issued.ActorPrincipalID)
-	if err != nil {
-		return nil, err
-	}
-	membershipID, err := parse(issued.TenantMembershipID)
-	if err != nil {
-		return nil, err
-	}
-	version, err := parse(issued.IssuedAuthorizationVersion)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]interface{}{
-		"execution_authorization_id":   authorizationID,
-		"actor_principal_id":           actorID,
-		"actor_tenant_membership_id":   membershipID,
-		"issued_authorization_version": version,
-		"authorization_effects":        pq.StringArray(append([]string(nil), issued.Effects...)),
-		"authorization_expires_at":     issued.ExpiresAt,
-	}, nil
 }
 
 func (s *MaterializationService) loadApprovedDefinition(
@@ -386,7 +534,9 @@ func (s *MaterializationService) workerLoop(ctx context.Context) {
 			return
 		}
 		if s.processPending(ctx, commonExecution.TaskTypeMaterializationPrepare) ||
-			s.processPending(ctx, commonExecution.TaskTypeMaterializationPublish) {
+			s.processPending(ctx, commonExecution.TaskTypeMaterializationSeal) ||
+			s.processPending(ctx, commonExecution.TaskTypeMaterializationPublish) ||
+			s.processPending(ctx, commonExecution.TaskTypeMaterializationGroupPublish) {
 			continue
 		}
 		select {
@@ -394,7 +544,12 @@ func (s *MaterializationService) workerLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 		case now := <-recoveryTicker.C:
-			for _, taskType := range []string{commonExecution.TaskTypeMaterializationPrepare, commonExecution.TaskTypeMaterializationPublish} {
+			for _, taskType := range []string{
+				commonExecution.TaskTypeMaterializationPrepare,
+				commonExecution.TaskTypeMaterializationSeal,
+				commonExecution.TaskTypeMaterializationPublish,
+				commonExecution.TaskTypeMaterializationGroupPublish,
+			} {
 				if err := s.repo.RecoverExpiredExecutions(ctx, taskType, now.UTC()); err != nil && ctx.Err() == nil {
 					log.Printf("model materialization lease recovery failed: %v", err)
 				}
@@ -404,6 +559,9 @@ func (s *MaterializationService) workerLoop(ctx context.Context) {
 }
 
 func (s *MaterializationService) processPending(ctx context.Context, taskType string) bool {
+	if taskType == commonExecution.TaskTypeMaterializationGroupPublish {
+		return s.processPendingGroup(ctx)
+	}
 	execution, batch, err := s.repo.ClaimPendingExecution(ctx, taskType, s.workerID, time.Now().UTC(), materializationWorkerLease)
 	if err != nil {
 		if ctx.Err() == nil {
@@ -420,25 +578,73 @@ func (s *MaterializationService) processPending(ctx context.Context, taskType st
 		return true
 	}
 	var metadata commonModels.JSONMap
-	if taskType == commonExecution.TaskTypeMaterializationPrepare {
+	switch taskType {
+	case commonExecution.TaskTypeMaterializationPrepare:
 		metadata, err = s.executePrepare(ctx, execution, batch)
-	} else {
+	case commonExecution.TaskTypeMaterializationSeal:
+		metadata, err = s.executeSeal(ctx, execution, batch)
+	default:
 		metadata, err = s.executePublish(ctx, execution, batch)
 	}
 	executionStatus := commonExecution.ExecutionStatusSuccess
 	batchStatus := models.MaterializationBatchPrepared
 	var errorDetails commonModels.JSONMap
-	if taskType == commonExecution.TaskTypeMaterializationPublish {
+	if taskType == commonExecution.TaskTypeMaterializationSeal {
+		batchStatus = models.MaterializationBatchSealed
+	} else if taskType == commonExecution.TaskTypeMaterializationPublish {
 		batchStatus = models.MaterializationBatchPublished
 	}
 	if err != nil {
 		executionStatus = commonExecution.ExecutionStatusFailed
-		batchStatus = models.MaterializationBatchFailed
+		switch taskType {
+		case commonExecution.TaskTypeMaterializationPrepare:
+			batchStatus = models.MaterializationBatchFailed
+		case commonExecution.TaskTypeMaterializationSeal:
+			batchStatus = models.MaterializationBatchPrepared
+		case commonExecution.TaskTypeMaterializationPublish:
+			batchStatus = models.MaterializationBatchSealed
+		}
 		errorDetails = commonModels.JSONMap{"code": "model.materialization.execution_failed", "message": "controlled materialization failed"}
 		log.Printf("model materialization execution %s failed: %v", execution.ExecutionID, err)
 	}
 	if completeErr := s.repo.CompleteExecution(ctx, lease, batch.ID, taskType, executionStatus, batchStatus, metadata, errorDetails); completeErr != nil {
 		log.Printf("model materialization execution %s completion failed: %v", execution.ExecutionID, completeErr)
+	}
+	return true
+}
+
+func (s *MaterializationService) processPendingGroup(ctx context.Context) bool {
+	execution, batches, err := s.repo.ClaimPendingGroupExecution(ctx, s.workerID, time.Now().UTC(), materializationWorkerLease)
+	if err != nil {
+		if ctx.Err() == nil {
+			log.Printf("model materialization group execution claim failed: %v", err)
+		}
+		return false
+	}
+	if execution == nil {
+		return false
+	}
+	lease, err := commonExecution.LeaseFromExecution(*execution)
+	if err != nil {
+		log.Printf("model materialization group execution %s has invalid lease: %v", execution.ExecutionID, err)
+		return true
+	}
+	metadata, err := s.executeGroupPublish(ctx, execution, batches)
+	executionStatus := commonExecution.ExecutionStatusSuccess
+	var errorDetails commonModels.JSONMap
+	if err != nil {
+		executionStatus = commonExecution.ExecutionStatusFailed
+		errorDetails = commonModels.JSONMap{
+			"code": "model.materialization_group.execution_failed", "message": "controlled materialization group publish failed",
+		}
+		log.Printf("model materialization group execution %s failed: %v", execution.ExecutionID, err)
+	}
+	batchIDs := make([]string, 0, len(batches))
+	for _, batch := range batches {
+		batchIDs = append(batchIDs, batch.ID)
+	}
+	if completeErr := s.repo.CompleteGroupExecution(ctx, lease, batchIDs, executionStatus, metadata, errorDetails); completeErr != nil {
+		log.Printf("model materialization group execution %s completion failed: %v", execution.ExecutionID, completeErr)
 	}
 	return true
 }
@@ -479,7 +685,7 @@ func (s *MaterializationService) executePrepare(
 	if err != nil {
 		return nil, err
 	}
-	table, fields, _, _, fingerprint, err := s.loadApprovedDefinition(batch.LogicalTableID, batch.TenantID)
+	table, fields, parentLocator, _, fingerprint, err := s.loadApprovedDefinition(batch.LogicalTableID, batch.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -511,15 +717,14 @@ func (s *MaterializationService) executePrepare(
 			if stagingComment == expectedMarker {
 				return nil
 			}
-			return fmt.Errorf("staging table name is already occupied")
+			return fmt.Errorf("materialization staging table name is already occupied")
 		}
 		preview := *table
 		preview.Materialization = models.JSONB{
 			"target_parent_locator": batch.TargetParentLocator,
 			"target_name":           batch.StagingName,
 		}
-		ddl := s.logicalTableSvc.generatePostgreSQLDDL(&preview, fields)
-		if err := tx.Exec(ddl).Error; err != nil {
+		if err := tx.Exec(s.logicalTableSvc.generatePostgreSQLDDL(&preview, fields)).Error; err != nil {
 			return err
 		}
 		return tx.Exec("COMMENT ON TABLE " + qualifiedIdentifier(schemaName, batch.StagingName) + " IS " + quoteSQLLiteral(expectedMarker)).Error
@@ -531,11 +736,23 @@ func (s *MaterializationService) executePrepare(
 		"schema_version": "model.materialization/v1",
 		"outputs": commonModels.JSONMap{
 			"batch_id": batch.ID,
+			"staging_locator": (&resourcetree.ResourceLocator{
+				EngineID: parentLocator.EngineID,
+				Path:     append(append([]string(nil), parentLocator.Path...), batch.StagingName),
+				Type:     resourcetree.TypeTable,
+			}).ToURI(),
 		},
 	}, nil
 }
 
-func (s *MaterializationService) executePublish(
+type materializationPhysicalColumn struct {
+	ColumnName   string `gorm:"column:column_name"`
+	DataType     string `gorm:"column:data_type"`
+	Nullable     bool   `gorm:"column:nullable"`
+	IsPrimaryKey bool   `gorm:"column:is_primary_key"`
+}
+
+func (s *MaterializationService) executeSeal(
 	ctx context.Context,
 	execution *commonExecution.TaskExecution,
 	batch *models.MaterializationBatch,
@@ -543,6 +760,14 @@ func (s *MaterializationService) executePublish(
 	engine, err := s.executionEngine(ctx, execution, batch)
 	if err != nil {
 		return nil, err
+	}
+	table, fields, parentLocator, _, fingerprint, err := s.loadApprovedDefinition(batch.LogicalTableID, batch.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	if table.Version != batch.LogicalTableVersion || fingerprint != batch.SchemaFingerprint ||
+		int64(parentLocator.EngineID) != batch.EngineID || parentLocator.ToURI() != batch.TargetParentLocator {
+		return nil, errors.New("logical table changed before materialization seal")
 	}
 	schemaName, err := materializationSchemaName(batch.TargetParentLocator)
 	if err != nil {
@@ -553,63 +778,289 @@ func (s *MaterializationService) executePublish(
 		return nil, err
 	}
 	expectedMarker := materializationMarker(batch.LogicalTableID, batch.SchemaFingerprint, batch.ID)
+	var physical []materializationPhysicalColumn
 	err = pool.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		targetComment, targetExists, err := physicalTableComment(tx, schemaName, batch.TargetName)
+		comment, exists, err := physicalTableComment(tx, schemaName, batch.StagingName)
 		if err != nil {
 			return err
 		}
-		stagingComment, stagingExists, err := physicalTableComment(tx, schemaName, batch.StagingName)
-		if err != nil {
-			return err
+		if !exists || comment != expectedMarker {
+			return errors.New("materialization staging ownership marker is invalid")
 		}
-		if !stagingExists {
-			if targetExists && targetComment == expectedMarker {
-				return nil
-			}
-			return fmt.Errorf("prepared staging table is missing")
-		}
-		if stagingComment != expectedMarker {
-			return fmt.Errorf("staging table ownership marker does not match batch")
-		}
-		if targetExists && !materializationMarkerMatchesOwner(targetComment, batch.LogicalTableID, batch.SchemaFingerprint) {
-			return fmt.Errorf("target table schema marker does not match approved logical schema")
-		}
-		if targetExists {
-			backupName := materializationTemporaryName(batch.TargetName, "backup", batch.ID)
-			if _, backupExists, err := physicalTableComment(tx, schemaName, backupName); err != nil {
-				return err
-			} else if backupExists {
-				return fmt.Errorf("materialization backup table name is already occupied")
-			}
-			if err := tx.Exec("ALTER TABLE " + qualifiedIdentifier(schemaName, batch.TargetName) + " RENAME TO " + quoteIdentifier(backupName)).Error; err != nil {
-				return err
-			}
-			if err := tx.Exec("ALTER TABLE " + qualifiedIdentifier(schemaName, batch.StagingName) + " RENAME TO " + quoteIdentifier(batch.TargetName)).Error; err != nil {
-				return err
-			}
-			return tx.Exec("DROP TABLE " + qualifiedIdentifier(schemaName, backupName)).Error
-		}
-		return tx.Exec("ALTER TABLE " + qualifiedIdentifier(schemaName, batch.StagingName) + " RENAME TO " + quoteIdentifier(batch.TargetName)).Error
+		return tx.Raw(`
+			SELECT a.attname AS column_name,
+			       pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type,
+			       NOT a.attnotnull AS nullable,
+			       EXISTS (
+			         SELECT 1 FROM pg_catalog.pg_index i
+			         WHERE i.indrelid = c.oid AND i.indisprimary AND a.attnum = ANY(i.indkey)
+			       ) AS is_primary_key
+			FROM pg_catalog.pg_class c
+			JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+			JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
+			WHERE n.nspname = ? AND c.relname = ? AND c.relkind IN ('r', 'p')
+			  AND a.attnum > 0 AND NOT a.attisdropped
+			ORDER BY a.attnum`, schemaName, batch.StagingName).Scan(&physical).Error
 	})
 	if err != nil {
 		return nil, err
 	}
-	parentLocator, err := resourcetree.ParseURI(batch.TargetParentLocator)
-	if err != nil {
-		return nil, err
+	if len(physical) != len(fields) {
+		return nil, errors.New("materialization staging column count does not match logical schema")
 	}
-	targetLocator := (&resourcetree.ResourceLocator{
+	for index, field := range fields {
+		column := physical[index]
+		expectedType := normalizePostgreSQLType(s.logicalTableSvc.mapDataTypeToPostgreSQL(field.DataType, field.Length))
+		if column.ColumnName != field.ColumnName || normalizePostgreSQLType(column.DataType) != expectedType ||
+			column.Nullable != field.Nullable || column.IsPrimaryKey != field.IsPK {
+			return nil, fmt.Errorf("materialization staging column %q does not match logical schema", field.ColumnName)
+		}
+	}
+	stagingLocator := (&resourcetree.ResourceLocator{
 		EngineID: parentLocator.EngineID,
-		Path:     append(append([]string(nil), parentLocator.Path...), batch.TargetName),
+		Path:     append(append([]string(nil), parentLocator.Path...), batch.StagingName),
 		Type:     resourcetree.TypeTable,
 	}).ToURI()
 	return commonModels.JSONMap{
 		"schema_version": "model.materialization/v1",
 		"outputs": commonModels.JSONMap{
-			"batch_id":       batch.ID,
-			"target_locator": targetLocator,
+			"batch_id":           batch.ID,
+			"staging_locator":    stagingLocator,
+			"schema_fingerprint": batch.SchemaFingerprint,
 		},
 	}, nil
+}
+
+func normalizePostgreSQLType(value string) string {
+	value = strings.ToLower(strings.Join(strings.Fields(value), " "))
+	value = strings.ReplaceAll(value, "varchar(", "character varying(")
+	switch value {
+	case "timestamp":
+		return "timestamp without time zone"
+	case "double precision":
+		return value
+	}
+	return value
+}
+
+func (s *MaterializationService) executePublish(
+	ctx context.Context,
+	execution *commonExecution.TaskExecution,
+	batch *models.MaterializationBatch,
+) (commonModels.JSONMap, error) {
+	targetLocators, err := s.publishBatches(ctx, execution, []models.MaterializationBatch{*batch})
+	if err != nil {
+		return nil, err
+	}
+	return commonModels.JSONMap{
+		"schema_version": "model.materialization/v1",
+		"outputs": commonModels.JSONMap{
+			"batch_id":       batch.ID,
+			"target_locator": targetLocators[0],
+		},
+	}, nil
+}
+
+func (s *MaterializationService) executeGroupPublish(
+	ctx context.Context,
+	execution *commonExecution.TaskExecution,
+	batches []models.MaterializationBatch,
+) (commonModels.JSONMap, error) {
+	if s.groupService == nil || execution == nil || len(batches) == 0 || execution.SourceTaskID == nil {
+		return nil, errors.New("materialization group execution is incomplete")
+	}
+	groupID, err := strconv.ParseInt(strings.TrimSpace(*execution.SourceTaskID), 10, 64)
+	if err != nil || groupID <= 0 {
+		return nil, errors.New("materialization group execution has an invalid task identity")
+	}
+	groupVersion, err := executionConfigPositiveInt64(execution.ExecutionConfig, "group_version")
+	if err != nil {
+		return nil, err
+	}
+	group, err := s.groupService.Get(ctx, int64(execution.TenantID), groupID)
+	if err != nil {
+		return nil, err
+	}
+	if group.Version != groupVersion || len(group.Members) != len(batches) {
+		return nil, errors.New("materialization group definition changed after publish was queued")
+	}
+	for index, member := range group.Members {
+		if member.LogicalTableID != batches[index].LogicalTableID {
+			return nil, errors.New("materialization group members changed after publish was queued")
+		}
+	}
+	targetLocators, err := s.publishBatches(ctx, execution, batches)
+	if err != nil {
+		return nil, err
+	}
+	batchIDs := make([]string, 0, len(batches))
+	for _, batch := range batches {
+		batchIDs = append(batchIDs, batch.ID)
+	}
+	return commonModels.JSONMap{
+		"schema_version": "model.materialization-group/v1",
+		"outputs":        commonModels.JSONMap{"batch_ids": batchIDs, "target_locators": targetLocators},
+	}, nil
+}
+
+type materializationPublishCandidate struct {
+	batch          models.MaterializationBatch
+	schemaName     string
+	expectedMarker string
+	backupName     string
+	targetExists   bool
+	alreadyDone    bool
+}
+
+func (s *MaterializationService) publishBatches(
+	ctx context.Context,
+	execution *commonExecution.TaskExecution,
+	batches []models.MaterializationBatch,
+) ([]string, error) {
+	if len(batches) == 0 {
+		return nil, errors.New("materialization publish has no batches")
+	}
+	engine, err := s.executionEngine(ctx, execution, &batches[0])
+	if err != nil {
+		return nil, err
+	}
+	pool, err := materializationPool(engine)
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]materializationPublishCandidate, 0, len(batches))
+	targetLocators := make([]string, 0, len(batches))
+	for _, batch := range batches {
+		if batch.EngineID != batches[0].EngineID || batch.Status != models.MaterializationBatchPublishing ||
+			batch.WriterExecutionID == nil || batch.SealExecutionID == nil || strings.TrimSpace(batch.StagingName) == "" {
+			return nil, errors.New("materialization publish batch set is incomplete or spans engines")
+		}
+		table, _, parentLocator, targetName, fingerprint, err := s.loadApprovedDefinition(batch.LogicalTableID, batch.TenantID)
+		if err != nil {
+			return nil, err
+		}
+		if table.Version != batch.LogicalTableVersion || fingerprint != batch.SchemaFingerprint ||
+			int64(parentLocator.EngineID) != batch.EngineID || parentLocator.ToURI() != batch.TargetParentLocator || targetName != batch.TargetName {
+			return nil, errors.New("logical table changed after materialization publish was queued")
+		}
+		schemaName, err := materializationSchemaName(batch.TargetParentLocator)
+		if err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, materializationPublishCandidate{
+			batch:          batch,
+			schemaName:     schemaName,
+			expectedMarker: materializationMarker(batch.LogicalTableID, batch.SchemaFingerprint, batch.ID),
+			backupName:     materializationTemporaryName(batch.TargetName, "backup", batch.ID),
+		})
+		targetLocators = append(targetLocators, (&resourcetree.ResourceLocator{
+			EngineID: parentLocator.EngineID,
+			Path:     append(append([]string(nil), parentLocator.Path...), batch.TargetName),
+			Type:     resourcetree.TypeTable,
+		}).ToURI())
+	}
+	if err := publishMaterializationCandidates(ctx, pool, candidates); err != nil {
+		return nil, err
+	}
+	return targetLocators, nil
+}
+
+func publishMaterializationCandidates(
+	ctx context.Context,
+	pool *gorm.DB,
+	candidates []materializationPublishCandidate,
+) error {
+	if pool == nil || len(candidates) == 0 {
+		return errors.New("materialization publish candidates are missing")
+	}
+	return pool.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		alreadyDone := 0
+		for index := range candidates {
+			candidate := &candidates[index]
+			targetComment, targetExists, err := physicalTableComment(tx, candidate.schemaName, candidate.batch.TargetName)
+			if err != nil {
+				return err
+			}
+			candidate.targetExists = targetExists
+			stagingComment, stagingExists, err := physicalTableComment(tx, candidate.schemaName, candidate.batch.StagingName)
+			if err != nil {
+				return err
+			}
+			if !stagingExists {
+				if targetExists && targetComment == candidate.expectedMarker {
+					candidate.alreadyDone = true
+					alreadyDone++
+					continue
+				}
+				return errors.New("prepared staging table is missing")
+			}
+			if stagingComment != candidate.expectedMarker {
+				return errors.New("staging table ownership marker does not match batch")
+			}
+			if targetExists && !materializationMarkerMatchesOwner(targetComment, candidate.batch.LogicalTableID, candidate.batch.SchemaFingerprint) {
+				return errors.New("target table schema marker does not match approved logical schema")
+			}
+			if targetExists {
+				if _, backupExists, err := physicalTableComment(tx, candidate.schemaName, candidate.backupName); err != nil {
+					return err
+				} else if backupExists {
+					return errors.New("materialization backup table name is already occupied")
+				}
+			}
+		}
+		if alreadyDone == len(candidates) {
+			return nil
+		}
+		if alreadyDone != 0 {
+			return errors.New("materialization group physical state is partially published")
+		}
+		for index := range candidates {
+			candidate := &candidates[index]
+			if candidate.targetExists {
+				if err := tx.Exec("ALTER TABLE " + qualifiedIdentifier(candidate.schemaName, candidate.batch.TargetName) + " RENAME TO " + quoteIdentifier(candidate.backupName)).Error; err != nil {
+					return err
+				}
+			}
+		}
+		for index := range candidates {
+			candidate := &candidates[index]
+			if err := tx.Exec("ALTER TABLE " + qualifiedIdentifier(candidate.schemaName, candidate.batch.StagingName) + " RENAME TO " + quoteIdentifier(candidate.batch.TargetName)).Error; err != nil {
+				return err
+			}
+		}
+		for index := range candidates {
+			candidate := &candidates[index]
+			if candidate.targetExists {
+				if err := tx.Exec("DROP TABLE " + qualifiedIdentifier(candidate.schemaName, candidate.backupName)).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+}
+
+func executionConfigPositiveInt64(config commonModels.JSONMap, key string) (int64, error) {
+	if config == nil {
+		return 0, fmt.Errorf("materialization execution config %s is missing", key)
+	}
+	var value int64
+	switch typed := config[key].(type) {
+	case int:
+		value = int64(typed)
+	case int64:
+		value = typed
+	case float64:
+		if typed == float64(int64(typed)) {
+			value = int64(typed)
+		}
+	case json.Number:
+		value, _ = typed.Int64()
+	}
+	if value <= 0 {
+		return 0, fmt.Errorf("materialization execution config %s is invalid", key)
+	}
+	return value, nil
 }
 
 func materializationSchemaName(locatorText string) (string, error) {

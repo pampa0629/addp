@@ -337,7 +337,7 @@ func TestEnrichSingleTableFileItemDetectsFormatFromContent(t *testing.T) {
 		"lake3",
 		size,
 		false,
-		func(path string) plugin.CatalogPath {
+		func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
 	)
@@ -508,7 +508,7 @@ func (r staticContentReader) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{}
 }
 func (r staticContentReader) StoreSemantics() plugin.StoreSemantics { return plugin.StoreSemantics{} }
-func (r staticContentReader) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
+func (r staticContentReader) OpenContent(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader(r.content)), nil
 }
 
@@ -530,7 +530,7 @@ func (r mapContentReader) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{}
 }
 func (r mapContentReader) StoreSemantics() plugin.StoreSemantics { return plugin.StoreSemantics{} }
-func (r mapContentReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+func (r mapContentReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	data, ok := r.content[path.StringPath()]
 	if !ok {
 		return nil, fmt.Errorf("content not found: %s", path.StringPath())

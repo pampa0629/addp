@@ -35,7 +35,7 @@
 | `document` | 以阅读、正文提取、全文索引为主 | `DocumentInfoProvider`，需要后端文本时实现 `DocumentTextReader`；原始文件预览由 engine / contentio / URL 内容通道提供 |
 | `media` | 图片、视频、音频等可感知媒体 | `MediaInfoProvider`，需要缩略图时实现 media content reader |
 | `container` | 内部包含 sheet、table、layer、entry 等子对象 | `ContainerInfoProvider` / `ContainerChildResolver`；父容器先写入轻量 `type_info.container`，child 内容按需解析 |
-| `graph` | 节点、边、关系结构 | 引擎原生图使用 `CatalogFactsProvider` 的 `CatalogFacts.Graph` / `GraphSampleProvider`；文件型图数据先补对应 format 能力 |
+| `graph` | 节点、边、关系结构 | 引擎原生图使用 `EngineCatalogFactsProvider` 的 `EngineCatalogFacts.Graph` / `GraphSampleProvider`；文件型图数据先补对应 format 能力 |
 | `model_3d` | 三维空间对象、网格、场景、构件、倾斜摄影或 BIM 模型 | `Model3DInfoProvider`；第一阶段可先实现 descriptor 和轻量 info，预览通过 Manager content reader / storage stream |
 | `point_cloud` | 三维点集合、点属性、空间范围和抽样 / LOD 是主要消费方式 | `PointCloudInfoProvider`；需要预览时实现点云抽样 reader 或 Manager 派生预览能力 |
 | `gaussian_splat` | 三维高斯基元、尺度、旋转、不透明度和视角相关颜色是主要消费方式 | `GaussianSplatInfoProvider`；需要预览时实现高斯泼溅 renderer 或 Manager 派生 splat artifact |

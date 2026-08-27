@@ -21,6 +21,7 @@ const (
 	defaultExecutionAuthorizationTTL              = 15 * time.Minute
 	maximumExecutionAuthorizationTTL              = time.Hour
 	developExecutionPermission                    = "develop.task.execute"
+	transferExecutionPermission                   = "transfer.task.execute"
 	qualityExecutionPermission                    = "quality.check_task.execute"
 	modelMaterializationExecutionPermission       = "model.materialization.execute"
 	serviceQuerySamplePermission                  = "service.definition.create"
@@ -43,19 +44,19 @@ var executionEffectPermissions = map[string]string{
 }
 
 var executionAudienceClients = map[string]string{
-	commonExecution.AudienceModel:   "addp-model",
-	commonExecution.AudienceQuality: "addp-quality",
-	commonExecution.AudienceDevelop: "addp-develop",
-	commonExecution.AudienceDuckDB:  "addp-duckdb",
-	commonExecution.AudienceService: "addp-service",
+	commonExecution.AudienceModel:    "addp-model",
+	commonExecution.AudienceQuality:  "addp-quality",
+	commonExecution.AudienceDevelop:  "addp-develop",
+	commonExecution.AudienceTransfer: "addp-transfer",
+	commonExecution.AudienceDuckDB:   "addp-duckdb",
+	commonExecution.AudienceService:  "addp-service",
 }
 
 type IssueExecutionAuthorizationInput struct {
 	SourceAccessToken string
 	Audience          string
 	ExecutionID       uuid.UUID
-	EngineIDs         []int64
-	Effects           []string
+	Accesses          []ExecutionEngineAccessScope
 	ExpiresIn         time.Duration
 	Audit             AuditMetadata
 }
@@ -64,8 +65,9 @@ type IssueExecutionAuthorizationFromExecutionInput struct {
 	ParentExecutionID  uuid.UUID
 	Audience           string
 	ExecutionID        uuid.UUID
-	EngineIDs          []int64
-	Effects            []string
+	Attempt            int
+	LeaseToken         uuid.UUID
+	Accesses           []ExecutionEngineAccessScope
 	ExpiresIn          time.Duration
 	ServicePrincipalID int64
 	ServiceClientID    string
@@ -75,7 +77,7 @@ type IssueExecutionAuthorizationFromExecutionInput struct {
 
 type IssueExecutionAuthorizationFromServiceDefinitionInput struct {
 	ExecutionID        uuid.UUID
-	EngineIDs          []int64
+	Accesses           []ExecutionEngineAccessScope
 	DefinitionID       int64
 	DefinitionVersion  string
 	ServicePrincipalID int64
@@ -89,8 +91,7 @@ type IssuedExecutionAuthorization struct {
 	ID                         int64
 	ExecutionID                uuid.UUID
 	Audience                   string
-	EngineIDs                  []int64
-	Effects                    []string
+	Accesses                   []ExecutionEngineAccessScope
 	ExpiresAt                  time.Time
 	ActorPrincipalID           int64
 	TenantID                   int64
@@ -99,6 +100,11 @@ type IssuedExecutionAuthorization struct {
 	SourceType                 string
 	SourceDefinitionID         *int64
 	SourceDefinitionVersion    *string
+}
+
+type ExecutionEngineAccessScope struct {
+	EngineID int64
+	Effects  []string
 }
 
 type AuthorizeExecutionEngineAccessInput struct {
@@ -140,8 +146,8 @@ func (s *ExecutionAuthorizationService) Issue(
 	if s == nil || s.repository == nil {
 		return nil, fmt.Errorf("%w: execution authorization service is required", commonapi.ErrBadRequest)
 	}
-	audience, engineIDs, effects, ttl, err := normalizeExecutionAuthorizationRequest(
-		input.Audience, input.ExecutionID, input.EngineIDs, input.Effects, input.ExpiresIn,
+	audience, accesses, effects, ttl, err := normalizeExecutionAuthorizationRequest(
+		input.Audience, input.ExecutionID, input.Accesses, input.ExpiresIn,
 	)
 	if err != nil {
 		return nil, err
@@ -200,11 +206,9 @@ func (s *ExecutionAuthorizationService) Issue(
 			IssuedAuthorizationVersion: principal.AuthorizationVersion,
 			SourceType:                 executionAuthorizationSourceUser,
 			ExecutionID:                input.ExecutionID, Audience: audience,
-			Effects:   pq.StringArray(append([]string(nil), effects...)),
-			EngineIDs: pq.Int64Array(append([]int64(nil), engineIDs...)),
 			ExpiresAt: expiresAt, CreatedAt: now,
 		}
-		if err := tx.CreateExecutionAuthorization(ctx, authorization); err != nil {
+		if err := tx.CreateExecutionAuthorization(ctx, authorization, executionAuthorizationAccessRows(accesses)); err != nil {
 			return err
 		}
 
@@ -222,7 +226,7 @@ func (s *ExecutionAuthorizationService) Issue(
 			EntityType: "execution_authorization", EntityID: strconv.FormatInt(authorization.ID, 10),
 			Details: map[string]any{
 				"audience": audience, "execution_id": input.ExecutionID.String(),
-				"engine_ids": formatExecutionEngineIDs(engineIDs), "effects": append([]string(nil), effects...),
+				"accesses":              executionAuthorizationAccessAudit(accesses),
 				"expires_at":            expiresAt.Format(time.RFC3339Nano),
 				"authorization_version": strconv.FormatInt(principal.AuthorizationVersion, 10),
 			},
@@ -232,7 +236,7 @@ func (s *ExecutionAuthorizationService) Issue(
 
 		issued = &IssuedExecutionAuthorization{
 			ID: authorization.ID, ExecutionID: authorization.ExecutionID, Audience: audience,
-			EngineIDs: append([]int64(nil), engineIDs...), Effects: append([]string(nil), effects...),
+			Accesses:  cloneExecutionEngineAccessScopes(accesses),
 			ExpiresAt: expiresAt, ActorPrincipalID: principal.ID, TenantID: *lockedSnapshot.TenantID,
 			TenantMembershipID:         *lockedSnapshot.TenantMembershipID,
 			IssuedAuthorizationVersion: principal.AuthorizationVersion,
@@ -256,8 +260,8 @@ func (s *ExecutionAuthorizationService) IssueFromServiceDefinition(
 	if input.ExpiresIn == 0 {
 		input.ExpiresIn = time.Minute
 	}
-	audience, engineIDs, effects, ttl, err := normalizeExecutionAuthorizationRequest(
-		"duckdb", input.ExecutionID, input.EngineIDs, []string{"read"}, input.ExpiresIn,
+	audience, accesses, effects, ttl, err := normalizeExecutionAuthorizationRequest(
+		"duckdb", input.ExecutionID, input.Accesses, input.ExpiresIn,
 	)
 	if err != nil {
 		return nil, err
@@ -265,6 +269,9 @@ func (s *ExecutionAuthorizationService) IssueFromServiceDefinition(
 	if input.DefinitionID <= 0 || !serviceDefinitionVersionPattern.MatchString(input.DefinitionVersion) ||
 		input.ServicePrincipalID <= 0 || input.ServiceClientID != "addp-service" || input.TenantID <= 0 {
 		return nil, ErrExecutionAuthorizationPermissionDenied
+	}
+	if len(effects) != 1 || effects[0] != "read" {
+		return nil, fmt.Errorf("%w: service definition authorization must be read-only", commonapi.ErrBadRequest)
 	}
 	if ttl > time.Minute {
 		return nil, fmt.Errorf("%w: service definition authorization exceeds one minute", commonapi.ErrBadRequest)
@@ -292,7 +299,8 @@ func (s *ExecutionAuthorizationService) IssueFromServiceDefinition(
 			membership.PrincipalID != principal.ID || tenant.Status != TenantStatusActive {
 			return ErrExecutionAuthorizationUnavailable
 		}
-		for _, engineID := range engineIDs {
+		for _, access := range accesses {
+			engineID := access.EngineID
 			available, err := tx.ExecutionAuthorizationEngineAvailable(ctx, input.TenantID, engineID)
 			if err != nil {
 				return err
@@ -310,10 +318,9 @@ func (s *ExecutionAuthorizationService) IssueFromServiceDefinition(
 			SourceType:         executionAuthorizationSourceServiceDefinition,
 			SourceDefinitionID: &definitionID, SourceDefinitionVersion: &definitionVersion,
 			ExecutionID: input.ExecutionID, Audience: audience,
-			Effects: pq.StringArray(effects), EngineIDs: pq.Int64Array(engineIDs),
 			ExpiresAt: expiresAt, CreatedAt: now.UTC(),
 		}
-		if err := tx.CreateExecutionAuthorization(ctx, authorization); err != nil {
+		if err := tx.CreateExecutionAuthorization(ctx, authorization, executionAuthorizationAccessRows(accesses)); err != nil {
 			return err
 		}
 		if err := NewAuditWriter(tx).Write(ctx, AuditEvent{
@@ -324,14 +331,14 @@ func (s *ExecutionAuthorizationService) IssueFromServiceDefinition(
 				"audience": audience, "execution_id": input.ExecutionID.String(),
 				"definition_id":      strconv.FormatInt(input.DefinitionID, 10),
 				"definition_version": input.DefinitionVersion,
-				"engine_ids":         formatExecutionEngineIDs(engineIDs), "effects": effects,
+				"accesses":           executionAuthorizationAccessAudit(accesses),
 			},
 		}); err != nil {
 			return err
 		}
 		issued = &IssuedExecutionAuthorization{
 			ID: authorization.ID, ExecutionID: input.ExecutionID, Audience: audience,
-			EngineIDs: append([]int64(nil), engineIDs...), Effects: append([]string(nil), effects...),
+			Accesses:  cloneExecutionEngineAccessScopes(accesses),
 			ExpiresAt: expiresAt, ActorPrincipalID: principal.ID, TenantID: input.TenantID,
 			TenantMembershipID: membership.ID, IssuedAuthorizationVersion: principal.AuthorizationVersion,
 			SourceType:         executionAuthorizationSourceServiceDefinition,
@@ -352,8 +359,8 @@ func (s *ExecutionAuthorizationService) IssueFromExecution(
 	if s == nil || s.repository == nil {
 		return nil, fmt.Errorf("%w: execution authorization service is required", commonapi.ErrBadRequest)
 	}
-	audience, engineIDs, effects, ttl, err := normalizeExecutionAuthorizationRequest(
-		input.Audience, input.ExecutionID, input.EngineIDs, input.Effects, input.ExpiresIn,
+	audience, accesses, effects, ttl, err := normalizeExecutionAuthorizationRequest(
+		input.Audience, input.ExecutionID, input.Accesses, input.ExpiresIn,
 	)
 	if err != nil {
 		return nil, err
@@ -362,12 +369,17 @@ func (s *ExecutionAuthorizationService) IssueFromExecution(
 	if audience == "duckdb" {
 		expectedClientID = "addp-develop"
 	}
+	hasAttempt := input.Attempt != 0
+	hasLeaseToken := input.LeaseToken != uuid.Nil
+	if hasAttempt != hasLeaseToken || input.Attempt < 0 {
+		return nil, fmt.Errorf("%w: lease attempt and token must be provided together", commonapi.ErrBadRequest)
+	}
 	if input.ParentExecutionID == uuid.Nil || input.ServicePrincipalID <= 0 || input.TenantID <= 0 ||
 		input.ServiceClientID != expectedClientID {
 		return nil, ErrExecutionAuthorizationPermissionDenied
 	}
 	provenance, err := s.repository.GetExecutionAuthorizationProvenance(
-		ctx, input.ParentExecutionID, input.ExecutionID, audience,
+		ctx, input.ParentExecutionID, input.ExecutionID, audience, input.Attempt, input.LeaseToken,
 	)
 	if err != nil {
 		return nil, ErrExecutionAuthorizationUnavailable
@@ -395,7 +407,8 @@ func (s *ExecutionAuthorizationService) IssueFromExecution(
 		if !containsAllExecutionPermissions(permissionRows, audience, effects) {
 			return ErrExecutionAuthorizationPermissionDenied
 		}
-		for _, engineID := range engineIDs {
+		for _, access := range accesses {
+			engineID := access.EngineID
 			available, err := tx.ExecutionAuthorizationEngineAvailable(ctx, provenance.TenantID, engineID)
 			if err != nil {
 				return err
@@ -405,17 +418,25 @@ func (s *ExecutionAuthorizationService) IssueFromExecution(
 			}
 		}
 		expiresAt := now.Add(ttl)
+		var sourceExecutionAttempt *int
+		var sourceExecutionLeaseToken *uuid.UUID
+		if hasAttempt {
+			attempt := input.Attempt
+			leaseToken := input.LeaseToken
+			sourceExecutionAttempt = &attempt
+			sourceExecutionLeaseToken = &leaseToken
+		}
 		authorization := &ExecutionAuthorization{
 			ActorPrincipalID: principal.ID, TenantID: provenance.TenantID,
 			TenantMembershipID:         membership.ID,
 			IssuedAuthorizationVersion: principal.AuthorizationVersion,
 			SourceType:                 executionAuthorizationSourceUser,
 			ExecutionID:                input.ExecutionID, Audience: audience,
-			Effects:   pq.StringArray(append([]string(nil), effects...)),
-			EngineIDs: pq.Int64Array(append([]int64(nil), engineIDs...)),
-			ExpiresAt: expiresAt, CreatedAt: now,
+			SourceExecutionAttempt:    sourceExecutionAttempt,
+			SourceExecutionLeaseToken: sourceExecutionLeaseToken,
+			ExpiresAt:                 expiresAt, CreatedAt: now,
 		}
-		if err := tx.CreateExecutionAuthorization(ctx, authorization); err != nil {
+		if err := tx.CreateExecutionAuthorization(ctx, authorization, executionAuthorizationAccessRows(accesses)); err != nil {
 			return err
 		}
 		audit := input.Audit
@@ -427,14 +448,14 @@ func (s *ExecutionAuthorizationService) IssueFromExecution(
 				"audience": audience, "execution_id": input.ExecutionID.String(),
 				"parent_execution_id": input.ParentExecutionID.String(),
 				"source_principal_id": strconv.FormatInt(principal.ID, 10),
-				"engine_ids":          formatExecutionEngineIDs(engineIDs), "effects": append([]string(nil), effects...),
+				"accesses":            executionAuthorizationAccessAudit(accesses),
 			},
 		}); err != nil {
 			return err
 		}
 		issued = &IssuedExecutionAuthorization{
 			ID: authorization.ID, ExecutionID: authorization.ExecutionID, Audience: audience,
-			EngineIDs: append([]int64(nil), engineIDs...), Effects: append([]string(nil), effects...),
+			Accesses:  cloneExecutionEngineAccessScopes(accesses),
 			ExpiresAt: expiresAt, ActorPrincipalID: principal.ID, TenantID: provenance.TenantID,
 			TenantMembershipID: membership.ID, IssuedAuthorizationVersion: principal.AuthorizationVersion,
 			SourceType: executionAuthorizationSourceUser,
@@ -509,14 +530,23 @@ func (s *ExecutionAuthorizationService) AuthorizeEngineAccess(
 				return err
 			}
 		}
-		if authorization.RevokedAt != nil || !authorization.ExpiresAt.After(now) ||
+		if authorization.SealedAt == nil || authorization.RevokedAt != nil || !authorization.ExpiresAt.After(now) ||
 			authorization.ExecutionID != input.ExecutionID || authorization.Audience == "" {
 			return ErrExecutionAuthorizationUnavailable
 		}
+		if authorization.SourceExecutionAttempt != nil || authorization.SourceExecutionLeaseToken != nil {
+			current, err := tx.ExecutionAuthorizationLeaseCurrent(ctx, authorization)
+			if err != nil || !current {
+				return ErrExecutionAuthorizationUnavailable
+			}
+		}
+		access, err := tx.GetExecutionAuthorizationEngineAccess(ctx, authorization.ID, input.EngineID)
+		if err != nil {
+			return ErrExecutionAuthorizationPermissionDenied
+		}
 		expectedClientID, exists := executionAudienceClients[authorization.Audience]
 		if !exists || input.ServiceClientID != expectedClientID || input.TenantID != authorization.TenantID ||
-			!containsExecutionEngine(authorization.EngineIDs, input.EngineID) ||
-			!containsAllExecutionEffects(authorization.Effects, requiredEffects) {
+			!containsAllExecutionEffects(access.Effects, requiredEffects) {
 			return ErrExecutionAuthorizationPermissionDenied
 		}
 
@@ -641,10 +671,9 @@ func lockAndValidateExecutionActor(
 func normalizeExecutionAuthorizationRequest(
 	audience string,
 	executionID uuid.UUID,
-	engineIDs []int64,
-	effects []string,
+	accesses []ExecutionEngineAccessScope,
 	expiresIn time.Duration,
-) (string, []int64, []string, time.Duration, error) {
+) (string, []ExecutionEngineAccessScope, []string, time.Duration, error) {
 	audience = strings.TrimSpace(audience)
 	if executionID == uuid.Nil || audience == "" || executionAudienceClients[audience] == "" {
 		return "", nil, nil, 0, fmt.Errorf("%w: unsupported execution authorization audience", commonapi.ErrBadRequest)
@@ -655,35 +684,78 @@ func normalizeExecutionAuthorizationRequest(
 	if expiresIn <= 0 || expiresIn > maximumExecutionAuthorizationTTL || expiresIn%time.Second != 0 {
 		return "", nil, nil, 0, fmt.Errorf("%w: invalid execution authorization expiry", commonapi.ErrBadRequest)
 	}
-	normalizedEngineIDs, err := normalizeExecutionEngineIDs(engineIDs)
+	normalizedAccesses, normalizedEffects, err := normalizeExecutionEngineAccessScopes(accesses)
 	if err != nil {
 		return "", nil, nil, 0, err
 	}
-	normalizedEffects, err := normalizeExecutionEffects(effects)
-	if err != nil {
-		return "", nil, nil, 0, err
-	}
-	return audience, normalizedEngineIDs, normalizedEffects, expiresIn, nil
+	return audience, normalizedAccesses, normalizedEffects, expiresIn, nil
 }
 
-func normalizeExecutionEngineIDs(engineIDs []int64) ([]int64, error) {
-	if len(engineIDs) == 0 {
-		return nil, fmt.Errorf("%w: execution authorization requires an engine", commonapi.ErrBadRequest)
+func normalizeExecutionEngineAccessScopes(accesses []ExecutionEngineAccessScope) ([]ExecutionEngineAccessScope, []string, error) {
+	if len(accesses) == 0 {
+		return nil, nil, fmt.Errorf("%w: execution authorization requires an engine", commonapi.ErrBadRequest)
 	}
-	seen := make(map[int64]struct{}, len(engineIDs))
-	normalized := make([]int64, 0, len(engineIDs))
-	for _, engineID := range engineIDs {
-		if engineID <= 0 {
-			return nil, fmt.Errorf("%w: invalid engine ID", commonapi.ErrBadRequest)
+	seen := make(map[int64]struct{}, len(accesses))
+	allEffects := make(map[string]struct{})
+	normalized := make([]ExecutionEngineAccessScope, 0, len(accesses))
+	for _, access := range accesses {
+		if access.EngineID <= 0 {
+			return nil, nil, fmt.Errorf("%w: invalid engine ID", commonapi.ErrBadRequest)
 		}
-		if _, duplicate := seen[engineID]; duplicate {
-			return nil, fmt.Errorf("%w: duplicate engine ID", commonapi.ErrBadRequest)
+		if _, duplicate := seen[access.EngineID]; duplicate {
+			return nil, nil, fmt.Errorf("%w: duplicate engine ID", commonapi.ErrBadRequest)
 		}
-		seen[engineID] = struct{}{}
-		normalized = append(normalized, engineID)
+		effects, err := normalizeExecutionEffects(access.Effects)
+		if err != nil {
+			return nil, nil, err
+		}
+		seen[access.EngineID] = struct{}{}
+		for _, effect := range effects {
+			allEffects[effect] = struct{}{}
+		}
+		normalized = append(normalized, ExecutionEngineAccessScope{EngineID: access.EngineID, Effects: effects})
 	}
-	sort.Slice(normalized, func(i, j int) bool { return normalized[i] < normalized[j] })
-	return normalized, nil
+	sort.Slice(normalized, func(i, j int) bool { return normalized[i].EngineID < normalized[j].EngineID })
+	union, err := normalizeExecutionEffects(mapExecutionEffects(allEffects))
+	if err != nil {
+		return nil, nil, err
+	}
+	return normalized, union, nil
+}
+
+func mapExecutionEffects(values map[string]struct{}) []string {
+	effects := make([]string, 0, len(values))
+	for effect := range values {
+		effects = append(effects, effect)
+	}
+	return effects
+}
+
+func executionAuthorizationAccessRows(accesses []ExecutionEngineAccessScope) []ExecutionAuthorizationEngineAccess {
+	rows := make([]ExecutionAuthorizationEngineAccess, 0, len(accesses))
+	for _, access := range accesses {
+		rows = append(rows, ExecutionAuthorizationEngineAccess{EngineID: access.EngineID, Effects: pq.StringArray(append([]string(nil), access.Effects...))})
+	}
+	return rows
+}
+
+func cloneExecutionEngineAccessScopes(accesses []ExecutionEngineAccessScope) []ExecutionEngineAccessScope {
+	cloned := make([]ExecutionEngineAccessScope, 0, len(accesses))
+	for _, access := range accesses {
+		cloned = append(cloned, ExecutionEngineAccessScope{EngineID: access.EngineID, Effects: append([]string(nil), access.Effects...)})
+	}
+	return cloned
+}
+
+func executionAuthorizationAccessAudit(accesses []ExecutionEngineAccessScope) []map[string]any {
+	result := make([]map[string]any, 0, len(accesses))
+	for _, access := range accesses {
+		result = append(result, map[string]any{
+			"engine_id": strconv.FormatInt(access.EngineID, 10),
+			"effects":   append([]string(nil), access.Effects...),
+		})
+	}
+	return result
 }
 
 func normalizeExecutionEffects(effects []string) ([]string, error) {
@@ -764,6 +836,19 @@ func containsAllExecutionPermissions(
 		return containsQualityReadBoundary()
 	case commonExecution.AudienceDevelop:
 		return containsDevelopBoundary()
+	case commonExecution.AudienceTransfer:
+		if _, exists := available[transferExecutionPermission]; !exists {
+			return false
+		}
+		for _, effect := range effects {
+			if effect != "read" && effect != "write" {
+				return false
+			}
+			if _, exists := available[executionEffectPermissions[effect]]; !exists {
+				return false
+			}
+		}
+		return true
 	case commonExecution.AudienceModel:
 		if _, exists := available[modelMaterializationExecutionPermission]; !exists {
 			return false
@@ -783,15 +868,6 @@ func containsAllExecutionPermissions(
 	}
 }
 
-func containsExecutionEngine(engineIDs []int64, required int64) bool {
-	for _, engineID := range engineIDs {
-		if engineID == required {
-			return true
-		}
-	}
-	return false
-}
-
 func containsAllExecutionEffects(available []string, required []string) bool {
 	values := make(map[string]struct{}, len(available))
 	for _, effect := range available {
@@ -803,14 +879,6 @@ func containsAllExecutionEffects(available []string, required []string) bool {
 		}
 	}
 	return true
-}
-
-func formatExecutionEngineIDs(engineIDs []int64) []string {
-	formatted := make([]string, 0, len(engineIDs))
-	for _, engineID := range engineIDs {
-		formatted = append(formatted, strconv.FormatInt(engineID, 10))
-	}
-	return formatted
 }
 
 func executionAuthorizationRisk(effects []string) AuditRiskLevel {

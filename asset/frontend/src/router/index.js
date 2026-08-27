@@ -35,6 +35,12 @@ const routes = [
         component: () => import('../views/AssetManager.vue'),
         meta: { requiresAuth: true, title: '资产管理' }
       },
+	  {
+		path: 'assets/new',
+		name: 'AssetCreate',
+		component: () => import('../views/AssetCreate.vue'),
+		meta: { requiresAuth: true, title: '创建资产' }
+	  },
       {
         path: 'assets/:id',
         name: 'AssetDetail',

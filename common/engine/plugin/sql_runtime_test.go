@@ -63,7 +63,7 @@ func (p *fakeSQLRuntimeProvider) ExecuteSQL(_ context.Context, _ ConnectionInfo,
 
 func TestReadSQLBatchPassesBoundParameters(t *testing.T) {
 	provider := &fakeSQLRuntimeProvider{}
-	_, err := ReadSQLBatch(context.Background(), provider, nil, CatalogPath{}, BatchReadOptions{
+	_, err := ReadSQLBatch(context.Background(), provider, nil, EngineCatalogPath{}, BatchReadOptions{
 		Query: "SELECT * FROM public.yanshi WHERE status = ?",
 		Args:  []interface{}{"active"},
 	})
@@ -116,12 +116,12 @@ func TestBindSQLRuntimeParametersRejectsMixedParameterModes(t *testing.T) {
 
 func TestReadSQLBatchUsesOffsetForTablePath(t *testing.T) {
 	provider := &fakeSQLRuntimeProvider{}
-	path := CatalogPath{
-		Version:  CatalogPathVersion,
+	path := EngineCatalogPath{
+		Version:  EngineCatalogPathVersion,
 		EngineID: 1,
-		Segments: []CatalogSegment{
-			{Term: CatalogTermSchema, Kind: CatalogKindNamespace, Name: "public"},
-			{Term: CatalogTermTable, Kind: CatalogKindTable, Name: "yanshi"},
+		Segments: []EngineCatalogSegment{
+			{Term: EngineCatalogTermSchema, Kind: EngineCatalogKindNamespace, Name: "public"},
+			{Term: EngineCatalogTermTable, Kind: EngineCatalogKindTable, Name: "yanshi"},
 		},
 	}
 
@@ -143,7 +143,7 @@ func TestReadSQLBatchUsesOffsetForTablePath(t *testing.T) {
 func TestReadSQLBatchPaginatesCustomQuery(t *testing.T) {
 	provider := &fakeSQLRuntimeProvider{}
 
-	_, err := ReadSQLBatch(context.Background(), provider, nil, CatalogPath{}, BatchReadOptions{
+	_, err := ReadSQLBatch(context.Background(), provider, nil, EngineCatalogPath{}, BatchReadOptions{
 		Query:  "SELECT * FROM public.yanshi",
 		Limit:  50,
 		Offset: 150,
@@ -159,7 +159,7 @@ func TestReadSQLBatchPaginatesCustomQuery(t *testing.T) {
 func TestReadSQLBatchUsesOraclePagination(t *testing.T) {
 	provider := &fakeSQLRuntimeProvider{engineType: "oracle"}
 
-	_, err := ReadSQLBatch(context.Background(), provider, nil, CatalogPath{}, BatchReadOptions{
+	_, err := ReadSQLBatch(context.Background(), provider, nil, EngineCatalogPath{}, BatchReadOptions{
 		Query:  "SELECT * FROM BUSINESS.ORDERS",
 		Limit:  50,
 		Offset: 150,
@@ -179,9 +179,9 @@ func TestCountCatalogItemRowsUsesExplicitCatalogPath(t *testing.T) {
 		Unregister(provider.Type())
 	})
 
-	count, err := CountCatalogItemRows(context.Background(), &Engine{ID: 1, EngineType: provider.Type()}, TabularItemPath(1, CatalogTermSchema, "public", "roads"))
+	count, err := CountEngineCatalogItemRows(context.Background(), &Engine{ID: 1, EngineType: provider.Type()}, TabularItemPath(1, EngineCatalogTermSchema, "public", "roads"))
 	if err != nil {
-		t.Fatalf("CountCatalogItemRows() error = %v", err)
+		t.Fatalf("CountEngineCatalogItemRows() error = %v", err)
 	}
 	if count != 1 {
 		t.Fatalf("count = %d, want 1", count)
@@ -190,7 +190,7 @@ func TestCountCatalogItemRowsUsesExplicitCatalogPath(t *testing.T) {
 		t.Fatalf("lastSQL = %s, want qualified table", provider.lastSQL)
 	}
 
-	_, err = CountCatalogItemRows(context.Background(), &Engine{ID: 1, EngineType: provider.Type()}, CatalogRootPath(TabularCatalogModel(CatalogTermSchema), 1))
+	_, err = CountEngineCatalogItemRows(context.Background(), &Engine{ID: 1, EngineType: provider.Type()}, EngineCatalogRootPath(TabularCatalogModel(EngineCatalogTermSchema), 1))
 	if err == nil {
 		t.Fatal("expected error for root-only path")
 	}

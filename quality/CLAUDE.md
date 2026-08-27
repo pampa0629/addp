@@ -16,6 +16,7 @@
 
 - 规则应用管理（RuleApplication）：将 Standard 模块定义的数据元质量规则，映射到具体数据库的表字段
 - 检查任务管理（CheckTask）：定义和执行确定 PostgreSQL 引擎、Schema、表范围的质量检查任务
+- 物化门禁管理（MaterializationGateTask）：对同一父编排中的 Model 物化组 staging 执行强类型发布前断言
 - 质量检查执行：通过持久 worker、安全 SQL 编译和 Execution Authorization 执行规则并计算表级/字段级质量评分
 - 问题工单管理（Issue）：对检查失败的规则自动生成问题工单，支持状态流转（待处理 → 已解决/已忽略）
 - 执行记录查询：读取 `common.task_executions` 查看历史执行记录及详细结果
@@ -41,21 +42,25 @@ quality/
 │       │   ├── router.go                     # 路由配置（/api/v1/quality 前缀）
 │       │   ├── rule_application_handler.go   # 规则应用 CRUD
 │       │   ├── check_task_handler.go         # 检查任务 CRUD + 手动执行
+│       │   ├── materialization_gate_handler.go # 物化门禁任务 CRUD（只能由 Orchestrator 执行）
 │       │   ├── execution_handler.go          # 执行记录查询
 │       │   └── issue_handler.go              # 问题工单查询和状态更新
 │       ├── config/config.go                  # 配置加载（基于 common.BaseConfig）
 │       ├── models/
 │       │   ├── rule_application.go           # 规则应用模型
 │       │   ├── check_task.go                 # 检查任务模型
+│       │   ├── materialization_gate_task.go  # 物化门禁任务模型
 │       │   └── issue.go                      # 问题工单模型
 │       ├── repository/
 │       │   ├── rule_application_repo.go
 │       │   ├── check_task_repo.go
+│       │   ├── materialization_gate_repo.go
 │       │   └── issue_repo.go
 │       └── service/
 │           ├── rule_engine.go                # 规则加载与应用服务
 │           ├── check_task_service.go         # 检查任务 CRUD 服务
 │           ├── check_executor.go             # 持久 worker、Execution Authorization、评分与 Issue 协调
+│           ├── materialization_gate_executor.go # Model staging 强类型断言执行器
 │           ├── sql_generator.go              # 规则→SQL 转换器（6 种规则类型）
 │           └── issue_service.go              # 问题工单服务
 └── frontend/
@@ -111,6 +116,16 @@ quality/
 | last_execution_status | string | 最近一次执行状态 |
 | created_by / updated_by | int64 | 操作人 |
 
+### `quality.materialization_gate_tasks` — 物化门禁任务定义
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id / tenant_id / code / version | bigint / string | 租户内稳定身份和乐观锁版本 |
+| materialization_group_id / materialization_group_version | bigint | 绑定并冻结的 Model 物化组 |
+| table_bindings | JSONB | 与物化组成员完全一致的 `alias + logical_table_id` 数组 |
+| assertions | JSONB | `addp.quality.materialization-gate/v1` 强类型断言文档 |
+| last_execution_id / last_execution_status / last_run_at | nullable | 最近 execution 投影 |
+
 ### `quality.issues` — 质量问题工单
 
 | 字段 | 类型 | 说明 |
@@ -157,14 +172,27 @@ DELETE /api/v1/quality/check-tasks/:id            # 删除
 POST   /api/v1/quality/check-tasks/:id/run        # 手动触发执行（异步，立即返回 execution_id）
 ```
 
-检查任务创建和更新必须通过 System 实时 Catalog 选择并校验 PostgreSQL Schema/表；Quality 只持久化 `engine_id + schema_name + table_name`，不保存 CatalogPath，也不依赖 Meta 扫描状态。
+检查任务创建和更新必须通过 System 实时 Catalog 选择并校验 PostgreSQL Schema/表；Quality 只持久化 `engine_id + schema_name + table_name`，不保存 EngineCatalogPath，也不依赖 Meta 扫描状态。
+
+### 物化门禁任务
+```
+GET    /api/v1/quality/materialization-gate-tasks       # 列表
+POST   /api/v1/quality/materialization-gate-tasks       # 创建并冻结当前 Model 物化组版本
+GET    /api/v1/quality/materialization-gate-tasks/:id   # 详情
+PUT    /api/v1/quality/materialization-gate-tasks/:id   # 按 version 乐观锁更新
+DELETE /api/v1/quality/materialization-gate-tasks/:id   # 删除
+```
+
+任务只保存逻辑表绑定和强类型断言，不保存 Engine、Schema、物理表或 staging locator；保存和执行前均通过 Common Model Client 校验物化组。
 
 ### TaskProvider 标准入口
 ```
-GET    /api/v1/quality/tasks                       # 列表，task_type 仅支持 check
+GET    /api/v1/quality/tasks                       # 列表，task_type 支持 check|materialization_gate
 GET    /api/v1/quality/tasks/:task_type/:id        # 详情
 POST   /api/v1/quality/tasks/:task_type/:id/execute # 执行
 ```
+
+物化门禁没有直接 run API，只允许 Orchestrator 通过 TaskProvider 触发。其成功输出为 `materialization_group_id + materialization_group_version`，下游 Model 物化组发布必须将二者绑定到 `expected_group_id + expected_group_version`。
 
 ### 执行记录（只读，读 `common.task_executions`）
 ```
@@ -184,6 +212,12 @@ PUT    /api/v1/quality/issues/:id/status          # 更新状态（resolved / ig
 GET    /health/live                            # 进程存活检查
 GET    /health/ready                           # 模块就绪检查
 ```
+
+### 企业 Catalog 质量摘要
+
+`POST /api/v1/quality/runtime/catalog-summaries/resolve` 只允许 `addp-catalog` Service Client 以 `quality.catalog.read` 批量读取结构化 PostgreSQL 表引用的当前质量摘要。该接口只组合 Quality 已有 CheckTask、最近 execution 和当前 open Issue，不接受 CatalogEntry ID、Meta Item ID、Tenant ID 或自由文本路径，不在 Quality 保存 Catalog 反向引用。
+
+只有最近 execution 为 `success` 且 metadata 符合 `addp.quality.execution-result/v1` 时才返回 `quality_score`；未配置、正在运行、失败或超时都不伪造当前评分。Catalog 不可达不影响 Quality 运行，Quality 不可达也不影响 Catalog Ready。
 
 ## 核心执行流程
 
@@ -277,7 +311,9 @@ worker 崩溃后由 lease 恢复：未达 max_attempts 返回 pending，达到�
 **被依赖**:
 - **Monitor 模块**: 通过 `common.task_executions` 中 `module='quality'` 的记录统一监控质量检查执行情况
 
-当前不支持事件触发、定时调度、取消、自定义 SQL、跨字段规则和自动映射；需要扩展时先修改正式数据质量规范。
+当前不支持事件触发、定时调度、取消、自定义 SQL、字段检查中的跨字段规则和自动映射；物化门禁只支持正式数据质量规范定义的五类强类型断言，需要扩展时先修改正式规范。
+
+MaterializationGateTask 必须绑定唯一 `materialization_group_id`，`table_bindings` 的 LogicalTable ID 集合必须与组成员完全一致，并冻结组版本。保存和执行前通过 Common Model Client 读取现有 MaterializationGroup；worker 再以当前 lease 获取 Materialization Read Context。组查询不返回 staging、DDL 或连接事实，物理读上下文不进入任务定义或 Orchestrator 参数。
 
 ## 配置项
 
@@ -290,6 +326,7 @@ worker 崩溃后由 lease 恢复：未达 max_attempts 返回 pending，达到�
 | `QUALITY_WORKER_POLL_INTERVAL` | `500ms` | pending claim 与过期恢复轮询间隔；必须小于 lease |
 | `SYSTEM_URL` | `http://localhost:8180` | System 模块地址 |
 | `STANDARD_URL` | `http://localhost:8110` | Standard 模块地址 |
+| `MODEL_URL` | `http://localhost:8181` | Model 模块地址；物化组校验和 staging 读上下文只通过 Common Model Client 获取 |
 | `QUALITY_SERVICE_CLIENT_SECRET` | - | Quality Confidential OAuth Client Secret |
 | `REDIS_HOST` / `REDIS_PORT` | - | Redis 连接配置（用于认证缓存） |
 
@@ -300,6 +337,9 @@ Quality 是以下 Permission 的唯一 owner：
 - `quality.rule_application.*`
 - `quality.check_task.*`
 - `quality.issue.*`
+- `quality.materialization_gate.*`
+- `quality.task_provider.read`
+- `quality.task_provider.execute`
 
 机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Quality 服务启动时不向 System 动态注册 Permission。
 

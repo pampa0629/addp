@@ -133,7 +133,7 @@ Kafka topic 第一版 basic scan 只保存 item identity，`attributes.item.data
 
 `datatype.AccessIndex` 只是当前代码中的共享结构归属，不表示访问索引属于 data type 或 type info。`access_index` 是独立 attributes 分区，服务内容窗口读取、range 读取和索引失效判断；不得写入 `type_info.table`、`format_info` 或 `capabilities.indexing`。
 
-`attributes.type_info.file` 不存在，也不得新增。文件、对象和目录是 catalog / storage 形态，不是 data type 主事实；对应路径、名称、大小、MIME、etag、hash、last_modified 等事实只能写入 `attributes.storage`，或进入 `CatalogEntry` / Meta item 的标准字段。无法识别内容语义时，`attributes.item.data_type` 必须为 `unknown`。
+`attributes.type_info.file` 不存在，也不得新增。文件、对象和目录是 Engine Catalog / storage 形态，不是 data type 主事实；对应路径、名称、大小、MIME、etag、hash、last_modified 等事实只能写入 `attributes.storage`，或进入 `EngineCatalogEntry` / Meta item 的标准字段。无法识别内容语义时，`attributes.item.data_type` 必须为 `unknown`。
 
 ## 写入规则
 
@@ -151,7 +151,7 @@ Kafka topic 第一版 basic scan 只保存 item identity，`attributes.item.data
 12. `locator` 不作为 attributes 标准分区写入。定位事实由 `meta_item.full_name`、`meta_item.item_type` 和搜索/DTO 层派生，不在 attributes 中重复保存。
 13. `access_index` 是读取优化信息，不是 data type info，也不是 format 私有信息。索引必须能通过源对象大小、etag、mtime 或 fingerprint 等事实判断是否仍适用于当前资源；资源变化后应重建，不得继续复用旧索引。对于 multi-ref 格式，`access_index.source` 允许记录 ref 级事实（如 `refs`、`ref_count`、`index_format`），用于重建、失效判断和调试，但不应把格式私有语义写成新的顶层分区。
 14. `SpatialInfo`、`AccessIndex`、`format_info` 不是 `TableInfo` 的组成部分。provider 如果一次解析同时得到这些事实，应作为同级结果交给 Meta normalizer，分别写入 `capabilities.spatial`、`access_index.<data_type>` 和 `format_info.<format>`。
-15. attributes 写入受 `scan_depth` 约束。`basic` 只写不读取 file/object 内容即可获得的身份、存储和轻量 item 事实；来自 `CatalogEntry` 或只读 catalog/system table 的低成本 `estimated_row_count`、`size_bytes` 可在 basic 写入。字段、主键、索引、容器 children、`access_index`、需要读取内容的 `format_info`、横切能力以及需要执行 `COUNT(*)`、全量扫描或统计刷新的高成本统计应由 `deep` 写入。
+15. attributes 写入受 `scan_depth` 约束。`basic` 只写不读取 file/object 内容即可获得的身份、存储和轻量 item 事实；来自 `EngineCatalogEntry` 或只读 database catalog / system table 的低成本 `estimated_row_count`、`size_bytes` 可在 basic 写入。字段、主键、索引、容器 children、`access_index`、需要读取内容的 `format_info`、横切能力以及需要执行 `COUNT(*)`、全量扫描或统计刷新的高成本统计应由 `deep` 写入。
 
 ## access_index 结构约定
 
@@ -400,7 +400,7 @@ WGS84 bounds、SRID 和 CRS 属于 `capabilities.spatial`，不重复写入 `for
 | `spatial` | 空间能力 | geometry_columns、primary_geometry_column、extent、has_spatial_index |
 | `temporal` | 时间能力 | time_columns、time_range、granularity、timezone |
 | `statistics` | 扫描统计与采样事实 | sample_size、is_sampled、schema_type、index_count、avg_record_size |
-| `extraction` | 内容提取 | extractor_available、text_extracted、status、reason、extractor、plain_text_preview、text_truncated、summary、index_ref |
+| `extraction` | 内容提取 | extractor_available、text_extracted、status、reason、extractor、plain_text_preview、text_truncated、summary |
 | `semantic` | 语义能力 | embedding_model、vector_index_ref、semantic_tags |
 | `constraints` | 关系表命名约束事实 | constraints（primary_key、unique、foreign_key） |
 | `partitioning` | 分区事实 | strategy、key_fields、subpartition_strategy、subpartition_key_fields、partition_count |
@@ -408,7 +408,7 @@ WGS84 bounds、SRID 和 CRS 属于 `capabilities.spatial`，不重复写入 `for
 
 横切能力不应变成顶层数据类型，也不应被塞进具体格式信息。
 
-`capabilities.indexing.indexes[]` 使用 `name`、`fields`、`is_unique`、`index_type`；字段顺序必须保持来源索引列顺序。`capabilities.constraints.constraints[]` 使用 `name`、`constraint_type`、`fields`，外键额外使用 `referenced_namespace`、`referenced_table`、`referenced_fields`；`constraint_type` 只允许 `primary_key`、`unique`、`foreign_key`。`capabilities.partitioning` 使用受控的 `strategy`、`key_fields`、`subpartition_strategy`、`subpartition_key_fields`、`partition_count`。这些结构直接来自 `CatalogFacts` 的强类型事实，Meta 不解析供应商原生表达式进行补推。
+`capabilities.indexing.indexes[]` 使用 `name`、`fields`、`is_unique`、`index_type`；字段顺序必须保持来源索引列顺序。`capabilities.constraints.constraints[]` 使用 `name`、`constraint_type`、`fields`，外键额外使用 `referenced_namespace`、`referenced_table`、`referenced_fields`；`constraint_type` 只允许 `primary_key`、`unique`、`foreign_key`。`capabilities.partitioning` 使用受控的 `strategy`、`key_fields`、`subpartition_strategy`、`subpartition_key_fields`、`partition_count`。这些结构直接来自 `EngineCatalogFacts` 的强类型事实，Meta 不解析供应商原生表达式进行补推。
 
 `capabilities.statistics` 只保存 Meta scan、catalog、system table、格式头或结构推断过程获得的紧凑统计与采样事实。它不保存 Manager data profile，也不得新增字段级 `fields`、`null_count`、`distinct_count`、`min`、`max`、`quantiles`、`histogram`、`top_values`、`profiled_at` 或 `profile_ref` 来旁路承载剖析结果。Manager 数据剖析的当前结果、字段分布和执行历史分别归 Manager 私有结果表与 `common.task_executions`。
 
@@ -423,7 +423,6 @@ WGS84 bounds、SRID 和 CRS 属于 `capabilities.spatial`，不重复写入 `for
 | `extractor` | 实际使用的提取器标识，例如 `common_format:docx` |
 | `plain_text_preview` | 从正文生成的短预览，不是全文事实源 |
 | `text_truncated` | 正文抽取是否因限制被截断 |
-| `index_ref` | 外部全文索引或提取结果引用，例如 `meilisearch:assets:<item_fingerprint>`；引用的是 item 指纹对应的索引记录，不是内容哈希 |
 
 历史或第三方字段如 `text_excerpt` 可以在隔离数据中出现，但平台标准文档正文预览字段统一使用 `plain_text_preview`。新增实现不得同时写入 `text_excerpt` 和 `plain_text_preview` 表达同一事实。
 

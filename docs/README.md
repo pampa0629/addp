@@ -43,11 +43,14 @@
 - [IAM OIDC 启用设计](next/addp-IAM%20OIDC启用设计.md)
 - [IAM 外部 IdP 与账号供应设计](next/addp-IAM外部IdP与账号供应设计.md)
 - [元数据体系图](concepts/addp元数据体系图.md)
+- [企业数据目录体系图](concepts/addp企业数据目录体系图.md)
+- [企业数据目录实现规范](spec/addp企业数据目录实现规范.md)
 - [数据项体系图](concepts/addp数据项体系图.md)
 - [数据类型和格式体系图](concepts/addp数据类型和格式体系图.md)
 - [元数据扫描机制规范](spec/addp元数据扫描机制规范.md)
 - [任务体系规范](spec/addp任务体系规范.md)
 - [调度与任务编排统一改造专题](next/ADDP调度与任务编排统一改造专题.md)
+- [Workbench 数据服务消费与数据应用专题](next/ADDP%20Workbench数据服务消费与数据应用专题.md)
 - [数据质量规范](spec/addp数据质量规范.md)
 - [数据血缘能力规范](spec/addp数据血缘能力规范.md)
 - [资源回收（Cleanup）体系规范](spec/addp-cleanup体系规范.md)
@@ -66,6 +69,7 @@
 - [模块启动、就绪与注册治理待办](next/ADDP模块与引擎注册治理专题.md)
 - [Manager 前端浏览器回归测试专题](next/Manager前端浏览器回归测试专题.md)
 - [ADDP 企业数据目录与 Catalog 模块专题](next/ADDP企业数据目录能力专题.md)
+- [ADDP Engine Catalog 命名收敛与迁移专题](next/ADDP引擎目录命名收敛专题.md)
 - [规划文档](plan/)
 - [跟进文档](next/)
 - [技能文档](skills/)
@@ -104,6 +108,28 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 11. [Manager 快显实现规范](../manager/docs/快显实现规范.md)：确认矢量物化视图任务、结果、外部 3857 目标、瓦片缓存和 UI 引导闭环。
 12. [Manager 向量化概念说明](../manager/docs/向量化概念说明.md)：确认 Manager 资源树 item / node 向量化、向量化任务和向量化结果的模块内概念边界。
 13. [Manager 向量化能力说明](../manager/docs/向量化能力说明.md)：确认 Manager 向量化结果字段、状态枚举、API、执行配置和 UI 契约。
+
+## Workbench 数据服务消费与数据应用主题
+
+处理已发布数据服务的动态查询、参数输入、表格/图表/地图展示、Workbench View、后续 Data Application、BI 能力边界或大屏展示模式时，建议按以下顺序阅读：
+
+1. [术语表](concepts/addp术语表.md)：确认 Workbench、Workbench View、Data Application 和 Consumer Descriptor 等稳定平台术语。
+2. [模块架构图](concepts/addp模块架构图.md)：确认 Console、System、Service、Asset 和 Portal 的现有边界。
+3. [数据服务体系图](concepts/addp数据服务体系图.md)：确认查询服务、瓦片服务和外部服务注册的发布与执行职责。
+4. [API 设计规范](spec/addp-API设计规范.md)：确认结构化查询、cursor 分页、Bearer、Service Principal 和 BFF 边界。
+5. [IAM owner 资源授权与 Asset 衔接设计](next/addp-IAM%20owner资源授权与Asset衔接设计.md)：确认 Asset 申请履约与 owner 最终授权主路径。
+6. [Workbench 数据服务消费与数据应用专题](next/ADDP%20Workbench数据服务消费与数据应用专题.md)：查看当前决策、阶段计划、延期范围和未决问题。
+7. [Outdoor 业务数据治理推进方案](next/Outdoor业务数据治理推进方案.md)：仅作为首个真实验收场景，不作为 Workbench 平台模型。
+
+## 企业数据目录主题
+
+处理业务元数据、CatalogEntry、DataItem 自动建档、语义关联、责任、企业目录搜索、来源重绑或 Asset 选源时，建议按以下顺序阅读：
+
+1. [术语表](concepts/addp术语表.md)：确认 Engine Catalog、Enterprise Data Catalog、CatalogEntry 和 CatalogComponent 的边界。
+2. [企业数据目录体系图](concepts/addp企业数据目录体系图.md)：确认 Meta、Standard、Catalog、Manager、Asset、Portal 的事实所有权和端到端主线。
+3. [企业数据目录实现规范](spec/addp企业数据目录实现规范.md)：确认身份、来源变化、状态机、权限、API、搜索和迁移约束。
+4. [账号与权限体系](concepts/addp账号与权限体系图.md)：确认 Department、Project Group、User 和 AuthContext。
+5. [企业数据目录与 Catalog 模块专题](next/ADDP企业数据目录能力专题.md)：查看阶段清单、决策记录和当前推进状态。
 
 ## 栅格、TIFF / COG 与空间快显主题
 

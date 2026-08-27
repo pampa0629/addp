@@ -8,37 +8,37 @@ import (
 )
 
 const (
-	CatalogTermRoot      = "root"
-	CatalogTermDirectory = "directory"
-	CatalogTermFile      = "file"
+	EngineCatalogTermRoot      = "root"
+	EngineCatalogTermDirectory = "directory"
+	EngineCatalogTermFile      = "file"
 
-	CatalogKindRoot      = "root"
-	CatalogKindDirectory = "directory"
-	CatalogKindFile      = "file"
+	EngineCatalogKindRoot      = "root"
+	EngineCatalogKindDirectory = "directory"
+	EngineCatalogKindFile      = "file"
 )
 
 type FileCatalogCallbacks struct {
-	ListDirectoryFunc       func(ctx context.Context, connInfo ConnectionInfo, parent CatalogPath) ([]CatalogEntry, error)
+	ListDirectoryFunc       func(ctx context.Context, connInfo ConnectionInfo, parent EngineCatalogPath) ([]EngineCatalogEntry, error)
 	GetFileStorageFactsFunc func(ctx context.Context, connInfo ConnectionInfo, path string) (*StorageObjectFacts, error)
 }
 
 // FileCatalogModel describes file-system hierarchy: root -> directory? -> file.
-func FileCatalogModel() CatalogModelSpec {
-	return CatalogModelSpec{
-		PathVersion: CatalogPathVersion,
-		RootTerm:    CatalogTermRoot,
-		Levels: []CatalogLevelSpec{
-			{Term: CatalogTermDirectory, Kinds: []string{CatalogKindDirectory}, Role: CatalogRoleBranch, Optional: true, I18nKey: CatalogTermI18nKey(CatalogTermDirectory)},
-			{Term: CatalogTermFile, Kinds: []string{CatalogKindFile}, Role: CatalogRoleLeaf, I18nKey: CatalogTermI18nKey(CatalogTermFile)},
+func FileCatalogModel() EngineCatalogModelSpec {
+	return EngineCatalogModelSpec{
+		PathVersion: EngineCatalogPathVersion,
+		RootTerm:    EngineCatalogTermRoot,
+		Levels: []EngineCatalogLevelSpec{
+			{Term: EngineCatalogTermDirectory, Kinds: []string{EngineCatalogKindDirectory}, Role: EngineCatalogRoleBranch, Optional: true, I18nKey: EngineCatalogTermI18nKey(EngineCatalogTermDirectory)},
+			{Term: EngineCatalogTermFile, Kinds: []string{EngineCatalogKindFile}, Role: EngineCatalogRoleLeaf, I18nKey: EngineCatalogTermI18nKey(EngineCatalogTermFile)},
 		},
 	}
 }
 
-// ListFileCatalogChildren maps filesystem roots, directories and files to CatalogProvider nodes.
-func ListFileCatalogChildren(ctx context.Context, callbacks FileCatalogCallbacks, connInfo ConnectionInfo, engineID uint, parent CatalogPath, opts ListOptions) ([]CatalogEntry, error) {
+// ListFileCatalogChildren maps filesystem roots, directories and files to EngineCatalogProvider nodes.
+func ListFileCatalogChildren(ctx context.Context, callbacks FileCatalogCallbacks, connInfo ConnectionInfo, engineID uint, parent EngineCatalogPath, opts ListOptions) ([]EngineCatalogEntry, error) {
 	parent = NormalizeFileCatalogSegments(parent)
 	model := FileCatalogModel()
-	if IsCatalogRootPath(parent) {
+	if IsEngineCatalogRootPath(parent) {
 		if err := requireCatalogRootPath(parent, model); err != nil {
 			return nil, err
 		}
@@ -50,7 +50,7 @@ func ListFileCatalogChildren(ctx context.Context, callbacks FileCatalogCallbacks
 	return listFileCatalogChildren(ctx, callbacks, connInfo, parent, opts)
 }
 
-func listFileCatalogChildren(ctx context.Context, callbacks FileCatalogCallbacks, connInfo ConnectionInfo, parent CatalogPath, opts ListOptions) ([]CatalogEntry, error) {
+func listFileCatalogChildren(ctx context.Context, callbacks FileCatalogCallbacks, connInfo ConnectionInfo, parent EngineCatalogPath, opts ListOptions) ([]EngineCatalogEntry, error) {
 	if callbacks.ListDirectoryFunc == nil {
 		return nil, fmt.Errorf("file catalog callbacks ListDirectoryFunc is nil")
 	}
@@ -61,9 +61,9 @@ func listFileCatalogChildren(ctx context.Context, callbacks FileCatalogCallbacks
 	if !opts.Recursive {
 		return nodes, nil
 	}
-	result := append([]CatalogEntry(nil), nodes...)
+	result := append([]EngineCatalogEntry(nil), nodes...)
 	for _, node := range nodes {
-		if node.Role != CatalogRoleBranch {
+		if node.Role != EngineCatalogRoleBranch {
 			continue
 		}
 		childNodes, err := listFileCatalogChildren(ctx, callbacks, connInfo, node.Path, opts)
@@ -76,19 +76,19 @@ func listFileCatalogChildren(ctx context.Context, callbacks FileCatalogCallbacks
 }
 
 // ResolveFileCatalogPath resolves a file catalog path.
-func ResolveFileCatalogPath(ctx context.Context, callbacks FileCatalogCallbacks, connInfo ConnectionInfo, engineID uint, path CatalogPath) (*CatalogEntry, error) {
+func ResolveFileCatalogPath(ctx context.Context, callbacks FileCatalogCallbacks, connInfo ConnectionInfo, engineID uint, path EngineCatalogPath) (*EngineCatalogEntry, error) {
 	path = NormalizeFileCatalogSegments(path)
 	model := FileCatalogModel()
-	if IsCatalogRootPath(path) {
+	if IsEngineCatalogRootPath(path) {
 		if err := requireCatalogRootPath(path, model); err != nil {
 			return nil, err
 		}
-		return &CatalogEntry{
+		return &EngineCatalogEntry{
 			Name: "",
 			Path: path,
-			Term: CatalogTermRoot,
-			Kind: CatalogTermRoot,
-			Role: CatalogRoleBranch,
+			Term: EngineCatalogTermRoot,
+			Kind: EngineCatalogTermRoot,
+			Role: EngineCatalogRoleBranch,
 		}, nil
 	}
 	if _, err := requireCatalogBusinessPath(path, model); err != nil {
@@ -96,7 +96,7 @@ func ResolveFileCatalogPath(ctx context.Context, callbacks FileCatalogCallbacks,
 	}
 
 	last := path.Segments[len(path.Segments)-1]
-	if last.Kind == CatalogKindFile || last.Term == CatalogTermFile {
+	if last.Kind == EngineCatalogKindFile || last.Term == EngineCatalogTermFile {
 		if callbacks.GetFileStorageFactsFunc == nil {
 			return nil, fmt.Errorf("file catalog callbacks GetFileStorageFactsFunc is nil")
 		}
@@ -107,20 +107,20 @@ func ResolveFileCatalogPath(ctx context.Context, callbacks FileCatalogCallbacks,
 		return fileStorageFactsCatalogEntry(engineID, path, storageFacts), nil
 	}
 
-	return &CatalogEntry{
+	return &EngineCatalogEntry{
 		Name: last.Name,
 		Path: path,
 		Term: last.Term,
 		Kind: last.Kind,
-		Role: CatalogRoleBranch,
-		Storage: &CatalogStorageFacts{
+		Role: EngineCatalogRoleBranch,
+		Storage: &EngineCatalogStorageFacts{
 			Path: path.StringPath(),
 		},
 	}, nil
 }
 
-// DescribeFileCatalogFacts maps file storage facts to CatalogFactsProvider output.
-func DescribeFileCatalogFacts(ctx context.Context, callbacks FileCatalogCallbacks, connInfo ConnectionInfo, engineID uint, path CatalogPath) (*CatalogFacts, error) {
+// DescribeFileCatalogFacts maps file storage facts to EngineCatalogFactsProvider output.
+func DescribeFileCatalogFacts(ctx context.Context, callbacks FileCatalogCallbacks, connInfo ConnectionInfo, engineID uint, path EngineCatalogPath) (*EngineCatalogFacts, error) {
 	path = NormalizeFileCatalogSegments(path)
 	if _, err := requireCatalogBusinessPath(path, FileCatalogModel()); err != nil {
 		return nil, err
@@ -134,10 +134,10 @@ func DescribeFileCatalogFacts(ctx context.Context, callbacks FileCatalogCallback
 	}
 	updatedAt := storageFacts.ModifiedAt
 	sizeBytes := storageFacts.Size
-	return &CatalogFacts{
+	return &EngineCatalogFacts{
 		Path: path,
 		Kind: fileKindFromPath(path),
-		Storage: &CatalogStorageFacts{
+		Storage: &EngineCatalogStorageFacts{
 			Name:        storageFacts.Name,
 			Path:        storageFacts.Path,
 			ContentType: storageFacts.ContentType,
@@ -149,29 +149,29 @@ func DescribeFileCatalogFacts(ctx context.Context, callbacks FileCatalogCallback
 	}, nil
 }
 
-func FileDirectoryCatalogEntry(parent CatalogPath, name, storagePath string) CatalogEntry {
-	return CatalogEntry{
+func FileDirectoryCatalogEntry(parent EngineCatalogPath, name, storagePath string) EngineCatalogEntry {
+	return EngineCatalogEntry{
 		Name: name,
-		Path: appendCatalogSegment(parent, parent.EngineID, CatalogTermDirectory, CatalogKindDirectory, name),
-		Term: CatalogTermDirectory,
-		Kind: CatalogKindDirectory,
-		Role: CatalogRoleBranch,
-		Storage: &CatalogStorageFacts{
+		Path: appendCatalogSegment(parent, parent.EngineID, EngineCatalogTermDirectory, EngineCatalogKindDirectory, name),
+		Term: EngineCatalogTermDirectory,
+		Kind: EngineCatalogKindDirectory,
+		Role: EngineCatalogRoleBranch,
+		Storage: &EngineCatalogStorageFacts{
 			Path: NormalizeFileCatalogPath(storagePath),
 		},
 	}
 }
 
-func FileLeafCatalogEntry(parent CatalogPath, facts StorageObjectFacts) CatalogEntry {
+func FileLeafCatalogEntry(parent EngineCatalogPath, facts StorageObjectFacts) EngineCatalogEntry {
 	sizeBytes := facts.Size
 	updatedAt := facts.ModifiedAt
-	return CatalogEntry{
+	return EngineCatalogEntry{
 		Name: facts.Name,
-		Path: appendCatalogSegment(parent, parent.EngineID, CatalogTermFile, CatalogKindFile, facts.Name),
-		Term: CatalogTermFile,
-		Kind: CatalogKindFile,
-		Role: CatalogRoleLeaf,
-		Storage: CatalogEntryStorageSummary(&CatalogStorageFacts{
+		Path: appendCatalogSegment(parent, parent.EngineID, EngineCatalogTermFile, EngineCatalogKindFile, facts.Name),
+		Term: EngineCatalogTermFile,
+		Kind: EngineCatalogKindFile,
+		Role: EngineCatalogRoleLeaf,
+		Storage: EngineCatalogEntryStorageSummary(&EngineCatalogStorageFacts{
 			Path:        NormalizeFileCatalogPath(facts.Path),
 			ContentType: facts.ContentType,
 			ETag:        facts.ETag,
@@ -181,23 +181,23 @@ func FileLeafCatalogEntry(parent CatalogPath, facts StorageObjectFacts) CatalogE
 	}
 }
 
-func fileKindFromPath(path CatalogPath) string {
+func fileKindFromPath(path EngineCatalogPath) string {
 	last := path.Segments[len(path.Segments)-1]
 	if last.Kind != "" {
 		return last.Kind
 	}
-	return CatalogKindFile
+	return EngineCatalogKindFile
 }
 
-func fileStorageFactsCatalogEntry(engineID uint, path CatalogPath, facts *StorageObjectFacts) *CatalogEntry {
+func fileStorageFactsCatalogEntry(engineID uint, path EngineCatalogPath, facts *StorageObjectFacts) *EngineCatalogEntry {
 	if path.Version == "" {
-		path.Version = CatalogPathVersion
+		path.Version = EngineCatalogPathVersion
 	}
 	if path.EngineID == 0 {
 		path.EngineID = engineID
 	}
-	term := CatalogTermFile
-	kind := CatalogKindFile
+	term := EngineCatalogTermFile
+	kind := EngineCatalogKindFile
 	if len(path.Segments) > 0 {
 		last := path.Segments[len(path.Segments)-1]
 		if last.Term != "" {
@@ -208,13 +208,13 @@ func fileStorageFactsCatalogEntry(engineID uint, path CatalogPath, facts *Storag
 		}
 	}
 	updatedAt := facts.ModifiedAt
-	return &CatalogEntry{
+	return &EngineCatalogEntry{
 		Name: facts.Name,
 		Path: path,
 		Term: term,
 		Kind: kind,
-		Role: CatalogRoleLeaf,
-		Storage: CatalogEntryStorageSummary(&CatalogStorageFacts{
+		Role: EngineCatalogRoleLeaf,
+		Storage: EngineCatalogEntryStorageSummary(&EngineCatalogStorageFacts{
 			Path:        facts.Path,
 			ContentType: facts.ContentType,
 			ETag:        facts.ETag,

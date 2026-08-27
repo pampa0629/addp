@@ -1,4 +1,23 @@
-import client from './client'
+import { createAPIClient } from '@common-ui'
+import client, { refreshAuthorizationOnForbidden } from './client'
+import { useAuthStore } from '../store/auth'
+
+const modelClient = refreshAuthorizationOnForbidden(
+  createAPIClient(() => useAuthStore(), { moduleName: 'Model' })
+)
+
+const PAGE_SIZE = 100
+
+const listAll = async (apiClient, path, params = {}) => {
+  const items = []
+  for (let page = 1; ; page += 1) {
+    const response = await apiClient.get(path, { params: { ...params, page, page_size: PAGE_SIZE } })
+    const pageItems = Array.isArray(response) ? response : response?.data
+    if (!Array.isArray(pageItems)) throw new TypeError(`Invalid list response from ${path}`)
+    items.push(...pageItems)
+    if (pageItems.length < PAGE_SIZE || (!Array.isArray(response) && response.total != null && items.length >= response.total)) return items
+  }
+}
 
 // 跨模块: 引擎列表（System 模块）
 export const systemEngineAPI = {
@@ -41,6 +60,22 @@ export const checkTaskAPI = {
   update: (id, data) => client.put(`/quality/check-tasks/${id}`, data),
   delete: (id) => client.delete(`/quality/check-tasks/${id}`),
   run: (id) => client.post(`/quality/check-tasks/${id}/run`)
+}
+
+// Model 是物化组和逻辑表定义的唯一 owner；Quality 只读消费其 canonical API。
+export const modelMaterializationAPI = {
+  listGroups: (params) => listAll(modelClient, '/model/materialization-groups', params),
+  getGroup: (id) => modelClient.get(`/model/materialization-groups/${id}`),
+  listLogicalTables: (params) => listAll(modelClient, '/model/logical-tables', params),
+  listLogicalTableFields: (id) => modelClient.get(`/model/logical-tables/${id}/fields`)
+}
+
+export const materializationGateAPI = {
+  list: (params) => client.get('/quality/materialization-gate-tasks', { params }),
+  get: (id) => client.get(`/quality/materialization-gate-tasks/${id}`),
+  create: (data) => client.post('/quality/materialization-gate-tasks', data),
+  update: (id, data) => client.put(`/quality/materialization-gate-tasks/${id}`, data),
+  delete: (id, version) => client.delete(`/quality/materialization-gate-tasks/${id}`, { data: { version } })
 }
 
 // 执行记录

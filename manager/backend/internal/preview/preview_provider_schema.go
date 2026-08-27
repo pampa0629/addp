@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
-	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
+	"github.com/addp/manager/internal/resourceutil"
 )
 
 type schemaPreviewProvider struct {
@@ -78,7 +78,7 @@ func (p *schemaPreviewProvider) Preview(ctx context.Context, req *PreviewRequest
 			if item.ObjectSizeBytes != nil {
 				child.SizeBytes = *item.ObjectSizeBytes
 			}
-			if contentType := catalogutil.StringAttribute(item.Attributes, "content_type"); contentType != "" {
+			if contentType := resourceutil.StringAttribute(item.Attributes, "content_type"); contentType != "" {
 				child.ContentType = contentType
 			}
 			children = append(children, child)

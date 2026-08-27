@@ -120,6 +120,7 @@ detect_common_affected_modules() {
         "asset"
         "portal"
         "graph"
+		"workbench"
         "gateway"
     )
 

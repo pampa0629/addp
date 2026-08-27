@@ -21,7 +21,7 @@ type mysqlApplyLedgerPosition struct {
 	NextOffset      int64
 }
 
-func (p *MySQLPlugin) PreparePartitionedTableChangeApply(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.PartitionedTableChangeApplyOptions) error {
+func (p *MySQLPlugin) PreparePartitionedTableChangeApply(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.PartitionedTableChangeApplyOptions) error {
 	if err := validateMySQLPartitionedTableChangeApplyOptions(opts); err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func (p *MySQLPlugin) PreparePartitionedTableChangeApply(ctx context.Context, co
 	return nil
 }
 
-func (p *MySQLPlugin) ApplyPartitionedTableChanges(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, batch *plugin.PartitionedTableChangeBatch, opts plugin.PartitionedTableChangeApplyOptions) (*plugin.PartitionedTableChangeApplyResult, error) {
+func (p *MySQLPlugin) ApplyPartitionedTableChanges(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.PartitionedTableChangeBatch, opts plugin.PartitionedTableChangeApplyOptions) (*plugin.PartitionedTableChangeApplyResult, error) {
 	keys, err := validateMySQLPartitionedTableChangeApplyBatch(batch, opts)
 	if err != nil {
 		return nil, err

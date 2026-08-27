@@ -21,9 +21,9 @@ type BranchLeafRuntime struct {
 }
 
 type branchLeafScanCatalog struct {
-	model            plugin.CatalogModelSpec
-	catalogProvider  plugin.CatalogProvider
-	factsProvider    plugin.CatalogFactsProvider
+	model            plugin.EngineCatalogModelSpec
+	catalogProvider  plugin.EngineCatalogProvider
+	factsProvider    plugin.EngineCatalogFactsProvider
 	samplingProvider plugin.DynamicSchemaSamplingProvider
 	connInfo         plugin.ConnectionInfo
 	branchTerm       string
@@ -38,7 +38,7 @@ func NewBranchLeafRuntime(db *gorm.DB, log *slog.Logger, repo *metaRepo.ScanRepo
 }
 
 // ScanBranch 扫描 root branch 及其所有 catalog leaf。
-// CatalogProvider 负责列出真实数据库、集合或 graph leaf；DynamicSchemaSamplingProvider 用于动态 schema 深度推断。
+// EngineCatalogProvider 负责列出真实数据库、集合或 graph leaf；DynamicSchemaSamplingProvider 用于动态 schema 深度推断。
 func (s *BranchLeafRuntime) ScanBranch(
 	ctx context.Context,
 	enginePlugin plugin.EnginePlugin,
@@ -50,13 +50,13 @@ func (s *BranchLeafRuntime) ScanBranch(
 ) (int, int, int, error) {
 
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
-	catalogProvider, ok := enginePlugin.(plugin.CatalogProvider)
+	catalogProvider, ok := enginePlugin.(plugin.EngineCatalogProvider)
 	if !ok {
-		return 0, 0, 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
+		return 0, 0, 0, fmt.Errorf("engine %s does not implement EngineCatalogProvider", resource.EngineType)
 	}
 	samplingProvider, _ := enginePlugin.(plugin.DynamicSchemaSamplingProvider)
-	catalogFactsProvider, _ := enginePlugin.(plugin.CatalogFactsProvider)
-	model := scanflow.CatalogModelForPlugin(enginePlugin)
+	catalogFactsProvider, _ := enginePlugin.(plugin.EngineCatalogFactsProvider)
+	model := scanflow.EngineCatalogModelForPlugin(enginePlugin)
 	if model == nil {
 		return 0, 0, 0, fmt.Errorf("engine %s has no catalog model", resource.EngineType)
 	}
@@ -70,7 +70,7 @@ func (s *BranchLeafRuntime) ScanBranch(
 	}
 
 	// 1. 创建/更新 root branch 节点
-	rootNode, err := metaRepo.EnsureCatalogRootNode(s.repo, tenantID, resource, enginePlugin)
+	rootNode, err := metaRepo.EnsureEngineCatalogRootNode(s.repo, tenantID, resource, enginePlugin)
 	if err != nil {
 		return 0, 0, 0, err
 	}

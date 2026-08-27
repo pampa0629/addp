@@ -60,7 +60,7 @@ func (p *S3Plugin) StoreSemantics() plugin.StoreSemantics {
 	}
 }
 
-func (p *S3Plugin) CatalogModel() plugin.CatalogModelSpec {
+func (p *S3Plugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.ObjectCatalogModel()
 }
 
@@ -72,19 +72,19 @@ func (p *S3Plugin) objectCatalogCallbacks() plugin.ObjectCatalogCallbacks {
 	}
 }
 
-func (p *S3Plugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+func (p *S3Plugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath, opts plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
 	return plugin.ListObjectCatalogChildren(ctx, p.objectCatalogCallbacks(), connInfo, parent.EngineID, parent, opts)
 }
 
-func (p *S3Plugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p *S3Plugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	return plugin.ResolveObjectCatalogPath(ctx, p.objectCatalogCallbacks(), connInfo, path.EngineID, path)
 }
 
-func (p *S3Plugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *S3Plugin) DescribeEngineCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	return plugin.DescribeObjectCatalogFacts(ctx, p.objectCatalogCallbacks(), connInfo, path.EngineID, path)
 }
 
-func (p *S3Plugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+func (p *S3Plugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
 	objectPath, err := plugin.RequireObjectLeafPath(path)
 	if err != nil {
 		return nil, err
@@ -92,7 +92,7 @@ func (p *S3Plugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionIn
 	return p.readFile(ctx, connInfo, objectPath, opts)
 }
 
-func (p *S3Plugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+func (p *S3Plugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
 	if opts.Length <= 0 {
 		return nil, fmt.Errorf("range read requires positive length")
 	}
@@ -103,7 +103,7 @@ func (p *S3Plugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionInfo
 	return p.readFile(ctx, connInfo, objectPath, opts)
 }
 
-func (p *S3Plugin) CreateContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.WriteOptions) (io.WriteCloser, error) {
+func (p *S3Plugin) CreateContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.WriteOptions) (io.WriteCloser, error) {
 	objectPath, err := plugin.RequireObjectLeafPath(path)
 	if err != nil {
 		return nil, err
@@ -115,7 +115,7 @@ func (p *S3Plugin) CreateContent(ctx context.Context, connInfo plugin.Connection
 	return objectstore.CreateContent(ctx, client, objectPath, opts)
 }
 
-func (p *S3Plugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) error {
+func (p *S3Plugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) error {
 	objectPath, err := plugin.RequireObjectLeafPath(path)
 	if err != nil {
 		return err
@@ -168,7 +168,7 @@ func (p *S3Plugin) parseConnInfo(connInfo plugin.ConnectionInfo) (endpoint, acce
 
 // listDirectory 列出路径下的直接子内容（非递归）
 // path 格式：bucket/prefix/
-func (p *S3Plugin) listDirectory(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
+func (p *S3Plugin) listDirectory(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath) ([]plugin.EngineCatalogEntry, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err
@@ -185,7 +185,7 @@ func (p *S3Plugin) listDirectory(ctx context.Context, connInfo plugin.Connection
 		Recursive: false,
 	})
 
-	var nodes []plugin.CatalogEntry
+	var nodes []plugin.EngineCatalogEntry
 
 	for obj := range objectCh {
 		if obj.Err != nil {
@@ -275,7 +275,7 @@ func (p *S3Plugin) getStorageObjectFacts(ctx context.Context, connInfo plugin.Co
 }
 
 // listBuckets 列出 service root 下的第一层业务 bucket。
-func (p *S3Plugin) listBuckets(ctx context.Context, connInfo plugin.ConnectionInfo, root plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
+func (p *S3Plugin) listBuckets(ctx context.Context, connInfo plugin.ConnectionInfo, root plugin.EngineCatalogPath) ([]plugin.EngineCatalogEntry, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err
@@ -286,7 +286,7 @@ func (p *S3Plugin) listBuckets(ctx context.Context, connInfo plugin.ConnectionIn
 		return nil, fmt.Errorf("failed to list buckets: %w", err)
 	}
 
-	result := make([]plugin.CatalogEntry, len(buckets))
+	result := make([]plugin.EngineCatalogEntry, len(buckets))
 	for i, b := range buckets {
 		result[i] = plugin.ObjectBucketCatalogEntry(root, b.Name)
 	}

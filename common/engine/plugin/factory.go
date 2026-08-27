@@ -167,8 +167,8 @@ func GetOrCreatePoolFromFactory(engine *Engine, config *PoolConfig) (*gorm.DB, e
 
 // === Catalog facts 查询相关方法 ===
 
-// DescribeCatalogFacts 描述 catalog leaf 的 engine-native facts。
-func DescribeCatalogFacts(ctx context.Context, resource *Engine, path CatalogPath, opts CatalogFactsOptions) (*CatalogFacts, error) {
+// DescribeEngineCatalogFacts 描述 catalog leaf 的 engine-native facts。
+func DescribeEngineCatalogFacts(ctx context.Context, resource *Engine, path EngineCatalogPath, opts EngineCatalogFactsOptions) (*EngineCatalogFacts, error) {
 	if resource == nil {
 		return nil, fmt.Errorf("resource cannot be nil")
 	}
@@ -178,23 +178,23 @@ func DescribeCatalogFacts(ctx context.Context, resource *Engine, path CatalogPat
 		return nil, err
 	}
 
-	factsProvider, ok := enginePlugin.(CatalogFactsProvider)
+	factsProvider, ok := enginePlugin.(EngineCatalogFactsProvider)
 	if !ok {
-		return nil, fmt.Errorf("plugin %s does not implement CatalogFactsProvider", resource.EngineType)
+		return nil, fmt.Errorf("plugin %s does not implement EngineCatalogFactsProvider", resource.EngineType)
 	}
 
 	if path.Version == "" {
-		path.Version = CatalogPathVersion
+		path.Version = EngineCatalogPathVersion
 	}
 	if path.EngineID == 0 {
 		path.EngineID = resource.ID
 	}
 
-	return factsProvider.DescribeCatalogFacts(ctx, resource.ConnectionInfo, path, opts)
+	return factsProvider.DescribeEngineCatalogFacts(ctx, resource.ConnectionInfo, path, opts)
 }
 
-// CountCatalogItemRows 获取 tabular catalog leaf 的行数。
-func CountCatalogItemRows(ctx context.Context, resource *Engine, path CatalogPath) (int64, error) {
+// CountEngineCatalogItemRows 获取 tabular catalog leaf 的行数。
+func CountEngineCatalogItemRows(ctx context.Context, resource *Engine, path EngineCatalogPath) (int64, error) {
 	if resource == nil {
 		return 0, fmt.Errorf("resource cannot be nil")
 	}
@@ -204,10 +204,10 @@ func CountCatalogItemRows(ctx context.Context, resource *Engine, path CatalogPat
 		return 0, err
 	}
 
-	if _, ok := enginePlugin.(CatalogFactsProvider); ok {
-		facts, err := DescribeCatalogFacts(ctx, resource, path, CatalogFactsOptions{IncludeStatistics: true})
+	if _, ok := enginePlugin.(EngineCatalogFactsProvider); ok {
+		facts, err := DescribeEngineCatalogFacts(ctx, resource, path, EngineCatalogFactsOptions{IncludeStatistics: true})
 		if err == nil && facts != nil {
-			if tableInfo := CatalogFactsTableInfo(facts); tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount >= 0 {
+			if tableInfo := EngineCatalogFactsTableInfo(facts); tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount >= 0 {
 				return *tableInfo.RowCount, nil
 			}
 		}
@@ -218,7 +218,7 @@ func CountCatalogItemRows(ctx context.Context, resource *Engine, path CatalogPat
 		return 0, fmt.Errorf("plugin %s does not implement SQLQueryRuntimeProvider", resource.EngineType)
 	}
 
-	segments := CatalogPathWithoutRoot(path).Segments
+	segments := EngineCatalogPathWithoutRoot(path).Segments
 	if len(segments) < 2 {
 		return 0, fmt.Errorf("catalog row count path requires namespace and item segments")
 	}

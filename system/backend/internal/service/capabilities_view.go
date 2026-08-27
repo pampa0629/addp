@@ -52,7 +52,7 @@ func buildCapabilitySummary(caps *engineplugin.EngineCapabilities, engineType st
 		})
 	}
 
-	if hasCatalog(caps) {
+	if hasEngineCatalog(caps) {
 		badges = append(badges, capabilityBadge("catalog", "system.engine.capabilityView.summary.catalog"))
 	}
 	if hasAnyStoreRead(caps) {
@@ -102,7 +102,7 @@ func buildStorageSection(caps *engineplugin.EngineCapabilities) *models.Capabili
 		ID:       "storage",
 		TitleKey: "system.engine.capabilityView.sections.storage",
 		Status:   capabilityStatusAvailable,
-		Path:     buildCatalogPath(caps.Storage.CatalogModel),
+		Path:     buildEngineCatalogPath(caps.Storage.CatalogModel),
 		Items:    []models.CapabilityViewItem{},
 	}
 
@@ -202,7 +202,7 @@ func buildStorageSection(caps *engineplugin.EngineCapabilities) *models.Capabili
 	return section
 }
 
-func buildCatalogPath(model *engineplugin.CatalogModelSpec) []models.CapabilityPathNode {
+func buildEngineCatalogPath(model *engineplugin.EngineCatalogModelSpec) []models.CapabilityPathNode {
 	if model == nil {
 		return nil
 	}
@@ -222,9 +222,9 @@ func buildCatalogPath(model *engineplugin.CatalogModelSpec) []models.CapabilityP
 			Value:    level.Term,
 		}
 		switch level.Role {
-		case engineplugin.CatalogRoleBranch:
+		case engineplugin.EngineCatalogRoleBranch:
 			node.Tags = append(node.Tags, capabilityValueTag("branch", "system.engine.capabilityView.values.branch"))
-		case engineplugin.CatalogRoleLeaf:
+		case engineplugin.EngineCatalogRoleLeaf:
 			node.Tags = append(node.Tags, capabilityValueTag("leaf", "system.engine.capabilityView.values.leaf"))
 		}
 		if level.Optional {
@@ -755,7 +755,7 @@ func deriveSectionStatus(items []models.CapabilityViewItem) string {
 	return capabilityStatusEngineUnavailable
 }
 
-func hasCatalog(caps *engineplugin.EngineCapabilities) bool {
+func hasEngineCatalog(caps *engineplugin.EngineCapabilities) bool {
 	return caps.Storage != nil && caps.Storage.Catalog != nil && caps.Storage.Catalog.Supported
 }
 

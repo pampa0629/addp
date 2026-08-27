@@ -27,7 +27,7 @@ func TestRefreshKnownTabularItemUsesCatalogFactsWithoutContentReader(t *testing.
 	rowCount := int64(12)
 	enginePlugin := &catalogFactsOnlyTablePlugin{
 		engineType: "known-refresh-mysql-spatial-table-test",
-		facts: &plugin.CatalogFacts{
+		facts: &plugin.EngineCatalogFacts{
 			Table: &datatype.TableInfo{
 				Name:     "roads",
 				Kind:     "table",
@@ -63,7 +63,7 @@ func TestRefreshKnownTabularItemUsesCatalogFactsWithoutContentReader(t *testing.
 	parentNode := models.MetaNode{
 		TenantID:   tenantID,
 		EngineID:   engineID,
-		NodeType:   plugin.CatalogTermSchema,
+		NodeType:   plugin.EngineCatalogTermSchema,
 		Name:       "public",
 		FullName:   "public",
 		Depth:      1,
@@ -76,7 +76,7 @@ func TestRefreshKnownTabularItemUsesCatalogFactsWithoutContentReader(t *testing.
 		TenantID:    tenantID,
 		EngineID:    engineID,
 		NodeID:      parentNode.ID,
-		ItemType:    plugin.CatalogTermTable,
+		ItemType:    plugin.EngineCatalogTermTable,
 		Name:        "roads",
 		FullName:    "public.roads",
 		Fingerprint: "known-refresh-table",
@@ -144,10 +144,10 @@ func TestRefreshKnownDynamicSchemaItemUsesSamplingProviderWithoutContentReader(t
 	engineID := uint(92)
 	rowCount := int64(7)
 	sizeBytes := int64(2048)
-	enginePlugin := &knownRefreshDynamicSchemaPlugin{facts: &plugin.CatalogFacts{
+	enginePlugin := &knownRefreshDynamicSchemaPlugin{facts: &plugin.EngineCatalogFacts{
 		Table: &datatype.TableInfo{
 			Name:      "Persons",
-			Kind:      plugin.CatalogKindCollection,
+			Kind:      plugin.EngineCatalogKindCollection,
 			RowCount:  &rowCount,
 			SizeBytes: &sizeBytes,
 			Fields: []datatype.FieldInfo{
@@ -159,13 +159,13 @@ func TestRefreshKnownDynamicSchemaItemUsesSamplingProviderWithoutContentReader(t
 		},
 	}}
 
-	parentNode := models.MetaNode{TenantID: tenantID, EngineID: engineID, NodeType: plugin.CatalogTermDatabase, Name: "Outdoor", FullName: "Outdoor", Attributes: models.JSONMap{}}
+	parentNode := models.MetaNode{TenantID: tenantID, EngineID: engineID, NodeType: plugin.EngineCatalogTermDatabase, Name: "Outdoor", FullName: "Outdoor", Attributes: models.JSONMap{}}
 	if err := db.Create(&parentNode).Error; err != nil {
 		t.Fatalf("create parent node: %v", err)
 	}
 	item := models.MetaItem{
 		TenantID: tenantID, EngineID: engineID, NodeID: parentNode.ID,
-		ItemType: plugin.CatalogTermCollection, Name: "Persons", FullName: "Outdoor.Persons",
+		ItemType: plugin.EngineCatalogTermCollection, Name: "Persons", FullName: "Outdoor.Persons",
 		Fingerprint: "known-refresh-dynamic-schema", Attributes: models.JSONMap{"stale": true},
 	}
 	if err := db.Create(&item).Error; err != nil {
@@ -212,7 +212,7 @@ func TestRefreshKnownDirectLeafItemUsesCatalogFactsWithoutContentReader(t *testi
 	engineID := uint(91)
 	enginePlugin := &catalogFactsOnlyDirectLeafPlugin{
 		engineType: "known-refresh-topic-test",
-		facts: &plugin.CatalogFacts{
+		facts: &plugin.EngineCatalogFacts{
 			Kind: "topic",
 			Topic: &plugin.TopicFacts{
 				PartitionCount:    1,
@@ -233,7 +233,7 @@ func TestRefreshKnownDirectLeafItemUsesCatalogFactsWithoutContentReader(t *testi
 	parentNode := models.MetaNode{
 		TenantID:   tenantID,
 		EngineID:   engineID,
-		NodeType:   plugin.CatalogTermService,
+		NodeType:   plugin.EngineCatalogTermService,
 		Name:       "Business Kafka",
 		FullName:   "",
 		Attributes: models.JSONMap{},
@@ -274,11 +274,11 @@ func TestRefreshKnownDirectLeafItemUsesCatalogFactsWithoutContentReader(t *testi
 		t.Fatalf("refreshed item = %#v, want deep scan", result.Item)
 	}
 	if len(enginePlugin.paths) != 1 {
-		t.Fatalf("DescribeCatalogFacts call count = %d, want 1", len(enginePlugin.paths))
+		t.Fatalf("DescribeEngineCatalogFacts call count = %d, want 1", len(enginePlugin.paths))
 	}
 	path := enginePlugin.paths[0]
-	if path.EngineID != engineID || len(path.Segments) != 2 || !plugin.IsCatalogRootSegment(path.Segments[0]) || path.Segments[1].Term != "topic" || path.Segments[1].Name != "orders" {
-		t.Fatalf("DescribeCatalogFacts path = %#v", path)
+	if path.EngineID != engineID || len(path.Segments) != 2 || !plugin.IsEngineCatalogRootSegment(path.Segments[0]) || path.Segments[1].Term != "topic" || path.Segments[1].Name != "orders" {
+		t.Fatalf("DescribeEngineCatalogFacts path = %#v", path)
 	}
 	if got := commonJSON.String(result.Item.Attributes, "item", "data_type"); got != string(datatype.Unknown) {
 		t.Fatalf("item.data_type = %q, want unknown", got)
@@ -301,7 +301,7 @@ func TestRefreshKnownSingleOSGBItemRedetectsStaleGLBFormat(t *testing.T) {
 	parentNode := models.MetaNode{
 		TenantID:   tenantID,
 		EngineID:   engineID,
-		NodeType:   plugin.CatalogTermDirectory,
+		NodeType:   plugin.EngineCatalogTermDirectory,
 		Name:       "single-osgb",
 		FullName:   "3d/single-osgb",
 		Depth:      2,
@@ -315,7 +315,7 @@ func TestRefreshKnownSingleOSGBItemRedetectsStaleGLBFormat(t *testing.T) {
 		TenantID:    tenantID,
 		EngineID:    engineID,
 		NodeID:      parentNode.ID,
-		ItemType:    plugin.CatalogTermFile,
+		ItemType:    plugin.EngineCatalogTermFile,
 		Name:        "Tile_4_L20_00010t3.osgb",
 		FullName:    physicalPath,
 		Fingerprint: "known-refresh-single-osgb-stale-glb",
@@ -380,7 +380,7 @@ func TestRefreshKnownWholeOSGBSceneRedetectsStaleOSGBFormat(t *testing.T) {
 	parentNode := models.MetaNode{
 		TenantID:   tenantID,
 		EngineID:   engineID,
-		NodeType:   plugin.CatalogTermDirectory,
+		NodeType:   plugin.EngineCatalogTermDirectory,
 		Name:       "3d",
 		FullName:   "3d",
 		Depth:      1,
@@ -394,7 +394,7 @@ func TestRefreshKnownWholeOSGBSceneRedetectsStaleOSGBFormat(t *testing.T) {
 		TenantID:    tenantID,
 		EngineID:    engineID,
 		NodeID:      parentNode.ID,
-		ItemType:    plugin.CatalogTermFile,
+		ItemType:    plugin.EngineCatalogTermFile,
 		Name:        "baita",
 		FullName:    scopePath,
 		Fingerprint: "known-refresh-whole-osgb-stale-format",
@@ -453,13 +453,13 @@ func TestRefreshKnownWholeOSGBSceneRedetectsStaleOSGBFormat(t *testing.T) {
 
 type catalogFactsOnlyTablePlugin struct {
 	engineType string
-	facts      *plugin.CatalogFacts
+	facts      *plugin.EngineCatalogFacts
 }
 
 type catalogFactsOnlyDirectLeafPlugin struct {
 	engineType string
-	facts      *plugin.CatalogFacts
-	paths      []plugin.CatalogPath
+	facts      *plugin.EngineCatalogFacts
+	paths      []plugin.EngineCatalogPath
 }
 
 func (p *catalogFactsOnlyDirectLeafPlugin) Type() string { return p.engineType }
@@ -479,16 +479,16 @@ func (p *catalogFactsOnlyDirectLeafPlugin) SensitiveFields() []string { return n
 func (p *catalogFactsOnlyDirectLeafPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{SchemaVersion: plugin.CapabilitiesSchemaVersion, EngineType: p.Type()}
 }
-func (p *catalogFactsOnlyDirectLeafPlugin) CatalogModel() plugin.CatalogModelSpec {
-	return plugin.CatalogModelSpec{
-		PathVersion: plugin.CatalogPathVersion,
-		RootTerm:    plugin.CatalogTermService,
-		Levels: []plugin.CatalogLevelSpec{{
-			Term: "topic", Kinds: []string{"topic"}, Role: plugin.CatalogRoleLeaf,
+func (p *catalogFactsOnlyDirectLeafPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
+	return plugin.EngineCatalogModelSpec{
+		PathVersion: plugin.EngineCatalogPathVersion,
+		RootTerm:    plugin.EngineCatalogTermService,
+		Levels: []plugin.EngineCatalogLevelSpec{{
+			Term: "topic", Kinds: []string{"topic"}, Role: plugin.EngineCatalogRoleLeaf,
 		}},
 	}
 }
-func (p *catalogFactsOnlyDirectLeafPlugin) DescribeCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *catalogFactsOnlyDirectLeafPlugin) DescribeEngineCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	p.paths = append(p.paths, path)
 	return p.facts, nil
 }
@@ -506,12 +506,12 @@ func (p *catalogFactsOnlyTablePlugin) DefaultPort() int                         
 func (p *catalogFactsOnlyTablePlugin) RequiredFields() []string                           { return nil }
 func (p *catalogFactsOnlyTablePlugin) SensitiveFields() []string                          { return nil }
 func (p *catalogFactsOnlyTablePlugin) Capabilities() plugin.EngineCapabilities {
-	return plugin.NewTabularCapabilities(p.Type(), plugin.CatalogTermSchema, plugin.TabularCapabilityOptions{SpatialFacts: true})
+	return plugin.NewTabularCapabilities(p.Type(), plugin.EngineCatalogTermSchema, plugin.TabularCapabilityOptions{SpatialFacts: true})
 }
-func (p *catalogFactsOnlyTablePlugin) CatalogModel() plugin.CatalogModelSpec {
-	return plugin.TabularCatalogModel(plugin.CatalogTermSchema)
+func (p *catalogFactsOnlyTablePlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
+	return plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema)
 }
-func (p *catalogFactsOnlyTablePlugin) DescribeCatalogFacts(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *catalogFactsOnlyTablePlugin) DescribeEngineCatalogFacts(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	return p.facts, nil
 }
 
@@ -520,9 +520,9 @@ type knownRefreshOSGBContentReader struct {
 }
 
 type knownRefreshDynamicSchemaPlugin struct {
-	facts          *plugin.CatalogFacts
-	sampledPath    plugin.CatalogPath
-	sampledOptions plugin.CatalogFactsOptions
+	facts          *plugin.EngineCatalogFacts
+	sampledPath    plugin.EngineCatalogPath
+	sampledOptions plugin.EngineCatalogFactsOptions
 }
 
 func (p *knownRefreshDynamicSchemaPlugin) Type() string { return "known-refresh-dynamic-schema-test" }
@@ -542,10 +542,10 @@ func (p *knownRefreshDynamicSchemaPlugin) SensitiveFields() []string { return ni
 func (p *knownRefreshDynamicSchemaPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewDynamicSchemaCapabilities(p.Type())
 }
-func (p *knownRefreshDynamicSchemaPlugin) CatalogModel() plugin.CatalogModelSpec {
+func (p *knownRefreshDynamicSchemaPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.DynamicSchemaCatalogModel()
 }
-func (p *knownRefreshDynamicSchemaPlugin) SampleDynamicSchema(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *knownRefreshDynamicSchemaPlugin) SampleDynamicSchema(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	p.sampledPath = path
 	p.sampledOptions = opts
 	return p.facts, nil
@@ -575,16 +575,16 @@ func (p knownRefreshOSGBSceneProvider) Capabilities() plugin.EngineCapabilities 
 func (p knownRefreshOSGBSceneProvider) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (p knownRefreshOSGBSceneProvider) CatalogModel() plugin.CatalogModelSpec {
+func (p knownRefreshOSGBSceneProvider) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.FileCatalogModel()
 }
-func (p knownRefreshOSGBSceneProvider) ListChildren(_ context.Context, _ plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+func (p knownRefreshOSGBSceneProvider) ListChildren(_ context.Context, _ plugin.ConnectionInfo, parent plugin.EngineCatalogPath, opts plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
 	scopePath := strings.Trim(parent.StringPath(), "/")
 	metadataPath := scopePath + "/metadata.xml"
 	dataPath := scopePath + "/Data"
 	tileDirPath := dataPath + "/Tile_1"
 	tilePath := tileDirPath + "/Tile_1_L14_0.osgb"
-	entries := []plugin.CatalogEntry{
+	entries := []plugin.EngineCatalogEntry{
 		knownRefreshFileEntry(1, "metadata.xml", metadataPath, int64(len(p.contents[metadataPath]))),
 		knownRefreshDirEntry(1, "Data", dataPath),
 	}
@@ -596,10 +596,10 @@ func (p knownRefreshOSGBSceneProvider) ListChildren(_ context.Context, _ plugin.
 	}
 	return entries, nil
 }
-func (p knownRefreshOSGBSceneProvider) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p knownRefreshOSGBSceneProvider) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	return nil, nil
 }
-func (p knownRefreshOSGBSceneProvider) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+func (p knownRefreshOSGBSceneProvider) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	content, ok := p.contents[strings.Trim(path.StringPath(), "/")]
 	if !ok {
 		return nil, fmt.Errorf("content not found: %s", path.StringPath())
@@ -607,27 +607,27 @@ func (p knownRefreshOSGBSceneProvider) OpenContent(_ context.Context, _ plugin.C
 	return io.NopCloser(strings.NewReader(content)), nil
 }
 
-func knownRefreshDirEntry(engineID uint, name, path string) plugin.CatalogEntry {
-	return plugin.CatalogEntry{
+func knownRefreshDirEntry(engineID uint, name, path string) plugin.EngineCatalogEntry {
+	return plugin.EngineCatalogEntry{
 		Name: name,
 		Path: plugin.FileDirectoryPath(engineID, path),
-		Term: plugin.CatalogTermDirectory,
-		Kind: plugin.CatalogKindDirectory,
-		Role: plugin.CatalogRoleBranch,
-		Storage: &plugin.CatalogStorageFacts{
+		Term: plugin.EngineCatalogTermDirectory,
+		Kind: plugin.EngineCatalogKindDirectory,
+		Role: plugin.EngineCatalogRoleBranch,
+		Storage: &plugin.EngineCatalogStorageFacts{
 			Path: path,
 		},
 	}
 }
 
-func knownRefreshFileEntry(engineID uint, name, path string, size int64) plugin.CatalogEntry {
-	return plugin.CatalogEntry{
+func knownRefreshFileEntry(engineID uint, name, path string, size int64) plugin.EngineCatalogEntry {
+	return plugin.EngineCatalogEntry{
 		Name: name,
 		Path: plugin.FileItemPath(engineID, path),
-		Term: plugin.CatalogTermFile,
-		Kind: plugin.CatalogKindFile,
-		Role: plugin.CatalogRoleLeaf,
-		Storage: &plugin.CatalogStorageFacts{
+		Term: plugin.EngineCatalogTermFile,
+		Kind: plugin.EngineCatalogKindFile,
+		Role: plugin.EngineCatalogRoleLeaf,
+		Storage: &plugin.EngineCatalogStorageFacts{
 			Path:      path,
 			SizeBytes: &size,
 		},

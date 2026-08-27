@@ -2,7 +2,7 @@
 
 ## 模块定位
 
-Manager 模块负责数据探查、数据预览、表格数据剖析、混合检索、空间快显和瓦片缓存能力。它不管理存储引擎配置，存储引擎由 System 管理；Manager 通过 System、Meta 和实际数据源完成只读探查与预览。
+Manager 模块负责数据探查、数据预览、表格数据剖析、混合检索、空间快显和瓦片缓存能力。它不管理存储引擎配置，存储引擎由 System 管理；Manager 通过 System、Meta 和实际数据源完成只读探查与预览。Manager 的资源树是技术浏览视图，不是 Enterprise Data Catalog，也不拥有企业 `CatalogEntry`、业务语义关联或责任事实。Catalog 落地后，Manager 只按需读取目录摘要并跳转企业目录；Catalog 不可达只影响该摘要和跳转，不得回退到旧 Asset 发现或在 Manager 内复制业务目录。
 
 数据剖析已经按确认边界实现：剖析执行和结果归 Manager，Meta 只提供 data item 身份、结构和源版本事实；首期在用户进入“剖析”标签时按需创建 `task_type=data_profiling` 的 ad-hoc execution，不创建持久任务定义、不声明 TaskProvider capability。完整规则见 `manager/docs/数据剖析规范.md`。
 
@@ -70,7 +70,7 @@ manager/
 - 数据探查：`GET /engines`；资源树事实读取、搜索和刷新统一使用 Meta `/api/v1/meta/resource-tree/:engine_id...`。
 - 预览与下载：`GET /preview`、`GET /storage-stream`、`GET /downloads/file?locator={ResourceLocator}`。
 - 数据剖析：`GET /data-profiles/current` 查询当前成功结果、新鲜度和 execution；`POST /data-profile-executions` 创建或复用 `data_profiling` ad-hoc execution。
-- 搜索：`GET /search`、`GET /search/history`、`DELETE /search/history/:id`、`DELETE /search/history`；`GET /search` 的可选 `engine_id` 必须在全文与向量检索 owner 侧同时生效，供查询工作台等调用方把候选严格限定到当前引擎，禁止先全局截断再由调用方过滤。
+- 搜索：`GET /search`、`GET /search/history`、`DELETE /search/history/:id`、`DELETE /search/history`；`GET /search` 只负责 DataItem 内容、全文、向量和空间检索，不承担企业业务元数据搜索。Manager 独占 `MEILISEARCH_MANAGER_CONTENT_INDEX`；Meta 只通过 `PUT/DELETE /runtime/content-documents` 提交或删除当前 Tenant 投影，不能直接读写该索引。可选 `engine_id` 必须在全文与向量检索 owner 侧同时生效，供查询工作台等调用方把候选严格限定到当前引擎，禁止先全局截断再由调用方过滤。
 - 空间要素辅助：`GET /engines/:id/spatial/features/:feature_id/centroid`、`GET /engines/:id/spatial/features/:feature_id/geometry`。
 - 预览状态与 Quick View：`GET /preview-state?locator={ResourceLocator}` 返回任意 data item 的用户预览设置，`PATCH /preview-state/view-state` 更新地图视口、三维相机或表格可见字段，`PATCH /preview-state/preferred-mode` 更新空间显示模式；Quick View 统一使用 ResourceLocator 入口，`GET /quick-view/capability?locator={ResourceLocator}` 返回快显能力状态，`GET /quick-view/flatgeobuf?locator={ResourceLocator}` 返回中小规模矢量 FlatGeobuf 快显材料，`GET /quick-view/geojson?locator={ResourceLocator}` 保留为 GeoJSON 调试/人类可读出口，`GET /quick-view/tiles/:z/:x/:y.mvt?locator={ResourceLocator}` 从实时源或 infra PMTiles 返回 MVT，`GET /raster_cog/:id/content` 返回 ready raster COG 内容；业务 PMTiles 通过 `vector_tile_set_generation` 生成或由合格缓存固化。
 - 点云快显：`GET /point_cloud_copc/:id/content` 返回 ready COPC 快显内容；LAS / LAZ / E57 / PCD / XYZ 通过 `point_cloud_copc_generation` 生成 Manager 私有 COPC artifact，源 COPC 直接基础预览。

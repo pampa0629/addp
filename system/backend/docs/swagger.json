@@ -1646,7 +1646,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogListChildrenRequest"
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineCatalogListChildrenRequest"
                         }
                     }
                 ],
@@ -1654,7 +1654,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogListChildrenResponse"
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineCatalogListChildrenResponse"
                         }
                     },
                     "400": {
@@ -1720,7 +1720,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogDescribeFactsRequest"
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineCatalogDescribeFactsRequest"
                         }
                     }
                 ],
@@ -1728,7 +1728,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/plugin.CatalogFacts"
+                            "$ref": "#/definitions/plugin.EngineCatalogFacts"
                         }
                     },
                     "400": {
@@ -2265,7 +2265,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅 addp-develop Tenant Service Principal 可消费绑定 Session 的用户派生授权；授权复核与 CatalogProvider.ListChildren 在同一请求完成 | Only the addp-develop tenant service principal may consume the session-bound user-derived authorization; authorization review and CatalogProvider.ListChildren complete in one request",
+                "description": "仅 addp-develop Tenant Service Principal 可消费绑定 Session 的用户派生授权；授权复核与 EngineCatalogProvider.ListChildren 在同一请求完成 | Only the addp-develop tenant service principal may consume the session-bound user-derived authorization; authorization review and EngineCatalogProvider.ListChildren complete in one request",
                 "consumes": [
                     "application/json"
                 ],
@@ -2290,7 +2290,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api.IAMNotebookCatalogChildrenRequest"
+                            "$ref": "#/definitions/internal_api.IAMNotebookEngineCatalogChildrenRequest"
                         }
                     }
                 ],
@@ -2298,7 +2298,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogListChildrenResponse"
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineCatalogListChildrenResponse"
                         }
                     },
                     "400": {
@@ -4732,6 +4732,68 @@
                 ]
             }
         },
+        "/runtime/catalog-references/resolve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-catalog Tenant Service Principal 可按当前 Tenant 解析 Department 与 User；User ID 是全局稳定身份，但必须有当前 Tenant Membership；跨 Tenant 与不存在统一返回 found=false | Only the addp-catalog tenant service principal may resolve departments and users in the current tenant; a user ID is globally stable but requires a current tenant membership; cross-tenant and missing subjects both return found=false",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtime Catalog References"
+                ],
+                "summary": "精确批量解析 Catalog 责任主体 | Resolve Catalog responsibility subjects in batch",
+                "parameters": [
+                    {
+                        "description": "主体引用集合，最多 200 个 | Subject references, up to 200",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCatalogReferenceBatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCatalogReferenceBatchResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.department.read",
+                    "iam.tenant_membership.read"
+                ]
+            }
+        },
         "/runtime/engine-descriptors": {
             "get": {
                 "security": [
@@ -4968,7 +5030,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅匹配 audience 的 Tenant Runtime Service Principal 可基于可验证的 Orchestrator 父 execution 与 owner 子 execution 来源链签发授权 | Only the tenant runtime service principal matching the audience may issue from a verified Orchestrator parent and owner child execution chain",
+                "description": "仅匹配 audience 的 Tenant Runtime Service Principal 可基于可验证的 Orchestrator 父 execution 与 owner 子 execution 来源链签发授权；子 execution 必须处于 pending，或由请求中精确的 attempt 与 lease_token 持有未过期的 running 租约 | Only the tenant runtime service principal matching the audience may issue from a verified Orchestrator parent and owner child execution chain; the child must be pending or hold the exact unexpired running lease identified by attempt and lease_token",
                 "consumes": [
                     "application/json"
                 ],
@@ -5023,6 +5085,11 @@
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "transfer.task.execute",
+                    "develop.data_read.execute",
+                    "develop.data_write.execute"
+                ],
                 "x-addp-required-permissions": [
                     "system.execution_authorization.execute"
                 ]
@@ -5661,6 +5728,87 @@
                 ]
             }
         },
+        "/runtime/tenants": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "供平台 Service Principal 发现已初始化的 active Tenant | Allows platform Service Principals to discover initialized active tenants",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "服务运行时 | Service Runtime"
+                ],
+                "summary": "发现运行时租户 | Discover runtime tenants",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态 | Status",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/internal_api.IAMTenantResponse"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.tenant.read"
+                ]
+            }
+        },
         "/tenant/audit/events": {
             "get": {
                 "security": [
@@ -5954,6 +6102,567 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "audit.tenant_event.read"
+                ]
+            }
+        },
+        "/tenant/departments": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "分页查询当前 Tenant 的稳定组织单元 | List stable organization units in the current tenant",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户组织 | Tenant Organization"
+                ],
+                "summary": "查询部门 | List departments",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "编码或名称 | Code or name",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态：active/disabled | Status: active/disabled",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/internal_api.IAMDepartmentResponse"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.department.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户组织 | Tenant Organization"
+                ],
+                "summary": "创建部门 | Create department",
+                "parameters": [
+                    {
+                        "description": "部门定义 | Department definition",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCreateDepartmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMDepartmentResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.department.create"
+                ]
+            }
+        },
+        "/tenant/departments/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户组织 | Tenant Organization"
+                ],
+                "summary": "查询部门详情 | Get department",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "部门 ID | Department ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMDepartmentResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.department.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户组织 | Tenant Organization"
+                ],
+                "summary": "更新部门 | Update department",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "部门 ID | Department ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整可编辑聚合与版本 | Full editable aggregate and version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMUpdateDepartmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMDepartmentResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.department.update"
+                ]
+            }
+        },
+        "/tenant/departments/{id}/disable": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户组织 | Tenant Organization"
+                ],
+                "summary": "停用部门 | Disable department",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "部门 ID | Department ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "版本与原因 | Version and reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMVersionedLifecycleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMDepartmentResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.department.update"
+                ]
+            }
+        },
+        "/tenant/departments/{id}/memberships": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户组织 | Tenant Organization"
+                ],
+                "summary": "查询部门成员 | List department memberships",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "部门 ID | Department ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态：active/ended | Status: active/ended",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/internal_api.IAMOrganizationMembershipResponse"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.department_membership.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户组织 | Tenant Organization"
+                ],
+                "summary": "新增部门成员 | Create department membership",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "部门 ID | Department ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "成员关系 | Membership",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCreateDepartmentMembershipRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMOrganizationMembershipResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.department_membership.create"
+                ]
+            }
+        },
+        "/tenant/departments/{id}/memberships/{membership_id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户组织 | Tenant Organization"
+                ],
+                "summary": "更新部门成员关系 | Update department membership",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "部门 ID | Department ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "成员关系 ID | Membership ID",
+                        "name": "membership_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "关系与版本 | Relationship and version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMUpdateDepartmentMembershipRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMOrganizationMembershipResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.department_membership.update"
+                ]
+            }
+        },
+        "/tenant/departments/{id}/memberships/{membership_id}/close": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户组织 | Tenant Organization"
+                ],
+                "summary": "结束部门成员关系 | Close department membership",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "部门 ID | Department ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "成员关系 ID | Membership ID",
+                        "name": "membership_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "版本与原因 | Version and reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMVersionedLifecycleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMOrganizationMembershipResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.department_membership.close"
+                ]
+            }
+        },
+        "/tenant/departments/{id}/restore": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户组织 | Tenant Organization"
+                ],
+                "summary": "恢复部门 | Restore department",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "部门 ID | Department ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "版本与原因 | Version and reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMVersionedLifecycleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMDepartmentResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.department.restore"
                 ]
             }
         },
@@ -6549,6 +7258,512 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "iam.tenant_membership.suspend"
+                ]
+            }
+        },
+        "/tenant/project_groups": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "分页查询当前 Tenant 的跨部门协作集合 | List cross-department collaboration groups in the current tenant",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户组织 | Tenant Organization"
+                ],
+                "summary": "查询项目组 | List project groups",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "编码或名称 | Code or name",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态：planned/active/closed | Status: planned/active/closed",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/internal_api.IAMProjectGroupResponse"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.project_group.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户组织 | Tenant Organization"
+                ],
+                "summary": "创建项目组 | Create project group",
+                "parameters": [
+                    {
+                        "description": "项目组定义 | Project group definition",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCreateProjectGroupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMProjectGroupResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.project_group.create"
+                ]
+            }
+        },
+        "/tenant/project_groups/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户组织 | Tenant Organization"
+                ],
+                "summary": "查询项目组详情 | Get project group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目组 ID | Project group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMProjectGroupResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.project_group.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户组织 | Tenant Organization"
+                ],
+                "summary": "更新项目组 | Update project group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目组 ID | Project group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整可编辑聚合与版本 | Full editable aggregate and version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMUpdateProjectGroupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMProjectGroupResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.project_group.update"
+                ]
+            }
+        },
+        "/tenant/project_groups/{id}/close": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户组织 | Tenant Organization"
+                ],
+                "summary": "关闭项目组 | Close project group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目组 ID | Project group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "版本与原因 | Version and reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMVersionedLifecycleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMProjectGroupResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.project_group.close"
+                ]
+            }
+        },
+        "/tenant/project_groups/{id}/memberships": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户组织 | Tenant Organization"
+                ],
+                "summary": "查询项目组成员 | List project group memberships",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目组 ID | Project group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态：active/ended | Status: active/ended",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/internal_api.IAMOrganizationMembershipResponse"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.project_group_membership.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户组织 | Tenant Organization"
+                ],
+                "summary": "新增项目组成员 | Create project group membership",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目组 ID | Project group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "成员关系 | Membership",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCreateProjectGroupMembershipRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMOrganizationMembershipResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.project_group_membership.create"
+                ]
+            }
+        },
+        "/tenant/project_groups/{id}/memberships/{membership_id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户组织 | Tenant Organization"
+                ],
+                "summary": "更新项目组成员关系 | Update project group membership",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目组 ID | Project group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "成员关系 ID | Membership ID",
+                        "name": "membership_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "组内角色与版本 | Group role and version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMUpdateProjectGroupMembershipRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMOrganizationMembershipResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.project_group_membership.update"
+                ]
+            }
+        },
+        "/tenant/project_groups/{id}/memberships/{membership_id}/close": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户组织 | Tenant Organization"
+                ],
+                "summary": "结束项目组成员关系 | Close project group membership",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目组 ID | Project group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "成员关系 ID | Membership ID",
+                        "name": "membership_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "版本与原因 | Version and reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMVersionedLifecycleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMOrganizationMembershipResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.project_group_membership.close"
                 ]
             }
         },
@@ -7845,6 +9060,39 @@
                 "ContextTypeTenant"
             ]
         },
+        "github_com_addp_system_internal_iam.DepartmentMembershipType": {
+            "type": "string",
+            "enum": [
+                "primary",
+                "additional"
+            ],
+            "x-enum-varnames": [
+                "DepartmentMembershipTypePrimary",
+                "DepartmentMembershipTypeAdditional"
+            ]
+        },
+        "github_com_addp_system_internal_iam.DepartmentRelationRole": {
+            "type": "string",
+            "enum": [
+                "member",
+                "leader"
+            ],
+            "x-enum-varnames": [
+                "DepartmentRelationRoleMember",
+                "DepartmentRelationRoleLeader"
+            ]
+        },
+        "github_com_addp_system_internal_iam.DepartmentStatus": {
+            "type": "string",
+            "enum": [
+                "active",
+                "disabled"
+            ],
+            "x-enum-varnames": [
+                "DepartmentStatusActive",
+                "DepartmentStatusDisabled"
+            ]
+        },
         "github_com_addp_system_internal_iam.LocalAccountStatus": {
             "type": "string",
             "enum": [
@@ -7856,6 +9104,17 @@
                 "LocalAccountStatusActive",
                 "LocalAccountStatusLocked",
                 "LocalAccountStatusDisabled"
+            ]
+        },
+        "github_com_addp_system_internal_iam.OrganizationMembershipStatus": {
+            "type": "string",
+            "enum": [
+                "active",
+                "ended"
+            ],
+            "x-enum-varnames": [
+                "OrganizationMembershipStatusActive",
+                "OrganizationMembershipStatusEnded"
             ]
         },
         "github_com_addp_system_internal_iam.PrincipalStatus": {
@@ -7914,6 +9173,32 @@
                 "PrivilegedChangePlatformIdentityDeactivate",
                 "PrivilegedChangePlatformRoleGrant",
                 "PrivilegedChangePlatformRoleRevoke"
+            ]
+        },
+        "github_com_addp_system_internal_iam.ProjectGroupRelationRole": {
+            "type": "string",
+            "enum": [
+                "member",
+                "leader",
+                "coordinator"
+            ],
+            "x-enum-varnames": [
+                "ProjectGroupRelationRoleMember",
+                "ProjectGroupRelationRoleLeader",
+                "ProjectGroupRelationRoleCoordinator"
+            ]
+        },
+        "github_com_addp_system_internal_iam.ProjectGroupStatus": {
+            "type": "string",
+            "enum": [
+                "planned",
+                "active",
+                "closed"
+            ],
+            "x-enum-varnames": [
+                "ProjectGroupStatusPlanned",
+                "ProjectGroupStatusActive",
+                "ProjectGroupStatusClosed"
             ]
         },
         "github_com_addp_system_internal_iam.TenantInvitationStatus": {
@@ -8114,125 +9399,6 @@
                     "items": {
                         "$ref": "#/definitions/github_com_addp_common_models.CapabilityViewBadge"
                     }
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.CatalogDescribeFactsRequest": {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogPath"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.CatalogEntry": {
-            "type": "object",
-            "properties": {
-                "kind": {
-                    "type": "string",
-                    "example": "namespace"
-                },
-                "leaf_count": {
-                    "type": "integer"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "public"
-                },
-                "path": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogPath"
-                },
-                "role": {
-                    "type": "string",
-                    "example": "branch"
-                },
-                "storage": {
-                    "$ref": "#/definitions/plugin.CatalogStorageFacts"
-                },
-                "table": {
-                    "$ref": "#/definitions/datatype.TableInfo"
-                },
-                "term": {
-                    "type": "string",
-                    "example": "schema"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.CatalogListChildrenRequest": {
-            "type": "object",
-            "properties": {
-                "options": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogListOptions"
-                },
-                "path": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogPath"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.CatalogListChildrenResponse": {
-            "type": "object",
-            "properties": {
-                "nodes": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogEntry"
-                    }
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.CatalogListOptions": {
-            "type": "object",
-            "properties": {
-                "limit": {
-                    "type": "integer",
-                    "example": 100
-                },
-                "offset": {
-                    "type": "integer",
-                    "example": 0
-                },
-                "recursive": {
-                    "type": "boolean",
-                    "example": false
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.CatalogPath": {
-            "type": "object",
-            "properties": {
-                "engine_id": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "segments": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogSegment"
-                    }
-                },
-                "version": {
-                    "type": "string",
-                    "example": "catalog.path/v1"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.CatalogSegment": {
-            "type": "object",
-            "properties": {
-                "kind": {
-                    "type": "string",
-                    "example": "namespace"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "public"
-                },
-                "term": {
-                    "type": "string",
-                    "example": "schema"
                 }
             }
         },
@@ -8466,6 +9632,125 @@
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineCatalogDescribeFactsRequest": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.EngineCatalogPath"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineCatalogEntry": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "example": "namespace"
+                },
+                "leaf_count": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "public"
+                },
+                "path": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.EngineCatalogPath"
+                },
+                "role": {
+                    "type": "string",
+                    "example": "branch"
+                },
+                "storage": {
+                    "$ref": "#/definitions/plugin.EngineCatalogStorageFacts"
+                },
+                "table": {
+                    "$ref": "#/definitions/datatype.TableInfo"
+                },
+                "term": {
+                    "type": "string",
+                    "example": "schema"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineCatalogListChildrenRequest": {
+            "type": "object",
+            "properties": {
+                "options": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.EngineCatalogListOptions"
+                },
+                "path": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.EngineCatalogPath"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineCatalogListChildrenResponse": {
+            "type": "object",
+            "properties": {
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.EngineCatalogEntry"
+                    }
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineCatalogListOptions": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "example": 100
+                },
+                "offset": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "recursive": {
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineCatalogPath": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.EngineCatalogSegment"
+                    }
+                },
+                "version": {
+                    "type": "string",
+                    "example": "catalog.path/v1"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineCatalogSegment": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "example": "namespace"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "public"
+                },
+                "term": {
+                    "type": "string",
+                    "example": "schema"
                 }
             }
         },
@@ -9237,6 +10522,75 @@
                 }
             }
         },
+        "internal_api.IAMCatalogReferenceBatchRequest": {
+            "type": "object",
+            "properties": {
+                "references": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.IAMCatalogReferenceRequest"
+                    }
+                }
+            }
+        },
+        "internal_api.IAMCatalogReferenceBatchResponse": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.IAMCatalogReferenceResolution"
+                    }
+                }
+            }
+        },
+        "internal_api.IAMCatalogReferenceRequest": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "subject_type": {
+                    "type": "string",
+                    "enum": [
+                        "department",
+                        "user"
+                    ]
+                }
+            }
+        },
+        "internal_api.IAMCatalogReferenceResolution": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "found": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "membership_status": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "principal_status": {
+                    "type": "string"
+                },
+                "referenceable": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "subject_type": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.IAMChangeCurrentPasswordRequest": {
             "type": "object",
             "properties": {
@@ -9360,6 +10714,34 @@
                 }
             }
         },
+        "internal_api.IAMCreateDepartmentMembershipRequest": {
+            "type": "object",
+            "properties": {
+                "membership_type": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.DepartmentMembershipType"
+                },
+                "relation_role": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.DepartmentRelationRole"
+                },
+                "tenant_membership_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMCreateDepartmentRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.IAMCreateManagedUserRequest": {
             "type": "object",
             "properties": {
@@ -9396,6 +10778,40 @@
                 },
                 "target_principal_id": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMCreateProjectGroupMembershipRequest": {
+            "type": "object",
+            "properties": {
+                "relation_role": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.ProjectGroupRelationRole"
+                },
+                "tenant_membership_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMCreateProjectGroupRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "ends_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "starts_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.ProjectGroupStatus"
                 }
             }
         },
@@ -9552,6 +10968,35 @@
                 }
             }
         },
+        "internal_api.IAMDepartmentResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.DepartmentStatus"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.IAMErrorResponse": {
             "type": "object",
             "properties": {
@@ -9566,23 +11011,17 @@
         "internal_api.IAMExecutionAuthorizationResponse": {
             "type": "object",
             "properties": {
+                "accesses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.IAMExecutionEngineAccessScope"
+                    }
+                },
                 "actor_principal_id": {
                     "type": "string"
                 },
                 "audience": {
                     "type": "string"
-                },
-                "effects": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "engine_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 },
                 "execution_id": {
                     "type": "string"
@@ -9655,6 +11094,20 @@
                     "type": "string"
                 },
                 "expires_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMExecutionEngineAccessScope": {
+            "type": "object",
+            "properties": {
+                "effects": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "engine_id": {
                     "type": "string"
                 }
             }
@@ -9740,26 +11193,26 @@
         "internal_api.IAMIssueExecutionAuthorizationFromExecutionRequest": {
             "type": "object",
             "properties": {
+                "accesses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.IAMExecutionEngineAccessScope"
+                    }
+                },
+                "attempt": {
+                    "type": "integer"
+                },
                 "audience": {
                     "type": "string"
-                },
-                "effects": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "engine_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 },
                 "execution_id": {
                     "type": "string"
                 },
                 "expires_in": {
                     "type": "integer"
+                },
+                "lease_token": {
+                    "type": "string"
                 },
                 "parent_execution_id": {
                     "type": "string"
@@ -9769,17 +11222,17 @@
         "internal_api.IAMIssueExecutionAuthorizationFromServiceDefinitionRequest": {
             "type": "object",
             "properties": {
+                "accesses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.IAMExecutionEngineAccessScope"
+                    }
+                },
                 "definition_id": {
                     "type": "string"
                 },
                 "definition_version": {
                     "type": "string"
-                },
-                "engine_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 },
                 "execution_id": {
                     "type": "string"
@@ -9792,20 +11245,14 @@
         "internal_api.IAMIssueExecutionAuthorizationRequest": {
             "type": "object",
             "properties": {
+                "accesses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.IAMExecutionEngineAccessScope"
+                    }
+                },
                 "audience": {
                     "type": "string"
-                },
-                "effects": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "engine_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 },
                 "execution_id": {
                     "type": "string"
@@ -9996,17 +11443,17 @@
                 }
             }
         },
-        "internal_api.IAMNotebookCatalogChildrenRequest": {
+        "internal_api.IAMNotebookEngineCatalogChildrenRequest": {
             "type": "object",
             "properties": {
                 "engine_id": {
                     "type": "integer"
                 },
                 "options": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogListOptions"
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.EngineCatalogListOptions"
                 },
                 "path": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogPath"
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.EngineCatalogPath"
                 },
                 "session_id": {
                     "type": "string"
@@ -10131,6 +11578,50 @@
                 }
             }
         },
+        "internal_api.IAMOrganizationMembershipResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "department_role": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.DepartmentRelationRole"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "ended_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "membership_type": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.DepartmentMembershipType"
+                },
+                "principal_id": {
+                    "type": "string"
+                },
+                "project_group_role": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.ProjectGroupRelationRole"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.OrganizationMembershipStatus"
+                },
+                "tenant_membership_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.IAMPasswordRotationResponse": {
             "type": "object",
             "properties": {
@@ -10177,6 +11668,41 @@
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMProjectGroupResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "ends_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "starts_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.ProjectGroupStatus"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -10640,6 +12166,34 @@
                 }
             }
         },
+        "internal_api.IAMUpdateDepartmentMembershipRequest": {
+            "type": "object",
+            "properties": {
+                "membership_type": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.DepartmentMembershipType"
+                },
+                "relation_role": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.DepartmentRelationRole"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.IAMUpdateDepartmentRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.IAMUpdateManagedUserRequest": {
             "type": "object",
             "properties": {
@@ -10651,6 +12205,40 @@
                 },
                 "primary_email": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMUpdateProjectGroupMembershipRequest": {
+            "type": "object",
+            "properties": {
+                "relation_role": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.ProjectGroupRelationRole"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.IAMUpdateProjectGroupRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "ends_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "starts_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.ProjectGroupStatus"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -10711,6 +12299,17 @@
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMVersionedLifecycleRequest": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -10919,104 +12518,6 @@
                 }
             }
         },
-        "plugin.CatalogFacts": {
-            "type": "object",
-            "properties": {
-                "constraints": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/plugin.ConstraintFacts"
-                    }
-                },
-                "graph": {
-                    "$ref": "#/definitions/datatype.GraphInfo"
-                },
-                "indexes": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/plugin.IndexFacts"
-                    }
-                },
-                "kind": {
-                    "type": "string"
-                },
-                "partitioning": {
-                    "$ref": "#/definitions/plugin.TablePartitioningFacts"
-                },
-                "path": {
-                    "$ref": "#/definitions/plugin.CatalogPath"
-                },
-                "spatial": {
-                    "$ref": "#/definitions/datatype.SpatialInfo"
-                },
-                "storage": {
-                    "$ref": "#/definitions/plugin.CatalogStorageFacts"
-                },
-                "table": {
-                    "$ref": "#/definitions/datatype.TableInfo"
-                },
-                "topic": {
-                    "$ref": "#/definitions/plugin.TopicFacts"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
-        "plugin.CatalogPath": {
-            "type": "object",
-            "properties": {
-                "engine_id": {
-                    "type": "integer"
-                },
-                "segments": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/plugin.CatalogSegment"
-                    }
-                },
-                "version": {
-                    "type": "string"
-                }
-            }
-        },
-        "plugin.CatalogSegment": {
-            "type": "object",
-            "properties": {
-                "kind": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "term": {
-                    "type": "string"
-                }
-            }
-        },
-        "plugin.CatalogStorageFacts": {
-            "type": "object",
-            "properties": {
-                "content_type": {
-                    "type": "string"
-                },
-                "etag": {
-                    "type": "string"
-                },
-                "extension": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "path": {
-                    "type": "string"
-                },
-                "size_bytes": {
-                    "type": "integer"
-                }
-            }
-        },
         "plugin.ConstraintFacts": {
             "type": "object",
             "properties": {
@@ -11043,6 +12544,104 @@
                 },
                 "referenced_table": {
                     "type": "string"
+                }
+            }
+        },
+        "plugin.EngineCatalogFacts": {
+            "type": "object",
+            "properties": {
+                "constraints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.ConstraintFacts"
+                    }
+                },
+                "graph": {
+                    "$ref": "#/definitions/datatype.GraphInfo"
+                },
+                "indexes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.IndexFacts"
+                    }
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "partitioning": {
+                    "$ref": "#/definitions/plugin.TablePartitioningFacts"
+                },
+                "path": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "spatial": {
+                    "$ref": "#/definitions/datatype.SpatialInfo"
+                },
+                "storage": {
+                    "$ref": "#/definitions/plugin.EngineCatalogStorageFacts"
+                },
+                "table": {
+                    "$ref": "#/definitions/datatype.TableInfo"
+                },
+                "topic": {
+                    "$ref": "#/definitions/plugin.TopicFacts"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.EngineCatalogPath": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.EngineCatalogSegment"
+                    }
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.EngineCatalogSegment": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "term": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.EngineCatalogStorageFacts": {
+            "type": "object",
+            "properties": {
+                "content_type": {
+                    "type": "string"
+                },
+                "etag": {
+                    "type": "string"
+                },
+                "extension": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "size_bytes": {
+                    "type": "integer"
                 }
             }
         },

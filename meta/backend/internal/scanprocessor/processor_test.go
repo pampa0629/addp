@@ -15,9 +15,9 @@ import (
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 func TestFileSingleDetectedItemInputKeepsStorageFacts(t *testing.T) {
@@ -27,12 +27,12 @@ func TestFileSingleDetectedItemInputKeepsStorageFacts(t *testing.T) {
 	resource := &commonModels.Engine{ID: 9, EngineType: "static"}
 	parent := &models.MetaNode{ID: 3, FullName: "tables"}
 	file := metaitem.StorageFileRef{
-		Name:        "sales.csv",
-		Path:        "tables/sales.csv",
-		CatalogPath: plugin.FileItemPath(resource.ID, "tables/sales.csv"),
-		Size:        42,
-		ModifiedAt:  modifiedAt,
-		ContentType: "text/csv",
+		Name:              "sales.csv",
+		Path:              "tables/sales.csv",
+		EngineCatalogPath: plugin.FileItemPath(resource.ID, "tables/sales.csv"),
+		Size:              42,
+		ModifiedAt:        modifiedAt,
+		ContentType:       "text/csv",
 	}
 	detected := metaitem.InferSingleResourceItem(file)
 	fullName := "root/tables/sales.csv"
@@ -45,8 +45,8 @@ func TestFileSingleDetectedItemInputKeepsStorageFacts(t *testing.T) {
 	if input.PhysicalPath != file.Path || input.IndexPath != file.Path || input.IndexRelativePath != file.Path {
 		t.Fatalf("paths = physical:%q index:%q relative:%q", input.PhysicalPath, input.IndexPath, input.IndexRelativePath)
 	}
-	if input.CatalogPathFor(file.Path).StringPath() != "tables/sales.csv" {
-		t.Fatalf("catalog path = %q", input.CatalogPathFor(file.Path).StringPath())
+	if input.EngineCatalogPathFor(file.Path).StringPath() != "tables/sales.csv" {
+		t.Fatalf("catalog path = %q", input.EngineCatalogPathFor(file.Path).StringPath())
 	}
 	if input.DataUpdatedAt == nil || !input.DataUpdatedAt.Equal(modifiedAt) {
 		t.Fatalf("DataUpdatedAt = %#v, want %v", input.DataUpdatedAt, modifiedAt)
@@ -70,25 +70,25 @@ func TestCatalogInputsRequireStrictDeepEnrichForCAD(t *testing.T) {
 		SizeBytes:          &size,
 	}}
 	file := metaitem.StorageFileRef{
-		Name:        "sample.dwg",
-		Path:        "cad/sample.dwg",
-		CatalogPath: plugin.FileItemPath(resource.ID, "cad/sample.dwg"),
-		Size:        size,
+		Name:              "sample.dwg",
+		Path:              "cad/sample.dwg",
+		EngineCatalogPath: plugin.FileItemPath(resource.ID, "cad/sample.dwg"),
+		Size:              size,
 	}
-	filePlan, ok := metacatalog.PlanFileCatalogDetectedItem(resource.ID, "cad", detected, "file")
+	filePlan, ok := scanresource.PlanFileDetectedItem(resource.ID, "cad", detected, "file")
 	if !ok {
 		t.Fatal("file item plan should be created")
 	}
-	objectResource := metacatalog.StorageResource{
-		RootName:    "data",
-		Path:        "cad/sample.dwg",
-		FullPath:    "data/cad/sample.dwg",
-		NodeType:    "object",
-		Format:      string(format.FormatDWG),
-		SizeBytes:   size,
-		CatalogPath: plugin.ObjectItemPath(resource.ID, "data", "cad/sample.dwg"),
+	objectResource := scanresource.StorageResource{
+		RootName:          "data",
+		Path:              "cad/sample.dwg",
+		FullPath:          "data/cad/sample.dwg",
+		NodeType:          "object",
+		Format:            string(format.FormatDWG),
+		SizeBytes:         size,
+		EngineCatalogPath: plugin.ObjectItemPath(resource.ID, "data", "cad/sample.dwg"),
 	}
-	objectPlan := metacatalog.PlanObjectCatalogSingleItem(resource.ID, objectResource, objectResource.Path, "object")
+	objectPlan := scanresource.PlanObjectSingleItem(resource.ID, objectResource, objectResource.Path, "object")
 
 	inputs := map[string]input{
 		"file single":   FileSingleInput(resource, 1, parent, file, detected, "file", file.Name, file.Path, nil, nil, models.ScannedDepthDeep),
@@ -127,7 +127,7 @@ func TestFileDetectedItemInputKeepsCatalogAndIndexPaths(t *testing.T) {
 			SizeBytes:          &size,
 		},
 	}
-	plan, ok := metacatalog.PlanFileCatalogDetectedItem(resource.ID, "/tables", detected, "file")
+	plan, ok := scanresource.PlanFileDetectedItem(resource.ID, "/tables", detected, "file")
 	if !ok {
 		t.Fatal("file item plan should be created")
 	}
@@ -143,8 +143,8 @@ func TestFileDetectedItemInputKeepsCatalogAndIndexPaths(t *testing.T) {
 	if input.PhysicalPath != "tables/sales.csv" || input.IndexPath != "tables/sales.csv" || input.IndexRelativePath != "tables/sales.csv" {
 		t.Fatalf("paths = physical:%q index:%q relative:%q", input.PhysicalPath, input.IndexPath, input.IndexRelativePath)
 	}
-	if input.CatalogPathFor(input.PhysicalPath).StringPath() != "tables/sales.csv" {
-		t.Fatalf("catalog path = %q", input.CatalogPathFor(input.PhysicalPath).StringPath())
+	if input.EngineCatalogPathFor(input.PhysicalPath).StringPath() != "tables/sales.csv" {
+		t.Fatalf("catalog path = %q", input.EngineCatalogPathFor(input.PhysicalPath).StringPath())
 	}
 	if !input.IncludeAccessIndex || input.SizeBytes != size || input.Attributes == nil {
 		t.Fatalf("input flags/size/attrs = access:%v size:%d attrs:%#v", input.IncludeAccessIndex, input.SizeBytes, input.Attributes)
@@ -171,7 +171,7 @@ func TestFileDetectedMultiTIFFInputUsesPrimaryContentPath(t *testing.T) {
 			SizeBytes: &size,
 		},
 	}
-	plan, ok := metacatalog.PlanFileCatalogDetectedItem(resource.ID, "/geotiff", detected, "file")
+	plan, ok := scanresource.PlanFileDetectedItem(resource.ID, "/geotiff", detected, "file")
 	if !ok {
 		t.Fatal("file item plan should be created")
 	}
@@ -184,8 +184,8 @@ func TestFileDetectedMultiTIFFInputUsesPrimaryContentPath(t *testing.T) {
 	if input.PhysicalPath != "geotiff/srtm_40_01.tif" {
 		t.Fatalf("physical path = %q, want primary TIFF path", input.PhysicalPath)
 	}
-	if input.CatalogPathFor(input.PhysicalPath).StringPath() != "geotiff/srtm_40_01.tif" {
-		t.Fatalf("catalog path = %q, want primary TIFF path", input.CatalogPathFor(input.PhysicalPath).StringPath())
+	if input.EngineCatalogPathFor(input.PhysicalPath).StringPath() != "geotiff/srtm_40_01.tif" {
+		t.Fatalf("catalog path = %q, want primary TIFF path", input.EngineCatalogPathFor(input.PhysicalPath).StringPath())
 	}
 }
 
@@ -209,7 +209,7 @@ func TestFileDetectedWholeScopeInputUsesScopeRootPath(t *testing.T) {
 		},
 		PhysicalPath: "3d/site",
 	}
-	plan, ok := metacatalog.PlanFileCatalogDetectedItem(resource.ID, "3d/site", detected, "file")
+	plan, ok := scanresource.PlanFileDetectedItem(resource.ID, "3d/site", detected, "file")
 	if !ok {
 		t.Fatal("file item plan should be created")
 	}
@@ -222,8 +222,8 @@ func TestFileDetectedWholeScopeInputUsesScopeRootPath(t *testing.T) {
 	if input.PhysicalPath != "3d/site" {
 		t.Fatalf("physical path = %q, want whole scope root", input.PhysicalPath)
 	}
-	if input.CatalogPathFor(input.PhysicalPath).StringPath() != "3d/site" {
-		t.Fatalf("catalog path = %q, want whole scope root", input.CatalogPathFor(input.PhysicalPath).StringPath())
+	if input.EngineCatalogPathFor(input.PhysicalPath).StringPath() != "3d/site" {
+		t.Fatalf("catalog path = %q, want whole scope root", input.EngineCatalogPathFor(input.PhysicalPath).StringPath())
 	}
 }
 
@@ -233,7 +233,7 @@ func TestObjectCompositeDetectedItemInputKeepsBucketAndObjectPaths(t *testing.T)
 	size := int64(256)
 	resource := &commonModels.Engine{ID: 7, EngineType: "static"}
 	parent := &models.MetaNode{ID: 5, FullName: "addp/datasets/roads"}
-	composite := metacatalog.ObjectCatalogCompositeItem{
+	composite := scanresource.ObjectCompositeItem{
 		Bucket: "addp",
 		Prefix: "datasets/roads",
 		Item: &metaitem.DetectedItem{
@@ -246,7 +246,7 @@ func TestObjectCompositeDetectedItemInputKeepsBucketAndObjectPaths(t *testing.T)
 			},
 		},
 	}
-	plan, ok := metacatalog.PlanObjectCatalogCompositeItem(resource.ID, composite, "object")
+	plan, ok := scanresource.PlanObjectCompositeItem(resource.ID, composite, "object")
 	if !ok {
 		t.Fatal("object composite item plan should be created")
 	}
@@ -265,8 +265,8 @@ func TestObjectCompositeDetectedItemInputKeepsBucketAndObjectPaths(t *testing.T)
 	if input.IndexRootName != "addp" || input.IndexPath != "datasets/roads/roads.shp" || input.IndexRelativePath != "datasets/roads/roads.shp" {
 		t.Fatalf("index fields = root:%q path:%q relative:%q", input.IndexRootName, input.IndexPath, input.IndexRelativePath)
 	}
-	if input.CatalogPathFor(input.IndexPath).StringPath() != "addp/datasets/roads/roads.shp" {
-		t.Fatalf("catalog path = %q", input.CatalogPathFor(input.IndexPath).StringPath())
+	if input.EngineCatalogPathFor(input.IndexPath).StringPath() != "addp/datasets/roads/roads.shp" {
+		t.Fatalf("catalog path = %q", input.EngineCatalogPathFor(input.IndexPath).StringPath())
 	}
 	if !input.IncludeAccessIndex || input.SizeBytes != size || input.Attributes == nil {
 		t.Fatalf("input flags/size/attrs = access:%v size:%d attrs:%#v", input.IncludeAccessIndex, input.SizeBytes, input.Attributes)
@@ -279,7 +279,7 @@ func TestObjectCompositeMultiTIFFInputUsesPrimaryObject(t *testing.T) {
 	size := int64(162)
 	resource := &commonModels.Engine{ID: 7, EngineType: "static"}
 	parent := &models.MetaNode{ID: 5, FullName: "addp/image"}
-	composite := metacatalog.ObjectCatalogCompositeItem{
+	composite := scanresource.ObjectCompositeItem{
 		Bucket: "addp",
 		Prefix: "image",
 		Item: &metaitem.DetectedItem{
@@ -298,7 +298,7 @@ func TestObjectCompositeMultiTIFFInputUsesPrimaryObject(t *testing.T) {
 			},
 		},
 	}
-	plan, ok := metacatalog.PlanObjectCatalogCompositeItem(resource.ID, composite, "object")
+	plan, ok := scanresource.PlanObjectCompositeItem(resource.ID, composite, "object")
 	if !ok {
 		t.Fatal("object composite item plan should be created")
 	}
@@ -314,8 +314,8 @@ func TestObjectCompositeMultiTIFFInputUsesPrimaryObject(t *testing.T) {
 	if input.IndexRootName != "addp" || input.IndexPath != "image/srtm_40_01.tif" {
 		t.Fatalf("index fields = root:%q path:%q, want primary object", input.IndexRootName, input.IndexPath)
 	}
-	if input.CatalogPathFor(input.IndexPath).StringPath() != "addp/image/srtm_40_01.tif" {
-		t.Fatalf("catalog path = %q, want bucket-qualified primary object", input.CatalogPathFor(input.IndexPath).StringPath())
+	if input.EngineCatalogPathFor(input.IndexPath).StringPath() != "addp/image/srtm_40_01.tif" {
+		t.Fatalf("catalog path = %q, want bucket-qualified primary object", input.EngineCatalogPathFor(input.IndexPath).StringPath())
 	}
 }
 
@@ -325,17 +325,17 @@ func TestObjectSingleDetectedItemInputKeepsEnhancedAttrsAndStorageFacts(t *testi
 	modifiedAt := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 	resource := &commonModels.Engine{ID: 7, EngineType: "static"}
 	parent := &models.MetaNode{ID: 5, FullName: "addp/datasets"}
-	catalogResource := metacatalog.StorageResource{
-		RootName:     "addp",
-		Path:         "datasets/profile.json",
-		FullPath:     "addp/datasets/profile.json",
-		NodeType:     "object",
-		Format:       string(format.FormatJSON),
-		SizeBytes:    128,
-		LastModified: &modifiedAt,
-		CatalogPath:  plugin.ObjectItemPath(resource.ID, "addp", "datasets/profile.json"),
+	catalogResource := scanresource.StorageResource{
+		RootName:          "addp",
+		Path:              "datasets/profile.json",
+		FullPath:          "addp/datasets/profile.json",
+		NodeType:          "object",
+		Format:            string(format.FormatJSON),
+		SizeBytes:         128,
+		LastModified:      &modifiedAt,
+		EngineCatalogPath: plugin.ObjectItemPath(resource.ID, "addp", "datasets/profile.json"),
 	}
-	plan := metacatalog.PlanObjectCatalogSingleItem(resource.ID, catalogResource, "datasets/profile.json", "object")
+	plan := scanresource.PlanObjectSingleItem(resource.ID, catalogResource, "datasets/profile.json", "object")
 	attrs := models.JSONMap{
 		"storage": map[string]interface{}{"path": "kept/from/existing"},
 	}
@@ -351,8 +351,8 @@ func TestObjectSingleDetectedItemInputKeepsEnhancedAttrsAndStorageFacts(t *testi
 	if input.PhysicalPath != catalogResource.FullPath || input.IndexRootName != "addp" || input.IndexPath != catalogResource.Path || input.IndexRelativePath != "datasets/profile.json" {
 		t.Fatalf("paths = physical:%q root:%q index:%q relative:%q", input.PhysicalPath, input.IndexRootName, input.IndexPath, input.IndexRelativePath)
 	}
-	if input.CatalogPathFor(input.IndexPath).StringPath() != "addp/datasets/profile.json" {
-		t.Fatalf("catalog path = %q", input.CatalogPathFor(input.IndexPath).StringPath())
+	if input.EngineCatalogPathFor(input.IndexPath).StringPath() != "addp/datasets/profile.json" {
+		t.Fatalf("catalog path = %q", input.EngineCatalogPathFor(input.IndexPath).StringPath())
 	}
 	if input.DataUpdatedAt == nil || !input.DataUpdatedAt.Equal(modifiedAt) {
 		t.Fatalf("DataUpdatedAt = %#v, want %v", input.DataUpdatedAt, modifiedAt)
@@ -441,10 +441,10 @@ func TestEnrichKnownMultiTablePreservesBaseItemAndStorageAttributes(t *testing.T
 	metaattr.SetStorage(attrs, "physical_path", "roads/roads.main")
 
 	got, err := (Processor{}).enrichKnownMultiTable(context.Background(), &input{
-		Detected:       detected,
-		ContentReader:  scanProcessorContentReader{},
-		EngineID:       1,
-		CatalogPathFor: plugin.FileItemPathForEngine(1),
+		Detected:             detected,
+		ContentReader:        scanProcessorContentReader{},
+		EngineID:             1,
+		EngineCatalogPathFor: plugin.FileItemPathForEngine(1),
 	}, attrs)
 	if err != nil {
 		t.Fatalf("enrichKnownMultiTable() error = %v", err)
@@ -525,6 +525,6 @@ func (scanProcessorContentReader) Capabilities() plugin.EngineCapabilities {
 func (scanProcessorContentReader) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (scanProcessorContentReader) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
+func (scanProcessorContentReader) OpenContent(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("")), nil
 }

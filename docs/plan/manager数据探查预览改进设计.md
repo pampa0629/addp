@@ -194,7 +194,7 @@ type TreeNode struct {
 
 ### 4.3 预览 API 响应增强
 
-预览响应中附加来自 Meta 的 item facts，attributes 以 key-value 列表形式返回。当前实现中该结构属于 Manager 预览 DTO，不是 engine `CatalogFacts`：
+预览响应中附加来自 Meta 的 item facts，attributes 以 key-value 列表形式返回。当前实现中该结构属于 Manager 预览 DTO，不是 engine `EngineCatalogFacts`：
 
 ```go
 type TablePreview struct {

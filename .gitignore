@@ -188,3 +188,4 @@ business/nfs/data/
 
 # 《数据治理100问》本地生成的发行物
 docs/books/数据治理100问/发布稿/*.pdf
+docs/books/数据治理100问/发布稿/*.mobi

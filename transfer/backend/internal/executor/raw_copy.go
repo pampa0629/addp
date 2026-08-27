@@ -20,7 +20,7 @@ type RawCopyPlan struct {
 
 type RawCopyEndpointPlan struct {
 	ConnInfo          engineplugin.ConnectionInfo
-	Path              engineplugin.CatalogPath
+	Path              engineplugin.EngineCatalogPath
 	ContentRead       engineplugin.ReadOptions
 	ContentWrite      engineplugin.WriteOptions
 	DeleteBeforeWrite bool

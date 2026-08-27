@@ -79,7 +79,7 @@ type InstanceCapabilitiesResolver interface {
 
 实现 `addp.workflow/v1` 的 Workflow Runtime 不按 `engine_type` 建立重复内置插件。它们通过 System Engine Instance 注册 capabilities 和 Runtime endpoint，Common Engine 使用唯一的 `HTTPWorkflowRuntimeProvider` 适配协议。`common/engine/plugins/builtin/extension` 只加载确实具有非通用控制面或 Provider 语义的内置 Runtime Plugin，不作为工作流运行时类型白名单。
 
-领域专用 Provider 可以保留，例如 SuperMap SDX+ for PostgreSQL table session Provider。此类 Provider 负责 ADDP 数据类型与领域协议之间的映射，但必须消费绑定 Runtime Engine Instance 的通用 `WorkflowRuntimeProvider`，不得再按固定 `engine_type` 获取一个编译期 Workflow Plugin。跨模块调用必须先按具体 Engine Instance 的 `extensions.spatial_workspaces[].bound_runtime_engine_id` 解析 Provider，再消费其 `CatalogModelProvider`、`CatalogFactsProvider` 和 table session 能力；不得按 `engine_type=postgresql` 直接进入 PostGIS SQL 路径。SuperMap SDX+ for PostgreSQL 的私有 geometry 只能在绑定 Runtime 内转换为 EWKB，`common/spatial`、Manager 和 Transfer 不解析其数据库 Blob。
+领域专用 Provider 可以保留，例如 SuperMap SDX+ for PostgreSQL table session Provider。此类 Provider 负责 ADDP 数据类型与领域协议之间的映射，但必须消费绑定 Runtime Engine Instance 的通用 `WorkflowRuntimeProvider`，不得再按固定 `engine_type` 获取一个编译期 Workflow Plugin。跨模块调用必须先按具体 Engine Instance 的 `extensions.spatial_workspaces[].bound_runtime_engine_id` 解析 Provider，再消费其 `EngineCatalogModelProvider`、`EngineCatalogFactsProvider` 和 table session 能力；不得按 `engine_type=postgresql` 直接进入 PostGIS SQL 路径。SuperMap SDX+ for PostgreSQL 的私有 geometry 只能在绑定 Runtime 内转换为 EWKB，`common/spatial`、Manager 和 Transfer 不解析其数据库 Blob。
 
 ### DSNProvider
 
@@ -104,22 +104,24 @@ type DSNProvider interface {
 
 ## 三、Provider 分层
 
-### CatalogModelProvider
+本节中的 Catalog 一律指 **Engine Catalog / 引擎目录**。跨模块公共类型使用 `EngineCatalog*` 前缀；不带限定词的 `Catalog` 和 `CatalogEntry` 保留给企业数据目录。既有 `/engines/:id/catalog/...` 路由、`storage.catalog*` capability JSON 和 `catalog.path/v1` 版本值由 Engine 上下文唯一限定，第一阶段保留。
+
+### EngineCatalogModelProvider
 
 声明引擎目录层级和术语，不访问真实数据。
 
 ```go
-type CatalogModelProvider interface {
+type EngineCatalogModelProvider interface {
     EnginePlugin
-    CatalogModel() CatalogModelSpec
+    EngineCatalogModel() EngineCatalogModelSpec
 }
 ```
 
-`CatalogLevelSpec.I18nKey` 是 UI 展示引擎原生术语的事实源。上层模块可以统一按 catalog model 消费目录与路径，但用户界面不应显示内部抽象名，而应使用该 key 翻译成 `Schema`、`数据库`、`Bucket`、`目录` 等原生术语。
+`EngineCatalogLevelSpec.I18nKey` 是 UI 展示引擎原生术语的事实源。上层模块可以统一按 catalog model 消费目录与路径，但用户界面不应显示内部抽象名，而应使用该 key 翻译成 `Schema`、`数据库`、`Bucket`、`目录` 等原生术语。
 
 示例层级：
 
-| 引擎 | Catalog Model |
+| 引擎 | Engine Catalog Model |
 | --- | --- |
 | PostgreSQL | `server(root) -> schema -> table/view` |
 | Oracle | `server(root) -> schema -> table/view/materialized_view` |
@@ -130,68 +132,68 @@ type CatalogModelProvider interface {
 | NFS | `root -> directory -> file` |
 | Kafka | `service(root) -> topic` |
 
-`CatalogModelSpec.RootTerm` 表达结构 root，`Levels` 只描述 root 下的业务层级，不包含 root。所有 catalog path 必须以显性 root segment 开始；`CatalogPath.StringPath()` 与 ResourceLocator 业务路径会跳过该 root segment。
+`EngineCatalogModelSpec.RootTerm` 表达结构 root，`Levels` 只描述 root 下的业务层级，不包含 root。所有 catalog path 必须以显性 root segment 开始；`EngineCatalogPath.StringPath()` 与 ResourceLocator 业务路径会跳过该 root segment。
 
-### CatalogProvider
+### EngineCatalogProvider
 
 连接真实引擎，列出真实 catalog entry。
 
 ```go
-type CatalogProvider interface {
+type EngineCatalogProvider interface {
     EnginePlugin
-    ListChildren(ctx context.Context, connInfo ConnectionInfo, parent CatalogPath, opts ListOptions) ([]CatalogEntry, error)
-    ResolvePath(ctx context.Context, connInfo ConnectionInfo, path CatalogPath) (*CatalogEntry, error)
+    ListChildren(ctx context.Context, connInfo ConnectionInfo, parent EngineCatalogPath, opts ListOptions) ([]EngineCatalogEntry, error)
+    ResolvePath(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath) (*EngineCatalogEntry, error)
 }
 ```
 
 公共调用方必须优先使用该统一入口，不再调用 `ListSchemas`、`ListTables`、`ListBuckets`、`ListCollections` 等旧上层接口。
 
-`ListChildren` 不接受 empty path 作为业务枚举入口。实时浏览需要展示根层时，由上层通过 `CatalogRootEntry(model, engineID, engineName)` 返回结构 root；枚举第一层业务节点时必须调用 `ListChildren(rootPath)`。provider 收到 empty path 应视为调用错误。
+`ListChildren` 不接受 empty path 作为业务枚举入口。实时浏览需要展示根层时，由上层通过 `EngineCatalogRootEntry(model, engineID, engineName)` 返回结构 root；枚举第一层业务节点时必须调用 `ListChildren(rootPath)`。provider 收到 empty path 应视为调用错误。
 
-`CatalogEntry.Role` 只允许 `branch` / `leaf`，表达 catalog 结构角色；`CatalogEntry.Term` 表达引擎原生术语，例如 `schema`、`table`、`bucket`、`prefix`、`object`、`file`、`collection`、`graph`。Engine 层不得用 `item` 表达 ADDP data item，也不得用 `is_item` / `is_container` 这类布尔字段作为主路径。
+`EngineCatalogEntry.Role` 只允许 `branch` / `leaf`，表达 catalog 结构角色；`EngineCatalogEntry.Term` 表达引擎原生术语，例如 `schema`、`table`、`bucket`、`prefix`、`object`、`file`、`collection`、`graph`。Engine 层不得用 `item` 表达 ADDP data item，也不得用 `is_item` / `is_container` 这类布尔字段作为主路径。
 
-`CatalogEntry` 是实时列表和路径解析用的轻量 catalog 条目，`Entry` 表达“目录条目 / 列表项”，不是“入口”。它回答“当前位置下面有什么、结构上怎么走”，不回答完整详情。稳定列表摘要必须使用显式字段：表格型 leaf 摘要进入 `Table *datatype.TableInfo`，branch 下直接 leaf 数量摘要进入 `LeafCount`，文件 / 对象列表事实进入 `Storage *CatalogStorageFacts` 和 `UpdatedAt`。`CatalogEntry.Table` 只能承载 `Name`、`Kind`、`Comment`、`EstimatedRowCount`、`SizeBytes`、`UpdatedAt`、`Native` 等列表级表摘要；只有来源能保证低成本值就是精确值时才可填充 `RowCount`，不得用估算值填充。列表摘要不应填充 `Fields` / `PrimaryKey`；`CatalogEntry.Storage` 只能承载 `Path`、`ContentType`、`ETag`、`SizeBytes` 等列表级存储摘要，不应填充 `Name` / `Extension` 等详情或派生事实。字段、主键、索引、graph schema、采样、完整 storage facts 等详情事实必须通过 `CatalogFactsProvider` 返回。`CatalogEntry` 不保留 `Attributes` 或 `Stats` 兜底口袋；Meta item attributes 和展示统计是扫描落库后的上层语义，不应回流为 engine listing 字段。
+`EngineCatalogEntry` 是实时列表和路径解析用的轻量 catalog 条目，`Entry` 表达“目录条目 / 列表项”，不是“入口”。它回答“当前位置下面有什么、结构上怎么走”，不回答完整详情。稳定列表摘要必须使用显式字段：表格型 leaf 摘要进入 `Table *datatype.TableInfo`，branch 下直接 leaf 数量摘要进入 `LeafCount`，文件 / 对象列表事实进入 `Storage *EngineCatalogStorageFacts` 和 `UpdatedAt`。`EngineCatalogEntry.Table` 只能承载 `Name`、`Kind`、`Comment`、`EstimatedRowCount`、`SizeBytes`、`UpdatedAt`、`Native` 等列表级表摘要；只有来源能保证低成本值就是精确值时才可填充 `RowCount`，不得用估算值填充。列表摘要不应填充 `Fields` / `PrimaryKey`；`EngineCatalogEntry.Storage` 只能承载 `Path`、`ContentType`、`ETag`、`SizeBytes` 等列表级存储摘要，不应填充 `Name` / `Extension` 等详情或派生事实。字段、主键、索引、graph schema、采样、完整 storage facts 等详情事实必须通过 `EngineCatalogFactsProvider` 返回。`EngineCatalogEntry` 不保留 `Attributes` 或 `Stats` 兜底口袋；Meta item attributes 和展示统计是扫描落库后的上层语义，不应回流为 engine listing 字段。
 
-### CatalogFactsProvider
+### EngineCatalogFactsProvider
 
 描述 catalog entry 或 leaf 的字段、统计、索引、约束、分区、空间信息和原生属性。
 
 ```go
-type CatalogFactsProvider interface {
+type EngineCatalogFactsProvider interface {
     EnginePlugin
-    DescribeCatalogFacts(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts CatalogFactsOptions) (*CatalogFacts, error)
+    DescribeEngineCatalogFacts(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts EngineCatalogFactsOptions) (*EngineCatalogFacts, error)
 }
 ```
 
-动态 schema 数据库可额外实现 `DynamicSchemaSamplingProvider`，用于采样推断字段结构。该 provider 表达的是字段结构推断能力，不表示 catalog leaf 的 data type 是 `document`，也不承担 Manager 数据剖析。图数据库的整体结构事实必须通过 `CatalogFactsProvider` 返回到 `CatalogFacts.Graph`，不再另设 graph facts provider。
+动态 schema 数据库可额外实现 `DynamicSchemaSamplingProvider`，用于采样推断字段结构。该 provider 表达的是字段结构推断能力，不表示 catalog leaf 的 data type 是 `document`，也不承担 Manager 数据剖析。图数据库的整体结构事实必须通过 `EngineCatalogFactsProvider` 返回到 `EngineCatalogFacts.Graph`，不再另设 graph facts provider。
 
-`CatalogFacts` 是 engine 侧 catalog entry 的统一事实详情结果。它回答“这个条目自身有哪些 engine 直接知道的事实”，不同于 `CatalogEntry` 的实时列表结构。对于 table 型 leaf，必须优先填充 `Table *datatype.TableInfo`，字段、主键、行数、大小、更新时间、表类型、注释和表级 native 事实都随 `TableInfo` 传递；索引、命名约束和分区布局分别通过 `Indexes []IndexFacts`、`Constraints []ConstraintFacts`、`Partitioning *TablePartitioningFacts` 表达，不得塞入 `TableInfo.Native`。对于 graph 型 leaf，必须优先填充 `Graph *datatype.GraphInfo`，节点结构、关系结构、连接模式、属性结构、节点数和关系数都随 `GraphInfo` 传递；对于 file / object leaf，必须优先填充 `Storage *CatalogStorageFacts` 表达名称、路径、大小、MIME、etag、扩展名等存储事实。`CatalogFacts` 不保留 `Stats` 兜底口袋；公共消费方需要 table 字段、graph facts 或完整 storage facts时，应使用 `CatalogFactsTableInfo()` / `CatalogFactsGraphInfo()` 或直接消费 `CatalogFacts.Storage`；构造列表 entry 时应使用 `CatalogEntryTableInfo()` / `CatalogEntryStorageInfo()` 这类摘要 helper。
+`EngineCatalogFacts` 是 Engine 侧 Engine Catalog entry 的统一事实详情结果。它回答“这个条目自身有哪些 Engine 直接知道的事实”，不同于 `EngineCatalogEntry` 的实时列表结构。对于 table 型 leaf，必须优先填充 `Table *datatype.TableInfo`，字段、主键、行数、大小、更新时间、表类型、注释和表级 native 事实都随 `TableInfo` 传递；索引、命名约束和分区布局分别通过 `Indexes []IndexFacts`、`Constraints []ConstraintFacts`、`Partitioning *TablePartitioningFacts` 表达，不得塞入 `TableInfo.Native`。对于 graph 型 leaf，必须优先填充 `Graph *datatype.GraphInfo`，节点结构、关系结构、连接模式、属性结构、节点数和关系数都随 `GraphInfo` 传递；对于 file / object leaf，必须优先填充 `Storage *EngineCatalogStorageFacts` 表达名称、路径、大小、MIME、etag、扩展名等存储事实。`EngineCatalogFacts` 不保留 `Stats` 兜底口袋；公共消费方需要 table 字段、graph facts 或完整 storage facts时，应使用 `EngineCatalogFactsTableInfo()` / `EngineCatalogFactsGraphInfo()` 或直接消费 `EngineCatalogFacts.Storage`；构造列表 entry 时应使用 `EngineCatalogEntryTableInfo()` / `EngineCatalogEntryStorageInfo()` 这类摘要 helper。
 
 关系型详细事实使用受控公共结构：`IndexFacts` 只表达索引名、有序字段、唯一性和索引类型；`ConstraintFacts` 的 `constraint_type` 只允许 `primary_key`、`unique`、`foreign_key`，外键使用 `referenced_namespace`、`referenced_table`、`referenced_fields` 表达引用目标；`TablePartitioningFacts` 表达主分区/子分区策略、键字段和分区数，不保存供应商私有分区表达式。`TableInfo.PrimaryKey` 和 `FieldInfo.PrimaryKey` 是主键字段的通用投影，必须与 `primary_key` 约束事实一致。
 
-`CatalogFactsOptions.IncludeIndexes`、`IncludeConstraints`、`IncludePartitioning` 分别控制这三类详细事实读取。列表、路径解析和 basic scan 不得主动读取；deep scan 或明确的 item 详情刷新按能力声明显式请求。Provider 不得因为请求某类事实而执行 DDL、统计刷新或数据全表扫描。
+`EngineCatalogFactsOptions.IncludeIndexes`、`IncludeConstraints`、`IncludePartitioning` 分别控制这三类详细事实读取。列表、路径解析和 basic scan 不得主动读取；deep scan 或明确的 item 详情刷新按能力声明显式请求。Provider 不得因为请求某类事实而执行 DDL、统计刷新或数据全表扫描。
 
-`CatalogFacts.Table.Fields` 必须满足统一字段类型契约：`FieldInfo.Type` 是已经映射完成的 ADDP 标准字段类型，`FieldInfo.NativeType` 是来源引擎的原生类型。Provider 必须显式选择自身的类型映射规则，不得把 `integer`、`numeric`、`String` 等原生类型交给公共 canonical parser 猜测，也不得依赖遍历全局 mapper 的无来源推断。无法映射时返回显式 `type=unknown`；`type` 为空是 Provider 契约错误。公共 normalizer 只负责规范化和校验，不得从 `native_type` 补推 `type`。
+`EngineCatalogFacts.Table.Fields` 必须满足统一字段类型契约：`FieldInfo.Type` 是已经映射完成的 ADDP 标准字段类型，`FieldInfo.NativeType` 是来源引擎的原生类型。Provider 必须显式选择自身的类型映射规则，不得把 `integer`、`numeric`、`String` 等原生类型交给公共 canonical parser 猜测，也不得依赖遍历全局 mapper 的无来源推断。无法映射时返回显式 `type=unknown`；`type` 为空是 Provider 契约错误。公共 normalizer 只负责规范化和校验，不得从 `native_type` 补推 `type`。
 
 Decimal 字段使用 `FieldInfo.Precision` 表达总有效位数，使用 `FieldInfo.Scale` 表达小数位数；已声明的原生精度必须由 Provider 无损写入这两个字段。`Precision=0` 表示来源未声明有限精度，不得解释为某个默认精度。当目标引擎只支持有界 decimal 时，调用方必须提供显式 `Precision/Scale`；目标 Provider 必须按自身上限严格校验，不得选择更大的默认 decimal、截断小数或改写为浮点数。
 
 `FieldInfo` 当前未单独表达时间类型的小数秒精度。目标 Provider 不得因此退化为原生零位小数秒并静默截断；在目标类型允许时必须选择该引擎可稳定支持的无损精度。MySQL table write、upsert 和 partitioned change apply 统一使用 `TIME(6)`、`DATETIME(6)`，已有低精度目标列不得被误判为兼容。
 
-`CatalogFacts` 不承载 `DocumentInfo`、`MediaInfo` 或 `ContainerInfo`。文档、图片、音视频、压缩包、Excel、SQLite / GeoPackage 等 encoded content 的标题、语言、页数、宽高、时长、编码、颜色空间、内部 child 列表、默认入口等信息，必须由 Meta / Manager / Transfer 等编排层先通过 StoreProvider 构造内容读取抽象，再交给 `common/format` 的 `DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider` 或对应 content reader 提取。Engine 只提供 catalog / storage 事实和内容访问能力，不读取内容后裁决 format 语义。
+`EngineCatalogFacts` 不承载 `DocumentInfo`、`MediaInfo` 或 `ContainerInfo`。文档、图片、音视频、压缩包、Excel、SQLite / GeoPackage 等 encoded content 的标题、语言、页数、宽高、时长、编码、颜色空间、内部 child 列表、默认入口等信息，必须由 Meta / Manager / Transfer 等编排层先通过 StoreProvider 构造内容读取抽象，再交给 `common/format` 的 `DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider` 或对应 content reader 提取。Engine 只提供 catalog / storage 事实和内容访问能力，不读取内容后裁决 format 语义。
 
-Kafka topic 使用 `CatalogFacts.Topic *TopicFacts` 表达实时 topic 事实。第一版 `TopicFacts` 只允许 `PartitionCount`、`ReplicationFactor` 和按 partition 的 leader / replica / ISR / earliest offset / latest offset 诊断；不得读取消息样本推断 schema，也不得把 partition 投影为 catalog child。Topic facts 默认只用于实时诊断，在 Meta attributes 正式定义持久化结构前不得塞入 `Native` 或其他兜底 map。
+Kafka topic 使用 `EngineCatalogFacts.Topic *TopicFacts` 表达实时 topic 事实。第一版 `TopicFacts` 只允许 `PartitionCount`、`ReplicationFactor` 和按 partition 的 leader / replica / ISR / earliest offset / latest offset 诊断；不得读取消息样本推断 schema，也不得把 partition 投影为 catalog child。Topic facts 默认只用于实时诊断，在 Meta attributes 正式定义持久化结构前不得塞入 `Native` 或其他兜底 map。
 
-`CatalogFacts` 不定义 `FileInfo`。file、object、directory、bucket、prefix、root 等只表达 catalog / storage 形态，不是 data type 主事实；引擎插件不得返回 `DataTypeFile`、`FileInfo` 或 `type_info.file`。路径、名称、大小、MIME、etag、hash、修改时间等存储事实应放在 `CatalogEntry` / `CatalogFacts.Storage` / `CatalogFacts.UpdatedAt` 标准字段中；内容语义无法识别时使用 `datatype.Unknown`。
+`EngineCatalogFacts` 不定义 `FileInfo`。file、object、directory、bucket、prefix、root 等只表达 catalog / storage 形态，不是 data type 主事实；引擎插件不得返回 `DataTypeFile`、`FileInfo` 或 `type_info.file`。路径、名称、大小、MIME、etag、hash、修改时间等存储事实应放在 `EngineCatalogEntry` / `EngineCatalogFacts.Storage` / `EngineCatalogFacts.UpdatedAt` 标准字段中；内容语义无法识别时使用 `datatype.Unknown`。
 
-对 tabular 引擎，`CatalogProvider.ListChildren()` 和 `CatalogFactsProvider.DescribeCatalogFacts()` 必须围绕同一份 `datatype.TableInfo` 事实表达。表级通用事实进入 `Name`、`Kind`、`Comment`、`RowCount`、`EstimatedRowCount`、`SizeBytes`、`UpdatedAt`、`Fields` 等标准字段；`RowCount` 只表示精确值，`EstimatedRowCount` 只表示估算值，0 是有效精确值。来源原生但仍属表级的事实进入 `TableInfo.Native`，列表接口通过 `CatalogEntry.Table.Native` 透出，详情接口通过 `CatalogFacts.Table.Native` 透出。`CatalogFacts` 不保留 `Attributes` 兜底口袋。不得在列表接口保留一套事实、详情接口丢失另一套事实。
+对 tabular 引擎，`EngineCatalogProvider.ListChildren()` 和 `EngineCatalogFactsProvider.DescribeEngineCatalogFacts()` 必须围绕同一份 `datatype.TableInfo` 事实表达。表级通用事实进入 `Name`、`Kind`、`Comment`、`RowCount`、`EstimatedRowCount`、`SizeBytes`、`UpdatedAt`、`Fields` 等标准字段；`RowCount` 只表示精确值，`EstimatedRowCount` 只表示估算值，0 是有效精确值。来源原生但仍属表级的事实进入 `TableInfo.Native`，列表接口通过 `EngineCatalogEntry.Table.Native` 透出，详情接口通过 `EngineCatalogFacts.Table.Native` 透出。`EngineCatalogFacts` 不保留 `Attributes` 兜底口袋。不得在列表接口保留一套事实、详情接口丢失另一套事实。
 
-Tabular provider 默认不执行高成本真实 row count。只有调用方显式传入 `CatalogFactsOptions.IncludeStatistics=true` 或走专用计数入口时，才允许调用 `RowCount` callback；该 callback 必须返回精确值。列表和路径解析阶段只能使用元数据来源中已有的统计估算，并写入 `EstimatedRowCount`。PostgreSQL、MySQL/Doris、ClickHouse 这类能从 catalog / system table 获得统计估算的引擎不得把该值写入 `RowCount`；Spark SQL 这类列表阶段没有低成本估算的引擎保持 `EstimatedRowCount` 为空。未知值保持为空，不得用 `0` 表示未知。
+Tabular provider 默认不执行高成本真实 row count。只有调用方显式传入 `EngineCatalogFactsOptions.IncludeStatistics=true` 或走专用计数入口时，才允许调用 `RowCount` callback；该 callback 必须返回精确值。列表和路径解析阶段只能使用元数据来源中已有的统计估算，并写入 `EstimatedRowCount`。PostgreSQL、MySQL/Doris、ClickHouse 这类能从 catalog / system table 获得统计估算的引擎不得把该值写入 `RowCount`；Spark SQL 这类列表阶段没有低成本估算的引擎保持 `EstimatedRowCount` 为空。未知值保持为空，不得用 `0` 表示未知。
 
 SQL catalog facts provider 的实现边界：
 
 - Common Engine 的 provider 是对上层模块的稳定能力契约；SQL catalog facts helper 只是 provider 内部实现复用工具，不作为新的对外抽象层。
 - `common/query` 中的 SQL 方言能力负责标识符引用、表名限定、分页、count/sample SQL 等；不得混入 catalog facts 探测逻辑。
-- Catalog facts helper 只在多个引擎共享同一类事实来源时抽取，例如 MySQL/Doris 共享 `information_schema`；PostgreSQL、ClickHouse、Spark SQL 等差异较大的实现应保留在插件内，不做大一统 `SQLCatalogFactsDialect`。
+- Engine Catalog facts helper 只在多个引擎共享同一类事实来源时抽取，例如 MySQL/Doris 共享 `information_schema`；PostgreSQL、ClickHouse、Spark SQL 等差异较大的实现应保留在插件内，不做大一统 `SQLCatalogFactsDialect`。
 - GORM 只作为连接池、driver 和 raw SQL 执行工具，不承担 ADDP 的 catalog path、catalog facts、系统库过滤、row count 策略等平台元数据语义。
 
 SQL catalog facts provider 差异矩阵：
@@ -201,7 +203,7 @@ SQL catalog facts provider 差异矩阵：
 | PostgreSQL | schema | `information_schema.schemata/tables/columns` + `pg_class` + `pg_stat_user_tables` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自约束表，注释来自 `col_description` | 列表使用 `pg_class.reltuples` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count`，不主动 `ANALYZE` | `pg_catalog`、`information_schema`、`pg_toast`、`pg_temp_*`、`pg_toast_*`；当实例检测到 SuperMap `sdx_postgis` 或 `sdx_postgresql` 时过滤 `sm*` 系统 leaf | 暂留插件内；PostgreSQL 原生 catalog 语义较强，不与 MySQL/Doris 合并 |
 | Oracle | schema | `ALL_USERS`、`ALL_OBJECTS`、`ALL_SECONDARY_OBJECTS`、`ALL_TAB_COLS`、`ALL_CONSTRAINTS`、`ALL_CONS_COLUMNS`、`ALL_INDEXES`、`ALL_IND_COLUMNS`、`ALL_PART_TABLES`、`ALL_PART_KEY_COLUMNS`、`ALL_SUBPART_KEY_COLUMNS`、`ALL_TAB_COMMENTS`、`ALL_COL_COMMENTS`、`ALL_TABLES`、`ALL_SDO_GEOM_METADATA`、`MDSYS.CS_SRS` | `TABLE` -> `table`、`VIEW` -> `view`、`MATERIALIZED VIEW` -> `materialized_view` | `ALL_TAB_COLS` 且只读取 `HIDDEN_COLUMN = 'NO'`，主键/唯一约束/外键来自约束视图，索引来自索引视图，分区策略与键来自分区视图，注释来自 comment 视图；`MDSYS.SDO_GEOMETRY` 映射为 geometry，空间元数据、SRID/CRS 与空间索引写入 `SpatialInfo` | 列表使用 `ALL_TABLES.NUM_ROWS` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)`，不主动收集统计信息；空间 extent 不为获取元数据而执行全表扫描 | 过滤 Oracle-maintained 与已知内置系统 schema，并按 `ALL_SECONDARY_OBJECTS` 过滤 Domain Index 自动创建的内部辅助对象；Transfer-owned Oracle Spatial mirror 以精确 ownership comment 标记并同时从 schema leaf count 和表列表过滤，不依赖对象名称模式。普通业务连接保留当前用户自己的 schema，其他 schema 只有在当前连接实际可见且至少包含一个受支持 leaf 时才暴露，因此默认空的 `PDBADMIN`、空管理 schema 和无对象授权的用户不会进入 Catalog；不枚举 synonym 和 ArcGIS SDE 内部对象 | 暂留 Oracle 插件内；Oracle data dictionary、分页、NUMBER、LOB 和空间对象不得并入 PostgreSQL/MySQL helper。Transfer Oracle CDC 通过独立 `cdc_user/cdc_password/cdc_database_name` 和 LogMiner capture Provider 接入，不改变 Oracle 插件 Catalog/Store 边界；ArcGIS SDE 仍为后续独立 Provider |
 
-`supermap/sdx_postgresql` 的目录结构仍由 PostgreSQL Provider 枚举，但 `sdx` 业务表的详细 `CatalogFacts` 必须由实例绑定的兼容 Workflow Runtime 通过 SDK 返回。私有 `SmGeometry bytea` 不得作为普通 bytes 字段进入 Meta；领域 Table Session Provider 对外统一返回虚拟 `SmGeometry` geometry 字段、EWKB 行编码、精确记录数和 SDK 空间事实。Meta 必须按实例 capability 中唯一的 `bound_runtime_engine_id` 解析 Runtime Descriptor，并校验所需 direct 算子后注入该 Provider；同一 PostgreSQL Engine 中的普通 PostgreSQL / PostGIS 表必须继续由 PostgreSQL Provider 处理，不能因为 Engine Instance 启用了 SDX+ for PostgreSQL 就整库切换到 Runtime Provider。`supermap/sdx_postgis` 的数据读写可以复用 PostgreSQL/PostGIS Provider，SuperMap 专用的注册、索引、bounds 和刷新操作由 Workspace Controller 负责。
+`supermap/sdx_postgresql` 的目录结构仍由 PostgreSQL Provider 枚举，但 `sdx` 业务表的详细 `EngineCatalogFacts` 必须由实例绑定的兼容 Workflow Runtime 通过 SDK 返回。私有 `SmGeometry bytea` 不得作为普通 bytes 字段进入 Meta；领域 Table Session Provider 对外统一返回虚拟 `SmGeometry` geometry 字段、EWKB 行编码、精确记录数和 SDK 空间事实。Meta 必须按实例 capability 中唯一的 `bound_runtime_engine_id` 解析 Runtime Descriptor，并校验所需 direct 算子后注入该 Provider；同一 PostgreSQL Engine 中的普通 PostgreSQL / PostGIS 表必须继续由 PostgreSQL Provider 处理，不能因为 Engine Instance 启用了 SDX+ for PostgreSQL 就整库切换到 Runtime Provider。`supermap/sdx_postgis` 的数据读写可以复用 PostgreSQL/PostGIS Provider，SuperMap 专用的注册、索引、bounds 和刷新操作由 Workspace Controller 负责。
 
 Oracle 插件的 `InstanceCapabilitiesResolver` 只读探测 ArcGIS SDE workspace 的正式核心注册表组合，并将事实写入 `extensions.spatial_workspaces`；它不枚举 SDE 内部对象、不读取 delta/state 数据，也不把该 workspace 注入普通 Oracle Catalog、Store 或 Oracle CDC Provider。后续 `ArcGIS SDE logical change source` 必须实现独立 Provider。
 
@@ -217,14 +219,14 @@ SDE Provider 不直接成为 Transfer continuous consumer。Transfer capture ada
 | ClickHouse | database | `system.databases`、`system.tables`、`system.columns` | `MaterializedView` -> `materialized_view`，`View`/其他包含 `View` 的 engine -> `view`，其他 -> `table` | `system.columns`，nullable 从类型字符串推断，`DEFAULT` / `MATERIALIZED` / `ALIAS` 映射到通用默认值和生成列字段，当前不表达主键 | 列表将 `system.tables.total_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | `system`、`information_schema`、`INFORMATION_SCHEMA` | 暂留插件内；ClickHouse `system.*` 语义独立 |
 | Spark SQL | database | `SHOW DATABASES`、`SHOW TABLES`、`DESCRIBE`，部分环境可查询 `information_schema` | 当前 `SHOW TABLES` 结果统一映射为 `table` | `DESCRIBE table` | 列表阶段不做真实 count，未知 `row_count` / `size_bytes` 保持为空；单表 catalog facts 显式请求统计时才执行 `COUNT(*)` | `information_schema`、`sys` | 暂留插件内；Spark catalog facts 更偏命令式接口 |
 
-对 graph 引擎，`CatalogProvider` 暴露 graph catalog leaf，label、relationship type 和 endpoint pattern 作为 `datatype.GraphInfo` 中的 schema / shape facts，而不是作为 graph data type 的主 catalog leaf 本体。Neo4j label / relationship 只作为 Manager 展示投影或查询筛选条件，不作为公共 catalog leaf。graph 公共事实应围绕 `GraphInfo.NodeShapes`、`GraphInfo.RelationshipShapes` 和 `GraphRelationshipPatternInfo` 表达，不得继续把 `from_labels[]` / `to_labels[]` 两个集合作为 relationship endpoint 主事实。
+对 graph 引擎，`EngineCatalogProvider` 暴露 graph catalog leaf，label、relationship type 和 endpoint pattern 作为 `datatype.GraphInfo` 中的 schema / shape facts，而不是作为 graph data type 的主 catalog leaf 本体。Neo4j label / relationship 只作为 Manager 展示投影或查询筛选条件，不作为公共 catalog leaf。graph 公共事实应围绕 `GraphInfo.NodeShapes`、`GraphInfo.RelationshipShapes` 和 `GraphRelationshipPatternInfo` 表达，不得继续把 `from_labels[]` / `to_labels[]` 两个集合作为 relationship endpoint 主事实。
 
-`CatalogFactsProvider` / `GraphSampleProvider` 返回的是面向 ADDP 用户的业务图视图。Neo4j 插件、扩展或索引产生的内部节点和内部关系不得进入 graph schema、计数、样本、路径和上层算法投影；例如 Neo4j Spatial 的 `SpatialLayer` 节点以及 `RTREE_METADATA`、`RTREE_REFERENCE`、`RTREE_ROOT` 关系应由 provider 或 Graph 模块服务层过滤，不能要求 `common/datatype.GraphInfo` 携带具体引擎内部规则。
+`EngineCatalogFactsProvider` / `GraphSampleProvider` 返回的是面向 ADDP 用户的业务图视图。Neo4j 插件、扩展或索引产生的内部节点和内部关系不得进入 graph schema、计数、样本、路径和上层算法投影；例如 Neo4j Spatial 的 `SpatialLayer` 节点以及 `RTREE_METADATA`、`RTREE_REFERENCE`、`RTREE_ROOT` 关系应由 provider 或 Graph 模块服务层过滤，不能要求 `common/datatype.GraphInfo` 携带具体引擎内部规则。
 
 ```go
 type GraphSampleProvider interface {
     EnginePlugin
-    SampleGraph(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts GraphSampleOptions) (*GraphData, error)
+    SampleGraph(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts GraphSampleOptions) (*GraphData, error)
 }
 ```
 
@@ -251,7 +253,7 @@ type GraphSampleFilter struct {
 
 ### StoreProvider
 
-表达 item 内容访问能力。Catalog 回答“有什么”，Facts 回答“engine 直接知道什么”，Store 回答“如何读写内容”。
+表达 item 内容访问能力。Engine Catalog 回答“有什么”，Facts 回答“Engine 直接知道什么”，Store 回答“如何读写内容”。
 
 ```go
 type StoreProvider interface {
@@ -286,7 +288,7 @@ type RecordReadSessionProvider interface {
     OpenRecordReadSession(
         ctx context.Context,
         connInfo ConnectionInfo,
-        path CatalogPath,
+        path EngineCatalogPath,
         opts RecordReadSessionOptions,
     ) (RecordReadSession, error)
 }
@@ -322,7 +324,7 @@ type ChangeStreamReaderProvider interface {
     OpenChangeStream(
         ctx context.Context,
         connInfo ConnectionInfo,
-        topic CatalogPath,
+        topic EngineCatalogPath,
         opts ChangeStreamReadOptions,
     ) (ChangeStreamReader, error)
 }
@@ -362,23 +364,23 @@ Provider 只返回原始 ChangeRecord，不负责 JSON、Debezium、Avro 或 Pro
 - `skip` 只推进 ledger，不写入、更新或删除业务行；同批数据操作与 skip 必须仍按 source position 单调处理。插件只有真实实现该事务语义后才可在 capability `operations` 中声明 `skip`。
 - 旧 runtime 即使仍持有业务库连接，只要其 batch end position 不大于 ledger，就不得覆盖新状态。
 
-`BatchReadOptions.Hints`、`TableReadSessionOptions.Hints` 和 `BatchData.Hints` 只用于同一次运行时读写链路中的控制提示，例如字段选择、空间字段输出编码、批大小或写入方法。Hints 不是 catalog facts，不得写入 `CatalogFacts`，也不得作为 Meta item attributes 的兜底口袋。
+`BatchReadOptions.Hints`、`TableReadSessionOptions.Hints` 和 `BatchData.Hints` 只用于同一次运行时读写链路中的控制提示，例如字段选择、空间字段输出编码、批大小或写入方法。Hints 不是 catalog facts，不得写入 `EngineCatalogFacts`，也不得作为 Meta item attributes 的兜底口袋。
 
 `WriteOptions.UserMetadata` 只表达对象 / 文件写入时需要传给底层存储的用户自定义 metadata，例如 S3 / MinIO user metadata。它不是 engine catalog facts，也不用于表格读写控制；表格读写控制必须使用 Hints 或强类型 options 字段。
 
-对象存储和文件系统不得互相继承，不共享 CatalogModel 或 catalog 拼装实现；二者最多共享内容流读写接口、MIME 推断、格式解析等底层 helper。
+对象存储和文件系统不得互相继承，不共享 Engine Catalog Model 或 Engine Catalog 拼装实现；二者最多共享内容流读写接口、MIME 推断、格式解析等底层 helper。
 
-`OpenContent()`、`OpenRange()`、`CreateContent()` 等 store 能力接收的仍是**引擎自身 catalog model 下的 leaf `CatalogPath`**，不是另起一套只为底层 IO 服务的“物理路径 DTO”。调用方不得自行伪造脱离 `CatalogModelSpec` 的快捷路径；如果从物理路径、对象 key 或扫描候选重新定位 leaf，应使用 engine 公共层提供的路径构造规则，或直接复用 `CatalogEntry.Path`。物理路径可作为 Meta node/item attribute 暴露给底层实现，但不能替代统一 catalog path 契约。
+`OpenContent()`、`OpenRange()`、`CreateContent()` 等 store 能力接收的仍是**引擎自身 catalog model 下的 leaf `EngineCatalogPath`**，不是另起一套只为底层 IO 服务的“物理路径 DTO”。调用方不得自行伪造脱离 `EngineCatalogModelSpec` 的快捷路径；如果从物理路径、对象 key 或扫描候选重新定位 leaf，应使用 engine 公共层提供的路径构造规则，或直接复用 `EngineCatalogEntry.Path`。物理路径可作为 Meta node/item attribute 暴露给底层实现，但不能替代统一 catalog path 契约。
 
 ```go
 type RangeReadableProvider interface {
     StoreProvider
-    OpenRange(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts ReadOptions) (io.ReadCloser, error)
+    OpenRange(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts ReadOptions) (io.ReadCloser, error)
 }
 
 type RangeWritableProvider interface {
     StoreProvider
-    WriteRange(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, offset int64, r io.Reader, opts WriteOptions) (int64, error)
+    WriteRange(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, offset int64, r io.Reader, opts WriteOptions) (int64, error)
 }
 ```
 
@@ -401,6 +403,26 @@ type QueryRuntimeProvider interface {
     ExecuteRuntimeQuery(ctx context.Context, connInfo ConnectionInfo, req QueryRequest) (*QueryResult, error)
 }
 ```
+
+生产搬运需要连续消费只读查询结果时使用 `QueryReadSessionProvider`，不能循环调用返回有界 `QueryResult` 的预览接口：
+
+```go
+type QueryReadSessionProvider interface {
+    QueryRuntimeProvider
+    OpenQueryReadSession(
+        ctx context.Context,
+        connInfo ConnectionInfo,
+        req QueryRequest,
+    ) (QueryReadSession, error)
+}
+
+type QueryReadSession interface {
+    ReadBatch(ctx context.Context, limit int) (*BatchData, error)
+    Close(ctx context.Context) error
+}
+```
+
+查询读取会话只接受 `QueryOptions.ReadOnly=true`，`QueryOptions.Limit/Offset` 必须为零；每批大小由 `ReadBatch(limit)` 控制。Provider 不得追加隐式 `$limit`、SQL `LIMIT` 或在内存中收集完整结果。查询文本中由用户明确声明的业务 `limit` 仍属于查询语义。MongoDB 第一版只开放 `find` 和 `aggregate`；`aggregate` 可以使用 `$project`、`$unwind`、`$group`、`$unionWith` 等只读阶段把嵌套 BSON 整形成扁平行，但任何层级出现 `$out` 或 `$merge` 都必须拒绝。
 
 联邦查询运行时使用独立 Provider，不把多数据源连接塞入普通 `QueryRequest`：
 
@@ -446,15 +468,15 @@ type FederatedQueryRequest struct {
 
 查询语言差异由 `QueryRequest.Language` 与 `capabilities.compute.query.languages` 表达，不按数据库类别新增查询入口。`QueryRuntimeProvider` 是普通查询主路径，适用于 SQL、MQL、Cypher 表格结果、OpenSearch DSL、Mango Query 等能返回 `QueryResult` 的查询。
 
-`GenerateSampleQuery()` 只负责把调用方通过 `SampleQueryOptions.Path` 传入的真实 Catalog leaf 转换为该引擎语言的查询模板。调用方必须先通过实时 Catalog 发现并确认该 leaf 当前有数据；联邦查询还必须使用当前用户派生的只读执行授权真实探测候选，不能把可能过期的 Meta 条目直接当作可执行样例。Provider 不得在缺少可查询 leaf、对象已失效、发现失败或连接失败时返回版本查询、`SELECT 1`、占位集合名或其他静态兜底。没有真实数据样例时必须让调用方得到明确的“样例不可用”错误。
+`GenerateSampleQuery()` 只负责把调用方通过 `SampleQueryOptions.Path` 传入的真实 Engine Catalog leaf 转换为该引擎语言的查询模板。调用方必须先通过实时 Engine Catalog 发现并确认该 leaf 当前有数据；联邦查询还必须使用当前用户派生的只读执行授权真实探测候选，不能把可能过期的 Meta 条目直接当作可执行样例。Provider 不得在缺少可查询 leaf、对象已失效、发现失败或连接失败时返回版本查询、`SELECT 1`、占位集合名或其他静态兜底。没有真实数据样例时必须让调用方得到明确的“样例不可用”错误。
 
-`QueryRequest.TargetPath` 是普通查询的目标 Catalog 路径。调用方在选择具体数据库、集合、图等资源后必须沿模板生成、验证、即时执行和任务重载链路传递同一目标路径；Provider 不得用连接信息中的默认数据库替代显式目标。MongoDB 的目录只返回当前认证主体通过原生 roles 获得授权的数据库和集合，ADDP 不另存一份可访问数据库列表。
+`QueryRequest.TargetPath` 是普通查询的目标 Engine Catalog 路径。调用方在选择具体数据库、集合、图等资源后必须沿模板生成、验证、即时执行和任务重载链路传递同一目标路径；Provider 不得用连接信息中的默认数据库替代显式目标。MongoDB 的目录只返回当前认证主体通过原生 roles 获得授权的数据库和集合，ADDP 不另存一份可访问数据库列表。
 
 当 `QueryRequest.Options.ReadOnly=true` 时，Provider 必须使用数据库只读事务、只读路由、只读命令白名单或其他等价的运行时约束执行查询。不得忽略该字段后使用普通高权限连接执行；无法建立可靠只读边界的 Provider 必须显式拒绝。
 
 `SQLQueryRuntimeProvider.ExecuteSQL()` 是 SQL 执行 helper 和 SQL dialect 适配层，当前仍可保留给 SQL 引擎和 batch read 适配使用；新增非 SQL 查询语言不得仿照它继续新增按数据库类别拆分的 provider。旧 `DocumentQueryRuntimeProvider` 已删除，不得恢复。
 
-图查询不属于普通查询的一个返回格式变体。图查询使用独立 `GraphQueryProvider`，返回 `GraphQueryResult`，面向 Graph 模块、图可视化和图算法等需要节点 / 关系结构的调用方。Neo4j 可同时实现 `QueryRuntimeProvider` 和 `GraphQueryProvider`：前者用于普通 Cypher 表格结果和 Manager 预览兜底，后者用于图结构结果。图结构摘要由 `CatalogFactsProvider` 的 `CatalogFacts.Graph` 提供，图样本由 `GraphSampleProvider` 或 `GraphQueryProvider` 提供。
+图查询不属于普通查询的一个返回格式变体。图查询使用独立 `GraphQueryProvider`，返回 `GraphQueryResult`，面向 Graph 模块、图可视化和图算法等需要节点 / 关系结构的调用方。Neo4j 可同时实现 `QueryRuntimeProvider` 和 `GraphQueryProvider`：前者用于普通 Cypher 表格结果和 Manager 预览兜底，后者用于图结构结果。图结构摘要由 `EngineCatalogFactsProvider` 的 `EngineCatalogFacts.Graph` 提供，图样本由 `GraphSampleProvider` 或 `GraphQueryProvider` 提供。
 
 ```go
 type GraphQueryProvider interface {
@@ -506,12 +528,12 @@ type InferenceRuntimeProvider interface {
 | --- | --- |
 | PostgreSQL | 通用 tabular 组合 + `BoundedWatermarkReadProvider` + `TableUpsertProvider` + `PartitionedTableChangeApplyProvider` |
 | MySQL | 通用 tabular 组合 + `TableUpsertProvider` + `PartitionedTableChangeApplyProvider` |
-| Doris / ClickHouse / Spark SQL | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
-| MongoDB | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `DynamicSchemaSamplingProvider` + `QueryRuntimeProvider` |
-| Neo4j | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `GraphSampleProvider` + `QueryRuntimeProvider` + `GraphQueryProvider` |
-| MinIO / S3 | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `ContentReadableProvider` + `RangeReadableProvider` + `ContentWritableProvider` + `ResourceDeleteProvider` |
-| NFS | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `ContentReadableProvider` + `RangeReadableProvider` + `ContentWritableProvider` + `ResourceDeleteProvider` |
-| Kafka | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `ChangeStreamReaderProvider` |
+| Doris / ClickHouse / Spark SQL | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
+| MongoDB | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `DynamicSchemaSamplingProvider` + `RecordReadSessionProvider` + `QueryRuntimeProvider` + `QueryReadSessionProvider` |
+| Neo4j | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `GraphSampleProvider` + `QueryRuntimeProvider` + `GraphQueryProvider` |
+| MinIO / S3 | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `ContentReadableProvider` + `RangeReadableProvider` + `ContentWritableProvider` + `ResourceDeleteProvider` |
+| NFS | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `ContentReadableProvider` + `RangeReadableProvider` + `ContentWritableProvider` + `ResourceDeleteProvider` |
+| Kafka | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `ChangeStreamReaderProvider` |
 | 任意 `addp.workflow/v1` Runtime | System Engine Instance + Common 通用 `HTTPWorkflowRuntimeProvider`；不按 Runtime `engine_type` 编译独立插件 |
 | DuckDB | `EnginePlugin` + `FederatedQueryRuntimeProvider` |
 | Jupyter | `EnginePlugin` + `ScriptRuntimeProvider`，并声明 `compute.script.interactive=true` |
@@ -521,29 +543,29 @@ type InferenceRuntimeProvider interface {
 
 ## 五、上层消费规则
 
-- System：通过 `EnginePlugin` 做注册、连接测试、连接信息校验和能力声明刷新；通过 `CatalogProvider.ListChildren()` 对外提供实时 catalog 浏览控制面 API：`POST /api/v1/system/engines/:id/catalog/children`。System 必须先完成自身 Infra 初始化并进入就绪状态，再异步逐实例巡检；零个 Engine Instance 或任一实例离线不得影响 System 启动。
-- Meta：使用 `CatalogProvider` 扫描目录并落库，使用 `CatalogFactsProvider` / `DynamicSchemaSamplingProvider` 获取 catalog leaf facts；扫描编排必须先读取 `CatalogModelSpec`，再结合 provider 组合选择 catalog scan strategy。`engine_family` 只能作为粗分类或展示字段，不能单独决定 namespace 术语、leaf 术语、扫描层级和内容读取方式。公开 API 应聚焦扫描后元数据快照，不再新增实时浏览公共接口。
+- System：通过 `EnginePlugin` 做注册、连接测试、连接信息校验和能力声明刷新；通过 `EngineCatalogProvider.ListChildren()` 对外提供实时 catalog 浏览控制面 API：`POST /api/v1/system/engines/:id/catalog/children`。System 必须先完成自身 Infra 初始化并进入就绪状态，再异步逐实例巡检；零个 Engine Instance 或任一实例离线不得影响 System 启动。
+- Meta：使用 `EngineCatalogProvider` 扫描目录并落库，使用 `EngineCatalogFactsProvider` / `DynamicSchemaSamplingProvider` 获取 catalog leaf facts；扫描编排必须先读取 `EngineCatalogModelSpec`，再结合 provider 组合选择 catalog scan strategy。`engine_family` 只能作为粗分类或展示字段，不能单独决定 namespace 术语、leaf 术语、扫描层级和内容读取方式。公开 API 应聚焦扫描后元数据快照，不再新增实时浏览公共接口。
 - Meta 扫描 API 和任务参数中的路径型目标统一命名为 `catalog_paths`。它表示引擎 catalog model 下的路径。
-- Manager：使用 Meta 树构建探查树；预览由 Manager 自身 preview provider / composer 组合完成。结构化数据优先消费 `BatchReadableProvider` 或只读 sample query；graph 预览优先消费 `type_info.graph` / `CatalogFactsProvider` 得到 schema 视图，并通过 `GraphSampleProvider` 或 `GraphQueryProvider` 获取轻量子图样本；对象/文件优先消费 `ContentReadableProvider` 并结合格式解析。
-- Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；Notebook 引擎实例通过 `execution_config.engine_id` 绑定，并以 System Runtime Descriptor + `ScriptRuntimeProvider.OpenSession()` 解析端点；Notebook Native Engine Facade 只在 `common-python` 把原生方法编译为 `CatalogProvider.ListChildren` / `CatalogFactsProvider.DescribeCatalogFacts`，不得反向新增 PostgreSQL、MongoDB、MinIO 等专用后端接口；图结构展示入口使用 `CatalogFactsProvider` / `GraphQueryProvider`。
+- Manager：使用 Meta 树构建探查树；预览由 Manager 自身 preview provider / composer 组合完成。结构化数据优先消费 `BatchReadableProvider` 或只读 sample query；graph 预览优先消费 `type_info.graph` / `EngineCatalogFactsProvider` 得到 schema 视图，并通过 `GraphSampleProvider` 或 `GraphQueryProvider` 获取轻量子图样本；对象/文件优先消费 `ContentReadableProvider` 并结合格式解析。
+- Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；Notebook 引擎实例通过 `execution_config.engine_id` 绑定，并以 System Runtime Descriptor + `ScriptRuntimeProvider.OpenSession()` 解析端点；Notebook Native Engine Facade 只在 `common-python` 把原生方法编译为 `EngineCatalogProvider.ListChildren` / `EngineCatalogFactsProvider.DescribeEngineCatalogFacts`，不得反向新增 PostgreSQL、MongoDB、MinIO 等专用后端接口；图结构展示入口使用 `EngineCatalogFactsProvider` / `GraphQueryProvider`。
 - Agent、Copilot、Manager：通过 System Runtime Descriptor 发现唯一 Inference Runtime，并消费 `InferenceRuntimeProvider`；业务场景绑定仍归各 owner，不能把 Runtime 端点、厂商协议或凭据保存到调用方配置。
 - Service：发布普通查询服务时使用 query runtime 和 Meta item/spatial 元数据；图查询服务使用 `GraphQueryProvider`。图查询服务的易用向导应消费 graph item 的 `type_info.graph.node_shapes`，不得再从 Meta 树读取 Neo4j label item。
-- Transfer：使用 source / target endpoint 生成执行计划。snapshot native table 读写消费 `TableReadSessionProvider`、`BatchReadableProvider`、`TableWritePreparer`、`TableWriteSessionProvider`、`BatchWritableProvider`；watermark bounded incremental 必须消费 `BoundedWatermarkReadProvider` 和幂等 `TableUpsertProvider`；encoded file/object 读写先通过 engine content provider 和 `common/engine/contentadapter` 构造 `common/contentio` 抽象，再交给 `common/format` provider。高吞吐数据搬运优先消费 batch / table session / content stream 能力，而不是 query runtime。
+- Transfer：使用 source / target endpoint 生成执行计划。snapshot native table 读写消费 `TableReadSessionProvider`、`BatchReadableProvider`、`TableWritePreparer`、`TableWriteSessionProvider`、`BatchWritableProvider`；只读原生查询 source 消费 `QueryReadSessionProvider`，不得使用有界 `QueryRuntimeProvider` 预览结果冒充全量；watermark bounded incremental 必须消费 `BoundedWatermarkReadProvider` 和幂等 `TableUpsertProvider`；encoded file/object 读写先通过 engine content provider 和 `common/engine/contentadapter` 构造 `common/contentio` 抽象，再交给 `common/format` provider。高吞吐数据搬运优先消费 batch / session / content stream 能力。
 - Transfer continuous runtime：业务 Kafka source 必须消费 `ChangeStreamReaderProvider`，由 Transfer adapter 生成 ChangeEvent 并通过 ChangeApplyWriter 组合目标 Provider。目标必须声明原子、单调且覆盖所需 operation 的 `PartitionedTableChangeApplyProvider`；当前 PostgreSQL 与 MySQL 实现该 Provider。Infra Kafka 连接来自 ADDP infra 配置，不注册 System Engine，但复用同一 Kafka reader/client 底层实现。
 
 所有上层模块 Backend 与附属 Worker 都必须支持零 Engine Instance 启动。具体请求或 execution 引用的实例不存在、不可用或能力不匹配时，只失败该请求或 execution；Worker 不得退出，Backend readiness 不得降级。模块自身必需 Infra 不属于 Engine Instance，仍按各模块部署契约管理。
 
 面向用户新建绑定或发起功能选择的业务接口，必须返回已在 System 注册、`lifecycle_state=active` 且匹配目标 capability 的 Engine 选择项，并携带 `connection_status`。选择器不得隐藏离线、未知或检测中的相关实例，而应展示并禁选；只有 `connection_status=online` 的选择项才可建立新绑定或发起使用。System 引擎管理清单继续展示全部可见实例；已有任务或配置的旧绑定必须保留展示并标记不可用，不得静默清空或自动替换。候选状态不能替代执行期按具体 Engine Instance 重新校验。
 
-### Catalog 错误契约
+### Engine Catalog 错误契约
 
-`CatalogProvider` 和 `CatalogFactsProvider` 必须通过 `common/engine/plugin` 的类型化 Catalog 错误表达调用方需要稳定判断的失败类别；System、Develop 和 Python SDK 不得解析 driver 或 Provider 错误文本。统一类别为：
+`EngineCatalogProvider` 和 `EngineCatalogFactsProvider` 必须通过 `common/engine/plugin` 的类型化 `EngineCatalogError` 表达调用方需要稳定判断的失败类别；System、Develop 和 Python SDK 不得解析 driver 或 Provider 错误文本。统一类别为：
 
 | 类别 | 语义 | HTTP 映射 |
 | --- | --- | --- |
-| `invalid_path` | `CatalogPath` 版本、Engine ID、层级或 segment 不合法 | 400 |
+| `invalid_path` | `EngineCatalogPath` 版本、Engine ID、层级或 segment 不合法 | 400 |
 | `not_found` | 已确认的 Engine 原生 branch / leaf 不存在 | 404 |
-| `unsupported` | 当前 capabilities、CatalogModel 或 Provider 不支持请求操作 | 422 |
+| `unsupported` | 当前 capabilities、Engine Catalog Model 或 Provider 不支持请求操作 | 422 |
 | `unavailable` | Engine 连接暂时不可建立或当前不可服务 | 503 |
 
 `context.DeadlineExceeded` / `context.Canceled` 保留标准 Go 因果链，由最外层按端到端 deadline 映射为 504 或客户端取消；未知错误统一保留为 Provider failure，不得猜测成 not found 或 unavailable。各插件必须在能够理解原生 driver 语义的边界完成类型化包装，并保留 `errors.Is` / `errors.As` 因果链；用户响应不得暴露 DSN、凭据、host、driver 原始错误或查询文本。
@@ -560,5 +582,5 @@ type InferenceRuntimeProvider interface {
 - 不得让插件返回 JSON 字符串形式的 capabilities。
 - 不得让非 DSN 引擎返回 JSON 字符串冒充 connection string。
 - 不得在 capabilities 中保存任务级运行参数。
-- 不得在 `CatalogProvider` / `CatalogFactsProvider` 中执行写入、DDL、统计刷新等有外部副作用的操作；连接测试也必须保持只读。
-- 不得按 Provider 或 driver 错误字符串推断 Catalog HTTP 状态码、`error_code` 或 SDK 异常类型。
+- 不得在 `EngineCatalogProvider` / `EngineCatalogFactsProvider` 中执行写入、DDL、统计刷新等有外部副作用的操作；连接测试也必须保持只读。
+- 不得按 Provider 或 driver 错误字符串推断 Engine Catalog HTTP 状态码、`error_code` 或 SDK 异常类型。

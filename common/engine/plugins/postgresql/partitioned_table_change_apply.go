@@ -23,7 +23,7 @@ type postgresApplyLedgerPosition struct {
 	NextOffset      int64
 }
 
-func (p *PostgreSQLPlugin) PreparePartitionedTableChangeApply(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.PartitionedTableChangeApplyOptions) error {
+func (p *PostgreSQLPlugin) PreparePartitionedTableChangeApply(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.PartitionedTableChangeApplyOptions) error {
 	if err := validatePartitionedTableChangeApplyOptions(opts); err != nil {
 		return err
 	}
@@ -47,7 +47,7 @@ func (p *PostgreSQLPlugin) PreparePartitionedTableChangeApply(ctx context.Contex
 	return nil
 }
 
-func (p *PostgreSQLPlugin) ApplyPartitionedTableChanges(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, batch *plugin.PartitionedTableChangeBatch, opts plugin.PartitionedTableChangeApplyOptions) (*plugin.PartitionedTableChangeApplyResult, error) {
+func (p *PostgreSQLPlugin) ApplyPartitionedTableChanges(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.PartitionedTableChangeBatch, opts plugin.PartitionedTableChangeApplyOptions) (*plugin.PartitionedTableChangeApplyResult, error) {
 	keys, err := validatePartitionedTableChangeApplyBatch(batch, opts)
 	if err != nil {
 		return nil, err

@@ -3,8 +3,8 @@ package scanchange
 import (
 	"github.com/addp/common/datatype"
 	commonJSON "github.com/addp/common/jsonmap"
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 func ShouldUpdateTable(existingItem *models.MetaItem, tableInfo datatype.TableInfo) bool {
@@ -51,7 +51,7 @@ func ShouldUpdateDynamicSchemaItem(existingItem *models.MetaItem, estimatedDocum
 	return false
 }
 
-func ShouldUpdateStorageResource(existingItem *models.MetaItem, resource metacatalog.StorageResource) bool {
+func ShouldUpdateStorageResource(existingItem *models.MetaItem, resource scanresource.StorageResource) bool {
 	if existingItem == nil {
 		return true
 	}

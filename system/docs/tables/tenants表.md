@@ -16,7 +16,7 @@ Tenant 是 ADDP 的最高业务隔离边界。User 通过 `tenant_memberships` �
 
 Tenant 关闭是终态；暂停和恢复是受控状态转换。状态变化会影响 Membership 和会话可用性，不能通过删除数据库行代替。
 
-## 当前 API
+## 当前 User 管理 API
 
 | 方法 | 路径 | Permission |
 | --- | --- | --- |
@@ -28,7 +28,15 @@ Tenant 关闭是终态；暂停和恢复是受控状态转换。状态变化会�
 | `POST` | `/api/v1/system/platform/tenants/{id}/restore` | `platform.tenant.restore` |
 | `POST` | `/api/v1/system/platform/tenants/{id}/close` | `platform.tenant.close` |
 
-这些 API 只接受 Platform Context，并由平台系统管理员 Role 的精确 Permission 控制。平台角色本身不获得任何 Tenant 业务数据访问权。
+这些 API 只接受 Platform Context 中的 User First-Party Token，并由平台系统管理员 Role 的精确 Permission 控制。平台角色本身不获得任何 Tenant 业务数据访问权。
+
+## Service Runtime 租户发现 API
+
+| 方法 | 路径 | Permission | 凭据与语义 |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/system/runtime/tenants` | `platform.tenant.read` | Platform Service Context；供内置 Runtime 发现已初始化的 active Tenant |
+
+该 Runtime 路由使用与 User 管理面相同的分页响应形状，但只接受 Service Access Token，并必须同时满足 Platform Service Context 和 `platform.tenant.read`。Service Principal 不得改用 `/platform/tenants`；User 也不得访问 Runtime 投影。
 
 ## 隔离规则
 

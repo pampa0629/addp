@@ -141,7 +141,7 @@ func IndexAttributes(indexes []IndexAttributesInput) []map[string]interface{} {
 	return result
 }
 
-func ApplyCatalogFactsCapabilities(attrs models.JSONMap, facts *plugin.CatalogFacts) {
+func ApplyEngineCatalogFactsCapabilities(attrs models.JSONMap, facts *plugin.EngineCatalogFacts) {
 	if attrs == nil || facts == nil {
 		return
 	}

@@ -36,8 +36,8 @@ engine catalog / facts
 
 ```mermaid
 graph LR
-    Engine["Engine"] --> Catalog["Catalog Facts"]
-    Engine --> Facts["Catalog Leaf Facts"]
+    Engine["Engine"] --> Catalog["Engine Catalog Facts"]
+    Engine --> Facts["Engine Catalog Leaf Facts"]
     Engine --> Read["Content / Range / Batch Read"]
 
     Catalog --> Scanner[Meta Scanner]
@@ -174,7 +174,7 @@ Meta normalizer 是 attributes 标准分区的最终裁决点。
 
 `meta_item` 表字段是 item 身份事实源，不重复写入 attributes。
 
-`attributes.type_info.file` 不存在。文件、对象、目录、bucket、prefix、root 等只表示 catalog / storage 形态；路径、名称、大小、MIME、etag、hash、last_modified 等基础事实写入 `storage`，或进入 `CatalogEntry` / Meta item 的标准字段。内容语义无法识别时，`item.data_type=unknown`。
+`attributes.type_info.file` 不存在。文件、对象、目录、bucket、prefix、root 等只表示 Engine Catalog / storage 形态；路径、名称、大小、MIME、etag、hash、last_modified 等基础事实写入 `storage`，或进入 `EngineCatalogEntry` / Meta item 的标准字段。内容语义无法识别时，`item.data_type=unknown`。
 
 ## 扫描流程
 

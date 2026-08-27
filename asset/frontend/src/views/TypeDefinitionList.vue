@@ -16,11 +16,6 @@
           <code>{{ row.code }}</code>
         </template>
       </el-table-column>
-      <el-table-column :label="t('asset.typeDefinition.sourceModule')" prop="source_module" width="130">
-        <template #default="{ row }">
-          {{ sourceModuleLabel(row.source_module) }}
-        </template>
-      </el-table-column>
       <el-table-column :label="t('asset.typeDefinition.authHandler')" prop="auth_handler" width="110">
         <template #default="{ row }">
           <el-tag v-if="row.auth_handler === 'token'" type="warning" size="small">{{ t('asset.typeDefinition.tokenAuth') }}</el-tag>
@@ -63,17 +58,6 @@ const typeTagMap = {
   report: 'info',
   algo_model: 'danger',
   application: ''
-}
-
-function sourceModuleLabel(module) {
-  const map = {
-    meta: t('asset.typeDefinition.sourceMeta'),
-    service: t('asset.typeDefinition.sourceService'),
-    standard: t('asset.typeDefinition.sourceStandard'),
-    develop: t('asset.typeDefinition.sourceDevelop'),
-    manual: t('asset.typeDefinition.sourceManual'),
-  }
-  return map[module] || module
 }
 
 function entryTypeLabel(entry) {

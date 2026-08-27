@@ -13,8 +13,8 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	"github.com/addp/common/format/rastermosaic"
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaitem"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 const rasterMosaicManifestMaxBytes int64 = 1 << 20
@@ -24,16 +24,16 @@ func detectRasterMosaicCompositeItems(
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
-	resources []metacatalog.StorageResource,
+	resources []scanresource.StorageResource,
 	claimed map[string]bool,
-) ([]metacatalog.ObjectCatalogCompositeItem, []ObjectCatalogCompositeDetectionError) {
+) ([]scanresource.ObjectCompositeItem, []ObjectCatalogCompositeDetectionError) {
 	if contentReader == nil || len(resources) == 0 {
 		return nil, nil
 	}
-	items := make([]metacatalog.ObjectCatalogCompositeItem, 0)
+	items := make([]scanresource.ObjectCompositeItem, 0)
 	warnings := make([]ObjectCatalogCompositeDetectionError, 0)
 	for _, resource := range resources {
-		if resource.NodeType != plugin.CatalogKindObject || claimed[resource.Path] {
+		if resource.NodeType != plugin.EngineCatalogKindObject || claimed[resource.Path] {
 			continue
 		}
 		if path.Base(strings.Trim(resource.Path, "/")) != rastermosaic.ManifestFileName {
@@ -60,7 +60,7 @@ func detectRasterMosaicCompositeItems(
 			claimed[member.Path] = true
 			totalSize += member.SizeBytes
 		}
-		items = append(items, metacatalog.ObjectCatalogCompositeItem{
+		items = append(items, scanresource.ObjectCompositeItem{
 			Bucket: resource.RootName,
 			Prefix: prefix,
 			Item:   rasterMosaicDetectedItem(prefix, resource.Path, manifest, totalSize),
@@ -70,7 +70,7 @@ func detectRasterMosaicCompositeItems(
 	return items, warnings
 }
 
-func readRasterMosaicManifest(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, resource metacatalog.StorageResource) (rastermosaic.Manifest, error) {
+func readRasterMosaicManifest(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, resource scanresource.StorageResource) (rastermosaic.Manifest, error) {
 	reader, err := contentReader.OpenContent(ctx, connInfo, plugin.ObjectItemPath(engineID, resource.RootName, resource.Path), plugin.ReadOptions{})
 	if err != nil {
 		return rastermosaic.Manifest{}, fmt.Errorf("open raster mosaic manifest: %w", err)
@@ -162,11 +162,11 @@ func rasterMosaicDetectedItem(prefix, manifestPath string, manifest rastermosaic
 	}
 }
 
-func resourcesUnderObjectPrefix(resources []metacatalog.StorageResource, bucket, prefix string) []metacatalog.StorageResource {
+func resourcesUnderObjectPrefix(resources []scanresource.StorageResource, bucket, prefix string) []scanresource.StorageResource {
 	prefix = strings.Trim(prefix, "/")
-	result := make([]metacatalog.StorageResource, 0)
+	result := make([]scanresource.StorageResource, 0)
 	for _, resource := range resources {
-		if resource.RootName != bucket || resource.NodeType != plugin.CatalogKindObject {
+		if resource.RootName != bucket || resource.NodeType != plugin.EngineCatalogKindObject {
 			continue
 		}
 		resourcePath := strings.Trim(resource.Path, "/")

@@ -63,8 +63,8 @@
             v-model="row.source_field"
             :placeholder="t('transfer.taskWizard.selectSourceField')"
             filterable
-            :allow-create="wizardState.isContinuousTask.value"
-            :default-first-option="wizardState.isContinuousTask.value"
+            :allow-create="wizardState.isContinuousTask.value || wizardState.sourceQueryEnabled.value"
+            :default-first-option="wizardState.isContinuousTask.value || wizardState.sourceQueryEnabled.value"
             @change="handleMappingChange($index)"
           >
             <el-option
@@ -93,6 +93,7 @@
             :placeholder="t('transfer.taskWizard.selectTargetField')"
             filterable
             allow-create
+            default-first-option
             @change="handleTargetFieldChange($index)"
           >
             <el-option

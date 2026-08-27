@@ -5,6 +5,7 @@
         v-if="iframeUrl"
         :src="iframeUrl"
         :key="iframeKey || iframeUrl"
+        data-testid="module-iframe"
         frameborder="0"
         allow="clipboard-write; clipboard-read"
         @load="$emit('load')"

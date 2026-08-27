@@ -15,8 +15,17 @@ func TestEmbeddedMigrationsContainQualityQueueIndexes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("executionMigrationNames() error = %v", err)
 	}
-	if got := names[len(names)-1]; got != "009_bounded_execution_ownership.sql" {
+	if got := names[len(names)-1]; got != "011_remove_authorization_effects.sql" {
 		t.Fatalf("latest execution migration = %q", got)
+	}
+	removedEffects, err := migrationFiles.ReadFile("migrations/011_remove_authorization_effects.sql")
+	if err != nil {
+		t.Fatalf("read authorization effects removal migration: %v", err)
+	}
+	for _, required := range []string{"DROP COLUMN IF EXISTS authorization_effects", "IN (0, 2)"} {
+		if !strings.Contains(string(removedEffects), required) {
+			t.Fatalf("authorization effects removal migration missing %q", required)
+		}
 	}
 	contents, err := migrationFiles.ReadFile("migrations/008_quality_execution_queue_indexes.sql")
 	if err != nil {
@@ -39,6 +48,20 @@ func TestEmbeddedMigrationsContainQualityQueueIndexes(t *testing.T) {
 	for _, required := range []string{"execution_boundary", "retry_of_execution_id", "lease_token", "idx_task_executions_bounded_pending"} {
 		if !strings.Contains(string(ownership), required) {
 			t.Fatalf("bounded ownership migration missing %q", required)
+		}
+	}
+	authorizationLineage, err := migrationFiles.ReadFile("migrations/010_execution_authorization_lineage.sql")
+	if err != nil {
+		t.Fatalf("read authorization lineage migration: %v", err)
+	}
+	for _, required := range []string{
+		"actor_principal_id",
+		"execution_authorization_id",
+		"execution_authorization_id IS NULL",
+		"IN (0, 3)",
+	} {
+		if !strings.Contains(string(authorizationLineage), required) {
+			t.Fatalf("authorization lineage migration missing %q", required)
 		}
 	}
 }

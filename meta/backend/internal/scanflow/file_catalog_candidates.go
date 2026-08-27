@@ -16,12 +16,12 @@ func FileCatalogDirectoryCandidateSet(
 	recursiveSubdirs []metaitem.StorageDirectoryRef,
 ) ContentCandidateSet {
 	return ContentCandidateSet{
-		CatalogPathFor:   plugin.FileItemPathForEngine(engineID),
-		DirPath:          dirPath,
-		Files:            files,
-		Subdirs:          subdirs,
-		RecursiveFiles:   recursiveFiles,
-		RecursiveSubdirs: recursiveSubdirs,
+		EngineCatalogPathFor: plugin.FileItemPathForEngine(engineID),
+		DirPath:              dirPath,
+		Files:                files,
+		Subdirs:              subdirs,
+		RecursiveFiles:       recursiveFiles,
+		RecursiveSubdirs:     recursiveSubdirs,
 	}
 }
 
@@ -32,10 +32,10 @@ func FileCatalogNonExclusiveCandidateSet(
 	subdirs []metaitem.StorageDirectoryRef,
 ) ContentCandidateSet {
 	return ContentCandidateSet{
-		CatalogPathFor: plugin.FileItemPathForEngine(engineID),
-		DirPath:        dirPath,
-		Files:          files,
-		Subdirs:        subdirs,
+		EngineCatalogPathFor: plugin.FileItemPathForEngine(engineID),
+		DirPath:              dirPath,
+		Files:                files,
+		Subdirs:              subdirs,
 	}
 }
 

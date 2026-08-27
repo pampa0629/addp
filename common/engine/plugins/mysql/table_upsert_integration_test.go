@@ -140,10 +140,10 @@ func openMySQLUpsertIntegration(t *testing.T) (*sql.DB, *MySQLPlugin, plugin.Con
 	return db, mysqlPlugin, connInfo, database
 }
 
-func mysqlIntegrationTablePath(database, table string) plugin.CatalogPath {
-	return plugin.CatalogPath{Segments: []plugin.CatalogSegment{
-		{Term: "database", Kind: plugin.CatalogRoleBranch, Name: database},
-		{Term: "table", Kind: plugin.CatalogRoleLeaf, Name: table},
+func mysqlIntegrationTablePath(database, table string) plugin.EngineCatalogPath {
+	return plugin.EngineCatalogPath{Segments: []plugin.EngineCatalogSegment{
+		{Term: "database", Kind: plugin.EngineCatalogRoleBranch, Name: database},
+		{Term: "table", Kind: plugin.EngineCatalogRoleLeaf, Name: table},
 	}}
 }
 

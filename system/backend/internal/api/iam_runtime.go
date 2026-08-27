@@ -22,6 +22,7 @@ type IAMRuntime struct {
 	MFAService                          *iam.MFAService
 	MFASessionService                   *iam.MFASessionService
 	TenantMembershipService             *iam.TenantMembershipService
+	OrganizationService                 *iam.OrganizationService
 	TenantInvitationService             *iam.TenantInvitationService
 	TenantRoleService                   *iam.TenantRoleService
 	PlatformTenantService               *iam.PlatformTenantService
@@ -40,6 +41,7 @@ type IAMRuntime struct {
 	ExecutionAuthorizationService       *iam.ExecutionAuthorizationService
 	NotebookSessionAuthorizationService *iam.NotebookSessionAuthorizationService
 	TaskAuthorizationSubjectService     *iam.TaskAuthorizationSubjectService
+	CatalogReferenceService             *iam.CatalogReferenceService
 	OAuthProvider                       *iamoauth.Provider
 	ConsentBridge                       *iamoauth.ConsentBridge
 
@@ -50,10 +52,12 @@ type IAMRuntime struct {
 	ExecutionAuthorizationHandler       *IAMExecutionAuthorizationHandler
 	NotebookSessionAuthorizationHandler *IAMNotebookSessionAuthorizationHandler
 	TaskAuthorizationSubjectHandler     *IAMTaskAuthorizationSubjectHandler
+	CatalogReferenceHandler             *IAMCatalogReferenceHandler
 	UserSelfHandler                     *IAMUserSelfHandler
 	PlatformTenantHandler               *IAMPlatformTenantHandler
 	PlatformUserHandler                 *IAMPlatformUserHandler
 	TenantMembershipHandler             *IAMTenantMembershipHandler
+	OrganizationHandler                 *IAMOrganizationHandler
 	TenantInvitationHandler             *IAMTenantInvitationHandler
 	TenantRoleHandler                   *IAMTenantRoleHandler
 	InternalAuditHandler                *IAMInternalAuditHandler
@@ -122,6 +126,7 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config, securityPolicy iam.SecurityP
 		return nil, fmt.Errorf("装配 IAM Tenant Invitation Service: %w", err)
 	}
 	tenantMembershipService := iam.NewTenantMembershipService(repository, nil)
+	organizationService := iam.NewOrganizationService(repository, nil)
 	tenantRoleService := iam.NewTenantRoleService(repository, nil)
 	platformTenantService := iam.NewPlatformTenantService(repository, nil)
 	platformUserService := iam.NewPlatformUserService(repository, identityService, nil)
@@ -174,6 +179,10 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config, securityPolicy iam.SecurityP
 	taskAuthorizationSubjectService, err := iam.NewTaskAuthorizationSubjectService(repository)
 	if err != nil {
 		return nil, fmt.Errorf("装配 IAM Task Authorization Subject Service: %w", err)
+	}
+	catalogReferenceService, err := iam.NewCatalogReferenceService(repository)
+	if err != nil {
+		return nil, fmt.Errorf("装配 IAM Catalog Reference Service: %w", err)
 	}
 
 	providerConfig := iamoauth.ProviderConfig{
@@ -242,6 +251,10 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config, securityPolicy iam.SecurityP
 	if err != nil {
 		return nil, fmt.Errorf("装配 IAM Delegation Handler: %w", err)
 	}
+	catalogReferenceHandler, err := NewIAMCatalogReferenceHandler(catalogReferenceService)
+	if err != nil {
+		return nil, fmt.Errorf("装配 IAM Catalog Reference Handler: %w", err)
+	}
 	userSelfHandler, err := NewIAMUserSelfHandler(
 		userSelfService,
 		secureCookies,
@@ -261,6 +274,10 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config, securityPolicy iam.SecurityP
 	tenantMembershipHandler, err := NewIAMTenantMembershipHandler(tenantMembershipService)
 	if err != nil {
 		return nil, fmt.Errorf("装配 IAM Tenant Membership Handler: %w", err)
+	}
+	organizationHandler, err := NewIAMOrganizationHandler(organizationService)
+	if err != nil {
+		return nil, fmt.Errorf("装配 IAM Organization Handler: %w", err)
 	}
 	tenantRoleHandler, err := NewIAMTenantRoleHandler(tenantRoleService)
 	if err != nil {
@@ -319,6 +336,7 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config, securityPolicy iam.SecurityP
 		MFAService:                          mfaService,
 		MFASessionService:                   mfaSessionService,
 		TenantMembershipService:             tenantMembershipService,
+		OrganizationService:                 organizationService,
 		TenantInvitationService:             tenantInvitationService,
 		TenantRoleService:                   tenantRoleService,
 		PlatformTenantService:               platformTenantService,
@@ -338,16 +356,19 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config, securityPolicy iam.SecurityP
 		ExecutionAuthorizationService:       executionAuthorizationService,
 		NotebookSessionAuthorizationService: notebookSessionAuthorizationService,
 		TaskAuthorizationSubjectService:     taskAuthorizationSubjectService,
+		CatalogReferenceService:             catalogReferenceService,
 		OAuthProvider:                       oauthProvider,
 		ConsentBridge:                       consentBridge,
 		AuthHandler:                         authHandler,
 		MFASessionHandler:                   mfaSessionHandler,
 		OAuthHandler:                        oauthHandler,
 		DelegationHandler:                   delegationHandler,
+		CatalogReferenceHandler:             catalogReferenceHandler,
 		UserSelfHandler:                     userSelfHandler,
 		PlatformTenantHandler:               platformTenantHandler,
 		PlatformUserHandler:                 platformUserHandler,
 		TenantMembershipHandler:             tenantMembershipHandler,
+		OrganizationHandler:                 organizationHandler,
 		TenantInvitationHandler:             tenantInvitationHandler,
 		TenantRoleHandler:                   tenantRoleHandler,
 		InternalAuditHandler:                internalAuditHandler,

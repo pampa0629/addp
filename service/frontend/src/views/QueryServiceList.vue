@@ -1,5 +1,9 @@
 <template>
-  <div class="query-service-list">
+  <div
+    class="query-service-list"
+    data-testid="query-service-list"
+    :data-load-state="loading ? 'loading' : (error ? 'error' : 'loaded')"
+  >
     <h1>{{ $t('service.query.listTitle') }}</h1>
 
     <!-- 操作栏 -->

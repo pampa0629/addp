@@ -78,6 +78,52 @@ describe('Console navigation bridge', () => {
     expect(portalSource).toContain("sidebarModules.value = ['system']")
   })
 
+  it('keeps the enterprise Catalog reachable from every Console discovery surface', () => {
+    const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
+    expect(configSource).toContain("modules: ['catalog', 'asset']")
+    expect(configSource).toContain("catalog:      '/catalog/entries'")
+    expect(configSource).toContain("index: '/catalog/entries'")
+
+    const searchSource = readFileSync(new URL('../src/config/searchIndex.js', import.meta.url), 'utf8')
+    expect(searchSource).toContain("module: 'catalog', route: '/catalog/entries'")
+
+    const apiDocsSource = readFileSync(new URL('../src/views/ApiDocs.vue', import.meta.url), 'utf8')
+    expect(apiDocsSource).toContain("name: 'catalog'")
+    expect(apiDocsSource).toContain("viewer('/swagger-spec/catalog')")
+
+    const viteSource = readFileSync(new URL('../vite.config.js', import.meta.url), 'utf8')
+    expect(viteSource).toContain("'/module-health/catalog'")
+    expect(viteSource).toContain("'/swagger-spec/catalog'")
+  })
+
+  it('keeps Workbench reachable as the general data-service consumer', () => {
+    const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
+    expect(configSource).toContain("modules: ['develop', 'service', 'workbench', 'orchestrator', 'monitor']")
+    expect(configSource).toContain("workbench:    '/workbench/views'")
+    expect(configSource).toContain("index: '/workbench/views'")
+
+    const searchSource = readFileSync(new URL('../src/config/searchIndex.js', import.meta.url), 'utf8')
+    expect(searchSource).toContain("module: 'workbench', route: '/workbench/views'")
+
+    const apiDocsSource = readFileSync(new URL('../src/views/ApiDocs.vue', import.meta.url), 'utf8')
+    expect(apiDocsSource).toContain("name: 'workbench'")
+    expect(apiDocsSource).toContain("viewer('/swagger-spec/workbench')")
+
+    const viteSource = readFileSync(new URL('../vite.config.js', import.meta.url), 'utf8')
+    expect(viteSource).toContain("'/module-health/workbench'")
+    expect(viteSource).toContain("'/swagger-spec/workbench'")
+  })
+
+  it('localizes the Workbench module name for every Console discovery surface', () => {
+    const zhCn = JSON.parse(readFileSync(new URL('../src/i18n/zh-cn.json', import.meta.url), 'utf8'))
+    const en = JSON.parse(readFileSync(new URL('../src/i18n/en.json', import.meta.url), 'utf8'))
+
+    expect(zhCn.console.modules.workbench.label).toBe('工作台')
+    expect(zhCn.console.menus.workbench.label).toBe('工作台')
+    expect(en.console.modules.workbench.label).toBe('Workbench')
+    expect(en.console.menus.workbench.label).toBe('Workbench')
+  })
+
   it('builds a Console route from one module-local fullPath', () => {
     expect(buildConsoleModuleRoute('develop', '/workflow?action=edit&id=544'))
       .toBe('/develop/workflow?action=edit&id=544')

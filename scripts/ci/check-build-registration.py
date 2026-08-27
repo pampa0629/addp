@@ -114,6 +114,8 @@ def image_build_definition(service: str, directory: str) -> tuple[str, str | Non
         return f"{directory}/Dockerfile", None, directory
     if service in {"transfer-bounded-worker", "meta-worker", "quality-worker"}:
         return f"{directory}/Dockerfile.prebuilt.worker", service, "."
+    if service == "develop-query-worker":
+        return f"{directory}/Dockerfile.prebuilt.query-worker", service, "."
     if service == "transfer-continuous-worker":
         return f"{directory}/Dockerfile.prebuilt.continuous-worker", service, "."
     if service in {"agent-backend", "copilot-backend"}:
@@ -185,7 +187,7 @@ def dockerfile_context_errors(
     service: str,
     dockerfile: str,
     context: str,
-    tracked_files: set[str],
+    available_files: set[str],
 ) -> list[str]:
     errors: list[str] = []
     repository_root = repository.resolve()
@@ -219,28 +221,28 @@ def dockerfile_context_errors(
                     f"{service}: {dockerfile}:{line_number} COPY source is missing from build context {context}: {source}"
                 )
                 continue
-            tracked_matches = []
+            available_matches = []
             for match in existing_matches:
                 relative_match = match.resolve().relative_to(repository_root).as_posix()
-                if match.is_file() and relative_match in tracked_files:
-                    tracked_matches.append(match)
+                if match.is_file() and relative_match in available_files:
+                    available_matches.append(match)
                 elif match.is_dir() and (
                     relative_match == "."
                     or any(
-                        tracked == relative_match
-                        or tracked.startswith(relative_match + "/")
-                        for tracked in tracked_files
+                        available == relative_match
+                        or available.startswith(relative_match + "/")
+                        for available in available_files
                     )
                 ):
-                    tracked_matches.append(match)
-            if not tracked_matches:
+                    available_matches.append(match)
+            if not available_matches:
                 errors.append(
-                    f"{service}: {dockerfile}:{line_number} COPY source is not tracked by Git: {source}"
+                    f"{service}: {dockerfile}:{line_number} COPY source is unavailable in the worktree: {source}"
                 )
                 continue
             visible_matches = [
                 match
-                for match in tracked_matches
+                for match in available_matches
                 if not dockerignore_excludes(
                     context_root, match.relative_to(context_root).as_posix()
                 )
@@ -262,6 +264,22 @@ def git_files(repository: Path, *patterns: str) -> list[str]:
         text=True,
     )
     return sorted(line for line in result.stdout.splitlines() if line)
+
+
+def repository_files(repository: Path, *patterns: str) -> list[str]:
+    """Return tracked and untracked worktree files for pre-commit validation."""
+    result = subprocess.run(
+        ["git", "ls-files", "-z", "-co", "--exclude-standard", "--", *patterns],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return sorted(
+        path
+        for path in result.stdout.split("\0")
+        if path and (repository / path).is_file()
+    )
 
 
 def shell_array(text: str, declaration: str) -> dict[str, str]:
@@ -331,12 +349,12 @@ def local_registry_base_images(text: str) -> set[str]:
 
 def expected_compile_entries(repository: Path) -> dict[str, str]:
     expected: dict[str, str] = {}
-    for path in git_files(repository, "*/backend/cmd/server/main.go"):
+    for path in repository_files(repository, "*/backend/cmd/server/main.go"):
         module = path.split("/", 1)[0]
         expected[f"{module}-backend"] = f"{module}/backend"
     if (repository / "gateway/cmd/gateway/main.go").is_file():
         expected["gateway"] = "gateway"
-    for path in git_files(repository, "*/backend/cmd/*worker/main.go"):
+    for path in repository_files(repository, "*/backend/cmd/*worker/main.go"):
         parts = Path(path).parts
         module, command = parts[0], parts[3]
         if command == "worker":
@@ -376,7 +394,7 @@ def validate_registration(repository: Path) -> list[str]:
     seed_entries = base_image_seed_entries(image_script)
     seeded_images = seeded_base_images(image_script)
     expected_compiled = expected_compile_entries(repository)
-    tracked_files = set(git_files(repository))
+    available_files = set(repository_files(repository))
     errors: list[str] = []
     registered_dockerfiles: set[str] = set()
 
@@ -508,9 +526,6 @@ def validate_registration(repository: Path) -> list[str]:
         if not definition_path.is_file():
             errors.append(f"{name}: image build definition does not exist: {definition}")
             continue
-        if definition not in tracked_files:
-            errors.append(f"{name}: image build definition is not tracked by Git: {definition}")
-            continue
         if definition_path.name.startswith("Dockerfile"):
             registered_dockerfiles.add(definition)
         if binary is not None and not dockerfile_copies_binary(
@@ -523,7 +538,7 @@ def validate_registration(repository: Path) -> list[str]:
         if context is not None:
             errors.extend(
                 dockerfile_context_errors(
-                    repository, name, definition, context, tracked_files
+                    repository, name, definition, context, available_files
                 )
             )
             for base_image in sorted(
@@ -540,14 +555,14 @@ def validate_registration(repository: Path) -> list[str]:
                         "registered in seed_base_images"
                     )
 
-    for path in git_files(repository, "*/frontend/package.json"):
+    for path in repository_files(repository, "*/frontend/package.json"):
         module = path.split("/", 1)[0]
         image = "console" if module == "console" else f"{module}-frontend"
         if image not in images:
             errors.append(f"{path}: image registration {image} is missing")
 
-    tracked_dockerfiles = set(git_files(repository, "*Dockerfile*"))
-    for path in sorted(tracked_dockerfiles):
+    available_dockerfiles = set(repository_files(repository, "*Dockerfile*"))
+    for path in sorted(available_dockerfiles):
         dockerfile_path = repository / path
         if not dockerfile_path.is_file():
             continue
@@ -557,14 +572,14 @@ def validate_registration(repository: Path) -> list[str]:
                 f"{path}: Rollup native package architecture must be selected dynamically"
             )
     for path in sorted(
-        tracked_dockerfiles - registered_dockerfiles - set(AUXILIARY_DOCKERFILES)
+        available_dockerfiles - registered_dockerfiles - set(AUXILIARY_DOCKERFILES)
     ):
         errors.append(f"{path}: Dockerfile is not registered or classified as auxiliary")
     for path, purpose in sorted(AUXILIARY_DOCKERFILES.items()):
         if not (repository / path).is_file():
             errors.append(f"{path}: auxiliary Dockerfile is missing ({purpose})")
-        elif path not in tracked_files:
-            errors.append(f"{path}: auxiliary Dockerfile is not tracked by Git ({purpose})")
+        elif path not in available_files:
+            errors.append(f"{path}: auxiliary Dockerfile is unavailable in the worktree ({purpose})")
 
     for name in sorted(expected_compiled):
         if name not in images:
@@ -591,10 +606,10 @@ def validate_registration(repository: Path) -> list[str]:
     for target in sorted(RETIRED_MAKE_TARGETS):
         if make_recipe(makefile, target) is not None:
             errors.append(f"Makefile retired target still exists: {target}")
-    tracked_scripts = set(git_files(repository, "scripts/**"))
-    for path in sorted(makefile_script_references(makefile) - tracked_scripts):
-        errors.append(f"Makefile references missing or untracked script: {path}")
-    for path in git_files(repository, "*Makefile"):
+    available_scripts = set(repository_files(repository, "scripts/**"))
+    for path in sorted(makefile_script_references(makefile) - available_scripts):
+        errors.append(f"Makefile references missing script: {path}")
+    for path in repository_files(repository, "*Makefile"):
         if path != "Makefile":
             errors.append(f"{path}: module Makefile duplicates the root build entry point")
     return errors

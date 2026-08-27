@@ -41,7 +41,7 @@ func TestEnrichResourceAttributesKeepsContainerSummaryWhenContentOpenFails(t *te
 		ContentReader: failingContentReader{},
 		Item:          item,
 		PhysicalPath:  "broken.zip",
-		CatalogPathFor: func(path string) plugin.CatalogPath {
+		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
 	})
@@ -108,7 +108,7 @@ func TestEnrichResourceAttributesDetectsUnknownDocumentAndWritesDocumentInfo(t *
 		Item:          item,
 		PhysicalPath:  "docs/report.docx",
 		SizeBytes:     size,
-		CatalogPathFor: func(path string) plugin.CatalogPath {
+		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
 	})
@@ -152,7 +152,7 @@ func TestEnrichResourceAttributesDetectsUnknownMediaAndWritesMediaInfo(t *testin
 		Item:          item,
 		PhysicalPath:  "images/pixel.png",
 		SizeBytes:     size,
-		CatalogPathFor: func(path string) plugin.CatalogPath {
+		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
 	})
@@ -190,7 +190,7 @@ func TestEnrichResourceAttributesWritesMediaFormatInfo(t *testing.T) {
 		Item:          item,
 		PhysicalPath:  "images/pixel.tif",
 		SizeBytes:     size,
-		CatalogPathFor: func(path string) plugin.CatalogPath {
+		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
 	})
@@ -233,7 +233,7 @@ func TestEnrichResourceAttributesWritesMediaInfoForMultiTIFF(t *testing.T) {
 		Item:          item,
 		PhysicalPath:  "geotiff/srtm_40_01.tif",
 		SizeBytes:     size,
-		CatalogPathFor: func(path string) plugin.CatalogPath {
+		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
 	})
@@ -285,7 +285,7 @@ func TestEnrichResourceAttributesDetectsUnknownGLBAndWritesModel3DInfo(t *testin
 		Item:          item,
 		PhysicalPath:  "models/building.glb",
 		SizeBytes:     size,
-		CatalogPathFor: func(path string) plugin.CatalogPath {
+		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
 	})
@@ -401,7 +401,7 @@ END-ISO-10303-21;`),
 				Item:          item,
 				PhysicalPath:  tt.path,
 				SizeBytes:     size,
-				CatalogPathFor: func(path string) plugin.CatalogPath {
+				EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 					return plugin.FileItemPath(1, path)
 				},
 			})
@@ -583,7 +583,7 @@ end_header
 				Item:          item,
 				PhysicalPath:  item.PhysicalPath,
 				SizeBytes:     size,
-				CatalogPathFor: func(path string) plugin.CatalogPath {
+				EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 					return plugin.FileItemPath(1, path)
 				},
 			})
@@ -629,7 +629,7 @@ func TestEnrichResourceAttributesWritesSampledBoundsForLargeGaussianPLY(t *testi
 		Item:          item,
 		PhysicalPath:  item.PhysicalPath,
 		SizeBytes:     size,
-		CatalogPathFor: func(path string) plugin.CatalogPath {
+		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
 	})
@@ -683,7 +683,7 @@ func TestEnrichResourceAttributesClassifiesSplatAsGaussianSplat(t *testing.T) {
 		Item:          item,
 		PhysicalPath:  item.PhysicalPath,
 		SizeBytes:     size,
-		CatalogPathFor: func(path string) plugin.CatalogPath {
+		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
 	})
@@ -744,7 +744,7 @@ func TestEnrichResourceAttributesClassifiesKSplatAsGaussianSplat(t *testing.T) {
 		Item:          item,
 		PhysicalPath:  item.PhysicalPath,
 		SizeBytes:     size,
-		CatalogPathFor: func(path string) plugin.CatalogPath {
+		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
 	})
@@ -790,7 +790,7 @@ func TestEnrichResourceAttributesDetectsUnknownLASAndWritesPointCloudInfo(t *tes
 		Item:          item,
 		PhysicalPath:  "point-cloud/site.las",
 		SizeBytes:     size,
-		CatalogPathFor: func(path string) plugin.CatalogPath {
+		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
 	})
@@ -848,7 +848,7 @@ func TestEnrichResourceAttributesDetectsUnknownLAZAndWritesPointCloudInfo(t *tes
 		Item:          item,
 		PhysicalPath:  "point-cloud/site.laz",
 		SizeBytes:     size,
-		CatalogPathFor: func(path string) plugin.CatalogPath {
+		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
 	})
@@ -890,7 +890,7 @@ func TestEnrichResourceAttributesDetectsUnknownCOPCAndWritesTiledPointCloudInfo(
 		Item:          item,
 		PhysicalPath:  "point-cloud/site.copc.laz",
 		SizeBytes:     size,
-		CatalogPathFor: func(path string) plugin.CatalogPath {
+		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
 	})
@@ -936,7 +936,7 @@ func TestEnrichResourceAttributesDetectsUnknownE57AndWritesScanCollectionInfo(t 
 		Item:          item,
 		PhysicalPath:  "point-cloud/bunny.e57",
 		SizeBytes:     size,
-		CatalogPathFor: func(path string) plugin.CatalogPath {
+		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
 	})
@@ -997,7 +997,7 @@ DATA ascii
 		Item:          item,
 		PhysicalPath:  "point-cloud/sample.pcd",
 		SizeBytes:     size,
-		CatalogPathFor: func(path string) plugin.CatalogPath {
+		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
 	})
@@ -1042,7 +1042,7 @@ func TestEnrichResourceAttributesDetectsUnknownXYZAndWritesPointCloudInfo(t *tes
 		Item:          item,
 		PhysicalPath:  "point-cloud/sample.xyz",
 		SizeBytes:     size,
-		CatalogPathFor: func(path string) plugin.CatalogPath {
+		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
 	})
@@ -1103,7 +1103,7 @@ func TestResolveAndEnrichMultiTIFFUsesPrimaryContent(t *testing.T) {
 		Item:          item,
 		PhysicalPath:  item.PrimaryContentPath,
 		SizeBytes:     size,
-		CatalogPathFor: func(path string) plugin.CatalogPath {
+		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
 	})
@@ -1171,7 +1171,7 @@ func TestResolveAndEnrichMultiGLTFUsesPrimaryManifest(t *testing.T) {
 		Item:         item,
 		PhysicalPath: item.PrimaryContentPath,
 		SizeBytes:    int64(len(content)),
-		CatalogPathFor: func(path string) plugin.CatalogPath {
+		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
 	})
@@ -1209,7 +1209,7 @@ func TestEnrichResourceAttributesKeepsPartialTIFFFormatInfo(t *testing.T) {
 		ContentReader: bytesContentReader{content: []byte{'I', 'I', 43, 0, 8, 0, 0, 0}},
 		Item:          item,
 		PhysicalPath:  "images/large.tif",
-		CatalogPathFor: func(path string) plugin.CatalogPath {
+		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
 	})
@@ -1241,7 +1241,7 @@ func (r failingContentReader) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{}
 }
 func (r failingContentReader) StoreSemantics() plugin.StoreSemantics { return plugin.StoreSemantics{} }
-func (r failingContentReader) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
+func (r failingContentReader) OpenContent(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
 	return nil, fmt.Errorf("open failed")
 }
 
@@ -1263,7 +1263,7 @@ func (r bytesContentReader) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{}
 }
 func (r bytesContentReader) StoreSemantics() plugin.StoreSemantics { return plugin.StoreSemantics{} }
-func (r bytesContentReader) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
+func (r bytesContentReader) OpenContent(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(r.content)), nil
 }
 
@@ -1287,10 +1287,10 @@ func (r rangeBytesContentReader) Capabilities() plugin.EngineCapabilities {
 func (r rangeBytesContentReader) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (r rangeBytesContentReader) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
+func (r rangeBytesContentReader) OpenContent(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(r.content)), nil
 }
-func (r rangeBytesContentReader) OpenRange(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+func (r rangeBytesContentReader) OpenRange(_ context.Context, _ plugin.ConnectionInfo, _ plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
 	offset := opts.Offset
 	length := opts.Length
 	if offset < 0 {
@@ -1329,7 +1329,7 @@ func (r pathContentReader) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{}
 }
 func (r pathContentReader) StoreSemantics() plugin.StoreSemantics { return plugin.StoreSemantics{} }
-func (r pathContentReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+func (r pathContentReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	content, ok := r.content[path.StringPath()]
 	if !ok {
 		return nil, fmt.Errorf("unexpected content path %q", path.StringPath())

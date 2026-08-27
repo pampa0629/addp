@@ -1,0 +1,84 @@
+[catalog.error.invalid_params]
+other = "Invalid request parameters"
+
+[catalog.error.entry_not_found]
+other = "Catalog entry was not found"
+
+[catalog.error.operation_failed]
+other = "Catalog operation failed"
+
+[catalog.error.version_conflict]
+other = "The catalog entry was updated by another operation; refresh and try again"
+[catalog.error.entry_not_editable]
+other = "The catalog entry is not editable in its current state"
+[catalog.error.invalid_transition]
+other = "The requested governance status transition is not allowed"
+[catalog.error.reference_not_referenceable]
+other = "One or more semantic or responsibility references are missing, inactive, or outside the current tenant"
+[catalog.error.certification_permission_required]
+other = "Certifying a catalog entry requires the separate certification permission"
+[catalog.error.deprecation_permission_required]
+other = "Deprecating a catalog entry requires the separate deprecation permission"
+[catalog.error.reference_validation_unavailable]
+other = "Semantic or responsibility reference validation is currently unavailable"
+[catalog.error.source_rebind_conflict]
+other = "Source rebind preconditions are not satisfied; refresh and verify both entries"
+[catalog.error.search_unavailable]
+other = "The enterprise catalog search projection is currently unavailable"
+[catalog.error.inventory_permission_required]
+other = "Viewing the enterprise inventory requires the separate inventory permission"
+[catalog.error.curation_requirements_not_met]
+other = "Business name, description, primary domain, and required responsibilities must be complete"
+[catalog.error.deprecation_reason_required]
+other = "A reason is required to deprecate a catalog entry"
+[catalog.error.invalid_recommended_successor]
+other = "The recommended successor must be an active-source curated or certified catalog entry in the current tenant"
+[catalog.error.user_principal_required]
+other = "This operation requires a User in the current tenant"
+[catalog.error.collection_not_found]
+other = "The catalog collection was not found or is inaccessible"
+[catalog.error.collection_version_conflict]
+other = "The catalog collection was updated by another operation; refresh and try again"
+[catalog.error.collection_name_conflict]
+other = "A catalog collection with this name already exists in the project group"
+
+[permissions.catalog.inventory.read.name]
+other = "View enterprise inventory"
+[permissions.catalog.inventory.read.description]
+other = "View automatically discovered enterprise catalog entries pending business curation"
+[permissions.catalog.reference.read.name]
+other = "Resolve catalog references"
+[permissions.catalog.reference.read.description]
+other = "Allow the Asset runtime to validate exact CatalogEntry selectable and publishable states"
+[permissions.catalog.entry.read.name]
+other = "View enterprise catalog"
+[permissions.catalog.entry.read.description]
+other = "View enterprise catalog entries according to catalog visibility"
+[permissions.catalog.collection.read.name]
+other = "View project group catalog collections"
+[permissions.catalog.collection.read.description]
+other = "View enterprise catalog collections owned by project groups the user participates in"
+[permissions.catalog.collection.update.name]
+other = "Maintain project group catalog collections"
+[permissions.catalog.collection.update.description]
+other = "Create, update, and delete enterprise catalog collections owned by project groups the user participates in"
+[permissions.catalog.entry.update.name]
+other = "Maintain enterprise catalog"
+[permissions.catalog.entry.update.description]
+other = "Maintain business metadata, semantic links, responsibilities, and visibility"
+[permissions.catalog.entry.certify.name]
+other = "Certify catalog entries"
+[permissions.catalog.entry.certify.description]
+other = "Promote eligible enterprise catalog entries to certified status"
+[permissions.catalog.entry.deprecate.name]
+other = "Deprecate catalog entries"
+[permissions.catalog.entry.deprecate.description]
+other = "Deprecate enterprise catalog entries with a governance reason and maintain an optional recommended successor"
+[permissions.catalog.source.rebind.name]
+other = "Rebind catalog sources"
+[permissions.catalog.source.rebind.description]
+other = "Explicitly bind a new technical source to an existing enterprise catalog identity"
+[permissions.catalog.audit.read.name]
+other = "View catalog audit"
+[permissions.catalog.audit.read.description]
+other = "View enterprise catalog governance, responsibility, and source rebind audit events"

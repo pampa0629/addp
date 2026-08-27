@@ -342,6 +342,27 @@
       "copy_success": "DDL 已复制到剪贴板",
       "copy_failed": "复制失败，请手动选择文本复制"
     },
+    "materialization_group": {
+      "title": "物化组",
+      "subtitle": "将同一目标引擎中需要原子发布的已审批逻辑表组织在一起。",
+      "create": "新建物化组",
+      "edit": "编辑物化组",
+      "name": "名称",
+      "code": "代码",
+      "description": "描述",
+      "members": "逻辑表成员",
+      "membersPlaceholder": "选择已审批且需要一起发布的逻辑表",
+      "membersHelp": "所有成员必须已审批、指向同一数据引擎，且物理目标不得重复。",
+      "version": "版本",
+      "updatedAt": "更新时间",
+      "actions": "操作",
+      "empty": "暂无物化组",
+      "deleteConfirm": "确定删除该物化组吗？",
+      "codeRequired": "请输入物化组代码",
+      "codeFormat": "代码必须以小写字母开头，且只能包含小写字母、数字和下划线",
+      "nameRequired": "请输入物化组名称",
+      "membersRequired": "请至少选择一张逻辑表"
+    },
     "layout": {
       "title": "数据建模",
       "user": "用户",
@@ -351,6 +372,7 @@
       "entities": "业务实体",
       "erDiagram": "实体关系图",
       "logicalTables": "逻辑表设计",
+      "materializationGroups": "物化组",
       "starSchema": "星型建模视图"
     }
   }

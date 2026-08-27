@@ -1,7 +1,15 @@
 schema_version: addp.permission_manifest/v1
 owner_module: quality
-manifest_version: 1
+manifest_version: 3
 permissions:
+  - key: quality.catalog.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.quality.catalog.read.name
+    description_i18n_key: permissions.quality.catalog.read.description
   - key: quality.check_task.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium
@@ -58,6 +66,38 @@ permissions:
     status: active
     name_i18n_key: permissions.quality.issue.update.name
     description_i18n_key: permissions.quality.issue.update.description
+  - key: quality.materialization_gate.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.quality.materialization_gate.create.name
+    description_i18n_key: permissions.quality.materialization_gate.create.description
+  - key: quality.materialization_gate.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.quality.materialization_gate.delete.name
+    description_i18n_key: permissions.quality.materialization_gate.delete.description
+  - key: quality.materialization_gate.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.quality.materialization_gate.read.name
+    description_i18n_key: permissions.quality.materialization_gate.read.description
+  - key: quality.materialization_gate.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.quality.materialization_gate.update.name
+    description_i18n_key: permissions.quality.materialization_gate.update.description
   - key: quality.rule_application.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium
@@ -90,3 +130,19 @@ permissions:
     status: active
     name_i18n_key: permissions.quality.rule_application.update.name
     description_i18n_key: permissions.quality.rule_application.update.description
+  - key: quality.task_provider.execute
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.quality.task_provider.execute.name
+    description_i18n_key: permissions.quality.task_provider.execute.description
+  - key: quality.task_provider.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.quality.task_provider.read.name
+    description_i18n_key: permissions.quality.task_provider.read.description

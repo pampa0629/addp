@@ -36,16 +36,16 @@ func (s *DirectLeafRuntime) ScanRoot(
 	if resource == nil {
 		return 0, fmt.Errorf("scan resource is nil")
 	}
-	catalogProvider, ok := enginePlugin.(plugin.CatalogProvider)
+	catalogProvider, ok := enginePlugin.(plugin.EngineCatalogProvider)
 	if !ok {
-		return 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
+		return 0, fmt.Errorf("engine %s does not implement EngineCatalogProvider", resource.EngineType)
 	}
-	model := scanflow.CatalogModelForPlugin(enginePlugin)
-	if model == nil || len(model.Levels) != 1 || model.Levels[0].Role != plugin.CatalogRoleLeaf {
+	model := scanflow.EngineCatalogModelForPlugin(enginePlugin)
+	if model == nil || len(model.Levels) != 1 || model.Levels[0].Role != plugin.EngineCatalogRoleLeaf {
 		return 0, fmt.Errorf("engine %s does not expose a direct leaf catalog model", resource.EngineType)
 	}
 
-	rootNode, err := metaRepo.EnsureCatalogRootNode(s.repo, tenantID, resource, enginePlugin)
+	rootNode, err := metaRepo.EnsureEngineCatalogRootNode(s.repo, tenantID, resource, enginePlugin)
 	if err != nil {
 		return 0, err
 	}
@@ -60,7 +60,7 @@ func (s *DirectLeafRuntime) ScanRoot(
 	entries, err := catalogProvider.ListChildren(
 		ctx,
 		plugin.ConnectionInfo(resource.ConnectionInfo),
-		plugin.CatalogRootPath(*model, resource.ID),
+		plugin.EngineCatalogRootPath(*model, resource.ID),
 		plugin.ListOptions{},
 	)
 	if err != nil {
@@ -69,7 +69,7 @@ func (s *DirectLeafRuntime) ScanRoot(
 
 	keepFingerprints := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		if entry.Role != plugin.CatalogRoleLeaf {
+		if entry.Role != plugin.EngineCatalogRoleLeaf {
 			continue
 		}
 		itemType := catalogLeafItemType(entry)

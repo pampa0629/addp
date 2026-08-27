@@ -113,10 +113,10 @@ func (s *fakeInitialMetadataScanStore) CompleteInitialMetadataScan(
 }
 
 func metadataScanTestPlan(engineID uint, parent, table string) *planner.ContinuousPlan {
-	path := engineplugin.CatalogRootPath((&postgresql.PostgreSQLPlugin{}).CatalogModel(), engineID)
+	path := engineplugin.EngineCatalogRootPath((&postgresql.PostgreSQLPlugin{}).EngineCatalogModel(), engineID)
 	path.Segments = append(path.Segments,
-		engineplugin.CatalogSegment{Name: parent},
-		engineplugin.CatalogSegment{Name: table},
+		engineplugin.EngineCatalogSegment{Name: parent},
+		engineplugin.EngineCatalogSegment{Name: table},
 	)
 	return &planner.ContinuousPlan{Target: planner.ContinuousTargetPlan{EngineID: engineID, Path: path}}
 }

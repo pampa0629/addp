@@ -6,6 +6,7 @@
   "main": "basic/src/index.js",
   "files": [
     "basic/src",
+    "chart/src",
     "map/src",
     "dag/src",
     "graph/src",

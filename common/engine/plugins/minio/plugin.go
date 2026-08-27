@@ -59,7 +59,7 @@ func (p *MinIOPlugin) StoreSemantics() plugin.StoreSemantics {
 	}
 }
 
-func (p *MinIOPlugin) CatalogModel() plugin.CatalogModelSpec {
+func (p *MinIOPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.ObjectCatalogModel()
 }
 
@@ -71,19 +71,19 @@ func (p *MinIOPlugin) objectCatalogCallbacks() plugin.ObjectCatalogCallbacks {
 	}
 }
 
-func (p *MinIOPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+func (p *MinIOPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath, opts plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
 	return plugin.ListObjectCatalogChildren(ctx, p.objectCatalogCallbacks(), connInfo, parent.EngineID, parent, opts)
 }
 
-func (p *MinIOPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p *MinIOPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	return plugin.ResolveObjectCatalogPath(ctx, p.objectCatalogCallbacks(), connInfo, path.EngineID, path)
 }
 
-func (p *MinIOPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *MinIOPlugin) DescribeEngineCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	return plugin.DescribeObjectCatalogFacts(ctx, p.objectCatalogCallbacks(), connInfo, path.EngineID, path)
 }
 
-func (p *MinIOPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+func (p *MinIOPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
 	objectPath, err := plugin.RequireObjectLeafPath(path)
 	if err != nil {
 		return nil, err
@@ -91,7 +91,7 @@ func (p *MinIOPlugin) OpenContent(ctx context.Context, connInfo plugin.Connectio
 	return p.readFile(ctx, connInfo, objectPath, opts)
 }
 
-func (p *MinIOPlugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+func (p *MinIOPlugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
 	if opts.Length <= 0 {
 		return nil, fmt.Errorf("range read requires positive length")
 	}
@@ -102,7 +102,7 @@ func (p *MinIOPlugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionI
 	return p.readFile(ctx, connInfo, objectPath, opts)
 }
 
-func (p *MinIOPlugin) CreateContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.WriteOptions) (io.WriteCloser, error) {
+func (p *MinIOPlugin) CreateContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.WriteOptions) (io.WriteCloser, error) {
 	objectPath, err := plugin.RequireObjectLeafPath(path)
 	if err != nil {
 		return nil, err
@@ -114,7 +114,7 @@ func (p *MinIOPlugin) CreateContent(ctx context.Context, connInfo plugin.Connect
 	return objectstore.CreateContent(ctx, client, objectPath, opts)
 }
 
-func (p *MinIOPlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) error {
+func (p *MinIOPlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) error {
 	objectPath, err := plugin.RequireObjectLeafPath(path)
 	if err != nil {
 		return err
@@ -156,7 +156,7 @@ func (p *MinIOPlugin) createClient(connInfo plugin.ConnectionInfo) (*miniogo.Cli
 
 // listDirectory 列出路径下的直接子内容（非递归）
 // path 格式：bucket/prefix/
-func (p *MinIOPlugin) listDirectory(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
+func (p *MinIOPlugin) listDirectory(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath) ([]plugin.EngineCatalogEntry, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err
@@ -174,7 +174,7 @@ func (p *MinIOPlugin) listDirectory(ctx context.Context, connInfo plugin.Connect
 		Recursive: false,
 	})
 
-	var nodes []plugin.CatalogEntry
+	var nodes []plugin.EngineCatalogEntry
 
 	for obj := range objectCh {
 		if obj.Err != nil {
@@ -265,7 +265,7 @@ func (p *MinIOPlugin) getStorageObjectFacts(ctx context.Context, connInfo plugin
 }
 
 // listBuckets 列出 service root 下的第一层业务 bucket。
-func (p *MinIOPlugin) listBuckets(ctx context.Context, connInfo plugin.ConnectionInfo, root plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
+func (p *MinIOPlugin) listBuckets(ctx context.Context, connInfo plugin.ConnectionInfo, root plugin.EngineCatalogPath) ([]plugin.EngineCatalogEntry, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err
@@ -276,7 +276,7 @@ func (p *MinIOPlugin) listBuckets(ctx context.Context, connInfo plugin.Connectio
 		return nil, fmt.Errorf("failed to list buckets: %w", err)
 	}
 
-	result := make([]plugin.CatalogEntry, len(buckets))
+	result := make([]plugin.EngineCatalogEntry, len(buckets))
 	for i, b := range buckets {
 		result[i] = plugin.ObjectBucketCatalogEntry(root, b.Name)
 	}

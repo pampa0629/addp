@@ -55,7 +55,7 @@ func spatialInfoFromBatch(batch *engineplugin.BatchData) *datatype.SpatialInfo {
 	return nil
 }
 
-func contentRefFromCatalogPath(path engineplugin.CatalogPath) contentio.Ref {
+func contentRefFromCatalogPath(path engineplugin.EngineCatalogPath) contentio.Ref {
 	stringPath := path.StringPath()
 	return contentio.NewRef(stringPath, contentio.RoleMain)
 }

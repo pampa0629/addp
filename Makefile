@@ -1,4 +1,4 @@
-.PHONY: help build build-images select-image-services test test-changed test-module test-platform test-book test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-console-frontend test-copilot test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-quality-postgres test-standard-postgres test-arcgis-open-formats \
+.PHONY: help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-book test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-console-frontend test-copilot test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-service-postgres test-standard-postgres test-workbench-postgres test-arcgis-open-formats \
         build-iam-bootstrap build-iam-recovery \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
@@ -123,19 +123,49 @@ test-module: ## 运行指定模块的 T0-T3 门禁；用法：make test-module M
 test-changed: ## 根据相对 HEAD 或 BASE_REF 的改动运行受影响 T0-T3 门禁
 	@python3 scripts/test/changed-gate.py --repository "$(CURDIR)" $(if $(BASE_REF),--base-ref "$(BASE_REF)",)
 
+local-ci: ## 在专用 macOS checkout 同步 origin/main 并运行辅助 T0-T3 巡检；参数用 LOCAL_CI_ARGS="--full|--check-only"
+	@bash scripts/test/local-macos-ci.sh $(LOCAL_CI_ARGS)
+
+test-local-ci-runner: ## 运行辅助 macOS 巡检器的确定性测试
+	@python3 scripts/test/local-macos-ci_test.py
+
 test-integration: ## 严格串行运行所有已登记的 disposable 基础设施集成门禁
 	@$(MAKE) test-system-iam-postgres
+	@$(MAKE) test-meta-postgres
+	@$(MAKE) test-catalog-postgres
+	@$(MAKE) test-develop-postgres
+	@$(MAKE) test-model-postgres
 	@$(MAKE) test-quality-postgres
+	@$(MAKE) test-service-postgres
 	@$(MAKE) test-standard-postgres
+	@$(MAKE) test-workbench-postgres
 
 test-system-iam-postgres: ## 使用一次性 PostgreSQL 数据库运行 System IAM 发布门禁
 	@bash scripts/test/system-iam-postgres-gate.sh
 
+test-meta-postgres: ## 使用一次性 PostgreSQL 数据库运行 Meta 变化源集成门禁
+	@bash scripts/test/meta-postgres-gate.sh
+
+test-catalog-postgres: ## 使用一次性 PostgreSQL 数据库运行 Catalog 约束集成门禁
+	@bash scripts/test/catalog-postgres-gate.sh
+
+test-develop-postgres: ## 使用一次性 PostgreSQL 数据库运行 Develop 目录变化集成门禁
+	@bash scripts/test/develop-postgres-gate.sh
+
+test-model-postgres: ## 使用一次性 PostgreSQL 数据库运行 Model 物化与事务集成门禁
+	@bash scripts/test/model-postgres-gate.sh
+
 test-quality-postgres: ## 使用一次性 PostgreSQL 数据库运行 Quality 集成门禁
 	@bash scripts/test/quality-postgres-gate.sh
 
+test-service-postgres: ## 使用一次性 PostgreSQL 数据库运行 Service Consumer Catalog 集成门禁
+	@bash scripts/test/service-postgres-gate.sh
+
 test-standard-postgres: ## 使用一次性 PostgreSQL 数据库运行 Standard 集成门禁
 	@bash scripts/test/standard-postgres-gate.sh
+
+test-workbench-postgres: ## 使用一次性 PostgreSQL 数据库运行 Workbench View 集成门禁
+	@bash scripts/test/workbench-postgres-gate.sh
 
 test-arcgis-open-formats: ## 使用真实 Access/PGeo 样本和 Oracle Spatial 运行集成门禁
 	@bash scripts/test/arcgis-open-formats-integration-gate.sh
@@ -148,7 +178,7 @@ test-online: ## 运行指定 Online suite（必须设置 ONLINE_SUITE 和 ADDP_O
 	@python3 scripts/test/online-gate.py --repository "$(CURDIR)" --suite "$(ONLINE_SUITE)"
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
-	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/ci/check-online-ci-registration_test.py
+	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/ci/check-online-ci-registration_test.py
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
 test-release: ## 运行指定 T5 发布套件；用法：make test-release RELEASE_SUITE=common-python-cli
@@ -160,6 +190,7 @@ test-release-runner: ## 运行 T5 分发器和 CI 登记检查的确定性测试
 
 test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@$(MAKE) test-book
+	@$(MAKE) test-local-ci-runner
 	@bash scripts/utils/check-deps-version.sh
 	@python3 scripts/ci/check-build-registration_test.py
 	@python3 scripts/ci/select-image-services_test.py
@@ -213,6 +244,10 @@ test-asset-frontend: ## 运行 Asset 前端确定性测试与构建
 	@cd asset/frontend && npm test
 	@cd asset/frontend && npm run build
 
+test-catalog-frontend: ## 运行 Catalog 前端路由状态测试与构建
+	@cd catalog/frontend && npm test
+	@cd catalog/frontend && npm run build
+
 test-console-frontend: ## 运行 Console 前端确定性测试与构建
 	@cd console/frontend && npm test
 	@cd console/frontend && npm run build
@@ -264,6 +299,10 @@ test-system-frontend: ## 运行 System 前端确定性测试与构建
 test-transfer-frontend: ## 运行 Transfer 前端确定性测试与构建
 	@cd transfer/frontend && npm test
 	@cd transfer/frontend && npm run build
+
+test-workbench-frontend: ## 运行 Workbench 前端确定性测试与构建
+	@cd workbench/frontend && npm test
+	@cd workbench/frontend && npm run build
 
 test-go: ## 校验依赖文件并使用临时 workspace 运行全部已跟踪 Go 模块测试
 	@set -e; \
@@ -323,11 +362,11 @@ test-authorization: ## 校验 IAM Manifest、生成常量和授权覆盖报告
 	@SWAGGER_COVERAGE_WARN_ONLY=1 bash scripts/swagger/check-route-coverage.sh all
 
 test: test-platform test-go test-common-python test-agent-eval test-copilot \
-	test-agent-frontend test-asset-frontend test-console-frontend test-develop-frontend \
+	test-agent-frontend test-asset-frontend test-catalog-frontend test-console-frontend test-develop-frontend \
 	test-graph-frontend test-inference-frontend test-manager-frontend test-meta-frontend \
 	test-model-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend \
 	test-quality-frontend test-service-frontend test-standard-frontend test-system-frontend \
-	test-transfer-frontend ## 运行全部无外部服务的确定性测试与构建门禁
+	test-transfer-frontend test-workbench-frontend ## 运行全部无外部服务的确定性测试与构建门禁
 	@echo "$(GREEN)全部确定性测试与构建门禁完成$(NC)"
 
 init-minio: ## 初始化 MinIO buckets（包括 PMTiles 快显缓存等）

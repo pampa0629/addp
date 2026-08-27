@@ -15,30 +15,61 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/assets/discoverable": {
+        "/data-items/changes": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回当前租户下已扫描完成的数据项，供 Asset 模块自动发现注册 | List scanned metadata items for Asset discovery",
+                "description": "按不透明游标顺序返回当前租户的 DataItem 创建、摘要更新和失效变化，仅供 Catalog 模块消费 | Return ordered DataItem creation, summary update, and missing changes for the current tenant; Catalog service only",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Meta"
                 ],
-                "summary": "列出可发现资产 | List discoverable assets",
+                "summary": "拉取 DataItem 变化 | Pull DataItem changes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "上次成功提交的不透明游标，空值表示从历史起点开始 | Opaque cursor committed by the consumer; empty starts from the beginning",
+                        "name": "after_cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "批大小，默认 200，最大 500 | Batch size, default 200 and maximum 500",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "可发现资产列表 | Discoverable assets",
+                        "description": "DataItem 变化批次 | DataItem change batch",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": true
-                            }
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.DataItemChangesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "无效游标或批大小 | Invalid cursor or batch size",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "非 Catalog 服务或权限不足 | Catalog service or permission required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "500": {
@@ -2547,6 +2578,49 @@ const docTemplate = `{
                 "FieldTypeUUID",
                 "FieldTypeGeometry"
             ]
+        },
+        "github_com_addp_meta_internal_models.DataItemChange": {
+            "type": "object",
+            "properties": {
+                "change_id": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "operation": {
+                    "type": "string"
+                },
+                "snapshot": {
+                    "$ref": "#/definitions/github_com_addp_meta_internal_models.JSONMap"
+                },
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_version": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.DataItemChangesResponse": {
+            "type": "object",
+            "properties": {
+                "changes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_meta_internal_models.DataItemChange"
+                    }
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "next_cursor": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                }
+            }
         },
         "github_com_addp_meta_internal_models.EngineScanMVTPreprocessPlan": {
             "type": "object",

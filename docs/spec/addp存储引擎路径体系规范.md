@@ -7,20 +7,20 @@
 
 | 引擎类型标识 | 显示名称 | 主要 Provider |
 |------------|---------|---------|
-| `postgresql` | PostgreSQL | CatalogProvider + CatalogFactsProvider + SQLQueryRuntimeProvider |
-| `oracle` | Oracle Database | CatalogProvider + CatalogFactsProvider + SQLQueryRuntimeProvider + TableReadSessionProvider |
-| `mysql` | MySQL | CatalogProvider + CatalogFactsProvider + SQLQueryRuntimeProvider |
-| `doris` | Apache Doris | CatalogProvider + CatalogFactsProvider + SQLQueryRuntimeProvider |
-| `clickhouse` | ClickHouse | CatalogProvider + CatalogFactsProvider + SQLQueryRuntimeProvider |
-| `mongodb` | MongoDB | CatalogProvider + CatalogFactsProvider + QueryRuntimeProvider |
-| `neo4j` | Neo4j | CatalogProvider + QueryRuntimeProvider + GraphQueryProvider |
-| `minio` | MinIO | CatalogProvider + ContentReadableProvider |
-| `s3` | Amazon S3 | CatalogProvider + ContentReadableProvider |
-| `nfs` | NFS 文件系统 | CatalogProvider + ContentReadableProvider |
+| `postgresql` | PostgreSQL | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider |
+| `oracle` | Oracle Database | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider + TableReadSessionProvider |
+| `mysql` | MySQL | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider |
+| `doris` | Apache Doris | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider |
+| `clickhouse` | ClickHouse | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider |
+| `mongodb` | MongoDB | EngineCatalogProvider + EngineCatalogFactsProvider + QueryRuntimeProvider |
+| `neo4j` | Neo4j | EngineCatalogProvider + QueryRuntimeProvider + GraphQueryProvider |
+| `minio` | MinIO | EngineCatalogProvider + ContentReadableProvider |
+| `s3` | Amazon S3 | EngineCatalogProvider + ContentReadableProvider |
+| `nfs` | NFS 文件系统 | EngineCatalogProvider + ContentReadableProvider |
 
 ---
 
-Kafka common Engine 插件已实现 `service -> topic` 路径、Catalog、topic facts、ResourceLocator 契约和 ChangeStreamReaderProvider。System 后端可注册业务 Kafka Engine；Console 配置表单和 Transfer continuous runtime 尚未开放，不得据此宣称 continuous 任务已经可执行。
+Kafka common Engine 插件已实现 `service -> topic` 路径、Engine Catalog、topic facts、ResourceLocator 契约和 ChangeStreamReaderProvider。System 后端可注册业务 Kafka Engine；Console 配置表单和 Transfer continuous runtime 尚未开放，不得据此宣称 continuous 任务已经可执行。
 
 ## 一、核心概念
 
@@ -47,7 +47,7 @@ Kafka common Engine 插件已实现 `service -> topic` 路径、Catalog、topic 
 - root `meta_node.name` 使用引擎实例名称，展示层直接显示为存储引擎。
 - root `meta_node.full_name` 固定为空字符串 `""`。
 - root 的 ResourceLocator path 为空，但必须和普通 node 一样携带 `type` 与 `node_id`，例如 `addp://engine/8/path/?type=server&node_id=99`。
-- root 不进入 `CatalogPath.StringPath()`、`full_name`、`storage_ref`、ResourceLocator 业务 path 或指纹输入。
+- root 不进入 `EngineCatalogPath.StringPath()`、`full_name`、`storage_ref`、ResourceLocator 业务 path 或指纹输入。
 - root 原生名称如有实际价值，写入 `meta_node.attributes.catalog.native_name`；例如 NFS 挂载根为 `/`。
 - Provider 枚举第一层业务 branch 时必须使用 `ListChildren(rootPath)`，不得用 empty path 表达业务第一层。
 
@@ -124,7 +124,7 @@ full_name 是相对于挂载点的路径，不包含挂载点本身：
 | `gis-data/sample.csv` | `/gis-data/sample.csv` |
 | `README.md` | `/README.md` |
 
-文件系统的 `CatalogPath` 必须继续遵守 `root -> directory* -> file` 模型；内容读取不能因为底层 NFS 需要 `/a/b.csv` 这样的物理路径，就额外发明单段 `path` 语义。对象存储同理，内容读取仍使用 `bucket -> prefix* -> object` 的 item path。物理路径只作为 storage attribute 或插件内部解析结果存在，不成为第二套上层路径模型。
+文件系统的 `EngineCatalogPath` 必须继续遵守 `root -> directory* -> file` 模型；内容读取不能因为底层 NFS 需要 `/a/b.csv` 这样的物理路径，就额外发明单段 `path` 语义。对象存储同理，内容读取仍使用 `bucket -> prefix* -> object` 的 item path。物理路径只作为 storage attribute 或插件内部解析结果存在，不成为第二套上层路径模型。
 
 ### 扫描请求路径字段
 
@@ -158,7 +158,7 @@ Meta scan 内部必须把“跨模块输入路径”和“扫描期规范化资�
 实现约束：
 
 1. 对象存储 `ref_groups.path` 进入 Meta 后应先拆为 `bucket` 与 `object_key`；scan resource 的 `Path` 类字段只允许保存 `object_key`，完整路径另行保存为 `bucket/object_key`。
-2. 对象存储 `CatalogPathForBucket(bucket)` 这类 mapper 只允许消费 bucket 内 `object_key`；需要消费 `bucket/object_key` 时必须使用命名明确的 mapper，不得混用。
+2. 对象存储 `EngineCatalogPathForBucket(bucket)` 这类 mapper 只允许消费 bucket 内 `object_key`；需要消费 `bucket/object_key` 时必须使用命名明确的 mapper，不得混用。
 3. 对象存储普通 `catalog_paths` scan 与 `ref_groups` scan 对同一个 object 必须生成一致的 scan resource 语义、`meta_item.full_name`、`attributes.storage.*` 和指纹输入。
 4. 文件系统 / NFS 没有 bucket 层，扫描期资源相对路径、完整 content path 与 `full_name` 在字符串上通常相同；实现不得为了对齐对象存储而给 NFS 额外引入 root 前缀或 bucket-like 段。
 5. `physical_path` 只表达已裁决 item 的 primary content 或 whole scope 根范围；扫描实现不得把它当作可自由拼接的 catalog selector，也不得把对象存储的 `bucket/object_key` 再交给只接受 `object_key` 的 mapper。
@@ -194,7 +194,7 @@ full_name 由 `database.item` 两段组成，使用 `.` 分隔：
 
 ### 消息系统（Kafka）
 
-Kafka topic 直接位于 service root 下，`full_name` 等于 topic 原名。partition 不进入 full_name、CatalogPath、ResourceLocator 或 Meta 树。
+Kafka topic 直接位于 service root 下，`full_name` 等于 topic 原名。partition 不进入 full_name、EngineCatalogPath、ResourceLocator 或 Meta 树。
 
 | 节点/数据项类型 | full_name 示例 | 说明 |
 |---|---|---|
@@ -290,7 +290,7 @@ NFS 必须创建 root meta_node，且 root 的 `name` 必须使用引擎实例�
 - NFS 的 `export_path` 属于连接配置，不得暴露为数据路径，也不得进入 `full_name`。
 - 挂载根目录下直接存在的文件必须有父 node 容纳；该父 node 就是 root meta_node。
 - root meta_node 是元数据树结构根，不是用户真实数据路径的一部分。
-- `.` 只是底层文件系统 API 可接受的当前目录写法，不得进入 CatalogPath、`full_name`、ResourceLocator 或 Transfer 任务 JSON。
+- `.` 只是底层文件系统 API 可接受的当前目录写法，不得进入 EngineCatalogPath、`full_name`、ResourceLocator 或 Transfer 任务 JSON。
 
 root 节点字段规范：
 
@@ -433,7 +433,7 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 
 ### NFS 扫描流程
 
-1. 通过 `CatalogRootEntry(model, engineID, engineName)` 获取结构 root，CatalogPath 包含 root segment，但其 `StringPath()` 为空。
+1. 通过 `EngineCatalogRootEntry(model, engineID, engineName)` 获取结构 root，EngineCatalogPath 包含 root segment，但其 `StringPath()` 为空。
 2. 创建 root `meta_node`，`name = engine.name`，`full_name = ""`，`meta_node.attributes.catalog.native_name="/"`。
 3. 扫描根目录时，递归扫描 `/` 下的所有目录和文件。
 4. 扫描非根目录时，先按 `catalog_paths` 确保从 root 到目标目录的 `dir meta_node` 链存在，再把扫描上下文切换到该目录 node。
@@ -443,34 +443,34 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 
 ### 对象存储扫描流程
 
-1. upsert service root `meta_node`，再通过 `CatalogProvider.ListChildren(root)` 获取 bucket 列表，创建 bucket `meta_node`
-2. 通过 `CatalogProvider.ListChildren(bucket/prefix)` 获取 prefix 和 object
+1. upsert service root `meta_node`，再通过 `EngineCatalogProvider.ListChildren(root)` 获取 bucket 列表，创建 bucket `meta_node`
+2. 通过 `EngineCatalogProvider.ListChildren(bucket/prefix)` 获取 prefix 和 object
 3. prefix 创建 `meta_node`（`node_type = prefix`），`full_name = bucket + "/" + prefix`
 4. object 创建 `meta_item`（`item_type = object`），`full_name = bucket + "/" + object_key`
 5. object 的格式和内容语义写入 `attributes.item.data_type`、`attributes.item.format`、`attributes.item.layout` 等 attributes 分区
 
 ### 关系型数据库扫描流程
 
-1. 通过 `CatalogProvider.ListChildren(root)` 获取 namespace 列表（PostgreSQL 为 schema；MySQL/Doris/ClickHouse 为 database）
-2. 插件负责过滤系统 schema/database，或通过 `CatalogCapability.system_filtering` 声明过滤能力
+1. 通过 `EngineCatalogProvider.ListChildren(root)` 获取 namespace 列表（PostgreSQL 为 schema；MySQL/Doris/ClickHouse 为 database）
+2. 插件负责过滤系统 schema/database，或通过 `EngineCatalogCapability.system_filtering` 声明过滤能力
 3. upsert server root `meta_node`，为每个 schema 或 database 创建子 `meta_node`
-4. 通过 `CatalogProvider.ListChildren(namespace)` 获取表/视图，创建 `meta_item`（`item_type = table/view`）
+4. 通过 `EngineCatalogProvider.ListChildren(namespace)` 获取表/视图，创建 `meta_item`（`item_type = table/view`）
 5. `meta_item.full_name` 使用 `<schema|database>.<table>`
 
 ### MongoDB / Neo4j 扫描流程
 
-1. 通过 `CatalogProvider.ListChildren(root)` 获取第一层业务 branch（MongoDB / Neo4j 为 database）
+1. 通过 `EngineCatalogProvider.ListChildren(root)` 获取第一层业务 branch（MongoDB / Neo4j 为 database）
 2. upsert server root `meta_node`，为每个 database branch 创建子 `meta_node`（`node_type = database`，`full_name = database`）
-3. 通过 `CatalogProvider.ListChildren(database branch)` 获取 collection/graph leaf，创建 `meta_item`
+3. 通过 `EngineCatalogProvider.ListChildren(database branch)` 获取 collection/graph leaf，创建 `meta_item`
 4. `meta_item.full_name` 使用 `database.collection`（Neo4j 为 `database.graph`）
 5. Neo4j label、relationship type 和 endpoint pattern 写入 `attributes.type_info.graph`，不作为独立 `meta_item`
 
 ### Kafka 扫描流程
 
-1. upsert service root `meta_node`，通过 `CatalogProvider.ListChildren(root)` 获取当前凭据可见的 topic。
+1. upsert service root `meta_node`，通过 `EngineCatalogProvider.ListChildren(root)` 获取当前凭据可见的 topic。
 2. topic 创建 `meta_item`，`item_type=topic`、`full_name=topic name`、`attributes.item.data_type=unknown`。
 3. 第一版 scan 不读取 topic 消息、不推断 JSON schema，也不把 partition 创建为 node/item。
-4. partition count、leader、副本、ISR、earliest/latest offset 等事实由实时 `CatalogFactsProvider` 或 Transfer runtime diagnostics 返回；在正式定义持久化结构前不得塞入 Meta attributes 兜底字段。
+4. partition count、leader、副本、ISR、earliest/latest offset 等事实由实时 `EngineCatalogFactsProvider` 或 Transfer runtime diagnostics 返回；在正式定义持久化结构前不得塞入 Meta attributes 兜底字段。
 
 ---
 
@@ -508,6 +508,6 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 - 对象存储使用 `bucket -> prefix -> object`。
 - 文件系统使用 `root -> directory -> file`。
 - 对象存储中的 `meta_item.item_type` 必须使用 `object`，文件系统中的 `meta_item.item_type` 必须使用 `file`；表格、文档、媒体、容器等内容语义进入 `attributes.item.data_type`。
-- 对象存储和文件系统不得共享 CatalogModel 或 catalog 拼装实现。
+- 对象存储和文件系统不得共享 Engine Catalog Model 或 Engine Catalog 拼装实现。
 - 二者可以共享内容流读写接口、MIME 推断、格式解析、preview composer 等底层能力。
 - Linux / macOS 本地文件系统后续也必须有结构性 root meta_node，用于容纳根目录下文件；展示名可另行确认，但不得省略 root。

@@ -122,11 +122,11 @@ func TestJupyterServiceOpenInteractiveSessionUsesStandardControlPlane(t *testing
 		SessionID: "abc-123", TenantID: 7, UserID: 9, TaskID: 11,
 		NotebookPath: "analysis.ipynb", Kernel: "python3",
 		BasePath: "/api/v1/develop/notebook-sessions/abc-123/", TTLSeconds: 3600,
-		OwnerAPIEndpoint:          "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/engine-descriptors",
-		OwnerCatalogAPIEndpoint:   "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/catalog/children",
-		OwnerTableScanAPIEndpoint: "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/table-scans",
-		OwnerQueryAPIEndpoint:     "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/queries",
-		OwnerCapabilityToken:      "addp_nkc_kernel-secret",
+		OwnerAPIEndpoint:              "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/engine-descriptors",
+		OwnerEngineCatalogAPIEndpoint: "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/catalog/children",
+		OwnerTableScanAPIEndpoint:     "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/table-scans",
+		OwnerQueryAPIEndpoint:         "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/queries",
+		OwnerCapabilityToken:          "addp_nkc_kernel-secret",
 	})
 	if err != nil {
 		t.Fatalf("OpenInteractiveSession() error = %v", err)

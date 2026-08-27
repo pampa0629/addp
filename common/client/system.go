@@ -107,15 +107,15 @@ type EngineCatalogSegment struct {
 }
 
 type EngineCatalogEntry struct {
-	Name      string                      `json:"name"`
-	Path      EngineCatalogPath           `json:"path"`
-	Term      string                      `json:"term"`
-	Kind      string                      `json:"kind"`
-	Role      string                      `json:"role"`
-	Table     *datatype.TableInfo         `json:"table,omitempty"`
-	Storage   *plugin.CatalogStorageFacts `json:"storage,omitempty"`
-	LeafCount *int                        `json:"leaf_count,omitempty"`
-	UpdatedAt *time.Time                  `json:"updated_at,omitempty"`
+	Name      string                            `json:"name"`
+	Path      EngineCatalogPath                 `json:"path"`
+	Term      string                            `json:"term"`
+	Kind      string                            `json:"kind"`
+	Role      string                            `json:"role"`
+	Table     *datatype.TableInfo               `json:"table,omitempty"`
+	Storage   *plugin.EngineCatalogStorageFacts `json:"storage,omitempty"`
+	LeafCount *int                              `json:"leaf_count,omitempty"`
+	UpdatedAt *time.Time                        `json:"updated_at,omitempty"`
 }
 
 type EngineCatalogListOptions struct {
@@ -124,11 +124,11 @@ type EngineCatalogListOptions struct {
 	Offset    int  `json:"offset,omitempty"`
 }
 
-func (c *SystemClient) ListCatalogChildren(engineID uint, req EngineCatalogListChildrenRequest) ([]EngineCatalogEntry, error) {
-	return c.ListCatalogChildrenWithToken(engineID, req, "")
+func (c *SystemClient) ListEngineCatalogChildren(engineID uint, req EngineCatalogListChildrenRequest) ([]EngineCatalogEntry, error) {
+	return c.ListEngineCatalogChildrenWithToken(engineID, req, "")
 }
 
-func (c *SystemClient) ListCatalogChildrenWithToken(engineID uint, req EngineCatalogListChildrenRequest, token string) ([]EngineCatalogEntry, error) {
+func (c *SystemClient) ListEngineCatalogChildrenWithToken(engineID uint, req EngineCatalogListChildrenRequest, token string) ([]EngineCatalogEntry, error) {
 	if c == nil || c.tenantID == nil || *c.tenantID == 0 {
 		return nil, errors.New("System catalog request requires a tenant context")
 	}

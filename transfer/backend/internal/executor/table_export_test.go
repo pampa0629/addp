@@ -1080,7 +1080,7 @@ func (r *fakeBatchReader) StoreSemantics() engineplugin.StoreSemantics {
 	return engineplugin.StoreSemantics{}
 }
 
-func (r *fakeBatchReader) ReadBatch(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, opts engineplugin.BatchReadOptions) (*engineplugin.BatchData, error) {
+func (r *fakeBatchReader) ReadBatch(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.EngineCatalogPath, opts engineplugin.BatchReadOptions) (*engineplugin.BatchData, error) {
 	r.offsets = append(r.offsets, opts.Offset)
 	r.batchOptions = append(r.batchOptions, opts)
 	if len(r.batches) == 0 {
@@ -1091,7 +1091,7 @@ func (r *fakeBatchReader) ReadBatch(_ context.Context, _ engineplugin.Connection
 	return batch, nil
 }
 
-func (r *fakeBatchReader) OpenTableReadSession(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, opts engineplugin.TableReadSessionOptions) (engineplugin.TableReadSession, error) {
+func (r *fakeBatchReader) OpenTableReadSession(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.EngineCatalogPath, opts engineplugin.TableReadSessionOptions) (engineplugin.TableReadSession, error) {
 	r.sessionOptions = opts
 	return &fakeTableReadSession{reader: r}, nil
 }
@@ -1185,23 +1185,23 @@ func (w *fakeNativeTableWriter) StoreSemantics() engineplugin.StoreSemantics {
 	return engineplugin.StoreSemantics{}
 }
 
-func (w *fakeNativeTableWriter) PrepareTableWrite(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, opts engineplugin.TableWriteOptions) error {
+func (w *fakeNativeTableWriter) PrepareTableWrite(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.EngineCatalogPath, opts engineplugin.TableWriteOptions) error {
 	w.preparedFields = append([]datatype.FieldInfo(nil), opts.Fields...)
 	w.preparedSpatialInfo = opts.SpatialInfo.Clone()
 	return nil
 }
 
-func (w *fakeNativeTableWriter) DeleteResource(context.Context, engineplugin.ConnectionInfo, engineplugin.CatalogPath) error {
+func (w *fakeNativeTableWriter) DeleteResource(context.Context, engineplugin.ConnectionInfo, engineplugin.EngineCatalogPath) error {
 	w.deleted = true
 	return nil
 }
 
-func (w *fakeNativeTableWriter) WriteBatch(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, batch *engineplugin.BatchData, _ engineplugin.BatchWriteOptions) error {
+func (w *fakeNativeTableWriter) WriteBatch(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.EngineCatalogPath, batch *engineplugin.BatchData, _ engineplugin.BatchWriteOptions) error {
 	w.batches = append(w.batches, batch)
 	return nil
 }
 
-func (w *fakeNativeTableWriter) OpenTableWriteSession(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, opts engineplugin.TableWriteSessionOptions) (engineplugin.TableWriteSession, error) {
+func (w *fakeNativeTableWriter) OpenTableWriteSession(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.EngineCatalogPath, opts engineplugin.TableWriteSessionOptions) (engineplugin.TableWriteSession, error) {
 	w.sessionFields = append([]datatype.FieldInfo(nil), opts.Fields...)
 	w.sessionSpatialInfo = opts.SpatialInfo.Clone()
 	return &fakeNativeTableWriteSession{writer: w}, nil
@@ -1257,7 +1257,7 @@ func (w *fakeContentWriter) StoreSemantics() engineplugin.StoreSemantics {
 	return engineplugin.StoreSemantics{}
 }
 
-func (w *fakeContentWriter) CreateContent(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath, _ engineplugin.WriteOptions) (io.WriteCloser, error) {
+func (w *fakeContentWriter) CreateContent(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.EngineCatalogPath, _ engineplugin.WriteOptions) (io.WriteCloser, error) {
 	if w.files != nil {
 		buf := &bytes.Buffer{}
 		return fakeWriteCloser{Writer: buf, close: func() {
@@ -1268,7 +1268,7 @@ func (w *fakeContentWriter) CreateContent(_ context.Context, _ engineplugin.Conn
 	return fakeWriteCloser{Writer: &w.buf, close: func() { w.closed = true }}, nil
 }
 
-func (w *fakeContentWriter) OpenContent(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath, _ engineplugin.ReadOptions) (io.ReadCloser, error) {
+func (w *fakeContentWriter) OpenContent(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.EngineCatalogPath, _ engineplugin.ReadOptions) (io.ReadCloser, error) {
 	if w.files == nil {
 		if w.openCounts != nil {
 			w.openCounts[path.StringPath()]++
@@ -1285,7 +1285,7 @@ func (w *fakeContentWriter) OpenContent(_ context.Context, _ engineplugin.Connec
 	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
-func (w *fakeContentWriter) OpenRange(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath, opts engineplugin.ReadOptions) (io.ReadCloser, error) {
+func (w *fakeContentWriter) OpenRange(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.EngineCatalogPath, opts engineplugin.ReadOptions) (io.ReadCloser, error) {
 	if w.files == nil {
 		data := w.buf.Bytes()
 		end := opts.Offset + opts.Length
@@ -1311,13 +1311,13 @@ func (w *fakeContentWriter) OpenRange(_ context.Context, _ engineplugin.Connecti
 	return io.NopCloser(bytes.NewReader(data[opts.Offset:end])), nil
 }
 
-func (w *fakeContentWriter) ListChildren(_ context.Context, _ engineplugin.ConnectionInfo, parent engineplugin.CatalogPath, _ engineplugin.ListOptions) ([]engineplugin.CatalogEntry, error) {
+func (w *fakeContentWriter) ListChildren(_ context.Context, _ engineplugin.ConnectionInfo, parent engineplugin.EngineCatalogPath, _ engineplugin.ListOptions) ([]engineplugin.EngineCatalogEntry, error) {
 	if w.files == nil {
 		return nil, nil
 	}
 	parentPath := strings.Trim(parent.StringPath(), "/")
 	dirs := map[string]bool{}
-	nodes := make([]engineplugin.CatalogEntry, 0)
+	nodes := make([]engineplugin.EngineCatalogEntry, 0)
 	for path := range w.files {
 		trimmed := strings.Trim(path, "/")
 		if parentPath != "" {
@@ -1340,12 +1340,12 @@ func (w *fakeContentWriter) ListChildren(_ context.Context, _ engineplugin.Conne
 				dirPath += "/"
 			}
 			dirPath += name
-			nodes = append(nodes, engineplugin.CatalogEntry{
+			nodes = append(nodes, engineplugin.EngineCatalogEntry{
 				Name: name,
 				Path: engineplugin.FileDirectoryPath(parent.EngineID, dirPath),
-				Term: engineplugin.CatalogTermDirectory,
-				Kind: engineplugin.CatalogKindDirectory,
-				Role: engineplugin.CatalogRoleBranch,
+				Term: engineplugin.EngineCatalogTermDirectory,
+				Kind: engineplugin.EngineCatalogKindDirectory,
+				Role: engineplugin.EngineCatalogRoleBranch,
 			})
 			continue
 		}
@@ -1355,13 +1355,13 @@ func (w *fakeContentWriter) ListChildren(_ context.Context, _ engineplugin.Conne
 		}
 		filePath += trimmed
 		sizeBytes := int64(len(w.files[filePath]))
-		nodes = append(nodes, engineplugin.CatalogEntry{
+		nodes = append(nodes, engineplugin.EngineCatalogEntry{
 			Name: trimmed,
 			Path: engineplugin.FileItemPath(parent.EngineID, filePath),
-			Term: engineplugin.CatalogTermFile,
-			Kind: engineplugin.CatalogKindFile,
-			Role: engineplugin.CatalogRoleLeaf,
-			Storage: &engineplugin.CatalogStorageFacts{
+			Term: engineplugin.EngineCatalogTermFile,
+			Kind: engineplugin.EngineCatalogKindFile,
+			Role: engineplugin.EngineCatalogRoleLeaf,
+			Storage: &engineplugin.EngineCatalogStorageFacts{
 				Path:      filePath,
 				SizeBytes: &sizeBytes,
 			},
@@ -1370,30 +1370,30 @@ func (w *fakeContentWriter) ListChildren(_ context.Context, _ engineplugin.Conne
 	return nodes, nil
 }
 
-func (w *fakeContentWriter) ResolvePath(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath) (*engineplugin.CatalogEntry, error) {
+func (w *fakeContentWriter) ResolvePath(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.EngineCatalogPath) (*engineplugin.EngineCatalogEntry, error) {
 	pathString := path.StringPath()
 	if w.files != nil {
 		if data, ok := w.files[pathString]; ok {
 			sizeBytes := int64(len(data))
-			return &engineplugin.CatalogEntry{
+			return &engineplugin.EngineCatalogEntry{
 				Name: pathString,
 				Path: path,
-				Term: engineplugin.CatalogTermFile,
-				Kind: engineplugin.CatalogKindFile,
-				Role: engineplugin.CatalogRoleLeaf,
-				Storage: &engineplugin.CatalogStorageFacts{
+				Term: engineplugin.EngineCatalogTermFile,
+				Kind: engineplugin.EngineCatalogKindFile,
+				Role: engineplugin.EngineCatalogRoleLeaf,
+				Storage: &engineplugin.EngineCatalogStorageFacts{
 					Path:      pathString,
 					SizeBytes: &sizeBytes,
 				},
 			}, nil
 		}
 	}
-	return &engineplugin.CatalogEntry{
+	return &engineplugin.EngineCatalogEntry{
 		Name: path.StringPath(),
 		Path: path,
-		Term: engineplugin.CatalogTermDirectory,
-		Kind: engineplugin.CatalogKindDirectory,
-		Role: engineplugin.CatalogRoleBranch,
+		Term: engineplugin.EngineCatalogTermDirectory,
+		Kind: engineplugin.EngineCatalogKindDirectory,
+		Role: engineplugin.EngineCatalogRoleBranch,
 	}, nil
 }
 

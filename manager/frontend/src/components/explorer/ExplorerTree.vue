@@ -62,7 +62,14 @@
         @node-collapse="handleNodeCollapse"
       >
         <template #node-label="{ data }">
-          <span class="explorer-node-label" :title="data.label">
+          <span
+            class="explorer-node-label"
+            :title="data.label"
+            :data-testid="isCatalogRootNode(data) ? 'engine-node' : undefined"
+            :data-engine-id="isCatalogRootNode(data) ? String(data.engineId) : undefined"
+            :data-engine-state="isCatalogRootNode(data) ? data.engineState : undefined"
+            :data-connection-status="isCatalogRootNode(data) ? data.connectionStatus : undefined"
+          >
             <span class="explorer-node-label__text">{{ data.label }}</span>
             <el-tag
               v-if="isCatalogRootNode(data) && !isNodeEngineAvailable(data)"

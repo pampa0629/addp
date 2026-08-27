@@ -143,14 +143,14 @@ func engineCategory(engine *commonModels.Engine) string {
 		}
 	}
 	if p, err := plugin.Get(engine.EngineType); err == nil {
-		modelProvider, ok := p.(plugin.CatalogModelProvider)
+		modelProvider, ok := p.(plugin.EngineCatalogModelProvider)
 		if !ok {
 			return "unknown"
 		}
-		switch strings.TrimSpace(modelProvider.CatalogModel().RootTerm) {
-		case plugin.CatalogTermService, plugin.CatalogTermRoot:
+		switch strings.TrimSpace(modelProvider.EngineCatalogModel().RootTerm) {
+		case plugin.EngineCatalogTermService, plugin.EngineCatalogTermRoot:
 			return "storage"
-		case plugin.CatalogTermServer:
+		case plugin.EngineCatalogTermServer:
 			return "database"
 		}
 	}

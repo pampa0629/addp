@@ -20,6 +20,7 @@ MODULES=(
   "service/frontend"
   "console/frontend"
   "monitor/frontend"
+  "catalog/frontend"
   "inference/frontend"
 )
 

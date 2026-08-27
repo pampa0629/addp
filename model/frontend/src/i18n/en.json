@@ -342,6 +342,27 @@
       "copy_success": "DDL copied to clipboard",
       "copy_failed": "Copy failed, please select text manually"
     },
+    "materialization_group": {
+      "title": "Materialization Groups",
+      "subtitle": "Group approved logical tables on one target engine for atomic publication.",
+      "create": "New Materialization Group",
+      "edit": "Edit Materialization Group",
+      "name": "Name",
+      "code": "Code",
+      "description": "Description",
+      "members": "Logical Table Members",
+      "membersPlaceholder": "Select approved logical tables to publish together",
+      "membersHelp": "All members must be approved, use the same engine, and have distinct physical targets.",
+      "version": "Version",
+      "updatedAt": "Updated At",
+      "actions": "Actions",
+      "empty": "No materialization groups",
+      "deleteConfirm": "Delete this materialization group?",
+      "codeRequired": "Enter a materialization group code",
+      "codeFormat": "Use lowercase letters, numbers, and underscores, starting with a letter",
+      "nameRequired": "Enter a materialization group name",
+      "membersRequired": "Select at least one logical table"
+    },
     "layout": {
       "title": "Data Modeling",
       "user": "User",
@@ -351,6 +372,7 @@
       "entities": "Business Entities",
       "erDiagram": "ER Diagram",
       "logicalTables": "Logical Table Design",
+      "materializationGroups": "Materialization Groups",
       "starSchema": "Star Schema View"
     }
   }

@@ -26,7 +26,7 @@ func TestParseExecutionContractAcceptsConcreteClosedContract(t *testing.T) {
 	}
 }
 
-func TestParseExecutionContractRejectsOpenUnknownAndRequiredOverrides(t *testing.T) {
+func TestParseExecutionContractRejectsOpenAndUnknownFields(t *testing.T) {
 	tests := []struct {
 		name   string
 		mutate func(map[string]interface{})
@@ -53,13 +53,6 @@ func TestParseExecutionContractRejectsOpenUnknownAndRequiredOverrides(t *testing
 			},
 			want: "output_schema must be a closed object schema",
 		},
-		{
-			name: "required override",
-			mutate: func(payload map[string]interface{}) {
-				payload["input_schema"].(map[string]interface{})["required"] = []interface{}{"distance"}
-			},
-			want: "required must be empty",
-		},
 	}
 
 	for _, tt := range tests {
@@ -82,5 +75,28 @@ func TestParseExecutionContractRejectsOpenUnknownAndRequiredOverrides(t *testing
 				t.Fatalf("error = %v, want containing %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestParseExecutionContractAcceptsRequiredRuntimeInputsWithPartialDefaults(t *testing.T) {
+	contract, err := ParseExecutionContract(map[string]interface{}{
+		"input_schema": map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"target_locator": map[string]interface{}{"type": "string", "format": "resource-locator", "minLength": float64(1)},
+				"batch_size":     map[string]interface{}{"type": "integer", "minimum": float64(1)},
+			},
+			"required":             []interface{}{"target_locator"},
+			"additionalProperties": false,
+		},
+		"input_defaults":  map[string]interface{}{"batch_size": float64(1000)},
+		"input_ui_schema": map[string]interface{}{"target_locator": map[string]interface{}{"control": "resource_tree_picker"}},
+		"output_schema":   ClosedObjectSchema(),
+	})
+	if err != nil {
+		t.Fatalf("ParseExecutionContract() error = %v", err)
+	}
+	if contract.InputDefaults["batch_size"] != float64(1000) {
+		t.Fatalf("input_defaults = %#v", contract.InputDefaults)
 	}
 }

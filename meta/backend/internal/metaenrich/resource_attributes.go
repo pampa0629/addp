@@ -13,19 +13,19 @@ import (
 )
 
 type ResourceAttributesInput struct {
-	ContentReader      plugin.ContentReadableProvider
-	ConnInfo           plugin.ConnectionInfo
-	EngineID           uint
-	Item               *metaitem.DetectedItem
-	PhysicalPath       string
-	SizeBytes          int64
-	IncludeAccessIndex bool
-	CatalogPathFor     func(string) plugin.CatalogPath
-	CADInspector       CADInspector
-	FormatDetector     RuntimeFormatDetector
-	ContainerInspector ContainerInspector
-	SourceEngine       *commonModels.Engine
-	TenantID           uint
+	ContentReader        plugin.ContentReadableProvider
+	ConnInfo             plugin.ConnectionInfo
+	EngineID             uint
+	Item                 *metaitem.DetectedItem
+	PhysicalPath         string
+	SizeBytes            int64
+	IncludeAccessIndex   bool
+	EngineCatalogPathFor func(string) plugin.EngineCatalogPath
+	CADInspector         CADInspector
+	FormatDetector       RuntimeFormatDetector
+	ContainerInspector   ContainerInspector
+	SourceEngine         *commonModels.Engine
+	TenantID             uint
 }
 
 func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input ResourceAttributesInput) (*metaitem.DetectedItem, []datatype.FieldInfo, error) {
@@ -37,7 +37,7 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 		return item, nil, err
 	}
 
-	canReadContent := input.ContentReader != nil && input.CatalogPathFor != nil && input.PhysicalPath != ""
+	canReadContent := input.ContentReader != nil && input.EngineCatalogPathFor != nil && input.PhysicalPath != ""
 	if item.Layout == format.LayoutSingle && canReadContent {
 		beforeDataType := item.DataType
 		beforeFormat := item.Format
@@ -50,7 +50,7 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 			input.PhysicalPath,
 			input.SizeBytes,
 			input.IncludeAccessIndex,
-			input.CatalogPathFor,
+			input.EngineCatalogPathFor,
 		)
 		if err != nil {
 			return item, nil, err
@@ -70,19 +70,19 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 	}
 
 	if canReadContent && (item.Layout == format.LayoutSingle || item.Layout == format.LayoutMulti) {
-		if err := EnrichSingleDocumentItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.CatalogPathFor); err != nil {
+		if err := EnrichSingleDocumentItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.EngineCatalogPathFor); err != nil {
 			return item, item.Fields, err
 		}
-		if err := EnrichSingleMediaItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.CatalogPathFor); err != nil {
+		if err := EnrichSingleMediaItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.EngineCatalogPathFor); err != nil {
 			return item, item.Fields, err
 		}
-		if err := EnrichSingleGaussianSplatItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.SizeBytes, input.CatalogPathFor); err != nil {
+		if err := EnrichSingleGaussianSplatItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.SizeBytes, input.EngineCatalogPathFor); err != nil {
 			return item, item.Fields, err
 		}
-		if err := EnrichSinglePointCloudItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.CatalogPathFor); err != nil {
+		if err := EnrichSinglePointCloudItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.EngineCatalogPathFor); err != nil {
 			return item, item.Fields, err
 		}
-		if err := EnrichSingleModel3DItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.CatalogPathFor); err != nil {
+		if err := EnrichSingleModel3DItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.EngineCatalogPathFor); err != nil {
 			return item, item.Fields, err
 		}
 	}
@@ -93,7 +93,7 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 		return item, item.Fields, nil
 	}
 	if item.DataType == datatype.Container && canReadContent {
-		reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, input.CatalogPathFor(input.PhysicalPath), plugin.ReadOptions{})
+		reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, input.EngineCatalogPathFor(input.PhysicalPath), plugin.ReadOptions{})
 		if err != nil {
 			return item, item.Fields, nil
 		}

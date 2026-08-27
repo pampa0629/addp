@@ -15,7 +15,7 @@ var _ plugin.TableReadSessionProvider = (*ClickHousePlugin)(nil)
 func (p *ClickHousePlugin) OpenTableReadSession(
 	ctx context.Context,
 	connInfo plugin.ConnectionInfo,
-	path plugin.CatalogPath,
+	path plugin.EngineCatalogPath,
 	opts plugin.TableReadSessionOptions,
 ) (plugin.TableReadSession, error) {
 	if err := resume.RejectUnsupported(opts.ResumeMarker, "clickhouse.table_read_session"); err != nil {
@@ -24,11 +24,11 @@ func (p *ClickHousePlugin) OpenTableReadSession(
 	if opts.Query != "" || len(opts.Args) != 0 {
 		return nil, fmt.Errorf("ClickHouse table read session requires a catalog table path")
 	}
-	segments := plugin.CatalogPathWithoutRoot(path).Segments
+	segments := plugin.EngineCatalogPathWithoutRoot(path).Segments
 	if len(segments) != 2 || segments[0].Name == "" || segments[1].Name == "" {
 		return nil, fmt.Errorf("ClickHouse table read requires database/table catalog path")
 	}
-	facts, err := p.DescribeCatalogFacts(ctx, connInfo, path, plugin.CatalogFactsOptions{})
+	facts, err := p.DescribeEngineCatalogFacts(ctx, connInfo, path, plugin.EngineCatalogFactsOptions{})
 	if err != nil {
 		return nil, err
 	}

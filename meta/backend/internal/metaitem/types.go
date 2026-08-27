@@ -34,22 +34,22 @@ type CompositeItemInfo struct {
 type ResourceClaimSet map[string]bool
 
 // StorageFileRef 是 Meta item resolver 使用的扫描期文件资源引用。
-// 它不是 engine catalog 主模型；catalog 结构应由 plugin.CatalogEntry 表达。
+// 它不是 engine catalog 主模型；catalog 结构应由 plugin.EngineCatalogEntry 表达。
 type StorageFileRef struct {
-	Name        string
-	Path        string
-	CatalogPath plugin.CatalogPath
-	Size        int64
-	ModifiedAt  time.Time
-	ContentType string
+	Name              string
+	Path              string
+	EngineCatalogPath plugin.EngineCatalogPath
+	Size              int64
+	ModifiedAt        time.Time
+	ContentType       string
 }
 
 // StorageDirectoryRef 是 Meta item resolver 使用的扫描期目录资源引用。
-// 它不是 engine catalog 主模型；catalog 结构应由 plugin.CatalogEntry 表达。
+// 它不是 engine catalog 主模型；catalog 结构应由 plugin.EngineCatalogEntry 表达。
 type StorageDirectoryRef struct {
-	Name        string
-	Path        string
-	CatalogPath plugin.CatalogPath
+	Name              string
+	Path              string
+	EngineCatalogPath plugin.EngineCatalogPath
 }
 
 // DetectionResult 是 Meta 统一识别入口在一个扫描范围内产出的 item 集合。
@@ -146,14 +146,14 @@ func ItemRefsFromPaths(paths []string) []dataitem.ItemRef {
 
 // DirectoryResolveInput 是 Meta 扫描范围 item 识别的输入。
 type DirectoryResolveInput struct {
-	ContentReader  plugin.ContentReadableProvider
-	ConnInfo       plugin.ConnectionInfo
-	EngineID       uint
-	CatalogPathFor func(path string) plugin.CatalogPath
-	DirPath        string
-	Files          []StorageFileRef
-	Subdirs        []StorageDirectoryRef
-	Options        ResolveOptions
+	ContentReader        plugin.ContentReadableProvider
+	ConnInfo             plugin.ConnectionInfo
+	EngineID             uint
+	EngineCatalogPathFor func(path string) plugin.EngineCatalogPath
+	DirPath              string
+	Files                []StorageFileRef
+	Subdirs              []StorageDirectoryRef
+	Options              ResolveOptions
 	// RecursiveFiles/RecursiveSubdirs 由扫描入口在需要识别 whole scope 时提供。
 	// resolver 只消费观察资源，不自行遍历存储引擎。
 	RecursiveFiles   []StorageFileRef

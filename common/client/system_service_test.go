@@ -42,6 +42,33 @@ func TestModuleRegistryRetryClassificationIsAnExplicitAllowlist(t *testing.T) {
 	}
 }
 
+func TestSystemServiceClientListsInitializedActiveCatalogTenantsWithPlatformToken(t *testing.T) {
+	t.Parallel()
+
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Header.Get("Authorization") != "Bearer platform-token" {
+			t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))
+		}
+		if r.URL.Path != "/api/v1/system/runtime/tenants" || r.URL.Query().Get("status") != "active" || r.URL.Query().Get("page_size") != "100" {
+			t.Fatalf("request URL = %s", r.URL.String())
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"7","status":"active","initialized":true},{"id":"8","status":"active","initialized":false}],"total":2,"page":1,"page_size":100,"total_pages":1}`))
+	}))
+	defer server.Close()
+
+	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
+	tenantIDs, err := client.ListCatalogTenantIDs(context.Background())
+	if err != nil {
+		t.Fatalf("ListCatalogTenantIDs() error = %v", err)
+	}
+	if requests != 1 || len(tenantIDs) != 1 || tenantIDs[0] != 7 {
+		t.Fatalf("tenant IDs = %#v, requests = %d", tenantIDs, requests)
+	}
+}
+
 func TestRegisterRuntimeEngineUsesPlatformBearer(t *testing.T) {
 	t.Parallel()
 
@@ -496,11 +523,11 @@ func TestSystemServiceClientListsCatalogChildrenWithTenantBearer(t *testing.T) {
 	defer server.Close()
 
 	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("tenant-token"), server.Client()).WithTenantID(7)
-	nodes, err := client.ListCatalogChildren(context.Background(), 12, EngineCatalogListChildrenRequest{Path: EngineCatalogPath{
+	nodes, err := client.ListEngineCatalogChildren(context.Background(), 12, EngineCatalogListChildrenRequest{Path: EngineCatalogPath{
 		Version: "catalog.path/v1", EngineID: 12, Segments: []EngineCatalogSegment{{Term: "schema", Kind: "namespace", Name: "public"}},
 	}})
 	if err != nil || len(nodes) != 1 || nodes[0].Name != "orders" {
-		t.Fatalf("ListCatalogChildren() nodes=%#v error=%v", nodes, err)
+		t.Fatalf("ListEngineCatalogChildren() nodes=%#v error=%v", nodes, err)
 	}
 }
 

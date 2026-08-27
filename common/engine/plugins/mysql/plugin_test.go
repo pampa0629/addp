@@ -10,7 +10,7 @@ import (
 
 func TestMySQLCatalogFieldTypeMapsNativeTypes(t *testing.T) {
 	if mysqlCatalogFactsDialect.MapFieldType == nil {
-		t.Fatal("MySQL CatalogFacts dialect must declare its field type mapper")
+		t.Fatal("MySQL EngineCatalogFacts dialect must declare its field type mapper")
 	}
 	tests := map[string]datatype.FieldType{
 		"int":            datatype.FieldTypeInt,

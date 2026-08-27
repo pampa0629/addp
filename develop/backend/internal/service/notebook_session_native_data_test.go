@@ -46,10 +46,10 @@ func (p *notebookNativeTestPlugin) Capabilities() plugin.EngineCapabilities {
 func (p *notebookNativeTestPlugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (p *notebookNativeTestPlugin) OpenRecordReadSession(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.RecordReadSessionOptions) (plugin.RecordReadSession, error) {
+func (p *notebookNativeTestPlugin) OpenRecordReadSession(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.RecordReadSessionOptions) (plugin.RecordReadSession, error) {
 	return p.recordSession, nil
 }
-func (p *notebookNativeTestPlugin) SampleGraph(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.GraphSampleOptions) (*plugin.GraphData, error) {
+func (p *notebookNativeTestPlugin) SampleGraph(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.GraphSampleOptions) (*plugin.GraphData, error) {
 	return &plugin.GraphData{}, nil
 }
 func (p *notebookNativeTestPlugin) ExecuteGraphQuery(_ context.Context, _ plugin.ConnectionInfo, query string, options plugin.QueryOptions) (*plugin.GraphQueryResult, error) {
@@ -57,16 +57,16 @@ func (p *notebookNativeTestPlugin) ExecuteGraphQuery(_ context.Context, _ plugin
 	p.graphOptions = options
 	return &plugin.GraphQueryResult{}, nil
 }
-func (p *notebookNativeTestPlugin) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
+func (p *notebookNativeTestPlugin) OpenContent(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
 	p.contentCalls++
 	return io.NopCloser(strings.NewReader("complete")), nil
 }
-func (p *notebookNativeTestPlugin) OpenRange(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, options plugin.ReadOptions) (io.ReadCloser, error) {
+func (p *notebookNativeTestPlugin) OpenRange(_ context.Context, _ plugin.ConnectionInfo, _ plugin.EngineCatalogPath, options plugin.ReadOptions) (io.ReadCloser, error) {
 	p.rangeCalls++
 	p.rangeOptions = options
 	return io.NopCloser(strings.NewReader("range")), nil
 }
-func (p *notebookNativeTestPlugin) OpenChangeStream(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ChangeStreamReadOptions) (plugin.ChangeStreamReader, error) {
+func (p *notebookNativeTestPlugin) OpenChangeStream(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ChangeStreamReadOptions) (plugin.ChangeStreamReader, error) {
 	return p.changeReader, nil
 }
 
@@ -124,7 +124,7 @@ func (r *notebookBlockingChangeReader) Close(ctx context.Context) error {
 }
 
 func TestNotebookSessionRecordScanEnforcesMaxRowsAndClosesCursor(t *testing.T) {
-	service, catalog, _ := newNotebookCatalogSessionTestService(t, nil)
+	service, catalog, _ := newNotebookEngineCatalogSessionTestService(t, nil)
 	public, _, err := service.Create(context.Background(), "addp_at_user", 7, 9, 14)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -157,7 +157,7 @@ func TestNotebookSessionRecordScanEnforcesMaxRowsAndClosesCursor(t *testing.T) {
 }
 
 func TestNotebookSessionGraphQueryForcesReadOnlyAndLimit(t *testing.T) {
-	service, catalog, _ := newNotebookCatalogSessionTestService(t, nil)
+	service, catalog, _ := newNotebookEngineCatalogSessionTestService(t, nil)
 	public, _, err := service.Create(context.Background(), "addp_at_user", 7, 9, 14)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -178,7 +178,7 @@ func TestNotebookSessionGraphQueryForcesReadOnlyAndLimit(t *testing.T) {
 }
 
 func TestNotebookSessionContentSelectsFullOrRangeProvider(t *testing.T) {
-	service, catalog, _ := newNotebookCatalogSessionTestService(t, nil)
+	service, catalog, _ := newNotebookEngineCatalogSessionTestService(t, nil)
 	public, _, err := service.Create(context.Background(), "addp_at_user", 7, 9, 14)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -208,7 +208,7 @@ func TestNotebookSessionContentSelectsFullOrRangeProvider(t *testing.T) {
 }
 
 func TestNotebookSessionCloseCancelsAndClosesChangeStream(t *testing.T) {
-	service, catalog, _ := newNotebookCatalogSessionTestService(t, nil)
+	service, catalog, _ := newNotebookEngineCatalogSessionTestService(t, nil)
 	public, _, err := service.Create(context.Background(), "addp_at_user", 7, 9, 14)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -250,7 +250,7 @@ func TestNotebookSessionCloseCancelsAndClosesChangeStream(t *testing.T) {
 }
 
 func TestNotebookSessionQueryRejectsUnsupportedLanguage(t *testing.T) {
-	service, catalog, _ := newNotebookCatalogSessionTestService(t, nil)
+	service, catalog, _ := newNotebookEngineCatalogSessionTestService(t, nil)
 	public, _, err := service.Create(context.Background(), "addp_at_user", 7, 9, 14)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -294,7 +294,7 @@ func notebookNativeTestEngine(id uint) *commonModels.Engine {
 
 func notebookNativeTestPath(engineID uint) commonClient.EngineCatalogPath {
 	return commonClient.EngineCatalogPath{
-		Version: plugin.CatalogPathVersion, EngineID: engineID,
+		Version: plugin.EngineCatalogPathVersion, EngineID: engineID,
 		Segments: []commonClient.EngineCatalogSegment{{Term: "server", Kind: "server", Name: "root"}, {Term: "item", Kind: "item", Name: "target"}},
 	}
 }

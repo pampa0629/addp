@@ -27,7 +27,7 @@ type notebookSessionControlPlaneRecorder struct {
 	issuedAuthorization string
 	issuedRequest       commonClient.IssueNotebookSessionAuthorizationRequest
 	issuedUserToken     string
-	listRequest         commonClient.NotebookCatalogChildrenRequest
+	listRequest         commonClient.NotebookEngineCatalogChildrenRequest
 	listTenantID        uint
 	listAuthorizationID string
 	revokeRequest       commonClient.RevokeNotebookSessionAuthorizationRequest
@@ -56,7 +56,7 @@ func (r *notebookSessionControlPlaneRecorder) ListChildren(
 	_ context.Context,
 	tenantID uint,
 	authorizationID string,
-	request commonClient.NotebookCatalogChildrenRequest,
+	request commonClient.NotebookEngineCatalogChildrenRequest,
 ) ([]commonClient.EngineCatalogEntry, error) {
 	r.listTenantID = tenantID
 	r.listAuthorizationID = authorizationID
@@ -255,7 +255,7 @@ func TestPublicNotebookSessionDoesNotExposeProxyCredentials(t *testing.T) {
 }
 
 func TestNotebookSessionAuthorizationFollowsSessionLifecycle(t *testing.T) {
-	service, catalog, runtimeCloseCount := newNotebookCatalogSessionTestService(t, nil)
+	service, catalog, runtimeCloseCount := newNotebookEngineCatalogSessionTestService(t, nil)
 	public, secret, err := service.Create(context.Background(), "addp_at_user", 7, 9, 14)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -270,11 +270,11 @@ func TestNotebookSessionAuthorizationFollowsSessionLifecycle(t *testing.T) {
 		t.Fatalf("stored session = %#v", stored)
 	}
 	kernelToken := storedKernelTokenForTest(t, stored)
-	nodes, err := service.ListCatalogChildren(context.Background(), public.ID, kernelToken,
-		commonClient.NotebookCatalogChildrenRequest{SessionID: "must-be-replaced", EngineID: 21})
+	nodes, err := service.ListEngineCatalogChildren(context.Background(), public.ID, kernelToken,
+		commonClient.NotebookEngineCatalogChildrenRequest{SessionID: "must-be-replaced", EngineID: 21})
 	if err != nil || len(nodes) != 1 || catalog.listRequest.SessionID != public.ID ||
 		catalog.listTenantID != 7 || catalog.listAuthorizationID != catalog.issuedAuthorization {
-		t.Fatalf("ListCatalogChildren() nodes=%#v error=%v request=%#v", nodes, err, catalog.listRequest)
+		t.Fatalf("ListEngineCatalogChildren() nodes=%#v error=%v request=%#v", nodes, err, catalog.listRequest)
 	}
 
 	if err := service.Close(context.Background(), 7, 9, 14, public.ID); err != nil {
@@ -289,7 +289,7 @@ func TestNotebookSessionAuthorizationFollowsSessionLifecycle(t *testing.T) {
 
 func TestNotebookSessionIssueFailureClosesRuntimeWithoutPublishingSession(t *testing.T) {
 	issueError := errors.New("authorization issue failed")
-	service, catalog, runtimeCloseCount := newNotebookCatalogSessionTestService(t, issueError)
+	service, catalog, runtimeCloseCount := newNotebookEngineCatalogSessionTestService(t, issueError)
 	public, secret, err := service.Create(context.Background(), "addp_at_user", 7, 9, 14)
 	if !errors.Is(err, issueError) || public != nil || secret != "" {
 		t.Fatalf("Create() session=%#v secret=%q error=%v", public, secret, err)
@@ -331,7 +331,7 @@ func TestNotebookSessionStreamWritesMultipleArrowBatchesAndHonorsMaxRows(t *test
 }
 
 func TestNotebookSessionCloseCancelsActiveReadAndUsesBoundedCursorClose(t *testing.T) {
-	service, _, _ := newNotebookCatalogSessionTestService(t, nil)
+	service, _, _ := newNotebookEngineCatalogSessionTestService(t, nil)
 	public, _, err := service.Create(context.Background(), "addp_at_user", 7, 9, 14)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -402,7 +402,7 @@ func TestNotebookSessionQueryRejectsMissingLanguageOrQuery(t *testing.T) {
 }
 
 func TestNotebookSessionQueryAppliesServerMaxRows(t *testing.T) {
-	service, catalog, _ := newNotebookCatalogSessionTestService(t, nil)
+	service, catalog, _ := newNotebookEngineCatalogSessionTestService(t, nil)
 	public, _, err := service.Create(context.Background(), "addp_at_user", 7, 9, 14)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -465,7 +465,7 @@ func notebookArrowIDs(t *testing.T, payload []byte) ([]int64, int) {
 	return ids, batches
 }
 
-func newNotebookCatalogSessionTestService(
+func newNotebookEngineCatalogSessionTestService(
 	t *testing.T,
 	issueError error,
 ) (*NotebookSessionService, *notebookSessionControlPlaneRecorder, *int) {

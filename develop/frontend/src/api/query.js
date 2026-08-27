@@ -3,6 +3,7 @@ import {
   createDevTask,
   updateDevTask
 } from './devTask'
+import { toQueryDevTaskPayload } from '@/utils/queryTaskPayload.mjs'
 
 /**
  * 为所选数据资源获取查询模板
@@ -43,28 +44,4 @@ export const saveQueryTask = (taskData) => {
  */
 export const updateQueryTask = (id, taskData) => {
   return updateDevTask(id, toQueryDevTaskPayload(taskData, false))
-}
-
-const toQueryDevTaskPayload = (taskData, includeDevType = true) => {
-  const queryType = taskData.query_type || 'sql'
-  const payload = {
-    name: taskData.name,
-    display_name: taskData.display_name,
-    content: {
-      query: taskData.query,
-      query_type: queryType,
-      target_locator: taskData.target_locator || undefined,
-      query_parameters: Array.isArray(taskData.query_parameters) ? taskData.query_parameters : []
-    },
-    execution_config: { engine_id: taskData.engine_id },
-    timeout: taskData.timeout,
-    description: taskData.description,
-    tags: taskData.tags
-  }
-
-  if (includeDevType) {
-    payload.dev_type = 'query'
-  }
-
-  return payload
 }

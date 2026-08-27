@@ -132,6 +132,36 @@ test_atomic_build_rejects_non_workspace_output() {
   [[ "$output" == *"工作区内的规范相对路径"* ]] || fail "invalid output error is not explicit: $output"
 }
 
+test_parallel_build_wait_propagates_failure() {
+  local completed_marker="${TEST_ROOT}/parallel-build-completed"
+  local output exit_code
+
+  set +e
+  output=$(BUILD_SCRIPT="$BUILD_SCRIPT" COMPLETED_MARKER="$completed_marker" bash -c '
+    source "$BUILD_SCRIPT"
+    (sleep 0.1; printf "completed\n" > "$COMPLETED_MARKER") &
+    successful_pid=$!
+    (exit 7) &
+    failed_pid=$!
+    addp_wait_for_parallel_builds "$successful_pid" "$failed_pid"
+  ' 2>&1)
+  exit_code=$?
+  set -e
+
+  [ "$exit_code" -ne 0 ] || fail "parallel build failure was reported as success"
+  [ -f "$completed_marker" ] || fail "parallel build wait returned before every build finished"
+  [[ "$output" == *"并行构建任务失败"* ]] || fail "parallel build failure lacks an explicit diagnostic: $output"
+
+  BUILD_SCRIPT="$BUILD_SCRIPT" bash -c '
+    source "$BUILD_SCRIPT"
+    (exit 0) &
+    first_pid=$!
+    (exit 0) &
+    second_pid=$!
+    addp_wait_for_parallel_builds "$first_pid" "$second_pid"
+  ' || fail "successful parallel builds were reported as failed"
+}
+
 test_source_fingerprint_excludes_workspace_build_caches() {
   local workspace="${TEST_ROOT}/fingerprint-cache-exclusion"
   mkdir -p "$workspace/service" "$workspace/.gomodcache/example" "$workspace/tools"
@@ -263,6 +293,7 @@ test_keepalive_style_cleanup_inherits_and_releases_lock
 test_lifecycle_lock_rejects_stale_lock
 test_source_fingerprint_excludes_workspace_build_caches
 test_atomic_build_rejects_non_workspace_output
+test_parallel_build_wait_propagates_failure
 test_atomic_build_does_not_replace_binary_on_failure
 test_atomic_build_embeds_identity_and_replaces_binary
 test_interrupted_build_removes_temporary_binary

@@ -49,7 +49,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	if !ok && !hasSession {
 		return nil, fmt.Errorf("engine %s does not implement a table read provider", req.Engine.EngineType)
 	}
-	catalogFactsProvider, _ := plug.(plugin.CatalogFactsProvider)
+	catalogFactsProvider, _ := plug.(plugin.EngineCatalogFactsProvider)
 	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
 
 	// 1. 处理表名可能包含 schema 前缀的情况
@@ -58,7 +58,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		tableName = strings.TrimPrefix(req.Table, req.Schema+".")
 	}
 
-	// 2. 从 CatalogFactsProvider 获取字段和统计信息。
+	// 2. 从 EngineCatalogFactsProvider 获取字段和统计信息。
 	catalogFacts, columns, err := p.describeDatabaseTable(ctx, catalogFactsProvider, connInfo, plug, req.ProviderPath)
 	if err != nil {
 		if p.isTableNotFoundError(err) {
@@ -69,7 +69,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		}
 		return nil, fmt.Errorf("failed to describe table: %w", err)
 	}
-	catalogSpatial := plugin.CatalogFactsSpatialInfo(catalogFacts)
+	catalogSpatial := plugin.EngineCatalogFactsSpatialInfo(catalogFacts)
 	profileFields := append([]datatype.FieldInfo(nil), columns...)
 	if metaTable := tableInfoFromMetaAttributes(req.Attributes, tableName); metaTable != nil && len(metaTable.Fields) > 0 {
 		profileFields = append([]datatype.FieldInfo(nil), metaTable.Fields...)
@@ -89,7 +89,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 			geometryColumns = databaseGeometryColumns(catalogSpatial, columns)
 		}
 	} else {
-		// Meta 不可用或无数据，回退到 CatalogFactsProvider。
+		// Meta 不可用或无数据，回退到 EngineCatalogFactsProvider。
 		columnNames = make([]string, len(columns))
 		for i, col := range columns {
 			columnNames[i] = col.Name
@@ -111,7 +111,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		}
 	}
 
-	// 4. 获取总行数，优先使用 Meta / CatalogFacts 中已知的估算值。
+	// 4. 获取总行数，优先使用 Meta / EngineCatalogFacts 中已知的估算值。
 	totalCount := p.resolveTableRowCount(req, catalogFacts)
 	if req.DataScope.Kind == "condition" {
 		totalCount = -1
@@ -185,7 +185,7 @@ func (p *DatabaseTablePreviewProvider) queryData(
 	batchReader plugin.BatchReadableProvider,
 	sessionReader plugin.TableReadSessionProvider,
 	connInfo plugin.ConnectionInfo,
-	providerPath plugin.CatalogPath,
+	providerPath plugin.EngineCatalogPath,
 	engineType, schema, table string,
 	offset, limit int,
 	columns []datatype.FieldInfo,
@@ -542,22 +542,22 @@ func parsePostGISNativeSRID(nativeType string) int {
 
 func (p *DatabaseTablePreviewProvider) describeDatabaseTable(
 	ctx context.Context,
-	catalogFactsProvider plugin.CatalogFactsProvider,
+	catalogFactsProvider plugin.EngineCatalogFactsProvider,
 	connInfo plugin.ConnectionInfo,
 	plug plugin.EnginePlugin,
-	providerPath plugin.CatalogPath,
-) (*plugin.CatalogFacts, []datatype.FieldInfo, error) {
+	providerPath plugin.EngineCatalogPath,
+) (*plugin.EngineCatalogFacts, []datatype.FieldInfo, error) {
 	if catalogFactsProvider == nil {
-		return nil, nil, fmt.Errorf("engine %s does not implement CatalogFactsProvider", plug.Type())
+		return nil, nil, fmt.Errorf("engine %s does not implement EngineCatalogFactsProvider", plug.Type())
 	}
-	catalogFacts, err := catalogFactsProvider.DescribeCatalogFacts(ctx, connInfo, providerPath, plugin.CatalogFactsOptions{
+	catalogFacts, err := catalogFactsProvider.DescribeEngineCatalogFacts(ctx, connInfo, providerPath, plugin.EngineCatalogFactsOptions{
 		IncludeStatistics: true,
 		IncludeIndexes:    true,
 	})
 	if err != nil {
 		return nil, nil, err
 	}
-	tableInfo := plugin.CatalogFactsTableInfo(catalogFacts)
+	tableInfo := plugin.EngineCatalogFactsTableInfo(catalogFacts)
 	if tableInfo == nil {
 		return catalogFacts, nil, nil
 	}
@@ -566,7 +566,7 @@ func (p *DatabaseTablePreviewProvider) describeDatabaseTable(
 
 func (p *DatabaseTablePreviewProvider) resolveTableRowCount(
 	req *PreviewRequest,
-	catalogFacts *plugin.CatalogFacts,
+	catalogFacts *plugin.EngineCatalogFacts,
 ) int64 {
 	if req != nil && req.ItemRowCount != nil && *req.ItemRowCount > 0 {
 		return *req.ItemRowCount
@@ -578,7 +578,7 @@ func (p *DatabaseTablePreviewProvider) resolveTableRowCount(
 		}
 	}
 	if catalogFacts != nil {
-		if tableInfo := plugin.CatalogFactsTableInfo(catalogFacts); tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
+		if tableInfo := plugin.EngineCatalogFactsTableInfo(catalogFacts); tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
 			return *tableInfo.RowCount
 		}
 	}

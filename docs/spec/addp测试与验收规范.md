@@ -130,9 +130,13 @@ T4 只在隔离的 ADDP 测试部署执行：
 
 专用 Runner 可以通过受 `ADDP_ONLINE_HOST=1` 强制保护的精确进程参数复用正式开发构建与进程入口，以控制业务 Backend、System 和 Gateway 的真实启动顺序；该入口不得成为日常开发的第二套模块依赖路径。精确停止必须先验证受管 PID 的进程身份。每个进程阶段都必须把 Liveness、Readiness、业务门禁、实例身份和 Gateway 路由投影写入仓库外证据目录。
 
+消费方与 Engine Instance 动态恢复类 T4 必须另外证明：全量重启后真实 User 在同一 Browser Context 首次打开 Console 原生页与模块 iframe 不需要 reload、手工刷新或二次点击；Engine Instance 经正式连接检测 API 从 `online` 转为 `offline` 再恢复 `online` 时，已打开页面自动更新，相关 Backend 与 Frontend PID 保持不变。Engine Instance 是永久身份，此类 suite 使用专用 Runner 预置的长期 Engine Fixture，只控制隔离物理端点的连通性，不得按 Run ID 创建、删除 Engine Instance 或清理墓碑。物理 Fixture 必须由 owner 的 Online 专用生命周期入口管理，要求 `ADDP_ONLINE_HOST=1`、不读取仓库内 `.env`、不复用平台 `POSTGRES_DB`，并在成功、失败和中断路径恢复连接观测后停止。
+
+企业数据目录发布类 T4 使用同一永久 PostgreSQL Engine Instance 及其 owner 生命周期入口创建的稳定表 `public.addp_online_catalog_fixture`。专用环境必须预置可引用的 Standard Domain 和 Department；首次运行可将该永久数据源对应的 `discovered` CatalogEntry 初始化为稳定 `curated` fixture，后续运行必须在验收后恢复其编目聚合。每轮创建的 Asset 和 Asset-owned 目录必须经正式 API 下架、删除并证明零残留；不得直接 SQL 清理。
+
 ### 5.3 数据、超时与清理
 
-T4 夹具优先通过 owner 正式 API 创建；正式 API 无法建立必要前置状态时，才允许 owner 提供专用测试 helper。跨模块 Online 场景不得以直接 SQL 作为常规夹具路线。
+T4 临时夹具优先通过 owner 正式 API 创建；正式 API 无法建立必要前置状态时，才允许 owner 提供专用测试 helper。Engine Instance 等永久身份按上一节使用预置专用 Fixture，不适用“每轮创建后删除”。跨模块 Online 场景不得以直接 SQL 作为常规夹具路线。
 
 每个 suite 必须：
 
@@ -186,6 +190,17 @@ Workflow 只负责：
 5. 对应规范、模块说明或运行指南。
 
 不得提交一个永久排队、连接开发环境或始终 Skip 的占位 workflow。
+
+### 7.1 辅助 macOS 定时巡检
+
+日常使用的 macOS 可以在独立 checkout 中定时运行 `make local-ci`，作为 GitHub Actions 之外的辅助反馈机制。该入口只复用已有 T0-T3 标准门禁，不产生第二套测试事实，也不替代 GitHub required checks。
+
+- checkout 必须专用于自动巡检，处于 `main`，且不得包含已跟踪或未跟踪改动；脚本只使用 `git fetch` 与 fast-forward，不使用 reset 或 clean 覆盖现场。
+- 首次运行执行全部确定性门禁和已登记 PostgreSQL 集成门禁；之后以上次成功 SHA 为 `BASE_REF` 运行 `make test-changed`。每个新 SHA 同时执行根 `make build BUILD_ARGS=--force`，复验全部 Linux 产品二进制。失败不推进成功基线，后续调度必须重试同一提交。
+- Python 与前端依赖准备只是环境编排；真实断言仍由根 `Makefile` 与 owner 门禁拥有。
+- 本地 PostgreSQL 继续只使用 `addp_test` 与 `addp_iam_test`，集成门禁严格串行。脚本只启停 `addp-infra` Compose 项目，不执行 Docker 全局 prune，不删除数据卷。
+- 辅助巡检不运行 T4 Online 或 T5 发布认证；两者继续遵循各自的专用环境、身份与报告协议。
+- 日志、上次成功 SHA 与运行锁位于 checkout 的 Git 内部状态目录，不进入工作树；日志不得包含 Token 或可复用凭据。
 
 ## 八、交付与完成标准
 

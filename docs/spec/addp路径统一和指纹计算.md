@@ -493,7 +493,7 @@ Meta 查询 API 只读取已经扫描并持久化的 `meta_node`、`meta_item`�
 | 已定位资源查询 | 已拿到 `node_id` 或 `item_id` 时，使用 `/nodes/:node_id`、`/nodes/:node_id/children`、`/nodes/:node_id/items`、`/items/:item_id`、`/items/:item_id/fields`、`/items/:item_id/spatial` 等主资源入口。 |
 | 跨模块条件定位 | 需要从引擎 catalog 路径定位资源时，使用 `engine_id + catalog_path`：`/nodes/by-catalog-path` 或 `/items/by-catalog-path`。 |
 
-`catalog_path` 是 Meta 与引擎 `CatalogModelSpec` 对齐后的稳定定位条件。对象存储路径必须先归一为 catalog path，再通过 `items/by-catalog-path` 定位 object item；不得恢复 `object_key` 作为 Meta 查询主键，也不得新增 `/metadata/table`、`/metadata/file`、`/metadata/spatial`、`/objects/:object_key/metadata` 等按引擎、格式或存储技术形态分叉的快捷查询入口。
+`catalog_path` 是 Meta 与引擎 `EngineCatalogModelSpec` 对齐后的稳定定位条件。对象存储路径必须先归一为 catalog path，再通过 `items/by-catalog-path` 定位 object item；不得恢复 `object_key` 作为 Meta 查询主键，也不得新增 `/metadata/table`、`/metadata/file`、`/metadata/spatial`、`/objects/:object_key/metadata` 等按引擎、格式或存储技术形态分叉的快捷查询入口。
 
 `common/client.MetaClient` 只能封装正式查询入口。查询失败不得被包装成隐式扫描、隐式 attributes 补写或派生产物创建。
 

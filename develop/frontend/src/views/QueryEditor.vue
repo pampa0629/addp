@@ -76,7 +76,7 @@
           </el-button>
         </el-tooltip>
         <el-button
-          :disabled="!selectedTarget || !queryContent.trim() || executing || switchingQueryTarget || savingForEngineSwitch"
+          :disabled="!selectedTarget || !queryContent.trim() || !relationTaskValid || executing || switchingQueryTarget || savingForEngineSwitch"
           @click="handlePersistQueryTask"
         >
           <el-icon><FolderAdd /></el-icon>
@@ -85,7 +85,7 @@
         <el-button
           type="primary"
           :loading="executing"
-          :disabled="loadingSampleQuery || !selectedTarget || !queryContent.trim() || switchingQueryTarget || savingForEngineSwitch"
+          :disabled="loadingSampleQuery || !selectedTarget || !queryContent.trim() || hasRelationInputs || switchingQueryTarget || savingForEngineSwitch"
           @click="executeQuery"
         >
           <el-icon><VideoPlay /></el-icon>
@@ -179,6 +179,28 @@
             </div>
           </div>
           <div v-loading="loadingSampleQuery" class="editor-content" :aria-busy="loadingSampleQuery">
+            <div class="relation-input-config">
+              <div class="relation-input-heading">
+                <span>{{ t('develop.query.relationInputs') }}</span>
+                <span class="relation-input-hint">{{ t('develop.query.relationInputsHint') }}</span>
+              </div>
+              <el-select
+                v-model="relationInputs"
+                multiple
+                filterable
+                allow-create
+                default-first-option
+                :placeholder="t('develop.query.relationInputsPlaceholder')"
+                :disabled="executing || switchingQueryTarget || savingForEngineSwitch"
+                @change="normalizeRelationInputSelection"
+              />
+              <el-alert
+                v-if="hasRelationInputs"
+                :type="relationTaskValid ? 'info' : 'error'"
+                :closable="false"
+                :title="relationTaskValid ? t('develop.query.relationExecutionHint') : relationTaskError"
+              />
+            </div>
             <el-alert
               v-if="queryDiagnostics.length"
               class="query-diagnostic-alert"
@@ -725,6 +747,10 @@ import {
 } from '@/utils/queryWorkbench.mjs'
 import { resolveQueryGenerationResult } from '@/utils/queryGenerationResult.mjs'
 import {
+  normalizeRelationInputs,
+  relationInputsValid as validateRelationInputs
+} from '@/utils/relationInputContract.mjs'
+import {
   confirmedResources,
   defaultResourceCandidatesByRole,
   groupResourceCandidates,
@@ -776,6 +802,7 @@ const queryAnalysis = ref(null)
 const catalogDrawerVisible = ref(false)
 const parameterDrawerVisible = ref(false)
 const queryParameters = ref([])
+const relationInputs = ref([])
 const executionParameterDialogVisible = ref(false)
 const executionParameterOverrides = ref({})
 const executionParameterFormRef = ref(null)
@@ -913,6 +940,21 @@ const referencedParameterNames = computed(() => extractQueryParameterReferences(
 const definedParameterNames = computed(() => queryParameters.value.map(parameter => String(parameter?.name || '').trim()).filter(Boolean))
 const hasUnresolvedParameters = computed(() => referencedParameterNames.value.some(name => !definedParameterNames.value.includes(name)))
 const hasUnusedParameters = computed(() => definedParameterNames.value.some(name => !referencedParameterNames.value.includes(name)))
+const hasRelationInputs = computed(() => relationInputs.value.length > 0)
+const relationInputsValid = computed(() => validateRelationInputs(relationInputs.value))
+const relationTaskValid = computed(() => !hasRelationInputs.value || (
+  relationInputsValid.value &&
+  currentQueryLanguage.value === 'sql' &&
+  String(selectedTarget.value?.engine?.engine_type || '').toLowerCase().includes('postgres')
+))
+const relationTaskError = computed(() => {
+  if (!relationInputsValid.value) return t('develop.query.relationInputsInvalid')
+  if (currentQueryLanguage.value !== 'sql') return t('develop.query.relationSqlRequired')
+  return t('develop.query.relationPostgresRequired')
+})
+const normalizeRelationInputSelection = () => {
+  relationInputs.value = normalizeRelationInputs(relationInputs.value)
+}
 const parameterSyncMessage = computed(() => {
   if (hasUnresolvedParameters.value && hasUnusedParameters.value) return t('develop.query.parameterSyncBoth')
   if (hasUnresolvedParameters.value) return t('develop.query.parameterSyncMissing')
@@ -958,7 +1000,8 @@ const currentSnapshot = computed(() => JSON.stringify({
   language: currentQueryLanguage.value,
   query: queryContent.value,
   target_locator: catalogSelection.value?.identity?.locator || targetLocator.value || '',
-  query_parameters: queryParameters.value.map(queryParameterPayload)
+  query_parameters: queryParameters.value.map(queryParameterPayload),
+  relation_inputs: relationInputs.value
 }))
 const isDirty = computed(() => queryTaskRouteReady.value && savedSnapshot.value !== currentSnapshot.value)
 
@@ -1318,6 +1361,10 @@ const insertQueryParameterReference = parameter => {
 
 const executeQuery = async () => {
   if (loadingSampleQuery.value || executing.value) return
+  if (hasRelationInputs.value) {
+    ElMessage.warning(t('develop.query.relationExecutionHint'))
+    return
+  }
   if (!selectedTarget.value) {
     ElMessage.warning(t('develop.query.selectDataSourceFirst'))
     return
@@ -2017,6 +2064,10 @@ const queryResourceCandidateFacts = candidate => [
 ].filter(Boolean).join(' · ')
 
 const handleSaveTask = async (taskData) => {
+  if (!relationTaskValid.value) {
+    ElMessage.warning(relationTaskError.value)
+    return
+  }
   if (!hasValidQueryParameters()) {
     parameterDrawerVisible.value = true
     ElMessage.warning(t('develop.query.queryParametersInvalid'))
@@ -2026,8 +2077,9 @@ const handleSaveTask = async (taskData) => {
     const task = await saveQueryTask({
       ...taskData,
       query_type: currentQueryLanguage.value,
-      target_locator: catalogSelection.value?.identity?.locator || targetLocator.value || '',
-      query_parameters: queryParameters.value.map(queryParameterPayload)
+      target_locator: hasRelationInputs.value ? '' : (catalogSelection.value?.identity?.locator || targetLocator.value || ''),
+      query_parameters: queryParameters.value.map(queryParameterPayload),
+      relation_inputs: normalizeRelationInputs(relationInputs.value)
     })
     currentTaskId.value = task.id
     currentTaskName.value = task.name
@@ -2057,6 +2109,10 @@ const handleSaveDialogVisibility = (visible) => {
 }
 
 const handlePersistQueryTask = async () => {
+  if (!relationTaskValid.value) {
+    ElMessage.warning(relationTaskError.value)
+    return
+  }
   if (!hasValidQueryParameters()) {
     parameterDrawerVisible.value = true
     ElMessage.warning(t('develop.query.queryParametersInvalid'))
@@ -2071,6 +2127,10 @@ const handlePersistQueryTask = async () => {
 
 const persistCurrentQueryTask = async () => {
   if (!currentTaskId.value) return false
+  if (!relationTaskValid.value) {
+    ElMessage.warning(relationTaskError.value)
+    return false
+  }
   if (!hasValidQueryParameters()) {
     parameterDrawerVisible.value = true
     ElMessage.warning(t('develop.query.queryParametersInvalid'))
@@ -2084,8 +2144,9 @@ const persistCurrentQueryTask = async () => {
       engine_id: selectedEngineId.value,
       query: queryContent.value,
       query_type: currentQueryLanguage.value,
-      target_locator: catalogSelection.value?.identity?.locator || targetLocator.value || '',
+      target_locator: hasRelationInputs.value ? '' : (catalogSelection.value?.identity?.locator || targetLocator.value || ''),
       query_parameters: queryParameters.value.map(queryParameterPayload),
+      relation_inputs: normalizeRelationInputs(relationInputs.value),
       description: task.description,
       tags: task.tags || [],
       timeout: task.timeout
@@ -2110,6 +2171,7 @@ const loadTask = async (taskId) => {
   queryParameters.value = (Array.isArray(task.content?.query_parameters) ? task.content.query_parameters : []).map((parameter, index) => (
     queryParameterEditorItem(parameter, `saved-${index}-${parameter.name}`)
   ))
+  relationInputs.value = normalizeRelationInputs(task.content?.relation_inputs)
   executionParameterOverrides.value = {}
   currentQueryLanguage.value = String(task.content?.query_type || '').toLowerCase()
   const engineID = task.execution_config?.engine_id
@@ -2131,6 +2193,7 @@ const resetQueryEditorForCreate = async () => {
   currentTask.value = null
   queryContent.value = ''
   queryParameters.value = []
+  relationInputs.value = []
   executionParameterOverrides.value = {}
   targetLocator.value = ''
   initialCatalogLocator.value = ''
@@ -2445,6 +2508,26 @@ onBeforeUnmount(() => {
 .editor-content :deep(.monaco-editor-container) {
   flex: 1;
   min-height: 0;
+}
+
+.relation-input-config {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 8px;
+  margin: 8px 12px 0;
+}
+
+.relation-input-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.relation-input-hint {
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .dirty-indicator {

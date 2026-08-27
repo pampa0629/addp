@@ -16,7 +16,6 @@ import (
 	"github.com/addp/meta/internal/metacleanup"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scantask"
-	"github.com/addp/meta/internal/search"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -27,19 +26,13 @@ type CleanupService struct {
 	db              *gorm.DB
 	redis           *redis.Client
 	dbCleaner       *metacleanup.DatabaseCleaner
-	searchCleaner   metaSearchCleaner
+	contentIndex    *commonClient.ManagerContentClient
 	taskExecRepo    *commonExecution.TaskExecutionRepository
 	log             *slog.Logger
 	retentionDays   int
 	cleanupInterval time.Duration
 	enabled         bool
 	stopCh          chan struct{}
-}
-
-type metaSearchCleaner interface {
-	Enabled() bool
-	ScanReclaimCandidates(context.Context, uint, []uint) (*metacleanup.MeilisearchReclaimStats, error)
-	ExecuteCleanup(context.Context, uint, []uint) (int, error)
 }
 
 // CleanupConfig 逻辑删除记录保留期清除配置
@@ -63,7 +56,7 @@ func NewCleanupService(
 	db *gorm.DB,
 	redisClient *redis.Client,
 	systemClient *commonClient.SystemServiceClient,
-	indexer *search.Indexer,
+	contentIndex *commonClient.ManagerContentClient,
 	config CleanupConfig,
 ) *CleanupService {
 	if config.RetentionDays == 0 {
@@ -77,7 +70,7 @@ func NewCleanupService(
 		db:              db,
 		redis:           redisClient,
 		dbCleaner:       metacleanup.NewDatabaseCleaner(db, systemClient, logger.With("component", "cleanup_database")),
-		searchCleaner:   metacleanup.NewMeilisearchCleaner(indexer, logger.With("component", "cleanup_meilisearch")),
+		contentIndex:    contentIndex,
 		taskExecRepo:    commonExecution.NewTaskExecutionRepository(db),
 		log:             logger.With("component", "cleanup_service"),
 		retentionDays:   config.RetentionDays,
@@ -352,7 +345,7 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 	}
 }
 
-func (s *CleanupService) metaEngineDeletionImpact(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}, stats *models.MetaCleanupStatistics) (events.CleanupImpactData, error) {
+func (s *CleanupService) metaEngineDeletionImpact(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}, _ *models.MetaCleanupStatistics) (events.CleanupImpactData, error) {
 	scope := metacleanup.ScopeFromContext(cleanupContext)
 	if scope.EngineID == 0 {
 		return events.CleanupImpactData{}, errors.New("meta engine deletion assessment requires engine_id")
@@ -381,12 +374,6 @@ func (s *CleanupService) metaEngineDeletionImpact(ctx context.Context, tenantID 
 	}
 	for _, task := range scanTasks {
 		items = append(items, events.CleanupImpactItem{StableRef: fmt.Sprintf("meta_scan_task:%d", task.ID), Disposition: events.CleanupImpactWillDelete})
-	}
-	if stats != nil && stats.MeilisearchIndexes.Count > 0 {
-		items = append(items, events.CleanupImpactItem{
-			StableRef:   fmt.Sprintf("meta_search_index:engine:%d:count:%d", scope.EngineID, stats.MeilisearchIndexes.Count),
-			Disposition: events.CleanupImpactWillDelete,
-		})
 	}
 	return events.BuildCleanupImpactData(items, "/meta/catalog")
 }
@@ -441,24 +428,7 @@ func (s *CleanupService) ScanReclaimCandidates(ctx context.Context, tenantID uin
 	}
 	stats.DuplicateFingerprints.Count = duplicateCount
 
-	// 6. 扫描 Meilisearch 待回收记录（新增）
-	if s.searchCleaner != nil && s.searchCleaner.Enabled() {
-		meilisearchStats, err := s.searchCleaner.ScanReclaimCandidates(ctx, tenantID, invalidEngineIDs)
-		if err != nil {
-			s.log.Error("扫描 Meilisearch 待回收记录失败", "error", err)
-			// 不中断整体扫描流程
-		} else {
-			stats.MeilisearchIndexes.Count = meilisearchStats.TotalCount
-			stats.MeilisearchIndexes.ByType = meilisearchStats.ByType
-			if len(meilisearchStats.Samples) > 10 {
-				stats.MeilisearchIndexes.Sample = meilisearchStats.Samples[:10]
-			} else {
-				stats.MeilisearchIndexes.Sample = meilisearchStats.Samples
-			}
-		}
-	}
-
-	// 7. 扫描 Meta-owned 扫描任务定义残留。
+	// 6. 扫描 Meta-owned 扫描任务定义残留。
 	scanTaskDefinitionCount, err := s.scanInvalidEngineScanTaskDefinitions(ctx, tenantID, scope, invalidEngineIDs)
 	if err != nil {
 		return nil, fmt.Errorf("扫描扫描任务定义残留失败: %w", err)
@@ -497,15 +467,12 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 	result.DeletedFingerprints = dbResult.DeletedFingerprints
 	result.Errors = append(result.Errors, dbResult.Errors...)
 
-	// 执行 Meilisearch 清理（新增）
-	if s.searchCleaner != nil && s.searchCleaner.Enabled() {
-		deletedCount, err := s.searchCleaner.ExecuteCleanup(ctx, tenantID, invalidEngineIDs)
-		if err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("清理 Meilisearch 失败: %v", err))
-			s.log.Error("清理 Meilisearch 失败", "error", err)
-		} else {
-			result.DeletedMeilisearchIndexes = deletedCount
-			s.log.Info("Meilisearch 清理完成", "deleted_count", deletedCount)
+	if s.contentIndex != nil {
+		for _, engineID := range invalidEngineIDs {
+			if err := s.contentIndex.WithTenantID(tenantID).DeleteDocuments(ctx, commonClient.ManagerContentDeleteScope{EngineID: engineID}); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("清理 Manager 内容投影失败: %v", err))
+				s.log.Error("清理 Manager 内容投影失败", "engine_id", engineID, "error", err)
+			}
 		}
 	}
 
@@ -675,7 +642,6 @@ func metaScanSummary(stats *models.MetaCleanupStatistics) events.CleanupResultSu
 		stats.LogicalCleanupCandidates.Nodes +
 		stats.LogicalCleanupCandidates.Items +
 		stats.DuplicateFingerprints.Count +
-		stats.MeilisearchIndexes.Count +
 		stats.ScanTaskDefinitions.Count
 
 	riskLevel := "low"
@@ -700,7 +666,6 @@ func metaExecuteSummary(result *models.MetaCleanupExecuteResult) events.CleanupR
 		AffectedRecords: result.DeletedNodes +
 			result.DeletedItems +
 			result.DeletedFingerprints +
-			result.DeletedMeilisearchIndexes +
 			result.DisabledScanTaskDefinitions +
 			result.DeletedScanTaskDefinitions,
 		DisabledTaskDefinitions: result.DisabledScanTaskDefinitions,

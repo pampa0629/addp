@@ -13,7 +13,7 @@ import (
 
 const sparkCatalogOperationTimeout = 30 * time.Second
 
-func (p *SparkSQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, _ plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+func (p *SparkSQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath, _ plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
 	ctx, cancel := sparkCatalogContext(ctx)
 	defer cancel()
 
@@ -26,18 +26,18 @@ func (p *SparkSQLPlugin) ListChildren(ctx context.Context, connInfo plugin.Conne
 		if err != nil {
 			return nil, fmt.Errorf("list Spark databases: %w", err)
 		}
-		entries := make([]plugin.CatalogEntry, 0, len(result.Rows))
+		entries := make([]plugin.EngineCatalogEntry, 0, len(result.Rows))
 		for _, row := range result.Rows {
 			name := sparkRowString(row, "namespace", "databaseName", "database")
 			if name == "" || isSparkSystemDatabase(name) {
 				continue
 			}
-			entries = append(entries, plugin.CatalogEntry{
+			entries = append(entries, plugin.EngineCatalogEntry{
 				Name: name,
-				Path: plugin.TabularNamespacePath(parent.EngineID, plugin.CatalogTermDatabase, name),
-				Term: plugin.CatalogTermDatabase,
-				Kind: plugin.CatalogKindNamespace,
-				Role: plugin.CatalogRoleBranch,
+				Path: plugin.TabularNamespacePath(parent.EngineID, plugin.EngineCatalogTermDatabase, name),
+				Term: plugin.EngineCatalogTermDatabase,
+				Kind: plugin.EngineCatalogKindNamespace,
+				Role: plugin.EngineCatalogRoleBranch,
 			})
 		}
 		return entries, nil
@@ -51,51 +51,51 @@ func (p *SparkSQLPlugin) ListChildren(ctx context.Context, connInfo plugin.Conne
 	if err != nil {
 		return nil, fmt.Errorf("list Spark tables in %q: %w", database, err)
 	}
-	entries := make([]plugin.CatalogEntry, 0, len(result.Rows))
+	entries := make([]plugin.EngineCatalogEntry, 0, len(result.Rows))
 	for _, row := range result.Rows {
 		name := sparkRowString(row, "tableName", "table_name", "table")
 		if name == "" {
 			continue
 		}
 		table := sparkSQLTableInfo(name)
-		entries = append(entries, plugin.CatalogEntry{
+		entries = append(entries, plugin.EngineCatalogEntry{
 			Name:  name,
-			Path:  plugin.TabularItemPath(parent.EngineID, plugin.CatalogTermDatabase, database, name),
-			Term:  plugin.CatalogTermTable,
-			Kind:  plugin.CatalogKindTable,
-			Role:  plugin.CatalogRoleLeaf,
-			Table: plugin.CatalogEntryTableSummary(&table),
+			Path:  plugin.TabularItemPath(parent.EngineID, plugin.EngineCatalogTermDatabase, database, name),
+			Term:  plugin.EngineCatalogTermTable,
+			Kind:  plugin.EngineCatalogKindTable,
+			Role:  plugin.EngineCatalogRoleLeaf,
+			Table: plugin.EngineCatalogEntryTableSummary(&table),
 		})
 	}
 	return entries, nil
 }
 
-func (p *SparkSQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p *SparkSQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	segments, root, err := sparkCatalogBusinessSegments(path)
 	if err != nil {
 		return nil, err
 	}
 	if root {
-		return &plugin.CatalogEntry{Name: "", Path: path, Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer, Role: plugin.CatalogRoleBranch}, nil
+		return &plugin.EngineCatalogEntry{Name: "", Path: path, Term: plugin.EngineCatalogTermServer, Kind: plugin.EngineCatalogTermServer, Role: plugin.EngineCatalogRoleBranch}, nil
 	}
 	if len(segments) == 1 {
-		return &plugin.CatalogEntry{Name: segments[0].Name, Path: path, Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Role: plugin.CatalogRoleBranch}, nil
+		return &plugin.EngineCatalogEntry{Name: segments[0].Name, Path: path, Term: plugin.EngineCatalogTermDatabase, Kind: plugin.EngineCatalogKindNamespace, Role: plugin.EngineCatalogRoleBranch}, nil
 	}
 	if len(segments) != 2 {
 		return nil, fmt.Errorf("Spark catalog item path requires database and table segments")
 	}
-	facts, err := p.DescribeCatalogFacts(ctx, connInfo, path, plugin.CatalogFactsOptions{})
+	facts, err := p.DescribeEngineCatalogFacts(ctx, connInfo, path, plugin.EngineCatalogFactsOptions{})
 	if err != nil {
 		return nil, err
 	}
-	return &plugin.CatalogEntry{
-		Name: segments[1].Name, Path: path, Term: plugin.CatalogTermTable,
-		Kind: plugin.CatalogKindTable, Role: plugin.CatalogRoleLeaf,
-		Table: plugin.CatalogEntryTableInfo(facts),
+	return &plugin.EngineCatalogEntry{
+		Name: segments[1].Name, Path: path, Term: plugin.EngineCatalogTermTable,
+		Kind: plugin.EngineCatalogKindTable, Role: plugin.EngineCatalogRoleLeaf,
+		Table: plugin.EngineCatalogEntryTableInfo(facts),
 	}, nil
 }
 
-func (p *SparkSQLPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *SparkSQLPlugin) DescribeEngineCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	segments, root, err := sparkCatalogBusinessSegments(path)
 	if err != nil {
 		return nil, err
@@ -139,7 +139,7 @@ func (p *SparkSQLPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plug
 			}
 		}
 	}
-	return &plugin.CatalogFacts{Path: path, Kind: plugin.CatalogKindTable, Table: table.Clone()}, nil
+	return &plugin.EngineCatalogFacts{Path: path, Kind: plugin.EngineCatalogKindTable, Table: table.Clone()}, nil
 }
 
 func sparkCatalogContext(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -152,25 +152,25 @@ func sparkCatalogContext(ctx context.Context) (context.Context, context.CancelFu
 	return context.WithTimeout(ctx, sparkCatalogOperationTimeout)
 }
 
-func sparkCatalogBusinessSegments(path plugin.CatalogPath) ([]plugin.CatalogSegment, bool, error) {
-	if len(path.Segments) == 0 || !plugin.IsCatalogRootSegment(path.Segments[0]) || path.Segments[0].Term != plugin.CatalogTermServer {
+func sparkCatalogBusinessSegments(path plugin.EngineCatalogPath) ([]plugin.EngineCatalogSegment, bool, error) {
+	if len(path.Segments) == 0 || !plugin.IsEngineCatalogRootSegment(path.Segments[0]) || path.Segments[0].Term != plugin.EngineCatalogTermServer {
 		return nil, false, fmt.Errorf("Spark catalog path requires an explicit server root segment")
 	}
 	if len(path.Segments) == 1 {
 		return nil, true, nil
 	}
 	segments := path.Segments[1:]
-	if segments[0].Term != plugin.CatalogTermDatabase || segments[0].Name == "" {
+	if segments[0].Term != plugin.EngineCatalogTermDatabase || segments[0].Name == "" {
 		return nil, false, fmt.Errorf("Spark catalog path requires a database segment")
 	}
-	if len(segments) > 2 || (len(segments) == 2 && (segments[1].Term != plugin.CatalogTermTable || segments[1].Name == "")) {
+	if len(segments) > 2 || (len(segments) == 2 && (segments[1].Term != plugin.EngineCatalogTermTable || segments[1].Name == "")) {
 		return nil, false, fmt.Errorf("Spark catalog path supports database and table segments")
 	}
 	return segments, false, nil
 }
 
 func sparkSQLTableInfo(tableName string) datatype.TableInfo {
-	return datatype.TableInfo{Name: tableName, Kind: plugin.CatalogKindTable}
+	return datatype.TableInfo{Name: tableName, Kind: plugin.EngineCatalogKindTable}
 }
 
 func sparkCommonFieldType(nativeType string) datatype.FieldType {

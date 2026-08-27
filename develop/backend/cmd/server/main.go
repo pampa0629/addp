@@ -110,11 +110,12 @@ func main() {
 
 	// 4. DevTask业务逻辑服务
 	devTaskService := service.NewDevTaskService(devTaskRepo, systemServiceClient)
+	catalogResourceService := service.NewCatalogResourceService(repository.NewCatalogResourceRepository(db))
+	catalogResourceHandler := api.NewCatalogResourceHandler(catalogResourceService)
 	log.Printf("✅ DevTaskService 初始化完成")
 
 	// 6. 联邦查询 Runtime 编排服务
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, serviceTokenSource)
-	modelClient := commonClient.NewModelClient(cfg.ModelServiceURL, serviceTokenSource, nil)
 	federatedQueryService := service.NewFederatedQueryService(systemServiceClient, metaClient)
 	log.Printf("✅ FederatedQueryService 初始化完成")
 
@@ -123,7 +124,7 @@ func main() {
 	log.Printf("✅ OperatorDiscoveryService 初始化完成")
 
 	// 8. DevExecutor 统一执行器（执行前复用正式工作流校验）
-	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, operatorDiscovery, metaClient, modelClient, sqlEngine, federatedQueryService, notebookExecutionService, cfg.QueryResultLimit)
+	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, operatorDiscovery, metaClient, sqlEngine, federatedQueryService, notebookExecutionService, cfg.QueryResultLimit)
 	log.Printf("✅ DevExecutor 初始化完成（使用统一执行表）")
 	toolApprovalService := service.NewToolApprovalService(db, devExecutor)
 
@@ -147,7 +148,7 @@ func main() {
 	// ========== 设置路由 ==========
 	queryPolicyHandler := api.NewQueryPolicyHandler(queryPolicyService)
 	lifecycleController := modulelifecycle.NewBusiness("develop", commonClient.ModuleRuntimeRoleBackend)
-	router := api.SetupRouter(cfg, db, devTaskHandler, executionHandler, toolApprovalHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, devTaskService, systemServiceClient, lifecycleController, queryPolicyHandler)
+	router := api.SetupRouter(cfg, db, devTaskHandler, executionHandler, toolApprovalHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, devTaskService, catalogResourceHandler, systemServiceClient, lifecycleController, queryPolicyHandler)
 	log.Printf("✅ 路由设置完成")
 	addr := cfg.ServerAddr
 	listener, err := net.Listen("tcp", addr)

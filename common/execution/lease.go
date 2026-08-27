@@ -30,6 +30,7 @@ func LeaseFromContext(ctx context.Context) (Lease, bool) {
 type ClaimOptions struct {
 	Module               string
 	TaskType             string
+	Source               string
 	WorkerID             string
 	Now                  time.Time
 	LeaseDuration        time.Duration
@@ -48,6 +49,7 @@ type Lease struct {
 type ExpiredOptions struct {
 	Module   string
 	TaskType string
+	Source   string
 	Now      time.Time
 	Limit    int
 }
@@ -71,6 +73,9 @@ func ClaimNext(ctx context.Context, tx *gorm.DB, options ClaimOptions) (*TaskExe
 	query := tx.WithContext(ctx).
 		Where("module = ? AND task_type = ? AND execution_boundary = ? AND status = ?", options.Module, options.TaskType, ExecutionBoundaryBounded, ExecutionStatusPending).
 		Order("created_at ASC, id ASC").Limit(1)
+	if options.Source != "" {
+		query = query.Where("source = ?", options.Source)
+	}
 	if options.RequireAuthorization {
 		query = query.Where("execution_authorization_id IS NOT NULL")
 	}
@@ -161,6 +166,9 @@ func FindExpiredForUpdate(ctx context.Context, tx *gorm.DB, options ExpiredOptio
 	query := tx.WithContext(ctx).
 		Where("module = ? AND task_type = ? AND execution_boundary = ? AND status = ? AND lease_expires_at IS NOT NULL AND lease_expires_at < ?", options.Module, options.TaskType, ExecutionBoundaryBounded, ExecutionStatusRunning, now).
 		Order("lease_expires_at ASC, id ASC").Limit(limit)
+	if options.Source != "" {
+		query = query.Where("source = ?", options.Source)
+	}
 	if tx.Dialector.Name() == "postgres" {
 		query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
 	}

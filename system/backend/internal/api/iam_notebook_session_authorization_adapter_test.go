@@ -10,15 +10,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestNotebookCatalogUnknownErrorKeepsFailureBoundary(t *testing.T) {
+func TestNotebookEngineCatalogUnknownErrorKeepsFailureBoundary(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tests := []struct {
 		name     string
 		respond  func(*gin.Context, error)
 		expected string
 	}{
-		{name: "control plane", respond: respondNotebookCatalogError, expected: "catalog_control_plane_failed"},
-		{name: "provider", respond: respondNotebookCatalogProviderError, expected: "catalog_provider_failed"},
+		{name: "control plane", respond: respondNotebookEngineCatalogError, expected: "engine_catalog_control_plane_failed"},
+		{name: "provider", respond: respondNotebookEngineCatalogProviderError, expected: "engine_catalog_provider_failed"},
 	}
 
 	for _, test := range tests {

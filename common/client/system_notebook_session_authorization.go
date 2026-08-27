@@ -26,7 +26,7 @@ type IssuedNotebookSessionAuthorization struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-type NotebookCatalogChildrenRequest struct {
+type NotebookEngineCatalogChildrenRequest struct {
 	SessionID string                   `json:"session_id"`
 	EngineID  uint                     `json:"engine_id"`
 	Path      EngineCatalogPath        `json:"path"`
@@ -89,10 +89,10 @@ func (c *SystemNotebookSessionAuthorizationClient) Issue(
 	return &response, nil
 }
 
-func (c *SystemServiceClient) ListNotebookCatalogChildren(
+func (c *SystemServiceClient) ListNotebookEngineCatalogChildren(
 	ctx context.Context,
 	authorizationID string,
-	request NotebookCatalogChildrenRequest,
+	request NotebookEngineCatalogChildrenRequest,
 ) ([]EngineCatalogEntry, error) {
 	if !canonicalNotebookUUID(authorizationID) || !canonicalNotebookUUID(request.SessionID) || request.EngineID == 0 {
 		return nil, errors.New("notebook catalog request is invalid")

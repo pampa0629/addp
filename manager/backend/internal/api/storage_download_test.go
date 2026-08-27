@@ -192,7 +192,7 @@ func (p *apiDownloadTestFilePlugin) Capabilities() plugin.EngineCapabilities {
 func (p *apiDownloadTestFilePlugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
-func (p *apiDownloadTestFilePlugin) DescribeCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, itemPath plugin.CatalogPath, _ plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *apiDownloadTestFilePlugin) DescribeEngineCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, itemPath plugin.EngineCatalogPath, _ plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	filePath := strings.Trim(itemPath.StringPath(), "/")
 	content, ok := p.files[filePath]
 	if !ok {
@@ -200,10 +200,10 @@ func (p *apiDownloadTestFilePlugin) DescribeCatalogFacts(_ context.Context, _ pl
 	}
 	now := time.Unix(0, 0)
 	sizeBytes := int64(len(content))
-	return &plugin.CatalogFacts{
+	return &plugin.EngineCatalogFacts{
 		Path: itemPath,
 		Kind: p.itemKind(),
-		Storage: &plugin.CatalogStorageFacts{
+		Storage: &plugin.EngineCatalogStorageFacts{
 			Name:      filePath,
 			Path:      filePath,
 			SizeBytes: &sizeBytes,
@@ -214,11 +214,11 @@ func (p *apiDownloadTestFilePlugin) DescribeCatalogFacts(_ context.Context, _ pl
 
 func (p *apiDownloadTestFilePlugin) itemKind() string {
 	if p.objectCatalog {
-		return plugin.CatalogKindObject
+		return plugin.EngineCatalogKindObject
 	}
-	return plugin.CatalogKindFile
+	return plugin.EngineCatalogKindFile
 }
-func (p *apiDownloadTestFilePlugin) OpenContent(_ context.Context, _ plugin.ConnectionInfo, itemPath plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+func (p *apiDownloadTestFilePlugin) OpenContent(_ context.Context, _ plugin.ConnectionInfo, itemPath plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	filePath := strings.Trim(itemPath.StringPath(), "/")
 	content, ok := p.files[filePath]
 	if !ok {

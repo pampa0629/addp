@@ -14,44 +14,48 @@ import (
 )
 
 type IssueExecutionAuthorizationRequest struct {
-	Audience    string   `json:"audience"`
-	ExecutionID string   `json:"execution_id"`
-	EngineIDs   []string `json:"engine_ids"`
-	Effects     []string `json:"effects"`
-	ExpiresIn   int64    `json:"expires_in"`
+	Audience    string                       `json:"audience"`
+	ExecutionID string                       `json:"execution_id"`
+	Accesses    []ExecutionEngineAccessScope `json:"accesses"`
+	ExpiresIn   int64                        `json:"expires_in"`
+}
+
+type ExecutionEngineAccessScope struct {
+	EngineID string   `json:"engine_id"`
+	Effects  []string `json:"effects"`
 }
 
 type IssueExecutionAuthorizationFromExecutionRequest struct {
-	ParentExecutionID string   `json:"parent_execution_id"`
-	Audience          string   `json:"audience"`
-	ExecutionID       string   `json:"execution_id"`
-	EngineIDs         []string `json:"engine_ids"`
-	Effects           []string `json:"effects"`
-	ExpiresIn         int64    `json:"expires_in"`
+	ParentExecutionID string                       `json:"parent_execution_id"`
+	Audience          string                       `json:"audience"`
+	ExecutionID       string                       `json:"execution_id"`
+	Attempt           int                          `json:"attempt,omitempty"`
+	LeaseToken        string                       `json:"lease_token,omitempty"`
+	Accesses          []ExecutionEngineAccessScope `json:"accesses"`
+	ExpiresIn         int64                        `json:"expires_in"`
 }
 
 type IssueExecutionAuthorizationFromServiceDefinitionRequest struct {
-	ExecutionID       string   `json:"execution_id"`
-	EngineIDs         []string `json:"engine_ids"`
-	DefinitionID      string   `json:"definition_id"`
-	DefinitionVersion string   `json:"definition_version"`
-	ExpiresIn         int64    `json:"expires_in"`
+	ExecutionID       string                       `json:"execution_id"`
+	Accesses          []ExecutionEngineAccessScope `json:"accesses"`
+	DefinitionID      string                       `json:"definition_id"`
+	DefinitionVersion string                       `json:"definition_version"`
+	ExpiresIn         int64                        `json:"expires_in"`
 }
 
 type IssuedExecutionAuthorization struct {
-	ID                         string    `json:"id"`
-	ExecutionID                string    `json:"execution_id"`
-	Audience                   string    `json:"audience"`
-	EngineIDs                  []string  `json:"engine_ids"`
-	Effects                    []string  `json:"effects"`
-	ExpiresAt                  time.Time `json:"expires_at"`
-	ActorPrincipalID           string    `json:"actor_principal_id"`
-	TenantID                   string    `json:"tenant_id"`
-	TenantMembershipID         string    `json:"tenant_membership_id"`
-	IssuedAuthorizationVersion string    `json:"issued_authorization_version"`
-	SourceType                 string    `json:"source_type"`
-	SourceDefinitionID         *string   `json:"source_definition_id,omitempty"`
-	SourceDefinitionVersion    *string   `json:"source_definition_version,omitempty"`
+	ID                         string                       `json:"id"`
+	ExecutionID                string                       `json:"execution_id"`
+	Audience                   string                       `json:"audience"`
+	Accesses                   []ExecutionEngineAccessScope `json:"accesses"`
+	ExpiresAt                  time.Time                    `json:"expires_at"`
+	ActorPrincipalID           string                       `json:"actor_principal_id"`
+	TenantID                   string                       `json:"tenant_id"`
+	TenantMembershipID         string                       `json:"tenant_membership_id"`
+	IssuedAuthorizationVersion string                       `json:"issued_authorization_version"`
+	SourceType                 string                       `json:"source_type"`
+	SourceDefinitionID         *string                      `json:"source_definition_id,omitempty"`
+	SourceDefinitionVersion    *string                      `json:"source_definition_version,omitempty"`
 }
 
 type ExecutionEngineAccessRequest struct {
@@ -68,6 +72,47 @@ type ExecutionEngineAccess struct {
 	Effects         []string       `json:"effects"`
 	ExpiresAt       time.Time      `json:"expires_at"`
 	Engine          *models.Engine `json:"engine"`
+}
+
+// TaskExecutionAuthorizationFields converts a validated System response into
+// the complete authorization fact set stored on common.task_executions.
+func TaskExecutionAuthorizationFields(issued *IssuedExecutionAuthorization) (map[string]interface{}, error) {
+	if issued == nil {
+		return nil, errors.New("execution authorization is empty")
+	}
+	parse := func(value string) (*int64, error) {
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || parsed <= 0 {
+			return nil, fmt.Errorf("invalid IAM ID %q", value)
+		}
+		return &parsed, nil
+	}
+	authorizationID, err := parse(issued.ID)
+	if err != nil {
+		return nil, err
+	}
+	actorID, err := parse(issued.ActorPrincipalID)
+	if err != nil {
+		return nil, err
+	}
+	membershipID, err := parse(issued.TenantMembershipID)
+	if err != nil {
+		return nil, err
+	}
+	version, err := parse(issued.IssuedAuthorizationVersion)
+	if err != nil {
+		return nil, err
+	}
+	if !issued.ExpiresAt.After(time.Now().UTC()) {
+		return nil, errors.New("execution authorization expiry is invalid")
+	}
+	return map[string]interface{}{
+		"execution_authorization_id":   authorizationID,
+		"actor_principal_id":           actorID,
+		"actor_tenant_membership_id":   membershipID,
+		"issued_authorization_version": version,
+		"authorization_expires_at":     issued.ExpiresAt,
+	}, nil
 }
 
 // SystemExecutionAuthorizationClient derives an execution authorization from
@@ -139,6 +184,17 @@ func (c *SystemServiceClient) IssueExecutionAuthorizationFromExecution(
 	if c == nil {
 		return nil, errors.New("System service client is required")
 	}
+	hasAttempt := request.Attempt != 0
+	hasLeaseToken := strings.TrimSpace(request.LeaseToken) != ""
+	if hasAttempt != hasLeaseToken || request.Attempt < 0 {
+		return nil, errors.New("execution authorization lease attempt and token must be provided together")
+	}
+	if hasLeaseToken {
+		parsed, err := uuid.Parse(request.LeaseToken)
+		if err != nil || parsed == uuid.Nil || parsed.String() != request.LeaseToken {
+			return nil, errors.New("execution authorization lease token must be a canonical UUID")
+		}
+	}
 	var response IssuedExecutionAuthorization
 	if err := c.doTenantJSON(
 		ctx, http.MethodPost, "/api/v1/system/runtime/execution-authorizations",
@@ -147,8 +203,7 @@ func (c *SystemServiceClient) IssueExecutionAuthorizationFromExecution(
 		return nil, err
 	}
 	if response.ExecutionID != request.ExecutionID || response.Audience != request.Audience ||
-		!sameStringSet(response.EngineIDs, request.EngineIDs) ||
-		!sameStringSet(response.Effects, request.Effects) || !response.ExpiresAt.After(time.Now().UTC()) {
+		!sameExecutionEngineAccessScopes(response.Accesses, request.Accesses) || !response.ExpiresAt.After(time.Now().UTC()) {
 		return nil, errors.New("System execution authorization returned an invalid response")
 	}
 	for _, value := range []string{
@@ -177,8 +232,7 @@ func (c *SystemServiceClient) IssueExecutionAuthorizationFromServiceDefinition(
 		return nil, err
 	}
 	if response.ExecutionID != request.ExecutionID || response.Audience != "duckdb" ||
-		!sameStringSet(response.EngineIDs, request.EngineIDs) ||
-		!sameStringSet(response.Effects, []string{"read"}) || response.SourceType != "service_definition" ||
+		!sameExecutionEngineAccessScopes(response.Accesses, request.Accesses) || response.SourceType != "service_definition" ||
 		response.SourceDefinitionID == nil || *response.SourceDefinitionID != request.DefinitionID ||
 		response.SourceDefinitionVersion == nil || *response.SourceDefinitionVersion != request.DefinitionVersion ||
 		!response.ExpiresAt.After(time.Now().UTC()) {
@@ -217,14 +271,37 @@ func sameStringSet(left, right []string) bool {
 	return true
 }
 
+func sameExecutionEngineAccessScopes(left, right []ExecutionEngineAccessScope) bool {
+	if len(left) == 0 || len(left) != len(right) {
+		return false
+	}
+	leftByEngine := make(map[string][]string, len(left))
+	for _, access := range left {
+		if _, err := parseCanonicalPositiveID(access.EngineID); err != nil {
+			return false
+		}
+		if _, duplicate := leftByEngine[access.EngineID]; duplicate || len(access.Effects) == 0 {
+			return false
+		}
+		leftByEngine[access.EngineID] = access.Effects
+	}
+	for _, access := range right {
+		effects, exists := leftByEngine[access.EngineID]
+		if !exists || !sameStringSet(effects, access.Effects) {
+			return false
+		}
+		delete(leftByEngine, access.EngineID)
+	}
+	return len(leftByEngine) == 0
+}
+
 func validateIssuedExecutionAuthorization(
 	response *IssuedExecutionAuthorization,
 	request IssueExecutionAuthorizationRequest,
 ) error {
 	if response == nil || response.Audience != request.Audience || response.ExecutionID != request.ExecutionID ||
 		!response.ExpiresAt.After(time.Now().UTC()) ||
-		!sameStringSet(response.EngineIDs, request.EngineIDs) ||
-		!sameStringSet(response.Effects, request.Effects) {
+		!sameExecutionEngineAccessScopes(response.Accesses, request.Accesses) {
 		return errors.New("System execution authorization returned an invalid response")
 	}
 	for _, value := range []string{

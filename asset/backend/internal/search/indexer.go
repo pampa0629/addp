@@ -3,6 +3,7 @@ package search
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 
 // AssetIndexDoc 资产索引文档结构
 type AssetIndexDoc struct {
-	ID          int64    `json:"id"`           // Meilisearch 主键
+	ID          int64    `json:"id"` // Meilisearch 主键
 	TenantID    int64    `json:"tenant_id"`
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
@@ -166,6 +167,16 @@ func (i *Indexer) UpdateStatusBatch(ids []int64, status string) {
 	idx := i.client.Index(i.index)
 	if _, err := idx.UpdateDocuments(docs); err != nil {
 		log.Printf("⚠️  批量更新资产状态索引失败 (count=%d, status=%s): %v", len(ids), status, err)
+	}
+}
+
+// DeleteAsset removes the projection after the authoritative Asset is deleted.
+func (i *Indexer) DeleteAsset(id int64) {
+	if !i.Enabled() || id <= 0 {
+		return
+	}
+	if _, err := i.client.Index(i.index).DeleteDocument(strconv.FormatInt(id, 10)); err != nil {
+		log.Printf("⚠️  删除资产索引失败 (id=%d): %v", id, err)
 	}
 }
 

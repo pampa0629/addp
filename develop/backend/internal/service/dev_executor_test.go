@@ -61,7 +61,7 @@ func TestDevelopLineageFactsUsesWorkflowDefinitionResourcesAndOutputs(t *testing
 	}
 }
 
-func TestExecuteWithParamsFromParentExecutionKeepsFailedChildWhenAuthorizationFails(t *testing.T) {
+func TestExecuteWithParamsFromParentExecutionQueuesQueryWithoutBackendAuthorization(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -133,24 +133,27 @@ func TestExecuteWithParamsFromParentExecutionKeepsFailedChildWhenAuthorizationFa
 		context.Background(), devTask.ID, nil, 7, commonExecution.TriggerTypeScheduled,
 		commonExecution.ModuleOrchestrator, parentExecutionID, commonExecution.TaskTypeQuery,
 	)
-	if err == nil || childExecutionID == "" || !called {
+	if err != nil || childExecutionID == "" || called {
 		t.Fatalf("child execution id=%q error=%v called=%t", childExecutionID, err, called)
 	}
 	child, loadErr := executionRepo.GetByExecutionID(context.Background(), childExecutionID, 7)
 	if loadErr != nil {
 		t.Fatalf("load failed child execution: %v", loadErr)
 	}
-	if child.Status != commonExecution.ExecutionStatusFailed || child.CompletedAt == nil ||
+	if child.Status != commonExecution.ExecutionStatusPending || child.CompletedAt != nil ||
 		child.ParentExecutionID == nil || *child.ParentExecutionID != parentExecutionID ||
 		child.ActorPrincipalID == nil || *child.ActorPrincipalID != principalID ||
 		child.ActorTenantMembershipID == nil || *child.ActorTenantMembershipID != membershipID ||
 		child.IssuedAuthorizationVersion == nil || *child.IssuedAuthorizationVersion != authorizationVersion ||
 		child.ExecutionAuthorizationID != nil {
-		t.Fatalf("failed child execution facts = %#v", child)
+		t.Fatalf("queued child execution facts = %#v", child)
+	}
+	if _, ok := child.ExecutionConfig["content"]; !ok {
+		t.Fatalf("queued child did not freeze content: %#v", child.ExecutionConfig)
 	}
 }
 
-func TestApplySQLExecutionAuthorizationFactsPersistsOnlyReferencesAndSummary(t *testing.T) {
+func TestApplySQLExecutionAuthorizationFactsPersistsOnlyReferences(t *testing.T) {
 	expiresAt := time.Date(2026, 7, 29, 10, 15, 0, 0, time.UTC)
 	execution := &commonExecution.TaskExecution{ExecutionID: "execution-1"}
 	applySQLExecutionAuthorizationFacts(execution, &IssuedSQLExecutionAuthorization{
@@ -161,7 +164,6 @@ func TestApplySQLExecutionAuthorizationFactsPersistsOnlyReferencesAndSummary(t *
 		execution.ActorPrincipalID == nil || *execution.ActorPrincipalID != 11 ||
 		execution.ActorTenantMembershipID == nil || *execution.ActorTenantMembershipID != 13 ||
 		execution.IssuedAuthorizationVersion == nil || *execution.IssuedAuthorizationVersion != 17 ||
-		len(execution.AuthorizationEffects) != 1 || execution.AuthorizationEffects[0] != "read" ||
 		execution.AuthorizationExpiresAt == nil || !execution.AuthorizationExpiresAt.Equal(expiresAt) {
 		t.Fatalf("execution authorization facts = %#v", execution)
 	}
@@ -176,69 +178,20 @@ func TestApplySQLExecutionAuthorizationFactsPersistsOnlyReferencesAndSummary(t *
 	}
 }
 
-func TestPrepareContentExecutionRejectsManagedMaterialization(t *testing.T) {
+func TestPrepareContentExecutionRejectsAdHocRelationResult(t *testing.T) {
 	executor := &DevExecutor{}
 	_, err := executor.prepareContentExecution(
 		context.Background(), commonExecution.TaskTypeQuery,
-		map[string]interface{}{"query": "SELECT 1", "query_type": "sql"},
-		map[string]interface{}{
-			"engine_id":              12,
-			"materialization_target": map[string]interface{}{"logical_table_id": 3},
-		},
+		map[string]interface{}{"query": "SELECT * FROM addp_input.source", "query_type": "sql", "relation_inputs": []interface{}{"source"}},
+		map[string]interface{}{"engine_id": 12},
 		nil, 7, 11, "addp_at_user", commonExecution.TriggerTypeManual, 60,
 	)
 	if err == nil || !strings.Contains(err.Error(), "只能通过已保存任务的 Orchestrator 执行") {
-		t.Fatalf("expected ad-hoc managed materialization rejection, got %v", err)
+		t.Fatalf("expected ad-hoc relation result rejection, got %v", err)
 	}
 }
 
-func TestResolveMaterializationWriteContextAndCompileSQL(t *testing.T) {
-	parentExecutionID := uuid.New()
-	batchID := uuid.New().String()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodPost || request.URL.Path != "/api/v1/model/materialization-write-contexts/resolve" ||
-			request.Header.Get("Authorization") != "Bearer addp_at_develop" || request.Header.Get("X-Tenant-ID") != "" {
-			t.Fatalf("invalid Model request: method=%s path=%s headers=%#v", request.Method, request.URL.Path, request.Header)
-		}
-		var payload commonClient.MaterializationWriteContextRequest
-		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
-			t.Fatal(err)
-		}
-		if payload.ParentExecutionID != parentExecutionID.String() || payload.LogicalTableID != 3 {
-			t.Fatalf("payload = %#v", payload)
-		}
-		_ = json.NewEncoder(w).Encode(commonClient.MaterializationWriteContext{
-			BatchID: batchID, EngineID: 12,
-			StagingLocator: "addp://engine/12/path/analytics/result%22stage?type=table",
-			WriteColumns:   []string{"person_id", "display\"name"},
-		})
-	}))
-	defer server.Close()
-
-	executor := &DevExecutor{
-		modelClient: commonClient.NewModelClient(server.URL, staticServiceTokenSource("addp_at_develop"), server.Client()),
-		sqlEngine:   NewSQLEngineService(&config.Config{}, nil, nil),
-	}
-	writeContext, err := executor.resolveMaterializationWriteContext(
-		context.Background(), 7, parentExecutionID,
-		&models.DevTask{
-			DevType:         commonExecution.TaskTypeQuery,
-			Content:         models.DevTaskContent{"query": "SELECT person_id, display_name FROM source", "query_type": "sql"},
-			ExecutionConfig: models.DevTaskContent{"engine_id": 12},
-		},
-		3,
-	)
-	if err != nil {
-		t.Fatalf("resolveMaterializationWriteContext() error = %v", err)
-	}
-	compiled := compileMaterializationWriteSQL(writeContext.StagingLocator, writeContext.WriteColumns, "SELECT person_id, display_name FROM source;")
-	want := `INSERT INTO "analytics"."result""stage" ("person_id", "display""name") SELECT person_id, display_name FROM source`
-	if compiled != want {
-		t.Fatalf("compiled SQL = %q, want %q", compiled, want)
-	}
-}
-
-func TestApplyWorkflowExecutionAuthorizationFactsPersistsOnlyReferencesAndEffects(t *testing.T) {
+func TestApplyWorkflowExecutionAuthorizationFactsPersistsOnlyReferences(t *testing.T) {
 	expiresAt := time.Date(2026, 7, 29, 10, 15, 0, 0, time.UTC)
 	execution := &commonExecution.TaskExecution{ExecutionID: "execution-2"}
 	applyWorkflowExecutionAuthorizationFacts(execution, &IssuedWorkflowExecutionAuthorization{
@@ -250,7 +203,6 @@ func TestApplyWorkflowExecutionAuthorizationFactsPersistsOnlyReferencesAndEffect
 		execution.ActorPrincipalID == nil || *execution.ActorPrincipalID != 21 ||
 		execution.ActorTenantMembershipID == nil || *execution.ActorTenantMembershipID != 23 ||
 		execution.IssuedAuthorizationVersion == nil || *execution.IssuedAuthorizationVersion != 27 ||
-		!reflect.DeepEqual([]string(execution.AuthorizationEffects), []string{"read", "write"}) ||
 		execution.AuthorizationExpiresAt == nil || !execution.AuthorizationExpiresAt.Equal(expiresAt) {
 		t.Fatalf("execution authorization facts = %#v", execution)
 	}

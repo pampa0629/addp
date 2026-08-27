@@ -251,6 +251,16 @@ import {
 
 地图预览、CRS registry、底图 profile 和 GCJ-02 展示适配规则见 [Map 前端组件说明](./map/README.md)。
 
+### 数据服务结果渲染器
+
+已发布数据服务的消费结果使用三组共享 primitive，业务模块只负责根据自身配置分派 renderer：
+
+- `basic/src/components/TabularResultRenderer.vue`：按显式列配置展示有界表格结果；
+- `chart/src/ChartRenderer.vue`：展示 `bar | line | pie`，只使用服务已返回的明细值，不在浏览器聚合；
+- `map/src/components/GeoJSONResultRenderer.vue`：只读取 Consumer Descriptor 明确声明的 geometry 字段和 CRS，不猜测字段名。
+
+Chart 和 Map 只接受单次查询得到的完整有界结果；`has_more=true` 或超过组件上限时必须拒绝渲染。Workbench 等消费模块应在自己的 Renderer Host 中按需加载这些组件，不得复制 renderer，也不得把 Service、Outdoor 或其他 owner 的 DTO 写入共享层。
+
 ### Agent UI 协议组件
 
 `agent-ui/` 提供 ADDP Agent 界面的共享协议适配层，完整协议、安全上限和降级规则见 `docs/spec/addp智能体交互协议规范.md`：

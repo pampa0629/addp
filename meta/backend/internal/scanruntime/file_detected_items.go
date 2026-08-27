@@ -5,11 +5,11 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scanprocessor"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 func (s *FilesystemCatalogRuntime) persistFileCatalogDetectedItem(
@@ -24,7 +24,7 @@ func (s *FilesystemCatalogRuntime) persistFileCatalogDetectedItem(
 	connInfo plugin.ConnectionInfo,
 	scanDepth string,
 ) (bool, string, scanflow.ExtractionCounts) {
-	itemPlan, ok := metacatalog.PlanFileCatalogDetectedItem(resource.ID, dirPath, detected, itemTerm)
+	itemPlan, ok := scanresource.PlanFileDetectedItem(resource.ID, dirPath, detected, itemTerm)
 	if !ok {
 		return false, "", scanflow.ExtractionCounts{}
 	}

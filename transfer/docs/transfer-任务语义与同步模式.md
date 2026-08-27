@@ -26,6 +26,10 @@ Transfer 负责：
 
 具体引擎的 catalog、native table 读写和 change stream 读取属于 `common/engine` Provider；encoded 格式读写属于 `common/format` Provider。Transfer 组合这些能力，不按具体源目标组合建立专用通道。
 
+bounded query source 是源引擎下推后的连续读取边界：任务保存 capability 已声明支持的只读查询语言和查询文本，Transfer 通过 `QueryReadSessionProvider` 分批消费结果。MongoDB MQL 可以在源端使用 `$project` 将对象子字段投影为扁平列，使用 `$unwind` 展开数组，并以 `$group` / `$unionWith` 完成确定性关系整形；最终输出必须是一条文档对应一行。Transfer 不递归摊平 BSON/JSON，也不解释数组的业务粒度。`$out`、`$merge` 和所有写查询禁止进入该路径。
+
+当 bounded query source 需要向上游步骤创建的既有表写入数据时，任务定义启用通用动态目标模式，不保存物理 `target`；TaskProvider 将 `target_locator` 声明为必填运行时输入，由 Orchestrator 从任意显式依赖的稳定 ResourceLocator 输出绑定。worker 使用通用 Engine capability 校验目标已存在且字段映射的名称、顺序和类型一致，仅通过 table write session append 本 execution 结果，不执行删除、清空、建表或改表。Transfer 不得保存其他业务 owner 的 ID 或调用其 API 解析目标。
+
 SuperMap 空间表也遵守同一边界。`supermap/sdx_postgis` 继续使用 PostgreSQL/PostGIS 原生 Provider；`supermap/sdx_postgresql` 的 bounded table 读取和写入由 `bound_runtime_engine_id` 指向的兼容 Workflow Runtime 执行 SDK direct table session。Transfer 通过 Tenant Service Token 读取 Runtime Descriptor，并校验 `addp.workflow/v1` 与完整表读写 direct 算子，不按固定 `engine_type` 选择 Runtime。两种方向都使用统一 `BatchData` 业务模型；当前 `supermap.table-batch/v1` HTTP 线协议固定为 JSON，geometry 值是 EWKB 字节并按 JSON 标准 base64 编码。Transfer 和 Common Spatial 不解析或生成 SuperMap 私有 geometry Blob，也不建立 PostGIS→SuperMap、ArcGIS SDE→SuperMap 等引擎组合通道。
 
 `supermap/sdx_postgresql` 写会话提交不是“最后一批数据已发送”。运行时只有在 SDK `DatasetVector.Append` 完成全部批次，随后完成 `ComputeBounds()`、`UpdateSpatialIndex()`，并关闭重开校验记录数、Bounds 和索引状态后，才能向 Transfer 返回成功。首期只进入 bounded snapshot 支持矩阵；continuous/CDC 必须另行定义目标幂等和位置提交语义。
@@ -89,7 +93,7 @@ Kafka poll 会分批读取，但不因此成为 bounded；数据库 CDC 的 init
 
 | 执行边界 | 装载方式 | 变化识别 | 当前源 | 当前目标与应用方式 |
 |---|---|---|---|---|
-| bounded | snapshot | 无 | 当前 table/raw-copy 支持矩阵内的源 | table `replace|append`；raw copy `replace` |
+| bounded | snapshot | 无 | 当前 table/raw-copy 支持矩阵内的源；声明查询读取会话的只读原生查询 source | table `replace|append`；raw copy `replace` |
 | bounded | incremental | watermark | PostgreSQL/MySQL native table | PostgreSQL/MySQL native table `upsert` |
 | continuous | incremental | kafka | 业务 Kafka keyed JSON object | PostgreSQL/MySQL native table `upsert` |
 | bounded | incremental | kafka offset range（replay execution） | 已有业务 Kafka continuous task 的原 topic | 不存在的新 PostgreSQL 隔离表 `upsert` |
@@ -107,6 +111,7 @@ bounded snapshot 使用独立 `transfer-bounded-worker` 从 `common.task_executi
 
 - `replace` 从头重新执行。
 - `append` 拒绝 retry，避免重复追加。
+- 动态既有表目标的 lease 过期后不重放当前 writer execution，避免在不受 Transfer 拥有的目标上猜测幂等语义；调用方必须重新发起完整编排并使用新目标。
 - execution 完成后如启用 `auto_scan_metadata`，触发一次目标 Meta deep scan。
 
 ### 4.2 Watermark incremental

@@ -619,7 +619,7 @@ func (p *downloadTestFilePlugin) Capabilities() plugin.EngineCapabilities {
 func (p *downloadTestFilePlugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
-func (p *downloadTestFilePlugin) DescribeCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *downloadTestFilePlugin) DescribeEngineCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	filePath := strings.Trim(path.StringPath(), "/")
 	content, ok := p.files[filePath]
 	if !ok {
@@ -627,10 +627,10 @@ func (p *downloadTestFilePlugin) DescribeCatalogFacts(_ context.Context, _ plugi
 	}
 	now := time.Unix(0, 0)
 	sizeBytes := int64(len(content))
-	return &plugin.CatalogFacts{
+	return &plugin.EngineCatalogFacts{
 		Path: path,
 		Kind: p.itemKind(),
-		Storage: &plugin.CatalogStorageFacts{
+		Storage: &plugin.EngineCatalogStorageFacts{
 			Name:      filePath,
 			Path:      filePath,
 			SizeBytes: &sizeBytes,
@@ -641,11 +641,11 @@ func (p *downloadTestFilePlugin) DescribeCatalogFacts(_ context.Context, _ plugi
 
 func (p *downloadTestFilePlugin) itemKind() string {
 	if p.objectCatalog {
-		return plugin.CatalogKindObject
+		return plugin.EngineCatalogKindObject
 	}
-	return plugin.CatalogKindFile
+	return plugin.EngineCatalogKindFile
 }
-func (p *downloadTestFilePlugin) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+func (p *downloadTestFilePlugin) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	filePath := strings.Trim(path.StringPath(), "/")
 	content, ok := p.files[filePath]
 	if !ok {
@@ -657,7 +657,7 @@ func (p *downloadTestFilePlugin) OpenContent(_ context.Context, _ plugin.Connect
 func setupExplorerService(t *testing.T) (*ExplorerService, func()) {
 	t.Helper()
 
-	capabilities, err := plugin.MarshalEngineCapabilities(plugin.NewTabularCapabilities("postgresql", plugin.CatalogTermSchema, plugin.TabularCapabilityOptions{}))
+	capabilities, err := plugin.MarshalEngineCapabilities(plugin.NewTabularCapabilities("postgresql", plugin.EngineCatalogTermSchema, plugin.TabularCapabilityOptions{}))
 	if err != nil {
 		t.Fatalf("failed to marshal capabilities: %v", err)
 	}

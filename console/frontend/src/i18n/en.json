@@ -133,7 +133,9 @@
         "orchestrator": "Orchestrator - Workflow Orchestration",
         "portal": "Portal - Asset Portal",
         "quality": "Quality - Data Quality",
+        "catalog": "Catalog - Enterprise Data Catalog",
         "service": "Service - Data Services",
+        "workbench": "Workbench - Data Service Consumption",
         "standard": "Standard - Data Standards",
         "system": "System - System Module",
         "transfer": "Transfer - Data Transfer"
@@ -143,7 +145,7 @@
       "dataPrepare": "Data Preparation",
       "dataGovern": "Data Governance",
       "devMonitor": "Dev & Monitor",
-      "asset": "Asset Management",
+      "asset": "Catalog & Assets",
       "portal": "Asset Portal",
       "agent": "AI Agent",
       "graph": "Knowledge Graph",
@@ -255,6 +257,10 @@
         "label": "Data Services",
         "desc": "External service registration, OGC services, query services"
       },
+      "workbench": {
+        "label": "Workbench",
+        "desc": "Query, visualize, and save reusable data service views"
+      },
       "orchestrator": {
         "label": "Task Orchestration",
         "desc": "Workflow orchestration, task scheduling, execution management"
@@ -262,6 +268,10 @@
       "monitor": {
         "label": "Execution Monitor",
         "desc": "Task monitoring, statistics, health checks"
+      },
+      "catalog": {
+        "label": "Enterprise Data Catalog",
+        "desc": "Enterprise inventory, business curation, semantic links, and governance"
       },
       "asset": {
         "label": "Asset Management",
@@ -335,16 +345,19 @@
         "entities": "Business Entities",
         "erDiagram": "ER Diagram",
         "logicalTables": "Logical Tables",
+        "materializationGroups": "Materialization Groups",
         "starSchema": "Star Schema"
       },
       "quality": {
         "label": "Data Quality",
         "ruleApplications": "Rule Applications",
         "checkTasks": "Check Tasks",
+        "materializationGateTasks": "Materialization Gates",
         "executions": "Executions",
         "issues": "Issues",
         "recentRuleApplications": "Quality Rule Applications",
         "recentCheckTasks": "Quality Check Tasks",
+        "recentMaterializationGateTasks": "Materialization Gate Tasks",
         "recentExecutions": "Quality Check Executions",
         "recentIssues": "Data Quality Issues"
       },
@@ -367,6 +380,10 @@
         "catalog": "Service Catalog",
         "recentCatalog": "Data Service Catalog"
       },
+      "workbench": {
+        "label": "Workbench",
+        "views": "Workbench Views"
+      },
       "orchestrator": {
         "label": "Task Orchestration",
         "orchestrations": "Orchestrations",
@@ -383,6 +400,10 @@
         "recentExecutions": "Platform Executions",
         "recentAlerts": "Execution Alerts",
         "recentNotifications": "Execution Alert Notifications"
+      },
+      "catalog": {
+        "label": "Enterprise Data Catalog",
+        "entries": "Catalog Browse"
       },
       "asset": {
         "label": "Asset Management",

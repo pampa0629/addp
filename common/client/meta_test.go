@@ -49,6 +49,41 @@ func TestMetaClientCollectExecutionLineageUsesDevelopServiceContract(t *testing.
 	}
 }
 
+func TestMetaClientListDataItemChangesUsesCatalogFeedContract(t *testing.T) {
+	t.Parallel()
+
+	var gotPath string
+	var gotCursor string
+	var gotLimit string
+	var gotAuthorization string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotCursor = r.URL.Query().Get("after_cursor")
+		gotLimit = r.URL.Query().Get("limit")
+		gotAuthorization = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"schema_version":"meta.data_item_changes/v1","changes":[{"change_id":"NDI","operation":"upsert","source_identity":"fingerprint-1","source_version":"00000000000000000042","observed_at":"2026-08-26T10:00:00Z","snapshot":{"item_id":21,"name":"orders"}}],"next_cursor":"NDI","has_more":true}`))
+	}))
+	defer server.Close()
+
+	result, err := newTestMetaClient(server.URL).WithTenantID(8).ListDataItemChanges(context.Background(), "NDE", 200)
+	if err != nil {
+		t.Fatalf("ListDataItemChanges() error = %v", err)
+	}
+	if gotPath != "/api/v1/meta/data-items/changes" || gotCursor != "NDE" || gotLimit != "200" {
+		t.Fatalf("request = %s?after_cursor=%s&limit=%s", gotPath, gotCursor, gotLimit)
+	}
+	if gotAuthorization != "Bearer test-token" {
+		t.Fatalf("Authorization = %q", gotAuthorization)
+	}
+	if result.SchemaVersion != "meta.data_item_changes/v1" || len(result.Changes) != 1 || result.Changes[0].SourceIdentity != "fingerprint-1" || !result.HasMore {
+		t.Fatalf("result = %#v", result)
+	}
+	if result.Changes[0].Snapshot["name"] != "orders" {
+		t.Fatalf("snapshot = %#v", result.Changes[0].Snapshot)
+	}
+}
+
 func TestMetaClientCreateManualScanRunUsesAsyncPath(t *testing.T) {
 	t.Parallel()
 

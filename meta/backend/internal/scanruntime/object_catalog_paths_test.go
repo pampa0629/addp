@@ -13,14 +13,14 @@ func TestResolveObjectCatalogTargetDistinguishesObjectAndPrefix(t *testing.T) {
 
 	sizeBytes := int64(100)
 	provider := objectScanTargetProvider{
-		items: map[string]plugin.CatalogEntry{
+		items: map[string]plugin.EngineCatalogEntry{
 			"addp/contain/shapefile.zip": {
 				Name: "shapefile.zip",
 				Path: plugin.ObjectItemPath(9, "addp", "contain/shapefile.zip"),
-				Kind: plugin.CatalogKindObject,
-				Term: plugin.CatalogTermObject,
-				Role: plugin.CatalogRoleLeaf,
-				Storage: &plugin.CatalogStorageFacts{
+				Kind: plugin.EngineCatalogKindObject,
+				Term: plugin.EngineCatalogTermObject,
+				Role: plugin.EngineCatalogRoleLeaf,
+				Storage: &plugin.EngineCatalogStorageFacts{
 					Path:      "addp/contain/shapefile.zip",
 					SizeBytes: &sizeBytes,
 				},
@@ -47,7 +47,7 @@ func TestResolveObjectCatalogTargetDistinguishesObjectAndPrefix(t *testing.T) {
 }
 
 type objectScanTargetProvider struct {
-	items map[string]plugin.CatalogEntry
+	items map[string]plugin.EngineCatalogEntry
 }
 
 func (p objectScanTargetProvider) Type() string         { return "object-scan-target-test" }
@@ -66,13 +66,13 @@ func (p objectScanTargetProvider) Capabilities() plugin.EngineCapabilities {
 func (p objectScanTargetProvider) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (p objectScanTargetProvider) CatalogModel() plugin.CatalogModelSpec {
+func (p objectScanTargetProvider) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.ObjectCatalogModel()
 }
-func (p objectScanTargetProvider) ListChildren(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+func (p objectScanTargetProvider) ListChildren(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
 	return nil, nil
 }
-func (p objectScanTargetProvider) ResolvePath(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p objectScanTargetProvider) ResolvePath(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	node, ok := p.items[path.StringPath()]
 	if !ok {
 		return nil, nil

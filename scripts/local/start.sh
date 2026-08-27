@@ -68,6 +68,7 @@ check_images() {
         "${REGISTRY}/addp-transfer-backend:${IMAGE_TAG}"
         "${REGISTRY}/addp-orchestrator-backend:${IMAGE_TAG}"
         "${REGISTRY}/addp-develop-backend:${IMAGE_TAG}"
+        "${REGISTRY}/addp-develop-query-worker:${IMAGE_TAG}"
         "${REGISTRY}/addp-copilot-backend:${IMAGE_TAG}"
         "${REGISTRY}/addp-geopython-workflow-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-model3d-workflow-engine:${IMAGE_TAG}"

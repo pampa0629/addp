@@ -22,10 +22,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
+      catalog: ${{ steps.catalog.outputs.run }}
       cli: ${{ steps.cli.outputs.run }}
+      develop: ${{ steps.develop.outputs.run }}
+      meta: ${{ steps.meta.outputs.run }}
+      model: ${{ steps.model.outputs.run }}
       quality: ${{ steps.quality.outputs.run }}
+      service: ${{ steps.service.outputs.run }}
       standard: ${{ steps.standard.outputs.run }}
       system: ${{ steps.system.outputs.run }}
+      workbench: ${{ steps.workbench.outputs.run }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -62,6 +68,66 @@ jobs:
           ADDP_CI_HEAD: ${{ github.sha }}
           ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
         run: python3 scripts/ci/select-module-gate.py --module quality
+
+      - name: Select Service PostgreSQL gate
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        id: service
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module service
+
+      - name: Select Meta PostgreSQL gate
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        id: meta
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module meta
+
+      - name: Select Catalog PostgreSQL gate
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        id: catalog
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module catalog
+
+      - name: Select Develop PostgreSQL gate
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        id: develop
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module develop
+
+      - name: Select Workbench PostgreSQL gate
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        id: workbench
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module workbench
+
+      - name: Select Model PostgreSQL gate
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        id: model
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module model
 
       - name: Select System IAM PostgreSQL gate
         id: system
@@ -177,6 +243,138 @@ jobs:
           gate: System IAM verification (PostgreSQL 15)
           status: ${{ job.status }}
 
+  meta-postgres:
+    name: Meta integration (PostgreSQL 15)
+    needs: selection
+    if: needs.selection.outputs.meta == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+        env:
+          POSTGRES_USER: addp_ci
+          POSTGRES_PASSWORD: addp_ci_password
+          POSTGRES_DB: addp_meta_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U addp_ci -d addp_meta_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: meta/backend/go.mod
+          cache: false
+
+      - name: Run Meta PostgreSQL gate
+        env:
+          META_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_meta_test?sslmode=disable
+        run: make test-meta-postgres
+
+      - name: Summarize Meta PostgreSQL gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Meta integration (PostgreSQL 15)
+          status: ${{ job.status }}
+
+  catalog-postgres:
+    name: Catalog integration (PostgreSQL 15)
+    needs: selection
+    if: needs.selection.outputs.catalog == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+        env:
+          POSTGRES_USER: addp_ci
+          POSTGRES_PASSWORD: addp_ci_password
+          POSTGRES_DB: addp_catalog_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U addp_ci -d addp_catalog_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: catalog/backend/go.mod
+          cache: false
+
+      - name: Run Catalog PostgreSQL gate
+        env:
+          CATALOG_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_catalog_test?sslmode=disable
+        run: make test-catalog-postgres
+
+      - name: Summarize Catalog PostgreSQL gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Catalog integration (PostgreSQL 15)
+          status: ${{ job.status }}
+
+  workbench-postgres:
+    name: Workbench integration (PostgreSQL 15)
+    needs: selection
+    if: needs.selection.outputs.workbench == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+        env:
+          POSTGRES_USER: addp_ci
+          POSTGRES_PASSWORD: addp_ci_password
+          POSTGRES_DB: addp_workbench_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U addp_ci -d addp_workbench_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: workbench/backend/go.mod
+          cache: false
+
+      - name: Run Workbench PostgreSQL gate
+        env:
+          WORKBENCH_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_workbench_test?sslmode=disable
+        run: make test-workbench-postgres
+
+      - name: Summarize Workbench PostgreSQL gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Workbench integration (PostgreSQL 15)
+          status: ${{ job.status }}
+
   quality-postgres:
     name: Quality integration (PostgreSQL 15)
     needs: selection
@@ -224,6 +422,138 @@ jobs:
         uses: ./.github/actions/ci-gate-summary
         with:
           gate: Quality integration (PostgreSQL 15)
+          status: ${{ job.status }}
+
+  model-postgres:
+    name: Model integration (PostgreSQL 15)
+    needs: selection
+    if: needs.selection.outputs.model == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+        env:
+          POSTGRES_USER: addp_ci
+          POSTGRES_PASSWORD: addp_ci_password
+          POSTGRES_DB: addp_model_disposable
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U addp_ci -d addp_model_disposable"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: model/backend/go.mod
+          cache: false
+
+      - name: Run Model PostgreSQL gate
+        env:
+          ADDP_TEST_MODEL_POSTGRES_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_model_disposable?sslmode=disable
+        run: make test-model-postgres
+
+      - name: Summarize Model PostgreSQL gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Model integration (PostgreSQL 15)
+          status: ${{ job.status }}
+
+  develop-postgres:
+    name: Develop integration (PostgreSQL 15)
+    needs: selection
+    if: needs.selection.outputs.develop == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+        env:
+          POSTGRES_USER: addp_ci
+          POSTGRES_PASSWORD: addp_ci_password
+          POSTGRES_DB: addp_develop_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U addp_ci -d addp_develop_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: develop/backend/go.mod
+          cache: false
+
+      - name: Run Develop PostgreSQL gate
+        env:
+          DEVELOP_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_develop_test?sslmode=disable
+        run: make test-develop-postgres
+
+      - name: Summarize Develop PostgreSQL gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Develop integration (PostgreSQL 15)
+          status: ${{ job.status }}
+
+  service-postgres:
+    name: Service integration (PostgreSQL 15)
+    needs: selection
+    if: needs.selection.outputs.service == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+        env:
+          POSTGRES_USER: addp_ci
+          POSTGRES_PASSWORD: addp_ci_password
+          POSTGRES_DB: addp_service_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U addp_ci -d addp_service_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: service/backend/go.mod
+          cache: false
+
+      - name: Run Service PostgreSQL gate
+        env:
+          SERVICE_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_service_test?sslmode=disable
+        run: make test-service-postgres
+
+      - name: Summarize Service PostgreSQL gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Service integration (PostgreSQL 15)
           status: ${{ job.status }}
 
   standard-postgres:

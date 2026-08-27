@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 16
+manifest_version: 18
 permissions:
   - key: audit.event.export
     allowed_scope_types: [platform]
@@ -87,31 +87,31 @@ permissions:
     risk_level: medium
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.department.create.name
     description_i18n_key: permissions.iam.department.create.description
-  - key: iam.department.delete
-    allowed_scope_types: [tenant]
-    risk_level: high
-    tenant_customizable: false
-    delegable: false
-    status: disabled
-    name_i18n_key: permissions.iam.department.delete.name
-    description_i18n_key: permissions.iam.department.delete.description
   - key: iam.department.read
     allowed_scope_types: [tenant, department]
     risk_level: low
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.department.read.name
     description_i18n_key: permissions.iam.department.read.description
+  - key: iam.department.restore
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.department.restore.name
+    description_i18n_key: permissions.iam.department.restore.description
   - key: iam.department.update
     allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.department.update.name
     description_i18n_key: permissions.iam.department.update.description
   - key: iam.department_membership.close
@@ -119,7 +119,7 @@ permissions:
     risk_level: critical
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.department_membership.close.name
     description_i18n_key: permissions.iam.department_membership.close.description
   - key: iam.department_membership.create
@@ -127,7 +127,7 @@ permissions:
     risk_level: medium
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.department_membership.create.name
     description_i18n_key: permissions.iam.department_membership.create.description
   - key: iam.department_membership.read
@@ -135,7 +135,7 @@ permissions:
     risk_level: low
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.department_membership.read.name
     description_i18n_key: permissions.iam.department_membership.read.description
   - key: iam.department_membership.update
@@ -143,7 +143,7 @@ permissions:
     risk_level: medium
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.department_membership.update.name
     description_i18n_key: permissions.iam.department_membership.update.description
   - key: iam.external_identity.link
@@ -303,7 +303,7 @@ permissions:
     risk_level: critical
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.project_group.close.name
     description_i18n_key: permissions.iam.project_group.close.description
   - key: iam.project_group.create
@@ -311,7 +311,7 @@ permissions:
     risk_level: medium
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.project_group.create.name
     description_i18n_key: permissions.iam.project_group.create.description
   - key: iam.project_group.read
@@ -319,7 +319,7 @@ permissions:
     risk_level: low
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.project_group.read.name
     description_i18n_key: permissions.iam.project_group.read.description
   - key: iam.project_group.update
@@ -327,7 +327,7 @@ permissions:
     risk_level: medium
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.project_group.update.name
     description_i18n_key: permissions.iam.project_group.update.description
   - key: iam.project_group_membership.close
@@ -335,7 +335,7 @@ permissions:
     risk_level: critical
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.project_group_membership.close.name
     description_i18n_key: permissions.iam.project_group_membership.close.description
   - key: iam.project_group_membership.create
@@ -343,7 +343,7 @@ permissions:
     risk_level: medium
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.project_group_membership.create.name
     description_i18n_key: permissions.iam.project_group_membership.create.description
   - key: iam.project_group_membership.read
@@ -351,7 +351,7 @@ permissions:
     risk_level: low
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.project_group_membership.read.name
     description_i18n_key: permissions.iam.project_group_membership.read.description
   - key: iam.project_group_membership.update
@@ -359,7 +359,7 @@ permissions:
     risk_level: medium
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.project_group_membership.update.name
     description_i18n_key: permissions.iam.project_group_membership.update.description
   - key: iam.role.read

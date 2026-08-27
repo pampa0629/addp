@@ -11,22 +11,22 @@ func TestCatalogLeafItemType(t *testing.T) {
 
 	tests := []struct {
 		name string
-		node plugin.CatalogEntry
+		node plugin.EngineCatalogEntry
 		want string
 	}{
 		{
 			name: "dynamic schema collection",
-			node: plugin.CatalogEntry{Term: plugin.CatalogTermCollection, Kind: plugin.CatalogKindCollection, Role: plugin.CatalogRoleLeaf},
+			node: plugin.EngineCatalogEntry{Term: plugin.EngineCatalogTermCollection, Kind: plugin.EngineCatalogKindCollection, Role: plugin.EngineCatalogRoleLeaf},
 			want: "collection",
 		},
 		{
 			name: "graph",
-			node: plugin.CatalogEntry{Term: plugin.CatalogTermGraph, Kind: plugin.CatalogKindGraph, Role: plugin.CatalogRoleLeaf},
+			node: plugin.EngineCatalogEntry{Term: plugin.EngineCatalogTermGraph, Kind: plugin.EngineCatalogKindGraph, Role: plugin.EngineCatalogRoleLeaf},
 			want: "graph",
 		},
 		{
 			name: "container is not item",
-			node: plugin.CatalogEntry{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Role: plugin.CatalogRoleBranch},
+			node: plugin.EngineCatalogEntry{Term: plugin.EngineCatalogTermDatabase, Kind: plugin.EngineCatalogKindNamespace, Role: plugin.EngineCatalogRoleBranch},
 			want: "",
 		},
 	}

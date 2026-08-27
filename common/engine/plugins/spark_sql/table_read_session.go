@@ -17,7 +17,7 @@ var _ plugin.TableReadSessionProvider = (*SparkSQLPlugin)(nil)
 func (p *SparkSQLPlugin) OpenTableReadSession(
 	ctx context.Context,
 	connInfo plugin.ConnectionInfo,
-	path plugin.CatalogPath,
+	path plugin.EngineCatalogPath,
 	opts plugin.TableReadSessionOptions,
 ) (plugin.TableReadSession, error) {
 	if err := resume.RejectUnsupported(opts.ResumeMarker, "spark.table_read_session"); err != nil {
@@ -33,7 +33,7 @@ func (p *SparkSQLPlugin) OpenTableReadSession(
 		}
 		return nil, fmt.Errorf("Spark table read requires database/table catalog path")
 	}
-	facts, err := p.DescribeCatalogFacts(ctx, connInfo, path, plugin.CatalogFactsOptions{})
+	facts, err := p.DescribeEngineCatalogFacts(ctx, connInfo, path, plugin.EngineCatalogFactsOptions{})
 	if err != nil {
 		return nil, err
 	}

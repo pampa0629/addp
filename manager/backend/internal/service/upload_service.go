@@ -108,11 +108,11 @@ func (s *UploadService) UploadFiles(ctx context.Context, req *UploadRequest) (*U
 	if !ok {
 		return nil, ErrUploadEngineUnsupported
 	}
-	modelProvider, ok := enginePlugin.(plugin.CatalogModelProvider)
+	modelProvider, ok := enginePlugin.(plugin.EngineCatalogModelProvider)
 	if !ok {
 		return nil, fmt.Errorf("engine %s does not expose catalog model", engine.EngineType)
 	}
-	parentPath, err := resourcetree.ProviderCatalogPathFromLocator(modelProvider.CatalogModel(), loc)
+	parentPath, err := resourcetree.EngineCatalogPathFromLocator(modelProvider.EngineCatalogModel(), loc)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func cleanUploadFileName(raw string) (string, error) {
 	return name, nil
 }
 
-func uploadLeafPath(parent plugin.CatalogPath, fileName string, targetType resourcetree.ResourceType) plugin.CatalogPath {
+func uploadLeafPath(parent plugin.EngineCatalogPath, fileName string, targetType resourcetree.ResourceType) plugin.EngineCatalogPath {
 	switch targetType {
 	case resourcetree.TypeBucket, resourcetree.TypePrefix:
 		return plugin.ObjectItemPath(parent.EngineID, objectBucket(parent), objectChildPath(parent, fileName))
@@ -192,24 +192,24 @@ func uploadLeafPath(parent plugin.CatalogPath, fileName string, targetType resou
 	}
 }
 
-func objectBucket(parent plugin.CatalogPath) string {
+func objectBucket(parent plugin.EngineCatalogPath) string {
 	for _, segment := range parent.Segments {
-		if segment.Term == plugin.CatalogTermBucket || segment.Kind == plugin.CatalogKindBucket {
+		if segment.Term == plugin.EngineCatalogTermBucket || segment.Kind == plugin.EngineCatalogKindBucket {
 			return strings.Trim(segment.Name, "/")
 		}
 	}
 	return ""
 }
 
-func objectChildPath(parent plugin.CatalogPath, fileName string) string {
+func objectChildPath(parent plugin.EngineCatalogPath, fileName string) string {
 	parts := make([]string, 0, len(parent.Segments))
 	skipUntilBucket := true
 	for _, segment := range parent.Segments {
-		if segment.Term == plugin.CatalogTermBucket || segment.Kind == plugin.CatalogKindBucket {
+		if segment.Term == plugin.EngineCatalogTermBucket || segment.Kind == plugin.EngineCatalogKindBucket {
 			skipUntilBucket = false
 			continue
 		}
-		if skipUntilBucket || plugin.IsCatalogRootSegment(segment) {
+		if skipUntilBucket || plugin.IsEngineCatalogRootSegment(segment) {
 			continue
 		}
 		if name := strings.Trim(segment.Name, "/"); name != "" {

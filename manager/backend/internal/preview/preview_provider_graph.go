@@ -57,19 +57,19 @@ func (p *GraphPreviewProvider) describeGraph(ctx context.Context, req *PreviewRe
 	if err != nil {
 		return nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
 	}
-	factsProvider, ok := plug.(plugin.CatalogFactsProvider)
+	factsProvider, ok := plug.(plugin.EngineCatalogFactsProvider)
 	if !ok {
-		return nil, fmt.Errorf("engine %s does not implement CatalogFactsProvider", req.Engine.EngineType)
+		return nil, fmt.Errorf("engine %s does not implement EngineCatalogFactsProvider", req.Engine.EngineType)
 	}
 	path, err := graphPreviewCatalogPath(req)
 	if err != nil {
 		return nil, err
 	}
-	facts, err := factsProvider.DescribeCatalogFacts(ctx, plugin.ConnectionInfo(req.Engine.ConnectionInfo), path, plugin.CatalogFactsOptions{IncludeStatistics: true})
+	facts, err := factsProvider.DescribeEngineCatalogFacts(ctx, plugin.ConnectionInfo(req.Engine.ConnectionInfo), path, plugin.EngineCatalogFactsOptions{IncludeStatistics: true})
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe graph: %w", err)
 	}
-	info := plugin.CatalogFactsGraphInfo(facts)
+	info := plugin.EngineCatalogFactsGraphInfo(facts)
 	if info == nil {
 		return nil, fmt.Errorf("graph facts are missing")
 	}
@@ -144,12 +144,12 @@ func clonePreviewMap(values map[string]interface{}) map[string]interface{} {
 	return cloned
 }
 
-func graphPreviewCatalogPath(req *PreviewRequest) (plugin.CatalogPath, error) {
+func graphPreviewCatalogPath(req *PreviewRequest) (plugin.EngineCatalogPath, error) {
 	if req == nil {
-		return plugin.CatalogPath{}, fmt.Errorf("invalid preview request")
+		return plugin.EngineCatalogPath{}, fmt.Errorf("invalid preview request")
 	}
 	if len(req.ProviderPath.Segments) == 0 {
-		return plugin.CatalogPath{}, fmt.Errorf("graph preview requires provider catalog path")
+		return plugin.EngineCatalogPath{}, fmt.Errorf("graph preview requires provider catalog path")
 	}
 	return req.ProviderPath, nil
 }

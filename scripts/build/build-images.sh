@@ -669,6 +669,11 @@ build_service() {
             fi
             ;;
 
+        develop-query-worker)
+            dockerfile_path="${service_dir}/Dockerfile.prebuilt.query-worker"
+            build_context="."
+            ;;
+
         transfer-continuous-worker)
             dockerfile_path="${service_dir}/Dockerfile.prebuilt.continuous-worker"
             build_context="."
@@ -970,6 +975,7 @@ main() {
         "transfer-backend:transfer/backend"
         "orchestrator-backend:orchestrator/backend"
         "develop-backend:develop/backend"
+        "develop-query-worker:develop/backend"
         "service-backend:service/backend"
         "monitor-backend:monitor/backend"
         "standard-backend:standard/backend"
@@ -978,6 +984,8 @@ main() {
         "model-backend:model/backend"
         "quality-backend:quality/backend"
         "asset-backend:asset/backend"
+        "catalog-backend:catalog/backend"
+        "workbench-backend:workbench/backend"
         "portal-backend:portal/backend"
         "graph-backend:graph/backend"
         "inference-backend:inference/backend"
@@ -1005,6 +1013,8 @@ main() {
         "service-frontend:service/frontend"
         "monitor-frontend:monitor/frontend"
         "standard-frontend:standard/frontend"
+        "catalog-frontend:catalog/frontend"
+        "workbench-frontend:workbench/frontend"
         "agent-frontend:agent/frontend"
         "model-frontend:model/frontend"
         "quality-frontend:quality/frontend"

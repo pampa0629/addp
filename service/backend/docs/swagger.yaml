@@ -299,6 +299,65 @@ definitions:
           type: array
         type: array
     type: object
+  github_com_addp_service_internal_models.CatalogReference:
+    properties:
+      source_identity:
+        type: string
+      source_type:
+        type: string
+    required:
+    - source_identity
+    - source_type
+    type: object
+  github_com_addp_service_internal_models.CatalogReferenceResolution:
+    properties:
+      detail_path:
+        type: string
+      found:
+        type: boolean
+      source_identity:
+        type: string
+      source_type:
+        type: string
+      status:
+        type: string
+      summary:
+        additionalProperties: {}
+        type: object
+      version:
+        type: integer
+    type: object
+  github_com_addp_service_internal_models.CatalogResourceChange:
+    properties:
+      change_id:
+        type: string
+      observed_at:
+        type: string
+      operation:
+        type: string
+      snapshot:
+        additionalProperties: {}
+        type: object
+      source_identity:
+        type: string
+      source_type:
+        type: string
+      source_version:
+        type: string
+    type: object
+  github_com_addp_service_internal_models.CatalogResourceChangesResponse:
+    properties:
+      changes:
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.CatalogResourceChange'
+        type: array
+      has_more:
+        type: boolean
+      next_cursor:
+        type: string
+      schema_version:
+        type: string
+    type: object
   github_com_addp_service_internal_models.ColumnInfo:
     properties:
       name:
@@ -307,6 +366,212 @@ definitions:
         type: boolean
       type:
         type: string
+    type: object
+  github_com_addp_service_internal_models.ConsumerDescriptor:
+    properties:
+      access_mode:
+        enum:
+        - public
+        - private
+        type: string
+      contract_fingerprint:
+        type: string
+      description:
+        type: string
+      input_contract:
+        $ref: '#/definitions/github_com_addp_service_internal_models.StructuredQueryInputContract'
+      operations:
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.ConsumerOperation'
+        type: array
+      output_contract:
+        $ref: '#/definitions/github_com_addp_service_internal_models.TabularOutputContract'
+      ref:
+        $ref: '#/definitions/github_com_addp_service_internal_models.ConsumerServiceReference'
+      schema_version:
+        type: string
+      status:
+        enum:
+        - active
+        type: string
+      title:
+        type: string
+    type: object
+  github_com_addp_service_internal_models.ConsumerFilterContract:
+    properties:
+      combinators:
+        items:
+          type: string
+        type: array
+      max_depth:
+        type: integer
+      max_in_values:
+        type: integer
+      max_nodes:
+        type: integer
+    type: object
+  github_com_addp_service_internal_models.ConsumerGeometryField:
+    properties:
+      crs_ref:
+        type: string
+      dimension:
+        type: integer
+      geometry_type:
+        type: string
+      name:
+        type: string
+      srid:
+        type: integer
+    type: object
+  github_com_addp_service_internal_models.ConsumerOperation:
+    properties:
+      input_kind:
+        enum:
+        - structured_query
+        type: string
+      key:
+        enum:
+        - query
+        type: string
+      method:
+        enum:
+        - POST
+        type: string
+      output_kind:
+        enum:
+        - tabular
+        - spatial_tabular
+        type: string
+      path:
+        type: string
+    type: object
+  github_com_addp_service_internal_models.ConsumerOrderContract:
+    properties:
+      directions:
+        items:
+          type: string
+        type: array
+      stable_key:
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_addp_service_internal_models.ConsumerOutputField:
+    properties:
+      comment:
+        type: string
+      element_type:
+        $ref: '#/definitions/datatype.FieldType'
+      name:
+        type: string
+      nullable:
+        type: boolean
+      type:
+        $ref: '#/definitions/datatype.FieldType'
+    type: object
+  github_com_addp_service_internal_models.ConsumerPageContract:
+    properties:
+      default_limit:
+        type: integer
+      kind:
+        enum:
+        - cursor
+        type: string
+      max_limit:
+        type: integer
+    type: object
+  github_com_addp_service_internal_models.ConsumerQueryField:
+    properties:
+      element_type:
+        $ref: '#/definitions/datatype.FieldType'
+      filterable:
+        type: boolean
+      name:
+        type: string
+      nullable:
+        type: boolean
+      operators:
+        items:
+          type: string
+        type: array
+      selectable:
+        type: boolean
+      sortable:
+        type: boolean
+      type:
+        $ref: '#/definitions/datatype.FieldType'
+    type: object
+  github_com_addp_service_internal_models.ConsumerQueryIntent:
+    properties:
+      allowed_values:
+        items:
+          type: string
+        type: array
+      default_value:
+        type: string
+      header:
+        type: string
+    type: object
+  github_com_addp_service_internal_models.ConsumerServiceListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.ConsumerServiceSummary'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  github_com_addp_service_internal_models.ConsumerServiceReference:
+    properties:
+      service_id:
+        type: integer
+      service_type:
+        enum:
+        - query
+        - graph
+        - tile
+        - registered
+        type: string
+    type: object
+  github_com_addp_service_internal_models.ConsumerServiceSummary:
+    properties:
+      access_mode:
+        enum:
+        - public
+        - private
+        type: string
+      contract_fingerprint:
+        type: string
+      description:
+        type: string
+      output_kind:
+        enum:
+        - tabular
+        - spatial_tabular
+        type: string
+      ref:
+        $ref: '#/definitions/github_com_addp_service_internal_models.ConsumerServiceReference'
+      title:
+        type: string
+    type: object
+  github_com_addp_service_internal_models.ConsumerSpatialContract:
+    properties:
+      crs_ref:
+        type: string
+      geometry_fields:
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.ConsumerGeometryField'
+        type: array
+      primary_geometry_field:
+        type: string
+      srid:
+        type: integer
     type: object
   github_com_addp_service_internal_models.CreateGraphQueryServiceRequest:
     properties:
@@ -946,6 +1211,24 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_addp_service_internal_models.ResolveCatalogReferencesRequest:
+    properties:
+      references:
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.CatalogReference'
+        maxItems: 200
+        minItems: 1
+        type: array
+    required:
+    - references
+    type: object
+  github_com_addp_service_internal_models.ResolveCatalogReferencesResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.CatalogReferenceResolution'
+        type: array
+    type: object
   github_com_addp_service_internal_models.SQLQueryOutputContractRequest:
     properties:
       engine_id:
@@ -955,6 +1238,47 @@ definitions:
     required:
     - engine_id
     - sql
+    type: object
+  github_com_addp_service_internal_models.StructuredQueryInputContract:
+    properties:
+      default_selection:
+        items:
+          type: string
+        type: array
+      fields:
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.ConsumerQueryField'
+        type: array
+      filter:
+        $ref: '#/definitions/github_com_addp_service_internal_models.ConsumerFilterContract'
+      formats:
+        items:
+          type: string
+        type: array
+      intent:
+        $ref: '#/definitions/github_com_addp_service_internal_models.ConsumerQueryIntent'
+      kind:
+        enum:
+        - structured_query
+        type: string
+      order:
+        $ref: '#/definitions/github_com_addp_service_internal_models.ConsumerOrderContract'
+      page:
+        $ref: '#/definitions/github_com_addp_service_internal_models.ConsumerPageContract'
+    type: object
+  github_com_addp_service_internal_models.TabularOutputContract:
+    properties:
+      fields:
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.ConsumerOutputField'
+        type: array
+      kind:
+        enum:
+        - tabular
+        - spatial_tabular
+        type: string
+      spatial:
+        $ref: '#/definitions/github_com_addp_service_internal_models.ConsumerSpatialContract'
     type: object
   github_com_addp_service_internal_models.TileServiceDTO:
     properties:
@@ -1357,17 +1681,6 @@ definitions:
           $ref: '#/definitions/datatype.FieldInfo'
         type: array
     type: object
-  internal_api.serviceEndpointResp:
-    properties:
-      endpoints:
-        additionalProperties:
-          type: string
-        type: object
-      service_type:
-        type: string
-      title:
-        type: string
-    type: object
 host: localhost:8086
 info:
   contact: {}
@@ -1434,6 +1747,14 @@ paths:
         name: serviceName
         required: true
         type: string
+      - default: query
+        description: 查询用途 | Query intent
+        enum:
+        - query
+        - export
+        in: header
+        name: X-ADDP-Query-Intent
+        type: string
       - description: 结构化查询请求 | Structured query request
         in: body
         name: request
@@ -1481,26 +1802,198 @@ paths:
       tags:
       - QueryExecution
       x-addp-auth-mode: public
-  /assets/discoverable:
+  /catalog-resources/changes:
     get:
+      description: 按不透明游标返回 QueryService 的最小检索摘要变化，仅供 Catalog 服务消费 | Return QueryService
+        minimal-search-summary changes by opaque cursor for the Catalog service only
+      parameters:
+      - description: 上次成功提交的不透明游标，空值从历史起点开始 | Opaque cursor committed by the consumer;
+          empty starts from the beginning
+        in: query
+        name: after_cursor
+        type: string
+      - description: 批大小，默认 200，最大 500 | Batch size, default 200 and maximum 500
+        in: query
+        name: limit
+        type: integer
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            items:
-              additionalProperties: true
-              type: object
-            type: array
+            $ref: '#/definitions/github_com_addp_service_internal_models.CatalogResourceChangesResponse'
+        "400":
+          description: 无效游标或批大小 | Invalid cursor or batch size
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 需要认证 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 非 Catalog 服务或权限不足 | Catalog service or permission required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 读取失败 | Read failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
-      summary: 列出可发现资产 | List discoverable assets
+      summary: 拉取 QueryService 目录资源变化 | Pull QueryService catalog resource changes
       tags:
-      - Service
+      - Catalog Integration
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - service.definition.read
+      - service.catalog.read
+  /consumer/services:
+    get:
+      parameters:
+      - description: 搜索词 | Search
+        in: query
+        name: search
+        type: string
+      - description: 服务类型 | Service type
+        enum:
+        - query
+        - graph
+        - tile
+        - registered
+        in: query
+        name: service_type
+        type: string
+      - description: 输出类型 | Output kind
+        enum:
+        - tabular
+        - spatial_tabular
+        in: query
+        name: output_kind
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        maximum: 100
+        minimum: 1
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.ConsumerServiceListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 可消费服务列表 | List consumable services
+      tags:
+      - ServiceConsumer
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - service.data_read.execute
+  /consumer/services/{service_type}/{service_id}:
+    get:
+      parameters:
+      - description: 服务类型 | Service type
+        enum:
+        - query
+        - graph
+        - tile
+        - registered
+        in: path
+        name: service_type
+        required: true
+        type: string
+      - description: 服务 ID | Service ID
+        in: path
+        minimum: 1
+        name: service_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.ConsumerDescriptor'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取服务消费描述 | Get service consumer descriptor
+      tags:
+      - ServiceConsumer
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - service.data_read.execute
   /data/aggregate:
     post:
       consumes:
@@ -1575,41 +2068,6 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - service.definition.read
-  /endpoints:
-    get:
-      parameters:
-      - description: 服务引用 | Service reference
-        in: query
-        name: ref
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api.serviceEndpointResp'
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取服务端点 | Get service endpoints
-      tags:
-      - Service
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - service.endpoint.read
   /graph:
     get:
       parameters:
@@ -2902,6 +3360,60 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - service.external_registration.update
+  /runtime/catalog-references/resolve:
+    post:
+      consumes:
+      - application/json
+      description: 按请求顺序动态解析 1 到 200 个 QueryService 引用；跨 Tenant 与不存在统一 found=false，仅供
+        Catalog 服务消费 | Dynamically resolve 1 to 200 QueryService references in request
+        order; cross-tenant and missing references both return found=false; Catalog
+        service only
+      parameters:
+      - description: QueryService 目录引用 | QueryService catalog references
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_models.ResolveCatalogReferencesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.ResolveCatalogReferencesResponse'
+        "400":
+          description: 请求无效 | Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 需要认证 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 非 Catalog 服务或权限不足 | Catalog service or permission required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 解析失败 | Resolution failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 解析 QueryService 目录引用 | Resolve QueryService catalog references
+      tags:
+      - Catalog Integration
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - service.catalog.read
   /settings/runtime-policy:
     get:
       produces:

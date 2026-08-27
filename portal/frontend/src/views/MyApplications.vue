@@ -84,8 +84,7 @@
       width="600px"
       destroy-on-close
     >
-      <div v-loading="endpointsLoading" class="usage-dialog-body">
-        <template v-if="!endpointsLoading">
+	  <div class="usage-dialog-body">
           <!-- 有效期提示 -->
           <el-alert
             v-if="currentApp?.auth_expires_at"
@@ -95,32 +94,6 @@
             style="margin-bottom: 16px"
           />
 
-          <!-- 数据服务类型：显示端点 -->
-          <template v-if="currentEndpoints && Object.keys(currentEndpoints.endpoints || {}).length > 0">
-            <div class="endpoints-section">
-              <div class="section-title">{{ currentEndpoints.title || t('portal.myApplications.serviceEndpoints') }}</div>
-              <div
-                v-for="(url, proto) in currentEndpoints.endpoints"
-                :key="proto"
-                class="endpoint-item"
-              >
-                <span class="endpoint-proto">{{ proto }}</span>
-                <el-input
-                  :value="url"
-                  readonly
-                  size="small"
-                  class="endpoint-url"
-                >
-                  <template #append>
-                    <el-button @click="copyText(url)" :icon="CopyDocument" />
-                  </template>
-                </el-input>
-              </div>
-            </div>
-          </template>
-
-          <!-- 非数据服务类型：通用说明 -->
-          <template v-else>
             <el-result
               icon="success"
               :title="t('portal.myApplications.authActive')"
@@ -132,8 +105,6 @@
                 </router-link>
               </template>
             </el-result>
-          </template>
-        </template>
       </div>
     </el-dialog>
   </div>
@@ -142,10 +113,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { WarningFilled, InfoFilled, CopyDocument } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { WarningFilled, InfoFilled } from '@element-plus/icons-vue'
 import { formatDate } from '@common-ui'
-import { myApplicationAPI, assetAPI } from '../api/portal'
+import { myApplicationAPI } from '../api/portal'
 
 const { t } = useI18n()
 const loading = ref(false)
@@ -153,9 +123,7 @@ const displayStatus = ref('')
 const applications = ref([])
 
 const usageDialogVisible = ref(false)
-const endpointsLoading = ref(false)
 const currentApp = ref(null)
-const currentEndpoints = ref(null)
 
 const DISPLAY_STATUS_CONFIG = computed(() => ({
   pending:    { label: t('portal.myApplications.pending'), type: 'warning' },
@@ -187,28 +155,9 @@ const filteredApplications = computed(() => {
 
 function applyFilter() {}
 
-async function openUsageDialog(app) {
+function openUsageDialog(app) {
   currentApp.value = app
-  currentEndpoints.value = null
   usageDialogVisible.value = true
-  endpointsLoading.value = true
-  try {
-    const data = await assetAPI.getEndpoints(app.asset_id)
-    currentEndpoints.value = data
-  } catch (err) {
-    currentEndpoints.value = { endpoints: {} }
-  } finally {
-    endpointsLoading.value = false
-  }
-}
-
-async function copyText(text) {
-  try {
-    await navigator.clipboard.writeText(text)
-    ElMessage.success(t('portal.common.copied'))
-  } catch {
-    ElMessage.error(t('portal.common.copyFailed'))
-  }
 }
 
 async function fetchApplications() {
@@ -340,39 +289,4 @@ onMounted(fetchApplications)
   min-height: 120px;
 }
 
-.endpoints-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.section-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  margin-bottom: 4px;
-}
-
-.endpoint-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.endpoint-proto {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-  padding: 2px 8px;
-  border-radius: 4px;
-  white-space: nowrap;
-  min-width: 80px;
-  text-align: center;
-}
-
-.endpoint-url {
-  flex: 1;
-  font-family: monospace;
-}
 </style>

@@ -26,8 +26,10 @@ func getUserID(c *gin.Context) int64 {
 func SetupRouter(
 	ruleEngineSvc *service.RuleEngineService,
 	checkTaskSvc *service.CheckTaskService,
+	gateTaskSvc *service.MaterializationGateService,
 	checkExecutor *service.CheckExecutor,
 	issueSvc *service.IssueService,
+	catalogSummarySvc *service.CatalogSummaryService,
 	db *gorm.DB,
 	systemURL string,
 	redisClient *redis.Client,
@@ -52,9 +54,11 @@ func SetupRouter(
 
 	ruleAppHandler := NewRuleApplicationHandler(ruleEngineSvc)
 	checkTaskHandler := NewCheckTaskHandler(checkTaskSvc, checkExecutor)
-	taskProviderHandler := NewTaskProviderHandler(checkTaskSvc, checkExecutor)
+	gateTaskHandler := NewMaterializationGateHandler(gateTaskSvc)
+	taskProviderHandler := NewTaskProviderHandler(checkTaskSvc, gateTaskSvc, checkExecutor)
 	executionHandler := NewExecutionHandler(commonExecution.NewTaskExecutionRepository(db))
 	issueHandler := NewIssueHandler(issueSvc)
+	catalogSummaryHandler := NewCatalogSummaryHandler(catalogSummarySvc)
 
 	api := router.Group("/api/v1/quality")
 	api.Use(
@@ -66,6 +70,10 @@ func SetupRouter(
 	}
 
 	{
+		catalogSummary := api.Group("/runtime/catalog-summaries")
+		catalogSummary.Use(commonAuth.MustNewServiceClientGuard("addp-catalog"))
+		catalogSummary.POST("/resolve", permission(qualityauthorization.PermissionQualityCatalogRead), catalogSummaryHandler.Resolve)
+
 		// 规则应用（字段-规则映射）
 		ruleApps := api.Group("/rule-applications")
 		{
@@ -75,6 +83,15 @@ func SetupRouter(
 			ruleApps.GET("/:id", permission(qualityauthorization.PermissionQualityRuleApplicationRead), ruleAppHandler.Get)
 			ruleApps.PUT("/:id", permission(qualityauthorization.PermissionQualityRuleApplicationUpdate), ruleAppHandler.Update)
 			ruleApps.DELETE("/:id", permission(qualityauthorization.PermissionQualityRuleApplicationDelete), ruleAppHandler.Delete)
+		}
+
+		gateTasks := api.Group("/materialization-gate-tasks")
+		{
+			gateTasks.GET("", permission(qualityauthorization.PermissionQualityMaterializationGateRead), gateTaskHandler.List)
+			gateTasks.POST("", permission(qualityauthorization.PermissionQualityMaterializationGateCreate), gateTaskHandler.Create)
+			gateTasks.GET("/:id", permission(qualityauthorization.PermissionQualityMaterializationGateRead), gateTaskHandler.Get)
+			gateTasks.PUT("/:id", permission(qualityauthorization.PermissionQualityMaterializationGateUpdate), gateTaskHandler.Update)
+			gateTasks.DELETE("/:id", permission(qualityauthorization.PermissionQualityMaterializationGateDelete), gateTaskHandler.Delete)
 		}
 
 		// 检查任务
@@ -91,16 +108,16 @@ func SetupRouter(
 		// TaskProvider 标准入口
 		tasks := api.Group("/tasks")
 		{
-			tasks.GET("", permission(qualityauthorization.PermissionQualityCheckTaskRead), taskProviderHandler.ListTasks)
-			tasks.GET("/:task_type/:id", permission(qualityauthorization.PermissionQualityCheckTaskRead), taskProviderHandler.TaskDetail)
-			tasks.POST("/:task_type/:id/execute", permission(qualityauthorization.PermissionQualityCheckTaskExecute), taskProviderHandler.TaskExecute)
+			tasks.GET("", permission(qualityauthorization.PermissionQualityTaskProviderRead), taskProviderHandler.ListTasks)
+			tasks.GET("/:task_type/:id", permission(qualityauthorization.PermissionQualityTaskProviderRead), taskProviderHandler.TaskDetail)
+			tasks.POST("/:task_type/:id/execute", permission(qualityauthorization.PermissionQualityTaskProviderExecute), taskProviderHandler.TaskExecute)
 		}
 
 		// 执行记录（读 common.task_executions）
 		executions := api.Group("/executions")
 		{
-			executions.GET("", permission(qualityauthorization.PermissionQualityCheckTaskRead), executionHandler.List)
-			executions.GET("/:execution_id", permission(qualityauthorization.PermissionQualityCheckTaskRead), executionHandler.Get)
+			executions.GET("", permission(qualityauthorization.PermissionQualityTaskProviderRead), executionHandler.List)
+			executions.GET("/:execution_id", permission(qualityauthorization.PermissionQualityTaskProviderRead), executionHandler.Get)
 		}
 
 		// 问题工单

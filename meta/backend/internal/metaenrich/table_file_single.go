@@ -21,7 +21,7 @@ func ExtractSingleTableFileItem(
 	filePath string,
 	fileSize int64,
 	includeAccessIndex bool,
-	catalogPathFor ...func(path string) plugin.CatalogPath,
+	catalogPathFor ...func(path string) plugin.EngineCatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
 	formatName := fileFormatName(filePath)
 	return extractSingleTableFileItemWithFormat(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeAccessIndex, formatName, catalogPathFor...)
@@ -36,7 +36,7 @@ func extractSingleTableFileItemWithFormat(
 	fileSize int64,
 	includeAccessIndex bool,
 	formatName string,
-	catalogPathFor ...func(path string) plugin.CatalogPath,
+	catalogPathFor ...func(path string) plugin.EngineCatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
 	formatType := format.NormalizeFormat(formatName)
 	provider, providerErr := format.GetTableInfoProvider(formatType)
@@ -99,7 +99,7 @@ func ExtractSingleTableFileItemStrict(
 	filePath string,
 	fileSize int64,
 	includeAccessIndex bool,
-	catalogPathFor ...func(path string) plugin.CatalogPath,
+	catalogPathFor ...func(path string) plugin.EngineCatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
 	rc, err := contentReader.OpenContent(ctx, connInfo, resolveTableFileCatalogPath(engineID, filePath, firstCatalogPathResolver(catalogPathFor)), plugin.ReadOptions{})
 	if err != nil {
@@ -147,7 +147,7 @@ func EnrichSingleTableFileItem(
 	filePath string,
 	fileSize int64,
 	includeAccessIndex bool,
-	catalogPathFor ...func(path string) plugin.CatalogPath,
+	catalogPathFor ...func(path string) plugin.EngineCatalogPath,
 ) (*metaitem.DetectedItem, bool, error) {
 	if item == nil || item.Layout != format.LayoutSingle {
 		return item, false, nil

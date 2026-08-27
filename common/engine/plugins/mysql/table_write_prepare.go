@@ -13,7 +13,7 @@ import (
 	commonquery "github.com/addp/common/query"
 )
 
-func (p *MySQLPlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteOptions) error {
+func (p *MySQLPlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteOptions) error {
 	database, table, err := mysqlTablePathParts(path)
 	if err != nil {
 		return err
@@ -31,7 +31,7 @@ func (p *MySQLPlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.Con
 	return createMySQLTableIfNotExists(ctx, db, database, table, opts.Fields, opts.SpatialInfo)
 }
 
-func (p *MySQLPlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) error {
+func (p *MySQLPlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) error {
 	database, table, err := mysqlTablePathParts(path)
 	if err != nil {
 		return err
@@ -480,7 +480,7 @@ func mysqlCommonFieldType(column mysqlColumnInfo) datatype.FieldType {
 	return datatype.FieldTypeUnknown
 }
 
-func mysqlTablePathParts(path plugin.CatalogPath) (string, string, error) {
+func mysqlTablePathParts(path plugin.EngineCatalogPath) (string, string, error) {
 	if len(path.Segments) < 2 {
 		return "", "", fmt.Errorf("mysql table path requires database/table catalog path")
 	}

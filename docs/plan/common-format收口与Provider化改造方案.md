@@ -112,7 +112,7 @@ Shapefile 的ref 物化已经从 Manager 下沉到 FormatPlugin / table content 
 Parquet lake table 预览也已经验证 scope 链路：
 
 ```text
-engine CatalogProvider + ContentReadableProvider
+engine EngineCatalogProvider + ContentReadableProvider
   -> contentio.Reader
   -> format.ScopeTableProvider
   -> Manager 面向前端的 DTO

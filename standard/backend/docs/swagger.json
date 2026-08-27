@@ -8,32 +8,53 @@
     "host": "localhost:8110",
     "basePath": "/api/v1/standard",
     "paths": {
-        "/assets/discoverable": {
+        "/catalog-resources/changes": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
+                "description": "按不透明游标返回 Metric 的最小摘要变化，仅供 Catalog 服务消费 | Return Metric minimal-summary changes by opaque cursor for the Catalog service only",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "AssetDiscoverable"
+                    "Catalog Integration"
                 ],
-                "summary": "可发现资产列表 | List discoverable assets",
+                "summary": "拉取 Standard Metric 目录资源变化 | Pull Standard Metric catalog resource changes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "上次成功提交的不透明游标，空值从历史起点开始 | Opaque cursor committed by the consumer; empty starts from the beginning",
+                        "name": "after_cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "批大小，默认 200，最大 500 | Batch size, default 200 and maximum 500",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/client.DiscoverableAsset"
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CatalogResourceChangesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "无效游标或批大小 | Invalid cursor or batch size",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
                             }
                         }
                     },
                     "401": {
-                        "description": "需要登录 | Authentication required",
+                        "description": "需要认证 | Authentication required",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -42,7 +63,7 @@
                         }
                     },
                     "403": {
-                        "description": "无权访问 | Access denied",
+                        "description": "非 Catalog 服务或权限不足 | Catalog service or permission required",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -51,7 +72,7 @@
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "解析失败 | Resolution failed",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -62,7 +83,7 @@
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "standard.metric.read"
+                    "standard.catalog.read"
                 ]
             }
         },
@@ -4656,6 +4677,246 @@
                 ]
             }
         },
+        "/metrics/{id}/relations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回当前 Metric 的基准指标和直接依赖关系；只使用当前 User AuthContext，不面向 Catalog Service Token 扩权 | Return the Metric base and direct dependency relations under the current User AuthContext; no Catalog service-token elevation",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Professional Relations"
+                ],
+                "summary": "查询 Metric 专业关系图 | Get Metric professional relation graph",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Metric ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "最大边数量，默认100，最大200 | Maximum edges, default 100, maximum 200",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.ProfessionalRelationsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "需要登录 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Metric 不存在 | Metric not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.metric.read"
+                ]
+            }
+        },
+        "/references/resolve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-catalog Tenant Service Principal 可按当前 Tenant 解析 Domain、Glossary 和 Element；跨 Tenant 与不存在统一返回 found=false | Only the addp-catalog tenant service principal may resolve domains, glossaries, and elements in the current tenant; cross-tenant and missing references both return found=false",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "CatalogReferences"
+                ],
+                "summary": "精确批量解析 Standard 引用 | Resolve exact Standard references in batch",
+                "parameters": [
+                    {
+                        "description": "精确引用集合，最多 200 个 | Exact references, up to 200",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.referenceResolutionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.referenceResolutionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "需要认证 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "仅允许 addp-catalog 且需三个读取权限 | addp-catalog and all three read permissions required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "解析失败 | Resolution failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.domain.read",
+                    "standard.glossary.read",
+                    "standard.element.read"
+                ]
+            }
+        },
+        "/runtime/catalog-references/resolve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按请求顺序动态解析 1 到 200 个 Metric 引用；跨 Tenant 与不存在统一 found=false，仅供 Catalog 服务消费 | Dynamically resolve 1 to 200 Metric references in request order; cross-tenant and missing references both return found=false; Catalog service only",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Integration"
+                ],
+                "summary": "解析 Standard Metric 目录引用 | Resolve Standard Metric catalog references",
+                "parameters": [
+                    {
+                        "description": "Metric 目录引用 | Metric catalog references",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.ResolveCatalogReferencesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.ResolveCatalogReferencesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "需要认证 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "非 Catalog 服务或权限不足 | Catalog service or permission required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "解析失败 | Resolution failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.catalog.read"
+                ]
+            }
+        },
         "/units": {
             "get": {
                 "security": [
@@ -4918,23 +5179,6 @@
         }
     },
     "definitions": {
-        "client.DiscoverableAsset": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "description": "描述（可空）",
-                    "type": "string"
-                },
-                "name": {
-                    "description": "资源名称",
-                    "type": "string"
-                },
-                "source_reference": {
-                    "description": "在源模块中的唯一标识",
-                    "type": "string"
-                }
-            }
-        },
         "dataquality.Parameters": {
             "type": "object",
             "properties": {
@@ -4974,6 +5218,95 @@
                     "type": "string"
                 },
                 "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.CatalogReference": {
+            "type": "object",
+            "required": [
+                "source_identity",
+                "source_type"
+            ],
+            "properties": {
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.CatalogReferenceResolution": {
+            "type": "object",
+            "properties": {
+                "detail_path": {
+                    "type": "string"
+                },
+                "found": {
+                    "type": "boolean"
+                },
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.CatalogResourceChange": {
+            "type": "object",
+            "properties": {
+                "change_id": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "operation": {
+                    "type": "string"
+                },
+                "snapshot": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                },
+                "source_version": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.CatalogResourceChangesResponse": {
+            "type": "object",
+            "properties": {
+                "changes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.CatalogResourceChange"
+                    }
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "next_cursor": {
+                    "type": "string"
+                },
+                "schema_version": {
                     "type": "string"
                 }
             }
@@ -5769,6 +6102,95 @@
                 }
             }
         },
+        "github_com_addp_standard_internal_models.ProfessionalRelationEdge": {
+            "type": "object",
+            "properties": {
+                "coefficient": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "relation_kind": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.ProfessionalResourceKey"
+                },
+                "target": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.ProfessionalResourceKey"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.ProfessionalRelationNode": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner_module": {
+                    "type": "string"
+                },
+                "resource_id": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.ProfessionalRelationsResponse": {
+            "type": "object",
+            "properties": {
+                "edges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.ProfessionalRelationEdge"
+                    }
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.ProfessionalRelationNode"
+                    }
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "subject": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.ProfessionalResourceKey"
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.ProfessionalResourceKey": {
+            "type": "object",
+            "properties": {
+                "owner_module": {
+                    "type": "string"
+                },
+                "resource_id": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_standard_internal_models.QualityRulesResponse": {
             "type": "object",
             "properties": {
@@ -5780,6 +6202,33 @@
                 },
                 "schema_version": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.ResolveCatalogReferencesRequest": {
+            "type": "object",
+            "required": [
+                "references"
+            ],
+            "properties": {
+                "references": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.CatalogReference"
+                    }
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.ResolveCatalogReferencesResponse": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.CatalogReferenceResolution"
+                    }
                 }
             }
         },
@@ -6359,6 +6808,103 @@
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_service.ReferenceResolution": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "found": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "lifecycle_state": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "object_type": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_service.ReferenceType"
+                },
+                "referenceable": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_service.ReferenceResolutionRequest": {
+            "type": "object",
+            "required": [
+                "id",
+                "object_type"
+            ],
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "object_type": {
+                    "enum": [
+                        "domain",
+                        "glossary",
+                        "element"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_service.ReferenceType"
+                        }
+                    ]
+                }
+            }
+        },
+        "github_com_addp_standard_internal_service.ReferenceType": {
+            "type": "string",
+            "enum": [
+                "domain",
+                "glossary",
+                "element"
+            ],
+            "x-enum-varnames": [
+                "ReferenceTypeDomain",
+                "ReferenceTypeGlossary",
+                "ReferenceTypeElement"
+            ]
+        },
+        "internal_api.referenceResolutionRequest": {
+            "type": "object",
+            "required": [
+                "references"
+            ],
+            "properties": {
+                "references": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_service.ReferenceResolutionRequest"
+                    }
+                }
+            }
+        },
+        "internal_api.referenceResolutionResponse": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_service.ReferenceResolution"
+                    }
                 }
             }
         }

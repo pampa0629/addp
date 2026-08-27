@@ -75,6 +75,39 @@ func BuildQueryExecutionContract(content map[string]interface{}) (*taskprovider.
 			"order": index,
 		}
 	}
+	bindings, hasRelationInputs, err := relationInputBindings(content)
+	if err != nil {
+		return nil, &QueryParameterDefinitionsError{Cause: err}
+	}
+	if hasRelationInputs {
+		if _, exists := properties["input_locators"]; exists {
+			return nil, &QueryParameterDefinitionsError{Cause: fmt.Errorf("查询参数名称 input_locators 与运行时关系输入冲突")}
+		}
+		if _, exists := properties["target_locator"]; exists {
+			return nil, &QueryParameterDefinitionsError{Cause: fmt.Errorf("查询参数名称 target_locator 与运行时目标冲突")}
+		}
+		locatorProperties := make(map[string]interface{}, len(bindings))
+		locatorRequired := make([]interface{}, 0, len(bindings))
+		for _, binding := range bindings {
+			locatorProperties[binding.Name] = map[string]interface{}{"type": "string", "minLength": float64(1)}
+			locatorRequired = append(locatorRequired, binding.Name)
+		}
+		properties["input_locators"] = map[string]interface{}{
+			"type": "object", "properties": locatorProperties, "required": locatorRequired, "additionalProperties": false,
+		}
+		properties["target_locator"] = map[string]interface{}{"type": "string", "minLength": float64(1)}
+		contract.InputSchema["required"] = []interface{}{"input_locators", "target_locator"}
+		contract.OutputSchema = map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"execution_id":   map[string]interface{}{"type": "string"},
+				"target_locator": map[string]interface{}{"type": "string"},
+				"row_count":      map[string]interface{}{"type": "integer", "minimum": float64(0)},
+			},
+			"required":             []interface{}{"execution_id", "target_locator", "row_count"},
+			"additionalProperties": false,
+		}
+	}
 	return &contract, nil
 }
 

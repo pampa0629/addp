@@ -39,6 +39,7 @@ import {
   buildAutomaticFieldMappings
 } from './fieldMapping.mjs'
 import { mergeTopicFieldRecommendations } from './topicFieldRecommendations.mjs'
+import { buildRuntimeTableTarget, querySourceValid, withQuerySource } from './runtimeTarget.mjs'
 
 export function useTaskWizardState() {
   const { t } = useI18n()
@@ -69,6 +70,11 @@ export function useTaskWizardState() {
   const sourceRepresentation = ref('native')
   const sourceFormat = ref('')
   const sourceLocator = ref('')
+  const sourceQueryEnabled = ref(false)
+  const sourceQueryLanguage = ref('mql')
+  const sourceQueryStatement = ref('')
+  const sourceQueryParameters = ref({})
+  const sourceQueryValid = ref(true)
   const readableEncodedFormats = ref(new Set())
   const rawCopyFormats = ref(new Map())
   const formatCapabilitiesLoaded = ref(false)
@@ -83,6 +89,7 @@ export function useTaskWizardState() {
   const targetTable = ref('')
   const targetType = ref('nfs')
   const targetRepresentation = ref('encoded')
+  const targetBinding = ref('definition')
 
   // 字段映射
   const fieldMappings = ref([])
@@ -190,8 +197,24 @@ export function useTaskWizardState() {
   const canGoNext = computed(() => {
     switch (currentStep.value) {
       case 0: // 选择Source
-        return !!(sourceEngineID.value && isSupportedSourceShape() && sourceLocator.value)
+        return !!(
+          sourceEngineID.value &&
+          isSupportedSourceShape() &&
+          sourceLocator.value &&
+          querySourceValid({
+            enabled: sourceQueryEnabled.value,
+            boundary: runtimeBoundary.value,
+            dataType: sourceDataType.value,
+            representation: sourceRepresentation.value,
+            language: sourceQueryLanguage.value,
+            statement: sourceQueryStatement.value,
+            parametersValid: sourceQueryValid.value
+          })
+        )
       case 1: // 选择Target
+        if (targetBinding.value === 'runtime') {
+          return sourceQueryEnabled.value && runtimeBoundary.value === 'bounded'
+        }
         if (targetRepresentation.value === 'native') {
           return !!(targetEngineID.value && targetConfig.value?.parentLocator && targetTable.value)
         }
@@ -242,7 +265,7 @@ export function useTaskWizardState() {
       schedule: isContinuousTask.value ? '' : schedule.value,
       enabled: isContinuousTask.value ? false : (schedule.value ? enabled.value : false),
       batch_size: isContinuousTask.value ? continuousPollBatchSize.value : batchSize.value,
-      auto_scan_metadata: true
+      auto_scan_metadata: targetBinding.value !== 'runtime'
     }
 
     if (!isContinuousTask.value) {
@@ -335,11 +358,18 @@ export function useTaskWizardState() {
         continuousPollBatchSize.value
       )
     }
-    const endpoint = {
+    let endpoint = {
       locator: sourceLocator.value,
       data_type: sourceDataType.value || 'table',
       representation: sourceRepresentation.value || 'native'
     }
+
+    endpoint = withQuerySource(endpoint, {
+      enabled: sourceQueryEnabled.value,
+      language: sourceQueryLanguage.value,
+      statement: sourceQueryStatement.value,
+      parameters: sourceQueryParameters.value
+    })
 
     const format = sourceBackendFormat(sourceFormat.value || config.format)
     if (endpoint.representation === 'encoded' && format) {
@@ -419,6 +449,9 @@ export function useTaskWizardState() {
   }
 
   function buildTargetEndpoint() {
+    if (targetBinding.value === 'runtime') {
+      return buildRuntimeTableTarget()
+    }
     const fileConfig = targetConfig.value || {}
     if (targetRepresentation.value === 'native') {
       const policy = isContinuousTask.value
@@ -593,6 +626,11 @@ export function useTaskWizardState() {
     }
 
     if (sourceChanged) {
+      sourceQueryEnabled.value = false
+      sourceQueryLanguage.value = 'mql'
+      sourceQueryStatement.value = ''
+      sourceQueryParameters.value = {}
+      sourceQueryValid.value = true
       sourceFields.value = []
       targetFields.value = []
       fieldMappings.value = []
@@ -602,6 +640,7 @@ export function useTaskWizardState() {
       targetSchema.value = ''
       targetTable.value = ''
       targetConfig.value = {}
+      targetBinding.value = 'definition'
       transforms.value = []
       targetRepresentation.value = nextContinuous
         ? 'native'
@@ -610,6 +649,19 @@ export function useTaskWizardState() {
       continuousKeyFields.value = []
       continuousInitialPosition.value = 'earliest'
       continuousPollBatchSize.value = 1000
+    }
+  }
+
+  function updateSourceQuery({ enabled: nextEnabled, language, statement, parameters, valid = true } = {}) {
+    sourceQueryEnabled.value = nextEnabled === true
+    sourceQueryLanguage.value = String(language || 'mql').trim().toLowerCase()
+    sourceQueryStatement.value = String(statement || '')
+    sourceQueryParameters.value = parameters && typeof parameters === 'object' && !Array.isArray(parameters)
+      ? parameters
+      : {}
+    sourceQueryValid.value = valid === true
+    if (!sourceQueryEnabled.value && targetBinding.value === 'runtime') {
+      setTargetBinding('definition')
     }
   }
 
@@ -752,8 +804,25 @@ export function useTaskWizardState() {
     targetTable.value = config.table || extra.table || ''
     targetType.value = config.targetType || 'nfs'
     targetRepresentation.value = config.representation || 'encoded'
+    targetBinding.value = 'definition'
     targetConfig.value = extra
     if (isWatermarkIncremental.value && !supportsWatermarkIncremental.value) {
+      resetIncrementalConfig()
+    }
+  }
+
+  function setTargetBinding(binding) {
+    targetBinding.value = binding === 'runtime' ? 'runtime' : 'definition'
+    if (targetBinding.value === 'runtime') {
+      targetEngineID.value = null
+      targetEngineType.value = ''
+      targetEngineCapabilities.value = null
+      targetSchema.value = ''
+      targetTable.value = ''
+      targetType.value = 'postgresql'
+      targetRepresentation.value = 'native'
+      targetConfig.value = {}
+      targetFields.value = []
       resetIncrementalConfig()
     }
   }
@@ -767,6 +836,7 @@ export function useTaskWizardState() {
     targetType.value = 'nfs'
     targetRepresentation.value = 'encoded'
     targetConfig.value = {}
+    targetBinding.value = 'definition'
     targetFields.value = []
     resetIncrementalConfig()
   }
@@ -871,7 +941,7 @@ export function useTaskWizardState() {
     try {
       const created = await taskAPI.create(taskConfig.value)
       const task = created?.data || created
-      if (!schedule.value && task?.id) {
+      if (!schedule.value && task?.id && targetBinding.value !== 'runtime') {
         try {
           await taskAPI.start(task.id)
           ElMessage.success(t('transfer.taskWizard.taskCreateAndStartSuccess'))
@@ -932,11 +1002,29 @@ export function useTaskWizardState() {
       sourceFormat.value = targetUiFormat(source.format, source.options || {})
       sourceLocator.value = source.locator || ''
       sourceConfig.value = extractSourceConfig(source)
+      sourceQueryEnabled.value = !!source.query
+      sourceQueryLanguage.value = String(source.query?.language || 'mql').toLowerCase()
+      sourceQueryStatement.value = source.query?.statement || ''
+      sourceQueryParameters.value = source.query?.parameters && typeof source.query.parameters === 'object'
+        ? source.query.parameters
+        : {}
+      sourceQueryValid.value = true
     }
 
     // Target 配置
     if (task.config?.target) {
       const target = task.config.target
+      targetBinding.value = target.binding === 'runtime' ? 'runtime' : 'definition'
+      if (targetBinding.value === 'runtime') {
+        targetEngineID.value = null
+        targetEngineType.value = ''
+        targetEngineCapabilities.value = null
+        targetSchema.value = ''
+        targetTable.value = ''
+        targetType.value = 'postgresql'
+        targetRepresentation.value = 'native'
+        targetConfig.value = {}
+      } else {
       const targetParentLoc = parseTransferLocator(target.parent_locator)
       targetEngineID.value = targetParentLoc.engineID || null
 			targetEngineType.value = normalizeEngineType(engineDescriptors.target?.engine_type || '')
@@ -946,6 +1034,7 @@ export function useTaskWizardState() {
       targetType.value = normalizeTargetType(target)
       targetRepresentation.value = target.representation || 'encoded'
       targetConfig.value = extractTargetConfig(target)
+      }
     }
 
     // 字段映射：从 config.transforms 回填。
@@ -1281,6 +1370,11 @@ export function useTaskWizardState() {
     sourceRepresentation.value = 'native'
     sourceFormat.value = ''
     sourceLocator.value = ''
+    sourceQueryEnabled.value = false
+    sourceQueryLanguage.value = 'mql'
+    sourceQueryStatement.value = ''
+    sourceQueryParameters.value = {}
+    sourceQueryValid.value = true
     readableEncodedFormats.value = new Set()
     rawCopyFormats.value = new Map()
     formatCapabilitiesLoaded.value = false
@@ -1293,6 +1387,7 @@ export function useTaskWizardState() {
     targetTable.value = ''
     targetType.value = 'nfs'
     targetRepresentation.value = 'encoded'
+    targetBinding.value = 'definition'
     targetConfig.value = {}
     fieldMappings.value = []
     sourceFields.value = []
@@ -1327,6 +1422,11 @@ export function useTaskWizardState() {
     sourceRepresentation,
     sourceFormat,
     sourceLocator,
+    sourceQueryEnabled,
+    sourceQueryLanguage,
+    sourceQueryStatement,
+    sourceQueryParameters,
+    sourceQueryValid,
     readableEncodedFormats,
     rawCopyFormats,
     formatCapabilitiesLoaded,
@@ -1339,6 +1439,7 @@ export function useTaskWizardState() {
     targetTable,
     targetType,
     targetRepresentation,
+    targetBinding,
     fieldMappings,
     sourceFields,
     targetFields,
@@ -1366,11 +1467,13 @@ export function useTaskWizardState() {
     prevStep,
     goToStep,
     updateSource,
+    updateSourceQuery,
     applyAssistantSource,
     updateFormatCapabilities,
     loadSourceFields,
     updateSourceItem,
     updateTarget,
+    setTargetBinding,
     clearTarget,
     loadTargetFields,
     resetTargetFields,

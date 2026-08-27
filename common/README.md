@@ -21,7 +21,7 @@ decoded JSON map 的通用读取工具，用于读取嵌套 section、字符串�
 `contentio` 不依赖 engine，也不解析格式；多 content 的组织规则属于 `common/format`、`common/dataitem` 或调用编排层，engine 到 contentio 的适配放在 `common/engine/contentadapter`。
 
 ### resourcetree
-把 Meta 已落库的 catalog / item 事实投影为跨模块资源树视图，并提供 `ResourceLocator` / provider `CatalogPath` 的纯转换能力。
+把 Meta 已落库的 Engine Catalog / item 事实投影为跨模块资源树视图，并提供 `ResourceLocator` / provider `EngineCatalogPath` 的纯转换能力。
 
 `resourcetree` 不持有 System / Meta client，不主动读取远程服务，不处理租户权限、token、降级策略、扫描或内容读取；上层模块自行获取 System / Meta 数据后，再调用资源树构建和路径转换能力。
 
@@ -30,7 +30,7 @@ decoded JSON map 的通用读取工具，用于读取嵌套 section、字符串�
 ### query
 查询文本通用能力，包括 SQL / Cypher / MQL 参数绑定、SQL 副作用分析，以及跨 SQL 引擎的标识符引用、基础 SELECT / COUNT 和分页 SQL 生成。
 
-`query` 不承载 catalog facts 探测或 PostGIS 等特定引擎扩展函数；PostGIS 空间表达式属于 `spatial`。
+`query` 不承载 Engine Catalog facts 探测或 PostGIS 等特定引擎扩展函数；PostGIS 空间表达式属于 `spatial`。
 
 ### spatial
 空间数据通用能力，包括 CRS、MVT、WKB、坐标转换和 PostGIS 空间 SQL 表达式。

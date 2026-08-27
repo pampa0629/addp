@@ -13,14 +13,14 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
 	"github.com/addp/manager/internal/repository"
+	"github.com/addp/manager/internal/resourceutil"
 )
 
 // fileCatalogPreviewProvider 文件系统类存储引擎预览插件（NFS/对象存储等）
-// 使用 CatalogProvider / CatalogFactsProvider / ContentReadableProvider 读取，不依赖具体客户端。
+// 使用 EngineCatalogProvider / EngineCatalogFactsProvider / ContentReadableProvider 读取，不依赖具体客户端。
 type fileCatalogPreviewProvider struct {
 	metadataRepo   *repository.MetadataRepository
 	cadPreviewRepo *repository.CADPreviewRepository
@@ -53,11 +53,11 @@ func (p *fileCatalogPreviewProvider) Preview(ctx context.Context, req *PreviewRe
 	if err != nil {
 		return nil, fmt.Errorf("unsupported engine type: %s", engine.EngineType)
 	}
-	catalogProvider, _ := pl.(plugin.CatalogProvider)
-	factsProvider, _ := pl.(plugin.CatalogFactsProvider)
+	catalogProvider, _ := pl.(plugin.EngineCatalogProvider)
+	factsProvider, _ := pl.(plugin.EngineCatalogFactsProvider)
 	contentReader, _ := pl.(plugin.ContentReadableProvider)
 	if catalogProvider == nil {
-		return nil, fmt.Errorf("engine %s does not implement CatalogProvider", engine.EngineType)
+		return nil, fmt.Errorf("engine %s does not implement EngineCatalogProvider", engine.EngineType)
 	}
 
 	connInfo := plugin.ConnectionInfo(engine.ConnectionInfo)
@@ -109,7 +109,7 @@ func (p *fileCatalogPreviewProvider) Preview(ctx context.Context, req *PreviewRe
 
 func (p *fileCatalogPreviewProvider) previewDirectory(
 	ctx context.Context,
-	catalogProvider plugin.CatalogProvider,
+	catalogProvider plugin.EngineCatalogProvider,
 	connInfo plugin.ConnectionInfo,
 	engine *commonModels.Engine,
 	rootName, dirPath string,
@@ -133,7 +133,7 @@ func (p *fileCatalogPreviewProvider) previewDirectory(
 
 func (p *fileCatalogPreviewProvider) previewFile(
 	ctx context.Context,
-	factsProvider plugin.CatalogFactsProvider,
+	factsProvider plugin.EngineCatalogFactsProvider,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	engine *commonModels.Engine,
@@ -167,7 +167,7 @@ func (p *fileCatalogPreviewProvider) previewFile(
 
 	if p.content != nil {
 		contentPath := filePath
-		contentFormat := normalizeObjectContentRequestFormat(catalogutil.StringAttribute(preview.Object.Attributes, "format"))
+		contentFormat := normalizeObjectContentRequestFormat(resourceutil.StringAttribute(preview.Object.Attributes, "format"))
 		if format.NormalizeFormat(contentFormat) == format.Format3DTiles {
 			contentPath = threeDTilesManifestObjectPath(rootName, filePath, preview.Object.Attributes)
 			canonicalContentType = "application/vnd.ogc.3dtiles+json"
@@ -273,7 +273,7 @@ func openFileCatalogContent(ctx context.Context, contentReader plugin.ContentRea
 	return nil, fs.ErrNotExist
 }
 
-func listFileCatalogPreviewChildren(ctx context.Context, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engine *commonModels.Engine, dirPath string) ([]models.ObjectPreviewChild, error) {
+func listFileCatalogPreviewChildren(ctx context.Context, catalogProvider plugin.EngineCatalogProvider, connInfo plugin.ConnectionInfo, engine *commonModels.Engine, dirPath string) ([]models.ObjectPreviewChild, error) {
 	nodes, err := catalogProvider.ListChildren(ctx, connInfo, plugin.FileDirectoryPath(engine.ID, dirPath), plugin.ListOptions{})
 	if err != nil {
 		return nil, err
@@ -282,13 +282,13 @@ func listFileCatalogPreviewChildren(ctx context.Context, catalogProvider plugin.
 	for _, node := range nodes {
 		childType := "object"
 		contentType := catalogEntryContentType(node)
-		if node.Role == plugin.CatalogRoleBranch {
+		if node.Role == plugin.EngineCatalogRoleBranch {
 			childType = "prefix"
 			contentType = "application/x-directory"
 		}
 		children = append(children, models.ObjectPreviewChild{
 			Name:        node.Name,
-			Path:        catalogutil.NodePhysicalPath(node),
+			Path:        resourceutil.NodePhysicalPath(node),
 			Type:        childType,
 			SizeBytes:   catalogEntrySizeBytes(node),
 			ContentType: contentType,
@@ -297,15 +297,15 @@ func listFileCatalogPreviewChildren(ctx context.Context, catalogProvider plugin.
 	return children, nil
 }
 
-func getFileCatalogPreviewStorageFacts(ctx context.Context, factsProvider plugin.CatalogFactsProvider, connInfo plugin.ConnectionInfo, engine *commonModels.Engine, path string) (*plugin.StorageObjectFacts, error) {
+func getFileCatalogPreviewStorageFacts(ctx context.Context, factsProvider plugin.EngineCatalogFactsProvider, connInfo plugin.ConnectionInfo, engine *commonModels.Engine, path string) (*plugin.StorageObjectFacts, error) {
 	if factsProvider == nil {
 		return nil, fs.ErrNotExist
 	}
-	item, err := factsProvider.DescribeCatalogFacts(ctx, connInfo, plugin.FileItemPath(engine.ID, path), plugin.CatalogFactsOptions{})
+	item, err := factsProvider.DescribeEngineCatalogFacts(ctx, connInfo, plugin.FileItemPath(engine.ID, path), plugin.EngineCatalogFactsOptions{})
 	if err != nil {
 		return nil, err
 	}
-	return catalogutil.CatalogFactsToStorageObjectFacts(item, path), nil
+	return resourceutil.EngineCatalogFactsToStorageObjectFacts(item, path), nil
 }
 
 // nfsPhysicalPath 将 locator 的 schema/table 转换为 NFS 绝对路径

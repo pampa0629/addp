@@ -87,7 +87,9 @@ business/
 ├── scripts/                        # 管理脚本
 │   ├── start.sh                    # 启动服务
 │   ├── stop.sh                     # 停止服务
-│   └── restart.sh                  # 重启服务
+│   ├── restart.sh                  # 重启服务
+│   ├── online-engine-fixture.sh    # T4 专用 PostgreSQL Fixture 生命周期
+│   └── online-workbench-mysql-fixture.sh # Workbench T4 专用只读 MySQL Fixture
 │
 ├── postgres/                       # PostgreSQL 配置
 │   ├── init.sql                    # 数据库初始化脚本
@@ -154,6 +156,16 @@ bash scripts/start.sh
 `-supermap-postgresql` 启动的 `business-supermap-postgresql` 使用独立 volume 和原生 PostgreSQL 15 镜像。启动脚本会拒绝已安装 PostGIS 的实例；SuperMap `sm*` 系统表只能在 System 中通过 `SuperMap SDX+ for PostgreSQL` 高危启用入口，由 `supermap_workflow` 的 SDK 算子创建。
 
 启用 MySQL 时，脚本还会在数据库 ready 后执行 `mysql/init-cdc.sh`。该脚本每次都创建或更新 `${MYSQL_CDC_USER:-addp_cdc}@%`，并将权限收敛为 Debezium 所需的最小权限集，因此已有数据卷也会生效。连接 MySQL CDC Engine 时使用 `.env` 中的 `MYSQL_CDC_USER` 和 `MYSQL_CDC_PASSWORD`，不要使用 root。
+
+### scripts/online-workbench-mysql-fixture.sh - Workbench T4 MySQL Fixture
+
+该入口只允许 `ADDP_ONLINE_HOST=1` 的 macOS 专用 Runner 使用，且只接受仓库外 `ADDP_ONLINE_WORKBENCH_MYSQL_*` 环境变量。它不读取或生成 `business/.env`，只操作由 `business/mysql` Compose service 拥有的 `business-mysql`，重建确定性测试数据，并将预置 Engine Instance 使用的账号收敛为仅有 `SELECT` 权限。个人开发环境不得调用该脚本。
+
+```bash
+bash scripts/online-workbench-mysql-fixture.sh start
+bash scripts/online-workbench-mysql-fixture.sh status
+bash scripts/online-workbench-mysql-fixture.sh stop
+```
 
 ### mysql/test-data.sh - MySQL Spatial 测试数据
 

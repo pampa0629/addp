@@ -270,12 +270,12 @@ func NewReplayTargetAbsenceValidator(getPlugin PluginGetter) func(context.Contex
 		if err != nil {
 			return err
 		}
-		catalog, ok := pluginValue.(engineplugin.CatalogProvider)
+		catalog, ok := pluginValue.(engineplugin.EngineCatalogProvider)
 		if !ok {
-			return fmt.Errorf("replay target PostgreSQL engine does not implement CatalogProvider")
+			return fmt.Errorf("replay target PostgreSQL engine does not implement EngineCatalogProvider")
 		}
 		parent := target.Path
-		parent.Segments = append([]engineplugin.CatalogSegment(nil), target.Path.Segments[:len(target.Path.Segments)-1]...)
+		parent.Segments = append([]engineplugin.EngineCatalogSegment(nil), target.Path.Segments[:len(target.Path.Segments)-1]...)
 		tableName := target.Path.Segments[len(target.Path.Segments)-1].Name
 		entries, err := catalog.ListChildren(ctx, target.ConnInfo, parent, engineplugin.ListOptions{})
 		if err != nil {

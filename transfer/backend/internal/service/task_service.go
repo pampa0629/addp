@@ -12,6 +12,8 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
+	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/taskprovider"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
@@ -156,6 +158,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 		return nil, err
 	}
 	boundary, _ := planner.TaskRuntimeBoundary(req.Config)
+	runtimeTarget := planner.IsRuntimeExistingTargetTaskConfig(req.Config)
 	schedule := strings.TrimSpace(req.Schedule)
 	enabled := false
 	if req.Enabled != nil {
@@ -166,6 +169,9 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 	}
 	if boundary == planner.RuntimeBoundaryContinuous && (schedule != "" || enabled) {
 		return nil, fmt.Errorf("%w: continuous tasks do not support task-owned schedules", ErrInvalidTaskConfig)
+	}
+	if runtimeTarget && (schedule != "" || enabled) {
+		return nil, fmt.Errorf("%w: runtime-target tasks require execution parameters from Orchestrator", ErrInvalidTaskConfig)
 	}
 	nextRunAt, err := transferTaskNextRunAt(schedule, enabled, time.Now())
 	if err != nil {
@@ -190,7 +196,12 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 	}
 
 	// 处理 auto_scan_metadata 字段
-	if req.AutoScanMetadata != nil {
+	if runtimeTarget && req.AutoScanMetadata != nil && *req.AutoScanMetadata {
+		return nil, fmt.Errorf("%w: runtime-target tasks do not trigger Transfer metadata scans", ErrInvalidTaskConfig)
+	}
+	if runtimeTarget {
+		task.AutoScanMetadata = false
+	} else if req.AutoScanMetadata != nil {
 		task.AutoScanMetadata = *req.AutoScanMetadata
 	} else {
 		task.AutoScanMetadata = true // 默认为 true
@@ -276,6 +287,7 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 		return nil, err
 	}
 	effectiveBoundary, _ := planner.TaskRuntimeBoundary(effectiveConfig)
+	runtimeTarget := planner.IsRuntimeExistingTargetTaskConfig(effectiveConfig)
 
 	// 更新字段
 	if req.Name != nil {
@@ -308,8 +320,17 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 	if effectiveBoundary == planner.RuntimeBoundaryContinuous && (task.Schedule != "" || task.Enabled) {
 		return nil, fmt.Errorf("%w: continuous tasks do not support task-owned schedules", ErrInvalidTaskConfig)
 	}
+	if runtimeTarget && (task.Schedule != "" || task.Enabled) {
+		return nil, fmt.Errorf("%w: runtime-target tasks require execution parameters from Orchestrator", ErrInvalidTaskConfig)
+	}
 	if req.AutoScanMetadata != nil {
+		if runtimeTarget && *req.AutoScanMetadata {
+			return nil, fmt.Errorf("%w: runtime-target tasks do not trigger Transfer metadata scans", ErrInvalidTaskConfig)
+		}
 		task.AutoScanMetadata = *req.AutoScanMetadata
+	}
+	if runtimeTarget {
+		task.AutoScanMetadata = false
 	}
 	nextRunAt, err := transferTaskNextRunAt(task.Schedule, task.Enabled, time.Now())
 	if err != nil {
@@ -497,6 +518,28 @@ func (s *TaskService) ReplayTask(ctx context.Context, id, tenantID, userID uint,
 
 // StartTaskWithContext 启动任务并记录统一任务体系上下文。
 func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, userID uint, triggerType string, source string, parentExecutionID *string) (*models.TaskExecution, error) {
+	return s.startTaskWithContext(ctx, id, tenantID, userID, triggerType, source, parentExecutionID, nil)
+}
+
+// StartTaskWithExecutionParameters starts a TaskProvider execution after its
+// runtime-only inputs have been resolved by Orchestrator.
+func (s *TaskService) StartTaskWithExecutionParameters(
+	ctx context.Context,
+	id, tenantID, userID uint,
+	triggerType, source string,
+	parentExecutionID *string,
+	parameters map[string]interface{},
+) (*models.TaskExecution, error) {
+	return s.startTaskWithContext(ctx, id, tenantID, userID, triggerType, source, parentExecutionID, parameters)
+}
+
+func (s *TaskService) startTaskWithContext(
+	ctx context.Context,
+	id, tenantID, userID uint,
+	triggerType, source string,
+	parentExecutionID *string,
+	parameters map[string]interface{},
+) (*models.TaskExecution, error) {
 	s.logger.Info("starting task", "task_id", id)
 
 	// 1. 检查任务存在性和权限
@@ -537,6 +580,15 @@ func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, us
 	if strings.TrimSpace(source) == "" {
 		source = commonExecution.ModuleTransfer
 	}
+	runtimeTarget := planner.IsRuntimeExistingTargetTaskConfig(task.Config)
+	contract := TransferTaskExecutionContract(task.Config)
+	if err := taskprovider.ValidateExecutionParameters(contract.InputSchema, parameters, taskprovider.ParameterValidationOptions{}); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidTaskConfig, err)
+	}
+	if runtimeTarget &&
+		(source != commonExecution.ModuleOrchestrator || parentExecutionID == nil || strings.TrimSpace(*parentExecutionID) == "") {
+		return nil, fmt.Errorf("%w: runtime-target tasks require an Orchestrator parent execution", ErrInvalidTaskConfig)
+	}
 	now := time.Now()
 	triggeredBy := int(userID)
 	executionRecord := &commonExecution.TaskExecution{
@@ -546,6 +598,10 @@ func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, us
 		TriggerType: normalizedTriggerType, TriggeredBy: &triggeredBy, ExecutionConfig: task.Config,
 		ExecutionBoundary: boundary,
 		CreatedAt:         now, UpdatedAt: now,
+	}
+	if runtimeTarget {
+		executionRecord.MaxAttempts = 1
+		executionRecord.Metadata = commonModels.JSONMap{"runtime_inputs": commonModels.JSONMap(parameters)}
 	}
 	if boundary == planner.RuntimeBoundaryContinuous {
 		if task.Schedule != "" || task.Enabled {
@@ -579,6 +635,34 @@ func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, us
 
 	s.logger.Info("bounded execution created", "task_id", id, "execution_id", execution.ID)
 	return execution, nil
+}
+
+func TransferTaskExecutionContract(config map[string]interface{}) taskprovider.ExecutionContract {
+	if !planner.IsRuntimeExistingTargetTaskConfig(config) {
+		return taskprovider.EmptyExecutionContract()
+	}
+	return taskprovider.ExecutionContract{
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"target_locator": map[string]interface{}{"type": "string", "minLength": float64(1)},
+			},
+			"required":             []interface{}{"target_locator"},
+			"additionalProperties": false,
+		},
+		InputDefaults: map[string]interface{}{},
+		InputUISchema: map[string]interface{}{},
+		OutputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"execution_id":   map[string]interface{}{"type": "string"},
+				"target_locator": map[string]interface{}{"type": "string"},
+				"row_count":      map[string]interface{}{"type": "integer", "minimum": float64(0)},
+			},
+			"required":             []interface{}{"execution_id", "target_locator", "row_count"},
+			"additionalProperties": false,
+		},
+	}
 }
 
 func (s *TaskService) ensureDatabaseCDCCapture(ctx context.Context, task *models.TransferTask) error {

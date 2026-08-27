@@ -2,7 +2,7 @@ package plugin
 
 func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabilityOptions) EngineCapabilities {
 	if namespaceTerm == "" {
-		namespaceTerm = CatalogTermDatabase
+		namespaceTerm = EngineCatalogTermDatabase
 	}
 	if opts.DefaultLanguage == "" {
 		opts.DefaultLanguage = "sql"
@@ -16,14 +16,14 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 		EngineType:    engineType,
 		EngineFamily:  "tabular",
 		Storage: &StorageCapabilities{
-			CatalogModel: PtrCatalogModel(TabularCatalogModel(namespaceTerm)),
-			Catalog: &CatalogCapability{
+			CatalogModel: PtrEngineCatalogModel(TabularCatalogModel(namespaceTerm)),
+			Catalog: &EngineCatalogCapability{
 				Supported:       true,
 				RealTime:        true,
 				SystemFiltering: true,
 				NodeKinds:       []string{"namespace", "table", "view", "materialized_view", "external_table"},
 			},
-			Facts: &CatalogFactsCapability{
+			Facts: &EngineCatalogFactsCapability{
 				Supported:    true,
 				FieldInfo:    true,
 				Statistics:   true,
@@ -126,13 +126,13 @@ func NewObjectCapabilities(engineType string) EngineCapabilities {
 		EngineType:    engineType,
 		EngineFamily:  "object",
 		Storage: &StorageCapabilities{
-			CatalogModel: PtrCatalogModel(ObjectCatalogModel()),
-			Catalog: &CatalogCapability{
+			CatalogModel: PtrEngineCatalogModel(ObjectCatalogModel()),
+			Catalog: &EngineCatalogCapability{
 				Supported: true,
 				RealTime:  true,
 				NodeKinds: []string{"bucket", "prefix", "object"},
 			},
-			Facts: &CatalogFactsCapability{
+			Facts: &EngineCatalogFactsCapability{
 				Supported:   true,
 				NativeFacts: true,
 			},
@@ -154,13 +154,13 @@ func NewFileCapabilities(engineType string) EngineCapabilities {
 		EngineType:    engineType,
 		EngineFamily:  "file",
 		Storage: &StorageCapabilities{
-			CatalogModel: PtrCatalogModel(FileCatalogModel()),
-			Catalog: &CatalogCapability{
+			CatalogModel: PtrEngineCatalogModel(FileCatalogModel()),
+			Catalog: &EngineCatalogCapability{
 				Supported: true,
 				RealTime:  true,
 				NodeKinds: []string{"root", "directory", "file"},
 			},
-			Facts: &CatalogFactsCapability{
+			Facts: &EngineCatalogFactsCapability{
 				Supported:   true,
 				NativeFacts: true,
 			},
@@ -181,13 +181,13 @@ func NewDynamicSchemaCapabilities(engineType string) EngineCapabilities {
 		EngineType:    engineType,
 		EngineFamily:  "dynamic_schema",
 		Storage: &StorageCapabilities{
-			CatalogModel: PtrCatalogModel(DynamicSchemaCatalogModel()),
-			Catalog: &CatalogCapability{
+			CatalogModel: PtrEngineCatalogModel(DynamicSchemaCatalogModel()),
+			Catalog: &EngineCatalogCapability{
 				Supported: true,
 				RealTime:  true,
 				NodeKinds: []string{"database", "collection"},
 			},
-			Facts: &CatalogFactsCapability{
+			Facts: &EngineCatalogFactsCapability{
 				Supported:   true,
 				FieldInfo:   true,
 				Statistics:  true,
@@ -206,6 +206,7 @@ func NewDynamicSchemaCapabilities(engineType string) EngineCapabilities {
 				Languages:       []string{"mql"},
 				DefaultLanguage: "mql",
 				ResultKinds:     []string{"document", "table"},
+				ReadSession:     true,
 				Parameters:      queryParameterCapability(true, "mql"),
 			},
 		},
@@ -218,13 +219,13 @@ func NewGraphCapabilities(engineType string) EngineCapabilities {
 		EngineType:    engineType,
 		EngineFamily:  "graph",
 		Storage: &StorageCapabilities{
-			CatalogModel: PtrCatalogModel(GraphCatalogModel()),
-			Catalog: &CatalogCapability{
+			CatalogModel: PtrEngineCatalogModel(GraphCatalogModel()),
+			Catalog: &EngineCatalogCapability{
 				Supported: true,
 				RealTime:  true,
 				NodeKinds: []string{"database", "graph"},
 			},
-			Facts: &CatalogFactsCapability{
+			Facts: &EngineCatalogFactsCapability{
 				Supported:   true,
 				NativeFacts: true,
 			},
@@ -292,7 +293,7 @@ func NewFederatedQueryCapabilities(
 	}
 }
 
-func PtrCatalogModel(model CatalogModelSpec) *CatalogModelSpec {
+func PtrEngineCatalogModel(model EngineCatalogModelSpec) *EngineCatalogModelSpec {
 	return &model
 }
 

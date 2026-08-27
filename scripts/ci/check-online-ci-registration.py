@@ -85,6 +85,115 @@ def validate_module_registry_process_profile(repository: Path, registered: set[s
             )
 
 
+def validate_consumer_engine_recovery_profile(repository: Path, registered: set[str]) -> None:
+    if "consumer-engine-recovery" not in registered:
+        return
+    host_gate = (repository / "scripts/test/online-host-gate.sh").read_text(encoding="utf-8")
+    required_fragments = (
+        "bash business/scripts/online-engine-fixture.sh start",
+        "bash business/scripts/online-engine-fixture.sh stop",
+        "bash scripts/dev/start.sh",
+        "playwright install chromium",
+        "consumer-process-stability-online.py",
+        "consumer-engine-recovery-online.py --restore-only",
+    )
+    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
+    if missing:
+        raise RegistrationError(
+            "consumer-engine-recovery process profile is missing: " + ", ".join(missing)
+        )
+    for relative in (
+        "business/scripts/online-engine-fixture.sh",
+        "scripts/test/consumer-engine-recovery-online.py",
+        "scripts/test/consumer-process-stability-online.py",
+        "console/frontend/playwright.online.config.js",
+        "console/frontend/e2e/online/consumer-engine-recovery.spec.js",
+    ):
+        if not (repository / relative).is_file():
+            raise RegistrationError(f"consumer-engine-recovery requires {relative}")
+    fixture = (repository / "business/scripts/online-engine-fixture.sh").read_text(encoding="utf-8")
+    for fragment in ("ADDP_ONLINE_HOST", "--env-file /dev/null", "business-postgres"):
+        if fragment not in fixture:
+            raise RegistrationError(
+                f"consumer-engine-recovery fixture contract is missing {fragment}"
+            )
+
+
+def validate_enterprise_catalog_publishing_profile(repository: Path, registered: set[str]) -> None:
+    if "enterprise-catalog-publishing" not in registered:
+        return
+    host_gate = (repository / "scripts/test/online-host-gate.sh").read_text(encoding="utf-8")
+    required_fragments = (
+        "enterprise-catalog-publishing)",
+        "START_TARGET=-all",
+        "META_URL CATALOG_URL ASSET_URL PORTAL_URL",
+        "ADDP_ONLINE_TEST_CATALOG_DOMAIN_ID",
+        "ADDP_ONLINE_TEST_CATALOG_DEPARTMENT_ID",
+        "bash business/scripts/online-engine-fixture.sh start",
+        'bash scripts/dev/start.sh "$START_TARGET"',
+    )
+    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
+    if missing:
+        raise RegistrationError(
+            "enterprise-catalog-publishing profile is missing: " + ", ".join(missing)
+        )
+    for relative in (
+        "business/scripts/online-engine-fixture.sh",
+        "scripts/test/enterprise-catalog-publishing-online.py",
+    ):
+        if not (repository / relative).is_file():
+            raise RegistrationError(f"enterprise-catalog-publishing requires {relative}")
+    fixture = (repository / "business/scripts/online-engine-fixture.sh").read_text(encoding="utf-8")
+    for fragment in ("addp_online_catalog_fixture", "CREATE TABLE IF NOT EXISTS", "ON CONFLICT"):
+        if fragment not in fixture:
+            raise RegistrationError(
+                f"enterprise-catalog-publishing fixture contract is missing {fragment}"
+            )
+
+
+def validate_workbench_service_consumption_profile(repository: Path, registered: set[str]) -> None:
+    if "workbench-service-consumption" not in registered:
+        return
+    host_gate = (repository / "scripts/test/online-host-gate.sh").read_text(encoding="utf-8")
+    required_fragments = (
+        "workbench-service-consumption)",
+        "START_TARGET=-all",
+        "SYSTEM_URL GATEWAY_URL SERVICE_URL WORKBENCH_URL CONSOLE_URL",
+        "ADDP_ONLINE_TEST_USER_USERNAME",
+        "ADDP_ONLINE_TEST_USER_PASSWORD",
+        "ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID",
+        "bash business/scripts/online-workbench-mysql-fixture.sh start",
+        "bash business/scripts/online-workbench-mysql-fixture.sh stop",
+        'bash scripts/dev/start.sh "$START_TARGET"',
+        "playwright install chromium",
+    )
+    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
+    if missing:
+        raise RegistrationError(
+            "workbench-service-consumption profile is missing: " + ", ".join(missing)
+        )
+    for relative in (
+        "business/scripts/online-workbench-mysql-fixture.sh",
+        "scripts/test/workbench-service-consumption-online.py",
+        "console/frontend/playwright.online.config.js",
+        "console/frontend/e2e/online/workbench-service-consumption.spec.js",
+    ):
+        if not (repository / relative).is_file():
+            raise RegistrationError(f"workbench-service-consumption requires {relative}")
+    fixture = (repository / "business/scripts/online-workbench-mysql-fixture.sh").read_text(encoding="utf-8")
+    for fragment in (
+        "ADDP_ONLINE_HOST",
+        "--env-file /dev/null",
+        "business-mysql",
+        "REVOKE ALL PRIVILEGES, GRANT OPTION",
+        "GRANT SELECT ON",
+    ):
+        if fragment not in fixture:
+            raise RegistrationError(
+                f"workbench-service-consumption fixture contract is missing {fragment}"
+            )
+
+
 def load_workflow_suites(repository: Path) -> set[str]:
     path = repository / ".github/workflows/online-t4-gates.yml"
     if not path.is_file():
@@ -144,6 +253,9 @@ def check_registration(repository: Path) -> None:
             f"Online workflow choices {sorted(workflow)} do not match registered suites {sorted(registered)}"
         )
     validate_module_registry_process_profile(repository, registered)
+    validate_consumer_engine_recovery_profile(repository, registered)
+    validate_enterprise_catalog_publishing_profile(repository, registered)
+    validate_workbench_service_consumption_profile(repository, registered)
 
 
 def main() -> int:

@@ -59,9 +59,9 @@ func TestEnsureCatalogRootNodeCanBeFinalized(t *testing.T) {
 	repo := NewScanRepository(db)
 	resource := &commonModels.Engine{ID: 25, Name: "Business Neo4j", EngineType: "catalog-root-test"}
 
-	root, err := EnsureCatalogRootNode(repo, 1, resource, catalogRootTestPlugin{})
+	root, err := EnsureEngineCatalogRootNode(repo, 1, resource, catalogRootTestPlugin{})
 	if err != nil {
-		t.Fatalf("EnsureCatalogRootNode() error = %v", err)
+		t.Fatalf("EnsureEngineCatalogRootNode() error = %v", err)
 	}
 	if root.ScanStatus == "completed" {
 		t.Fatal("test setup unexpectedly completed root node")
@@ -210,9 +210,9 @@ func (catalogRootTestPlugin) TestConnection(context.Context, plugin.ConnectionIn
 func (catalogRootTestPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{}
 }
-func (catalogRootTestPlugin) CatalogModel() plugin.CatalogModelSpec {
+func (catalogRootTestPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.GraphCatalogModel()
 }
 
 var _ plugin.EnginePlugin = catalogRootTestPlugin{}
-var _ plugin.CatalogModelProvider = catalogRootTestPlugin{}
+var _ plugin.EngineCatalogModelProvider = catalogRootTestPlugin{}

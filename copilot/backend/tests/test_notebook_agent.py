@@ -3,7 +3,7 @@ import asyncio
 from addp_common.auth import AuthorizationContext
 from api import notebook_agent_api
 from api.notebook_agent_api import (
-    NotebookCatalogCandidate,
+    NotebookEngineCatalogCandidate,
     NotebookGenerationRequest,
     NotebookResourceFact,
 )
@@ -83,13 +83,13 @@ def test_notebook_candidate_phase_only_ranks_known_candidate_ids(monkeypatch):
         }'''),
     )
     candidates = [
-        NotebookCatalogCandidate(
+        NotebookEngineCatalogCandidate(
             candidate_id="farmland-1", role="耕地", engine_id=8,
             engine_name="PostgreSQL", engine_type="postgresql", name="farmland_history",
             term="table", kind="table", path_names=["public", "farmland_history"],
             path={"version": "catalog.path/v1", "engine_id": 8, "segments": []},
         ),
-        NotebookCatalogCandidate(
+        NotebookEngineCatalogCandidate(
             candidate_id="farmland-2", role="耕地", engine_id=8,
             engine_name="PostgreSQL", engine_type="postgresql", name="farmland",
             term="table", kind="table", path_names=["public", "farmland"],

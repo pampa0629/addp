@@ -1,0 +1,11 @@
+{
+  "name": "@addp/common-frontend-chart",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "peerDependencies": {
+    "echarts": "5.5.1",
+    "vue": "^3.4.0"
+  }
+}

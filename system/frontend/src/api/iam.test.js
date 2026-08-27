@@ -61,6 +61,30 @@ describe('IAM management API contract', () => {
     expect(client.post).toHaveBeenCalledWith('/system/tenant/role_assignments/11/revoke', { reason: 'rotation' })
   })
 
+  it('uses the versioned tenant organization API families', () => {
+    iamAPI.departments.list({ status: 'active' })
+    iamAPI.departments.update('3', { parent_id: null, name: 'Research', version: 2 })
+    iamAPI.departments.disable('3', 3, 'reorganization')
+    iamAPI.departments.createMembership('3', { tenant_membership_id: '9', membership_type: 'primary', relation_role: 'leader' })
+    iamAPI.departments.closeMembership('3', '12', 4, 'transfer')
+    iamAPI.projectGroups.list({ status: 'active' })
+    iamAPI.projectGroups.update('5', { name: 'Joint Project', description: '', status: 'active', version: 2 })
+    iamAPI.projectGroups.close('5', 3, 'completed')
+    iamAPI.projectGroups.createMembership('5', { tenant_membership_id: '9', relation_role: 'member' })
+    iamAPI.projectGroups.closeMembership('5', '14', 2, 'completed')
+
+    expect(client.get).toHaveBeenNthCalledWith(1, '/system/tenant/departments', { params: { status: 'active' } })
+    expect(client.put).toHaveBeenCalledWith('/system/tenant/departments/3', { parent_id: null, name: 'Research', version: 2 })
+    expect(client.post).toHaveBeenCalledWith('/system/tenant/departments/3/disable', { version: 3, reason: 'reorganization' })
+    expect(client.post).toHaveBeenCalledWith('/system/tenant/departments/3/memberships', { tenant_membership_id: '9', membership_type: 'primary', relation_role: 'leader' })
+    expect(client.post).toHaveBeenCalledWith('/system/tenant/departments/3/memberships/12/close', { version: 4, reason: 'transfer' })
+    expect(client.get).toHaveBeenNthCalledWith(2, '/system/tenant/project_groups', { params: { status: 'active' } })
+    expect(client.put).toHaveBeenCalledWith('/system/tenant/project_groups/5', { name: 'Joint Project', description: '', status: 'active', version: 2 })
+    expect(client.post).toHaveBeenCalledWith('/system/tenant/project_groups/5/close', { version: 3, reason: 'completed' })
+    expect(client.post).toHaveBeenCalledWith('/system/tenant/project_groups/5/memberships', { tenant_membership_id: '9', relation_role: 'member' })
+    expect(client.post).toHaveBeenCalledWith('/system/tenant/project_groups/5/memberships/14/close', { version: 2, reason: 'completed' })
+  })
+
   it('resets an ordinary local account through the governed platform path', () => {
     const request = { new_password: 'new-secret', reason: 'user lost password' }
 

@@ -43,25 +43,25 @@ other = "Notebook 会话授权已失效或无权使用"
 [system.auth.internal_error]
 other = "认证服务暂时不可用"
 
-[system.catalog.control_plane_failed]
+[system.engine_catalog.control_plane_failed]
 other = "目录控制面暂时不可用"
 
-[system.catalog.provider_failed]
+[system.engine_catalog.provider_failed]
 other = "引擎目录读取失败"
 
-[system.catalog.engine_not_found]
+[system.engine_catalog.engine_not_found]
 other = "引擎不存在或当前不可访问"
 
-[system.catalog.entry_not_found]
+[system.engine_catalog.entry_not_found]
 other = "目录对象不存在"
 
-[system.catalog.operation_unsupported]
+[system.engine_catalog.operation_unsupported]
 other = "当前引擎不支持该目录操作"
 
-[system.catalog.engine_unavailable]
+[system.engine_catalog.engine_unavailable]
 other = "引擎当前不可用"
 
-[system.catalog.timeout]
+[system.engine_catalog.timeout]
 other = "目录读取超时"
 
 [system.auth.invalid_current_password]
@@ -216,3 +216,5 @@ other = "创建资源回收执行任务失败"
 
 [system.cleanup.get_history_failed]
 other = "查询资源回收任务历史失败"
+[system.iam.organization_version_conflict]
+other = "组织资源已被其他用户修改，请刷新后重试"

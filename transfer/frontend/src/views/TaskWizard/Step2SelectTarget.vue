@@ -26,6 +26,21 @@
     />
 
     <el-form class="target-form" :model="formData" label-width="120px">
+      <el-form-item
+        v-if="runtimeTargetAvailable"
+        :label="t('transfer.taskWizard.targetBindingLabel')"
+      >
+        <div class="runtime-target-config">
+          <el-switch
+            v-model="isRuntimeTarget"
+            :active-text="t('transfer.taskWizard.runtimeTargetEnabled')"
+            @change="handleTargetBindingChange"
+          />
+          <div class="field-hint">{{ t('transfer.taskWizard.runtimeTargetHint') }}</div>
+        </div>
+      </el-form-item>
+
+      <template v-if="!isRuntimeTarget">
       <el-form-item :label="t('transfer.taskWizard.targetEngineLabel')">
         <el-select
           v-model="formData.engineID"
@@ -183,6 +198,7 @@
         :closable="false"
         :title="spatialTargetHint"
       />
+      </template>
     </el-form>
 
   </div>
@@ -252,6 +268,7 @@ const targetSchema = ref('')
 const targetTable = ref('')
 const tableWriteMode = ref('overwrite')
 const tableWriteModeOptions = ['overwrite', 'append']
+const isRuntimeTarget = ref(props.wizardState.targetBinding.value === 'runtime')
 
 const engines = ref([])
 const loadingEngines = ref(false)
@@ -288,6 +305,9 @@ const sourceRepresentation = computed(() => props.wizardState.sourceRepresentati
 const sourceFormat = computed(() => props.wizardState.sourceFormat?.value || '')
 
 const isContinuousSource = computed(() => props.wizardState.isContinuousTask?.value === true)
+const runtimeTargetAvailable = computed(() => {
+  return props.wizardState.sourceQueryEnabled?.value === true && !isContinuousSource.value
+})
 
 const sourceTransferSupported = computed(() => {
   if (isContinuousSource.value) return true
@@ -330,6 +350,7 @@ const targetStorageKind = computed(() => {
 const targetPickerInitialLocator = computed(() => restoredParentLocator.value || '')
 
 const canProceed = computed(() => {
+  if (isRuntimeTarget.value) return runtimeTargetAvailable.value
   if (isNativeTableTarget.value) {
     const hasParentLocator = !!targetParentLocator.value
     return !!(formData.engineID && hasParentLocator && targetTable.value.trim())
@@ -343,6 +364,13 @@ const canProceed = computed(() => {
   }
   return false
 })
+
+function handleTargetBindingChange(runtime) {
+  props.wizardState.setTargetBinding(runtime ? 'runtime' : 'definition')
+  if (!runtime) {
+    resetLocalTargetForm()
+  }
+}
 
 const targetParentLocator = computed(() => {
   const selection = targetParentSelection.value
@@ -449,6 +477,7 @@ const geometryFieldOptions = computed(() => {
 
 watch(canProceed, (ready) => {
   if (restoringState.value) return
+  if (isRuntimeTarget.value) return
   if (ready) {
     syncTarget()
   } else {
@@ -459,12 +488,18 @@ watch(canProceed, (ready) => {
 watch(
   () => [
     props.wizardState.targetEngineID.value,
+    props.wizardState.targetBinding.value,
     props.wizardState.targetRepresentation.value,
     props.wizardState.targetSchema.value,
     props.wizardState.targetTable.value,
     targetConfigSignature(props.wizardState.targetConfig.value || {})
   ],
-  async ([engineID]) => {
+  async ([engineID, binding]) => {
+    isRuntimeTarget.value = binding === 'runtime'
+    if (isRuntimeTarget.value) {
+      resetLocalTargetForm()
+      return
+    }
     if (!engineID) {
       resetLocalTargetForm()
       return
@@ -481,6 +516,10 @@ function isObjectStorageEngine(engineType) {
 }
 
 function syncTarget() {
+  if (isRuntimeTarget.value) {
+    props.wizardState.setTargetBinding('runtime')
+    return
+  }
   if (!selectedEngine.value || !canProceed.value) {
     syncTargetDraft()
     return
@@ -892,6 +931,11 @@ async function loadCapabilities() {
 
 async function restoreState() {
   const state = props.wizardState
+  isRuntimeTarget.value = state.targetBinding.value === 'runtime'
+  if (isRuntimeTarget.value) {
+    resetLocalTargetForm()
+    return
+  }
   if (!state.targetEngineID.value) {
     resetLocalTargetForm()
     return
@@ -1262,6 +1306,10 @@ onMounted(async () => {
   line-height: 1.5;
   color: var(--addp-text-secondary);
   font-size: 12px;
+}
+
+.runtime-target-config {
+  width: 100%;
 }
 
 .error-hint {

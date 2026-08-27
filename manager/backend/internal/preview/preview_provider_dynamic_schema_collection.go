@@ -32,9 +32,9 @@ func (p *dynamicSchemaCollectionPreviewProvider) Preview(ctx context.Context, re
 	if !ok {
 		return nil, fmt.Errorf("engine %s does not implement QueryRuntimeProvider", req.Engine.EngineType)
 	}
-	factsProvider, ok := p_.(plugin.CatalogFactsProvider)
+	factsProvider, ok := p_.(plugin.EngineCatalogFactsProvider)
 	if !ok {
-		return nil, fmt.Errorf("engine %s does not implement CatalogFactsProvider", req.Engine.EngineType)
+		return nil, fmt.Errorf("engine %s does not implement EngineCatalogFactsProvider", req.Engine.EngineType)
 	}
 
 	// 2. 解析 Schema 和 Table
@@ -105,14 +105,14 @@ func (p *dynamicSchemaCollectionPreviewProvider) Preview(ctx context.Context, re
 	}
 
 	// 6. 字段结构统一来自 Provider 动态 schema 采样，预览行只负责展示。
-	catalogFacts, err := factsProvider.DescribeCatalogFacts(ctx, connInfo, req.ProviderPath, plugin.CatalogFactsOptions{
+	catalogFacts, err := factsProvider.DescribeEngineCatalogFacts(ctx, connInfo, req.ProviderPath, plugin.EngineCatalogFactsOptions{
 		SampleSize:        100,
 		IncludeStatistics: req.ItemRowCount == nil,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe dynamic schema: %w", err)
 	}
-	tableInfo := plugin.CatalogFactsTableInfo(catalogFacts)
+	tableInfo := plugin.EngineCatalogFactsTableInfo(catalogFacts)
 	if tableInfo == nil {
 		return nil, fmt.Errorf("dynamic schema provider returned no table facts")
 	}

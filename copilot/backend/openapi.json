@@ -351,7 +351,7 @@
         "title": "NavigateResponse",
         "type": "object"
       },
-      "NotebookCatalogCandidate": {
+      "NotebookEngineCatalogCandidate": {
         "additionalProperties": false,
         "properties": {
           "candidate_id": {
@@ -419,7 +419,7 @@
           "kind",
           "path"
         ],
-        "title": "NotebookCatalogCandidate",
+        "title": "NotebookEngineCatalogCandidate",
         "type": "object"
       },
       "NotebookGenerationRequest": {
@@ -427,7 +427,7 @@
         "properties": {
           "candidates": {
             "items": {
-              "$ref": "#/components/schemas/NotebookCatalogCandidate"
+              "$ref": "#/components/schemas/NotebookEngineCatalogCandidate"
             },
             "maxItems": 320,
             "title": "Candidates",
@@ -936,7 +936,7 @@
                 "type": "null"
               }
             ],
-            "description": "仅用于资源发现的 Owner Catalog 容器 locator，不是输入资源或查询执行范围",
+            "description": "仅用于资源发现的 Owner Engine Catalog 容器 locator，不是输入资源或查询执行范围",
             "title": "Resource Scope Locator"
           },
           "resources": {

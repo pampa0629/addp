@@ -29,12 +29,17 @@ graph TB
         SystemFE[System Frontend<br/>:5173]
         ManagerFE[Manager Frontend<br/>:5174]
         MetaFE[Meta Frontend<br/>:5175]
+        CatalogFE[Catalog Frontend<br/>:5189]
+        WorkbenchFE[Workbench Frontend<br/>:5190]
         TransferFE[Transfer Frontend<br/>:5176]
         OrchestratorFE[Orchestrator Frontend<br/>:5177]
         DevelopFE[Develop Frontend<br/>:5178]
         ServiceFE[Service Frontend<br/>:5179]
         MonitorFE[Monitor Frontend<br/>:5179]
         InferenceFE[Inference Frontend<br/>:5188]
+        StandardFE[Standard Frontend<br/>:5181]
+        AssetFE[Asset Frontend<br/>:5184]
+        PortalFE[Portal Frontend<br/>:5185]
     end
 
     subgraph "网关层"
@@ -45,6 +50,8 @@ graph TB
         System[System Backend<br/>核心系统<br/>:8180]
         Manager[Manager Backend<br/>数据管理<br/>:8081]
         Meta[Meta Backend<br/>元数据服务<br/>:8082]
+        Catalog[Catalog Backend<br/>企业数据目录<br/>:8192]
+        Workbench[Workbench Backend<br/>服务消费工作台<br/>:8193]
         Transfer[Transfer Backend<br/>数据传输<br/>:8083]
         Orchestrator[Orchestrator Backend<br/>任务编排<br/>:8084]
         Develop[Develop Backend<br/>数据开发<br/>:8185]
@@ -52,6 +59,9 @@ graph TB
         Monitor[Monitor Backend<br/>执行监控<br/>:8100]
         Quality[Quality Backend<br/>数据质量<br/>:8182]
         Inference[Inference Backend<br/>统一 AI 推理<br/>:8191]
+        Standard[Standard Backend<br/>数据标准<br/>:8110]
+        Asset[Asset Backend<br/>数据资产<br/>:8183]
+        Portal[Portal Backend<br/>资产门户 BFF<br/>:8184]
     end
 
     subgraph "Worker运行时"
@@ -86,16 +96,23 @@ graph TB
     SystemFE -.-> Console
     ManagerFE -.-> Console
     MetaFE -.-> Console
+    CatalogFE -.-> Console
+    WorkbenchFE -.-> Console
     TransferFE -.-> Console
     OrchestratorFE -.-> Console
     DevelopFE -.-> Console
     ServiceFE -.-> Console
     MonitorFE -.-> Console
     InferenceFE -.-> Console
+    StandardFE -.-> Console
+    AssetFE -.-> Console
+    PortalFE -.-> Console
 
     Gateway --> System
     Gateway --> Manager
     Gateway --> Meta
+    Gateway --> Catalog
+    Gateway --> Workbench
     Gateway --> Transfer
     Gateway --> Orchestrator
     Gateway --> Develop
@@ -103,10 +120,15 @@ graph TB
     Gateway --> Monitor
     Gateway --> Quality
     Gateway --> Inference
+    Gateway --> Standard
+    Gateway --> Asset
+    Gateway --> Portal
 
     System --> Common
     Manager --> Common
     Meta --> Common
+    Catalog --> Common
+    Workbench --> Common
     Transfer --> Common
     Orchestrator --> Common
     Develop --> Common
@@ -114,15 +136,30 @@ graph TB
     Monitor --> Common
     Quality --> Common
     Inference --> Common
+    Standard --> Common
+    Asset --> Common
+    Portal --> Common
+
+    Meta -. DataItem 可恢复变化 .-> Catalog
+    Standard -. 语义对象公开读取 .-> Catalog
+    Catalog -. 目录摘要与导航 .-> Manager
+    Catalog -. 目录对象选择 .-> Asset
+    Asset -. 已发布资产 .-> Portal
+    Service -. Consumer Descriptor 与在线查询 .-> Workbench
 
     SystemFE --> CommonFE
     ManagerFE --> CommonFE
     MetaFE --> CommonFE
+    CatalogFE --> CommonFE
+    WorkbenchFE --> CommonFE
     TransferFE --> CommonFE
     OrchestratorFE --> CommonFE
     DevelopFE --> CommonFE
     ServiceFE --> CommonFE
     InferenceFE --> CommonFE
+    StandardFE --> CommonFE
+    AssetFE --> CommonFE
+    PortalFE --> CommonFE
 
     Common --> PostgreSQL
     Common --> Redis
@@ -153,9 +190,9 @@ graph TB
     classDef engine fill:#fff9c4,stroke:#f57f17
     classDef infra fill:#fce4ec,stroke:#880e4f
 
-    class Console,SystemFE,ManagerFE,MetaFE,TransferFE,OrchestratorFE,DevelopFE,ServiceFE,MonitorFE,InferenceFE frontend
+    class Console,SystemFE,ManagerFE,MetaFE,CatalogFE,WorkbenchFE,TransferFE,OrchestratorFE,DevelopFE,ServiceFE,MonitorFE,InferenceFE,StandardFE,AssetFE,PortalFE frontend
     class Gateway gateway
-    class System,Manager,Meta,Transfer,Orchestrator,Develop,Service,Monitor,Quality,Inference backend
+    class System,Manager,Meta,Catalog,Workbench,Transfer,Orchestrator,Develop,Service,Monitor,Quality,Inference,Standard,Asset,Portal backend
     class TransferBoundedWorker,TransferContinuousWorker,MetaWorker,QualityWorker worker
     class Common,CommonFE shared
     class PyWorkflow,SparkWorkflow,CustomWorkflow,Jupyter engine
@@ -166,11 +203,13 @@ graph TB
 - **前端层**: 各模块的独立前端应用,Console 通过 iframe 集成所有模块前端
 - **网关层**: Gateway 统一处理外部请求并路由到对应的后端服务
 - **服务层**: 各业务模块的后端服务,提供 RESTful API
+- **业务模块边界**: Transfer、Develop、Model、Quality 等是对等 owner，默认只向下依赖 System、Meta、Common 和 Engine Provider。跨 owner 协作优先由 Orchestrator 连接 TaskProvider 稳定输出与必填运行时输入，数据资源使用 ResourceLocator 交接；引入 Common Client 只解决传输实现重复，不会消除 owner-specific ID、API 或生命周期造成的语义依赖。任务定义非必要不得保存其他业务 owner 的专有 ID。
+- **企业目录主线**: Meta 维护 DataItem 技术事实并提供可恢复变化；Catalog 建立企业目录身份、业务语义关联、责任和搜索；Asset 从 Catalog 选择并组合目录对象；Portal 只消费已发布资产。图中的虚线业务调用都是运行软依赖，不构成启动或 Ready 条件。
 - **Worker运行时**: bounded execution 数据面使用 owner 模块附属的独立进程；owner Backend 只承担 API、调度和控制面。
   - **Transfer Bounded Worker**: 从 `common.task_executions` PostgreSQL claim snapshot、watermark 和 bounded replay execution。
   - **Transfer Continuous Worker**: 已实现的独立长驻进程角色，通过 supervisor、DB lease、heartbeat 和 fencing 承载多个 continuous runtime session；不使用 Asynq 承载无限消费循环。当前数据面开放业务 Kafka keyed JSON -> PostgreSQL/MySQL，以及 PostgreSQL/MySQL/Oracle 单表 Debezium CDC -> PostgreSQL/MySQL/Oracle；Oracle Spatial 由 Oracle capture Provider 在源 schema 内维护 WKB 镜像表后进入同一 Debezium/consumer/apply 主路径，Oracle target 只开放 XY geometry。两类 source 共用同一 continuous runtime、position、lease 和 fencing；ArcGIS SDE 仍保留为后续独立逻辑变化源 Provider，不能并入普通 Oracle redo CDC。
   - **Meta Worker**: 从 `common.task_executions` PostgreSQL claim 扫描 execution，执行元数据扫描和索引。
-  - **Quality Worker**: 独立进程，从 `common.task_executions` PostgreSQL claim 质量检查 execution，执行评分和 Issue reconcile。
+  - **Quality Worker**: 独立进程，从 `common.task_executions` PostgreSQL claim `check|materialization_gate` execution；字段检查执行评分和 Issue reconcile，物化门禁通过 Model Client 读取同批 staging 并执行强类型断言。
 - **Manager 快显与瓦片任务**: `vector_tile_cache_generation` 与 `vector_tile_set_generation` 由 Manager Backend 按源能力选择唯一执行路径：PostgreSQL/PostGIS 表使用原生 `ST_AsMVT`，MySQL、Oracle 等标准 EWKB 可读的空间表流式物化临时 FlatGeobuf 后调用 GeoPython `vector_to_pmtiles`，文件或对象通过受控访问计划调用同一 operator；三类路径统一输出 PMTiles v3。任务定义、执行记录和缓存结果分别进入 Manager owner 表、`common.task_executions` 与 `manager.vector_tile_cache`。`vector_materialized_view_generation` 仍由 Manager Backend 在手动或编排触发时执行，结果进入 `manager.vector_materialized_view`。这些任务当前不启动模块自身定时调度；若需要多执行器横向扩展或独立 GIS 资源隔离，应将对应任务类型整体切换为唯一的 Manager Worker 或 GIS 执行引擎，不允许 Backend 与 Worker 双轨并存。
 - **共享模块**: common 和 common-frontend 提供可复用的代码和组件
 - **扩展运行时**: `engines/` 目录集中放置不拥有业务配置事实的独立计算 / Notebook Runtime 实现，由业务模块通过统一 Provider 调用。Inference 同时拥有 Provider、Deployment、Profile、凭据和配置管理入口，因此保留为根目录业务模块；其数据面端点另以 `inference_runtime` Engine Instance 纳入统一引擎体系，不在 `engines/` 下复制 owner 实现。
@@ -187,6 +226,8 @@ graph TB
 | **Gateway** | API 网关,请求路由和转发 | 8000 / 8000 | Go, Gin |
 | **Manager** | 数据管理:数据存储目录展示、数据预览、空间快显和瓦片缓存 | 8081 / 8081 | Go, Gin, OpenLayers |
 | **Meta** | 元数据服务:扫描、索引、搜索 | 8082 / 8082 | Go, Gin, Meilisearch, Cron |
+| **Catalog** | 企业数据目录：稳定目录身份、来源绑定、业务语义关联、责任、治理和企业元数据搜索 | 8192 / 8192 | Go, Gin, GORM, Meilisearch |
+| **Workbench** | 服务消费工作台：动态参数、结构化查询、可视化和个人 Workbench View | 8193 / 8193 | Go, Gin, GORM, Vue 3 |
 | **Meta Worker** | Meta 扫描任务处理器 | - | Go, PostgreSQL claim/lease |
 | **Transfer** | 数据传输:同步、搬运、格式转换任务 | 8083 / 8083 | Go, Gin, GORM |
 | **Transfer Bounded Worker** | Transfer 有界任务处理器 | - | Go, PostgreSQL claim/lease |
@@ -196,7 +237,10 @@ graph TB
 | **Service** | 数据服务:服务发布(空间OGC标准与非空间)、外部服务注册 | 8086 / 8086 | Go, Gin, OGC 标准 |
 | **Monitor** | 执行监控:统一监控所有模块的任务执行记录、统计分析 | 8100 / 8100 | Go, Gin, PostgreSQL |
 | **Quality** | 数据质量:规则应用、检查任务、质量评分和问题治理 | 8182 / 8182 | Go, Gin, GORM |
-| **Quality Worker** | Quality 有界检查执行器，独立进程 | - | Go, PostgreSQL claim/lease |
+| **Quality Worker** | Quality 有界字段检查与物化门禁执行器，独立进程 | - | Go, PostgreSQL claim/lease |
+| **Standard** | 数据标准：业务域、术语、数据元、指标、分类分级等语义定义 | 8110 / 8110 | Go, Gin, GORM |
+| **Asset** | 数据资产：目录对象组合、发布、申请、授权、评价和运营 | 8183 / 8183 | Go, Gin, GORM, Meilisearch |
+| **Portal** | 面向消费者的已发布资产门户 BFF | 8184 / 8184 | Go, Gin, GORM |
 | **Inference** | 统一 AI 推理：Provider Connection、Model Deployment、Model Profile、加密凭据和推理数据面 | 8191 / 8191 | Go, Gin, GORM |
 | **Copilot** | AI 辅助助手：输入资源解析与确认、查询/工作流/Notebook/Transfer 领域生成、导航和图谱抽取 | 8087 / 8087 | Python, FastAPI, LangChain |
 
@@ -364,19 +408,19 @@ graph TB
 | **Transfer Bounded Worker** | Transfer | PostgreSQL claim snapshot、watermark 和 bounded replay execution，持有 execution lease 后执行 | Go, PostgreSQL claim/lease |
 | **Transfer Continuous Worker** | Transfer | 一个进程承载多个 continuous runtime session，按 task claim lease，并在 session 内受限处理 partition | Go, DB lease, Kafka client |
 | **Meta Worker** | Meta | PostgreSQL claim 扫描 execution，处理元数据扫描和索引；定时调度留在 Backend | Go, PostgreSQL claim/lease |
-| **Quality Worker** | Quality | 独立进程领取已授权 `pending` check execution，执行规则、评分和 Issue reconcile | Go, PostgreSQL claim/lease |
+| **Quality Worker** | Quality | 独立进程领取已授权 `pending` `check|materialization_gate` execution，执行字段规则或物化断言 | Go, PostgreSQL claim/lease, Model Client |
 | **TileCacheTask** | Manager | 在 Manager Backend 内按手动请求或 Orchestrator 编排触发 `vector_tile_cache_generation`，执行记录写入 `common.task_executions` | Go, TaskProvider API |
 | **VectorMaterializedViewTask** | Manager | 在 Manager Backend 内按用户手动或 Orchestrator 编排触发执行 `vector_materialized_view_generation`，创建或刷新 Manager 管理的 3857 矢量物化视图目标 | Go, TaskProvider API |
 
 **运行时说明**:
 - **Bounded execution queue**: Quality、Meta、Transfer bounded 统一以 `common.task_executions` PostgreSQL claim 为唯一领取路线，不使用 Redis/Asynq 或进程内 channel。
 - **Continuous supervisor**: Transfer continuous worker 直接 claim pending execution 和 `transfer.runtime_leases`；同一 task 同一时刻只有一个合法 owner，不把长期 session 投递为 Asynq job。
-- **Quality DB claim**: 独立 `quality-worker` 从 `common.task_executions` 领取已授权 `pending` check execution；每个实例使用有界槽位，多实例通过 `SKIP LOCKED`、attempt 与 `lease_token` 协调。
+- **Quality DB claim**: 独立 `quality-worker` 从 `common.task_executions` 领取已授权 `pending` `check|materialization_gate` execution；每个实例使用有界槽位，多实例通过 `SKIP LOCKED`、attempt 与 `lease_token` 协调。
 - **CDC capture supervisor**: Transfer 已实现唯一 capture control plane，通过 Kafka Connect REST 管理 PostgreSQL/MySQL Debezium connector，并负责 generation、provider 专属捕获资源、内部 topic/group/ACL 的任务级生命周期；它不嵌入 continuous worker，也不把 Infra Kafka 注册为 System Engine。
 - **Manager 受管结果调度边界**: 瓦片缓存、矢量物化视图等受管当前结果任务均为 `supports_schedule=false`，不由 Manager 自身定时调度；周期性刷新由 Orchestrator 显式携带本次覆盖确认触发。Embedding 的逐 item owner scheduler 独立保留。
 - **执行记录**: 各模块执行状态统一写入 `common.task_executions`。
 - **角色边界**: owner scheduler 负责创建和投递 execution，execution worker 负责真实运行体与终态，Monitor dispatcher 只消费通知 outbox；固定 cleanup、collector 和 heartbeat 属于 maintenance loop，不应统称 worker。
-- **单一路线**: 同一 task type 只能有一条正式执行路线。Quality check、Meta scan 和 Transfer bounded 的正式路线均是独立 Worker + PostgreSQL claim；Backend 不执行 bounded 业务逻辑。
+- **单一路线**: 同一 task type 只能有一条正式执行路线。Quality `check|materialization_gate`、Meta scan、Transfer bounded 和 Orchestrator 来源 Develop query 的正式路线均是独立 Worker + PostgreSQL claim；Backend 不执行 bounded 业务逻辑。
 - **结果状态**: Manager 瓦片缓存结果状态写入 `manager.vector_tile_cache`，矢量物化视图结果状态写入 `manager.vector_materialized_view`，不由 execution 替代。
 - **未来切换条件**: 当 Manager API 响应因后台生成受影响、临时材料与 GeoPython 调用需要独立资源隔离，或需要多个执行器并行消费同一类任务时，对应任务类型应切换到唯一的 Manager Worker 或 GIS 执行引擎运行时。
 
@@ -648,6 +692,8 @@ graph LR
     Gateway --> |/api/v1/system/*| System[System Backend<br/>:8180]
     Gateway --> |/api/v1/manager/*| Manager[Manager Backend<br/>:8081]
     Gateway --> |/api/v1/meta/*| Meta[Meta Backend<br/>:8082]
+    Gateway --> |/api/v1/catalog/*| Catalog[Catalog Backend<br/>:8192]
+    Gateway --> |/api/v1/workbench/*| Workbench[Workbench Backend<br/>:8193]
     Gateway --> |/api/v1/transfer/*| Transfer[Transfer Backend<br/>:8083]
     Gateway --> |/api/v1/orchestrator/*| Orchestrator[Orchestrator Backend<br/>:8084]
     Gateway --> |/api/v1/develop/*| Develop[Develop Backend<br/>:8185]
@@ -660,7 +706,7 @@ graph LR
 
     class Client client
     class Gateway gateway
-    class System,Manager,Meta,Transfer,Orchestrator,Develop,Service,Monitor backend
+    class System,Manager,Meta,Catalog,Workbench,Transfer,Orchestrator,Develop,Service,Monitor backend
 ```
 
 ### 路由规则
@@ -670,6 +716,8 @@ graph LR
 | `/api/v1/system/*` | System Backend | 8180 | 用户认证、引擎管理、日志 |
 | `/api/v1/manager/*` | Manager Backend | 8081 | 数据管理、预览、空间快显和瓦片缓存 |
 | `/api/v1/meta/*` | Meta Backend | 8082 | 元数据扫描、索引、搜索 |
+| `/api/v1/catalog/*` | Catalog Backend | 8192 | 企业目录身份、业务编目、责任、语义关联和搜索 |
+| `/api/v1/workbench/*` | Workbench Backend | 8193 | 已发布服务消费、个人视图和后续数据应用创作 |
 | `/api/v1/transfer/*` | Transfer Backend | 8083 | 数据同步、搬运、格式转换 |
 | `/api/v1/orchestrator/*` | Orchestrator Backend | 8084 | 任务编排、调度 |
 | `/api/v1/develop/*` | Develop Backend | 8185 | 查询、工作流、Notebook |
@@ -911,8 +959,8 @@ graph TB
         TransferT["Transfer<br/>sync"]
         DevelopT["Develop<br/>query / workflow / script"]
         ManagerT["Manager<br/>vector_tile_cache_generation / vector_materialized_view_generation / embedding"]
-        QualityT["Quality<br/>check"]
-        ModelT["Model<br/>materialization_prepare / materialization_publish"]
+        QualityT["Quality<br/>check / materialization_gate"]
+        ModelT["Model<br/>materialization_prepare / materialization_seal / materialization_publish / materialization_group_publish"]
         GraphT["Graph<br/>kg_build"]
         OrchestratorT["Orchestrator<br/>orchestration"]
 
@@ -1017,11 +1065,15 @@ ADDP 部署按以下顺序使实例进入 Ready。业务进程可以在 System �
 3. 业务模块层（进程可并行创建，System Ready 后才能 Ready）
    ├─ Manager Backend
    ├─ Meta Backend + Worker
+   ├─ Catalog Backend
    ├─ Transfer Backend + Worker
    ├─ Orchestrator Backend
    ├─ Develop Backend
    ├─ Service Backend
-   └─ Monitor Backend
+   ├─ Monitor Backend
+   ├─ Standard Backend
+   ├─ Asset Backend
+   └─ Portal Backend
 
 4. 扩展运行时层（可并行，也可早于 System 或业务模块启动）
    ├─ GeoPython Workflow 运行时
@@ -1041,11 +1093,15 @@ ADDP 部署按以下顺序使实例进入 Ready。业务进程可以在 System �
    ├─ System Frontend
    ├─ Manager Frontend
    ├─ Meta Frontend
+   ├─ Catalog Frontend
    ├─ Transfer Frontend
    ├─ Orchestrator Frontend
    ├─ Develop Frontend
    ├─ Service Frontend
-   └─ Monitor Frontend
+   ├─ Monitor Frontend
+   ├─ Standard Frontend
+   ├─ Asset Frontend
+   └─ Portal Frontend
 ```
 
 **启动与恢复边界说明**：
@@ -1058,6 +1114,7 @@ ADDP 部署按以下顺序使实例进入 Ready。业务进程可以在 System �
 | **System 暂时不可达** | 模块在注册或心跳失败被观测后转为 Not Ready，但进程保持 Alive 并重试注册。Gateway 只保留最近一次仍在本地租约有效期内的快照；租约失效后请求返回 503，不回退到硬编码模块地址。 |
 | **扩展运行时与 Engine Instance** | Runtime 自身就绪后异步注册；零个 Engine Instance 是合法状态，业务模块启动不得依赖任何内置或外部引擎存在。 |
 | **Agent / Copilot 独立进程** | Python 应用与 Go 模块共用同一模块注册和 Ready 契约；进程可以在任意时刻创建，但 System 注册成功前不得接受业务流量。运行时调用其他业务模块时仍只失败当前请求，不改变本模块 Ready。 |
+| **Catalog ↔ 专业模块** | Catalog 拉取 Meta DataItem 变化并按需读取 Standard、System 等 owner 事实；这些调用失败只造成同步滞后或当前业务请求失败，不改变 Catalog Ready。Manager、Asset 调用 Catalog 也遵循同一软依赖边界，禁止回退旧发现路径。 |
 | **前端无严格顺序约束** | Console 通过 iframe 动态加载各模块前端（用户访问时才加载），各前端可完全并行启动 |
 
 ---
@@ -1070,11 +1127,13 @@ ADDP 部署按以下顺序使实例进入 Ready。业务进程可以在 System �
 - [ADDP 开发原则](../spec/addp开发原则.md)
 - [ADDP 共享模块介绍](addp共享模块介绍.md)
 - [ADDP 新模块开发指南](../spec/addp新模块开发指南.md)
+- [企业数据目录体系图](addp企业数据目录体系图.md)
+- [企业数据目录实现规范](../spec/addp企业数据目录实现规范.md)
 - [Monitor 模块实施报告](../monitor/docs/Monitor模块实施报告.md)
 
 ---
 
-**文档版本**: v1.1
+**文档版本**: v1.2
 **创建日期**: 2026-02-16
-**更新日期**: 2026-08-25
+**更新日期**: 2026-08-26
 **作者**: ADDP 开发团队

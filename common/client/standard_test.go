@@ -2,12 +2,64 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+func TestStandardClientResolvesExactReferencesInRequestOrder(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/standard/references/resolve" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer tenant-token" || r.Header.Get("X-Tenant-ID") != "" {
+			t.Fatalf("unexpected auth headers: %#v", r.Header)
+		}
+		var request standardReferenceResolutionRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if len(request.References) != 2 || request.References[0].ObjectType != "domain" || request.References[1].ID != 9 {
+			t.Fatalf("request = %#v", request)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"object_type":"domain","id":7,"found":true,"referenceable":true,"name":"Sales","code":"sales","status":"active","version":3},{"object_type":"glossary","id":9,"found":false,"referenceable":false}]}`))
+	}))
+	defer server.Close()
+
+	client := NewStandardClient(server.URL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "tenant-token", nil
+	}), server.Client()).WithTenantID(7)
+	results, err := client.ResolveReferences(context.Background(), []StandardReference{
+		{ObjectType: "domain", ID: 7},
+		{ObjectType: "glossary", ID: 9},
+	})
+	if err != nil {
+		t.Fatalf("ResolveReferences() error = %v", err)
+	}
+	if len(results) != 2 || !results[0].Referenceable || results[1].Found {
+		t.Fatalf("results = %#v", results)
+	}
+}
+
+func TestStandardClientRejectsMisorderedReferenceResults(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"object_type":"element","id":2,"found":true,"referenceable":true},{"object_type":"domain","id":1,"found":true,"referenceable":true}]}`))
+	}))
+	defer server.Close()
+
+	client := NewStandardClient(server.URL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "tenant-token", nil
+	}), server.Client()).WithTenantID(7)
+	_, err := client.ResolveReferences(context.Background(), []StandardReference{{ObjectType: "domain", ID: 1}, {ObjectType: "element", ID: 2}})
+	if err == nil || !strings.Contains(err.Error(), "out of request order") {
+		t.Fatalf("ResolveReferences() error = %v", err)
+	}
+}
 
 func TestStandardClientPreservesTenantAPIError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -54,7 +54,7 @@ Oracle Engine Instance
 因此：
 
 - Engine 身份、连接、Catalog root 和 ResourceLocator 继续遵守 Oracle 规范。
-- SDE 业务表仍使用 `schema -> table` CatalogPath，不增加 `sde://` URI 或第二套资源树。
+- SDE 业务表仍使用 `schema -> table` EngineCatalogPath，不增加 `sde://` URI 或第二套资源树。
 - `SDE` repository owner 和系统表不进入普通业务 Catalog。
 - workspace capability 只决定是否可以选择 SDE 专用 Provider，不改变整个 Oracle Engine 的普通表行为。
 
@@ -187,7 +187,7 @@ addp://engine/{engine_id}/path/{owner}/{table}?type=table&item_id={item_id}
 
 ### 5.2 SDE 业务事实
 
-SDE Provider 应从 repository registry 动态发现并向 CatalogFacts/Meta 提供：
+SDE Provider 应从 repository registry 动态发现并向 EngineCatalogFacts/Meta 提供：
 
 - repository owner。
 - registration ID。
@@ -483,7 +483,7 @@ SDE logical change 应新增独立变化识别值：
 
 1. 建立正式许可 E2E 环境。
 2. 读取 registry，识别 feature class、storage、versioning、ObjectID/GlobalID 和高级数据集。
-3. 定义 typed CatalogFacts/Meta attributes。
+3. 定义 typed EngineCatalogFacts/Meta attributes。
 4. 开放 `support.catalog=true`，其他执行能力继续关闭。
 
 ### Phase 2：非版本化 bounded read

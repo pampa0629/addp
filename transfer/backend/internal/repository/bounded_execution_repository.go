@@ -59,9 +59,9 @@ func (r *TaskRepository) ClaimNextBoundedExecution(ctx context.Context, workerID
 	return execution, lease, &task, nil
 }
 
-// FailExpiredBoundedExecutions closes stale Transfer attempts without blind
-// replay. A user retry creates a new execution after the external commit state
-// has been inspected.
+// FailExpiredBoundedExecutions fails closed. A runtime-bound existing table may
+// already contain partial writes, so a fresh orchestration execution must bind
+// a fresh target instead of replaying the same lease.
 func (r *TaskRepository) FailExpiredBoundedExecutions(ctx context.Context, now time.Time, limit int) (int, error) {
 	count := 0
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

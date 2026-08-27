@@ -43,25 +43,25 @@ other = "The Notebook session authorization is unavailable or forbidden"
 [system.auth.internal_error]
 other = "The authentication service is temporarily unavailable"
 
-[system.catalog.control_plane_failed]
+[system.engine_catalog.control_plane_failed]
 other = "The catalog control plane is temporarily unavailable"
 
-[system.catalog.provider_failed]
+[system.engine_catalog.provider_failed]
 other = "The engine catalog could not be read"
 
-[system.catalog.engine_not_found]
+[system.engine_catalog.engine_not_found]
 other = "The engine does not exist or is not accessible"
 
-[system.catalog.entry_not_found]
+[system.engine_catalog.entry_not_found]
 other = "The catalog entry does not exist"
 
-[system.catalog.operation_unsupported]
+[system.engine_catalog.operation_unsupported]
 other = "The engine does not support this catalog operation"
 
-[system.catalog.engine_unavailable]
+[system.engine_catalog.engine_unavailable]
 other = "The engine is currently unavailable"
 
-[system.catalog.timeout]
+[system.engine_catalog.timeout]
 other = "The catalog request timed out"
 
 [system.auth.invalid_current_password]
@@ -216,3 +216,5 @@ other = "Failed to create resource reclaim execution task"
 
 [system.cleanup.get_history_failed]
 other = "Failed to query resource reclaim task history"
+[system.iam.organization_version_conflict]
+other = "The organization resource was changed by another user. Refresh and try again"

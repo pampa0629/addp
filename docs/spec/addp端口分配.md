@@ -122,6 +122,10 @@ make ports-validate
 | **Graph Frontend**    | **5187** | **8118**    | **知识图谱 UI**            |
 | **Inference Backend** | **8191** | **8191**    | **统一 AI 推理控制面与数据面** |
 | **Inference Frontend** | **5188** | **8119**   | **Provider、模型和 Profile 管理 UI** |
+| **Catalog Backend**   | **8192** | **8192**    | **企业数据目录身份、业务语义关联、责任和搜索** |
+| **Catalog Frontend**  | **5189** | **8120**    | **企业数据目录管理 UI** |
+| **Workbench Backend** | **8193** | **8193**    | **已发布服务消费、动态查询和数据应用创作** |
+| **Workbench Frontend** | **5190** | **8121**   | **Workbench 创作端 UI** |
 | Math Workflow Engine  | 8089     | 8089        | 数学计算工作流参考实现（自动启动服务、手动注册） |
 | Jupyter API Server    | 8097     | 8097        | Jupyter 执行引擎 API       |
 | Spark Workflow Engine | 8098     | 8098        | Spark 分布式工作流引擎     |
@@ -160,6 +164,8 @@ make ports-validate
   - **8183: Asset（数据资产管理）**
   - **8184: Portal（数据消费者门户）**
   - **8191: Inference（统一 AI 推理）**
+  - **8192: Catalog（企业数据目录）**
+  - **8193: Workbench（服务消费工作台）**
 - **引擎服务**：808x-809x 系列
   - 8089: Math Workflow Engine（参考实现，自动启动服务、手动注册）
   - 8097: Jupyter API Server
@@ -189,6 +195,8 @@ make ports-validate
   - **5186: Agent**
   - **5187: Graph**
   - **5188: Inference**
+  - **5189: Catalog**
+  - **5190: Workbench**
 
 ### 前端 Docker 端口规则
 - **核心模块**：809x 系列（8090-8096）
@@ -210,6 +218,8 @@ make ports-validate
   - **8117: Agent**
   - **8118: Graph**
   - **8119: Inference**
+  - **8120: Catalog**
+  - **8121: Workbench**
 
 ## Standard 和 Model 模块配置要求
 

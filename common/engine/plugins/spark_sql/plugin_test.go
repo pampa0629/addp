@@ -73,7 +73,7 @@ func TestListChildrenUsesSparkThriftQueryForDatabases(t *testing.T) {
 	entries, err := spark.ListChildren(
 		context.Background(),
 		plugin.ConnectionInfo{"host": "spark", "port": 10000},
-		plugin.CatalogRootPath(spark.CatalogModel(), 7),
+		plugin.EngineCatalogRootPath(spark.EngineCatalogModel(), 7),
 		plugin.ListOptions{},
 	)
 	if err != nil {
@@ -101,7 +101,7 @@ func TestListChildrenUsesQualifiedSparkShowTables(t *testing.T) {
 	entries, err := spark.ListChildren(
 		context.Background(),
 		plugin.ConnectionInfo{"host": "spark", "port": 10000},
-		plugin.TabularNamespacePath(7, plugin.CatalogTermDatabase, "analytics"),
+		plugin.TabularNamespacePath(7, plugin.EngineCatalogTermDatabase, "analytics"),
 		plugin.ListOptions{},
 	)
 	if err != nil {

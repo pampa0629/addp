@@ -130,6 +130,30 @@ def validate_module_registration_lifecycle(repository: Path) -> list[str]:
     return errors
 
 
+def validate_pointcloud_image_contract(repository: Path) -> list[str]:
+    errors: list[str] = []
+    common_runtime_module = "common-python/addp_common/module_lifecycle.py"
+    if not (repository / common_runtime_module).is_file():
+        errors.append(f"{common_runtime_module} is missing")
+
+    dockerfile_path = repository / "engines/pointcloud-workflow/Dockerfile"
+    dockerfile = dockerfile_path.read_text(encoding="utf-8")
+    expected_copy = f"COPY {common_runtime_module} /common-python/addp_common/module_lifecycle.py"
+    if expected_copy not in dockerfile:
+        errors.append(
+            "engines/pointcloud-workflow/Dockerfile does not package "
+            "common-python/addp_common/module_lifecycle.py"
+        )
+
+    for relative in ("scripts/dev/start.sh", "scripts/dev/restart.sh"):
+        source = (repository / relative).read_text(encoding="utf-8")
+        if common_runtime_module not in source:
+            errors.append(
+                f"{relative} PointCloud image fingerprint does not include {common_runtime_module}"
+            )
+    return errors
+
+
 def validate(repository: Path) -> list[str]:
     errors: list[str] = []
     start_path = repository / "scripts/dev/start.sh"
@@ -181,6 +205,7 @@ def validate(repository: Path) -> list[str]:
         if forbidden_call in system_main:
             errors.append(f"system startup still calls {forbidden_call}")
     errors.extend(validate_module_registration_lifecycle(repository))
+    errors.extend(validate_pointcloud_image_contract(repository))
     return errors
 
 

@@ -74,6 +74,24 @@ func (r *TaskRepository) ClaimExecution(ctx context.Context, taskID, tenantID ui
 			execution.Metadata["fencing_token"] = state.FencingToken
 			claimedState = &state
 		}
+		if execution.ParentExecutionID != nil {
+			if execution.Source != commonExecution.ModuleOrchestrator {
+				return fmt.Errorf("transfer child execution source must be orchestrator")
+			}
+			var parent commonExecution.TaskExecution
+			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+				Where("tenant_id = ? AND execution_id = ? AND module = ? AND status = ?",
+					tenantID, *execution.ParentExecutionID, commonExecution.ModuleOrchestrator, commonExecution.ExecutionStatusRunning).
+				First(&parent).Error; err != nil {
+				return err
+			}
+			if parent.ActorPrincipalID == nil || parent.ActorTenantMembershipID == nil || parent.IssuedAuthorizationVersion == nil {
+				return fmt.Errorf("orchestration parent has no authorization lineage")
+			}
+			execution.ActorPrincipalID = parent.ActorPrincipalID
+			execution.ActorTenantMembershipID = parent.ActorTenantMembershipID
+			execution.IssuedAuthorizationVersion = parent.IssuedAuthorizationVersion
+		}
 		if err := tx.Create(execution).Error; err != nil {
 			return err
 		}
@@ -90,6 +108,10 @@ func (r *TaskRepository) ClaimExecution(ctx context.Context, taskID, tenantID ui
 		return nil
 	})
 	return &claimedTask, claimedState, err
+}
+
+func (r *TaskRepository) AttachBoundedExecutionAuthorization(ctx context.Context, lease commonExecution.Lease, fields map[string]interface{}) error {
+	return commonExecution.UpdateWithLease(ctx, r.db, lease, fields)
 }
 
 // StartContinuousExecution 原子写入用户期望状态与 pending execution。

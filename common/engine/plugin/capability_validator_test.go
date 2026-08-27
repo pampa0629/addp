@@ -16,7 +16,7 @@ func (p *dynamicSchemaOnlyPlugin) Capabilities() EngineCapabilities {
 		EngineType:    p.Type(),
 		EngineFamily:  "dynamic_schema",
 		Storage: &StorageCapabilities{
-			Facts: &CatalogFactsCapability{
+			Facts: &EngineCatalogFactsCapability{
 				Supported:  true,
 				FieldInfo:  true,
 				Statistics: true,
@@ -26,8 +26,8 @@ func (p *dynamicSchemaOnlyPlugin) Capabilities() EngineCapabilities {
 	}
 }
 
-func (p *dynamicSchemaOnlyPlugin) SampleDynamicSchema(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts CatalogFactsOptions) (*CatalogFacts, error) {
-	return &CatalogFacts{Path: path}, nil
+func (p *dynamicSchemaOnlyPlugin) SampleDynamicSchema(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts EngineCatalogFactsOptions) (*EngineCatalogFacts, error) {
+	return &EngineCatalogFacts{Path: path}, nil
 }
 
 func TestValidatePluginCapabilitiesAcceptsDynamicSchemaSamplingProvider(t *testing.T) {
@@ -62,7 +62,7 @@ type spatialEncodingReadablePlugin struct {
 	spatialEncodingPlugin
 }
 
-func (p *spatialEncodingReadablePlugin) ReadBatch(context.Context, ConnectionInfo, CatalogPath, BatchReadOptions) (*BatchData, error) {
+func (p *spatialEncodingReadablePlugin) ReadBatch(context.Context, ConnectionInfo, EngineCatalogPath, BatchReadOptions) (*BatchData, error) {
 	return &BatchData{}, nil
 }
 
@@ -70,7 +70,7 @@ type spatialFeatureReadablePlugin struct {
 	spatialEncodingReadablePlugin
 }
 
-func (p *spatialFeatureReadablePlugin) ReadSpatialFeature(context.Context, ConnectionInfo, CatalogPath, SpatialFeatureReadOptions) (*SpatialFeatureData, error) {
+func (p *spatialFeatureReadablePlugin) ReadSpatialFeature(context.Context, ConnectionInfo, EngineCatalogPath, SpatialFeatureReadOptions) (*SpatialFeatureData, error) {
 	return &SpatialFeatureData{}, nil
 }
 
@@ -78,7 +78,7 @@ type spatialEncodingWritablePlugin struct {
 	spatialEncodingPlugin
 }
 
-func (p *spatialEncodingWritablePlugin) WriteBatch(context.Context, ConnectionInfo, CatalogPath, *BatchData, BatchWriteOptions) error {
+func (p *spatialEncodingWritablePlugin) WriteBatch(context.Context, ConnectionInfo, EngineCatalogPath, *BatchData, BatchWriteOptions) error {
 	return nil
 }
 
@@ -86,7 +86,7 @@ type recordReadSessionPlugin struct {
 	spatialEncodingPlugin
 }
 
-func (p *recordReadSessionPlugin) OpenRecordReadSession(context.Context, ConnectionInfo, CatalogPath, RecordReadSessionOptions) (RecordReadSession, error) {
+func (p *recordReadSessionPlugin) OpenRecordReadSession(context.Context, ConnectionInfo, EngineCatalogPath, RecordReadSessionOptions) (RecordReadSession, error) {
 	return nil, nil
 }
 

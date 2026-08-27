@@ -114,7 +114,7 @@ func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableR
 		SCDType:          req.SCDType,
 		Status:           "draft",
 		Version:          1,
-		Materialization:  req.Materialization,
+		Materialization:  normalizeMaterialization(req.Materialization),
 		CreatedBy:        userID,
 	}
 	if err := validateMaterialization(table, nil); err != nil {
@@ -218,7 +218,8 @@ func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req
 		if err != nil {
 			return err
 		}
-		previewTable := previewLogicalTableWithMaterialization(table, req.Materialization)
+		normalizedMaterialization := normalizeMaterialization(req.Materialization)
+		previewTable := previewLogicalTableWithMaterialization(table, normalizedMaterialization)
 		if err := validateMaterialization(previewTable, fields); err != nil {
 			return apperrors.Wrap(apperrors.KindValidation, "materialization_invalid", i18n.MsgValidationFailed, err)
 		}
@@ -238,7 +239,7 @@ func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req
 		table.Layer = req.Layer
 		table.GrainDescription = req.GrainDescription
 		table.SCDType = *req.SCDType
-		table.Materialization = req.Materialization
+		table.Materialization = normalizedMaterialization
 		table.UpdatedBy = &userID
 		return repository.NewLogicalTableRepository(tx).Update(table)
 	})
@@ -270,6 +271,13 @@ func (s *LogicalTableService) DeleteLogicalTable(id, tenantID, version int64) er
 		}
 		if table.Status != "draft" {
 			return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
+		}
+		grouped, err := repository.NewMaterializationGroupRepository(tx).ContainsLogicalTable(context.Background(), tenantID, id)
+		if err != nil {
+			return err
+		}
+		if grouped {
+			return apperrors.Conflict("materialization_group_member_conflict", i18n.MsgTableStateConflict)
 		}
 		relations, err := repository.NewTableRelationRepository(tx).ListByTable(id, tenantID)
 		if err != nil {
@@ -329,6 +337,15 @@ func (s *LogicalTableService) updateLogicalTableStatus(id, tenantID, userID, ver
 		}
 		if table.Status != from {
 			return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
+		}
+		if to == "draft" {
+			grouped, err := repository.NewMaterializationGroupRepository(tx).ContainsLogicalTable(context.Background(), tenantID, id)
+			if err != nil {
+				return err
+			}
+			if grouped {
+				return apperrors.Conflict("materialization_group_member_conflict", i18n.MsgTableStateConflict)
+			}
 		}
 		if validateApproval {
 			if err := validateLogicalTableShape(table.TableType, table.SCDType, table.GrainDescription); err != nil {
@@ -560,6 +577,41 @@ func previewLogicalTableWithMaterialization(table *models.LogicalTable, material
 	return &previewTable
 }
 
+func normalizeMaterialization(config map[string]interface{}) models.JSONB {
+	normalized := make(models.JSONB, len(config))
+	for key, value := range config {
+		normalized[key] = value
+	}
+	for _, key := range []string{"target_parent_locator", "target_name"} {
+		if value, ok := normalized[key].(string); ok {
+			normalized[key] = strings.TrimSpace(value)
+		}
+	}
+	rawPartitionBy, exists := normalized["partition_by"]
+	if !exists || rawPartitionBy == nil {
+		delete(normalized, "partition_by")
+		delete(normalized, "partition_type")
+		return normalized
+	}
+	partitionBy, ok := rawPartitionBy.(string)
+	if !ok {
+		return normalized
+	}
+	partitionBy = strings.TrimSpace(partitionBy)
+	if partitionBy == "" {
+		delete(normalized, "partition_by")
+		delete(normalized, "partition_type")
+		return normalized
+	}
+	normalized["partition_by"] = partitionBy
+	partitionType, ok := normalized["partition_type"].(string)
+	if !ok || strings.TrimSpace(partitionType) == "" {
+		partitionType = "range"
+	}
+	normalized["partition_type"] = strings.ToLower(strings.TrimSpace(partitionType))
+	return normalized
+}
+
 // generatePostgreSQLDDL 生成 PostgreSQL CREATE TABLE DDL
 func (s *LogicalTableService) generatePostgreSQLDDL(table *models.LogicalTable, fields []models.LogicalField) string {
 	var ddl strings.Builder
@@ -745,27 +797,33 @@ func validateMaterialization(table *models.LogicalTable, fields []models.Logical
 			return fmt.Errorf("物化配置 target_name 不是合法标识符")
 		}
 	}
-	for _, key := range []string{"partition_by"} {
-		if value, ok := materializationString(config, key); ok && value != "" && !identifierPattern.MatchString(value) {
-			return fmt.Errorf("物化配置 %s 不是合法标识符", key)
+	partitionBy, err := requiredMaterializationString(config, "partition_by")
+	if err != nil {
+		return err
+	}
+	if partitionBy != "" && !identifierPattern.MatchString(partitionBy) {
+		return fmt.Errorf("物化配置 partition_by 不是合法标识符")
+	}
+	partitionType, err := requiredMaterializationString(config, "partition_type")
+	if err != nil {
+		return err
+	}
+	if partitionBy != "" {
+		partitionType = strings.ToLower(partitionType)
+		if partitionType != "range" && partitionType != "list" && partitionType != "hash" {
+			return fmt.Errorf("不支持的分区类型: %s", partitionType)
 		}
 	}
-	if value, ok := materializationString(config, "partition_type"); ok && value != "" {
-		value = strings.ToLower(value)
-		if value != "range" && value != "list" && value != "hash" {
-			return fmt.Errorf("不支持的分区类型: %s", value)
-		}
-	}
-	if partition, ok := config["partition_by"].(string); ok && partition != "" && len(fields) > 0 {
+	if partitionBy != "" && len(fields) > 0 {
 		found := false
 		for _, field := range fields {
-			if field.ColumnName == partition {
+			if field.ColumnName == partitionBy {
 				found = true
 				break
 			}
 		}
 		if !found {
-			return fmt.Errorf("分区字段不存在: %s", partition)
+			return fmt.Errorf("分区字段不存在: %s", partitionBy)
 		}
 	}
 	for _, field := range fields {
@@ -798,6 +856,11 @@ func materializationString(config models.JSONB, key string) (string, bool) {
 	}
 	text, ok := value.(string)
 	return strings.TrimSpace(text), ok
+}
+
+func materializationHasPartitioning(config models.JSONB) bool {
+	partitionBy, ok := materializationString(config, "partition_by")
+	return ok && partitionBy != ""
 }
 
 // quoteDefault 处理默认值引号

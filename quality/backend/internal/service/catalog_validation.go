@@ -15,7 +15,7 @@ func requirePostgreSQLCatalogTable(ctx context.Context, client *commonClient.Sys
 		return nil, fmt.Errorf("%w: a PostgreSQL catalog target is required", commonAPI.ErrBadRequest)
 	}
 	bound := client.WithTenantID(uint(tenantID))
-	rootEntries, err := bound.ListCatalogChildren(ctx, uint(engineID), commonClient.EngineCatalogListChildrenRequest{
+	rootEntries, err := bound.ListEngineCatalogChildren(ctx, uint(engineID), commonClient.EngineCatalogListChildrenRequest{
 		Path:    commonClient.EngineCatalogPath{Version: "catalog.path/v1", EngineID: uint(engineID), Segments: []commonClient.EngineCatalogSegment{}},
 		Options: commonClient.EngineCatalogListOptions{Limit: 100},
 	})
@@ -32,7 +32,7 @@ func requirePostgreSQLCatalogTable(ctx context.Context, client *commonClient.Sys
 	if root == nil {
 		return nil, fmt.Errorf("%w: PostgreSQL catalog root is unavailable", commonAPI.ErrBadRequest)
 	}
-	namespaces, err := bound.ListCatalogChildren(ctx, uint(engineID), commonClient.EngineCatalogListChildrenRequest{Path: root.Path, Options: commonClient.EngineCatalogListOptions{Limit: 1000}})
+	namespaces, err := bound.ListEngineCatalogChildren(ctx, uint(engineID), commonClient.EngineCatalogListChildrenRequest{Path: root.Path, Options: commonClient.EngineCatalogListOptions{Limit: 1000}})
 	if err != nil {
 		return nil, fmt.Errorf("validate PostgreSQL schema: %w", err)
 	}
@@ -46,7 +46,7 @@ func requirePostgreSQLCatalogTable(ctx context.Context, client *commonClient.Sys
 	if namespace == nil {
 		return nil, fmt.Errorf("%w: schema %q was not found in the selected PostgreSQL engine", commonAPI.ErrBadRequest, schemaName)
 	}
-	tables, err := bound.ListCatalogChildren(ctx, uint(engineID), commonClient.EngineCatalogListChildrenRequest{Path: namespace.Path, Options: commonClient.EngineCatalogListOptions{Limit: 1000}})
+	tables, err := bound.ListEngineCatalogChildren(ctx, uint(engineID), commonClient.EngineCatalogListChildrenRequest{Path: namespace.Path, Options: commonClient.EngineCatalogListOptions{Limit: 1000}})
 	if err != nil {
 		return nil, fmt.Errorf("validate PostgreSQL table: %w", err)
 	}
@@ -63,7 +63,7 @@ func requirePostgreSQLCatalogColumn(ctx context.Context, client *commonClient.Sy
 	if client == nil || tenantID <= 0 || engineID <= 0 || table == nil {
 		return fmt.Errorf("%w: a PostgreSQL catalog table is required", commonAPI.ErrBadRequest)
 	}
-	facts, err := client.WithTenantID(uint(tenantID)).DescribeCatalogFacts(ctx, uint(engineID), commonClient.EngineCatalogDescribeFactsRequest{Path: table.Path})
+	facts, err := client.WithTenantID(uint(tenantID)).DescribeEngineCatalogFacts(ctx, uint(engineID), commonClient.EngineCatalogDescribeFactsRequest{Path: table.Path})
 	if err != nil {
 		return fmt.Errorf("validate PostgreSQL column: %w", err)
 	}

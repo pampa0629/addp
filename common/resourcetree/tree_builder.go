@@ -139,7 +139,7 @@ func buildFallbackCatalogRootTreeNode(engine *models.Engine, hasChildren bool) *
 		Locator:     rootLocator,
 		Label:       engine.Name,
 		Type:        string(rootType),
-		TypeLabel:   enginePlugin.CatalogTermI18nKey(string(rootType)),
+		TypeLabel:   enginePlugin.EngineCatalogTermI18nKey(string(rootType)),
 		Icon:        EngineIcon(engine),
 		Metadata:    engineTreeMetadata(engine, 0, "", 0, "", nil),
 		Children:    []*TreeNode{},
@@ -374,7 +374,7 @@ func (b *TreeBuilder) ConvertNodeToTree(loc *ResourceLocator, metadata map[strin
 		Locator:     locatorURI,
 		Label:       loc.LastSegment(),
 		Type:        string(loc.Type),
-		TypeLabel:   enginePlugin.CatalogTermI18nKey(string(loc.Type)),
+		TypeLabel:   enginePlugin.EngineCatalogTermI18nKey(string(loc.Type)),
 		Icon:        getIconByType(string(loc.Type)),
 		Metadata:    metadata,
 		Children:    []*TreeNode{},
@@ -528,13 +528,13 @@ func addMetaItemFacts(metadata map[string]interface{}, attrs map[string]interfac
 
 func catalogTypeLabel(engine *models.Engine, nodeType string) string {
 	if engine == nil || engine.Capabilities == nil {
-		return enginePlugin.CatalogTermI18nKey(nodeType)
+		return enginePlugin.EngineCatalogTermI18nKey(nodeType)
 	}
 	capabilities, err := enginePlugin.ParseEngineCapabilities(string(*engine.Capabilities))
 	if err != nil || capabilities == nil || capabilities.Storage == nil || capabilities.Storage.CatalogModel == nil {
-		return enginePlugin.CatalogTermI18nKey(nodeType)
+		return enginePlugin.EngineCatalogTermI18nKey(nodeType)
 	}
-	return enginePlugin.CatalogLevelI18nKey(*capabilities.Storage.CatalogModel, nodeType)
+	return enginePlugin.EngineCatalogLevelI18nKey(*capabilities.Storage.CatalogModel, nodeType)
 }
 
 // calculateItemDepth 动态计算 Item 的深度
@@ -652,11 +652,11 @@ func buildEngineRootLocator(engineID uint, rootType ResourceType) string {
 }
 
 func catalogRootResourceType(engine *models.Engine) ResourceType {
-	return CatalogRootResourceType(engine)
+	return EngineCatalogRootResourceType(engine)
 }
 
-// CatalogRootResourceType 返回引擎结构根在 ResourceLocator 中应使用的 root term。
-func CatalogRootResourceType(engine *models.Engine) ResourceType {
+// EngineCatalogRootResourceType 返回引擎结构根在 ResourceLocator 中应使用的 root term。
+func EngineCatalogRootResourceType(engine *models.Engine) ResourceType {
 	if engine == nil {
 		return TypeRoot
 	}
@@ -692,11 +692,11 @@ func catalogRootResourceTypeFromCapabilities(engine *models.Engine) ResourceType
 		return TypeUnknown
 	}
 	switch strings.TrimSpace(capabilities.Storage.CatalogModel.RootTerm) {
-	case enginePlugin.CatalogTermServer:
+	case enginePlugin.EngineCatalogTermServer:
 		return TypeServer
-	case enginePlugin.CatalogTermService:
+	case enginePlugin.EngineCatalogTermService:
 		return TypeService
-	case enginePlugin.CatalogTermRoot:
+	case enginePlugin.EngineCatalogTermRoot:
 		return TypeRoot
 	default:
 		return TypeUnknown

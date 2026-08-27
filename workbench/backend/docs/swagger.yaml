@@ -1,0 +1,434 @@
+basePath: /api/v1/workbench
+definitions:
+  api.PaginatedResponse:
+    properties:
+      data: {}
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  github_com_addp_workbench_internal_models.QueryFilter:
+    properties:
+      and:
+        items:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.QueryFilter'
+        type: array
+      field:
+        type: string
+      not:
+        $ref: '#/definitions/github_com_addp_workbench_internal_models.QueryFilter'
+      op:
+        type: string
+      or:
+        items:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.QueryFilter'
+        type: array
+      value:
+        type: object
+    type: object
+  github_com_addp_workbench_internal_models.QueryOrder:
+    properties:
+      direction:
+        type: string
+      field:
+        type: string
+    type: object
+  github_com_addp_workbench_internal_models.ServiceReference:
+    properties:
+      service_id:
+        type: integer
+      service_type:
+        enum:
+        - query
+        type: string
+    required:
+    - service_id
+    - service_type
+    type: object
+  github_com_addp_workbench_internal_models.ViewParameterDefinition:
+    properties:
+      control_type:
+        type: string
+      key:
+        type: string
+      label:
+        type: string
+      required:
+        type: boolean
+    type: object
+  github_com_addp_workbench_internal_models.ViewParameterFilter:
+    properties:
+      field:
+        type: string
+      operator:
+        type: string
+      parameter_key:
+        type: string
+    type: object
+  github_com_addp_workbench_internal_models.ViewQueryTemplate:
+    properties:
+      fixed_filter:
+        $ref: '#/definitions/github_com_addp_workbench_internal_models.QueryFilter'
+      format:
+        type: string
+      order_by:
+        items:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.QueryOrder'
+        type: array
+      page_limit:
+        type: integer
+      parameter_filters:
+        items:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.ViewParameterFilter'
+        type: array
+      select:
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_addp_workbench_internal_models.ViewResponse:
+    properties:
+      contract_fingerprint:
+        type: string
+      created_at:
+        type: string
+      default_parameter_values:
+        type: object
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner_user_id:
+        type: integer
+      parameter_definitions:
+        items:
+          type: object
+        type: array
+      query_template:
+        type: object
+      renderer_config:
+        type: object
+      renderer_type:
+        enum:
+        - table
+        - chart
+        - map
+        type: string
+      service_ref:
+        $ref: '#/definitions/github_com_addp_workbench_internal_models.ServiceReference'
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
+  github_com_addp_workbench_internal_models.ViewWriteRequest:
+    properties:
+      default_parameter_values:
+        additionalProperties:
+          items:
+            type: integer
+          type: array
+        type: object
+      description:
+        type: string
+      name:
+        type: string
+      parameter_definitions:
+        items:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.ViewParameterDefinition'
+        type: array
+      query_template:
+        $ref: '#/definitions/github_com_addp_workbench_internal_models.ViewQueryTemplate'
+      renderer_config:
+        type: object
+      renderer_type:
+        enum:
+        - table
+        - chart
+        - map
+        type: string
+      service_ref:
+        $ref: '#/definitions/github_com_addp_workbench_internal_models.ServiceReference'
+      version:
+        type: integer
+    required:
+    - name
+    - renderer_config
+    - renderer_type
+    type: object
+host: localhost:8193
+info:
+  contact: {}
+  title: ADDP Workbench API
+  version: "1.0"
+paths:
+  /views:
+    get:
+      description: 只返回当前 Tenant 和当前 User 拥有的工作台视图；不访问 Service | Return only Workbench
+        views owned by the current User in the current Tenant; Service is not accessed
+      parameters:
+      - description: 页码，默认 1 | Page number, default 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认 20，最大 100 | Page size, default 20 and maximum 100
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 工作台视图分页结果 | Paginated Workbench views
+          schema:
+            $ref: '#/definitions/api.PaginatedResponse'
+        "400":
+          description: 请求参数无效 | Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 权限不足 | Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出工作台视图 | List Workbench views
+      tags:
+      - Workbench Views
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - workbench.view.read
+    post:
+      consumes:
+      - application/json
+      description: 转发当前已验证的 User Bearer 读取 Service Consumer Descriptor，校验完整配置并保存当前契约指纹；请求不得提交
+        Tenant、owner、指纹或 Token | Forward the validated User Bearer to read the Service
+        Consumer Descriptor, validate the complete configuration, and save the current
+        contract fingerprint; Tenant, owner, fingerprint, and tokens are not accepted
+      parameters:
+      - description: 工作台视图配置 | Workbench view configuration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.ViewWriteRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 新建工作台视图 | Created Workbench view
+          schema:
+            $ref: '#/definitions/github_com_addp_workbench_internal_models.ViewResponse'
+        "400":
+          description: 视图配置无效 | Invalid view configuration
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Workbench 或 Service 权限不足 | Insufficient Workbench or Service
+            permission
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service 不可用 | Service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建工作台视图 | Create a Workbench view
+      tags:
+      - Workbench Views
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - workbench.view.create
+  /views/{id}:
+    delete:
+      description: 删除只匹配当前 Tenant 与当前 User 的视图，不访问 Service | Delete a view only when
+        it matches the current Tenant and User, without accessing Service
+      parameters:
+      - description: Workbench View UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功 | Deleted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: ID 无效 | Invalid ID
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 权限不足 | Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 视图不存在 | View not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除工作台视图 | Delete a Workbench view
+      tags:
+      - Workbench Views
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - workbench.view.delete
+    get:
+      description: 只读取 Workbench 自身保存的配置，不访问 Service；其他用户的视图按不存在处理 | Read only the
+        configuration stored by Workbench without accessing Service; views owned by
+        another user are treated as not found
+      parameters:
+      - description: Workbench View UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 工作台视图 | Workbench view
+          schema:
+            $ref: '#/definitions/github_com_addp_workbench_internal_models.ViewResponse'
+        "400":
+          description: ID 无效 | Invalid ID
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 权限不足 | Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 视图不存在 | View not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取工作台视图 | Get a Workbench view
+      tags:
+      - Workbench Views
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - workbench.view.read
+    put:
+      consumes:
+      - application/json
+      description: service_ref 不可改变；使用正整数 version 乐观并发并重新读取 Descriptor 校验配置和契约指纹 |
+        service_ref is immutable; use a positive version for optimistic concurrency
+        and re-read the Descriptor to validate configuration and contract fingerprint
+      parameters:
+      - description: Workbench View UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 完整工作台视图配置和当前 version | Complete Workbench view configuration
+          and current version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.ViewWriteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新后的工作台视图 | Updated Workbench view
+          schema:
+            $ref: '#/definitions/github_com_addp_workbench_internal_models.ViewResponse'
+        "400":
+          description: 视图配置无效 | Invalid view configuration
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Workbench 或 Service 权限不足 | Insufficient Workbench or Service
+            permission
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 视图不存在 | View not found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 版本冲突 | Version conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service 不可用 | Service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新工作台视图 | Update a Workbench view
+      tags:
+      - Workbench Views
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - workbench.view.update
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

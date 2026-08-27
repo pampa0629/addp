@@ -55,6 +55,7 @@ localhost:5001/addp-meta-backend         latest
 localhost:5001/addp-transfer-backend     latest
 localhost:5001/addp-orchestrator-backend latest
 localhost:5001/addp-develop-backend      latest
+localhost:5001/addp-develop-query-worker latest
 localhost:5001/addp-gateway              latest
 localhost:5001/addp-console               latest
 localhost:5001/addp-nginx                latest
@@ -212,6 +213,7 @@ Worker 服务:
   quality-worker
   transfer-bounded-worker
   transfer-continuous-worker
+  develop-query-worker
 
 前端服务:
   system-frontend      (port 8090)

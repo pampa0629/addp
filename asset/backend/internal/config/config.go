@@ -21,16 +21,12 @@ type Config struct {
 	SystemURL           string
 	ServiceClientSecret string
 
-	// 源模块 URL（用于资产自动发现）
-	MetaURL     string
-	ServiceURL  string
-	StandardURL string
-	DevelopURL  string
+	CatalogURL string
 
 	// Meilisearch（用于资产全文搜索，可选）
-	MeilisearchURL        string
-	MeilisearchMasterKey  string
-	MeilisearchAssetIndex string
+	MeilisearchURL                 string
+	MeilisearchMasterKey           string
+	MeilisearchPublishedAssetIndex string
 }
 
 func LoadConfig() (*Config, error) {
@@ -48,14 +44,11 @@ func LoadConfig() (*Config, error) {
 		SystemURL:           commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
 		ServiceClientSecret: commonConfig.GetEnv("ASSET_SERVICE_CLIENT_SECRET", ""),
 
-		MetaURL:     commonConfig.GetEnv("META_URL", "http://localhost:8082"),
-		ServiceURL:  commonConfig.GetEnv("SERVICE_URL", "http://localhost:8086"),
-		StandardURL: commonConfig.GetEnv("STANDARD_URL", "http://localhost:8110"),
-		DevelopURL:  commonConfig.GetEnv("DEVELOP_URL", "http://localhost:8185"),
+		CatalogURL: commonConfig.GetEnv("CATALOG_URL", "http://localhost:8192"),
 
-		MeilisearchURL:        os.Getenv("MEILISEARCH_URL"),
-		MeilisearchMasterKey:  os.Getenv("MEILISEARCH_MASTER_KEY"),
-		MeilisearchAssetIndex: commonConfig.GetEnv("MEILISEARCH_ASSET_CATALOG_INDEX", "asset_catalog"),
+		MeilisearchURL:                 os.Getenv("MEILISEARCH_URL"),
+		MeilisearchMasterKey:           os.Getenv("MEILISEARCH_MASTER_KEY"),
+		MeilisearchPublishedAssetIndex: commonConfig.GetEnv("MEILISEARCH_ASSET_CATALOG_INDEX", "asset_catalog"),
 	}
 
 	commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)

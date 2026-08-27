@@ -69,12 +69,7 @@
             <el-option :label="t('asset.assetManager.offline')" value="offline" />
           </el-select>
           <span class="total-label">{{ t('asset.assetManager.total', { count: total }) }}</span>
-          <el-button
-            :loading="syncing"
-            @click="handleSync"
-          >
-            {{ t('asset.assetManager.syncButton') }}
-          </el-button>
+          <el-button type="primary" @click="openCreate">{{ t('asset.assetManager.createButton') }}</el-button>
         </div>
 
         <!-- 批量操作栏 -->
@@ -110,7 +105,6 @@
             </template>
           </el-table-column>
           <el-table-column prop="type_name" :label="t('asset.assetManager.type')" width="90" />
-          <el-table-column prop="source_module" :label="t('asset.assetManager.source')" width="90" />
           <el-table-column prop="catalog_name" :label="t('asset.assetManager.catalog')" width="120" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="category-text">{{ row.catalog_name || '—' }}</span>
@@ -118,8 +112,7 @@
           </el-table-column>
           <el-table-column prop="status" :label="t('asset.assetManager.status')" width="90">
             <template #default="{ row }">
-              <el-tag v-if="!row.source_available" type="danger" size="small">{{ t('asset.assetManager.sourceUnavailable') }}</el-tag>
-              <el-tag v-else-if="row.status === 'draft'" type="info" size="small">{{ t('asset.assetManager.draft') }}</el-tag>
+              <el-tag v-if="row.status === 'draft'" type="info" size="small">{{ t('asset.assetManager.draft') }}</el-tag>
               <el-tag v-else-if="row.status === 'published'" type="success" size="small">{{ t('asset.assetManager.published') }}</el-tag>
               <el-tag v-else-if="row.status === 'offline'" type="warning" size="small">{{ t('asset.assetManager.offline') }}</el-tag>
             </template>
@@ -190,7 +183,6 @@ const route = useRoute()
 const router = useRouter()
 
 // ===== 状态 =====
-const syncing = ref(false)
 const loading = ref(false)
 const assets = ref([])
 const total = ref(0)
@@ -235,7 +227,7 @@ onMounted(async () => {
   await Promise.all([loadCategories(), loadTypes()])
   await initializeCategoryRoute()
   categoryRouteReady.value = true
-  await handleSync()
+  await Promise.all([loadAssets(), loadUncategorizedCount()])
 })
 
 watch(() => route.query.catalog_id, async () => {
@@ -247,24 +239,6 @@ watch(() => route.query.catalog_id, async () => {
   page.value = 1
   await loadAssets()
 })
-
-// ===== 同步 =====
-async function handleSync() {
-  syncing.value = true
-  try {
-    const res = await assetAPI.sync()
-    const created = res.created ?? 0
-    if (created > 0) {
-      ElMessage.success(t('asset.assetManager.syncSuccess', { count: created }))
-    }
-  } catch (e) {
-    ElMessage.warning(t('asset.assetManager.syncError'))
-  } finally {
-    syncing.value = false
-    await loadAssets()
-    await loadUncategorizedCount()
-  }
-}
 
 // ===== 资产列表 =====
 async function loadAssets() {
@@ -416,6 +390,10 @@ function onTreeNodeClick(data) {
 
 function openDetail(assetId) {
   navigateAssetRoute(router, `/assets/${assetId}`)
+}
+
+function openCreate() {
+  navigateAssetRoute(router, '/assets/new')
 }
 
 function openAddRootCategory() {

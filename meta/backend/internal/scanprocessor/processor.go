@@ -11,42 +11,42 @@ import (
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaenrich"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 type AssetIndexer interface {
-	IndexCatalogAsset(ctx context.Context, resource *commonModels.Engine, tenantID, engineID uint, catalogResource metacatalog.StorageResource, relativePath, fullName string, item *models.MetaItem, extractedText string) bool
+	IndexCatalogContent(ctx context.Context, resource *commonModels.Engine, tenantID, engineID uint, catalogResource scanresource.StorageResource, relativePath, fullName string, item *models.MetaItem, extractedText string) bool
 }
 
 type input struct {
-	Resource           *commonModels.Engine
-	TenantID           uint
-	EngineID           uint
-	ParentNode         *models.MetaNode
-	ExistingItemID     uint
-	ItemType           string
-	ItemName           string
-	FullName           string
-	Attributes         models.JSONMap
-	Detected           *metaitem.DetectedItem
-	ContentReader      plugin.ContentReadableProvider
-	ConnInfo           plugin.ConnectionInfo
-	CatalogPath        plugin.CatalogPath
-	CatalogPathFor     func(string) plugin.CatalogPath
-	PhysicalPath       string
-	IndexRootName      string
-	IndexPath          string
-	IndexRelativePath  string
-	SizeBytes          int64
-	DataUpdatedAt      *time.Time
-	ScanDepth          string
-	IncludeAccessIndex bool
-	StrictDeepEnrich   bool
+	Resource             *commonModels.Engine
+	TenantID             uint
+	EngineID             uint
+	ParentNode           *models.MetaNode
+	ExistingItemID       uint
+	ItemType             string
+	ItemName             string
+	FullName             string
+	Attributes           models.JSONMap
+	Detected             *metaitem.DetectedItem
+	ContentReader        plugin.ContentReadableProvider
+	ConnInfo             plugin.ConnectionInfo
+	EngineCatalogPath    plugin.EngineCatalogPath
+	EngineCatalogPathFor func(string) plugin.EngineCatalogPath
+	PhysicalPath         string
+	IndexRootName        string
+	IndexPath            string
+	IndexRelativePath    string
+	SizeBytes            int64
+	DataUpdatedAt        *time.Time
+	ScanDepth            string
+	IncludeAccessIndex   bool
+	StrictDeepEnrich     bool
 }
 
 type Result struct {
@@ -177,9 +177,9 @@ func prepareAttributes(input *input) models.JSONMap {
 	if input.DataUpdatedAt != nil {
 		metaattr.SetStorage(attrs, "last_modified_at", input.DataUpdatedAt)
 	}
-	if input.CatalogPathFor == nil {
-		path := input.CatalogPath
-		input.CatalogPathFor = func(string) plugin.CatalogPath {
+	if input.EngineCatalogPathFor == nil {
+		path := input.EngineCatalogPath
+		input.EngineCatalogPathFor = func(string) plugin.EngineCatalogPath {
 			return path
 		}
 	}

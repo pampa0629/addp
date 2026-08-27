@@ -89,7 +89,7 @@ func (s *rawCopyContentStore) StoreSemantics() engineplugin.StoreSemantics {
 	return engineplugin.StoreSemantics{}
 }
 
-func (s *rawCopyContentStore) OpenContent(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath, _ engineplugin.ReadOptions) (io.ReadCloser, error) {
+func (s *rawCopyContentStore) OpenContent(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.EngineCatalogPath, _ engineplugin.ReadOptions) (io.ReadCloser, error) {
 	data, ok := s.files[path.StringPath()]
 	if !ok {
 		return nil, fmt.Errorf("content %s not found", path.StringPath())
@@ -97,7 +97,7 @@ func (s *rawCopyContentStore) OpenContent(_ context.Context, _ engineplugin.Conn
 	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
-func (s *rawCopyContentStore) CreateContent(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath, _ engineplugin.WriteOptions) (io.WriteCloser, error) {
+func (s *rawCopyContentStore) CreateContent(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.EngineCatalogPath, _ engineplugin.WriteOptions) (io.WriteCloser, error) {
 	buf := &bytes.Buffer{}
 	return rawCopyWriteCloser{Writer: buf, close: func() {
 		if s.files == nil {
@@ -107,7 +107,7 @@ func (s *rawCopyContentStore) CreateContent(_ context.Context, _ engineplugin.Co
 	}}, nil
 }
 
-func (s *rawCopyContentStore) DeleteResource(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath) error {
+func (s *rawCopyContentStore) DeleteResource(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.EngineCatalogPath) error {
 	if s.deleted == nil {
 		s.deleted = map[string]bool{}
 	}

@@ -64,7 +64,7 @@ test('PUT payloads preserve complete nullable and zero-valued model state', () =
     { target_parent_locator: '', target_name: '', partition_by: '', partition_type: 'range' }
   ), {
     name: 'Order', domain_id: null, entity_id: 7, version: 3, table_type: 'entity', layer: 'dwd',
-    materialization: { target_parent_locator: '', target_name: '', partition_by: '', partition_type: 'range' }
+    materialization: { target_parent_locator: '', target_name: '' }
   })
 
   assert.deepEqual(buildEntityAttributeUpdateRequest({
@@ -106,9 +106,7 @@ test('DDL preview payload contains only current materialization fields', () => {
   }), {
     materialization: {
       target_parent_locator: 'addp://engine/2/path/analytics?type=schema',
-      target_name: 'fact_order',
-      partition_by: '',
-      partition_type: 'range'
+      target_name: 'fact_order'
     }
   })
 })
@@ -117,9 +115,23 @@ test('DDL preview payload normalizes absent materialization without leaking unde
   assert.deepEqual(buildDDLPreviewRequest(), {
     materialization: {
       target_parent_locator: '',
-      target_name: '',
-      partition_by: '',
-      partition_type: ''
+      target_name: ''
+    }
+  })
+})
+
+test('materialization payload keeps normalized partition design only when partition field is present', () => {
+  assert.deepEqual(buildDDLPreviewRequest({
+    target_parent_locator: 'addp://engine/2/path/analytics?type=schema',
+    target_name: 'fact_order',
+    partition_by: ' occurred_at ',
+    partition_type: 'RANGE'
+  }), {
+    materialization: {
+      target_parent_locator: 'addp://engine/2/path/analytics?type=schema',
+      target_name: 'fact_order',
+      partition_by: 'occurred_at',
+      partition_type: 'range'
     }
   })
 })

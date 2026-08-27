@@ -3,13 +3,13 @@ package metapath
 import (
 	"testing"
 
-	"github.com/addp/meta/internal/metacatalog"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 func TestFilterObjectResourcesForDepthKeepsDirectChildren(t *testing.T) {
 	t.Parallel()
 
-	resources := []metacatalog.StorageResource{
+	resources := []scanresource.StorageResource{
 		{NodeType: "prefix", Path: "a"},
 		{NodeType: "prefix", Path: "a/b"},
 		{NodeType: "object", Path: "file.csv"},
@@ -26,7 +26,7 @@ func TestFilterObjectResourcesForDepthKeepsDirectChildren(t *testing.T) {
 func TestFilterObjectResourcesForDepthUsesBasePath(t *testing.T) {
 	t.Parallel()
 
-	resources := []metacatalog.StorageResource{
+	resources := []scanresource.StorageResource{
 		{NodeType: "prefix", Path: "lake/table"},
 		{NodeType: "object", Path: "lake/table/data.parquet"},
 		{NodeType: "object", Path: "lake/table/nested/data.parquet"},

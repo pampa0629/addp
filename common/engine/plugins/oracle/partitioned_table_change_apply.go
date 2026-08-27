@@ -30,7 +30,7 @@ type oracleApplyLedgerPosition struct {
 	NextOffset      int64
 }
 
-func (p *OraclePlugin) PreparePartitionedTableChangeApply(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.PartitionedTableChangeApplyOptions) error {
+func (p *OraclePlugin) PreparePartitionedTableChangeApply(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.PartitionedTableChangeApplyOptions) error {
 	keys, err := validateOraclePartitionedTableChangeApplyOptions(opts)
 	if err != nil {
 		return err
@@ -75,7 +75,7 @@ func (p *OraclePlugin) PreparePartitionedTableChangeApply(ctx context.Context, c
 	return validateOracleApplyTargetKeys(ctx, db, schema, table, keys)
 }
 
-func (p *OraclePlugin) ApplyPartitionedTableChanges(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, batch *plugin.PartitionedTableChangeBatch, opts plugin.PartitionedTableChangeApplyOptions) (*plugin.PartitionedTableChangeApplyResult, error) {
+func (p *OraclePlugin) ApplyPartitionedTableChanges(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.PartitionedTableChangeBatch, opts plugin.PartitionedTableChangeApplyOptions) (*plugin.PartitionedTableChangeApplyResult, error) {
 	keys, err := validateOraclePartitionedTableChangeApplyBatch(batch, opts)
 	if err != nil {
 		return nil, err
@@ -256,8 +256,8 @@ func oracleApplyFields(fields []datatype.FieldInfo, keys []string, targetAbsent 
 	return result
 }
 
-func oracleTablePathParts(path plugin.CatalogPath) (string, string, error) {
-	segments := plugin.CatalogPathWithoutRoot(path).Segments
+func oracleTablePathParts(path plugin.EngineCatalogPath) (string, string, error) {
+	segments := plugin.EngineCatalogPathWithoutRoot(path).Segments
 	if len(segments) < 2 {
 		return "", "", fmt.Errorf("oracle table operation requires schema/table catalog path")
 	}

@@ -129,7 +129,7 @@ func TestShouldUseMySQLInsertWriteMethod(t *testing.T) {
 
 func TestMySQLOpenTableWriteSessionRejectsResumeMarker(t *testing.T) {
 	mysqlPlugin := &MySQLPlugin{}
-	_, err := mysqlPlugin.OpenTableWriteSession(nil, nil, plugin.CatalogPath{}, plugin.TableWriteSessionOptions{
+	_, err := mysqlPlugin.OpenTableWriteSession(nil, nil, plugin.EngineCatalogPath{}, plugin.TableWriteSessionOptions{
 		ResumeMarker: &resume.Marker{Version: resume.MarkerVersionV1},
 	})
 	if err == nil {
@@ -194,7 +194,7 @@ func TestMySQLTableWriteSessionBuildCommitMarker(t *testing.T) {
 }
 
 func TestMySQLTablePathPartsErrorText(t *testing.T) {
-	_, _, err := mysqlTablePathParts(plugin.CatalogPath{})
+	_, _, err := mysqlTablePathParts(plugin.EngineCatalogPath{})
 	if err == nil || !strings.Contains(err.Error(), "database/table") {
 		t.Fatalf("mysqlTablePathParts error = %v, want database/table", err)
 	}

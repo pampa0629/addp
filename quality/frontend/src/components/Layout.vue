@@ -46,6 +46,10 @@
               <el-icon><List /></el-icon>
               <span>{{ t('quality.layout.checkTasks') }}</span>
             </el-menu-item>
+            <el-menu-item index="/materialization-gate-tasks">
+              <el-icon><Lock /></el-icon>
+              <span>{{ t('quality.layout.materializationGateTasks') }}</span>
+            </el-menu-item>
             <el-menu-item index="/executions">
               <el-icon><Clock /></el-icon>
               <span>{{ t('quality.layout.executions') }}</span>
@@ -71,7 +75,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import {
   User, ArrowDown, SwitchButton, CircleCheck,
-  Setting, List, Clock, Warning
+  Setting, List, Clock, Warning, Lock
 } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 
@@ -90,6 +94,7 @@ const activeMenu = computed(() => {
   const path = route.path
   if (path.startsWith('/rule-applications')) return '/rule-applications'
   if (path.startsWith('/check-tasks')) return '/check-tasks'
+  if (path.startsWith('/materialization-gate-tasks')) return '/materialization-gate-tasks'
   if (path.startsWith('/executions')) return '/executions'
   if (path.startsWith('/issues')) return '/issues'
   return path

@@ -60,7 +60,7 @@ func TestIntegrationOracleSpatialMirrorLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	items, err := (&oracleplugin.OraclePlugin{}).ListChildren(ctx, connInfo,
-		engineplugin.TabularNamespacePath(92001, engineplugin.CatalogTermSchema, schema), engineplugin.ListOptions{})
+		engineplugin.TabularNamespacePath(92001, engineplugin.EngineCatalogTermSchema, schema), engineplugin.ListOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

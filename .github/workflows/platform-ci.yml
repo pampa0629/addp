@@ -346,6 +346,9 @@ jobs:
           - module: asset
             name: Asset
             target: test-asset-frontend
+          - module: catalog
+            name: Catalog
+            target: test-catalog-frontend
           - module: console
             name: Console
             target: test-console-frontend
@@ -385,6 +388,9 @@ jobs:
           - module: transfer
             name: Transfer
             target: test-transfer-frontend
+          - module: workbench
+            name: Workbench
+            target: test-workbench-frontend
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

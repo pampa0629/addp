@@ -253,6 +253,63 @@ const docTemplate = `{
                     "asset.management.read",
                     "asset.entry.read"
                 ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "选择一个或多个 CatalogEntry 原子创建资产草稿 | Atomically create an asset draft by selecting one or more CatalogEntry references",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Asset"
+                ],
+                "summary": "创建资产 | Create asset",
+                "parameters": [
+                    {
+                        "description": "完整资产聚合 | Complete asset aggregate",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_asset_internal_service.CreateAssetReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.management.read",
+                    "asset.entry.update"
+                ]
             }
         },
         "/assets/batch-catalog": {
@@ -447,36 +504,6 @@ const docTemplate = `{
                 ]
             }
         },
-        "/assets/sync": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Asset"
-                ],
-                "summary": "同步资产 | Sync assets",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "asset.management.read",
-                    "asset.entry.update"
-                ]
-            }
-        },
         "/assets/type-fields/{type_id}": {
             "get": {
                 "security": [
@@ -609,13 +636,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "已发布资产必须先下架再删除 | Published assets must be offlined before deletion",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Asset"
                 ],
-                "summary": "删除资产 | Delete asset",
+                "summary": "删除草稿或已下架资产 | Delete draft or offline asset",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1395,7 +1423,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/github_com_addp_asset_internal_service.CatalogEntry"
+                                "$ref": "#/definitions/github_com_addp_asset_internal_service.AssetCatalogTreeNode"
                             }
                         }
                     }
@@ -1606,6 +1634,58 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_asset_internal_service.AssetCatalogTreeNode": {
+            "type": "object",
+            "properties": {
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_asset_internal_service.AssetCatalogTreeNode"
+                    }
+                },
+                "count": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "integer"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_asset_internal_service.AssetComponentInput": {
+            "type": "object",
+            "properties": {
+                "catalog_entry_id": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_asset_internal_service.BatchCatalogReq": {
             "type": "object",
             "required": [
@@ -1640,41 +1720,38 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_asset_internal_service.CatalogEntry": {
+        "github_com_addp_asset_internal_service.CreateAssetReq": {
             "type": "object",
+            "required": [
+                "components",
+                "name",
+                "type_id"
+            ],
             "properties": {
-                "children": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_asset_internal_service.CatalogEntry"
-                    }
-                },
-                "count": {
+                "catalog_id": {
                     "type": "integer"
                 },
-                "created_at": {
-                    "type": "string"
+                "components": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_asset_internal_service.AssetComponentInput"
+                    }
                 },
                 "description": {
                     "type": "string"
                 },
-                "id": {
-                    "type": "integer"
-                },
                 "name": {
                     "type": "string"
                 },
-                "parent_id": {
-                    "type": "integer"
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
-                "sort_order": {
+                "type_id": {
                     "type": "integer"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
                 }
             }
         },
@@ -1712,9 +1789,22 @@ const docTemplate = `{
         },
         "github_com_addp_asset_internal_service.UpdateAssetReq": {
             "type": "object",
+            "required": [
+                "components",
+                "name",
+                "type_id",
+                "version"
+            ],
             "properties": {
                 "catalog_id": {
                     "type": "integer"
+                },
+                "components": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_asset_internal_service.AssetComponentInput"
+                    }
                 },
                 "description": {
                     "type": "string"
@@ -1727,6 +1817,13 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "type_id": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },

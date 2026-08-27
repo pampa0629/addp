@@ -45,7 +45,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 
 	// 创建Handler
 	handler := NewHandler(engineService, scanService, taskService, executionService, metadataQueryService, inspectService, lineageService)
-	assetDiscHandler := newAssetDiscoverableHandler(db)
+	handler.dataItemChangeService = service.NewDataItemChangeService(db)
 
 	lifecycle.RegisterHealthRoutes(router)
 	router.Use(lifecycle.RequireReady())
@@ -65,14 +65,6 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		api.Use(audit.ServiceAuditMiddleware("meta", systemClient))
 	}
 	{
-		// 资产发现接口（供 Asset 模块调用）
-		api.GET(
-			"/assets/discoverable",
-			auth.MustNewServiceClientGuard("addp-asset"),
-			permission(metaauthorization.PermissionMetaCatalogRead),
-			assetDiscHandler.listDiscoverableAssets,
-		)
-
 		// 资源相关
 		api.GET("/engines", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetEngines)
 
@@ -95,6 +87,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 
 		// 元数据相关
 		api.GET("/engines/:engine_id/items", permission(metaauthorization.PermissionMetaCatalogRead), handler.ListEngineItems)
+		api.GET("/data-items/changes", auth.MustNewServiceClientGuard("addp-catalog"), permission(metaauthorization.PermissionMetaCatalogRead), handler.ListDataItemChanges)
 
 		// 新增：用于 Manager 模块的元数据查询接口
 		api.GET("/engines/:engine_id/tree", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetMetadataTree)

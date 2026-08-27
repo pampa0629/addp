@@ -45,10 +45,8 @@ func main() {
 	}
 	systemClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
 	engineService := service.NewEngineService(db, systemClient)
-	scanService, _, err := service.NewRuntimeScanService(db, engineService, cfg)
-	if err != nil {
-		log.Fatalf("扫描运行时初始化失败: %v", err)
-	}
+	contentIndexClient := commonClient.NewManagerContentClient(cfg.ManagerServiceURL, tokenSource, nil)
+	scanService := service.NewRuntimeScanService(db, engineService, cfg, contentIndexClient)
 
 	var redisClient *redis.Client
 	if cfg.RedisHost != "" && cfg.RedisPort != "" {

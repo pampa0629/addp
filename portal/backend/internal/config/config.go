@@ -11,7 +11,6 @@ type Config struct {
 
 	SystemURL           string
 	AssetURL            string
-	ServiceURL          string
 	ServiceClientSecret string
 
 	RedisHost     string
@@ -27,7 +26,6 @@ func LoadConfig() *Config {
 		Port:                commonConfig.GetEnv("PORTAL_BACKEND_PORT", "8184"),
 		SystemURL:           commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
 		AssetURL:            commonConfig.GetEnv("ASSET_URL", "http://localhost:8183"),
-		ServiceURL:          commonConfig.GetEnv("SERVICE_URL", "http://localhost:8086"),
 		ServiceClientSecret: os.Getenv("PORTAL_SERVICE_CLIENT_SECRET"),
 
 		RedisHost:     commonConfig.GetEnv("REDIS_HOST", "localhost"),

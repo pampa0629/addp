@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lib/pq"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -49,7 +48,19 @@ func TestExecutionAuthorizationFactsMigrationAgainstPostgres(t *testing.T) {
 		t.Fatal("partial execution authorization tuple was accepted")
 	}
 
-	membershipID, version, authorizationID := int64(13), int64(17), int64(19)
+	membershipID, version := int64(13), int64(17)
+	lineageOnly := &TaskExecution{
+		TenantID: 7, ExecutionID: "00000000-0000-0000-0000-000000000004",
+		Module: ModuleDevelop, TaskType: TaskTypeQuery, Source: ModuleOrchestrator,
+		Status: ExecutionStatusPending, TriggerType: TriggerTypeManual,
+		ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
+		IssuedAuthorizationVersion: &version, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := NewTaskExecutionRepository(db).Create(context.Background(), lineageOnly); err != nil {
+		t.Fatalf("create execution with authorization lineage: %v", err)
+	}
+
+	authorizationID := int64(19)
 	expiresAt := now.Add(5 * time.Minute)
 	authorized := &TaskExecution{
 		TenantID: 7, ExecutionID: "00000000-0000-0000-0000-000000000003",
@@ -57,7 +68,7 @@ func TestExecutionAuthorizationFactsMigrationAgainstPostgres(t *testing.T) {
 		Status: ExecutionStatusPending, TriggerType: TriggerTypeManual,
 		ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
 		IssuedAuthorizationVersion: &version, ExecutionAuthorizationID: &authorizationID,
-		AuthorizationEffects: pq.StringArray{"read"}, AuthorizationExpiresAt: &expiresAt,
+		AuthorizationExpiresAt: &expiresAt,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if err := NewTaskExecutionRepository(db).Create(context.Background(), authorized); err != nil {

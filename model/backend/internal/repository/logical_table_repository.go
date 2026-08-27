@@ -28,6 +28,15 @@ func (r *LogicalTableRepository) GetByID(id, tenantID int64) (*models.LogicalTab
 	return &table, commonrepo.WrapDBError(err)
 }
 
+func (r *LogicalTableRepository) GetByIDs(ids []int64, tenantID int64) ([]models.LogicalTable, error) {
+	if len(ids) == 0 {
+		return []models.LogicalTable{}, nil
+	}
+	var tables []models.LogicalTable
+	err := r.db.Where("tenant_id = ? AND id IN ?", tenantID, ids).Order("id ASC").Find(&tables).Error
+	return tables, commonrepo.WrapDBError(err)
+}
+
 type ListLogicalTableOptions struct {
 	DomainID  *int64
 	Layer     string

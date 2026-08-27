@@ -125,13 +125,13 @@ func TestIssueExecutionAuthorizationFromParentUsesQualityBoundary(t *testing.T) 
 			}
 			if request.ParentExecutionID != parentExecutionID || request.ExecutionID != childExecutionID ||
 				request.Audience != commonExecution.AudienceQuality || request.ExpiresIn != 3600 ||
-				len(request.EngineIDs) != 1 || request.EngineIDs[0] != "12" ||
-				len(request.Effects) != 1 || request.Effects[0] != "read" {
+				len(request.Accesses) != 1 || request.Accesses[0].EngineID != "12" ||
+				len(request.Accesses[0].Effects) != 1 || request.Accesses[0].Effects[0] != "read" {
 				t.Fatalf("authorization request = %#v", request)
 			}
 			_ = json.NewEncoder(w).Encode(commonClient.IssuedExecutionAuthorization{
-				ID: "91", ExecutionID: childExecutionID, Audience: commonExecution.AudienceQuality, EngineIDs: []string{"12"},
-				Effects: []string{"read"}, ExpiresAt: expiresAt, ActorPrincipalID: "21", TenantID: "7",
+				ID: "91", ExecutionID: childExecutionID, Audience: commonExecution.AudienceQuality,
+				Accesses: []commonClient.ExecutionEngineAccessScope{{EngineID: "12", Effects: []string{"read"}}}, ExpiresAt: expiresAt, ActorPrincipalID: "21", TenantID: "7",
 				TenantMembershipID: "22", IssuedAuthorizationVersion: "3", SourceType: "user",
 			})
 		default:
@@ -165,7 +165,9 @@ func TestIssueExecutionAuthorizationRejectsInvalidSystemResponse(t *testing.T) {
 			response.ExpiresAt = time.Now().UTC().Add(-time.Minute)
 		}},
 		{name: "audience mismatch", mutate: func(response *commonClient.IssuedExecutionAuthorization) { response.Audience = "addp-develop" }},
-		{name: "engine expansion", mutate: func(response *commonClient.IssuedExecutionAuthorization) { response.EngineIDs = []string{"12", "13"} }},
+		{name: "engine expansion", mutate: func(response *commonClient.IssuedExecutionAuthorization) {
+			response.Accesses = append(response.Accesses, commonClient.ExecutionEngineAccessScope{EngineID: "13", Effects: []string{"read"}})
+		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			childExecutionID := "2aaeb79d-2bbd-47a2-a8d4-a607ce6d51a5"
@@ -176,7 +178,8 @@ func TestIssueExecutionAuthorizationRejectsInvalidSystemResponse(t *testing.T) {
 					_ = json.NewEncoder(w).Encode(map[string]interface{}{"access_token": "addp_at_quality_service", "token_type": "Bearer", "expires_in": 300, "scope": "addp.api"})
 				case "/api/v1/system/runtime/execution-authorizations":
 					response := commonClient.IssuedExecutionAuthorization{
-						ID: "91", ExecutionID: childExecutionID, Audience: commonExecution.AudienceQuality, EngineIDs: []string{"12"}, Effects: []string{"read"},
+						ID: "91", ExecutionID: childExecutionID, Audience: commonExecution.AudienceQuality,
+						Accesses:  []commonClient.ExecutionEngineAccessScope{{EngineID: "12", Effects: []string{"read"}}},
 						ExpiresAt: time.Now().UTC().Add(time.Hour), ActorPrincipalID: "21", TenantID: "7", TenantMembershipID: "22", IssuedAuthorizationVersion: "3",
 					}
 					test.mutate(&response)

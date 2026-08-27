@@ -2,7 +2,7 @@
 
 ## 概述
 
-Copilot 是一个**纯后端 API 服务**（Python FastAPI，端口 8087），没有独立前端。Develop 的查询工作台、工作流编辑器和 Notebook 编辑器分别嵌入 AI 助手：查询工作台把当前 Query Engine、查询语言、可选的已确认资源和编辑器已有查询交给 Copilot 生成候选查询文本；工作流编辑器把工作流运行时和已确认资源交给 Copilot 生成 DAG；Notebook 编辑器把当前 Session Catalog 中用户确认的资源事实交给 Copilot 生成 Python/GeoPandas 单元。三种结果都只作为候选，保存、插入和执行继续归 Develop。
+Copilot 是一个**纯后端 API 服务**（Python FastAPI，端口 8087），没有独立前端。Develop 的查询工作台、工作流编辑器和 Notebook 编辑器分别嵌入 AI 助手：查询工作台把当前 Query Engine、查询语言、可选的已确认资源和编辑器已有查询交给 Copilot 生成候选查询文本；工作流编辑器把工作流运行时和已确认资源交给 Copilot 生成 DAG；Notebook 编辑器把当前 Session Engine Catalog 中用户确认的资源事实交给 Copilot 生成 Python/GeoPandas 单元。三种结果都只作为候选，保存、插入和执行继续归 Develop。
 
 ---
 
@@ -12,7 +12,7 @@ Copilot 是一个**纯后端 API 服务**（Python FastAPI，端口 8087），�
 |------|------|------|
 | **Develop 前端** | `WorkflowEditor.vue` | AI 助手面板 UI；用户输入自然语言、选择工作流引擎实例；接收并渲染生成的工作流 DAG |
 | **Develop 前端** | `QueryEditor.vue` | 查询 AI 助手；固定当前 Query Engine 与 capability 查询语言，确认该引擎内的数据资源并把候选查询回填 Monaco Editor |
-| **Develop 前端** | `NotebookEditor.vue` | Notebook AI 助手；只使用当前 Notebook Session Catalog，逐角色确认数据源后展示并插入 Python 单元 |
+| **Develop 前端** | `NotebookEditor.vue` | Notebook AI 助手；只使用当前 Notebook Session Engine Catalog，逐角色确认数据源后展示并插入 Python 单元 |
 | **Develop 前端** | `OperatorPalette.vue` | 算子面板；按工作流引擎实例加载可用算子列表供用户拖拽使用 |
 | **Develop 前端** | `api/copilot.js` | 封装对 Copilot 后端的 HTTP 调用 |
 | **Gateway** | `gateway:8000` | 统一路由入口；将 `/api/copilot/*` 反向代理到 Copilot 后端 |
@@ -32,7 +32,7 @@ Copilot 是一个**纯后端 API 服务**（Python FastAPI，端口 8087），�
 
 ## 查询工作台生成主流程
 
-1. Develop 前端提交自然语言、当前 `engine_id`、当前 `query_language`、具体 data item locator 和可选 `current_query`。MongoDB 用户可以只选择 database；已有 MQL 时，Develop 提取全部 collection 引用并在当前 database 的 Owner Catalog 中解析为具体 locator；编辑器为空时首次提交 `resources=[] + resource_scope_locator=<database locator>`。scope locator 不进入资源事实或查询执行参数。
+1. Develop 前端提交自然语言、当前 `engine_id`、当前 `query_language`、具体 data item locator 和可选 `current_query`。MongoDB 用户可以只选择 database；已有 MQL 时，Develop 提取全部 collection 引用并在当前 database 的 Owner Engine Catalog 中解析为具体 locator；编辑器为空时首次提交 `resources=[] + resource_scope_locator=<database locator>`。scope locator 不进入资源事实或查询执行参数。
 2. Copilot 通过 `engine.list` 验证当前用户可访问该 Query Engine，并校验查询语言属于 `capabilities.compute.query.languages`。
 3. 已提交具体 data item locator 时执行 `resource.ancestors.get` 与 `data.preview`；MQL 已声明 collection 时必须提交 Develop 自动解析得到的全部 collection 资源，不能用 `resources=[]` 绕过字段事实；编辑器为空且提交 scope 时提取独立输入角色，通过 `resource.children.list` 枚举直接子资源并逐一 `data.preview`；没有 scope 的资源发现才使用 `data.search` 粗筛并校验 ancestor 和预览事实。
 4. 同一角色多候选时通过结构化 `clarifications[]` 返回全部候选给用户单选；候选不得来自其他 Engine 或 scope。MongoDB 只选 database 且编辑器为空时，Copilot 返回 Owner 已验证的该 database 直接 collection 候选，再由 Develop 通用澄清弹窗要求用户确认。
@@ -44,7 +44,7 @@ Agent 使用根 `skills/query-generation` 和 `query.draft.generate` Tool 复用
 ## Notebook 编辑器生成主流程
 
 1. Develop 创建短期 Notebook Session，并以该 Session 的授权 Catalog 作为唯一数据范围。
-2. 首次请求只让 Copilot 提取独立输入角色及中英文检索词；Develop 在 Session Catalog 内粗筛。某个角色零召回时，Copilot 只为该角色补充一次未尝试的检索词，Develop 再次扫描同一 Catalog。
+2. 首次请求只让 Copilot 提取独立输入角色及中英文检索词；Develop 在 Session Engine Catalog 内粗筛。某个角色零召回时，Copilot 只为该角色补充一次未尝试的检索词，Develop 再次扫描同一 Catalog。
 3. Develop 将全部候选返回前端，LLM 只能排序和标记推荐项；多个候选必须由用户逐角色确认。
 4. 确认后 Develop 重新校验原生路径并读取字段、几何列、几何类型和 CRS，调用 `notebook.draft.generate`。
 5. Copilot 只生成通过 `addp_common.notebook.engines` 读取数据的 Pandas/GeoPandas Python 单元。空间表使用 `to_geopandas(...)`；不得生成 `engine.sql(...)`、旁路连接或硬编码字段/CRS。

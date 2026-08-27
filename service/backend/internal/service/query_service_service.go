@@ -198,6 +198,11 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 		Status:    "active",
 		CreatedBy: createdBy,
 	}
+	if service.IsRESTAPIEnabled() {
+		if err := ValidateQueryConsumerContract(service); err != nil {
+			return nil, err
+		}
+	}
 
 	// 10. 保存到数据库
 	if err := s.repo.Create(service); err != nil {
@@ -425,11 +430,15 @@ func tableResourceRefFromRequest(req *models.CreateQueryServiceRequest) (*tableR
 }
 
 func (s *QueryServiceService) buildProtocolsConfig(userProtocols map[string]interface{}, hasGeometry bool) models.JSONB {
+	restFormats := []string{"json", "csv"}
+	if hasGeometry {
+		restFormats = append(restFormats, "geojson")
+	}
 	// 默认协议配置
 	protocols := map[string]interface{}{
 		"rest_api": map[string]interface{}{
 			"enabled": true,
-			"formats": []string{"json", "csv", "geojson"},
+			"formats": restFormats,
 		},
 		"ogc_features": map[string]interface{}{
 			"enabled": false,
@@ -792,6 +801,25 @@ func (s *QueryServiceService) UpdateService(id uint, req *models.UpdateQueryServ
 		updates["status"] = *req.Status
 	}
 
+	candidate := *service
+	if dataConfig, ok := updates["data_config"].(models.JSONB); ok {
+		candidate.DataConfig = dataConfig
+	}
+	if protocols, ok := updates["protocols"].(models.JSONB); ok {
+		candidate.Protocols = protocols
+	}
+	if status, ok := updates["status"].(string); ok {
+		candidate.Status = status
+	}
+	if maxFeatures, ok := updates["max_features"].(int); ok {
+		candidate.MaxFeatures = maxFeatures
+	}
+	if candidate.Status == "active" && candidate.IsRESTAPIEnabled() {
+		if err := ValidateQueryConsumerContract(&candidate); err != nil {
+			return nil, fmt.Errorf("cannot activate query service: %w", err)
+		}
+	}
+
 	// 执行更新
 	if err := s.repo.Update(id, updates); err != nil {
 		return nil, fmt.Errorf("update service failed: %w", err)
@@ -816,6 +844,18 @@ func (s *QueryServiceService) DeleteService(id uint) error {
 
 // UpdateServiceStatus 更新服务状态
 func (s *QueryServiceService) UpdateServiceStatus(id uint, status string, errorMessage string) error {
+	if status == "active" {
+		service, err := s.repo.GetByID(id)
+		if err != nil {
+			return fmt.Errorf("get service failed: %w", err)
+		}
+		service.Status = status
+		if service.IsRESTAPIEnabled() {
+			if err := ValidateQueryConsumerContract(service); err != nil {
+				return fmt.Errorf("cannot activate query service: %w", err)
+			}
+		}
+	}
 	if err := s.repo.UpdateStatus(id, status, errorMessage); err != nil {
 		return fmt.Errorf("update service status failed: %w", err)
 	}

@@ -608,15 +608,15 @@ func validateTargetDoesNotExist(ctx context.Context, plan *CapturePlan) error {
 	if err != nil {
 		return fmt.Errorf("load database CDC target plugin %q: %w", plan.TargetType, err)
 	}
-	catalog, ok := targetPlugin.(engineplugin.CatalogProvider)
+	catalog, ok := targetPlugin.(engineplugin.EngineCatalogProvider)
 	if !ok {
-		return fmt.Errorf("database CDC target plugin %q does not implement CatalogProvider", plan.TargetType)
+		return fmt.Errorf("database CDC target plugin %q does not implement EngineCatalogProvider", plan.TargetType)
 	}
-	modelProvider, ok := targetPlugin.(engineplugin.CatalogModelProvider)
+	modelProvider, ok := targetPlugin.(engineplugin.EngineCatalogModelProvider)
 	if !ok {
-		return fmt.Errorf("database CDC target plugin %q does not implement CatalogModelProvider", plan.TargetType)
+		return fmt.Errorf("database CDC target plugin %q does not implement EngineCatalogModelProvider", plan.TargetType)
 	}
-	branch, ok := engineplugin.CatalogFirstBusinessBranch(modelProvider.CatalogModel())
+	branch, ok := engineplugin.EngineCatalogFirstBusinessBranch(modelProvider.EngineCatalogModel())
 	if !ok {
 		return fmt.Errorf("database CDC target plugin %q has no namespace catalog level", plan.TargetType)
 	}
@@ -626,7 +626,7 @@ func validateTargetDoesNotExist(ctx context.Context, plan *CapturePlan) error {
 		return fmt.Errorf("list database CDC target namespace %q: %w", plan.TargetNamespace, err)
 	}
 	for _, child := range children {
-		if child.Role == engineplugin.CatalogRoleLeaf && child.Name == plan.TargetTable {
+		if child.Role == engineplugin.EngineCatalogRoleLeaf && child.Name == plan.TargetTable {
 			return fmt.Errorf("database CDC initial snapshot target table must not already exist")
 		}
 	}

@@ -94,7 +94,7 @@ func (e *ManagerVectorTileSetExecutor) GenerateVectorTileSet(ctx context.Context
 		if err != nil {
 			return nil, err
 		}
-		return &VectorTileSetExecutionResult{CatalogPath: vectorTileSetCatalogPath(req.Config), Metadata: commonModels.JSONMap{
+		return &VectorTileSetExecutionResult{EngineCatalogPath: vectorTileSetCatalogPath(req.Config), Metadata: commonModels.JSONMap{
 			"profile_hash": req.Config.ProfileHash, "pmtiles": facts, "reuse": commonModels.JSONMap{"source": "manager_vector_tile_cache", "validated": true},
 		}}, nil
 	}
@@ -208,7 +208,7 @@ func (e *ManagerVectorTileSetExecutor) invokeWorkflowVectorTileSet(ctx context.C
 	if jsonString(facts["archive_format"]) != "pmtiles" || jsonString(facts["header_hash"]) == "" {
 		return nil, errors.New("vector tile set generation returned invalid PMTiles facts")
 	}
-	return &VectorTileSetExecutionResult{CatalogPath: vectorTileSetCatalogPath(req.Config), Metadata: commonModels.JSONMap{
+	return &VectorTileSetExecutionResult{EngineCatalogPath: vectorTileSetCatalogPath(req.Config), Metadata: commonModels.JSONMap{
 		"profile_hash": req.Config.ProfileHash, "pmtiles": facts,
 		"workflow_runtime": commonModels.JSONMap{"engine_id": workflowEngine.ID, "engine_name": workflowEngine.Name, "operator": operator.Name, "execution_id": result.ExecutionID, "mode": "direct"},
 	}}, nil
@@ -252,7 +252,7 @@ func (e *ManagerVectorTileSetExecutor) generatePostGISVectorTileSet(ctx context.
 		"empty_tiles": archive.Result.EmptyTiles, "actual_max_zoom": archive.Result.ActualMaxZoom,
 		"stop_reason": archive.Result.StopReason, "generation_seconds": archive.Result.GenerationSec,
 	}
-	return &VectorTileSetExecutionResult{CatalogPath: vectorTileSetCatalogPath(req.Config), Metadata: commonModels.JSONMap{
+	return &VectorTileSetExecutionResult{EngineCatalogPath: vectorTileSetCatalogPath(req.Config), Metadata: commonModels.JSONMap{
 		"profile_hash": req.Config.ProfileHash, "pmtiles": facts,
 		"generator": commonModels.JSONMap{"kind": "postgis_native", "sql": "ST_AsMVT"},
 	}}, nil

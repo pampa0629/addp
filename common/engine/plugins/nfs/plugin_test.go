@@ -21,28 +21,28 @@ func (r testReadSeekCloser) Close() error {
 func TestNFSRootCatalogEntryIsSemanticRoot(t *testing.T) {
 	p := &NFSPlugin{}
 
-	root := plugin.CatalogRootEntry(p.CatalogModel(), 7, "Business NFS")
+	root := plugin.EngineCatalogRootEntry(p.EngineCatalogModel(), 7, "Business NFS")
 	if root.Name != "Business NFS" {
 		t.Fatalf("expected root name from engine, got %q", root.Name)
 	}
 	if got := root.Path.StringPath(); got != "" {
 		t.Fatalf("expected root string path '', got %q", got)
 	}
-	if root.Term != plugin.CatalogTermRoot || root.Kind != plugin.CatalogKindRoot {
+	if root.Term != plugin.EngineCatalogTermRoot || root.Kind != plugin.EngineCatalogKindRoot {
 		t.Fatalf("expected root term/kind, got %s/%s", root.Term, root.Kind)
 	}
-	if got := p.CatalogModel().RootTerm; got != plugin.CatalogTermRoot {
-		t.Fatalf("expected file catalog root term %q, got %q", plugin.CatalogTermRoot, got)
+	if got := p.EngineCatalogModel().RootTerm; got != plugin.EngineCatalogTermRoot {
+		t.Fatalf("expected file catalog root term %q, got %q", plugin.EngineCatalogTermRoot, got)
 	}
 }
 
 func TestFileCatalogNormalizesDotRoot(t *testing.T) {
 	callbacks := plugin.FileCatalogCallbacks{
-		ListDirectoryFunc: func(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
+		ListDirectoryFunc: func(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath) ([]plugin.EngineCatalogEntry, error) {
 			if path := parent.StringPath(); path != "" {
 				t.Fatalf("expected semantic root list path '', got %q", path)
 			}
-			return []plugin.CatalogEntry{
+			return []plugin.EngineCatalogEntry{
 				plugin.FileDirectoryCatalogEntry(parent, "shp", "./shp/"),
 			}, nil
 		},

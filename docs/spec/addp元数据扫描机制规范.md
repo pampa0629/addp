@@ -228,8 +228,8 @@ Meta 的扫描编排必须分开回答三类问题：
 
 | 问题 | 事实源 |
 |---|---|
-| 目录层级如何组织、各层叫什么、哪一层是 leaf | `CatalogModelSpec` |
-| 能否列目录、描述 catalog facts、采样字段、读取内容 | 已实现的 provider 组合 |
+| 目录层级如何组织、各层叫什么、哪一层是 leaf | `EngineCatalogModelSpec` |
+| 能否列目录、描述 Engine Catalog facts、采样字段、读取内容 | 已实现的 provider 组合 |
 | Meta 需要怎样执行和落库 | Meta 自己的 scan strategy |
 
 `engine_family` 只保留粗分类意义，不能单独决定扫描流程。Meta 可以因为执行语义不同而保留多种 strategy，例如：
@@ -239,11 +239,11 @@ Meta 的扫描编排必须分开回答三类问题：
 - object catalog 型：对象存储按 bucket / prefix / object 模型扫描，可做复合对象聚合。
 - file catalog 型：文件系统按 root / directory / file 模型扫描，可做复合文件聚合。
 
-这些 strategy 的差异来自 catalog model 和 provider 语义，不等于为每个具体引擎重建一套上层抽象。新增引擎时，优先复用已有 strategy；只有当 `CatalogModelSpec` 与 provider 组合都无法表达真实差异时，才新增 strategy。
+这些 strategy 的差异来自 Engine Catalog model 和 provider 语义，不等于为每个具体引擎重建一套上层抽象。新增引擎时，优先复用已有 strategy；只有当 `EngineCatalogModelSpec` 与 provider 组合都无法表达真实差异时，才新增 strategy。
 
-`direct_leaves` 的选择条件固定为：`CatalogModelSpec.Levels` 只有一个业务层，且该层 `role=leaf`。Meta 通过 `CatalogProvider.ListChildren(root)` 枚举 leaf，直接挂到结构 root 下；不得按 `engine_type` 写特例，也不得为 leaf 创建额外 branch node。Kafka 第一版按该策略扫描 topic，只落 item identity 和规范要求的基础 item attributes，不读取消息、不推断 schema、不创建 partition node/item。
+`direct_leaves` 的选择条件固定为：`EngineCatalogModelSpec.Levels` 只有一个业务层，且该层 `role=leaf`。Meta 通过 `EngineCatalogProvider.ListChildren(root)` 枚举 leaf，直接挂到结构 root 下；不得按 `engine_type` 写特例，也不得为 leaf 创建额外 branch node。Kafka 第一版按该策略扫描 topic，只落 item identity 和规范要求的基础 item attributes，不读取消息、不推断 schema、不创建 partition node/item。
 
-object catalog 与 file catalog 可以共用 Meta 内容目录扫描主链路，但不得抹平两者的 catalog model 术语：
+对象存储 Engine Catalog 与文件系统 Engine Catalog 可以共用 Meta 内容目录扫描主链路，但不得抹平两者的 Engine Catalog model 术语：
 
 - object catalog：`service -> bucket -> prefix? -> object`
 - file catalog：`root -> directory? -> file`
@@ -263,9 +263,9 @@ Meta API 和扫描任务参数中，路径型扫描目标统一使用 `catalog_p
 }
 ```
 
-`catalog_paths` 表达的是对应引擎 `CatalogModelSpec` 下的 catalog path，不是对象存储专属 object key，也不是文件系统物理路径。MinIO / S3 的路径遵守 `bucket -> prefix -> object`，NFS 的路径遵守 `root -> directory -> file`。新增调用方、前端表单和模块间客户端必须统一使用 `catalog_paths`。
+`catalog_paths` 表达的是对应引擎 `EngineCatalogModelSpec` 下的 Engine Catalog path，不是对象存储专属 object key，也不是文件系统物理路径。MinIO / S3 的路径遵守 `bucket -> prefix -> object`，NFS 的路径遵守 `root -> directory -> file`。该字段由 Engine 上下文限定并继续作为唯一线上字段；新增调用方、前端表单和模块间客户端必须统一使用 `catalog_paths`。
 
-`catalog_paths` 只表示“从这些 catalog 路径开始枚举或刷新范围”。它不表示“这些 sibling content 共同组成一个 data item”。Shapefile 等 multi content 的本次 refs 边界必须使用 `ref_groups`。
+`catalog_paths` 只表示“从这些 Engine Catalog 路径开始枚举或刷新范围”。它不表示“这些 sibling content 共同组成一个 data item”。Shapefile 等 multi content 的本次 refs 边界必须使用 `ref_groups`。
 
 内容引用边界使用 `ref_groups`：
 
@@ -293,20 +293,20 @@ Meta API 和扫描任务参数中，路径型扫描目标统一使用 `catalog_p
 
 - `ref_groups[].primary` 表示该组的主 content path。
 - `ref_groups[].refs[]` 表示本组可见的完整 content refs；`role` 和 `required` 只描述 ref 在组内的约束，不决定最终 data item 类型。
-- `ref_groups` 进入 Meta 后必须转为 engine 对应的 content ref 或 `plugin.CatalogPath`，再进入统一 detector；不得在 Transfer、Manager 或调用方提前判断 refs 是否构成 data item。
+- `ref_groups` 进入 Meta 后必须转为 engine 对应的 content ref 或 `plugin.EngineCatalogPath`，再进入统一 detector；不得在 Transfer、Manager 或调用方提前判断 refs 是否构成 data item。
 - 对于 Transfer 写出结果，Transfer 应提交本次实际生成的 refs group，不得为了触发识别而扩大到父目录 `catalog_paths`。
 
 ## Basic / Deep 边界
 
-### CatalogEntry / CatalogFacts 消费规则
+### EngineCatalogEntry / EngineCatalogFacts 消费规则
 
-Meta 扫描必须先通过 `CatalogProvider.ListChildren()` 获得 `CatalogEntry`，再按条目角色、扫描深度和 provider 组合决定是否进一步读取 `CatalogFacts`。
+Meta 扫描必须先通过 `EngineCatalogProvider.ListChildren()` 获得 `EngineCatalogEntry`，再按条目角色、扫描深度和 provider 组合决定是否进一步读取 `EngineCatalogFacts`。
 
-对 `meta_node`，通常只消费 `CatalogEntry`：root、schema、database、bucket、prefix、directory 等 branch 的身份、层级、展示名、`full_name`、`LeafCount` 和低成本 `Storage.Path` 足以建立资源树。node 的 `item_count`、`total_size`、`scan_status`、`scanned_depth` 来自 Meta 扫描聚合和过程状态，不是 engine 对 node 的原生 facts。第一阶段不为 node 设计 deep-only facts；如果后续要持久化 bucket region、owner、目录权限、生命周期策略等原生事实，必须先单独扩展规范，不能把它们混入 item facts。
+对 `meta_node`，通常只消费 `EngineCatalogEntry`：root、schema、database、bucket、prefix、directory 等 branch 的身份、层级、展示名、`full_name`、`LeafCount` 和低成本 `Storage.Path` 足以建立资源树。node 的 `item_count`、`total_size`、`scan_status`、`scanned_depth` 来自 Meta 扫描聚合和过程状态，不是 engine 对 node 的原生 facts。第一阶段不为 node 设计 deep-only facts；如果后续要持久化 bucket region、owner、目录权限、生命周期策略等原生事实，必须先单独扩展规范，不能把它们混入 item facts。
 
-对 `meta_item`，`CatalogEntry` 只提供路径坐标、身份和列表级摘要，不能当作完整详情事实使用。`basic` 可以使用 `CatalogEntry.Table`、`CatalogEntry.Storage`、`CatalogEntry.UpdatedAt` 等低成本摘要建立 item 身份、存储属性和跳过判断；需要字段、主键、索引、graph schema、动态 schema 采样、文件内容格式信息、容器 children 或访问索引时，必须显式通过 `CatalogFactsProvider`、`DynamicSchemaSamplingProvider`、content reader 或 format info provider 获取。
+对 `meta_item`，`EngineCatalogEntry` 只提供路径坐标、身份和列表级摘要，不能当作完整详情事实使用。`basic` 可以使用 `EngineCatalogEntry.Table`、`EngineCatalogEntry.Storage`、`EngineCatalogEntry.UpdatedAt` 等低成本摘要建立 item 身份、存储属性和跳过判断；需要字段、主键、索引、graph schema、动态 schema 采样、文件内容格式信息、容器 children 或访问索引时，必须显式通过 `EngineCatalogFactsProvider`、`DynamicSchemaSamplingProvider`、content reader 或 format info provider 获取。
 
-`CatalogFacts` 不是每个 entry 自动携带的隐含字段。Meta 需要详情时必须使用 `CatalogEntry.Path` 显式调用对应 provider；不得把 `CatalogEntry` 原样写入 `meta_item.attributes`，也不得从 `CatalogEntry.Table` 推断字段、主键或索引。
+`EngineCatalogFacts` 不是每个 entry 自动携带的隐含字段。Meta 需要详情时必须使用 `EngineCatalogEntry.Path` 显式调用对应 provider；不得把 `EngineCatalogEntry` 原样写入 `meta_item.attributes`，也不得从 `EngineCatalogEntry.Table` 推断字段、主键或索引。
 
 ### Basic 扫描
 
@@ -319,7 +319,7 @@ Meta 扫描必须先通过 `CatalogProvider.ListChildren()` 获得 `CatalogEntry
 - `attributes.schema_version`。
 - `attributes.storage` 中由 catalog 直接返回的事实，例如 bucket、path、name、size、etag、last_modified_at、content_type。
 - `attributes.item` 中无需读取内容即可判断的事实，例如 `layout`、`data_type`、`format`。如果 `refs`、`file_count`、`scope_exclusive` 可由 catalog、manifest 或路径规则直接判断，也可以写入；需要打开 file/object 内容才能判断的，一律归 deep。
-- 来自 `CatalogEntry` 或只读 catalog/system table 的低成本摘要，例如 table / collection 的估算 `row_count`、`size_bytes`、storage `etag` 和 `last_modified_at`。这类事实可用于列表展示、跳过判断和 basic attributes，但不得为了得到它们执行全表扫描、读取 file/object 内容或触发统计刷新。
+- 来自 `EngineCatalogEntry` 或只读 catalog/system table 的低成本摘要，例如 table / collection 的估算 `row_count`、`size_bytes`、storage `etag` 和 `last_modified_at`。这类事实可用于列表展示、跳过判断和 basic attributes，但不得为了得到它们执行全表扫描、读取 file/object 内容或触发统计刷新。
 - 轻量格式判断：扩展名、MIME、catalog 声明。若确实需要读取极小 header，必须有读取上限和明确理由。
 
 不应写入：
@@ -349,7 +349,7 @@ Meta 扫描必须先通过 `CatalogProvider.ListChildren()` 获得 `CatalogEntry
 Deep 扫描可以读取内容，但仍应遵守 provider / reader 边界：
 
 - 元数据事实通过 info provider 写入 `type_info` / `format_info` / `capabilities`。
-- 数据库 table deep 扫描应通过 `CatalogFactsProvider.DescribeCatalogFacts()` 获取 `TableInfo.Fields`、`PrimaryKey` 和索引等详情；collection deep 扫描可通过 `DynamicSchemaSamplingProvider` 获取采样字段和索引；graph item 即使在 basic 下如果需要建立稳定图 item 语义，也可以读取低成本 `CatalogFacts.Graph`，但 deep 才允许请求样本。
+- 数据库 table deep 扫描应通过 `EngineCatalogFactsProvider.DescribeEngineCatalogFacts()` 获取 `TableInfo.Fields`、`PrimaryKey` 和索引等详情；collection deep 扫描可通过 `DynamicSchemaSamplingProvider` 获取采样字段和索引；graph item 即使在 basic 下如果需要建立稳定图 item 语义，也可以读取低成本 `EngineCatalogFacts.Graph`，但 deep 才允许请求样本。
 - 内容窗口、样本、原始文本、缩略图不直接塞进 `type_info`。
 - 大文件 deep 扫描应由 provider 自己控制成本和阈值，不能无边界全量读取。
 - Meta deep 扫描不得继续识别并持久化容器 children 的下一层 data item。比如 ZIP 中的 Shapefile 组件应作为 ZIP 的直接 entry 写入 children；把这些 entry 临时组合成 Shapefile 预览项属于 Manager 动态预览职责，不写回 Meta。

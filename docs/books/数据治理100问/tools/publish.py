@@ -41,6 +41,7 @@ COMBINED_DOCX_NAME = "数据治理100问-合订本.docx"
 PDF_NAME = "数据治理100问.pdf"
 EPUB_NAME = "数据治理100问.epub"
 HTML_NAME = "数据治理100问-html.zip"
+MOBI_NAME = "数据治理100问.mobi"
 BODY_FONT = "Arial Unicode MS"
 HEADING_FONT = "Arial Unicode MS"
 BLUE = "2E5D7B"
@@ -756,6 +757,18 @@ def publish_pdf(combined_docx: Path, output: Path, temp_dir: Path) -> Path:
     return output
 
 
+def publish_mobi(epub: Path, output: Path) -> Path:
+    ebook_convert = find_executable(
+        "ebook-convert",
+        ["/Applications/calibre.app/Contents/MacOS/ebook-convert"],
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    run_checked([ebook_convert, str(epub), str(output), "--output-profile=kindle"])
+    if not output.is_file():
+        raise RuntimeError("合订本 MOBI 未生成")
+    return output
+
+
 def publish_combined_formats(formats: set[str], output_dir: Path) -> list[Path]:
     results: list[Path] = []
     with tempfile.TemporaryDirectory(prefix="data_governance_book_") as temp:
@@ -772,11 +785,16 @@ def publish_combined_formats(formats: set[str], output_dir: Path) -> list[Path]:
             results.append(destination)
         if "pdf" in formats:
             results.append(publish_pdf(combined_docx, output_dir / PDF_NAME, temp_dir))
-        if "epub" in formats:
-            destination = output_dir / EPUB_NAME
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            run_checked(pandoc_book_command(prepared, destination, "epub3"), cwd=temp_dir)
-            results.append(destination)
+        if "epub" in formats or "mobi" in formats:
+            built_epub = temp_dir / EPUB_NAME
+            run_checked(pandoc_book_command(prepared, built_epub, "epub3"), cwd=temp_dir)
+            if "epub" in formats:
+                destination = output_dir / EPUB_NAME
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(built_epub, destination)
+                results.append(destination)
+            if "mobi" in formats:
+                results.append(publish_mobi(built_epub, output_dir / MOBI_NAME))
         if "html" in formats:
             destination = output_dir / HTML_NAME
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -797,7 +815,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="生成《数据治理100问》发行版")
     parser.add_argument(
         "format",
-        choices=("docx", "combined-docx", "pdf", "epub", "html", "verify", "all"),
+        choices=("docx", "combined-docx", "pdf", "epub", "mobi", "html", "verify", "all"),
         help="发行格式；docx 为分篇 Word，all 生成全部格式",
     )
     parser.add_argument(
@@ -824,7 +842,7 @@ def main() -> int:
     if args.format == "all":
         clean_release_output(
             output_dir,
-            (COMBINED_DOCX_NAME, PDF_NAME, EPUB_NAME, HTML_NAME),
+            (COMBINED_DOCX_NAME, PDF_NAME, EPUB_NAME, MOBI_NAME, HTML_NAME),
             DOCX_DIR_NAME,
         )
     if args.format in {"docx", "all"}:
@@ -834,6 +852,7 @@ def main() -> int:
         "combined-docx",
         "pdf",
         "epub",
+        "mobi",
         "html",
     }
     selected = combined_formats if args.format == "all" else {args.format} & combined_formats

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -87,11 +89,12 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 	if isReplayExecutionConfig(execution.ExecutionConfig) {
 		return s.executeBoundedReplay(ctx, task, executionID, execution.ExecutionConfig)
 	}
-
-	return s.executeCommonTransferTask(ctx, task, executionID)
+	runtimeTask := *task
+	runtimeTask.Config = execution.ExecutionConfig
+	return s.executeCommonTransferTask(ctx, &runtimeTask, execution, executionID)
 }
 
-func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, task *models.TransferTask, executionID uint) error {
+func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, task *models.TransferTask, execution *commonExecution.TaskExecution, executionID uint) error {
 	if s.systemClient == nil {
 		err := fmt.Errorf("system client is required for common engine/format transfer task")
 		s.updateExecutionError(ctx, task, executionID, err)
@@ -123,6 +126,9 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 		wrapped := fmt.Errorf("load source meta item attributes: %w", err)
 		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
+	}
+	if planner.IsRuntimeExistingTargetTaskConfig(task.Config) {
+		return s.executeRuntimeTargetTableTransferTask(ctx, task, execution, executionID, spec)
 	}
 
 	resolver := planner.NewHybridEngineResolver(planner.BindEngineResolver(planner.NewSystemEngineResolver(s.systemClient), task.TenantID), s.infraEngineResolver())
@@ -330,11 +336,34 @@ func (s *ExecutionEngineService) attachSourceInspectAttributes(task *models.Tran
 }
 
 func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Context, task *models.TransferTask, executionID uint, spec planner.TableExportTaskSpec, resolver planner.EngineResolver) error {
+	buildResult, metrics, err := s.runCommonTableTransferData(ctx, task, executionID, spec, resolver)
+	if err != nil {
+		s.updateExecutionError(ctx, task, executionID, err)
+		return err
+	}
+
+	if task.AutoScanMetadata {
+		s.triggerMetadataScan(task, executionID, spec, buildResult.Plan.Target, metrics.TargetRefs)
+	}
+	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source.Locator, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
+		s.logger.Warn("failed to persist transfer lineage facts", "error", err, "execution_id", executionID)
+	}
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *ExecutionEngineService) runCommonTableTransferData(
+	ctx context.Context,
+	task *models.TransferTask,
+	executionID uint,
+	spec planner.TableExportTaskSpec,
+	resolver planner.EngineResolver,
+) (*planner.TableTransferBuildResult, *executor.TablePipelineMetrics, error) {
 	buildResult, err := planner.BuildTableTransferPlan(spec, resolver)
 	if err != nil {
-		wrapped := fmt.Errorf("build common table transfer plan: %w", err)
-		s.updateExecutionError(ctx, task, executionID, wrapped)
-		return wrapped
+		return nil, nil, fmt.Errorf("build common table transfer plan: %w", err)
 	}
 	buildResult.Plan.ProgressCallback = s.tableProgressCallback(task, executionID)
 
@@ -345,21 +374,15 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 		buildResult.Plan.Target.Format,
 	)
 	if err != nil {
-		wrapped := fmt.Errorf("create common table transfer executor: %w", err)
-		s.updateExecutionError(ctx, task, executionID, wrapped)
-		return wrapped
+		return nil, nil, fmt.Errorf("create common table transfer executor: %w", err)
 	}
 	if err := s.configureInstanceTableProviders(ctx, task.TenantID, spec, buildResult, tableExecutor); err != nil {
-		wrapped := fmt.Errorf("configure instance table providers: %w", err)
-		s.updateExecutionError(ctx, task, executionID, wrapped)
-		return wrapped
+		return nil, nil, fmt.Errorf("configure instance table providers: %w", err)
 	}
 	if hasSpatialReprojectTransform(buildResult.Plan.Transforms) {
 		workflowEngine, workflowOperator, err := s.selectDirectWorkflowRuntime(ctx, task.TenantID, "vector_reproject")
 		if err != nil {
-			wrapped := fmt.Errorf("resolve vector_reproject workflow runtime: %w", err)
-			s.updateExecutionError(ctx, task, executionID, wrapped)
-			return wrapped
+			return nil, nil, fmt.Errorf("resolve vector_reproject workflow runtime: %w", err)
 		}
 		tableExecutor.GeometryBatchReprojecter = newWorkflowGeometryBatchReprojectProvider(workflowEngine, workflowOperator.Name)
 	}
@@ -375,22 +398,142 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 		if metrics != nil {
 			s.updateTableTransferMetrics(executionID, metrics.RecordsRead, metrics.RecordsWritten)
 		}
-		s.updateExecutionError(ctx, task, executionID, wrapped)
-		return wrapped
+		return buildResult, metrics, wrapped
 	}
 	s.updateTableTransferMetrics(executionID, metrics.RecordsRead, metrics.RecordsWritten)
 	s.updateTableTargetRefs(executionID, metrics.TargetRefs)
 
-	if task.AutoScanMetadata {
-		s.triggerMetadataScan(task, executionID, spec, buildResult.Plan.Target, metrics.TargetRefs)
+	return buildResult, metrics, nil
+}
+
+func (s *ExecutionEngineService) executeRuntimeTargetTableTransferTask(
+	ctx context.Context,
+	task *models.TransferTask,
+	execution *commonExecution.TaskExecution,
+	executionID uint,
+	spec planner.TableExportTaskSpec,
+) error {
+	lease, ok := commonExecution.LeaseFromContext(ctx)
+	if !ok || execution == nil || execution.ParentExecutionID == nil || strings.TrimSpace(*execution.ParentExecutionID) == "" {
+		return s.failRuntimeTargetTransfer(ctx, task, executionID, fmt.Errorf("runtime-target transfer requires a current bounded lease and orchestration parent"))
 	}
-	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source.Locator, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
-		s.logger.Warn("failed to persist transfer lineage facts", "error", err, "execution_id", executionID)
+	if s.systemRuntime == nil {
+		return s.failRuntimeTargetTransfer(ctx, task, executionID, fmt.Errorf("System runtime client is required for runtime-target transfer"))
+	}
+	targetLocator, err := runtimeTargetLocator(execution.Metadata)
+	if err != nil {
+		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+	}
+	resolvedSpec, err := planner.ResolveRuntimeExistingTarget(spec, targetLocator)
+	if err != nil {
+		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+	}
+	sourceRef, err := resolvedSpec.Source.EngineRef()
+	if err != nil {
+		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+	}
+	targetRef, err := resolvedSpec.Target.EngineRef()
+	if err != nil {
+		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+	}
+	effectsByEngine := map[uint][]string{sourceRef.ID: []string{"read"}}
+	if sourceRef.ID == targetRef.ID {
+		effectsByEngine[sourceRef.ID] = []string{"read", "write"}
+	} else {
+		effectsByEngine[targetRef.ID] = []string{"write"}
+	}
+	orderedEngineIDs := make([]uint, 0, len(effectsByEngine))
+	for engineID := range effectsByEngine {
+		orderedEngineIDs = append(orderedEngineIDs, engineID)
+	}
+	sort.Slice(orderedEngineIDs, func(i, j int) bool { return orderedEngineIDs[i] < orderedEngineIDs[j] })
+	accesses := make([]commonClient.ExecutionEngineAccessScope, 0, len(orderedEngineIDs))
+	for _, engineID := range orderedEngineIDs {
+		accesses = append(accesses, commonClient.ExecutionEngineAccessScope{
+			EngineID: strconv.FormatUint(uint64(engineID), 10), Effects: append([]string(nil), effectsByEngine[engineID]...),
+		})
+	}
+	issued, err := s.systemRuntime.WithTenantID(task.TenantID).IssueExecutionAuthorizationFromExecution(ctx, commonClient.IssueExecutionAuthorizationFromExecutionRequest{
+		ParentExecutionID: *execution.ParentExecutionID,
+		Audience:          commonExecution.AudienceTransfer,
+		ExecutionID:       execution.ExecutionID,
+		Attempt:           lease.Attempt,
+		LeaseToken:        lease.Token,
+		Accesses:          accesses,
+		ExpiresIn:         int64(time.Hour / time.Second),
+	})
+	if err != nil {
+		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+	}
+	authorizationFields, err := commonClient.TaskExecutionAuthorizationFields(issued)
+	if err != nil {
+		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+	}
+	if err := s.taskRepo.AttachBoundedExecutionAuthorization(ctx, lease, authorizationFields); err != nil {
+		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+	}
+
+	resolver := planner.StaticEngineResolver{}
+	for _, engineID := range orderedEngineIDs {
+		requiredEffects := effectsByEngine[engineID]
+		access, err := s.systemRuntime.WithTenantID(task.TenantID).GetExecutionEngineAccess(ctx, issued.ID, commonClient.ExecutionEngineAccessRequest{
+			ExecutionID: execution.ExecutionID, EngineID: strconv.FormatUint(uint64(engineID), 10),
+			RequiredEffects: requiredEffects,
+		})
+		if err != nil {
+			return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+		}
+		binding, err := planner.EngineBindingFromEngine(access.Engine)
+		if err != nil {
+			return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+		}
+		resolver[engineID] = binding
+	}
+	_, metrics, err := s.runCommonTableTransferData(ctx, task, executionID, resolvedSpec, resolver)
+	if err != nil {
+		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+	}
+	if err := s.writeTransferLineageFacts(ctx, task, executionID, resolvedSpec.Source.Locator, resolvedSpec.Target.Locator, resolvedSpec.Target.ParentLocator, resolvedSpec.Target.Name, resolvedSpec.Target.Policy); err != nil {
+		s.logger.Warn("failed to persist runtime-target transfer lineage facts", "error", err, "execution_id", executionID)
+	}
+	if err := s.executionService.UpdateExecution(ctx, executionID, map[string]interface{}{
+		"metadata": commonModels.JSONMap{"outputs": commonModels.JSONMap{
+			"execution_id": execution.ExecutionID, "target_locator": targetLocator, "row_count": metrics.RecordsWritten,
+		}},
+	}); err != nil {
+		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
 	}
 	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
 		return err
 	}
 	return nil
+}
+
+func runtimeTargetLocator(metadata commonModels.JSONMap) (string, error) {
+	inputs, ok := metadata["runtime_inputs"].(map[string]interface{})
+	if !ok {
+		if typed, typedOK := metadata["runtime_inputs"].(commonModels.JSONMap); typedOK {
+			inputs = map[string]interface{}(typed)
+			ok = true
+		}
+	}
+	value, valueOK := inputs["target_locator"].(string)
+	locator, err := resourcetree.ParseURI(strings.TrimSpace(value))
+	if !ok || !valueOK || err != nil || locator.Type != resourcetree.TypeTable {
+		return "", fmt.Errorf("runtime target_locator must identify a table")
+	}
+	return locator.ToURI(), nil
+}
+
+func (s *ExecutionEngineService) failRuntimeTargetTransfer(
+	ctx context.Context,
+	task *models.TransferTask,
+	executionID uint,
+	err error,
+) error {
+	wrapped := fmt.Errorf("execute runtime existing-table transfer: %w", err)
+	s.updateExecutionError(ctx, task, executionID, wrapped)
+	return wrapped
 }
 
 func (s *ExecutionEngineService) configureInstanceTableProviders(

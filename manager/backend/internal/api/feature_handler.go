@@ -280,11 +280,11 @@ func readSpatialFeature(c *gin.Context, engine *commonModels.Engine, connInfo pl
 	if !ok {
 		return nil, fmt.Errorf("engine %s does not implement SpatialFeatureReadProvider", engineType)
 	}
-	modelProvider, ok := plug.(plugin.CatalogModelProvider)
+	modelProvider, ok := plug.(plugin.EngineCatalogModelProvider)
 	if !ok {
-		return nil, fmt.Errorf("engine %s does not implement CatalogModelProvider", engineType)
+		return nil, fmt.Errorf("engine %s does not implement EngineCatalogModelProvider", engineType)
 	}
-	branch, ok := plugin.CatalogFirstBusinessBranch(modelProvider.CatalogModel())
+	branch, ok := plugin.EngineCatalogFirstBusinessBranch(modelProvider.EngineCatalogModel())
 	if !ok || strings.TrimSpace(branch.Term) == "" {
 		return nil, fmt.Errorf("engine %s catalog model has no business namespace", engineType)
 	}

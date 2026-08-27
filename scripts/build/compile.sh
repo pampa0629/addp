@@ -147,6 +147,8 @@ compile_service() {
         entry_point="./cmd/worker"
         if [ "$name" = "transfer-continuous-worker" ]; then
             entry_point="./cmd/continuous-worker"
+        elif [ "$name" = "develop-query-worker" ]; then
+            entry_point="./cmd/query-worker"
         fi
     elif [ ! -d "$dir/cmd/server" ] && [ -d "$dir/cmd/gateway" ]; then
         entry_point="./cmd/gateway"
@@ -219,6 +221,7 @@ SERVICES=(
     "transfer-continuous-worker:transfer/backend"
     "orchestrator-backend:orchestrator/backend"
     "develop-backend:develop/backend"
+    "develop-query-worker:develop/backend"
     "service-backend:service/backend"
     "monitor-backend:monitor/backend"
     "standard-backend:standard/backend"
@@ -226,6 +229,8 @@ SERVICES=(
     "quality-backend:quality/backend"
     "quality-worker:quality/backend"
     "asset-backend:asset/backend"
+    "catalog-backend:catalog/backend"
+    "workbench-backend:workbench/backend"
     "portal-backend:portal/backend"
     "graph-backend:graph/backend"
     "inference-backend:inference/backend"

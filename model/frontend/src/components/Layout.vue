@@ -54,6 +54,10 @@
               <el-icon><Operation /></el-icon>
               <span>{{ t('model.layout.logicalTables') }}</span>
             </el-menu-item>
+            <el-menu-item index="/materialization-groups">
+              <el-icon><SetUp /></el-icon>
+              <span>{{ t('model.layout.materializationGroups') }}</span>
+            </el-menu-item>
             <el-menu-item index="/star-schema">
               <el-icon><Star /></el-icon>
               <span>{{ t('model.layout.starSchema') }}</span>
@@ -75,7 +79,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import {
   User, ArrowDown, SwitchButton,
-  DataAnalysis, Box, Tickets, Memo, Operation, Connection, Star
+  DataAnalysis, Box, Tickets, Memo, Operation, Connection, Star, SetUp
 } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 
@@ -95,6 +99,7 @@ const activeMenu = computed(() => {
   if (path.startsWith('/dw-layers')) return '/dw-layers'
   if (path.startsWith('/entities')) return '/entities'
   if (path.startsWith('/logical-tables')) return '/logical-tables'
+  if (path.startsWith('/materialization-groups')) return '/materialization-groups'
   if (path.startsWith('/er-diagram')) return '/er-diagram'
   if (path.startsWith('/star-schema')) return '/star-schema'
   return path

@@ -13,6 +13,7 @@ const AuthorizationCatalogReportSchemaVersion = "addp.authorization_catalog_repo
 var stablePermissionOwnerModules = []string{
 	"agent",
 	"asset",
+	"catalog",
 	"copilot",
 	"develop",
 	"graph",
@@ -27,6 +28,7 @@ var stablePermissionOwnerModules = []string{
 	"standard",
 	"system",
 	"transfer",
+	"workbench",
 }
 
 type PermissionManifestReference struct {

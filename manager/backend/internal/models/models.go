@@ -153,7 +153,7 @@ type TablePreview struct {
 	PreviewHint         string                   `json:"preview_hint,omitempty"`
 	Object              *ObjectPreview           `json:"object,omitempty"`
 	Graph               *GraphPreviewData        `json:"graph,omitempty"`
-	ItemMeta            *CatalogFacts            `json:"item_meta,omitempty"` // 数据项元数据（来自 meta 模块）
+	ItemMeta            *EngineCatalogFacts      `json:"item_meta,omitempty"` // 数据项元数据（来自 meta 模块）
 	Advisories          []PreviewAdvisory        `json:"preview_advisories,omitempty"`
 	// MVT preview metadata (for frontend to switch between GeoJSON and MVT rendering)
 	EngineID   uint   `json:"engineId,omitempty"`   // Engine ID for MVT API
@@ -191,8 +191,9 @@ type GraphPreviewRelationship struct {
 	Properties  map[string]interface{} `json:"properties"`
 }
 
-// CatalogFacts 数据项元数据（来自 meta 模块，附加在预览响应中）
-type CatalogFacts struct {
+// EngineCatalogFacts 数据项元数据（来自 meta 模块，附加在预览响应中）
+type EngineCatalogFacts struct {
+	Fingerprint     string          `json:"fingerprint"`        // Meta DataItem 对外稳定技术身份
 	ItemType        string          `json:"item_type"`          // 原始类型值，如 "table", "graph"
 	ItemTypeI18nKey string          `json:"item_type_i18n_key"` // i18n key，如 "engine.term.table"
 	FullName        string          `json:"full_name"`          // 在引擎内的完整路径

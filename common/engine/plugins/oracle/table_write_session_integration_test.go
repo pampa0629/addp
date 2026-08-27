@@ -27,10 +27,10 @@ func TestIntegrationOracleTableWriteSessionSpatialRoundTrip(t *testing.T) {
 	p := &OraclePlugin{}
 	schema := strings.ToUpper(connInfo["user"].(string))
 	table := "ADDP_BOUNDED_" + strings.ToUpper(uuid.NewString()[:8])
-	path := plugin.CatalogRootPath(p.CatalogModel(), 92001)
+	path := plugin.EngineCatalogRootPath(p.EngineCatalogModel(), 92001)
 	path.Segments = append(path.Segments,
-		plugin.CatalogSegment{Term: plugin.CatalogTermSchema, Kind: plugin.CatalogKindNamespace, Name: schema},
-		plugin.CatalogSegment{Term: plugin.CatalogTermTable, Kind: plugin.CatalogKindTable, Name: table},
+		plugin.EngineCatalogSegment{Term: plugin.EngineCatalogTermSchema, Kind: plugin.EngineCatalogKindNamespace, Name: schema},
+		plugin.EngineCatalogSegment{Term: plugin.EngineCatalogTermTable, Kind: plugin.EngineCatalogKindTable, Name: table},
 	)
 	defer func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -109,9 +109,9 @@ func TestIntegrationOracleTableWriteSessionSpatialRoundTrip(t *testing.T) {
 		t.Fatalf("rows=%d population=%d gtype=%d/%d srid=%d/%d", count, population, minGType, maxGType, minSRID, maxSRID)
 	}
 
-	facts, err := p.DescribeCatalogFacts(ctx, connInfo, path, plugin.CatalogFactsOptions{IncludeSpatialFacts: true, IncludeIndexes: true})
+	facts, err := p.DescribeEngineCatalogFacts(ctx, connInfo, path, plugin.EngineCatalogFactsOptions{IncludeSpatialFacts: true, IncludeIndexes: true})
 	if err != nil {
-		t.Fatalf("DescribeCatalogFacts: %v", err)
+		t.Fatalf("DescribeEngineCatalogFacts: %v", err)
 	}
 	if facts.Spatial == nil || facts.Spatial.PrimaryGeometryType() != string(datatype.GeometryTypeMultiPolygon) || facts.Spatial.PrimarySRIDValue() != srid || facts.Spatial.HasSpatialIndex == nil || !*facts.Spatial.HasSpatialIndex {
 		t.Fatalf("spatial facts=%#v", facts.Spatial)
@@ -147,10 +147,10 @@ func TestIntegrationOraclePrepareMixedCaseSpatialColumn(t *testing.T) {
 	p := &OraclePlugin{}
 	schema := strings.ToUpper(connInfo["user"].(string))
 	table := "ADDP_CASE_" + strings.ToUpper(uuid.NewString()[:8])
-	path := plugin.CatalogRootPath(p.CatalogModel(), 92002)
+	path := plugin.EngineCatalogRootPath(p.EngineCatalogModel(), 92002)
 	path.Segments = append(path.Segments,
-		plugin.CatalogSegment{Term: plugin.CatalogTermSchema, Kind: plugin.CatalogKindNamespace, Name: schema},
-		plugin.CatalogSegment{Term: plugin.CatalogTermTable, Kind: plugin.CatalogKindTable, Name: table},
+		plugin.EngineCatalogSegment{Term: plugin.EngineCatalogTermSchema, Kind: plugin.EngineCatalogKindNamespace, Name: schema},
+		plugin.EngineCatalogSegment{Term: plugin.EngineCatalogTermTable, Kind: plugin.EngineCatalogKindTable, Name: table},
 	)
 	defer func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -198,9 +198,9 @@ func TestIntegrationOraclePrepareMixedCaseSpatialColumn(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `INSERT INTO `+qualified+` ("id", "Shape") VALUES (1, MDSYS.SDO_GEOMETRY(2001, 4326, MDSYS.SDO_POINT_TYPE(116.397, 39.908, NULL), NULL, NULL))`); err != nil {
 		t.Fatalf("insert mixed-case spatial row: %v", err)
 	}
-	facts, err := p.DescribeCatalogFacts(ctx, connInfo, path, plugin.CatalogFactsOptions{IncludeSpatialFacts: true, IncludeIndexes: true})
+	facts, err := p.DescribeEngineCatalogFacts(ctx, connInfo, path, plugin.EngineCatalogFactsOptions{IncludeSpatialFacts: true, IncludeIndexes: true})
 	if err != nil {
-		t.Fatalf("DescribeCatalogFacts: %v", err)
+		t.Fatalf("DescribeEngineCatalogFacts: %v", err)
 	}
 	if facts.Spatial == nil || facts.Spatial.PrimaryGeometryName() != "Shape" || facts.Spatial.PrimaryGeometryType() != "Point" || facts.Spatial.PrimarySRIDValue() != srid || facts.Spatial.PrimaryDimensionValue() != dimension {
 		t.Fatalf("mixed-case spatial facts = %#v", facts.Spatial)
@@ -210,7 +210,7 @@ func TestIntegrationOraclePrepareMixedCaseSpatialColumn(t *testing.T) {
 	}
 }
 
-func readOracleIntegrationBatchAfterDDL(ctx context.Context, p *OraclePlugin, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
+func readOracleIntegrationBatchAfterDDL(ctx context.Context, p *OraclePlugin, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
 	var lastErr error
 	for attempt := 0; attempt < 10; attempt++ {
 		batch, err := p.ReadBatch(ctx, connInfo, path, opts)

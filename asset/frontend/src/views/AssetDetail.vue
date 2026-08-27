@@ -10,7 +10,7 @@
         <span>{{ editMode ? t('asset.assetDetail.editAsset') : t('asset.assetDetail.assetDetail') }}</span>
       </div>
       <div class="header-actions" v-if="!editMode && asset">
-        <el-button v-if="canEdit" @click="startEdit">{{ t('asset.assetDetail.edit') }}</el-button>
+		<el-button v-if="canEdit" @click="startEdit">{{ t('asset.assetDetail.edit') }}</el-button>
         <el-button v-if="asset.status === 'draft'" type="success" @click="handlePublish">{{ t('asset.assetDetail.submitPublish') }}</el-button>
         <el-button v-if="asset.status === 'published'" type="warning" plain @click="handleOffline">{{ t('asset.assetDetail.offline') }}</el-button>
         <el-button v-if="asset.status === 'offline'" type="primary" @click="handlePublish">{{ t('asset.assetDetail.republish') }}</el-button>
@@ -45,9 +45,7 @@
           <el-descriptions-item :label="t('asset.assetDetail.assetType')">
             <el-tag size="small">{{ asset.type_name || '-' }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item :label="t('asset.assetDetail.category')">{{ asset.category?.name || '-' }}</el-descriptions-item>
-          <el-descriptions-item :label="t('asset.assetDetail.sourceModule')">{{ asset.source_module || '-' }}</el-descriptions-item>
-          <el-descriptions-item :label="t('asset.assetDetail.sourceReference')" :span="2">{{ asset.source_reference || '-' }}</el-descriptions-item>
+		  <el-descriptions-item :label="t('asset.assetDetail.category')">{{ asset.catalog_name || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('asset.assetDetail.tags')" :span="2">
             <el-tag v-for="tag in (asset.tags || [])" :key="tag" size="small" style="margin-right: 4px">{{ tag }}</el-tag>
             <span v-if="!asset.tags?.length">-</span>
@@ -56,6 +54,14 @@
           <el-descriptions-item :label="t('asset.assetDetail.createdAt')">{{ formatDate(asset.created_at) }}</el-descriptions-item>
           <el-descriptions-item :label="t('asset.assetDetail.updatedAt')">{{ formatDate(asset.updated_at) }}</el-descriptions-item>
         </el-descriptions>
+
+		<h3 class="section-title">{{ t('asset.assetCreate.components') }}</h3>
+		<el-table :data="asset.components || []" border>
+		  <el-table-column prop="role" :label="t('asset.catalogPicker.role')" width="120">
+			<template #default="{ row }">{{ row.role === 'primary' ? t('asset.catalogPicker.primary') : t('asset.catalogPicker.supporting') }}</template>
+		  </el-table-column>
+		  <el-table-column prop="catalog_entry_id" :label="t('asset.catalogPicker.entry')" />
+		</el-table>
 
         <template v-if="asset.ext_fields?.length">
           <h3 class="section-title">{{ t('asset.assetDetail.extFields') }}</h3>
@@ -86,17 +92,26 @@
           <el-input v-model="form.name" :placeholder="t('asset.assetDetail.assetNamePlaceholder')" maxlength="500" />
         </el-form-item>
 
+		<el-form-item :label="t('asset.assetDetail.assetType')" prop="type_id">
+		  <el-select v-model="form.type_id" style="width: 100%">
+			<el-option v-for="item in typeOptions" :key="item.id" :label="item.name" :value="item.id" />
+		  </el-select>
+		</el-form-item>
+
         <el-form-item :label="t('asset.assetDetail.category')">
           <el-cascader
-            v-model="form.category_id_path"
+			v-model="form.catalog_id"
             :options="categoryOptions"
             :props="{ checkStrictly: true, value: 'id', label: 'name', children: 'children', emitPath: false }"
             :placeholder="t('asset.assetDetail.categoryPlaceholder')"
             clearable
             style="width: 100%"
-            @change="onCategoryChange"
           />
         </el-form-item>
+
+		<el-form-item :label="t('asset.assetCreate.components')" prop="components">
+		  <CatalogEntryPicker v-model="form.components" style="width: 100%" />
+		</el-form-item>
 
         <el-form-item :label="t('asset.assetDetail.description')">
           <el-input v-model="form.description" type="textarea" :rows="3" :placeholder="t('asset.assetDetail.descriptionPlaceholder')" maxlength="2000" />
@@ -141,7 +156,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { useConsolePageDescriptor } from '@common-ui'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
-import { assetAPI, catalogAPI } from '../api/asset'
+import CatalogEntryPicker from '../components/CatalogEntryPicker.vue'
+import { assetAPI, catalogAPI, typeDefinitionAPI } from '../api/asset'
 import { useI18n } from 'vue-i18n'
 import { navigateAssetRoute } from '../utils/moduleNavigation'
 
@@ -162,6 +178,7 @@ useConsolePageDescriptor(router, 'asset', {
   ready: computed(() => !editMode.value && Boolean(asset.value?.name))
 })
 const categoryTree = ref([])
+const typeOptions = ref([])
 
 const formRef = ref()
 const tagInputVisible = ref(false)
@@ -169,18 +186,22 @@ const tagInputRef = ref()
 const tagInputValue = ref('')
 
 const form = reactive({
+	version: 0,
   name: '',
-  category_id: null,
-  category_id_path: null,
+	type_id: null,
+	catalog_id: null,
   description: '',
-  tags: []
+	tags: [],
+	components: []
 })
 
 const rules = computed(() => ({
-  name: [{ required: true, message: t('asset.assetDetail.assetNameRequired'), trigger: 'blur' }]
+	name: [{ required: true, message: t('asset.assetDetail.assetNameRequired'), trigger: 'blur' }],
+	type_id: [{ required: true, message: t('asset.assetCreate.typeRequired'), trigger: 'change' }],
+	components: [{ type: 'array', min: 1, message: t('asset.assetCreate.componentRequired'), trigger: 'change' }]
 }))
 
-const canEdit = computed(() => Boolean(asset.value))
+const canEdit = computed(() => Boolean(asset.value) && asset.value.status !== 'published')
 
 // 将分类树扁平化为 el-cascader 所需格式（保留树形结构）
 const categoryOptions = computed(() => categoryTree.value)
@@ -188,8 +209,9 @@ const categoryOptions = computed(() => categoryTree.value)
 async function loadData() {
   loading.value = true
   try {
-    const catRes = await catalogAPI.tree()
-    categoryTree.value = catRes || []
+	const [catRes, typeRes] = await Promise.all([catalogAPI.tree(), typeDefinitionAPI.list()])
+	categoryTree.value = catRes || []
+	typeOptions.value = (typeRes || []).filter(item => item.enabled)
     await loadAsset()
   } catch (e) {
     ElMessage.error(t('asset.assetDetail.loadFailed'))
@@ -203,17 +225,19 @@ async function loadAsset() {
   asset.value = res
 }
 
-function onCategoryChange(val) {
-  form.category_id = val || null
-}
-
 watch([editMode, asset], ([editing, currentAsset]) => {
   if (editing && currentAsset) {
+	form.version = currentAsset.version
     form.name = currentAsset.name
-    form.category_id = currentAsset.category_id || null
-    form.category_id_path = currentAsset.category_id || null
+	form.type_id = currentAsset.type_id
+	form.catalog_id = currentAsset.catalog_id || null
     form.description = currentAsset.description || ''
     form.tags = [...(currentAsset.tags || [])]
+	form.components = (currentAsset.components || []).map(item => ({
+	  catalog_entry_id: item.catalog_entry_id,
+	  role: item.role,
+	  sort_order: item.sort_order
+	}))
   }
 })
 
@@ -222,16 +246,16 @@ async function save() {
   submitting.value = true
   try {
     const payload = {
+	  version: form.version,
       name: form.name,
-      category_id: form.category_id || null,
+	  type_id: form.type_id,
+	  catalog_id: form.catalog_id || null,
       description: form.description,
-      tags: form.tags
+	  tags: form.tags,
+	  components: form.components
     }
 
     await assetAPI.update(assetId.value, payload)
-    if (form.category_id === null && asset.value.category_id !== null) {
-      await assetAPI.batchCatalog([assetId.value], null)
-    }
     ElMessage.success(t('asset.assetDetail.saved'))
     await navigateAssetRoute(router, `/assets/${assetId.value}`, { history: 'replace' })
     await loadAsset()

@@ -118,6 +118,15 @@ func (r *MetricRepository) GetByID(id, tenantID int64) (*models.Metric, error) {
 	return &m, commonrepo.WrapDBError(err)
 }
 
+func (r *MetricRepository) GetByIDs(ids []int64, tenantID int64) ([]models.Metric, error) {
+	if len(ids) == 0 {
+		return []models.Metric{}, nil
+	}
+	var metrics []models.Metric
+	err := r.db.Where("tenant_id = ? AND id IN ?", tenantID, ids).Order("id ASC").Find(&metrics).Error
+	return metrics, commonrepo.WrapDBError(err)
+}
+
 func (r *MetricRepository) Create(m *models.Metric) error {
 	return wrapDBError(r.db.Create(m).Error)
 }
@@ -192,6 +201,17 @@ func (r *MetricRepository) GetDependencies(metricID, tenantID int64) ([]models.M
 		Where("standard.metric_dependencies.from_metric_id = ?", metricID).
 		Find(&deps).Error
 	return deps, err
+}
+
+func (r *MetricRepository) GetDependenciesByMetric(metricID, tenantID int64) ([]models.MetricDependency, error) {
+	var dependencies []models.MetricDependency
+	err := r.db.Model(&models.MetricDependency{}).
+		Joins("JOIN standard.metrics source ON source.id = standard.metric_dependencies.from_metric_id AND source.tenant_id = ?", tenantID).
+		Joins("JOIN standard.metrics target ON target.id = standard.metric_dependencies.to_metric_id AND target.tenant_id = ?", tenantID).
+		Where("standard.metric_dependencies.from_metric_id = ? OR standard.metric_dependencies.to_metric_id = ?", metricID, metricID).
+		Order("standard.metric_dependencies.id ASC").
+		Find(&dependencies).Error
+	return dependencies, commonrepo.WrapDBError(err)
 }
 
 // SetDependencies 设置复合指标依赖（全量替换）

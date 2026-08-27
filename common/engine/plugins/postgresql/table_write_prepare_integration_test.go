@@ -197,12 +197,12 @@ func postgresPrepareIntegrationEnv(key, fallback string) string {
 	return fallback
 }
 
-func postgresPrepareTablePath(schemaName, tableName string) plugin.CatalogPath {
-	return plugin.CatalogPath{
-		Version: plugin.CatalogPathVersion,
-		Segments: []plugin.CatalogSegment{
-			{Term: plugin.CatalogTermSchema, Kind: plugin.CatalogKindNamespace, Name: schemaName},
-			{Term: plugin.CatalogTermTable, Kind: plugin.CatalogKindTable, Name: tableName},
+func postgresPrepareTablePath(schemaName, tableName string) plugin.EngineCatalogPath {
+	return plugin.EngineCatalogPath{
+		Version: plugin.EngineCatalogPathVersion,
+		Segments: []plugin.EngineCatalogSegment{
+			{Term: plugin.EngineCatalogTermSchema, Kind: plugin.EngineCatalogKindNamespace, Name: schemaName},
+			{Term: plugin.EngineCatalogTermTable, Kind: plugin.EngineCatalogKindTable, Name: tableName},
 		},
 	}
 }

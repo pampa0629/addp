@@ -127,6 +127,56 @@ func TestBoundedExecutionClaimUsesDatabaseLeaseAndRecoveryFailsClosed(t *testing
 	}
 }
 
+func TestRuntimeTargetExpiredLeaseFailsClosed(t *testing.T) {
+	db := newTaskRepositoryTestDB(t)
+	repo := NewTaskRepository(db)
+	task := createTaskRepositoryTestTask(t, db, 7, "runtime-target-lease")
+	config := runtimeTargetTaskRepositoryConfig()
+	if err := db.Model(&task).Update("config", config).Error; err != nil {
+		t.Fatal(err)
+	}
+	execution := claimTestExecution(task, "runtime-target-execution")
+	execution.ExecutionBoundary = commonExecution.ExecutionBoundaryBounded
+	execution.ExecutionConfig = config
+	principalID, membershipID, version := int64(11), int64(12), int64(3)
+	execution.ActorPrincipalID = &principalID
+	execution.ActorTenantMembershipID = &membershipID
+	execution.IssuedAuthorizationVersion = &version
+	if _, _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, &execution, ""); err != nil {
+		t.Fatalf("create pending execution: %v", err)
+	}
+
+	now := time.Now().UTC()
+	claimed, lease, _, err := repo.ClaimNextBoundedExecution(context.Background(), "transfer-bounded-worker-1", now, time.Minute)
+	if err != nil || claimed == nil || lease == nil || lease.Attempt != 1 {
+		t.Fatalf("first claim execution=%#v lease=%#v error=%v", claimed, lease, err)
+	}
+	authorizationID := int64(91)
+	if err := repo.AttachBoundedExecutionAuthorization(context.Background(), *lease, map[string]interface{}{
+		"execution_authorization_id": authorizationID,
+		"authorization_expires_at":   now.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("attach attempt authorization: %v", err)
+	}
+
+	count, err := repo.FailExpiredBoundedExecutions(context.Background(), now.Add(2*time.Minute), 10)
+	if err != nil || count != 1 {
+		t.Fatalf("FailExpiredBoundedExecutions count=%d error=%v", count, err)
+	}
+	var failed commonExecution.TaskExecution
+	if err := db.First(&failed, execution.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if failed.Status != commonExecution.ExecutionStatusFailed || failed.Attempt != 1 ||
+		failed.ActorPrincipalID == nil || *failed.ActorPrincipalID != principalID {
+		t.Fatalf("failed execution = %#v", failed)
+	}
+	claimedAgain, leaseAgain, _, err := repo.ClaimNextBoundedExecution(context.Background(), "transfer-bounded-worker-2", now.Add(3*time.Minute), time.Minute)
+	if err != nil || claimedAgain != nil || leaseAgain != nil {
+		t.Fatalf("second claim execution=%#v lease=%#v error=%v", claimedAgain, leaseAgain, err)
+	}
+}
+
 func TestClaimExecutionAtomicallyRejectsSecondActiveExecution(t *testing.T) {
 	db := newTaskRepositoryTestDB(t)
 	repo := NewTaskRepository(db)
@@ -395,6 +445,27 @@ func createTaskRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID uint, name
 		t.Fatalf("create task: %v", err)
 	}
 	return task
+}
+
+func runtimeTargetTaskRepositoryConfig() models.JSONMap {
+	return models.JSONMap{
+		"runtime": map[string]interface{}{"boundary": "bounded"},
+		"load":    map[string]interface{}{"mode": "snapshot"},
+		"source": map[string]interface{}{
+			"locator": "addp://engine/1/path/outdoor/entries?type=table", "data_type": "table", "representation": "native",
+			"query": map[string]interface{}{"language": "mql", "statement": `[{"$project":{"person_id":"$person.id"}}]`},
+		},
+		"target": map[string]interface{}{
+			"binding": "runtime", "data_type": "table", "representation": "native",
+			"policy": map[string]interface{}{"apply_mode": "append"},
+		},
+		"transforms": []interface{}{map[string]interface{}{
+			"type": "field_mapping", "version": "v1", "mode": "project",
+			"fields": []interface{}{map[string]interface{}{
+				"source": "person_id", "target": "person_id", "target_type": "string", "nullable": false,
+			}},
+		}},
+	}
 }
 
 func createTaskRepositoryTestExecution(t *testing.T, db *gorm.DB, task models.TransferTask, taskType string, status string, startedAt time.Time) {

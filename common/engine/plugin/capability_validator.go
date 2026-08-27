@@ -39,23 +39,23 @@ func validateStorageCapabilities(p EnginePlugin, storage *StorageCapabilities) e
 		return nil
 	}
 	if storage.CatalogModel != nil {
-		provider, ok := p.(CatalogModelProvider)
+		provider, ok := p.(EngineCatalogModelProvider)
 		if !ok {
-			return fmt.Errorf("%s declares storage.catalog_model but does not implement CatalogModelProvider", p.Type())
+			return fmt.Errorf("%s declares storage.catalog_model but does not implement EngineCatalogModelProvider", p.Type())
 		}
-		if !reflect.DeepEqual(*storage.CatalogModel, provider.CatalogModel()) {
-			return fmt.Errorf("%s storage.catalog_model does not match CatalogModelProvider", p.Type())
+		if !reflect.DeepEqual(*storage.CatalogModel, provider.EngineCatalogModel()) {
+			return fmt.Errorf("%s storage.catalog_model does not match EngineCatalogModelProvider", p.Type())
 		}
 	}
 	if storage.Catalog != nil && storage.Catalog.Supported {
-		if _, ok := p.(CatalogProvider); !ok {
-			return fmt.Errorf("%s declares catalog support but does not implement CatalogProvider", p.Type())
+		if _, ok := p.(EngineCatalogProvider); !ok {
+			return fmt.Errorf("%s declares catalog support but does not implement EngineCatalogProvider", p.Type())
 		}
 	}
 	if storage.Facts != nil && storage.Facts.Supported {
-		if _, ok := p.(CatalogFactsProvider); !ok {
+		if _, ok := p.(EngineCatalogFactsProvider); !ok {
 			if _, ok := p.(DynamicSchemaSamplingProvider); !ok {
-				return fmt.Errorf("%s declares facts support but does not implement CatalogFactsProvider or DynamicSchemaSamplingProvider", p.Type())
+				return fmt.Errorf("%s declares facts support but does not implement EngineCatalogFactsProvider or DynamicSchemaSamplingProvider", p.Type())
 			}
 		}
 	}
@@ -210,6 +210,11 @@ func validateComputeCapabilities(p EnginePlugin, compute *ComputeCapabilities) e
 				return fmt.Errorf("%s declares query federation without runtime_api", p.Type())
 			}
 		}
+		if compute.Query.ReadSession {
+			if _, ok := p.(QueryReadSessionProvider); !ok {
+				return fmt.Errorf("%s declares query read_session but does not implement QueryReadSessionProvider", p.Type())
+			}
+		}
 		if Contains(compute.Query.ResultKinds, "graph") {
 			if _, ok := p.(GraphQueryProvider); !ok {
 				return fmt.Errorf("%s declares graph query result kinds but does not implement GraphQueryProvider", p.Type())
@@ -285,19 +290,19 @@ func validateQueryParameterCapability(engineType string, query *QueryCapability)
 }
 
 func validateProviderCapabilities(p EnginePlugin, caps EngineCapabilities) error {
-	if _, ok := p.(CatalogModelProvider); ok {
+	if _, ok := p.(EngineCatalogModelProvider); ok {
 		if caps.Storage == nil || caps.Storage.CatalogModel == nil {
-			return fmt.Errorf("%s implements CatalogModelProvider but does not declare storage.catalog_model", p.Type())
+			return fmt.Errorf("%s implements EngineCatalogModelProvider but does not declare storage.catalog_model", p.Type())
 		}
 	}
-	if _, ok := p.(CatalogProvider); ok {
+	if _, ok := p.(EngineCatalogProvider); ok {
 		if caps.Storage == nil || caps.Storage.Catalog == nil || !caps.Storage.Catalog.Supported {
-			return fmt.Errorf("%s implements CatalogProvider but does not declare catalog support", p.Type())
+			return fmt.Errorf("%s implements EngineCatalogProvider but does not declare catalog support", p.Type())
 		}
 	}
-	if _, ok := p.(CatalogFactsProvider); ok {
+	if _, ok := p.(EngineCatalogFactsProvider); ok {
 		if caps.Storage == nil || caps.Storage.Facts == nil || !caps.Storage.Facts.Supported {
-			return fmt.Errorf("%s implements CatalogFactsProvider but does not declare facts support", p.Type())
+			return fmt.Errorf("%s implements EngineCatalogFactsProvider but does not declare facts support", p.Type())
 		}
 	}
 	if _, ok := p.(DynamicSchemaSamplingProvider); ok {
@@ -311,6 +316,11 @@ func validateProviderCapabilities(p EnginePlugin, caps EngineCapabilities) error
 	if _, ok := p.(QueryRuntimeProvider); ok {
 		if caps.Compute == nil || caps.Compute.Query == nil || !caps.Compute.Query.Supported {
 			return fmt.Errorf("%s implements QueryRuntimeProvider but does not declare query support", p.Type())
+		}
+	}
+	if _, ok := p.(QueryReadSessionProvider); ok {
+		if caps.Compute == nil || caps.Compute.Query == nil || !caps.Compute.Query.Supported || !caps.Compute.Query.ReadSession {
+			return fmt.Errorf("%s implements QueryReadSessionProvider but does not declare query read_session", p.Type())
 		}
 	}
 	if _, ok := p.(FederatedQueryRuntimeProvider); ok {

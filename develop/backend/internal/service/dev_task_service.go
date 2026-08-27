@@ -553,6 +553,11 @@ func validateDevTaskContent(devType string, content map[string]interface{}) erro
 
 	switch devType {
 	case commonExecution.TaskTypeQuery:
+		if err := validateAllowedFields(content, "content", map[string]struct{}{
+			"query": {}, "query_type": {}, "query_parameters": {}, "relation_inputs": {}, "target_locator": {},
+		}); err != nil {
+			return err
+		}
 		query, ok := content["query"].(string)
 		if !ok || strings.TrimSpace(query) == "" {
 			return fmt.Errorf("query 类型必须在 content.query 中提供查询内容")
@@ -744,6 +749,9 @@ func validateDevTaskExecutionConfig(devType string, content map[string]interface
 	if executionConfig == nil {
 		return fmt.Errorf("查询任务必须提供 execution_config")
 	}
+	if err := validateAllowedFields(executionConfig, "execution_config", map[string]struct{}{"engine_id": {}}); err != nil {
+		return err
+	}
 
 	engineID := devTaskExecutionConfigEngineID(executionConfig)
 	if engineID == nil {
@@ -758,48 +766,38 @@ func validateDevTaskExecutionConfig(devType string, content map[string]interface
 			return fmt.Errorf("content.target_locator 的引擎 ID 必须与 execution_config.engine_id 一致")
 		}
 	}
-	logicalTableID, managed, err := materializationTargetLogicalTableID(executionConfig)
+	relationInputs, hasRelationInputs, err := relationInputBindings(content)
 	if err != nil {
 		return err
 	}
-	if managed {
-		if logicalTableID <= 0 || queryType != "sql" {
-			return fmt.Errorf("execution_config.materialization_target 仅支持 SQL 查询任务")
+	if hasRelationInputs {
+		if queryType != "sql" {
+			return fmt.Errorf("content.relation_inputs 仅支持 SQL 查询任务")
 		}
 		queryText, _ := content["query"].(string)
 		analysis, analysisErr := AnalyzeQuery("sql", queryText)
 		if analysisErr != nil || analysis.Statement != "SELECT" || analysis.Effect != string(SQLExecutionEffectRead) {
-			return fmt.Errorf("逻辑表托管写入的 content.query 必须是单条只读 SELECT")
+			return fmt.Errorf("关系输入写入的 content.query 必须是单条只读 SELECT")
+		}
+		if err := validateRelationResultSource(queryText, relationInputs); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-func materializationTargetLogicalTableID(executionConfig map[string]interface{}) (int64, bool, error) {
-	if executionConfig == nil {
-		return 0, false, nil
+func validateAllowedFields(value map[string]interface{}, path string, allowed map[string]struct{}) error {
+	unknown := make([]string, 0)
+	for field := range value {
+		if _, exists := allowed[field]; !exists {
+			unknown = append(unknown, field)
+		}
 	}
-	raw, exists := executionConfig["materialization_target"]
-	if !exists {
-		return 0, false, nil
+	if len(unknown) == 0 {
+		return nil
 	}
-	var target map[string]interface{}
-	switch value := raw.(type) {
-	case map[string]interface{}:
-		target = value
-	case models.DevTaskContent:
-		target = map[string]interface{}(value)
-	default:
-		return 0, true, fmt.Errorf("execution_config.materialization_target 必须是对象")
-	}
-	if len(target) != 1 {
-		return 0, true, fmt.Errorf("execution_config.materialization_target 只能包含 logical_table_id")
-	}
-	logicalTableID, ok := positiveInt64(target["logical_table_id"])
-	if !ok {
-		return 0, true, fmt.Errorf("execution_config.materialization_target.logical_table_id 必须是正整数")
-	}
-	return logicalTableID, true, nil
+	sort.Strings(unknown)
+	return fmt.Errorf("%s 包含未声明字段: %s", path, strings.Join(unknown, ", "))
 }
 
 func positiveInt64(value interface{}) (int64, bool) {

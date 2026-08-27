@@ -251,7 +251,7 @@ WHERE id = $2 AND tenant_id = $3 AND version = $4;
 // HTTP 504 Gateway Timeout
 {
   "error": "读取引擎目录超时",
-  "error_code": "catalog_timeout",
+  "error_code": "engine_catalog_timeout",
   "error_type": "transient"
 }
 ```

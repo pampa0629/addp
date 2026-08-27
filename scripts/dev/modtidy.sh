@@ -17,6 +17,8 @@ echo -e "${BLUE}=== ADDP Go Modules Tidy (并发模式) ===${NC}\n"
 # List of all Go backend modules
 GO_MODULES=(
     "common"
+	"catalog/backend"
+	"workbench/backend"
     "system/backend"
     "manager/backend"
     "meta/backend"

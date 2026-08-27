@@ -161,7 +161,7 @@ class ResourceResolutionService:
         policy: ResourceResolutionPolicy,
     ) -> dict[str, Any]:
         if not policy.session_catalog:
-            raise ValueError(f"{policy.name} 场景不支持 Session Catalog 候选")
+            raise ValueError(f"{policy.name} 场景不支持 Session Engine Catalog 候选")
         if self.notebook_recommender is None:
             return {}
         return await self.notebook_recommender.recommend(query, candidates)

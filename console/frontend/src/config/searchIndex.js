@@ -31,9 +31,11 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.modeling.dwLayers',     module: 'modeling', route: '/modeling/dw-layers',    keywords: ['数仓分层', '分层', 'data warehouse', 'layer'] },
   { labelKey: 'console.menus.modeling.entities',     module: 'modeling', route: '/modeling/entities',     keywords: ['业务实体', '实体', 'entity'] },
   { labelKey: 'console.menus.modeling.logicalTables',module: 'modeling', route: '/modeling/logical-tables',keywords: ['逻辑表', '逻辑模型', 'logical table'] },
+  { labelKey: 'console.menus.modeling.materializationGroups', module: 'modeling', route: '/modeling/materialization-groups', keywords: ['物化组', '原子发布', 'materialization group', 'publish'] },
   { labelKey: 'console.menus.modeling.starSchema',   module: 'modeling', route: '/modeling/star-schema',  keywords: ['星型建模', '星型模型', 'star schema'] },
   // 数据质量
   { labelKey: 'console.menus.quality.checkTasks',       module: 'quality', route: '/quality/check-tasks',      keywords: ['质量检查', '质量', 'quality check'] },
+  { labelKey: 'console.menus.quality.materializationGateTasks', module: 'quality', route: '/quality/materialization-gate-tasks', keywords: ['物化门禁', '发布门禁', '强类型断言', 'materialization gate'] },
   { labelKey: 'console.menus.quality.ruleApplications', module: 'quality', route: '/quality/rule-applications',keywords: ['规则应用', '质量规则', 'rule'] },
   { labelKey: 'console.menus.quality.issues',           module: 'quality', route: '/quality/issues',           keywords: ['质量问题', '问题工单', 'issue'] },
   // 数据开发
@@ -45,6 +47,8 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.service.tile',          module: 'service', route: '/service/tile',           keywords: ['瓦片服务', '地图瓦片', 'tile', 'map tile', 'OGC'] },
   { labelKey: 'console.menus.service.services',      module: 'service', route: '/service/services',       keywords: ['服务注册', '外部服务', 'service registry'] },
   { labelKey: 'console.menus.service.catalog',       module: 'service', route: '/service/catalog',        keywords: ['服务目录', '服务列表', 'catalog'] },
+  // 数据服务消费
+  { labelKey: 'console.menus.workbench.views', module: 'workbench', route: '/workbench/views', keywords: ['工作台视图', '数据服务消费', '动态查询', '可视化', 'workbench', 'service consumer', 'view'] },
   // 任务编排
   { labelKey: 'console.menus.orchestrator.orchestrations', module: 'orchestrator', route: '/orchestrator/orchestrations', keywords: ['编排任务', '工作流编排', 'orchestration', 'dag'] },
   { labelKey: 'console.menus.orchestrator.executions',     module: 'orchestrator', route: '/orchestrator/executions',    keywords: ['编排执行', '执行记录', 'orchestrator execution'] },
@@ -53,6 +57,8 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.monitor.executions',  module: 'monitor', route: '/monitor/executions', keywords: ['执行记录', '任务历史', 'execution history'] },
   { labelKey: 'console.menus.monitor.alerts',      module: 'monitor', route: '/monitor/alerts',     keywords: ['告警', '风险', 'alert', 'incident'] },
   { labelKey: 'console.menus.monitor.notifications', module: 'monitor', route: '/monitor/notifications', keywords: ['Webhook', '邮件', '通知', '投递', 'email', 'notification', 'delivery'] },
+  // 企业数据目录
+  { labelKey: 'console.menus.catalog.entries', module: 'catalog', route: '/catalog/entries', keywords: ['企业数据目录', '企业资源', '业务元数据', 'catalog', 'enterprise data catalog', 'inventory'] },
   // 资产管理
   { labelKey: 'console.menus.asset.assets',          module: 'asset', route: '/asset/assets',          keywords: ['资产', '数据资产', 'asset'] },
   { labelKey: 'console.menus.asset.categories',      module: 'asset', route: '/asset/categories',      keywords: ['资产目录', '分类', 'category'] },

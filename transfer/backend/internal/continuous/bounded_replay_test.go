@@ -65,8 +65,8 @@ func TestBoundedReplayRunnerRejectsEmptyAndRepeatedRanges(t *testing.T) {
 
 func TestReplayTargetAbsenceValidatorRejectsExistingTable(t *testing.T) {
 	target := replayTestPlan().Target
-	target.Path = plugin.TabularItemPath(8, plugin.CatalogTermSchema, "replay", "orders_replay")
-	catalog := &fakeReplayCatalogProvider{entries: []plugin.CatalogEntry{{Name: "orders_replay"}}}
+	target.Path = plugin.TabularItemPath(8, plugin.EngineCatalogTermSchema, "replay", "orders_replay")
+	catalog := &fakeReplayCatalogProvider{entries: []plugin.EngineCatalogEntry{{Name: "orders_replay"}}}
 	validator := NewReplayTargetAbsenceValidator(func(string) (plugin.EnginePlugin, error) { return catalog, nil })
 	if err := validator(context.Background(), &target); !errors.Is(err, ErrReplayTargetExists) {
 		t.Fatalf("existing target error = %v", err)
@@ -78,16 +78,16 @@ func TestReplayTargetAbsenceValidatorRejectsExistingTable(t *testing.T) {
 
 type fakeReplayCatalogProvider struct {
 	fakeChangeApplyProvider
-	entries []plugin.CatalogEntry
-	parent  plugin.CatalogPath
+	entries []plugin.EngineCatalogEntry
+	parent  plugin.EngineCatalogPath
 }
 
-func (p *fakeReplayCatalogProvider) ListChildren(_ context.Context, _ plugin.ConnectionInfo, parent plugin.CatalogPath, _ plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+func (p *fakeReplayCatalogProvider) ListChildren(_ context.Context, _ plugin.ConnectionInfo, parent plugin.EngineCatalogPath, _ plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
 	p.parent = parent
 	return p.entries, nil
 }
 
-func (p *fakeReplayCatalogProvider) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (p *fakeReplayCatalogProvider) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	return nil, nil
 }
 

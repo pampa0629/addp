@@ -31,8 +31,8 @@ func TestIntegrationTransferBoundedOracleSpatialTarget(t *testing.T) {
 	}
 	schema := "BUSINESS"
 	targetTable := "ADDP_TRANSFER_" + strings.ToUpper(uuid.NewString()[:8])
-	sourcePath := engineplugin.TabularItemPath(22, engineplugin.CatalogTermSchema, schema, "SPATIAL_FEATURES")
-	targetPath := engineplugin.TabularItemPath(22, engineplugin.CatalogTermSchema, schema, targetTable)
+	sourcePath := engineplugin.TabularItemPath(22, engineplugin.EngineCatalogTermSchema, schema, "SPATIAL_FEATURES")
+	targetPath := engineplugin.TabularItemPath(22, engineplugin.EngineCatalogTermSchema, schema, targetTable)
 	oraclePlugin := &oracleengine.OraclePlugin{}
 	defer func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -40,9 +40,9 @@ func TestIntegrationTransferBoundedOracleSpatialTarget(t *testing.T) {
 		_ = oraclePlugin.DeleteResource(cleanupCtx, connInfo, targetPath)
 	}()
 
-	facts, err := oraclePlugin.DescribeCatalogFacts(ctx, connInfo, sourcePath, engineplugin.CatalogFactsOptions{IncludeSpatialFacts: true})
+	facts, err := oraclePlugin.DescribeEngineCatalogFacts(ctx, connInfo, sourcePath, engineplugin.EngineCatalogFactsOptions{IncludeSpatialFacts: true})
 	if err != nil {
-		t.Fatalf("DescribeCatalogFacts source: %v", err)
+		t.Fatalf("DescribeEngineCatalogFacts source: %v", err)
 	}
 	if facts.Table == nil || facts.Spatial == nil {
 		t.Fatalf("source facts=%#v", facts)

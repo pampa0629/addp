@@ -457,11 +457,11 @@ func (r *DataSessionRunner) buildPlan(ctx context.Context, claim repository.Runt
 	return plan, nil
 }
 
-func internalKafkaTopicPath(topic string) engineplugin.CatalogPath {
-	model := (&kafka.KafkaPlugin{}).CatalogModel()
-	path := engineplugin.CatalogRootPath(model, 0)
-	path.Segments = append(path.Segments, engineplugin.CatalogSegment{
-		Term: kafka.CatalogTermTopic, Kind: kafka.CatalogKindTopic, Name: topic,
+func internalKafkaTopicPath(topic string) engineplugin.EngineCatalogPath {
+	model := (&kafka.KafkaPlugin{}).EngineCatalogModel()
+	path := engineplugin.EngineCatalogRootPath(model, 0)
+	path.Segments = append(path.Segments, engineplugin.EngineCatalogSegment{
+		Term: kafka.EngineCatalogTermTopic, Kind: kafka.EngineCatalogKindTopic, Name: topic,
 	})
 	return path
 }

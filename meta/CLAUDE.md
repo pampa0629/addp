@@ -2,14 +2,14 @@
 
 ## 模块定位
 
-Meta 模块负责元数据扫描、元数据存储、元数据查询、对象元数据提取、扫描任务调度、扫描运行记录和资产发现接口。它是 Manager 数据探查、Asset 自动发现和搜索索引的重要来源。
+Meta 模块负责从 Engine Catalog 扫描并持久化 DataItem 技术事实，以及元数据查询、对象元数据提取、扫描任务调度和扫描运行记录。Meta 不拥有企业 `CatalogEntry`、业务语义关联、责任或治理状态，也不再向 Asset 提供自动发现接口。企业 Catalog 接入时，Meta 只提供 DataItem fingerprint 为身份的可恢复游标变化源和精确批量读取契约，不同步调用 Catalog，也不保存 `catalog_entry_id` 反向投影。PostgreSQL table 的 Catalog 变化摘要由 Meta 直接带出结构化 `schema_name + table_name`，供 Catalog 向 Quality 动态解析当前摘要；消费方不得拆分 `full_name` 猜测定位。
 
 ## 技术栈与端口
 
 - 后端：Go + Gin + GORM，默认端口 `8082`，环境变量 `META_BACKEND_PORT`。
 - 前端：Vue 3 + Element Plus，开发端口 `5175`，启动脚本环境变量 `META_FE_PORT`。
 - 数据库：PostgreSQL `meta` schema。
-- 依赖：System、Redis、Meilisearch、MinIO，可选 pgvector/嵌入服务。
+- 依赖：System、Redis、MinIO；Manager 内容投影是运行时软依赖，不参与启动或 Ready。
 
 ## 重要目录
 
@@ -22,9 +22,8 @@ meta/
 │   ├── internal/service/      # 应用服务门面、装配、查询代理、刷新入口
 │   ├── internal/scanadapter/  # catalog strategy dispatch 与 object/file path/ref group adapter
 │   ├── internal/scanruntime/  # tabular/direct-leaf/branch-leaf/object/file 扫描运行时
-│   ├── internal/scanprocessor/# item 持久化、deep enrich、content hash、索引调度
+│   ├── internal/scanprocessor/# item 持久化、deep enrich、content hash、Manager 内容投影调度
 │   ├── internal/metatest/     # Meta 后端测试基础设施
-│   ├── internal/search/       # Meilisearch indexer
 │   ├── internal/worker/       # PostgreSQL claim + lease 扫描 Worker
 │   └── docs/                  # Swagger 产物
 ├── docs/
@@ -37,7 +36,7 @@ meta/
 
 ## Meta 扫描分层约定
 
-Meta 扫描链路按“通用规则、Meta 编排、Catalog 规划、内容增强、Attributes 落库”分层。后续改造应优先保持以下边界，避免把同一类逻辑散落到多个扫描入口。
+Meta 扫描链路按“通用规则、Meta 编排、Engine Catalog 规划、内容增强、Attributes 落库”分层。后续改造应优先保持以下边界，避免把同一类逻辑散落到多个扫描入口。
 
 ### 当前主线状态
 
@@ -64,7 +63,7 @@ Meta 扫描链路按“通用规则、Meta 编排、Catalog 规划、内容增�
 ### Meta 内部目录职责
 
 - `internal/metaitem/`：Meta item 识别编排层。负责 resolver 注册、排序、claims 去重，并把 `dataitem.ResolvedItem` 转换成 Meta 可继续增强和落库的 `DetectedItem`。典型文件：`resolver.go`、`single_resource.go`、`multi_table_enrichment.go`。
-- `internal/metacatalog/`：Catalog 资源规划层。负责把对象存储或文件系统 catalog entry 规范化为 `StorageResource`，规划 single/composite item 的路径、父节点、fingerprint 和基础 attributes。典型文件：`storage_resource.go`、`object_items.go`。
+- `internal/scanresource/`：Engine Catalog 条目到 Meta 扫描资源的规范化与规划层。负责把对象存储或文件系统 Engine Catalog entry 转换为 `StorageResource`，规划 single/composite item 的路径、父节点、fingerprint 和基础 attributes。该包不是 Catalog 事实 owner。典型文件：`storage_resource.go`、`object_items.go`。
 - `internal/metaenrich/`：内容增强层。凡是需要打开内容、读取 schema、读取容器内部、读取文件前缀来确认格式的逻辑，都应在这里或通过这里统一提供。典型文件：`table_file.go`、`container_children.go`、`single_format.go`。
 - `internal/metaattr/`：Attributes 规范写入层。负责把 `DetectedItem` 和增强结果合并成标准落库结构：`item`、`storage`、`type_info`、`format_info`、`access_index`、`capabilities`。典型文件：`item_attributes.go`、`attributes.go`。
 - `internal/metapath/`：路径语义工具层。负责 bucket、object、prefix、filesystem path 的切分、规范化和拼接，扫描逻辑不要重复手写路径规则。
@@ -81,7 +80,7 @@ Meta 只负责把正式规范中的 data type、type info 和横切事实写入�
 - `common/datatype` 中的通用事实结构，例如 `TableInfo`、`FieldInfo`、`SpatialInfo`。
 - 为 attributes 写入定义的轻量输入结构，例如 data item attributes input、dynamic schema attributes input。
 
-`metaattr` 不应接收 `metaitem.DetectedItem`、`plugin.CatalogFacts`、`plugin.IndexFacts`、`models.SpatialMetadata`、Manager DTO 等上层复杂类型。上层模块如果拿到 engine / format / query / 展示模型，应先在本层转换为轻量输入或 `datatype` 事实结构，再调用 `metaattr`，避免 attributes helper 反向依赖扫描、engine 或展示边界。
+`metaattr` 不应接收 `metaitem.DetectedItem`、`plugin.EngineCatalogFacts`、`plugin.IndexFacts`、`models.SpatialMetadata`、Manager DTO 等上层复杂类型。上层模块如果拿到 engine / format / query / 展示模型，应先在本层转换为轻量输入或 `datatype` 事实结构，再调用 `metaattr`，避免 attributes helper 反向依赖扫描、engine 或展示边界。
 
 动态 schema 记录集合的 attributes 写入使用 `BuildDynamicSchemaAttributes` / `ApplyDynamicSchemaStatistics` 这条路径；字段画像写入 `type_info.table.fields`，采样和索引事实分别写入 `capabilities.statistics` / `capabilities.indexing`，不得写入 `type_info.document` 或新增 `type_info.collection`。
 
@@ -91,13 +90,13 @@ Meta 只负责把正式规范中的 data type、type info 和横切事实写入�
 
 ```text
 service.ScanService
-  -> scanadapter.ContentCatalogScanner
+  -> scanadapter.EngineCatalogContentScanner
   -> scanruntime.ObjectStorageCatalogRuntime
   -> scanruntime.ScanPaths / ScanRefGroups
   -> scanruntime.DetectObjectCatalogResourceFormats     # 基于内容前缀修正未知格式
   -> scanflow.DetectObjectCatalogCompositeItems
   -> metaitem.ResolveItems
-  -> metacatalog.PlanObjectCatalogSingleItem / PlanObjectCatalogCompositeItem
+  -> scanresource.PlanObjectSingleItem / PlanObjectCompositeItem
   -> scanprocessor.ObjectSingleInput / ObjectCompositeInput
   -> metaenrich / metaattr
   -> repository.UpsertItemWithDepth
@@ -107,7 +106,7 @@ service.ScanService
 
 ```text
 service.ScanService
-  -> scanadapter.ContentCatalogScanner
+  -> scanadapter.EngineCatalogContentScanner
   -> scanruntime.FilesystemCatalogRuntime
   -> scanruntime.ScanPaths / ScanRefGroups
   -> metaitem.StorageFileRef
@@ -122,7 +121,7 @@ service.ScanService
 
 ```text
 service.ScanService
-  -> scanadapter.CatalogDispatcher
+  -> scanadapter.EngineCatalogScanDispatcher
   -> scanruntime.DatabaseRuntime / DirectLeafRuntime / BranchLeafRuntime
   -> metaattr
   -> repository.UpsertNode / UpsertItemWithDepth
@@ -146,7 +145,6 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 
 路由前缀：`/api/v1/meta`。
 
-- 资产发现：`GET /api/v1/meta/assets/discoverable`，只接受 `addp-asset` Tenant Service Access Token，并校验 `meta.catalog.read`；Tenant 只来自 canonical AuthContext。
 - 引擎：`GET /engines`。
 - 扫描：`POST /scan/run/unscanned`、`POST /scan/run/manual`。
 - 扫描运行列表：`GET /scan/runs`。
@@ -185,7 +183,7 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 - 扫描必须执行租户隔离校验，不能绕过 System 引擎归属与 execution/request 的 Tenant Context。
 - 数据库、对象存储、文件系统和 NoSQL 扫描逻辑按 `scanadapter` / `scanruntime` / `scanprocessor` 分层扩展，`service` 只做应用门面和依赖装配，避免在 Handler 或 service 中堆叠扫描细节。
 - `ScanTaskService` 的类型和构造保留在 `scan_task_service.go`；生命周期、execution、任务 CRUD、调度同步分别放在 `scan_task_lifecycle.go`、`scan_task_execution.go`、`scan_task_crud.go`、`scan_task_schedule.go`。
-- `CatalogDispatcher` 的类型和总分发保留在 `catalog_dispatcher.go`；tabular、branch-leaf、通用锁和 root 收尾分别放在 `catalog_dispatcher_tabular.go`、`catalog_dispatcher_branch.go`、`catalog_dispatcher_helpers.go`。
+- `EngineCatalogScanDispatcher` 的类型和总分发保留在 `engine_catalog_scan_dispatcher.go`；tabular、branch-leaf、通用锁和 root 收尾分别放在 `engine_catalog_scan_dispatcher_tabular.go`、`engine_catalog_scan_dispatcher_branch.go`、`engine_catalog_scan_dispatcher_helpers.go`。只保留这一条分发路径。
 - `scanprocessor.Processor` 主流程保留在 `processor.go`；输入构造、文档抽取、内容 hash 分别放在 `processor_inputs.go`、`processor_document.go`、`content_hash.go`。
 - `scanruntime.DatabaseRuntime` 类型、构造和 `ScanNamespace` 主入口保留在 `database_runtime.go`；表扫描循环、表详情 attributes、facts 合并、空间元数据分别放在 `database_tables.go`、`database_table_details.go`、`database_table_facts.go`、`database_spatial.go`。
 - `scanruntime.ObjectStorageCatalogRuntime` 和 `FilesystemCatalogRuntime` 主文件只保留类型、构造和 `ScanPaths` 入口；对象 resource 持久化放在 `object_resources.go`，文件目录递归扫描放在 `file_directory_scan.go`。

@@ -55,40 +55,16 @@ echo -e "${YELLOW}Meilisearch 索引初始化（模块化组织）${NC}"
 echo -e "${YELLOW}========================================${NC}"
 echo ""
 
-# 模块化索引配置（格式: {module}:{resource_type}）
-INDEXES=(
-  "meta:assets:Meta 模块统一索引（元数据资产）"
-  "manager:files:Manager 模块文件索引（目录文件）"
-  "develop:results:Develop 模块查询结果索引"
-)
-
-echo -e "${YELLOW}▶ 创建模块化索引...${NC}"
-
-for index_info in "${INDEXES[@]}"; do
-  IFS=':' read -r index_name _ index_desc <<< "$index_info"
-
-  # 检查索引是否存在
-  STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-    -H "Authorization: Bearer ${MEILI_KEY}" \
-    "${MEILI_URL}/indexes/${index_name}")
-
-  if [ "$STATUS" = "200" ]; then
-    echo -e "  ${GREEN}✓ ${index_name}${NC} - 已存在"
-  else
-    echo -e "  ${BLUE}▸ ${index_name}${NC} - 创建中..."
-    RESPONSE=$(curl -s -X POST "${MEILI_URL}/indexes" \
-      -H "Authorization: Bearer ${MEILI_KEY}" \
-      -H "Content-Type: application/json" \
-      -d "{\"uid\": \"${index_name}\", \"primaryKey\": \"id\"}")
-
-    if echo "$RESPONSE" | grep -q "taskUid"; then
-      echo -e "  ${GREEN}✓ ${index_name}${NC} - 创建成功"
-    else
-      echo -e "  ${RED}✗ ${index_name}${NC} - 创建失败"
-      echo -e "  ${YELLOW}响应: ${RESPONSE}${NC}"
-    fi
-  fi
-done
+echo -e "${YELLOW}▶ 校验 Meilisearch API...${NC}"
+STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+  -H "Authorization: Bearer ${MEILI_KEY}" \
+  "${MEILI_URL}/health")
+if [ "$STATUS" != "200" ]; then
+  echo -e "  ${RED}✗ Meilisearch API 不可用（HTTP ${STATUS}）${NC}"
+  exit 1
+fi
+echo -e "  ${GREEN}✓ Meilisearch API 可用${NC}"
+echo -e "  ${BLUE}各模块在启动时创建并配置自己的 owner 索引；Infra 不预建跨模块共享索引。${NC}"
 
 echo ""
 echo -e "${GREEN}✓ Meilisearch 索引初始化完成${NC}"
@@ -98,9 +74,4 @@ echo -e "${YELLOW}索引访问信息${NC}"
 echo -e "${YELLOW}========================================${NC}"
 echo "  访问地址: ${MEILI_URL}"
 echo "  Master Key: ${MEILI_KEY}"
-echo ""
-echo "  已创建的索引:"
-echo "  - meta:assets    : Meta 模块元数据资产"
-echo "  - manager:files  : Manager 模块目录文件"
-echo "  - develop:results: Develop 模块查询结果"
 echo ""

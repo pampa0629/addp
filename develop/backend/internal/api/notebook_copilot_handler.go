@@ -53,7 +53,7 @@ func (h *NotebookHandler) GenerateSessionNotebookCell(c *gin.Context) {
 		case errors.Is(err, service.ErrNotebookSessionNotFound):
 			c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookSessionUnavailable)})
 		case errors.Is(err, service.ErrNotebookCopilotForbidden):
-			c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookCatalogForbidden)})
+			c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookEngineCatalogForbidden)})
 		default:
 			c.JSON(http.StatusBadGateway, gin.H{"error": commoni18n.TWithDetail(c, developi18n.MsgNotebookCopilotFailed, err.Error())})
 		}

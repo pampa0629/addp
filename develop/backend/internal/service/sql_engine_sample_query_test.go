@@ -119,13 +119,13 @@ func TestGenerateExecutableSampleQueryRequiresSuccessfulNonEmptyExecution(t *tes
 }
 
 func TestGenerateExecutableSampleQueryUsesSelectedCatalogPath(t *testing.T) {
-	selectedPath := plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
+	selectedPath := plugin.EngineCatalogPath{
+		Version:  plugin.EngineCatalogPathVersion,
 		EngineID: 42,
-		Segments: []plugin.CatalogSegment{
-			{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer},
-			{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: "business"},
-			{Term: plugin.CatalogTermCollection, Kind: plugin.CatalogKindCollection, Name: "orders"},
+		Segments: []plugin.EngineCatalogSegment{
+			{Term: plugin.EngineCatalogTermServer, Kind: plugin.EngineCatalogTermServer},
+			{Term: plugin.EngineCatalogTermDatabase, Kind: plugin.EngineCatalogKindNamespace, Name: "business"},
+			{Term: plugin.EngineCatalogTermCollection, Kind: plugin.EngineCatalogKindCollection, Name: "orders"},
 		},
 	}
 	provider := &executableSampleQueryProvider{
@@ -154,13 +154,13 @@ func TestGenerateExecutableSampleQueryUsesSelectedCatalogPath(t *testing.T) {
 }
 
 func TestGenerateExecutableSampleQueryReportsSelectedResourceEmpty(t *testing.T) {
-	selectedPath := plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
+	selectedPath := plugin.EngineCatalogPath{
+		Version:  plugin.EngineCatalogPathVersion,
 		EngineID: 42,
-		Segments: []plugin.CatalogSegment{
-			{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer},
-			{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: "business"},
-			{Term: plugin.CatalogTermCollection, Kind: plugin.CatalogKindCollection, Name: "empty_orders"},
+		Segments: []plugin.EngineCatalogSegment{
+			{Term: plugin.EngineCatalogTermServer, Kind: plugin.EngineCatalogTermServer},
+			{Term: plugin.EngineCatalogTermDatabase, Kind: plugin.EngineCatalogKindNamespace, Name: "business"},
+			{Term: plugin.EngineCatalogTermCollection, Kind: plugin.EngineCatalogKindCollection, Name: "empty_orders"},
 		},
 	}
 	provider := &executableSampleQueryProvider{

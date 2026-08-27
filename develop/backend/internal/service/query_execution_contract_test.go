@@ -3,6 +3,8 @@ package service
 import (
 	"reflect"
 	"testing"
+
+	"github.com/addp/common/taskprovider"
 )
 
 func TestBuildQueryExecutionContractUsesDefinitionsAndDefaults(t *testing.T) {
@@ -43,6 +45,48 @@ func TestBuildQueryExecutionContractRequiresExactDefinitions(t *testing.T) {
 		if _, err := BuildQueryExecutionContract(content); err == nil {
 			t.Fatalf("expected invalid query parameters: %#v", content)
 		}
+	}
+}
+
+func TestBuildQueryExecutionContractRequiresRelationLocatorsAtRuntime(t *testing.T) {
+	content := map[string]interface{}{
+		"query_type":      "sql",
+		"query":           "SELECT member_id FROM addp_input.members",
+		"relation_inputs": []interface{}{"members"},
+	}
+	contract, err := BuildQueryExecutionContract(content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := taskprovider.ValidateExecutionContract(map[string]interface{}{
+		"input_schema":    contract.InputSchema,
+		"input_defaults":  contract.InputDefaults,
+		"input_ui_schema": contract.InputUISchema,
+		"output_schema":   contract.OutputSchema,
+	}); err != nil {
+		t.Fatalf("execution contract is invalid: %v", err)
+	}
+	required := contract.InputSchema["required"].([]interface{})
+	if !reflect.DeepEqual(required, []interface{}{"input_locators", "target_locator"}) {
+		t.Fatalf("required = %#v", required)
+	}
+	if len(contract.InputDefaults) != 0 {
+		t.Fatalf("runtime locators must not have defaults: %#v", contract.InputDefaults)
+	}
+	if _, _, err := resolveQueryExecutionParameters(content, map[string]interface{}{}); err == nil {
+		t.Fatal("expected missing runtime locators to fail")
+	}
+	_, effective, err := resolveQueryExecutionParameters(content, map[string]interface{}{
+		"input_locators": map[string]interface{}{
+			"members": "addp://engine/12/path/public/members?type=table",
+		},
+		"target_locator": "addp://engine/12/path/public/member_result?type=table",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if effective != nil {
+		t.Fatalf("runtime locators must not become SQL value parameters: %#v", effective)
 	}
 }
 

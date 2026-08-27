@@ -58,8 +58,8 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 
 | 中文         | 英文标识符        | 对应插件接口            | 使用该能力的模块               |
 | ------------ | ----------------- | ----------------------- | ------------------------------ |
-| 目录发现       | CatalogCapability  | CatalogProvider          | Meta / Manager / Console        |
-| Catalog leaf facts | CatalogFactsCapability | CatalogFactsProvider     | Meta / Manager / Service        |
+| 目录发现       | EngineCatalogCapability  | EngineCatalogProvider          | Meta / Manager / Console        |
+| Catalog leaf facts | EngineCatalogFactsCapability | EngineCatalogFactsProvider     | Meta / Manager / Service        |
 | 内容读取       | ContentRead        | ContentReadableProvider  | Manager / Meta / Transfer       |
 | 查询计算       | QueryCompute       | QueryRuntimeProvider     | Develop / Service / Manager     |
 | 工作流计算     | WorkflowCompute    | WorkflowRuntimeProvider  | Develop / Orchestrator          |

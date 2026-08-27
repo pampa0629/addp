@@ -58,7 +58,7 @@ func TestIntegrationOracleFlatGeobufQuickView(t *testing.T) {
 		ItemType:     "table",
 		ProviderPath: plugin.TabularItemPath(
 			92001,
-			plugin.CatalogTermSchema,
+			plugin.EngineCatalogTermSchema,
 			"BUSINESS",
 			"CUSTOMER_LOCATIONS",
 		),

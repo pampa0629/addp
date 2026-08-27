@@ -11,10 +11,6 @@ definitions:
         type: integer
       attempt:
         type: integer
-      authorization_effects:
-        items:
-          type: string
-        type: array
       authorization_expires_at:
         type: string
       bytes_read:

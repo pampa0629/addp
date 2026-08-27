@@ -34,6 +34,8 @@ func SetupRouter(
 	tableRelationSvc *service.TableRelationService,
 	standardReferenceGuardSvc *service.StandardReferenceGuardService,
 	materializationSvc *service.MaterializationService,
+	materializationGroupSvc *service.MaterializationGroupService,
+	catalogResourceSvc *service.CatalogResourceService,
 	taskExecutionRepo *commonExecution.TaskExecutionRepository,
 	systemURL string,
 	redisClient *redis.Client,
@@ -72,7 +74,10 @@ func SetupRouter(
 	tableRelationHandler := NewTableRelationHandler(tableRelationSvc)
 	standardReferenceGuardHandler := NewStandardReferenceGuardHandler(standardReferenceGuardSvc)
 	materializationHandler := NewMaterializationTaskProviderHandler(materializationSvc, taskExecutionRepo)
-	materializationContextHandler := NewMaterializationContextHandler(materializationSvc)
+	materializationReadContextHandler := NewMaterializationReadContextHandler(materializationSvc)
+	materializationGroupHandler := NewMaterializationGroupHandler(materializationGroupSvc)
+	catalogResourceHandler := NewCatalogResourceHandler(catalogResourceSvc)
+	professionalRelationHandler := NewProfessionalRelationHandler(entityRelationSvc, tableRelationSvc)
 
 	// API 路由组
 	api := router.Group("/api/v1/model")
@@ -86,9 +91,21 @@ func SetupRouter(
 	}
 
 	{
-		materializationContexts := api.Group("/materialization-write-contexts")
-		materializationContexts.Use(commonAuth.MustNewServiceClientGuard("addp-develop"))
-		materializationContexts.POST("/resolve", permission(modelauthorization.PermissionModelMaterializationContextRead), materializationContextHandler.ResolveWriteContext)
+		catalogResources := api.Group("")
+		catalogResources.Use(commonAuth.MustNewServiceClientGuard("addp-catalog"))
+		catalogResources.GET("/catalog-resources/changes", permission(modelauthorization.PermissionModelCatalogRead), catalogResourceHandler.ListChanges)
+		catalogResources.POST("/runtime/catalog-references/resolve", permission(modelauthorization.PermissionModelCatalogRead), catalogResourceHandler.ResolveReferences)
+
+		materializationReadContexts := api.Group("/materialization-read-contexts")
+		materializationReadContexts.Use(commonAuth.MustNewServiceClientGuard("addp-quality"))
+		materializationReadContexts.POST("", permission(modelauthorization.PermissionModelMaterializationReadExecute), materializationReadContextHandler.Resolve)
+
+		materializationGroups := api.Group("/materialization-groups")
+		materializationGroups.GET("", permission(modelauthorization.PermissionModelMaterializationGroupRead), materializationGroupHandler.List)
+		materializationGroups.POST("", permission(modelauthorization.PermissionModelMaterializationGroupCreate), materializationGroupHandler.Create)
+		materializationGroups.GET("/:id", permission(modelauthorization.PermissionModelMaterializationGroupRead), materializationGroupHandler.Get)
+		materializationGroups.PUT("/:id", permission(modelauthorization.PermissionModelMaterializationGroupUpdate), materializationGroupHandler.Update)
+		materializationGroups.DELETE("/:id", permission(modelauthorization.PermissionModelMaterializationGroupDelete), materializationGroupHandler.Delete)
 
 		taskProvider := api.Group("/task-provider")
 		taskProvider.Use(commonAuth.MustNewServiceClientGuard("addp-orchestrator"))
@@ -108,6 +125,7 @@ func SetupRouter(
 			entities.GET("", permission(modelauthorization.PermissionModelEntityRead), entityHandler.ListEntities)
 			entities.POST("", permission(modelauthorization.PermissionModelEntityCreate), entityHandler.CreateEntity)
 			entities.GET("/:id", permission(modelauthorization.PermissionModelEntityRead), entityHandler.GetEntity)
+			entities.GET("/:id/relations", permission(modelauthorization.PermissionModelEntityRead, modelauthorization.PermissionModelEntityRelationRead), professionalRelationHandler.GetEntityRelations)
 			entities.PUT("/:id", permission(modelauthorization.PermissionModelEntityUpdate), entityHandler.UpdateEntity)
 			entities.DELETE("/:id", permission(modelauthorization.PermissionModelEntityDelete), entityHandler.DeleteEntity)
 			entities.POST("/:id/approve", permission(modelauthorization.PermissionModelEntityApprove), entityHandler.ApproveEntity)
@@ -142,6 +160,7 @@ func SetupRouter(
 			logicalTables.GET("", permission(modelauthorization.PermissionModelLogicalModelRead), logicalTableHandler.ListLogicalTables)
 			logicalTables.POST("", permission(modelauthorization.PermissionModelLogicalModelCreate), logicalTableHandler.CreateLogicalTable)
 			logicalTables.GET("/:id", permission(modelauthorization.PermissionModelLogicalModelRead), logicalTableHandler.GetLogicalTable)
+			logicalTables.GET("/:id/relations", permission(modelauthorization.PermissionModelLogicalModelRead), professionalRelationHandler.GetLogicalTableRelations)
 			logicalTables.PUT("/:id", permission(modelauthorization.PermissionModelLogicalModelUpdate), logicalTableHandler.UpdateLogicalTable)
 			logicalTables.DELETE("/:id", permission(modelauthorization.PermissionModelLogicalModelDelete), logicalTableHandler.DeleteLogicalTable)
 			logicalTables.POST("/:id/approve", permission(modelauthorization.PermissionModelLogicalModelUpdate), logicalTableHandler.ApproveLogicalTable)

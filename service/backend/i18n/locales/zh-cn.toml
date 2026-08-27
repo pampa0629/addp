@@ -19,6 +19,15 @@ other = "ref 中的 ID 无效"
 [service.err.not_found]
 other = "服务不存在"
 
+[service.err.lookup_failed]
+other = "读取服务失败"
+
+[service.err.inactive]
+other = "服务当前未启用"
+
+[service.err.rest_api_disabled]
+other = "该服务未启用 REST API"
+
 [service.success.deleted]
 other = "删除成功"
 
@@ -49,6 +58,9 @@ other = "查询请求格式错误"
 [service.err.invalid_query_format]
 other = "查询返回格式无效"
 
+[service.err.invalid_query_intent]
+other = "查询用途标识无效"
+
 [service.err.invalid_structured_query]
 other = "结构化查询条件无效"
 
@@ -60,6 +72,15 @@ other = "查询结果格式化失败"
 
 [service.err.invalid_feature_id]
 other = "要素 ID 无效或已过期"
+
+[service.consumer.filter_invalid]
+other = "服务消费目录筛选参数无效"
+
+[service.consumer.reference_invalid]
+other = "服务消费引用无效"
+
+[service.consumer.catalog_failed]
+other = "读取服务消费目录失败"
 
 [service.configuration.load_failed]
 other = "加载服务运行策略失败"
