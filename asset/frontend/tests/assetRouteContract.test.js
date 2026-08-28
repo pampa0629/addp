@@ -80,4 +80,20 @@ describe('Asset public route contract', () => {
     expect(assetDetail).toContain(":confirm-button-text=\"t('asset.assetDetail.confirm')\"")
     expect(assetDetail).toContain(":cancel-button-text=\"t('asset.assetDetail.cancel')\"")
   })
+
+  it('uses the single filtered Asset dashboard contract for application asset operations', () => {
+    const api = readSource('api/asset.js')
+    const dashboard = readSource('views/Dashboard.vue')
+    const zhCn = JSON.parse(readSource('i18n/zh-cn.json')).asset.dashboard
+    const en = JSON.parse(readSource('i18n/en.json')).asset.dashboard
+
+    expect(api).toContain("dashboard: (params = {}) => client.get('/asset/assets/stats/dashboard', { params })")
+    expect(dashboard).toContain('dashboardStatsParams(selectedScope.value)')
+    expect(dashboard).toContain('requestSequence !== statsRequestSequence')
+    expect(dashboard).toContain('stats.effective_authorized_users')
+    expect(dashboard).not.toContain('authorization_active')
+    expect(dashboard).not.toMatch(/\sstyle=\"/)
+    expect(zhCn.scopeApplications).toBe('全部数据应用资产')
+    expect(en.scopeApplications).toBe('All Data Application Assets')
+  })
 })

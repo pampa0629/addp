@@ -60,7 +60,12 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 	assets := api.Group("/assets")
 	assets.GET("", managementPermission(assetauthorization.PermissionAssetEntryRead), handler.listAssets)
 	assets.GET("/stats", managementPermission(assetauthorization.PermissionAssetEntryRead), handler.getAssetStats)
-	assets.GET("/stats/dashboard", managementPermission(assetauthorization.PermissionAssetEntryRead), handler.getAssetDashboardStats)
+	assets.GET("/stats/dashboard", managementPermission(
+		assetauthorization.PermissionAssetEntryRead,
+		assetauthorization.PermissionAssetApplicationRead,
+		assetauthorization.PermissionAssetAuthorizationRead,
+		assetauthorization.PermissionAssetRatingRead,
+	), handler.getAssetDashboardStats)
 	assets.GET("/type-fields/:type_id", managementPermission(assetauthorization.PermissionAssetEntryRead), handler.getAssetTypeFields)
 	assets.GET("/:id", managementPermission(assetauthorization.PermissionAssetEntryRead), handler.getAsset)
 	assets.POST("", managementPermission(assetauthorization.PermissionAssetEntryUpdate), handler.createAsset)

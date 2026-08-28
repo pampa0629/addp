@@ -7,6 +7,7 @@ export default defineConfig({
     '@': resolve(__dirname, 'src'), '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
     '@common-ui-chart': resolve(__dirname, '../../common-frontend/chart/src'),
     '@common-ui-map': resolve(__dirname, '../../common-frontend/map/src'),
+    '@amap/amap-jsapi-loader': resolve(__dirname, 'node_modules/@amap/amap-jsapi-loader'),
     '@element-plus/icons-vue': resolve(__dirname, 'node_modules/@element-plus/icons-vue'),
     'element-plus': resolve(__dirname, 'node_modules/element-plus'), 'vue-i18n': resolve(__dirname, 'node_modules/vue-i18n')
   }, dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios', 'echarts', 'ol', 'proj4'] },

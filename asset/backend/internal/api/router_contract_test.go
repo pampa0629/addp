@@ -92,7 +92,12 @@ func assetPermissionRouteContracts() []permissionRouteContract {
 		{http.MethodDelete, "/api/v1/asset/categories/invalid", `{}`, managementPermissions(authorization.PermissionAssetCategoryDelete)},
 		{http.MethodGet, "/api/v1/asset/assets", "", managementPermissions(authorization.PermissionAssetEntryRead)},
 		{http.MethodGet, "/api/v1/asset/assets/stats", "", managementPermissions(authorization.PermissionAssetEntryRead)},
-		{http.MethodGet, "/api/v1/asset/assets/stats/dashboard", "", managementPermissions(authorization.PermissionAssetEntryRead)},
+		{http.MethodGet, "/api/v1/asset/assets/stats/dashboard", "", managementPermissions(
+			authorization.PermissionAssetEntryRead,
+			authorization.PermissionAssetApplicationRead,
+			authorization.PermissionAssetAuthorizationRead,
+			authorization.PermissionAssetRatingRead,
+		)},
 		{http.MethodGet, "/api/v1/asset/assets/type-fields/invalid", "", managementPermissions(authorization.PermissionAssetEntryRead)},
 		{http.MethodGet, "/api/v1/asset/assets/invalid", "", managementPermissions(authorization.PermissionAssetEntryRead)},
 		{http.MethodPost, "/api/v1/asset/assets", `{}`, managementPermissions(authorization.PermissionAssetEntryUpdate)},

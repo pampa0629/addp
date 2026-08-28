@@ -521,6 +521,31 @@ Workbench Backend 在草稿保存和发布时必须使用已读取的 Consumer D
 
 本段不增加自定义 CSS、任意 DOM selector、按 Component 隐藏、悬浮工具栏、编辑/运行双快照、匿名 kiosk URL 或第二套 renderer。全部配置继续随 Application Revision 不可变发布。
 
+### 5.8 Data Application 资产运营指标评估
+
+“资产运营”不能被收敛成一张跨模块总表。Data Application、承载它的 application Asset、底层 Query Service 和 Task Execution 是不同聚合，必须先区分各自事实，再讨论展示：
+
+| 运营问题 | 唯一事实 owner | 当前可用事实 | 明确不能推断 |
+| --- | --- | --- | --- |
+| 有多少 application Asset、处于什么状态 | Asset | `asset.assets` 的类型、状态、上架时间 | Data Application 发布不等于 Asset 已上架 |
+| 有多少申请、授权和评价 | Asset | Application、Authorization、Rating 及其时间与状态 | `effective` Authorization 只能称“有效授权”，不能称“活跃用户”或“已使用” |
+| 某个 Data Application 被多少人成功打开 | Workbench | 当前没有持久化的运行准入事实 | Runtime API 日志、页面曝光、Catalog 点击和 Portal 打开按钮都不能替代成功运行准入 |
+| 某个 Query Service 被调用多少次、结果如何 | Service owner 写入的 System Audit Event | `service.query.executed | exported` 的服务身份、结果、返回行数、错误码和查询形状指纹 | 不能反推调用来自哪个 Data Application；同一 Service 可以被多个消费者复用 |
+| 任务执行量、成功率、耗时和积压 | execution owner 写入 `common.task_executions`，Monitor 只聚合 | 统一 Execution 事实 | Data Application 在线打开、参数查询和 wallboard 刷新不是 Task 或 Execution |
+
+基于现有事实，第一阶段可直接提供且语义可靠的指标只包括：
+
+1. Asset 按 `application` 类型或具体 Asset 统计资产数量、状态分布、上架趋势、申请结果分布、当前有效授权人数、评价数量和平均分；这些指标继续由 Asset 自己查询私有表，不读取 Workbench 或 System 审计表；
+2. Service 按 Query Service 统计调用量、成功 / 拒绝 / 失败分布、查询 / 导出用途、返回行数和错误码；它表达服务运行情况，不命名为 Data Application 使用量；
+3. Workbench 当前只展示应用发布状态和 Revision，不虚构“访问量”“活跃用户”“查询成功率”。如果后续确认应用级使用分析确有产品价值，必须先设计并持久化由 Workbench owner 产生的成功运行准入事实，再定义运行准入次数、独立访问用户和按 Revision 分布；失败授权尝试属于审计 / 安全事实，不进入使用量；
+4. 一个 Data Application 可以被不同 Asset 以不同发布说明、授权期限和评价运营，Asset 指标必须按 Asset 身份保存；不得假设 Data Application 与 Asset 一一对应，也不得把多个 Asset 的评价或申请直接覆盖回 Workbench 聚合根。
+
+本阶段不建设跨模块“综合热度分”、不让 Asset 在线查询 Workbench 私有表、不让 Workbench 获得 Tenant 全量审计读取权限，也不新增可由浏览器伪造的 `application_id` Service 请求头。若未来需要把具体 Component 查询可靠归因到 Data Application，必须先独立确认受信消费上下文协议及其成本；在此之前，Service 调用指标与 Application 运行准入指标保持两条事实清晰但不伪关联的路线。
+
+第一阶段实现继续复用 Asset 唯一的 `GET /assets/stats/dashboard`，通过可选 `type_code` 与 `asset_id` 收敛统计范围：无参数表示全部资产，`type_code=application` 表示全部数据应用资产，同时传入 `asset_id` 表示该类型下的具体 Asset。接口返回资产状态、申请待审 / 通过 / 驳回、近 30 天上架与申请趋势、评价数与均分；授权指标固定为当前未过期且已完成履约的 `effective` Authorization 按 `user_id` 去重数，字段命名为 `effective_authorized_users`，删除含义模糊的 `authorization_active`。指定 Asset 不存在、跨 Tenant 或与类型不匹配时返回不存在，不返回伪造的全零结果。
+
+该统计接口同时读取 Asset Entry、Application、Authorization 和 Rating 四类私有事实，因此管理端调用必须同时具备四类只读 Permission；不能因结果是聚合值就只校验 Asset Entry 读取权限。前端运营看板默认选择全部数据应用资产，可切换到全部资产或具体数据应用 Asset；范围提示必须明确“仅统计 Asset 自有事实，不代表应用访问活跃度”。
+
 ## 六、Service Consumer Descriptor 与 Consumer Catalog
 
 ### 6.1 必要性
@@ -1089,7 +1114,8 @@ Phase 4B 再接企业目录和资产授权主线：
 - [x] 实现 5.6 节 wallboard 应用刷新策略；
 - [x] 实现 5.7 节 wallboard 应用呈现区块；
 - [ ] 外部 BI 消费服务的契约与接入指南；
-- [ ] 评估正式 Data Application 资产运营指标。
+- [x] 完成 5.8 节 Data Application 资产运营指标事实源与模块归属评估；
+- [x] 在 Asset 自有事实范围内实现 `application` 类型及具体 Asset 的运营分组；
 
 Workbench 不因为 Phase 5 增强而取得数据建模、SQL、指标定义或任务计算职责。
 
@@ -1474,9 +1500,25 @@ git diff --check
 
 模块门禁完整覆盖 platform T0、Workbench Go T1、29 项 Frontend T1/T3 与生产构建、PostgreSQL T2；Swagger 把 `visible_sections` 声明为必填枚举数组，17 个公开路由覆盖一致。真实浏览器验收继续使用长期应用 `d6c30859-15c8-4b88-964b-f2dd315fb923`，未创建、删除或下线应用：在大屏、30 秒刷新条件下隐藏全部三个可选区块，保存并发布修订 5。运行页只保留紧凑工具栏、两个组件标题和查询结果；页面标题、说明、参数控件、查询按钮及表格分页均未出现。跨过一个完整 30 秒刷新周期后，表格与图表仍保持真实长沙市查询结果，页面查询错误为 0，浏览器 error/warn 日志为空；验收后已关闭运行标签页。
 
+### 14.15 Phase 5 Data Application 资产运营指标评估（2026-08-28）
+
+5.8 节已完成现状核查和模块归属设计，本段没有修改运行代码、数据库或 API。Asset 已拥有资产状态、上架趋势、申请、有效 Authorization 和 Rating 等运营事实；Service 已把 `service.query.executed | exported` 作为追加式审计事件写入 System，包含 Query Service、结果、用途、返回行数、错误码与查询形状指纹；Monitor 只聚合 `common.task_executions`，Data Application 在线消费不属于其执行监控范围。
+
+当前唯一缺失的是 Workbench owner 持久化的“成功运行准入”事实。Runtime API 成功返回可以证明当前 User 在当时获准读取某个已发布 Revision，但现有实现只返回快照，不写使用事实。Component 查询随后由浏览器直接调用 Service，Service 无法可信获知它来自哪个 Data Application；同一 Query Service 也可被 Workbench View、其他 Data Application 或外部客户端复用。因此本轮明确不从 Service Audit、Gateway 日志、Referer、Portal 点击或浏览器自报请求头拼接 Data Application 访问量，也不把有效授权人数命名为活跃用户。
+
+第一阶段建议只在 Asset 现有事实上增加 application 类型和具体 Asset 的运营分组，不跨模块联查；Workbench 继续不展示访问量。只有在应用创建者或资产运营方确认确实需要“成功打开次数 / 独立访问用户 / Revision 分布”后，才单独设计 Workbench owner 的运行准入事实、保留周期、隐私边界和聚合 API。具体 Component 查询归因属于更高成本的受信消费上下文问题，不作为运行准入指标的前置条件，也不能用可伪造 header 临时解决。
+
+### 14.16 Workbench 前端依赖门禁与 Asset 运营分组实现（2026-08-28）
+
+`make test-workbench-frontend` 在干净依赖环境中暴露了 `@common-ui-map` 源码所需的 `@amap/amap-jsapi-loader` 无法解析。根因不是依赖未声明，而是 Workbench 直接解析 `common-frontend/map` 源码时，Vite 会从共享源码目录寻找 peer runtime；开发机残留的 `common-frontend/map/node_modules` 遮蔽了 CI 缺口。Workbench 现与 Service、Agent 的正式路线一致，把该 peer 显式解析到 Workbench 自己的依赖树，并增加合同测试。删除共享包残留依赖、执行全新 `npm ci` 后，30 项 Workbench 前端测试和生产构建均通过；本变更不需要服务重启。
+
+5.8 节推荐的第一阶段 Asset 运营分组已经沿唯一 `/assets/stats/dashboard` 路由实现。Backend 支持全部资产、`application` 类型和具体 Asset 三种交集范围，完整传播查询错误；申请结果拆分为待审 / 通过 / 驳回，有效授权改为当前未过期、已履约并按用户去重，评价和两类 30 天趋势使用同一 Asset 范围。跨 Tenant、类型不匹配或不存在的具体 Asset 返回不存在。路由授权同步收紧为 Asset Entry、Application、Authorization、Rating 四类只读 Permission 的 all-of。
+
+Asset 运营看板默认展示全部数据应用资产，并可选择全部资产或具体数据应用 Asset；全部文案、范围说明、错误、趋势可访问名称和异步播报均使用中英文 i18n，样式使用 ADDP 主题变量。Backend 全量 Go 测试、9 项 Asset 前端测试与生产构建、Swagger 生成和 41 个公开路由覆盖、授权覆盖均已通过。Asset PostgreSQL 标准门禁新增运营聚合用例，先发现并修复 PostgreSQL 保留字表别名问题，随后 Schema 与运营聚合两段真实 PostgreSQL 测试通过且清理测试 Schema。运行态浏览器复核须在 Asset 服务按标准方式重启后完成。
+
 ## 十五、概念设计状态
 
-当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Service 公开执行路由、授权模型和 Query Service 输出契约没有发生变化。Phase 5 单页能力已经收口，下一步建议优先评估正式 Data Application 的资产运营指标，只确定可观测事实、指标口径和责任模块，不立即建设统计页面；在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
+当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成。Service 公开执行路由、授权模型和 Query Service 输出契约没有发生变化。运行态复核完成后，下一步建议优先评估并编写“外部 BI 消费服务的契约与接入指南”，不立即增加跨模块综合统计或 Workbench 运行埋点；只有确认成功打开次数、独立访问用户和 Revision 分布确有独立产品价值时，才进入 Workbench owner 运行准入事实设计。在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
 
 ## 十六、相关文档
 

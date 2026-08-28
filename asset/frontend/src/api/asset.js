@@ -57,5 +57,5 @@ export const ratingAPI = {
 
 // 运营看板统计（Phase 6.3）
 export const statsAPI = {
-  dashboard: () => client.get('/asset/assets/stats/dashboard')
+  dashboard: (params = {}) => client.get('/asset/assets/stats/dashboard', { params })
 }

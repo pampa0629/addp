@@ -768,10 +768,12 @@ type DashboardStats struct {
 	AssetDraft     int64 `json:"asset_draft"`
 	AssetPublished int64 `json:"asset_published"`
 	AssetOffline   int64 `json:"asset_offline"`
-	// 申请汇总
-	ApplicationTotal    int64 `json:"application_total"`
-	ApplicationPending  int64 `json:"application_pending"`
-	AuthorizationActive int64 `json:"authorization_active"`
+	// 申请结果与当前有效授权用户汇总
+	ApplicationTotal         int64 `json:"application_total"`
+	ApplicationPending       int64 `json:"application_pending"`
+	ApplicationApproved      int64 `json:"application_approved"`
+	ApplicationRejected      int64 `json:"application_rejected"`
+	EffectiveAuthorizedUsers int64 `json:"effective_authorized_users"`
 	// 时间趋势（近 30 天，按天汇总）
 	PublishTrend     []DailyCount `json:"publish_trend"`
 	ApplicationTrend []DailyCount `json:"application_trend"`
@@ -786,9 +788,25 @@ type DailyCount struct {
 	Count int64  `json:"count"`
 }
 
+// DashboardStatsFilter 约束运营统计使用的 Asset 范围。
+// TypeCode 与 AssetID 同时存在时取交集，不跨模块解析来源对象。
+type DashboardStatsFilter struct {
+	TypeCode string
+	AssetID  int64
+}
+
 // GetDashboardStats 获取运营看板统计数据
-func (s *AssetService) GetDashboardStats(tenantID uint) (*DashboardStats, error) {
+func (s *AssetService) GetDashboardStats(tenantID uint, filter DashboardStatsFilter) (*DashboardStats, error) {
 	stats := &DashboardStats{}
+	if filter.AssetID > 0 {
+		var assetCount int64
+		if err := s.dashboardAssetScope(tenantID, filter).Count(&assetCount).Error; err != nil {
+			return nil, err
+		}
+		if assetCount == 0 {
+			return nil, gorm.ErrRecordNotFound
+		}
+	}
 
 	// 1. 资产状态汇总
 	type statusRow struct {
@@ -796,11 +814,12 @@ func (s *AssetService) GetDashboardStats(tenantID uint) (*DashboardStats, error)
 		Count  int64  `gorm:"column:count"`
 	}
 	var statusRows []statusRow
-	s.db.Table("asset.assets").
-		Select("status, COUNT(*) as count").
-		Where("tenant_id = ?", tenantID).
-		Group("status").
-		Scan(&statusRows)
+	if err := s.dashboardAssetScope(tenantID, filter).
+		Select("scoped_asset.status, COUNT(*) as count").
+		Group("scoped_asset.status").
+		Scan(&statusRows).Error; err != nil {
+		return nil, err
+	}
 	for _, r := range statusRows {
 		stats.AssetTotal += r.Count
 		switch r.Status {
@@ -813,69 +832,122 @@ func (s *AssetService) GetDashboardStats(tenantID uint) (*DashboardStats, error)
 		}
 	}
 
-	// 2. 申请汇总
-	s.db.Table("asset.applications").
-		Where("tenant_id = ?", tenantID).
-		Count(&stats.ApplicationTotal)
-	s.db.Table("asset.applications").
-		Where("tenant_id = ? AND status = 'pending'", tenantID).
-		Count(&stats.ApplicationPending)
-	s.db.Table("asset.authorizations").
-		Where("tenant_id = ? AND status = ?", tenantID, models.AuthorizationStatusEffective).
-		Count(&stats.AuthorizationActive)
+	// 2. 申请结果汇总
+	var applicationStatusRows []statusRow
+	if err := s.db.Table("asset.applications AS application").
+		Select("application.status, COUNT(*) as count").
+		Where("application.tenant_id = ?", tenantID).
+		Where("application.asset_id IN (?)", s.dashboardAssetIDs(tenantID, filter)).
+		Group("application.status").
+		Scan(&applicationStatusRows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range applicationStatusRows {
+		stats.ApplicationTotal += row.Count
+		switch row.Status {
+		case "pending":
+			stats.ApplicationPending = row.Count
+		case "approved":
+			stats.ApplicationApproved = row.Count
+		case "rejected":
+			stats.ApplicationRejected = row.Count
+		}
+	}
 
-	// 3. 近 30 天上架趋势
-	publishTrend := s.dailyTrend(
-		"asset.assets",
-		"published_at",
-		"tenant_id = ? AND status = 'published' AND published_at IS NOT NULL",
-		tenantID,
+	// 3. 当前未过期、已完成履约的授权，按用户去重。
+	if err := s.db.Table("asset.authorizations AS grant_record").
+		Select("COUNT(DISTINCT grant_record.user_id)").
+		Where("grant_record.tenant_id = ?", tenantID).
+		Where("grant_record.asset_id IN (?)", s.dashboardAssetIDs(tenantID, filter)).
+		Where("grant_record.status = ?", models.AuthorizationStatusEffective).
+		Where("grant_record.expires_at IS NULL OR grant_record.expires_at > ?", time.Now().UTC()).
+		Scan(&stats.EffectiveAuthorizedUsers).Error; err != nil {
+		return nil, err
+	}
+
+	// 4. 近 30 天上架趋势
+	publishTrend, err := s.dailyTrend(
+		s.db.Table("asset.assets AS trend_asset").
+			Where("trend_asset.tenant_id = ? AND trend_asset.status = 'published' AND trend_asset.published_at IS NOT NULL", tenantID).
+			Where("trend_asset.id IN (?)", s.dashboardAssetIDs(tenantID, filter)),
+		"trend_asset.published_at",
 	)
+	if err != nil {
+		return nil, err
+	}
 	stats.PublishTrend = publishTrend
 
-	// 4. 近 30 天申请趋势
-	appTrend := s.dailyTrend(
-		"asset.applications",
-		"created_at",
-		"tenant_id = ?",
-		tenantID,
+	// 5. 近 30 天申请趋势
+	appTrend, err := s.dailyTrend(
+		s.db.Table("asset.applications AS trend_application").
+			Where("trend_application.tenant_id = ?", tenantID).
+			Where("trend_application.asset_id IN (?)", s.dashboardAssetIDs(tenantID, filter)),
+		"trend_application.created_at",
 	)
+	if err != nil {
+		return nil, err
+	}
 	stats.ApplicationTrend = appTrend
 
-	// 5. 评价汇总
+	// 6. 评价汇总
 	type ratingRow struct {
 		Count    int64   `gorm:"column:count"`
 		AvgScore float64 `gorm:"column:avg_score"`
 	}
 	var rr ratingRow
-	s.db.Table("asset.ratings").
+	if err := s.db.Table("asset.ratings AS rating").
 		Select("COUNT(*) as count, COALESCE(AVG(score), 0) as avg_score").
-		Where("tenant_id = ?", tenantID).
-		Scan(&rr)
+		Where("rating.tenant_id = ?", tenantID).
+		Where("rating.asset_id IN (?)", s.dashboardAssetIDs(tenantID, filter)).
+		Scan(&rr).Error; err != nil {
+		return nil, err
+	}
 	stats.RatingCount = rr.Count
 	stats.RatingAvgScore = rr.AvgScore
 
 	return stats, nil
 }
 
-// dailyTrend 获取指定表近 30 天每天的数据量
-func (s *AssetService) dailyTrend(table, dateCol, condition string, args ...interface{}) []DailyCount {
+func (s *AssetService) dashboardAssetScope(tenantID uint, filter DashboardStatsFilter) *gorm.DB {
+	query := s.db.Table("asset.assets AS scoped_asset").
+		Joins("JOIN asset.type_definitions AS scoped_type ON scoped_type.id = scoped_asset.type_id").
+		Where("scoped_asset.tenant_id = ?", tenantID)
+	if filter.TypeCode != "" {
+		query = query.Where("scoped_type.code = ?", filter.TypeCode)
+	}
+	if filter.AssetID > 0 {
+		query = query.Where("scoped_asset.id = ?", filter.AssetID)
+	}
+	return query
+}
+
+func (s *AssetService) dashboardAssetIDs(tenantID uint, filter DashboardStatsFilter) *gorm.DB {
+	return s.dashboardAssetScope(tenantID, filter).Select("scoped_asset.id")
+}
+
+// dailyTrend 获取指定查询近 30 天每天的数据量。
+func (s *AssetService) dailyTrend(query *gorm.DB, dateCol string) ([]DailyCount, error) {
 	type row struct {
 		Date  string `gorm:"column:date"`
 		Count int64  `gorm:"column:count"`
 	}
+	dateExpression := fmt.Sprintf("TO_CHAR(DATE_TRUNC('day', %s), 'YYYY-MM-DD')", dateCol)
+	if s.db.Dialector.Name() == "sqlite" {
+		dateExpression = fmt.Sprintf("strftime('%%Y-%%m-%%d', %s)", dateCol)
+	}
 	var rows []row
-	s.db.Table(table).
-		Select(fmt.Sprintf("TO_CHAR(DATE_TRUNC('day', %s), 'YYYY-MM-DD') AS date, COUNT(*) AS count", dateCol)).
-		Where(condition, args...).
-		Where(fmt.Sprintf("%s >= NOW() - INTERVAL '30 days'", dateCol)).
+	if err := query.
+		Select(dateExpression+" AS date, COUNT(*) AS count").
+		Where(fmt.Sprintf("%s >= ?", dateCol), time.Now().UTC().Add(-30*24*time.Hour)).
 		Group("date").
 		Order("date ASC").
-		Scan(&rows)
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
 
 	counts := make([]DailyCount, 0, len(rows))
 	for _, r := range rows {
 		counts = append(counts, DailyCount{Date: r.Date, Count: r.Count})
 	}
-	return counts
+	return counts, nil
 }

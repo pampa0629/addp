@@ -115,6 +115,50 @@ definitions:
     - name
     - type_id
     type: object
+  github_com_addp_asset_internal_service.DailyCount:
+    properties:
+      count:
+        type: integer
+      date:
+        type: string
+    type: object
+  github_com_addp_asset_internal_service.DashboardStats:
+    properties:
+      application_approved:
+        type: integer
+      application_pending:
+        type: integer
+      application_rejected:
+        type: integer
+      application_total:
+        description: 申请结果与当前有效授权用户汇总
+        type: integer
+      application_trend:
+        items:
+          $ref: '#/definitions/github_com_addp_asset_internal_service.DailyCount'
+        type: array
+      asset_draft:
+        type: integer
+      asset_offline:
+        type: integer
+      asset_published:
+        type: integer
+      asset_total:
+        description: 资产状态汇总
+        type: integer
+      effective_authorized_users:
+        type: integer
+      publish_trend:
+        description: 时间趋势（近 30 天，按天汇总）
+        items:
+          $ref: '#/definitions/github_com_addp_asset_internal_service.DailyCount'
+        type: array
+      rating_avg_score:
+        type: number
+      rating_count:
+        description: 评价汇总
+        type: integer
+    type: object
   github_com_addp_asset_internal_service.DeleteAssetCategoryRequest:
     properties:
       version:
@@ -639,11 +683,38 @@ paths:
       - asset.entry.read
   /assets/stats/dashboard:
     get:
+      description: 按资产类型或具体资产统计 Asset 自有的状态、申请结果、有效授权用户、评价和近 30 天趋势 | Aggregate Asset-owned
+        status, application results, effective authorized users, ratings, and 30-day
+        trends by asset type or a specific asset
+      parameters:
+      - description: 资产类型代码 | Asset type code
+        in: query
+        name: type_code
+        type: string
+      - description: 资产 ID；与 type_code 同时存在时取交集 | Asset ID; intersects with type_code
+          when both are present
+        in: query
+        name: asset_id
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 资产运营统计 | Asset dashboard statistics
+          schema:
+            $ref: '#/definitions/github_com_addp_asset_internal_service.DashboardStats'
+        "400":
+          description: 参数无效 | Invalid parameter
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 资产不存在或不属于统计范围 | Asset not found or outside the requested scope
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 统计失败 | Statistics query failed
           schema:
             additionalProperties: true
             type: object
@@ -656,6 +727,9 @@ paths:
       x-addp-required-permissions:
       - asset.management.read
       - asset.entry.read
+      - asset.application.read
+      - asset.authorization.read
+      - asset.rating.read
   /assets/type-fields/{type_id}:
     get:
       parameters:

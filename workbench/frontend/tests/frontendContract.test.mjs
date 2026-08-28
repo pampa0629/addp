@@ -64,6 +64,18 @@ test('edit loading does not depend on enumerating the entire Service Consumer Ca
   assert.match(editor, /:disabled="filterableFields\.length === 0"/)
 })
 
+test('resolves shared map runtime peers from the Workbench dependency tree', () => {
+  const packageManifest = JSON.parse(readSource('../package.json'))
+  const viteConfig = readSource('../vite.config.js')
+
+  assert.equal(packageManifest.dependencies['@amap/amap-jsapi-loader'], '1.0.1')
+  assert.match(
+    viteConfig,
+    /['"]@amap\/amap-jsapi-loader['"]:\s*resolve\(__dirname,\s*['"]node_modules\/@amap\/amap-jsapi-loader['"]\)/,
+    'common-frontend/map sources must resolve the peer from Workbench node_modules in a clean checkout'
+  )
+})
+
 test('production Workbench code and configuration do not embed acceptance-domain facts', () => {
   const workbenchRoot = resolve(fileURLToPath(new URL('..', import.meta.url)), '..')
   const forbidden = [

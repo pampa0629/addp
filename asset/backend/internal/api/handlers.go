@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	i18nkeys "github.com/addp/asset/i18n"
 	"github.com/addp/asset/internal/service"
@@ -541,16 +542,35 @@ func (h *Handler) getAssetStats(c *gin.Context) {
 
 // getAssetDashboardStats godoc
 // @Summary 获取资产运营统计 | Get asset dashboard statistics
+// @Description 按资产类型或具体资产统计 Asset 自有的状态、申请结果、有效授权用户、评价和近 30 天趋势 | Aggregate Asset-owned status, application results, effective authorized users, ratings, and 30-day trends by asset type or a specific asset
 // @Tags Asset
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param type_code query string false "资产类型代码 | Asset type code"
+// @Param asset_id query int false "资产 ID；与 type_code 同时存在时取交集 | Asset ID; intersects with type_code when both are present"
+// @Success 200 {object} service.DashboardStats "资产运营统计 | Asset dashboard statistics"
+// @Failure 400 {object} map[string]interface{} "参数无效 | Invalid parameter"
+// @Failure 404 {object} map[string]interface{} "资产不存在或不属于统计范围 | Asset not found or outside the requested scope"
+// @Failure 500 {object} map[string]interface{} "统计失败 | Statistics query failed"
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.management.read","asset.entry.read"]
+// @x-addp-required-permissions ["asset.management.read","asset.entry.read","asset.application.read","asset.authorization.read","asset.rating.read"]
 // @Router /assets/stats/dashboard [get]
 func (h *Handler) getAssetDashboardStats(c *gin.Context) {
-	result, err := h.assetSvc.GetDashboardStats(commonAuth.GetTenantID(c))
+	filter := service.DashboardStatsFilter{TypeCode: strings.TrimSpace(c.Query("type_code"))}
+	if value := c.Query("asset_id"); value != "" {
+		assetID, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || assetID <= 0 {
+			commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
+			return
+		}
+		filter.AssetID = assetID
+	}
+	result, err := h.assetSvc.GetDashboardStats(commonAuth.GetTenantID(c), filter)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			commonAPI.NotFoundError(c, commoni18n.T(c, i18nkeys.MsgAssetNotFound))
+			return
+		}
 		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
