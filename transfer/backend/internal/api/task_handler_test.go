@@ -359,6 +359,53 @@ func TestTaskHandlerListTasksUsesStandardItemsShape(t *testing.T) {
 	}
 }
 
+func TestProviderGetFixedTargetTaskDeclaresStableOutputs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newTransferTaskHandlerTestDB(t)
+	taskSvc := service.NewTaskService(db, nil, nil)
+	task, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
+		Name:     "fixed target sync",
+		TaskType: commonExecution.TaskTypeSync,
+		Config:   validTransferTaskHandlerConfig(),
+	}, 7, 9)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		setTransferTestAuthContext(t, c, 7, 9)
+		c.Next()
+	})
+	router.GET("/task-provider/tasks/:task_type/:id", NewTaskHandler(taskSvc).GetTask)
+	request := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/task-provider/tasks/sync/%d", task.ID), nil)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", response.Code, response.Body.String())
+	}
+
+	var body struct {
+		ExecutionContract struct {
+			InputSchema  map[string]interface{} `json:"input_schema"`
+			OutputSchema map[string]interface{} `json:"output_schema"`
+		} `json:"execution_contract"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	inputProperties, _ := body.ExecutionContract.InputSchema["properties"].(map[string]interface{})
+	if len(inputProperties) != 0 {
+		t.Fatalf("fixed-target input properties = %#v, want empty", inputProperties)
+	}
+	outputProperties, _ := body.ExecutionContract.OutputSchema["properties"].(map[string]interface{})
+	for _, name := range []string{"execution_id", "target_locator", "row_count"} {
+		if outputProperties[name] == nil {
+			t.Fatalf("output properties missing %s: %#v", name, outputProperties)
+		}
+	}
+}
+
 func TestProviderExecuteTaskRejectsUnknownFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

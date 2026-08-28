@@ -638,31 +638,28 @@ func (s *TaskService) startTaskWithContext(
 }
 
 func TransferTaskExecutionContract(config map[string]interface{}) taskprovider.ExecutionContract {
-	if !planner.IsRuntimeExistingTargetTaskConfig(config) {
-		return taskprovider.EmptyExecutionContract()
+	contract := taskprovider.EmptyExecutionContract()
+	contract.OutputSchema = map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"execution_id":   map[string]interface{}{"type": "string"},
+			"target_locator": map[string]interface{}{"type": "string"},
+			"row_count":      map[string]interface{}{"type": "integer", "minimum": float64(0)},
+		},
+		"required":             []interface{}{"execution_id", "target_locator", "row_count"},
+		"additionalProperties": false,
 	}
-	return taskprovider.ExecutionContract{
-		InputSchema: map[string]interface{}{
+	if planner.IsRuntimeExistingTargetTaskConfig(config) {
+		contract.InputSchema = map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"target_locator": map[string]interface{}{"type": "string", "minLength": float64(1)},
 			},
 			"required":             []interface{}{"target_locator"},
 			"additionalProperties": false,
-		},
-		InputDefaults: map[string]interface{}{},
-		InputUISchema: map[string]interface{}{},
-		OutputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"execution_id":   map[string]interface{}{"type": "string"},
-				"target_locator": map[string]interface{}{"type": "string"},
-				"row_count":      map[string]interface{}{"type": "integer", "minimum": float64(0)},
-			},
-			"required":             []interface{}{"execution_id", "target_locator", "row_count"},
-			"additionalProperties": false,
-		},
+		}
 	}
+	return contract
 }
 
 func (s *TaskService) ensureDatabaseCDCCapture(ctx context.Context, task *models.TransferTask) error {

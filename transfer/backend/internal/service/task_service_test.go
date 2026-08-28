@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/plugins/csv"
 	_ "github.com/addp/common/format/plugins/pdf"
+	"github.com/addp/common/taskprovider"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	"github.com/google/uuid"
@@ -109,6 +110,48 @@ func TestRuntimeTargetTaskRequiresOrchestratorInputs(t *testing.T) {
 	}
 	if persistedExecution.ParentExecutionID == nil || *persistedExecution.ParentExecutionID != parentExecutionID {
 		t.Fatalf("parent_execution_id = %v, want %s", persistedExecution.ParentExecutionID, parentExecutionID)
+	}
+}
+
+func TestTransferTaskExecutionContractDeclaresStableOutputsForFixedTarget(t *testing.T) {
+	contract := TransferTaskExecutionContract(validTableTransferTaskConfig())
+	inputProperties, ok := contract.InputSchema["properties"].(map[string]interface{})
+	if !ok || len(inputProperties) != 0 {
+		t.Fatalf("fixed-target input properties = %#v, want closed empty object", contract.InputSchema["properties"])
+	}
+	if _, exists := contract.InputSchema["required"]; exists {
+		t.Fatalf("fixed-target input schema unexpectedly requires parameters: %#v", contract.InputSchema)
+	}
+	assertTransferStableOutputContract(t, contract)
+}
+
+func TestTransferTaskExecutionContractRequiresTargetOnlyForRuntimeBinding(t *testing.T) {
+	contract := TransferTaskExecutionContract(validRuntimeTargetTransferTaskConfig())
+	inputProperties, ok := contract.InputSchema["properties"].(map[string]interface{})
+	if !ok || inputProperties["target_locator"] == nil {
+		t.Fatalf("runtime-target input properties = %#v, want target_locator", contract.InputSchema["properties"])
+	}
+	required, ok := contract.InputSchema["required"].([]interface{})
+	if !ok || len(required) != 1 || required[0] != "target_locator" {
+		t.Fatalf("runtime-target required = %#v, want target_locator", contract.InputSchema["required"])
+	}
+	assertTransferStableOutputContract(t, contract)
+}
+
+func assertTransferStableOutputContract(t *testing.T, contract taskprovider.ExecutionContract) {
+	t.Helper()
+	properties, ok := contract.OutputSchema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("output properties = %#v, want object", contract.OutputSchema["properties"])
+	}
+	for _, name := range []string{"execution_id", "target_locator", "row_count"} {
+		if properties[name] == nil {
+			t.Fatalf("output properties missing %s: %#v", name, properties)
+		}
+	}
+	required, ok := contract.OutputSchema["required"].([]interface{})
+	if !ok || len(required) != 3 {
+		t.Fatalf("output required = %#v, want three stable outputs", contract.OutputSchema["required"])
 	}
 }
 
