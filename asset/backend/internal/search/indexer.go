@@ -12,17 +12,17 @@ import (
 
 // AssetIndexDoc 资产索引文档结构
 type AssetIndexDoc struct {
-	ID          int64    `json:"id"` // Meilisearch 主键
-	TenantID    int64    `json:"tenant_id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Tags        []string `json:"tags"`
-	TypeCode    string   `json:"type_code"`
-	TypeName    string   `json:"type_name"`
-	CatalogID   *int64   `json:"catalog_id"`
-	CatalogName string   `json:"catalog_name"`
-	Status      string   `json:"status"`       // "published" | "offline"
-	PublishedAt string   `json:"published_at"` // RFC3339，用于排序
+	ID           int64    `json:"id"` // Meilisearch 主键
+	TenantID     int64    `json:"tenant_id"`
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	Tags         []string `json:"tags"`
+	TypeCode     string   `json:"type_code"`
+	TypeName     string   `json:"type_name"`
+	CategoryID   *int64   `json:"category_id"`
+	CategoryName string   `json:"category_name"`
+	Status       string   `json:"status"`       // "published" | "offline"
+	PublishedAt  string   `json:"published_at"` // RFC3339，用于排序
 }
 
 // Indexer 封装 asset 模块的 Meilisearch 操作
@@ -39,7 +39,7 @@ func NewIndexer(msURL, msAPIKey, indexName string) (*Indexer, error) {
 		enabled: strings.TrimSpace(msURL) != "",
 	}
 	if idx.index == "" {
-		idx.index = "asset_catalog"
+		idx.index = "asset_published"
 	}
 
 	if !idx.enabled {
@@ -83,7 +83,7 @@ func (i *Indexer) ensureIndex() error {
 		"description",
 		"tags",
 		"type_name",
-		"catalog_name",
+		"category_name",
 	}); err != nil {
 		return fmt.Errorf("配置可搜索属性失败: %w", err)
 	}
@@ -92,7 +92,7 @@ func (i *Indexer) ensureIndex() error {
 		"tenant_id",
 		"status",
 		"type_code",
-		"catalog_id",
+		"category_id",
 	}); err != nil {
 		return fmt.Errorf("配置过滤属性失败: %w", err)
 	}
@@ -134,6 +134,29 @@ func (i *Indexer) UpsertAssets(docs []AssetIndexDoc) {
 	if _, err := index.AddDocuments(docs); err != nil {
 		log.Printf("⚠️  批量写入资产索引失败 (count=%d): %v", len(docs), err)
 	}
+}
+
+// ReplaceAssets rebuilds the derived search projection from authoritative Asset records.
+func (i *Indexer) ReplaceAssets(docs []AssetIndexDoc) error {
+	if !i.Enabled() {
+		return nil
+	}
+	index := i.client.Index(i.index)
+	if _, err := index.DeleteAllDocuments(); err != nil {
+		return fmt.Errorf("清空资产索引失败: %w", err)
+	}
+	if len(docs) == 0 {
+		return nil
+	}
+	for idx := range docs {
+		if docs[idx].Tags == nil {
+			docs[idx].Tags = []string{}
+		}
+	}
+	if _, err := index.AddDocuments(docs); err != nil {
+		return fmt.Errorf("重建资产索引失败: %w", err)
+	}
+	return nil
 }
 
 // UpdateStatus 仅更新资产的 status 字段（下架时调用，文档保留在索引中）
@@ -187,22 +210,13 @@ type SearchResult struct {
 }
 
 // Search 搜索已上架资产，返回匹配的资产 ID 列表（按相关度排序）
-func (i *Indexer) Search(tenantID int64, keyword string, typeCode string, catalogID *int64, limit, offset int64) (*SearchResult, error) {
+func (i *Indexer) Search(tenantID int64, keyword string, typeCode string, categoryID *int64, limit, offset int64) (*SearchResult, error) {
 	if !i.Enabled() {
 		return nil, nil
 	}
 
 	// 固定过滤：仅返回 published 状态 + 当前租户
-	filters := []string{
-		fmt.Sprintf("tenant_id = %d", tenantID),
-		"status = \"published\"",
-	}
-	if typeCode != "" {
-		filters = append(filters, fmt.Sprintf("type_code = \"%s\"", typeCode))
-	}
-	if catalogID != nil {
-		filters = append(filters, fmt.Sprintf("catalog_id = %d", *catalogID))
-	}
+	filters := buildAssetSearchFilters(tenantID, typeCode, categoryID)
 	filterStr := strings.Join(filters, " AND ")
 
 	req := &meilisearch.SearchRequest{
@@ -233,6 +247,23 @@ func (i *Indexer) Search(tenantID int64, keyword string, typeCode string, catalo
 	}
 
 	return result, nil
+}
+
+func buildAssetSearchFilters(tenantID int64, typeCode string, categoryID *int64) []string {
+	filters := []string{
+		fmt.Sprintf("tenant_id = %d", tenantID),
+		"status = \"published\"",
+	}
+	if typeCode != "" {
+		filters = append(filters, fmt.Sprintf("type_code = \"%s\"", typeCode))
+	}
+	if categoryID == nil {
+		return filters
+	}
+	if *categoryID == -1 {
+		return append(filters, "category_id IS NULL")
+	}
+	return append(filters, fmt.Sprintf("category_id = %d", *categoryID))
 }
 
 // MeilisearchPublishedAt 将 *time.Time 格式化为索引用字符串

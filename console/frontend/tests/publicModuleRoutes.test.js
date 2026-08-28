@@ -4,6 +4,16 @@ import { describe, expect, it } from 'vitest'
 const readRepoFile = path => readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8')
 
 describe('P1 module public route contracts', () => {
+  it('keeps Enterprise Catalog and Asset Directory distinct in product copy', () => {
+    const zhCn = JSON.parse(readRepoFile('console/frontend/src/i18n/zh-cn.json')).console
+    const en = JSON.parse(readRepoFile('console/frontend/src/i18n/en.json')).console
+
+    expect(zhCn.modules.catalog.label).toBe('企业资源目录')
+    expect(zhCn.modules.asset.desc).toContain('资产目录')
+    expect(en.modules.catalog.label).toBe('Enterprise Catalog')
+    expect(en.menus.asset.recentCategories).toBe('Asset Directory Management')
+  })
+
   it.each([
     ['graph', 'navigateGraphRoute', 'graph'],
     ['service', 'navigateServiceRoute', 'service'],
@@ -68,8 +78,8 @@ describe('P1 module public route contracts', () => {
     expect(starSchema).toContain("query: { table_id: tableId }")
 
     const assetManager = readRepoFile('asset/frontend/src/views/AssetManager.vue')
-    expect(assetManager).toContain('route.query.catalog_id')
-    expect(assetManager).toContain("{ catalog_id: String(id) }")
+    expect(assetManager).toContain('route.query.category_id')
+    expect(assetManager).toContain("{ category_id: String(id) }")
   })
 
   it('keeps Asset creation on the implemented CatalogEntry component contract', () => {
@@ -84,6 +94,8 @@ describe('P1 module public route contracts', () => {
     const api = readRepoFile('asset/frontend/src/api/asset.js')
     expect(api).toContain("client.post('/asset/assets', data)")
     expect(api).toContain("client.get('/catalog/entries', { params })")
+    expect(api).toContain("client.get('/asset/categories/tree')")
+    expect(api).not.toContain('/asset/catalogs')
 
     const create = readRepoFile('asset/frontend/src/views/AssetCreate.vue')
     expect(create).toContain('<CatalogEntryPicker v-model="form.components"')
@@ -156,7 +168,7 @@ describe('P2 module public route contracts', () => {
     expect(cleanup).toContain("entity_type: 'cleanup'")
   })
 
-  it('keeps Portal search and catalog pagination recoverable with a safe detail return', () => {
+  it('keeps Portal search and asset category pagination recoverable with a safe detail return', () => {
     const search = readRepoFile('portal/frontend/src/views/Search.vue')
     const routeState = readRepoFile('portal/frontend/src/utils/routeState.js')
     expect(search).toContain('resolveSearchRouteState')
@@ -164,9 +176,9 @@ describe('P2 module public route contracts', () => {
     expect(routeState).toContain('routeQuery.page')
     expect(search).toContain("router.replace({ name: 'Search'")
 
-    const catalog = readRepoFile('portal/frontend/src/views/Catalog.vue')
-    expect(catalog).toContain('resolveCatalogRouteState')
-    expect(catalog).toContain("name: 'Catalog'")
+    const category = readRepoFile('portal/frontend/src/views/Category.vue')
+    expect(category).toContain('resolveCategoryRouteState')
+    expect(category).toContain("name: 'Category'")
 
     const detail = readRepoFile('portal/frontend/src/views/AssetDetail.vue')
     expect(detail).toContain('assetDetailReturnTarget')

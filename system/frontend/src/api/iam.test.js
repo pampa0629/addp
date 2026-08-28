@@ -37,7 +37,7 @@ describe('IAM management API contract', () => {
   })
 
   it('uses the single tenant role and assignment API family', () => {
-    const role = { role_key: 'custom.reader', scope_types: ['tenant'], permission_keys: ['asset.catalog.read'] }
+    const role = { role_key: 'custom.reader', scope_types: ['tenant'], permission_keys: ['asset.category.read'] }
     iamAPI.tenantRoles.list()
     iamAPI.tenantRoles.listAssignablePermissions()
     iamAPI.tenantRoles.create(role)

@@ -94,9 +94,9 @@ REQUIRED_PERMISSIONS = {
     "catalog.entry.update",
     "catalog.inventory.read",
     "asset.management.read",
-    "asset.catalog.create",
-    "asset.catalog.delete",
-    "asset.catalog.read",
+    "asset.category.create",
+    "asset.category.delete",
+    "asset.category.read",
     "asset.entry.delete",
     "asset.entry.offline",
     "asset.entry.publish",
@@ -452,7 +452,8 @@ def run_suite(
 ) -> dict[str, object]:
     deadline = time.monotonic() + convergence_timeout
     asset_id: int | None = None
-    asset_catalog_id: int | None = None
+    asset_category_id: int | None = None
+    asset_category_version: int | None = None
     asset_status: str | None = None
     entry_id: str | None = None
     restore_payload: dict[str, object] | None = None
@@ -506,16 +507,17 @@ def run_suite(
             raise SuiteError("Asset has no enabled TypeDefinition")
         type_id = positive_int(enabled_types[0].get("id"), "Asset TypeDefinition id")
 
-        asset_catalog = _object(
+        asset_category = _object(
             client.request(
                 "POST",
-                "/api/v1/asset/catalogs",
+                "/api/v1/asset/categories",
                 (201,),
                 {"name": f"Online Catalog {run_id}", "description": f"Temporary Online run {run_id}", "sort_order": 0},
             ).payload,
-            "Asset catalog",
+            "Asset category",
         )
-        asset_catalog_id = positive_int(asset_catalog.get("id"), "Asset catalog id")
+        asset_category_id = positive_int(asset_category.get("id"), "Asset category id")
+        asset_category_version = positive_int(asset_category.get("version"), "Asset category version")
         asset = _object(
             client.request(
                 "POST",
@@ -525,7 +527,7 @@ def run_suite(
                     "name": f"Online Asset {run_id}",
                     "description": f"Meta -> Catalog -> Asset -> Portal evidence for {run_id}",
                     "type_id": type_id,
-                    "catalog_id": asset_catalog_id,
+                    "category_id": asset_category_id,
                     "tags": ["online", "enterprise-catalog"],
                     "components": [{"catalog_entry_id": entry_id, "role": "primary", "sort_order": 0}],
                 },
@@ -598,12 +600,12 @@ def run_suite(
                 client.request("GET", f"/api/v1/portal/assets/{asset_id}", (404,))
             except Exception as error:
                 cleanup_errors.append(f"Asset: {error}")
-        if asset_catalog_id is not None:
+        if asset_category_id is not None and asset_category_version is not None:
             try:
-                client.request("DELETE", f"/api/v1/asset/catalogs/{asset_catalog_id}", (200,))
-                client.request("GET", f"/api/v1/asset/catalogs/{asset_catalog_id}", (404,))
+                client.request("DELETE", f"/api/v1/asset/categories/{asset_category_id}", (200,), {"version": asset_category_version})
+                client.request("GET", f"/api/v1/asset/categories/{asset_category_id}", (404,))
             except Exception as error:
-                cleanup_errors.append(f"Asset catalog: {error}")
+                cleanup_errors.append(f"Asset category: {error}")
         if entry_id is not None and restore_payload is not None:
             try:
                 current = _object(client.request("GET", f"/api/v1/catalog/entries/{entry_id}", (200,)).payload, "CatalogEntry cleanup")

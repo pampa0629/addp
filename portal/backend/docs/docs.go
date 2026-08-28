@@ -44,8 +44,8 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "目录ID | Catalog ID",
-                        "name": "catalog_id",
+                        "description": "资产分类 ID | Asset category ID",
+                        "name": "category_id",
                         "in": "query"
                     }
                 ],
@@ -334,7 +334,7 @@ const docTemplate = `{
                 ]
             }
         },
-        "/catalogs": {
+        "/categories": {
             "get": {
                 "security": [
                     {
@@ -347,7 +347,7 @@ const docTemplate = `{
                 "tags": [
                     "Portal"
                 ],
-                "summary": "获取目录树 | Get catalog tree",
+                "summary": "获取资产分类树 | Get asset category tree",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -371,11 +371,11 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "asset.catalog.read"
+                    "asset.category.read"
                 ]
             }
         },
-        "/catalogs/{id}/assets": {
+        "/categories/{id}/assets": {
             "get": {
                 "security": [
                     {
@@ -388,11 +388,11 @@ const docTemplate = `{
                 "tags": [
                     "Portal"
                 ],
-                "summary": "获取目录下的资产列表 | Get assets in catalog",
+                "summary": "获取分类下的资产列表 | Get assets in category",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "目录ID | Catalog ID",
+                        "description": "资产分类 ID | Asset category ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -418,7 +418,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "asset.catalog.read",
+                    "asset.category.read",
                     "asset.entry.read"
                 ]
             }

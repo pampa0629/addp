@@ -31,7 +31,7 @@ func TestConsumerProjectionFiltersVisibilityAndDerivesCurrentUser(t *testing.T) 
 	}
 
 	permissions := []string{
-		"asset.entry.read", "asset.catalog.read", "asset.application.create", "asset.application.read",
+		"asset.entry.read", "asset.category.read", "asset.application.create", "asset.application.read",
 		"asset.authorization.read", "asset.rating.create", "asset.rating.read", "asset.rating.update",
 	}
 	authServer := authtest.NewTenantUserAuthContextServer(t, "7", map[string][]string{"Bearer consumer": permissions})
@@ -114,13 +114,13 @@ func consumerTestDB(t *testing.T) *gorm.DB {
 			icon_url TEXT,
 			description TEXT, enabled BOOLEAN, sort_order INTEGER, created_at DATETIME, updated_at DATETIME
 		)`,
-		`CREATE TABLE asset.catalogs (
+		`CREATE TABLE asset.categories (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL, parent_id INTEGER,
 			sort_order INTEGER, description TEXT, created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE asset.assets (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL, description TEXT,
-			type_id INTEGER NOT NULL, catalog_id INTEGER, tags TEXT, status TEXT, owner_id INTEGER,
+			type_id INTEGER NOT NULL, category_id INTEGER, tags TEXT, status TEXT, owner_id INTEGER,
 			version INTEGER NOT NULL DEFAULT 1, published_at DATETIME,
 			created_by INTEGER, updated_by INTEGER, created_at DATETIME, updated_at DATETIME
 		)`,

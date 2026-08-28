@@ -11,7 +11,7 @@
 | Engine Instance | System 中的一条引擎实例，保存租户、名称、类型、连接配置、能力声明、生命周期和连通性观测；一条记录只绑定一个确定的物理端点。 |
 | Engine Plugin | `common/engine/plugins/<engine_type>` 下的内置引擎适配实现，负责非通用的连接、校验、测试和能力暴露；实现标准 Workflow Runtime 协议的外部运行时不要求编译期 Plugin。 |
 | Capability | 插件返回的结构化能力声明，版本为 `engine.capabilities/v1`。 |
-| Engine Catalog | 引擎中的真实目录层级和事实读取抽象，如 schema/table、bucket/object、database/graph；跨模块类型统一使用 `EngineCatalog*`，不带限定词的 Catalog 保留给企业数据目录。 |
+| Engine Catalog | 引擎中的真实目录层级和事实读取抽象，如 schema/table、bucket/object、database/graph；跨模块类型统一使用 `EngineCatalog*`，不带限定词的 Catalog 保留给企业资源目录。 |
 | Item | 可被描述、预览、读取或写入的叶子数据项。 |
 | AI Inference Runtime | 对 ADDP 调用方提供统一 `addp.inference/v1` 数据面的计算 Runtime；Provider、模型和凭据是 Runtime 内部强类型资源。 |
 

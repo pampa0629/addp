@@ -37,32 +37,32 @@ var (
 
 // AssetListParams 资产列表查询参数
 type AssetListParams struct {
-	Page      int
-	PageSize  int
-	Status    string
-	TypeID    int64
-	CatalogID *int64 // nil=不过滤；-1=只看未归目录
-	Keyword   string
+	Page       int
+	PageSize   int
+	Status     string
+	TypeID     int64
+	CategoryID *int64 // nil=不过滤；-1=只看未分类资产
+	Keyword    string
 }
 
 // AssetWithType 带类型信息的资产（列表展示用）
 type AssetWithType struct {
 	models.Asset
-	TypeName    string `json:"type_name"`
-	TypeCode    string `json:"type_code"`
-	CatalogName string `json:"catalog_name,omitempty"`
+	TypeName     string `json:"type_name"`
+	TypeCode     string `json:"type_code"`
+	CategoryName string `json:"category_name,omitempty"`
 }
 
 // AssetDetail 资产详情（含扩展字段和目录信息）
 type AssetDetail struct {
 	models.Asset
-	TypeName    string                  `json:"type_name"`
-	TypeCode    string                  `json:"type_code"`
-	CatalogName string                  `json:"catalog_name,omitempty"`
-	ExtFields   []models.AssetExtField  `json:"ext_fields"`
-	Catalog     *models.Catalog         `json:"catalog,omitempty"`
-	TypeDef     *models.TypeDefinition  `json:"type_def,omitempty"`
-	Components  []models.AssetComponent `json:"components"`
+	TypeName     string                  `json:"type_name"`
+	TypeCode     string                  `json:"type_code"`
+	CategoryName string                  `json:"category_name,omitempty"`
+	ExtFields    []models.AssetExtField  `json:"ext_fields"`
+	Category     *models.AssetCategory   `json:"category,omitempty"`
+	TypeDef      *models.TypeDefinition  `json:"type_def,omitempty"`
+	Components   []models.AssetComponent `json:"components"`
 }
 
 type AssetComponentInput struct {
@@ -75,7 +75,7 @@ type CreateAssetReq struct {
 	Name        string                `json:"name" binding:"required"`
 	Description string                `json:"description"`
 	TypeID      int64                 `json:"type_id" binding:"required"`
-	CatalogID   *int64                `json:"catalog_id"`
+	CategoryID  *int64                `json:"category_id"`
 	Tags        []string              `json:"tags"`
 	Components  []AssetComponentInput `json:"components" binding:"required,min=1"`
 }
@@ -86,7 +86,7 @@ type UpdateAssetReq struct {
 	Name        string                `json:"name" binding:"required"`
 	Description string                `json:"description"`
 	TypeID      int64                 `json:"type_id" binding:"required"`
-	CatalogID   *int64                `json:"catalog_id"`
+	CategoryID  *int64                `json:"category_id"`
 	Tags        []string              `json:"tags"`
 	Components  []AssetComponentInput `json:"components" binding:"required,min=1"`
 }
@@ -96,10 +96,10 @@ type BatchIDsReq struct {
 	IDs []int64 `json:"ids" binding:"required,min=1"`
 }
 
-// BatchCatalogReq 批量归目录请求
-type BatchCatalogReq struct {
-	IDs       []int64 `json:"ids" binding:"required,min=1"`
-	CatalogID *int64  `json:"catalog_id"` // null 表示清除目录
+// BatchCategoryRequest 批量设置资产分类请求
+type BatchCategoryRequest struct {
+	IDs        []int64 `json:"ids" binding:"required,min=1"`
+	CategoryID *int64  `json:"category_id"` // null 表示清除分类
 }
 
 // List 查询资产列表（分页 + 过滤）。关键词搜索只走 Asset 自己的搜索投影。
@@ -116,7 +116,7 @@ func (s *AssetService) List(tenantID uint, params *AssetListParams) ([]AssetWith
 			}
 		}
 		offset := int64((params.Page - 1) * params.PageSize)
-		msResult, err := s.indexer.Search(int64(tenantID), params.Keyword, typeCode, params.CatalogID, int64(params.PageSize), offset)
+		msResult, err := s.indexer.Search(int64(tenantID), params.Keyword, typeCode, params.CategoryID, int64(params.PageSize), offset)
 		if err != nil || msResult == nil {
 			return nil, 0, fmt.Errorf("Asset search projection is unavailable: %w", err)
 		}
@@ -125,9 +125,9 @@ func (s *AssetService) List(tenantID uint, params *AssetListParams) ([]AssetWith
 		}
 		var assets []AssetWithType
 		if err := s.db.Table("asset.assets a").
-			Select("a.*, t.name as type_name, t.code as type_code, c.name as catalog_name").
+			Select("a.*, t.name as type_name, t.code as type_code, c.name as category_name").
 			Joins("LEFT JOIN asset.type_definitions t ON t.id = a.type_id").
-			Joins("LEFT JOIN asset.catalogs c ON c.id = a.catalog_id").
+			Joins("LEFT JOIN asset.categories c ON c.id = a.category_id").
 			Where("a.tenant_id = ? AND a.id IN ?", tenantID, msResult.IDs).
 			Scan(&assets).Error; err != nil {
 			return nil, 0, err
@@ -147,9 +147,9 @@ func (s *AssetService) List(tenantID uint, params *AssetListParams) ([]AssetWith
 	}
 
 	query := s.db.Table("asset.assets a").
-		Select("a.*, t.name as type_name, t.code as type_code, c.name as catalog_name").
+		Select("a.*, t.name as type_name, t.code as type_code, c.name as category_name").
 		Joins("LEFT JOIN asset.type_definitions t ON t.id = a.type_id").
-		Joins("LEFT JOIN asset.catalogs c ON c.id = a.catalog_id").
+		Joins("LEFT JOIN asset.categories c ON c.id = a.category_id").
 		Where("a.tenant_id = ?", tenantID)
 
 	if params.Status != "" {
@@ -158,11 +158,11 @@ func (s *AssetService) List(tenantID uint, params *AssetListParams) ([]AssetWith
 	if params.TypeID > 0 {
 		query = query.Where("a.type_id = ?", params.TypeID)
 	}
-	if params.CatalogID != nil {
-		if *params.CatalogID == -1 {
-			query = query.Where("a.catalog_id IS NULL")
+	if params.CategoryID != nil {
+		if *params.CategoryID == -1 {
+			query = query.Where("a.category_id IS NULL")
 		} else {
-			query = query.Where("a.catalog_id = ?", *params.CatalogID)
+			query = query.Where("a.category_id = ?", *params.CategoryID)
 		}
 	}
 	var total int64
@@ -205,11 +205,11 @@ func (s *AssetService) Get(tenantID uint, id int64) (*AssetDetail, error) {
 		detail.TypeCode = typeDef.Code
 	}
 
-	if asset.CatalogID != nil {
-		var cat models.Catalog
-		if err := s.db.First(&cat, *asset.CatalogID).Error; err == nil {
-			detail.Catalog = &cat
-			detail.CatalogName = cat.Name
+	if asset.CategoryID != nil {
+		var category models.AssetCategory
+		if err := s.db.First(&category, *asset.CategoryID).Error; err == nil {
+			detail.Category = &category
+			detail.CategoryName = category.Name
 		}
 	}
 
@@ -240,18 +240,18 @@ func (s *AssetService) GetPublished(tenantID uint, id int64) (*AssetDetail, erro
 		detail.TypeName = typeDef.Name
 		detail.TypeCode = typeDef.Code
 	}
-	if asset.CatalogID != nil {
-		var catalog models.Catalog
-		if err := s.db.First(&catalog, *asset.CatalogID).Error; err == nil {
-			detail.Catalog = &catalog
-			detail.CatalogName = catalog.Name
+	if asset.CategoryID != nil {
+		var category models.AssetCategory
+		if err := s.db.First(&category, *asset.CategoryID).Error; err == nil {
+			detail.Category = &category
+			detail.CategoryName = category.Name
 		}
 	}
 	return detail, nil
 }
 
 func (s *AssetService) Create(ctx context.Context, tenantID uint, userID uint, req *CreateAssetReq) (*AssetDetail, error) {
-	if err := s.validateOwnedReferences(tenantID, req.TypeID, req.CatalogID); err != nil {
+	if err := s.validateOwnedReferences(tenantID, req.TypeID, req.CategoryID); err != nil {
 		return nil, err
 	}
 	components, err := s.validateComponents(ctx, tenantID, req.TypeID, req.Components, false)
@@ -264,7 +264,7 @@ func (s *AssetService) Create(ctx context.Context, tenantID uint, userID uint, r
 	}
 	asset := models.Asset{
 		TenantID: int64(tenantID), Name: name, Description: strings.TrimSpace(req.Description),
-		TypeID: req.TypeID, CatalogID: req.CatalogID, Tags: models.JSONBArray(req.Tags), Status: "draft",
+		TypeID: req.TypeID, CategoryID: req.CategoryID, Tags: models.JSONBArray(req.Tags), Status: "draft",
 		OwnerID: int64(userID), Version: 1, CreatedBy: int64(userID),
 	}
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -284,7 +284,7 @@ func (s *AssetService) Create(ctx context.Context, tenantID uint, userID uint, r
 
 // Update atomically replaces the complete editable Asset aggregate.
 func (s *AssetService) Update(ctx context.Context, tenantID uint, id int64, userID uint, req *UpdateAssetReq) (*AssetDetail, error) {
-	if err := s.validateOwnedReferences(tenantID, req.TypeID, req.CatalogID); err != nil {
+	if err := s.validateOwnedReferences(tenantID, req.TypeID, req.CategoryID); err != nil {
 		return nil, err
 	}
 	components, err := s.validateComponents(ctx, tenantID, req.TypeID, req.Components, false)
@@ -301,7 +301,7 @@ func (s *AssetService) Update(ctx context.Context, tenantID uint, id int64, user
 			Where("id = ? AND tenant_id = ? AND version = ? AND status IN ('draft','offline')", id, tenantID, req.Version).
 			Updates(map[string]any{
 				"name": name, "description": strings.TrimSpace(req.Description), "type_id": req.TypeID,
-				"catalog_id": req.CatalogID, "tags": models.JSONBArray(req.Tags), "updated_by": updatedBy,
+				"category_id": req.CategoryID, "tags": models.JSONBArray(req.Tags), "updated_by": updatedBy,
 				"version": gorm.Expr("version + 1"),
 			})
 		if result.Error != nil {
@@ -482,7 +482,7 @@ func (s *AssetService) BatchOffline(tenantID uint, ids []int64) (int, error) {
 }
 
 // toIndexDoc 将 Asset 模型转换为 Meilisearch 索引文档
-// 注意：会查询数据库获取类型名和目录名，适合在 goroutine 中调用
+// 注意：会查询数据库获取类型名和资产分类名，适合在 goroutine 中调用
 func (s *AssetService) toIndexDoc(asset *models.Asset) *search.AssetIndexDoc {
 	doc := &search.AssetIndexDoc{
 		ID:          asset.ID,
@@ -500,23 +500,68 @@ func (s *AssetService) toIndexDoc(asset *models.Asset) *search.AssetIndexDoc {
 		doc.TypeName = td.Name
 	}
 
-	if asset.CatalogID != nil {
-		var cat models.Catalog
-		if err := s.db.First(&cat, *asset.CatalogID).Error; err == nil {
-			doc.CatalogID = asset.CatalogID
-			doc.CatalogName = cat.Name
+	if asset.CategoryID != nil {
+		var category models.AssetCategory
+		if err := s.db.First(&category, *asset.CategoryID).Error; err == nil {
+			doc.CategoryID = asset.CategoryID
+			doc.CategoryName = category.Name
 		}
 	}
 
 	return doc
 }
 
-// BatchCatalog 批量归目录（catalogID 为 nil 时清除目录）
-func (s *AssetService) BatchCatalog(tenantID uint, ids []int64, catalogID *int64) (int, error) {
+// RebuildPublishedIndex rebuilds the optional search projection from published assets.
+func (s *AssetService) RebuildPublishedIndex() error {
+	if s.indexer == nil || !s.indexer.Enabled() {
+		return nil
+	}
+	var assets []models.Asset
+	if err := s.db.Where("status = ?", "published").Order("id ASC").Find(&assets).Error; err != nil {
+		return err
+	}
+	docs := make([]search.AssetIndexDoc, 0, len(assets))
+	for idx := range assets {
+		docs = append(docs, *s.toIndexDoc(&assets[idx]))
+	}
+	return s.indexer.ReplaceAssets(docs)
+}
+
+// BatchCategory 批量归类（categoryID 为 nil 时清除分类）
+func (s *AssetService) BatchCategory(tenantID uint, ids []int64, categoryID *int64) (int, error) {
+	if !validUniqueAssetIDs(ids) {
+		return 0, ErrInvalidAssetAggregate
+	}
+	if categoryID != nil {
+		var categoryCount int64
+		if err := s.db.Model(&models.AssetCategory{}).
+			Where("id = ? AND tenant_id = ?", *categoryID, tenantID).
+			Count(&categoryCount).Error; err != nil {
+			return 0, err
+		}
+		if categoryCount != 1 {
+			return 0, ErrInvalidAssetAggregate
+		}
+	}
 	result := s.db.Model(&models.Asset{}).
 		Where("id IN ? AND tenant_id = ?", ids, tenantID).
-		Update("catalog_id", catalogID)
-	return int(result.RowsAffected), result.Error
+		Update("category_id", categoryID)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	if s.indexer != nil && s.indexer.Enabled() && result.RowsAffected > 0 {
+		var published []models.Asset
+		if err := s.db.Where("id IN ? AND tenant_id = ? AND status = ?", ids, tenantID, "published").Find(&published).Error; err != nil {
+			log.Printf("⚠️  批量归类已完成，但查询待刷新资产搜索投影失败: %v", err)
+			return int(result.RowsAffected), nil
+		}
+		docs := make([]search.AssetIndexDoc, 0, len(published))
+		for idx := range published {
+			docs = append(docs, *s.toIndexDoc(&published[idx]))
+		}
+		s.indexer.UpsertAssets(docs)
+	}
+	return int(result.RowsAffected), nil
 }
 
 func (s *AssetService) validateComponents(ctx context.Context, tenantID uint, typeID int64, inputs []AssetComponentInput, publish bool) ([]models.AssetComponent, error) {
@@ -606,7 +651,7 @@ func validateComponentShape(inputs []AssetComponentInput) error {
 	return nil
 }
 
-func (s *AssetService) validateOwnedReferences(tenantID uint, typeID int64, catalogID *int64) error {
+func (s *AssetService) validateOwnedReferences(tenantID uint, typeID int64, categoryID *int64) error {
 	if typeID <= 0 {
 		return ErrInvalidAssetAggregate
 	}
@@ -619,12 +664,12 @@ func (s *AssetService) validateOwnedReferences(tenantID uint, typeID int64, cata
 	if typeCount != 1 {
 		return ErrInvalidAssetAggregate
 	}
-	if catalogID != nil {
-		var catalogCount int64
-		if err := s.db.Model(&models.Catalog{}).Where("id = ? AND tenant_id = ?", *catalogID, tenantID).Count(&catalogCount).Error; err != nil {
+	if categoryID != nil {
+		var categoryCount int64
+		if err := s.db.Model(&models.AssetCategory{}).Where("id = ? AND tenant_id = ?", *categoryID, tenantID).Count(&categoryCount).Error; err != nil {
 			return err
 		}
-		if catalogCount != 1 {
+		if categoryCount != 1 {
 			return ErrInvalidAssetAggregate
 		}
 	}

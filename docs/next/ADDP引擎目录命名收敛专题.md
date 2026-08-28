@@ -8,7 +8,7 @@
 
 本专题跟踪 ADDP 引擎层 `catalog` 词族向 `Engine Catalog` 词族收敛的架构决策、影响范围、迁移批次和验收结果。
 
-本专题只负责引擎目录命名收敛，不设计企业数据目录的数据模型、业务元数据或资产发布流程。企业数据目录目标架构和实施计划见 [ADDP 企业数据目录与 Catalog 模块专题](ADDP企业数据目录能力专题.md)。
+本专题只负责引擎目录命名收敛，不设计企业资源目录的数据模型、业务元数据或资产发布流程。企业资源目录目标架构和实施计划见 [ADDP 企业资源目录与 Catalog 模块专题](ADDP企业资源目录能力专题.md)。
 
 两项工作的先后关系固定为：
 
@@ -26,15 +26,15 @@ Engine Catalog 命名收敛
 ADDP 当前同时需要表达两种不同的 Catalog：
 
 1. 引擎实时目录：用于枚举数据库、Schema、表、Bucket、目录、对象、Collection、Graph 和 Topic，并读取引擎原生事实；
-2. 企业数据目录：用于建立企业级稳定身份，关联业务语义、责任、治理状态和专业资源。
+2. 企业资源目录：用于建立企业级稳定身份，关联业务语义、责任、治理状态和专业资源。
 
-迁移前引擎层大量使用裸名 `CatalogProvider`、`CatalogPath`、`CatalogEntry` 和 `CatalogFacts`。企业数据目录也天然需要 `Catalog` 与 `CatalogEntry`，继续复用裸名会造成概念、代码搜索、DTO、Swagger Schema 和模块职责混淆。
+迁移前引擎层大量使用裸名 `CatalogProvider`、`CatalogPath`、`CatalogEntry` 和 `CatalogFacts`。企业资源目录也天然需要 `Catalog` 与 `CatalogEntry`，继续复用裸名会造成概念、代码搜索、DTO、Swagger Schema 和模块职责混淆。
 
 已经确认的单一路线是：
 
 - 引擎层正式名称为 **Engine Catalog / 引擎目录**；
 - 引擎层跨模块代码类型统一使用 `EngineCatalog*` 前缀；
-- 不带限定词的 **Catalog / CatalogEntry** 保留给企业数据目录；
+- 不带限定词的 **Catalog / CatalogEntry** 保留给企业资源目录；
 - Meta 扫描结果继续使用 `node`、`item` 和 `DataItem` 词族；
 - Manager 展示继续使用 `resource tree`，不把视图名称改成 Catalog；
 - 不采用 `Namespace`、`Resource`、`Inventory`、`Discovery` 或 `Hierarchy` 替代整个引擎目录概念。
@@ -45,11 +45,11 @@ ADDP 当前同时需要表达两种不同的 Catalog：
 | --- | --- | --- | --- |
 | Engine Plugin | Engine Catalog / 引擎目录 | 当前引擎如何组织和定位可枚举对象、对象有哪些引擎原生事实 | 企业业务语义、治理状态、资产发布 |
 | Meta | 技术元数据目录 | 扫描后有哪些 node 和 DataItem、技术事实和当前扫描状态是什么 | 企业目录身份和业务编目 |
-| Catalog module | Enterprise Data Catalog / 企业数据目录 | 企业有哪些资源、是什么意思、由谁负责、如何关联和发现 | 引擎实时枚举和数据内容读取 |
+| Catalog module | Enterprise Catalog / 企业资源目录 | 企业有哪些资源、是什么意思、由谁负责、如何关联和发现 | 引擎实时枚举和数据内容读取 |
 | Manager | Resource Tree / 技术资源树 | 用户如何浏览、定位、预览和使用技术资源 | 企业目录事实所有权 |
-| Asset | Asset Catalog / 数据资产目录 | 哪些治理成果已被组合、发布和运营 | 自动扫描和企业资源盘点 |
+| Asset | Asset Directory / 资产目录 | 哪些治理成果已被组合、发布和运营 | 自动扫描和企业资源盘点 |
 
-正式文档中的裸词 `Catalog` 默认表示企业数据目录。表达引擎层时必须写成 `Engine Catalog` 或“引擎目录”；表达数据库标准或产品原生术语时，允许按上下文使用 database catalog、schema、namespace 等原生名称。
+正式文档中的裸词 `Catalog` 默认表示企业资源目录。表达引擎层时必须写成 `Engine Catalog` 或“引擎目录”；表达数据库标准或产品原生术语时，允许按上下文使用 database catalog、schema、namespace 等原生名称。
 
 ## 四、代码命名映射
 
@@ -137,10 +137,10 @@ ADDP 当前同时需要表达两种不同的 Catalog：
 - [x] 更新 `docs/spec/addp引擎插件接口规范.md`；
 - [x] 更新 `docs/spec/addp元数据扫描机制规范.md`；
 - [x] 更新受影响的 Meta、Manager、System、Develop 概念说明；
-- [x] 更新企业数据目录专题，确认裸名 Catalog 和 CatalogEntry 归企业目录；
+- [x] 更新企业资源目录专题，确认裸名 Catalog 和 CatalogEntry 归企业目录；
 - [x] 冻结第四节命名映射、公开错误码和保留项。
 
-完成门槛：正式文档只存在 Engine Catalog 与 Enterprise Data Catalog 两个带明确边界的概念，不再把裸名 CatalogEntry 定义为引擎目录条目。
+完成门槛：正式文档只存在 Engine Catalog 与 Enterprise Catalog 两个带明确边界的概念，不再把裸名 CatalogEntry 定义为引擎目录条目。
 
 ### 阶段 1：影响面与门禁盘点
 
@@ -186,7 +186,7 @@ ADDP 当前同时需要表达两种不同的 Catalog：
 - [ ] 运行 `make test-platform`，确认构建、CI、Swagger 和模块登记一致性；
 - [x] 检查 Git diff 中没有兼容分支、旧 JSON 双字段和 fallback；
 - [x] 回写本专题的实际验证结果；
-- [x] 在企业数据目录专题中解除命名阻塞，企业 Catalog 可继续进入对象与 API 设计。
+- [x] 在企业资源目录专题中解除命名阻塞，企业 Catalog 可继续进入对象与 API 设计。
 
 完成门槛：本地最小充分门禁通过，main push 后现有 CI 能自动覆盖该变更，企业 Catalog 可以安全使用裸名 `CatalogEntry`。
 
@@ -207,7 +207,7 @@ ADDP 当前同时需要表达两种不同的 Catalog：
 | Engine Catalog 命名方向 | 已确认 | 引擎层使用 `EngineCatalog*`，裸 Catalog 保留给企业目录 |
 | 替代词评估 | 已完成 | 不采用 Namespace、Resource、Inventory、Discovery、Hierarchy |
 | 初次影响规模 | 已盘点 | 约 331 个文件，实施时以实时 `rg` 为准 |
-| 正式概念文档 | 已完成 | Engine Catalog、Enterprise Data Catalog 及裸名边界已写入正式文档 |
+| 正式概念文档 | 已完成 | Engine Catalog、Enterprise Catalog 及裸名边界已写入正式文档 |
 | 公共契约与消费者迁移 | 已完成 | Common 契约、内置插件和全部已知真实消费者已原子收敛 |
 | 旧名和生成物清理 | 已完成 | 旧公共名、歧义内部包名、Swagger、OpenAPI 和 i18n 已同步，无兼容路线 |
 | 全量验证 | 部分阻塞 | 本专题定向门禁已通过；`make test-platform` 与 Develop 全包测试被工作树中其他未完成改造阻塞 |

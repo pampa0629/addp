@@ -8,10 +8,19 @@ import (
 )
 
 const (
-	DataApplicationSnapshotSchemaVersion = "addp.workbench_data_application/v1"
-	PublicationStatusUnpublished         = "unpublished"
-	PublicationStatusPublished           = "published"
-	PublicationStatusOffline             = "offline"
+	DataApplicationSnapshotSchemaVersion  = "addp.workbench_data_application/v1"
+	PublicationStatusUnpublished          = "unpublished"
+	PublicationStatusPublished            = "published"
+	PublicationStatusOffline              = "offline"
+	ApplicationDisplayModeDesktop         = "desktop"
+	ApplicationDisplayModeWallboard       = "wallboard"
+	ApplicationRefreshIntervalDisabled    = 0
+	ApplicationRefreshInterval30Seconds   = 30
+	ApplicationRefreshInterval60Seconds   = 60
+	ApplicationRefreshInterval300Seconds  = 300
+	ApplicationVisibleSectionTitle        = "title"
+	ApplicationVisibleSectionParameters   = "parameters"
+	ApplicationVisibleSectionQueryActions = "query_actions"
 )
 
 type DataApplication struct {
@@ -55,12 +64,16 @@ type DataApplicationSnapshot struct {
 	Components        []DataApplicationComponent        `json:"components" binding:"required"`
 	Parameters        []DataApplicationParameter        `json:"parameters"`
 	ParameterBindings []DataApplicationParameterBinding `json:"parameter_bindings"`
+	SelectionBindings []DataApplicationSelectionBinding `json:"selection_bindings"`
 }
 
 type DataApplicationPage struct {
-	ID         string                           `json:"id" binding:"required"`
-	Title      string                           `json:"title" binding:"required"`
-	Placements []DataApplicationComponentLayout `json:"placements" binding:"required"`
+	ID                     string                           `json:"id" binding:"required"`
+	Title                  string                           `json:"title" binding:"required"`
+	DisplayMode            string                           `json:"display_mode" binding:"required" enums:"desktop,wallboard"`
+	RefreshIntervalSeconds *int                             `json:"refresh_interval_seconds" binding:"required" enums:"0,30,60,300"`
+	VisibleSections        []string                         `json:"visible_sections" binding:"required" enums:"title,parameters,query_actions"`
+	Placements             []DataApplicationComponentLayout `json:"placements" binding:"required"`
 }
 
 type DataApplicationComponentLayout struct {
@@ -96,6 +109,16 @@ type DataApplicationParameterBinding struct {
 	ApplicationParameterKey string `json:"application_parameter_key" binding:"required"`
 	ComponentID             string `json:"component_id" binding:"required"`
 	ComponentParameterKey   string `json:"component_parameter_key" binding:"required"`
+}
+
+type DataApplicationSelectionBinding struct {
+	SourceComponentID string                               `json:"source_component_id" binding:"required"`
+	Assignments       []DataApplicationSelectionAssignment `json:"assignments" binding:"required"`
+}
+
+type DataApplicationSelectionAssignment struct {
+	SourceField             string `json:"source_field" binding:"required"`
+	ApplicationParameterKey string `json:"application_parameter_key" binding:"required"`
 }
 
 type DataApplicationCreateRequest struct {

@@ -33,7 +33,7 @@ func NewTenantAuthContextServer(t testing.TB, tenantID, permission string) *http
 		case "Bearer " + AssetServiceToken:
 			authContext = tenantAuthContext("service_principal", "addp-asset", tenantID, permission)
 		case "Bearer " + AssetServiceNoPermissionToken:
-			authContext = tenantAuthContext("service_principal", "addp-asset", tenantID, "asset.catalog.read")
+			authContext = tenantAuthContext("service_principal", "addp-asset", tenantID, "asset.category.read")
 		case "Bearer " + OtherServiceToken:
 			authContext = tenantAuthContext("service_principal", "addp-meta", tenantID, permission)
 		case "Bearer " + UserToken:

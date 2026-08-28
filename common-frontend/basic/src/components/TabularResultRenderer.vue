@@ -1,5 +1,5 @@
 <template>
-  <el-table :data="rows" border stripe height="100%" class="result-table">
+  <el-table :data="rows" border stripe height="100%" class="result-table" highlight-current-row @row-click="selectRow">
     <el-table-column
       v-for="column in visibleColumns"
       :key="column"
@@ -15,13 +15,19 @@
 
 <script setup>
 import { computed } from 'vue'
-import { formatResultCell } from '../utils/tabularResult'
+import { formatResultCell, resultSelectionFromRow } from '../utils/tabularResult'
 
 const props = defineProps({
   rows: { type: Array, default: () => [] },
   columns: { type: Array, default: () => [] },
   fields: { type: Array, default: () => [] }
 })
+const emit = defineEmits(['result-select'])
+
+function selectRow(row) {
+  const selection = resultSelectionFromRow(props.rows, row)
+  if (selection) emit('result-select', selection)
+}
 
 const visibleColumns = computed(() => {
   if (props.columns.length > 0) return props.columns

@@ -18,6 +18,10 @@ Workbench 是面向数据消费者、以已发布 Service 为唯一数据入口�
 - Workbench View 是当前 User 私有资源，所有读取和写入同时匹配当前 Tenant 与 owner User。
 - Data Application 是独立聚合根：创建时复制来源 View 配置，不保存来源 View 外键；Phase 4A 的草稿、发布、下线和运行均同时匹配当前 Tenant 与 owner User。
 - 发布产生不可变 Application Revision；草稿使用 `version` 并发控制，发布版次单独使用 `revision_number`。
+- Selection Binding 只把同页源 Component 当前结果的显式标量字段写入 Application Parameter；目标 Component 必须由既有 Parameter Binding 推导，不能在 renderer 或快照中保存查询、URL、任意动作或第二套目标关系。
+- Application Display Mode 是同一 Data Application 页面的运行呈现方式；当前只允许 `desktop | wallboard`。全屏只保存在浏览器会话中，不能进入发布快照；wallboard 不能拥有第二套 Component、查询、授权或数据源。
+- Application Refresh Policy 只允许 wallboard 使用关闭、30 秒、60 秒、300 秒四档浏览器前台刷新；页面不可见时暂停，当前查询未完成时跳过本轮，不能创建 Task、Schedule、Execution 或后台刷新旁路。
+- Application Presentation Sections 只允许 wallboard 从 `title | parameters | query_actions` 中隐藏运行页区块；修订与刷新状态、全屏入口、Component 标题和错误提示始终显示。隐藏查询操作必须启用自动刷新，隐藏参数区必须保证全部必填参数有可执行默认值。
 - 创建和更新 View 时转发当前已验证的 User Bearer 读取 Descriptor；不保存任何 Token。
 - 创建、更新和发布 Data Application 时同样使用当前 User Bearer 重新校验每个 Component 的 Descriptor；运行端由浏览器使用当前 User Bearer 调用 Service。
 - 列表、详情和删除只读取 Workbench 自身事实，不因 Service 不可达而失败。

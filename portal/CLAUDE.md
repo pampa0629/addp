@@ -2,9 +2,9 @@
 
 ## 模块定位
 
-Portal 模块是用户侧数据资产门户，通过 BFF 后端聚合 Asset 和 Service 能力，提供资产首页、目录浏览、搜索、详情、申请、我的申请、服务端点和资产评价。
+Portal 模块是用户侧数据资产门户，通过 BFF 后端聚合 Asset 和 Service 能力，提供资产首页、AssetCategory 资产目录浏览、搜索、详情、申请、我的申请、服务端点和资产评价。
 
-Portal 只消费 Asset 已发布对象，不直接搜索 Enterprise Data Catalog 全量资源，不调用 Meta 自动发现，也不绕过 Asset 的申请、授权和运营边界。企业资源盘点和治理视图属于 Catalog，面向消费者的资产目录属于 Asset / Portal。
+Portal 只消费 Asset 已发布对象和 AssetCategory 投影，不直接搜索 Enterprise Catalog 全量资源，不调用 Meta 自动发现，也不绕过 Asset 的申请、授权和运营边界。企业资源盘点和治理视图属于 Catalog；Asset 是资产目录事实 owner，Portal 只负责消费者展示。
 
 ## 技术栈与端口
 
@@ -31,7 +31,7 @@ portal/
 ## API 与边界
 
 - 路由前缀：`/api/v1/portal`。
-- 主要接口：`/home`、`/search`、`/catalogs`、`/catalogs/:id/assets`、`/assets`、`/assets/:id`、`/assets/:id/apply`、`/assets/:id/apply-status`、`/my/applications`、`/assets/:id/ratings`。
+- 主要接口：`/home`、`/search`、`/categories`、`/categories/:id/assets`、`/assets`、`/assets/:id`、`/assets/:id/apply`、`/assets/:id/apply-status`、`/my/applications`、`/assets/:id/ratings`。
 - Portal 不直接持久化资产业务数据；新增能力优先在 Asset 或 Service 落业务规则，Portal 只做用户侧聚合和展示。
 - Portal 调用 Asset 消费 API 时只在当前同步请求栈内转发已验证的 User Bearer，不保存 Token，不提交 User/Tenant/Role 字段，也不使用 Portal Service Principal 替代资产使用者。
 - Portal 不读取 `INTERNAL_API_KEY`，也不发送 `X-Internal-API-Key` 或 `X-Tenant-ID`。
@@ -41,8 +41,8 @@ portal/
 ## 前端公开路由
 
 - Portal 是独立用户门户，公开路由固定保留 `/portal` 前缀，不接入 Console iframe 模块导航桥。
-- 搜索页使用 `keyword`、`type_id`、`page`，目录页使用 path `/portal/catalogs/:id` 与 query `page`，默认页码 1 省略。
-- 资产详情唯一使用 `/portal/assets/:id`。返回操作只复用已验证的 `/portal/...` 浏览器历史；没有合法 Portal 来源时，根据资产 `catalog_id` 回目录，否则回搜索页。
+- 搜索页使用 `keyword`、`type_id`、`page`，资产分类页使用 path `/portal/categories/:id` 与 query `page`，默认页码 1 省略。
+- 资产详情唯一使用 `/portal/assets/:id`。返回操作只复用已验证的 `/portal/...` 浏览器历史；没有合法 Portal 来源时，根据资产 `category_id` 回资产分类，否则回搜索页。
 - 不接受任意 `return_url`，不把申请表单、API Key、Token 或服务凭据写入 URL。
 
 ## 开发与验证

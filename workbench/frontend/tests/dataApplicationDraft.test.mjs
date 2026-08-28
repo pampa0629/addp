@@ -4,7 +4,7 @@ import { confirmDataApplicationAction, normalizedApplicationSnapshot } from '../
 
 test('normalizes a Vue-style reactive snapshot without cloning the Proxy directly', () => {
   const snapshot = new Proxy({
-    page: { id: 'page-a', title: 'Page', placements: [] },
+    page: { id: 'page-a', title: 'Page', display_mode: 'desktop', refresh_interval_seconds: 0, visible_sections: ['title', 'parameters', 'query_actions'], placements: [] },
     components: [{ id: 'component-a' }],
     parameters: [
       { key: 'used', label: 'Used' },
@@ -16,7 +16,7 @@ test('normalizes a Vue-style reactive snapshot without cloning the Proxy directl
   }, {})
 
   assert.deepEqual(normalizedApplicationSnapshot(snapshot), {
-    page: { id: 'page-a', title: 'Page', placements: [] },
+    page: { id: 'page-a', title: 'Page', display_mode: 'desktop', refresh_interval_seconds: 0, visible_sections: ['title', 'parameters', 'query_actions'], placements: [] },
     components: [{ id: 'component-a' }],
     parameters: [{ key: 'used', label: 'Used' }],
     parameter_bindings: [

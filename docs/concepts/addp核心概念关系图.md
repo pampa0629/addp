@@ -26,7 +26,7 @@ mindmap
       核心数据流转模块
         transfer:数据传输
         meta:元数据
-        catalog:企业数据目录
+        catalog:企业资源目录
         manager:数据管理
         develop:数据开发
         service:数据服务
@@ -93,7 +93,7 @@ mindmap
         EngineCatalogFactsProvider
         GraphSampleProvider
         Spatial 横切能力
-    企业数据目录
+    企业资源目录
       CatalogEntry 企业稳定身份
       SourceBinding 专业来源绑定
       CatalogComponent 字段或组件
@@ -110,6 +110,10 @@ mindmap
       Workbench View 个人消费配置
       Data Application 独立聚合根
       Application Revision 不可变发布快照
+      Selection Binding 结果选择到应用参数
+      Application Display Mode desktop与wallboard
+      Application Refresh Policy 大屏前台刷新
+      Application Presentation Sections 运行页呈现区块
       当前访问者身份执行 Service
     任务编排
       TaskProvider 模块角色声明与动态发现
@@ -314,7 +318,7 @@ mindmap
 
 ---
 
-### 12. [企业数据目录](addp企业数据目录体系图.md)
+### 12. [企业资源目录](addp企业资源目录体系图.md)
 
 **企业资源稳定身份、业务语义关联、责任和权限感知发现**
 
@@ -324,7 +328,7 @@ mindmap
 - Department / Project Group / User 与目录身份的关系
 - 技术资源、企业元数据、内容和资产搜索的所有权
 
-📄 **[阅读完整文档 →](addp企业数据目录体系图.md)**
+📄 **[阅读完整文档 →](addp企业资源目录体系图.md)**
 
 ---
 
@@ -364,7 +368,7 @@ mindmap
 - **[元数据体系图](addp元数据体系图.md)** - 元数据层次、扫描流程、attributes 结构
 - **[数据项体系图](addp数据项体系图.md)** - engine、node、data item 链条和模块职责边界
 - **[数据类型和格式体系图](addp数据类型和格式体系图.md)** - 数据类型、文件格式、能力分层、provider / reader 体系
-- **[企业数据目录体系图](addp企业数据目录体系图.md)** - CatalogEntry、来源绑定、业务语义、责任和企业目录搜索边界
+- **[企业资源目录体系图](addp企业资源目录体系图.md)** - CatalogEntry、来源绑定、业务语义、责任和企业目录搜索边界
 
 ### 数据开发与编排
 
@@ -395,7 +399,7 @@ graph TB
 
     元数据 --> 类型[数据类型与格式]
     元数据 --> 开发
-    元数据 --> 目录[企业数据目录]
+    元数据 --> 目录[企业资源目录]
     标准[数据标准] --> 目录
     账号[账号与权限] --> 目录
     目录 --> 资产[数据资产]

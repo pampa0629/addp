@@ -150,7 +150,7 @@
         "orchestrator": "Orchestrator - 工作流编排",
         "portal": "Portal - 资产门户",
         "quality": "Quality - 数据质量",
-        "catalog": "Catalog - 企业数据目录",
+        "catalog": "Catalog - 企业资源目录",
         "service": "Service - 数据服务",
         "workbench": "Workbench - 数据服务消费工作台",
         "standard": "Standard - 数据标准",
@@ -287,12 +287,12 @@
         "desc": "任务执行监控、统计分析、健康检查"
       },
       "catalog": {
-        "label": "企业数据目录",
+        "label": "企业资源目录",
         "desc": "企业资源盘点、业务编目、语义关联与治理"
       },
       "asset": {
         "label": "资产管理",
-        "desc": "资产类型、分类管理、申请与授权"
+        "desc": "资产类型、资产目录、申请与授权"
       },
       "system": {
         "label": "系统管理",
@@ -420,7 +420,7 @@
         "recentNotifications": "执行告警通知"
       },
       "catalog": {
-        "label": "企业数据目录",
+        "label": "企业资源目录",
         "entries": "目录浏览",
         "coverage": "治理覆盖率"
       },

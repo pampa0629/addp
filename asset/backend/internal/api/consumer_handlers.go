@@ -37,9 +37,9 @@ func (h *Handler) listConsumerAssets(c *gin.Context) {
 	params := &service.AssetListParams{
 		Page: page, PageSize: pageSize, Status: "published", TypeID: typeID, Keyword: c.Query("keyword"),
 	}
-	if value := c.Query("catalog_id"); value != "" {
-		if catalogID, err := strconv.ParseInt(value, 10, 64); err == nil {
-			params.CatalogID = &catalogID
+	if value := c.Query("category_id"); value != "" {
+		if categoryID, err := strconv.ParseInt(value, 10, 64); err == nil {
+			params.CategoryID = &categoryID
 		}
 	}
 	assets, total, err := h.assetSvc.List(commonAuth.GetTenantID(c), params)
@@ -92,22 +92,22 @@ func (h *Handler) getConsumerAssetStats(c *gin.Context) {
 	commonAPI.SuccessResponse(c, stats)
 }
 
-// listConsumerCatalogs godoc
-// @Summary 浏览已上架资产目录 | Browse published asset catalogs
+// listConsumerCategories godoc
+// @Summary 浏览已上架资产分类 | Browse published asset categories
 // @Tags Asset Consumer
 // @Produce json
-// @Success 200 {array} service.AssetCatalogTreeNode
+// @Success 200 {array} service.AssetCategoryTreeNode
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.catalog.read"]
-// @Router /consumer/catalogs [get]
-func (h *Handler) listConsumerCatalogs(c *gin.Context) {
-	catalogs, err := h.catalogSvc.GetPublishedTree(commonAuth.GetTenantID(c))
+// @x-addp-required-permissions ["asset.category.read"]
+// @Router /consumer/categories [get]
+func (h *Handler) listConsumerCategories(c *gin.Context) {
+	categories, err := h.categorySvc.GetPublishedTree(commonAuth.GetTenantID(c))
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
-	commonAPI.SuccessResponse(c, catalogs)
+	commonAPI.SuccessResponse(c, categories)
 }
 
 // createConsumerApplication godoc

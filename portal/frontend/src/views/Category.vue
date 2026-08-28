@@ -1,17 +1,17 @@
 <template>
-  <div class="catalog-page">
-    <!-- 左侧目录树 -->
-    <div class="sidebar" v-loading="catalogLoading">
+  <div class="category-page">
+    <!-- 左侧资产分类树 -->
+    <div class="sidebar" v-loading="categoryLoading">
       <div class="sidebar-header">
-        <h4>{{ t('portal.catalog.title') }}</h4>
+        <h4>{{ t('portal.category.title') }}</h4>
       </div>
-      <el-scrollbar class="catalog-scroll">
+      <el-scrollbar class="category-scroll">
         <el-tree
-          :data="catalogTree"
+          :data="categoryTree"
           :props="treeProps"
           node-key="id"
-          :default-expanded-keys="[currentCatalogId]"
-          :current-node-key="currentCatalogId"
+          :default-expanded-keys="[currentCategoryId]"
+          :current-node-key="currentCategoryId"
           highlight-current
           @node-click="handleNodeClick"
         >
@@ -29,12 +29,12 @@
     <!-- 右侧资产列表 -->
     <div class="main-content">
       <div class="content-header">
-        <h3 class="catalog-name">{{ currentCatalogName }}</h3>
-        <span class="total-count" v-if="!assetLoading">{{ t('portal.catalog.totalAssets', { count: total }) }}</span>
+        <h3 class="category-name">{{ currentCategoryName }}</h3>
+        <span class="total-count" v-if="!assetLoading">{{ t('portal.category.totalAssets', { count: total }) }}</span>
       </div>
 
       <div v-loading="assetLoading">
-        <el-empty v-if="!assetLoading && assets.length === 0" :description="t('portal.catalog.noAssets')" />
+        <el-empty v-if="!assetLoading && assets.length === 0" :description="t('portal.category.noAssets')" />
         <el-row :gutter="16" v-else>
           <el-col
             v-for="asset in assets"
@@ -65,25 +65,25 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Folder, FolderOpened } from '@element-plus/icons-vue'
-import { catalogAPI } from '../api/portal'
+import { categoryAPI } from '../api/portal'
 import AssetCard from '../components/AssetCard.vue'
-import { resolveCatalogRouteState } from '../utils/routeState'
+import { resolveCategoryRouteState } from '../utils/routeState'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 
-const catalogLoading = ref(false)
+const categoryLoading = ref(false)
 const assetLoading = ref(false)
-const catalogTree = ref([])
+const categoryTree = ref([])
 const assets = ref([])
 const total = ref(0)
-const page = ref(resolveCatalogRouteState(route.query).page)
+const page = ref(resolveCategoryRouteState(route.query).page)
 const pageSize = ref(12)
 
-const currentCatalogId = computed(() => Number(route.params.id))
-const currentCatalogName = computed(() => {
-  return findCatalogName(catalogTree.value, currentCatalogId.value) || t('portal.catalog.browse')
+const currentCategoryId = computed(() => Number(route.params.id))
+const currentCategoryName = computed(() => {
+  return findCategoryName(categoryTree.value, currentCategoryId.value) || t('portal.category.browse')
 })
 
 const treeProps = {
@@ -91,11 +91,11 @@ const treeProps = {
   label: 'name'
 }
 
-function findCatalogName(nodes, id) {
+function findCategoryName(nodes, id) {
   for (const node of nodes) {
     if (node.id === id) return node.name
     if (node.children?.length) {
-      const found = findCatalogName(node.children, id)
+      const found = findCategoryName(node.children, id)
       if (found) return found
     }
   }
@@ -103,34 +103,34 @@ function findCatalogName(nodes, id) {
 }
 
 function handleNodeClick(data) {
-  router.push(`/portal/catalogs/${data.id}`)
+  router.push(`/portal/categories/${data.id}`)
 }
 
 function handlePageChange(nextPage) {
   page.value = nextPage
   router.replace({
-    name: 'Catalog',
+    name: 'Category',
     params: { id: String(route.params.id) },
     query: nextPage > 1 ? { page: String(nextPage) } : {}
   })
 }
 
-async function fetchCatalogs() {
-  catalogLoading.value = true
+async function fetchCategories() {
+  categoryLoading.value = true
   try {
-    const resp = await catalogAPI.list()
-    catalogTree.value = resp || []
+    const resp = await categoryAPI.list()
+    categoryTree.value = resp || []
   } catch (err) {
-    console.error('获取目录失败:', err)
+    console.error('获取资产分类失败:', err)
   } finally {
-    catalogLoading.value = false
+    categoryLoading.value = false
   }
 }
 
 async function fetchAssets() {
   assetLoading.value = true
   try {
-    const resp = await catalogAPI.getAssets(currentCatalogId.value, {
+    const resp = await categoryAPI.getAssets(currentCategoryId.value, {
       page: page.value,
       page_size: pageSize.value
     })
@@ -144,11 +144,11 @@ async function fetchAssets() {
 }
 
 watch(() => [route.params.id, route.query], async () => {
-  const routeState = resolveCatalogRouteState(route.query)
+  const routeState = resolveCategoryRouteState(route.query)
   page.value = routeState.page
   if (routeState.changed) {
     await router.replace({
-      name: 'Catalog',
+      name: 'Category',
       params: { id: String(route.params.id) },
       query: routeState.query
     })
@@ -158,12 +158,12 @@ watch(() => [route.params.id, route.query], async () => {
 }, { immediate: true })
 
 onMounted(() => {
-  fetchCatalogs()
+  fetchCategories()
 })
 </script>
 
 <style scoped>
-.catalog-page {
+.category-page {
   display: flex;
   gap: 0;
 }
@@ -189,7 +189,7 @@ onMounted(() => {
   color: var(--el-text-color-primary);
 }
 
-.catalog-scroll {
+.category-scroll {
   flex: 1;
   padding: 8px 0;
 }
@@ -223,7 +223,7 @@ onMounted(() => {
   margin-bottom: 20px;
 }
 
-.catalog-name {
+.category-name {
   font-size: 16px;
   font-weight: 600;
   margin: 0;

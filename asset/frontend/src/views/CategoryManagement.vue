@@ -1,8 +1,8 @@
 <template>
-  <div class="catalog-management">
+  <div class="category-management">
     <div class="page-header">
-      <h2>{{ t('asset.catalog.title') }}</h2>
-      <el-button type="primary" :icon="Plus" @click="openCreate(null)">{{ t('asset.catalog.newRootCatalog') }}</el-button>
+      <h2>{{ t('asset.category.title') }}</h2>
+      <el-button type="primary" :icon="Plus" @click="openCreate(null)">{{ t('asset.category.newRootCategory') }}</el-button>
     </div>
 
     <el-row :gutter="16">
@@ -27,14 +27,14 @@
                     size="small"
                     :icon="Plus"
                     @click.stop="openCreate(data)"
-                    title="添加子目录"
+                    :title="t('asset.category.addSubCategory')"
                   />
                   <el-button
                     link
                     size="small"
                     :icon="Edit"
                     @click.stop="openEdit(data)"
-                    title="编辑"
+                    :title="t('asset.category.edit')"
                   />
                   <el-button
                     link
@@ -42,14 +42,14 @@
                     :icon="Delete"
                     type="danger"
                     @click.stop="handleDelete(data)"
-                    title="删除"
+                    :title="t('asset.category.delete')"
                   />
                 </span>
               </span>
             </template>
           </el-tree>
-          <el-empty v-else-if="!loading" :description="t('asset.catalog.emptyDesc')">
-            <el-button type="primary" :icon="Plus" @click="openCreate(null)">{{ t('asset.catalog.newRootCatalog') }}</el-button>
+          <el-empty v-else-if="!loading" :description="t('asset.category.emptyDesc')">
+            <el-button type="primary" :icon="Plus" @click="openCreate(null)">{{ t('asset.category.newRootCategory') }}</el-button>
           </el-empty>
         </el-card>
       </el-col>
@@ -58,54 +58,54 @@
       <el-col :span="16">
         <el-card v-if="selected" class="detail-card">
           <template #header>
-            <span>{{ t('asset.catalog.detailTitle') }}</span>
+            <span>{{ t('asset.category.detailTitle') }}</span>
           </template>
           <el-descriptions :column="1" border>
-            <el-descriptions-item :label="t('asset.catalog.name')">{{ selected.name }}</el-descriptions-item>
-            <el-descriptions-item :label="t('asset.catalog.description')">{{ selected.description || '—' }}</el-descriptions-item>
-            <el-descriptions-item :label="t('asset.catalog.sortOrder')">{{ selected.sort_order }}</el-descriptions-item>
-            <el-descriptions-item :label="t('asset.catalog.createdAt')">{{ formatTime(selected.created_at) }}</el-descriptions-item>
-            <el-descriptions-item :label="t('asset.catalog.updatedAt')">{{ formatTime(selected.updated_at) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('asset.category.name')">{{ selected.name }}</el-descriptions-item>
+            <el-descriptions-item :label="t('asset.category.description')">{{ selected.description || '—' }}</el-descriptions-item>
+            <el-descriptions-item :label="t('asset.category.sortOrder')">{{ selected.sort_order }}</el-descriptions-item>
+            <el-descriptions-item :label="t('asset.category.createdAt')">{{ formatTime(selected.created_at) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('asset.category.updatedAt')">{{ formatTime(selected.updated_at) }}</el-descriptions-item>
           </el-descriptions>
           <div class="detail-actions">
-            <el-button :icon="Plus" @click="openCreate(selected)">{{ t('asset.catalog.addSubCatalog') }}</el-button>
-            <el-button :icon="Edit" @click="openEdit(selected)">{{ t('asset.catalog.edit') }}</el-button>
-            <el-button :icon="Delete" type="danger" @click="handleDelete(selected)">{{ t('asset.catalog.delete') }}</el-button>
+            <el-button :icon="Plus" @click="openCreate(selected)">{{ t('asset.category.addSubCategory') }}</el-button>
+            <el-button :icon="Edit" @click="openEdit(selected)">{{ t('asset.category.edit') }}</el-button>
+            <el-button :icon="Delete" type="danger" @click="handleDelete(selected)">{{ t('asset.category.delete') }}</el-button>
           </div>
         </el-card>
-        <el-empty v-else :description="t('asset.catalog.selectHint')" />
+        <el-empty v-else :description="t('asset.category.selectHint')" />
       </el-col>
     </el-row>
 
     <!-- 创建/编辑对话框 -->
     <el-dialog
       v-model="dialogVisible"
-      :title="isEdit ? t('asset.catalog.editDialog') : (parentNode ? t('asset.catalog.newRootCatalog') + `（${parentNode.name}）` : t('asset.catalog.newRootCatalog'))"
+      :title="isEdit ? t('asset.category.editDialog') : (parentNode ? `${t('asset.category.addSubCategory')}（${parentNode.name}）` : t('asset.category.newRootCategory'))"
       width="480px"
       @closed="resetForm"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
-        <el-form-item :label="t('asset.catalog.name')" prop="name">
-          <el-input v-model="form.name" :placeholder="t('asset.catalog.namePlaceholder')" maxlength="200" show-word-limit />
+        <el-form-item :label="t('asset.category.name')" prop="name">
+          <el-input v-model="form.name" :placeholder="t('asset.category.namePlaceholder')" maxlength="200" show-word-limit />
         </el-form-item>
-        <el-form-item :label="t('asset.catalog.sortOrder')">
+        <el-form-item :label="t('asset.category.sortOrder')">
           <el-input-number v-model="form.sort_order" :min="0" :max="9999" style="width:160px" />
-          <span class="input-hint">{{ t('asset.catalog.sortOrderHint') }}</span>
+          <span class="input-hint">{{ t('asset.category.sortOrderHint') }}</span>
         </el-form-item>
-        <el-form-item :label="t('asset.catalog.description')">
+        <el-form-item :label="t('asset.category.description')">
           <el-input
             v-model="form.description"
             type="textarea"
             :rows="3"
-            :placeholder="t('asset.catalog.descriptionPlaceholder')"
+            :placeholder="t('asset.category.descriptionPlaceholder')"
             maxlength="500"
             show-word-limit
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">{{ t('asset.catalog.cancel') }}</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">{{ t('asset.catalog.confirm') }}</el-button>
+        <el-button @click="dialogVisible = false">{{ t('asset.category.cancel') }}</el-button>
+        <el-button type="primary" :loading="submitting" @click="handleSubmit">{{ t('asset.category.confirm') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -115,7 +115,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
-import { catalogAPI } from '../api/asset'
+import { categoryAPI } from '../api/asset'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -134,16 +134,16 @@ const formRef = ref(null)
 
 const form = ref({ name: '', description: '', sort_order: 0 })
 const rules = computed(() => ({
-  name: [{ required: true, message: t('asset.catalog.nameRequired'), trigger: 'blur' }]
+  name: [{ required: true, message: t('asset.category.nameRequired'), trigger: 'blur' }]
 }))
 
 async function loadTree() {
   loading.value = true
   try {
-    const res = await catalogAPI.tree()
+    const res = await categoryAPI.tree()
     treeData.value = res || []
   } catch (e) {
-    ElMessage.error(t('asset.catalog.loadFailed'))
+    ElMessage.error(t('asset.category.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -165,6 +165,7 @@ function openEdit(data) {
   parentNode.value = null
   form.value = {
     id: data.id,
+    version: data.version,
     name: data.name,
     description: data.description || '',
     sort_order: data.sort_order || 0
@@ -181,44 +182,49 @@ async function handleSubmit() {
   submitting.value = true
   try {
     if (isEdit.value) {
-      await catalogAPI.update(form.value.id, {
+      await categoryAPI.update(form.value.id, {
+        version: form.value.version,
         name: form.value.name,
         description: form.value.description,
         sort_order: form.value.sort_order
       })
-      ElMessage.success(t('asset.catalog.updateSuccess'))
+      ElMessage.success(t('asset.category.updateSuccess'))
     } else {
-      await catalogAPI.create({
+      await categoryAPI.create({
         name: form.value.name,
         description: form.value.description,
         sort_order: form.value.sort_order,
         parent_id: parentNode.value?.id || null
       })
-      ElMessage.success(t('asset.catalog.createSuccess'))
+      ElMessage.success(t('asset.category.createSuccess'))
     }
     dialogVisible.value = false
     selected.value = null
     await loadTree()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || (isEdit.value ? t('asset.catalog.updateFailed') : t('asset.catalog.createFailed')))
+    ElMessage.error(e.response?.data?.error || (isEdit.value ? t('asset.category.updateFailed') : t('asset.category.createFailed')))
   } finally {
     submitting.value = false
   }
 }
 
 async function handleDelete(data) {
-  await ElMessageBox.confirm(
-    `${t('asset.catalog.deleteConfirmTitle')}「${data.name}」？`,
-    t('asset.catalog.deleteConfirmTitle'),
-    { type: 'warning', confirmButtonText: t('asset.catalog.deleteButton'), confirmButtonClass: 'el-button--danger' }
-  )
   try {
-    await catalogAPI.delete(data.id)
-    ElMessage.success(t('asset.catalog.deleteSuccess'))
+    await ElMessageBox.confirm(
+      `${t('asset.category.deleteConfirmTitle')}「${data.name}」？`,
+      t('asset.category.deleteConfirmTitle'),
+      { type: 'warning', confirmButtonText: t('asset.category.deleteButton'), confirmButtonClass: 'el-button--danger' }
+    )
+  } catch {
+    return
+  }
+  try {
+    await categoryAPI.delete(data.id, data.version)
+    ElMessage.success(t('asset.category.deleteSuccess'))
     if (selected.value?.id === data.id) selected.value = null
     await loadTree()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('asset.catalog.deleteFailed'))
+    ElMessage.error(e.response?.data?.error || t('asset.category.deleteFailed'))
   }
 }
 
@@ -231,7 +237,7 @@ onMounted(loadTree)
 </script>
 
 <style scoped>
-.catalog-management { padding: 24px; }
+.category-management { padding: 24px; }
 
 .page-header {
   display: flex;

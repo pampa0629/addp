@@ -50,7 +50,7 @@ graph TB
         System[System Backend<br/>核心系统<br/>:8180]
         Manager[Manager Backend<br/>数据管理<br/>:8081]
         Meta[Meta Backend<br/>元数据服务<br/>:8082]
-        Catalog[Catalog Backend<br/>企业数据目录<br/>:8192]
+        Catalog[Catalog Backend<br/>企业资源目录<br/>:8192]
         Workbench[Workbench Backend<br/>服务消费工作台<br/>:8193]
         Transfer[Transfer Backend<br/>数据传输<br/>:8083]
         Orchestrator[Orchestrator Backend<br/>任务编排<br/>:8084]
@@ -226,8 +226,8 @@ graph TB
 | **Gateway** | API 网关,请求路由和转发 | 8000 / 8000 | Go, Gin |
 | **Manager** | 数据管理:数据存储目录展示、数据预览、空间快显和瓦片缓存 | 8081 / 8081 | Go, Gin, OpenLayers |
 | **Meta** | 元数据服务:扫描、索引、搜索 | 8082 / 8082 | Go, Gin, Meilisearch, Cron |
-| **Catalog** | 企业数据目录：稳定目录身份、来源绑定、业务语义关联、责任、治理和企业元数据搜索 | 8192 / 8192 | Go, Gin, GORM, Meilisearch |
-| **Workbench** | 服务消费工作台：动态参数、结构化查询、个人 Workbench View，以及 Data Application 创作、不可变发布修订和运行 | 8193 / 8193 | Go, Gin, GORM, Vue 3 |
+| **Catalog** | 企业资源目录：稳定目录身份、来源绑定、业务语义关联、责任、治理和企业元数据搜索 | 8192 / 8192 | Go, Gin, GORM, Meilisearch |
+| **Workbench** | 服务消费工作台：动态参数、结构化查询、个人 Workbench View，以及支持参数绑定、选择联动、桌面与大屏展示、大屏前台刷新和运行页呈现区块的 Data Application 创作、不可变发布修订和运行 | 8193 / 8193 | Go, Gin, GORM, Vue 3 |
 | **Meta Worker** | Meta 扫描任务处理器 | - | Go, PostgreSQL claim/lease |
 | **Transfer** | 数据传输:同步、搬运、格式转换任务 | 8083 / 8083 | Go, Gin, GORM |
 | **Transfer Bounded Worker** | Transfer 有界任务处理器 | - | Go, PostgreSQL claim/lease |
@@ -1127,8 +1127,8 @@ ADDP 部署按以下顺序使实例进入 Ready。业务进程可以在 System �
 - [ADDP 开发原则](../spec/addp开发原则.md)
 - [ADDP 共享模块介绍](addp共享模块介绍.md)
 - [ADDP 新模块开发指南](../spec/addp新模块开发指南.md)
-- [企业数据目录体系图](addp企业数据目录体系图.md)
-- [企业数据目录实现规范](../spec/addp企业数据目录实现规范.md)
+- [企业资源目录体系图](addp企业资源目录体系图.md)
+- [企业资源目录实现规范](../spec/addp企业资源目录实现规范.md)
 - [Monitor 模块实施报告](../monitor/docs/Monitor模块实施报告.md)
 
 ---

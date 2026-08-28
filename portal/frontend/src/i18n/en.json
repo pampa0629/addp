@@ -80,7 +80,7 @@
       "description": "Description",
       "basicInfo": "Basic Info",
       "assetType": "Asset Type",
-      "catalog": "Catalog",
+      "category": "Asset Category",
       "owner": "Owner",
       "publishedAt": "Published At",
       "assetId": "Asset ID",
@@ -124,11 +124,11 @@
       "algo_model": "Algorithm Model",
       "application": "Data Application"
     },
-    "catalog": {
-      "title": "Asset Catalog",
-      "browse": "Browse Catalog",
+    "category": {
+      "title": "Asset Directory",
+      "browse": "Browse Categories",
       "totalAssets": "{count} assets",
-      "noAssets": "No published assets in this catalog"
+      "noAssets": "No published assets in this category"
     }
   }
 }

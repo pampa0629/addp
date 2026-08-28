@@ -32,3 +32,12 @@ export function buildGeoJSONFeatures(rows, config, transformGeometry = (geometry
     return { type: 'Feature', id: String(index), geometry, properties }
   }).filter(Boolean)
 }
+
+export function resultSelectionFromFeature(feature, rowCount) {
+  const rawID = feature?.id
+  if (typeof rawID !== 'string' && typeof rawID !== 'number') return null
+  const rowIndex = Number(rawID)
+  return Number.isInteger(rowIndex) && rowIndex >= 0 && rowIndex < rowCount
+    ? { row_index: rowIndex }
+    : null
+}

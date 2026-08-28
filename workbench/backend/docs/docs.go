@@ -1582,11 +1582,21 @@ const docTemplate = `{
         "github_com_addp_workbench_internal_models.DataApplicationPage": {
             "type": "object",
             "required": [
+                "display_mode",
                 "id",
                 "placements",
-                "title"
+                "refresh_interval_seconds",
+                "title",
+                "visible_sections"
             ],
             "properties": {
+                "display_mode": {
+                    "type": "string",
+                    "enum": [
+                        "desktop",
+                        "wallboard"
+                    ]
+                },
                 "id": {
                     "type": "string"
                 },
@@ -1596,8 +1606,28 @@ const docTemplate = `{
                         "$ref": "#/definitions/github_com_addp_workbench_internal_models.DataApplicationComponentLayout"
                     }
                 },
+                "refresh_interval_seconds": {
+                    "type": "integer",
+                    "enum": [
+                        0,
+                        30,
+                        60,
+                        300
+                    ]
+                },
                 "title": {
                     "type": "string"
+                },
+                "visible_sections": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "title",
+                            "parameters",
+                            "query_actions"
+                        ]
+                    }
                 }
             }
         },
@@ -1714,6 +1744,39 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_workbench_internal_models.DataApplicationSelectionAssignment": {
+            "type": "object",
+            "required": [
+                "application_parameter_key",
+                "source_field"
+            ],
+            "properties": {
+                "application_parameter_key": {
+                    "type": "string"
+                },
+                "source_field": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_workbench_internal_models.DataApplicationSelectionBinding": {
+            "type": "object",
+            "required": [
+                "assignments",
+                "source_component_id"
+            ],
+            "properties": {
+                "assignments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_workbench_internal_models.DataApplicationSelectionAssignment"
+                    }
+                },
+                "source_component_id": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_workbench_internal_models.DataApplicationSnapshot": {
             "type": "object",
             "required": [
@@ -1745,6 +1808,12 @@ const docTemplate = `{
                 },
                 "schema_version": {
                     "type": "string"
+                },
+                "selection_bindings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_workbench_internal_models.DataApplicationSelectionBinding"
+                    }
                 }
             }
         },

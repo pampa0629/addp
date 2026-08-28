@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 72
+manifest_version: 73
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -382,7 +382,7 @@ roles:
       - asset.application.create
       - asset.application.read
       - asset.authorization.read
-      - asset.catalog.read
+      - asset.category.read
       - asset.entry.read
       - asset.rating.create
       - asset.rating.read
@@ -401,10 +401,10 @@ roles:
       - asset.application.revoke
       - asset.authorization.read
       - asset.authorization.revoke
-      - asset.catalog.create
-      - asset.catalog.delete
-      - asset.catalog.read
-      - asset.catalog.update
+      - asset.category.create
+      - asset.category.delete
+      - asset.category.read
+      - asset.category.update
       - asset.entry.delete
       - asset.entry.offline
       - asset.entry.publish

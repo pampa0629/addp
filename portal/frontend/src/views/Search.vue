@@ -36,9 +36,9 @@
           <div class="result-item-header">
             <el-tag size="small" class="type-tag">{{ getTypeName(asset.type_code, asset.type_name) }}</el-tag>
             <span class="asset-name">{{ asset.name }}</span>
-            <span class="catalog-path" v-if="asset.catalog_name">
+            <span class="category-path" v-if="asset.category_name">
               <el-icon><FolderOpened /></el-icon>
-              {{ asset.catalog_name }}
+              {{ asset.category_name }}
             </span>
           </div>
           <p class="asset-description">{{ asset.description || t('portal.common.noDescription') }}</p>
@@ -213,7 +213,7 @@ watch(() => route.query, async (query) => {
   flex: 1;
 }
 
-.catalog-path {
+.category-path {
   display: flex;
   align-items: center;
   gap: 4px;

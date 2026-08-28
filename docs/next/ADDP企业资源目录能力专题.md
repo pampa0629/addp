@@ -1,12 +1,12 @@
-# ADDP 企业数据目录与 Catalog 模块专题
+# ADDP 企业资源目录与 Catalog 模块专题
 
 更新时间：2026-08-27
 
-状态：阶段 0 至阶段 6 的架构、实现与确定性门禁已收口；专用 macOS T4 和停机恢复场景作为外部条件验证继续保留，不阻塞本专题完成
+状态：阶段 0 至阶段 6 的架构、实现与确定性门禁已收口；企业资源目录、资产目录和引擎资源树的命名边界及 `AssetCategory` 单路径迁移已完成；专用 macOS T4 和停机恢复场景作为外部条件验证继续保留，不阻塞本专题完成
 
 ## 一、文档定位
 
-本专题持续跟踪 ADDP 企业数据目录（Enterprise Data Catalog，EDC）及独立 `Catalog` 模块的架构决策、待确认事项和实施进度。
+本专题持续跟踪 ADDP 企业资源目录（Enterprise Catalog）及独立 `Catalog` 模块的架构决策、待确认事项和实施进度。本文不使用 EDC 缩写，避免重新把范围收窄为 Enterprise Data Catalog。
 
 本文件位于 `docs/next/`，用于承载正在推进的设计，不直接替代正式概念和规范。进入代码实现前，已经稳定的概念必须同步进入：
 
@@ -16,7 +16,7 @@
 - 后续新增的 Catalog 概念文档与实现规范；
 - 受影响模块的 `CLAUDE.md`、API、Swagger、测试和 CI/CD 门禁。
 
-本专题不讨论底层数据复制，不把企业数据目录等同于资产门户，也不以兼容现有 Asset 自动发现或 Meta 搜索实现为目标。
+本专题不讨论底层数据复制，不把企业资源目录等同于资产门户，也不以兼容现有 Asset 自动发现或 Meta 搜索实现为目标。
 
 ### 1.1 本轮归拢后的主线
 
@@ -44,7 +44,7 @@ ADDP 已经有多个管理数据和数据相关成果的专业模块：
 - Service 管理已发布数据服务；
 - Develop 管理查询、工作流和 Notebook 等开发成果；
 - Manager 管理数据预览、检索、剖析和快显；
-- Asset 管理数据资产的编目、发布、授权、评价和运营；
+- Asset 管理资产组合、AssetCategory 多级资产目录、发布、授权、评价和运营；
 - Portal 面向消费者展示和申请已发布资产；
 - System/IAM 管理 Tenant、Department、Project Group、User、Role 和授权上下文。
 
@@ -52,13 +52,13 @@ ADDP 已经有多个管理数据和数据相关成果的专业模块：
 
 > 企业有哪些数据、模型、指标和服务？它们是什么意思？由谁负责？质量如何？相互之间有什么关系？哪些已经完成治理，哪些已经作为资产发布？
 
-此前 Meta 搜索、Manager 检索和 Asset 自动发现分别承担了一部分目录能力，导致“技术资源目录、企业数据目录和资产目录”边界不清。根因不是单个字段或接口缺失，而是 ADDP 尚未建立企业数据目录这一独立架构边界。
+此前 Meta 搜索、Manager 检索和 Asset 自动发现分别承担了一部分目录能力，导致“技术资源目录、企业资源目录和资产目录”边界不清。根因不是单个字段或接口缺失，而是 ADDP 尚未建立企业资源目录这一独立架构边界。
 
 ## 三、已确认的架构决策
 
 以下决策已达成共识，后续设计不再并行保留其他路线：
 
-1. ADDP 新增独立 `Catalog` 模块，承载企业数据目录能力。
+1. ADDP 新增独立 `Catalog` 模块，承载企业资源目录能力。
 2. Meta 与 Standard 之间不存在直接依赖关系；二者分别拥有技术事实和语义定义。
 3. Catalog 通过专业模块的公开读契约和变化契约消费事实；专业模块不反向依赖 Catalog。
 4. 业务语义定义仍归 Standard；语义定义与具体专业资源的关联事实归 Catalog。
@@ -89,9 +89,9 @@ ADDP 已经有多个管理数据和数据相关成果的专业模块：
 
 专业模块继续拥有完整专业事实。Catalog 不接管其 CRUD、生命周期和详细数据模型。
 
-### 4.2 企业数据目录
+### 4.2 企业资源目录
 
-企业数据目录不是另一棵资源树，也不是专业资源的完整副本。它负责：
+企业资源目录不是另一棵资源树，也不是专业资源的完整副本。它负责：
 
 - 企业级稳定目录身份；
 - 专业资源与目录身份的来源绑定；
@@ -107,29 +107,33 @@ ADDP 已经有多个管理数据和数据相关成果的专业模块：
     + 业务语义和责任关联
     + 跨模块关系
     + 搜索、筛选和权限视图
-    = 企业数据目录能力
+    = 企业资源目录能力
 ```
 
-### 4.3 数据资产目录
+### 4.3 资产目录与 AssetCategory
 
-数据资产目录是已经完成业务定义、责任确认、治理和正式发布的运营成果视图。
+资产目录（Asset Directory）是面向消费者组织已发布资产的多级业务导航，不是企业资源目录的子树或副本。目录中的单个分类节点统一称 `AssetCategory`，整体树称 `AssetCategoryTree`。
 
-Asset 负责资产身份和版本、多目录对象的组合边界、发布与上下架、使用条件，以及申请、授权、评价和运营。资产不复制 CatalogEntry 的来源绑定和专业事实。
+Asset 负责 AssetCategory 定义和层级、资产归类、资产身份和版本、多目录对象的组合边界、发布与上下架、使用条件，以及申请、授权、评价和运营。Portal 只读取已启用且包含已发布资产的分类树。
 
 一个资产可以组合多个 CatalogEntry，一个 CatalogEntry 也可以被多个资产复用。
 
+业务域、企业资源组织方式和资产目录不要求一致：Domain 是少量稳定的治理边界；Catalog 使用搜索、分面和关系组织企业资源；AssetCategory 则按消费者理解的数据主题或消费场景形成多级导航。资产可以跨业务域组合多个 CatalogEntry，发布人可以参考组成资源获得分类建议，但必须显式确认资产归类，不能自动复制 Catalog 的 Domain、Department 或资源类型结构。
+
+`Catalog` 与 `Category` 的用词边界固定为：Catalog 是带描述的系统化登记和发现体系；Category 是分类体系中的单个类别。Asset 模块不得继续以 `Catalog` 命名分类实体、表、字段、路由或权限。
+
 ### 4.4 Engine Catalog 与企业 Catalog
 
-ADDP 引擎体系中的 `EngineCatalogProvider`、catalog path 或数据库 catalog 表示引擎原生命名空间或扫描能力；本专题中的 `Catalog` 表示企业数据目录模块。
+ADDP 引擎体系中的 `EngineCatalogProvider`、catalog path 或数据库 catalog 表示引擎原生命名空间或扫描能力；本专题中的 `Catalog` 表示企业资源目录模块。
 
 正式进入术语表时必须分别定义：
 
 - Engine Catalog：数据引擎原生命名空间；
-- Enterprise Data Catalog：跨专业目录的统一关联与发现能力；
-- Catalog module：ADDP 中实现企业数据目录能力的 owner 模块；
-- CatalogEntry：企业数据目录中的稳定对象身份。
+- Enterprise Catalog：跨专业目录的统一关联与发现能力；
+- Catalog module：ADDP 中实现企业资源目录能力的 owner 模块；
+- CatalogEntry：企业资源目录中的稳定对象身份。
 
-当前术语表已将 `EngineCatalogProvider`、`EngineCatalogPath`、`EngineCatalogEntry` 和 `EngineCatalogFacts` 定义为引擎层词族，并把裸名 `Catalog` 与 `CatalogEntry` 保留给企业数据目录。生产代码的公共契约、调用方、Swagger 和 Python SDK 已按该边界迁移，不保留旧名兼容类型。
+当前术语表已将 `EngineCatalogProvider`、`EngineCatalogPath`、`EngineCatalogEntry` 和 `EngineCatalogFacts` 定义为引擎层词族，并把裸名 `Catalog` 与 `CatalogEntry` 保留给企业资源目录。生产代码的公共契约、调用方、Swagger 和 Python SDK 已按该边界迁移，不保留旧名兼容类型。
 
 具体影响范围、迁移批次和门禁见 [ADDP Engine Catalog 命名收敛与迁移专题](ADDP引擎目录命名收敛专题.md)。企业 Catalog 的命名阻塞已解除；后续可按本专题阶段 1 设计企业 `CatalogEntry` 契约，不得回用引擎实时目录 DTO。
 
@@ -407,7 +411,7 @@ Catalog 可以拥有 Project Group 范围的目录集合、草稿和任务，这
 
 ## 十一、目录组织和用户视图
 
-企业数据目录不采用单一树表示所有维度，使用“业务主分类 + 分面筛选 + 关系图”。目录浏览在同一 `/entries` 路由内以 Standard Domain 为主分类，按“业务域 → 责任部门 → 资源类型”逐步收窄权威分页列表；这只是即时聚合的导航读模型，不建立 Domain—Department—Entry Type 的持久化父子关系，也不复制 CatalogEntry。
+企业资源目录不采用单一树表示所有维度，使用“业务主分类 + 分面筛选 + 关系图”。业务域保持少量、稳定并服务治理责任，不承担资产门户的多级导航。目录浏览在同一 `/entries` 路由内以 Standard Domain 为主分类，按“业务域 → 责任部门 → 资源类型”逐步收窄权威分页列表；这只是即时聚合的导航读模型，不建立 Domain—Department—Entry Type 的持久化父子关系，也不复制 CatalogEntry。
 
 主导航优先引用 Standard Domain。候选分面包括对象类型、来源模块、来源系统、责任部门、责任人、协作项目组、来源状态、治理状态、业务域、术语、质量、鲜活度、认证状态、安全等级和时空范围。
 
@@ -552,9 +556,9 @@ Catalog 是自身目录事实和目录操作权限的 owner；底层资源内容
 
 - [x] 确认命名方向：引擎层使用 `EngineCatalog*`，裸名 `Catalog` 和 `CatalogEntry` 保留给企业目录；
 - [x] 按 [Engine Catalog 命名收敛专题](ADDP引擎目录命名收敛专题.md) 完成正式文档和代码迁移；
-- [x] 更新术语表，增加 Enterprise Data Catalog、Catalog module、CatalogEntry 和 CatalogComponent；
+- [x] 更新术语表，增加 Enterprise Catalog、Catalog module、CatalogEntry 和 CatalogComponent；
 - [x] 更新核心概念关系图和模块架构图；
-- [x] 新增 [企业数据目录体系图](../concepts/addp企业数据目录体系图.md) 与 [企业数据目录实现规范](../spec/addp企业数据目录实现规范.md)；
+- [x] 新增 [企业资源目录体系图](../concepts/addp企业资源目录体系图.md) 与 [企业资源目录实现规范](../spec/addp企业资源目录实现规范.md)；
 - [x] 修订 System、Meta、Standard、Manager、Asset、Portal 模块边界；
 - [x] 明确技术资源、企业元数据、内容和已发布资产搜索所有权，以及资源总览、治理目录、资产门户三个视图；
 - [x] 将已经确认的独立 Catalog、自动建档、软依赖和单一事实源共识固化为阶段 0 正式基线。
@@ -704,7 +708,7 @@ Catalog 新模块实现必须同时覆盖：
 
 ## 十九、阶段 1 决策与剩余实施问题
 
-已固化到 [企业数据目录实现规范](../spec/addp企业数据目录实现规范.md)：
+已固化到 [企业资源目录实现规范](../spec/addp企业资源目录实现规范.md)：
 
 1. CatalogEntry 使用 UUID 稳定身份和 BIGINT 聚合根并发版本；CatalogComponent 是无独立版本的聚合子对象；
 2. Meta 使用同事务 append-only DataItem 变化日志，Catalog 通过 opaque cursor 拉取、幂等应用和从起点重放；
@@ -737,7 +741,7 @@ Catalog 新模块实现必须同时覆盖：
 
 ### 2026-08-17：建立专题
 
-- 确认 ADDP 缺少跨专业目录的企业数据目录能力；
+- 确认 ADDP 缺少跨专业目录的企业资源目录能力；
 - 识别 Meta 扩展、独立模块、Asset 扩展和前端聚合等候选方案；
 - 暂未决定模块归属。
 
@@ -754,7 +758,7 @@ Catalog 新模块实现必须同时覆盖：
 
 ### 2026-08-26：重新归拢研发主线
 
-- 确认此前业务元数据与企业数据目录共识仍作为后续研发基线；
+- 确认此前业务元数据与企业资源目录共识仍作为后续研发基线；
 - 明确阶段 0 正式文档确认先于 Catalog 代码实现；
 - 明确除 System 与自身必需 Infra 外，不建立业务模块启动或 Ready 强依赖；
 - 识别企业目录实体与既有引擎 `CatalogEntry` 的术语冲突，并确认通过 `EngineCatalog*` 词族迁移释放企业 `CatalogEntry`；
@@ -762,7 +766,7 @@ Catalog 新模块实现必须同时覆盖：
 
 ### 2026-08-26：完成阶段 0 与阶段 1 契约基线
 
-- 新增正式 [企业数据目录体系图](../concepts/addp企业数据目录体系图.md) 和 [企业数据目录实现规范](../spec/addp企业数据目录实现规范.md)；
+- 新增正式 [企业资源目录体系图](../concepts/addp企业资源目录体系图.md) 和 [企业资源目录实现规范](../spec/addp企业资源目录实现规范.md)；
 - 将 Catalog 纳入核心概念、模块架构、端口分配、文档导航及 System、Meta、Standard、Manager、Asset、Portal 边界；
 - 固化 UUID CatalogEntry、来源绑定历史、CatalogComponent 聚合、语义与责任基数；
 - 固化 Meta append-only 变化日志、Catalog cursor 拉取、幂等 checkpoint 和重放对账单一路线；
@@ -892,7 +896,7 @@ Catalog 新模块实现必须同时覆盖：
 - 推荐继任使用 CatalogEntry 聚合字段 `recommended_successor_entry_id`，通过既有完整 `PUT /entries/:id` 和聚合 `version` 原子维护，不新增第二条写路径；
 - 旧条目与继任项保持两个独立企业身份，旧条目继续显示和审计；`merged_into_entry_id` 仍只表达同一身份归并；
 - 目标建立时必须同 Tenant、active、来源有效并处于 `curated` 或 `certified`；一个旧条目最多一个推荐继任项，一个继任项可以承接多个旧条目。
-- 后端聚合、约束和审计、完整更新 API、Swagger、前端编辑与详情展示均已实现；Catalog Go、Frontend 测试与构建、PostgreSQL 迁移及聚合集成门禁均通过。平台 `test-changed` 已运行至 System PostgreSQL 门禁，被当前 System IAM 可重复的测试数据隔离与审计计数失败阻断，与本项 Catalog 实现无文件依赖关系。
+- 后端聚合、约束和审计、完整更新 API、Swagger、前端编辑与详情展示均已实现；Catalog Go、Frontend 测试与构建、PostgreSQL 迁移及聚合集成门禁均通过。当时记录的 System IAM 测试数据隔离与审计计数阻塞已在后续迁移收口中解除，当前完整 `make test-changed` 已通过。
 
 ### 2026-08-26：首次运行态验收
 
@@ -1040,6 +1044,26 @@ Catalog 新模块实现必须同时覆盖：
 - 本机统一重启后完成真实写入验收：在两个并行页面中明确选择同一组 `public_test.parquet` 与 `public_test_shapefile.shp`，首个页面成功批量分配“户外域”，两个条目分别从版本 2 递增到 3，并产生同一 `batch_id=7ccc4cf6-27e2-46e4-b5e3-bff2050f16ea` 下的两条审计；第二个过期页面返回版本冲突、保留两项选择和对话框输入，数据库没有第二组审计或版本递增；
 - 运行态同时验证 Department 目标使用 System 动态名称候选且当前 Tenant 无可选部门，不回退为手工 ID；选中 Model 逻辑模型后选择主业务域操作，页面明确提示其事实由 Model / Standard 维护并禁用提交。验收结束后通过 Catalog“业务编目”完整聚合更新移除两条临时 Domain 关联，两个条目均递增到版本 4、主业务域计数恢复为 0；浏览器列表选择恢复为 0，详情页和列表页 warning/error 均为 0。
 
+### 2026-08-27：企业资源目录、资产目录与引擎资源树命名收口
+
+- 中文产品名统一为“企业资源目录”，专业英文名为 `Enterprise Catalog`；模块、聚合根和稳定身份继续使用 `catalog`、`CatalogEntry`，不把 Catalog 解释为多级树，也不再用“企业数据目录”缩小其对数据项、标准、模型、指标、服务和开发成果的覆盖范围；
+- Asset 面向 Portal 的多级消费导航统一为“资产目录”；节点、树、表、字段、路由和权限分别收敛为 `AssetCategory`、`AssetCategoryTree`、`asset.categories`、`category_id`、`/categories` 和 `asset.category.*`。旧 `Catalog` 分类模型、`asset.catalogs`、`catalog_id`、`/catalogs`、`asset.catalog.*` 不保留运行时兼容分支；
+- 既有环境只在 Asset schema migration 中执行一次性原地改名并保留数据；若新旧表或新旧字段同时存在则直接失败，避免猜测权威事实源。System migration 109 将旧权限绑定原子迁移到新权限后禁用旧权限，不让角色授权丢失，也不保留双权限路线；
+- AssetCategory 更新和删除统一携带聚合 `version`，使用乐观并发控制；资产创建、编辑、列表、批量归类、搜索投影、Portal 分类树和 Common Asset Client 已全部改用 `category_id/category_name`。发布资产搜索索引仍是 Asset 可重建派生投影，Asset 启动时从权威已发布资产重建，不成为第二事实源；
+- Manager / Common 的技术浏览结构固定称“引擎资源树”或 `ResourceTree`，Console 英文交互可称 `Data Explorer`；它按 Engine Node / Item 展示技术资源，不改名为 Catalog，也不承担企业关联或资产分类；
+- UI 中 Department、Domain、Engine 等稳定 ID 均由 owner 动态名称选择器提供，不要求用户输入内部 ID。企业资源目录继续使用搜索、分面和关系导航；资产目录才提供独立多级分类树，二者不复制、不要求同构；
+- Asset、Catalog、Portal、Console、Common Client、Swagger、授权生成物、确定性 Online 契约和 CI 自动发现已同步。`make test-module MODULE=asset`（指定 `addp_test`）、`make test-module MODULE=catalog`（指定 `addp_test`）、`make test-module MODULE=portal`、System IAM PostgreSQL、全仓授权门禁及对应前后端测试与生产构建均已通过；不需要为本轮新建测试入口或第二套 CI workflow。
+- 仓库聚合 `make test-changed` 已在 24 个受影响注册模块上完整通过，覆盖 platform T0、各 owner T1/T2/T3、System migration 109、Swagger、授权和 CI 登记。期间同步修复了 `changed-gate.py` 对已删除 tracked file 的扫描错误，并将 Transfer 旧文本快照收敛到已有 runtime-target 不扫描契约；两者均已纳入原有测试体系。
+
+### 2026-08-28：统一重启后的运行态与物理命名收口
+
+- 用户统一重启后，System、Gateway、Console、Catalog、Asset、Portal 和 Workbench 进程均已启动；System migration 为 `109 / dirty=false`，`asset.category.*` 四项权限均为 active，`asset.categories` 存在且 `asset.catalogs` 不存在；
+- Catalog 启动瞬间因 Workbench 尚未就绪记录过一次同步延迟，此后没有重复告警；Workbench 变化接口已注册，Catalog 的 `workbench/catalog_resources` checkpoint 已推进，确认是可恢复的启动时序而不是持续依赖故障；
+- 浏览器只读验收确认企业资源目录治理视图、三段名称导航、Workbench 数据应用条目和资产目录管理页均正常加载，页面 warning/error 为 0。运行态发现并修正了产品术语尾差：整体导航统一展示“资产目录 / Asset Directory”，分类树内部代码和 API 继续使用 `AssetCategory`，不再使用会与 Enterprise Catalog 冲突的 `Asset Catalog`；
+- Asset schema 的表和字段虽然已经收敛，但 PostgreSQL 仍会保留表改名前的序列、主键与三个索引名。迁移现已原子重命名 `categories_id_seq`、`categories_pkey` 并删除三个旧冗余索引；若新旧序列或主键同时存在则直接失败，不保留双轨物理对象；
+- Asset、Portal、Console 定向前端测试与生产构建全部通过；`make test-module MODULE=asset` 完整通过 platform T0、Asset Go T1、前端 T1/T3、PostgreSQL T2、Swagger、授权和 CI 自动发现；
+- 用户随后正常统一重启，System、Gateway、Catalog、Asset、Portal、Workbench Ready 与 Console 均为 `200`。Asset schema 中五个旧 `catalog*` 序列、主键和索引对象已全部归零，`categories_id_seq`、`categories_pkey` 与三个新索引完整存在；迁移由 Asset 正常启动自动应用，没有手工改库。Catalog 启动时仍仅出现一次 Workbench 时序告警，随后 checkpoint 已在重启后继续推进，确认自动恢复链路有效。
+
 ## 二十二、当前推进状态
 
 | 工作项 | 状态 | 说明 |
@@ -1057,6 +1081,7 @@ Catalog 新模块实现必须同时覆盖：
 | Catalog 模块实现 | 核心能力已完成 | 自动建档、查询、编目、重绑、历史、搜索投影、PostgreSQL 门禁和平台登记已落地；T4 已登记待专用 Runner 首跑 |
 | 组织、语义与协作实现 | 已完成 | 组织管理、语义、责任、失效治理队列、个人目录标记、Project Group 目录集合、状态推进和审计均已完成 |
 | Manager / Asset 旧路线删除 | 已完成 | Manager owner 内容索引、AssetComponent 单路径、Portal 已发布消费均已收敛，旧 discoverable、AssetRecord 和 `source_reference` 已删除 |
+| 企业资源目录 / 资产目录 / 引擎资源树命名收口 | 已完成 | Enterprise Catalog 使用 `CatalogEntry`；Asset 多级导航使用 `AssetCategory`；Manager 技术树使用 `ResourceTree`，三者不复制、不兼容旧分类契约 |
 | Model 专业目录接入 | 已完成 | Entity / LogicalTable 自动建档，当前专业事实动态解析，Catalog 仅保存最小可重建投影且不复制 Model 语义 |
 | Standard Metric 专业目录接入 | 已完成 | Metric 自动建档，当前专业事实动态解析，指标定义与内生关系仍只归 Standard |
 | Service QueryService 专业目录接入 | 已完成 | QueryService 自动建档，当前最小摘要动态解析，服务定义、执行契约和消费描述仍只归 Service |
@@ -1064,7 +1089,7 @@ Catalog 新模块实现必须同时覆盖：
 | Quality 当前摘要接入 | 已完成 | PostgreSQL DataItem 详情按结构化物理引用动态组合评分与问题摘要，Catalog 不复制 Quality 事实 |
 | Meta DataItem 血缘联邦视图 | 已通过运行态验收 | 当前 User Token 直连 Meta、共享图组件按需加载、不复制边；抽验详情成功展示 4 个节点、3 条关系 |
 | Model / Standard 专业关系联邦视图 | 已通过运行态验收 | Standard 关系空状态正常；Model Entity 抽验成功动态返回 2 条一对多专业关系，均由当前 User Token 直连 owner |
-| Catalog 推荐继任关系 | 已完成，待运行态验收 | 唯一 Catalog 自有跨条目关系；Catalog 定向门禁已通过，全量变更门禁被 System IAM 现有失败阻断；不建立空泛通用关系表，不与 owner 专业关系类型重叠 |
+| Catalog 推荐继任关系 | 已完成，待运行态验收 | 唯一 Catalog 自有跨条目关系；Catalog 定向门禁、System IAM PostgreSQL 和全仓授权门禁均已通过；不建立空泛通用关系表，不与 owner 专业关系类型重叠 |
 | Catalog 治理覆盖率 | 已通过七维运行态验收 | 1,002 个 active 条目动态聚合；责任部门、业务责任人、数据管理员独立显示，组件数据元适用 189 个，不保存覆盖率投影 |
 | 治理覆盖率缺口处置闭环 | 已通过运行态验收 | 未覆盖数字与两个虚拟入口均进入同口径权威缺口列表并复用现有编目编辑器；不新增明细表、任务实体或搜索投影 |
 | 联邦影响分析与目录导航 | 已通过运行态验收 | Model 稳定 ID 和 Meta fingerprint 均已动态解析并完成可见 CatalogEntry 跳转；不代理、不复制 owner 关系边 |
@@ -1081,7 +1106,7 @@ Catalog 新模块实现必须同时覆盖：
 
 ## 二十三、后续会话接力清单
 
-新会话应以本专题和 [企业数据目录实现规范](../spec/addp企业数据目录实现规范.md) 为事实基线，不重新讨论已确认的模块边界，也不要恢复 Meta / Standard 反向投影、Catalog owner 全量副本或默认平铺全部 DataItem 的旧方向。
+新会话应以本专题和 [企业资源目录实现规范](../spec/addp企业资源目录实现规范.md) 为事实基线，不重新讨论已确认的模块边界，也不要恢复 Meta / Standard 反向投影、Catalog owner 全量副本或默认平铺全部 DataItem 的旧方向。
 
 1. 先检查工作区和运行态，保留其他并行改造；本轮统一重启与主要目录交互验收已经完成，不要重复重启或重做已通过项。
 2. 治理覆盖率、Meta 血缘邻居和 Model 专业节点的来源身份导航已完成运行态验收；后续会话不要重复重启或重复制造样例，只有相关契约再次变更时才重跑这些路径。
@@ -1090,8 +1115,9 @@ Catalog 新模块实现必须同时覆盖：
 5. 在明确的停机窗口执行来源 missing、停机追赶、显式重绑、System 恢复和 owner `503` 专项 T4；不得在共享开发服务上擅自停止 System、Standard、Meta 或 Catalog。
 6. 推荐继任项的名称选择器已有定向门禁；当前 Tenant 只有 998 条 `discovered` 条目，没有可进入弃用流程的 `curated|certified` 样本。后续只在自然产生合适治理状态样本后补运行态证据，不为验收篡改 CatalogEntry。
 7. 如需重跑完整 Catalog 模块门禁，显式使用 `CATALOG_POSTGRES_TEST_DSN='postgres://addp:addp_password@127.0.0.1:15432/addp_test?sslmode=disable' make test-module MODULE=catalog`；不得新建本地测试 database。
-8. System 全量 IAM PostgreSQL 门禁与全仓授权门禁的既有失败应按各自 owner 根因独立修复；不得为了让 migration 101/102 显绿而放宽计数、跳过测试或修改无关权限期望。
+8. System 全量 IAM PostgreSQL 门禁与全仓授权门禁已在 AssetCategory permission migration 109 收口后通过。后续若再次失败，应按对应 owner 根因处理，不得放宽计数、跳过测试或恢复 `asset.catalog.*` 兼容权限。
 9. 治理缺口处置、企业目录上下文导航、“待归类”“待分配部门”和七维治理覆盖率均已完成运行态验收；后续会话不要重复重启或重做共享环境点击，只在相关契约再次变化时重跑。
 10. 旧 `accountability` 已从 API 响应、Swagger、URL 和页面删除，只在负向测试与规范删除说明中出现；不得恢复复合维度或兼容 query。
 11. 统一 Workspace 评估已收口为“当前不新增”；不得为了形式上统一而添加空壳模块、`workspace_id` 或把引擎 `SpatialWorkspace` 与企业协作概念合并；只在第 10.5 节触发条件成立时重开文档优先评估。
 12. 显式成员批量治理已经完成代码、Swagger、PostgreSQL、前端、Online 契约登记和本机真实写入验收；后续不要增加“全部匹配筛选”、手工 owner ID、Tenant 级 `revision` 或逐条部分成功路线。专用 macOS 只需随既有 `enterprise-catalog-publishing` 做当前页选择和对话框的周期回归，不在永久 fixture 上重复提交批量写入。
+13. **已完成**：正常统一重启后只读确认 Asset schema 中不再存在 `catalogs_id_seq`、`catalogs_pkey`、`idx_asset_catalogs_*` 或 `idx_asset_assets_catalog_id`；迁移由 Asset 启动自动应用，没有手工改库或单独接管整套服务。

@@ -30,10 +30,10 @@ const routes = [
         meta: { requiresAuth: true, title: '搜索结果' }
       },
       {
-        path: 'portal/catalogs/:id',
-        name: 'Catalog',
-        component: () => import('../views/Catalog.vue'),
-        meta: { requiresAuth: true, title: '目录浏览' }
+        path: 'portal/categories/:id',
+        name: 'Category',
+        component: () => import('../views/Category.vue'),
+        meta: { requiresAuth: true, title: '资产目录浏览' }
       },
       {
         path: 'portal/assets/:id',

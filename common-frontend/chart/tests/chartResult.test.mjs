@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildChartOption, validateChartResult } from '../src/chartResult.mjs'
+import { buildChartOption, resultSelectionFromChartEvent, validateChartResult } from '../src/chartResult.mjs'
 
 test('builds bounded chart options without aggregating service rows', () => {
   const rows = [{ city: 'A', amount: 2 }, { city: 'B', amount: 3 }]
@@ -8,6 +8,12 @@ test('builds bounded chart options without aggregating service rows', () => {
   assert.deepEqual(validateChartResult(rows, config, false), { valid: true, reason: '' })
   assert.deepEqual(buildChartOption(rows, config).series[0].data, [2, 3])
   assert.equal(validateChartResult(rows, config, true).reason, 'partial_result')
+})
+
+test('maps an ECharts item click to the original result index', () => {
+  assert.deepEqual(resultSelectionFromChartEvent({ dataIndex: 1 }, 2), { row_index: 1 })
+  assert.equal(resultSelectionFromChartEvent({ dataIndex: 2 }, 2), null)
+  assert.equal(resultSelectionFromChartEvent({}, 2), null)
 })
 
 test('rejects incomplete or invalid pie data', () => {

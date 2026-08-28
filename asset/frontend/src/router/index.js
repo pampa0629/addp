@@ -25,9 +25,9 @@ const routes = [
       },
       {
         path: 'categories',
-        name: 'CatalogManagement',
-        component: () => import('../views/CatalogManagement.vue'),
-        meta: { requiresAuth: true, title: '目录管理' }
+        name: 'CategoryManagement',
+        component: () => import('../views/CategoryManagement.vue'),
+        meta: { requiresAuth: true, title: '资产目录管理' }
       },
       {
         path: 'assets',

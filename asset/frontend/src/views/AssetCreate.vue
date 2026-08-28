@@ -14,7 +14,7 @@
         </el-select>
       </el-form-item>
       <el-form-item :label="t('asset.assetDetail.category')">
-        <el-cascader v-model="form.catalog_id" :options="catalogs" :props="{ checkStrictly: true, value: 'id', label: 'name', children: 'children', emitPath: false }" clearable style="width: 100%" />
+        <el-cascader v-model="form.category_id" :options="categories" :props="{ checkStrictly: true, value: 'id', label: 'name', children: 'children', emitPath: false }" clearable style="width: 100%" />
       </el-form-item>
       <el-form-item :label="t('asset.assetDetail.description')">
         <el-input v-model="form.description" type="textarea" :rows="4" maxlength="2000" />
@@ -37,7 +37,7 @@ import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import CatalogEntryPicker from '../components/CatalogEntryPicker.vue'
-import { assetAPI, catalogAPI, typeDefinitionAPI } from '../api/asset'
+import { assetAPI, categoryAPI, typeDefinitionAPI } from '../api/asset'
 import { navigateAssetRoute } from '../utils/moduleNavigation'
 
 const { t } = useI18n()
@@ -45,8 +45,8 @@ const router = useRouter()
 const formRef = ref()
 const submitting = ref(false)
 const types = ref([])
-const catalogs = ref([])
-const form = reactive({ name: '', description: '', type_id: null, catalog_id: null, tags: [], components: [] })
+const categories = ref([])
+const form = reactive({ name: '', description: '', type_id: null, category_id: null, tags: [], components: [] })
 const rules = {
   name: [{ required: true, message: t('asset.assetDetail.assetNameRequired'), trigger: 'blur' }],
   type_id: [{ required: true, message: t('asset.assetCreate.typeRequired'), trigger: 'change' }],
@@ -55,9 +55,9 @@ const rules = {
 
 onMounted(async () => {
   try {
-    const [typeResult, catalogResult] = await Promise.all([typeDefinitionAPI.list(), catalogAPI.tree()])
+    const [typeResult, categoryResult] = await Promise.all([typeDefinitionAPI.list(), categoryAPI.tree()])
     types.value = (typeResult || []).filter(item => item.enabled)
-    catalogs.value = catalogResult || []
+    categories.value = categoryResult || []
   } catch (error) {
     ElMessage.error(error.response?.data?.error || t('asset.assetDetail.loadFailed'))
   }

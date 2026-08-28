@@ -181,6 +181,10 @@ func TestNotebookSessionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		ExpiresIn: 10 * time.Minute, Audit: issueAudit,
 	})
 	if err != nil {
+		var validationError *CredentialValidationError
+		if errors.As(err, &validationError) {
+			t.Fatalf("issue second authorization: credential reason=%s error=%v", validationError.Reason, err)
+		}
 		t.Fatalf("issue second authorization: %v", err)
 	}
 	secondExecutionID := uuid.New()

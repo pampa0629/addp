@@ -63,7 +63,7 @@ CREATE SCHEMA IF NOT EXISTS common;
 -- Asset 模块 (数据资产管理：编目、申请、授权、评价)
 CREATE SCHEMA IF NOT EXISTS asset;
 
--- Catalog 模块 (企业数据目录：稳定身份、来源绑定、业务编目与治理状态)
+-- Catalog 模块 (企业资源目录：稳定身份、来源绑定、业务编目与治理状态)
 CREATE SCHEMA IF NOT EXISTS catalog;
 CREATE SCHEMA IF NOT EXISTS workbench;
 
@@ -97,7 +97,7 @@ COMMENT ON SCHEMA copilot IS 'Copilot 模块：AI对话、会话管理、上下�
 COMMENT ON SCHEMA model IS 'Model 模块：数据标准、数据建模、指标管理';
 COMMENT ON SCHEMA common IS 'Common 模块：跨模块共享的数据表（统一执行记录表等）';
 COMMENT ON SCHEMA asset IS 'Asset 模块：数据资产编目、申请与授权管理';
-COMMENT ON SCHEMA catalog IS 'Catalog 模块：企业数据目录、稳定身份、来源绑定与业务编目';
+COMMENT ON SCHEMA catalog IS 'Catalog 模块：企业资源目录、稳定身份、来源绑定与业务编目';
 COMMENT ON SCHEMA workbench IS 'Workbench 模块：数据服务消费视图与后续数据应用';
 COMMENT ON SCHEMA agent IS 'Agent 模块：智能体会话、消息与技能调用';
 COMMENT ON SCHEMA graph IS 'Graph 模块：知识图谱本体建模、图谱管理、图谱探索';

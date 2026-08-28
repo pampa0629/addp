@@ -383,7 +383,7 @@
                 "tags": [
                     "Catalog"
                 ],
-                "summary": "列出企业数据目录 | List enterprise catalog entries",
+                "summary": "列出企业资源目录 | List enterprise catalog entries",
                 "parameters": [
                     {
                         "enum": [

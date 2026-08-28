@@ -25,7 +25,7 @@
 | resource | 资源 | Engine Catalog 或资源树语境下的外部对象统称。 | 当讨论内容读写边界时优先使用 content / ref，避免把 engine 资源模型带入 format。 |
 | resource concurrency version | 资源并发版本 | 可变持久化主资源用于乐观并发控制的单调递增正整数。 | API 字段统一为 `version`，数据库统一使用非空 `BIGINT` 并从 `1` 开始；只判断客户端编辑基线是否仍然有效，不表达业务版次、发布版本或内容来源版本。聚合子资源共用聚合根版本。 |
 | collection revision | 集合修订版本 | 对一次跨多个独立聚合的集合级替换提供并发边界的单调递增正整数。 | 仅在操作没有单一聚合根时使用；API 字段统一为 `revision`。它不是集合成员数量，也不能用任一成员的资源并发版本替代。 |
-| Engine Catalog | 引擎目录 | Engine Plugin 对真实引擎原生命名空间、可枚举层级、路径和对象事实的统一只读抽象。 | 回答“引擎当前有什么、结构上如何定位、引擎直接知道哪些事实”；不是企业数据目录，也不拥有业务语义和治理状态。跨模块代码词族统一使用 `EngineCatalog*`。 |
+| Engine Catalog | 引擎目录 | Engine Plugin 对真实引擎原生命名空间、可枚举层级、路径和对象事实的统一只读抽象。 | 回答“引擎当前有什么、结构上如何定位、引擎直接知道哪些事实”；不是企业资源目录，也不拥有业务语义和治理状态。跨模块代码词族统一使用 `EngineCatalog*`。 |
 | EngineCatalogPath | 引擎目录路径 | Engine Catalog 内的路径坐标。 | 不等同于 ResourceLocator，也不等同于 Meta `full_name`。线上版本值 `catalog.path/v1` 由 Engine 上下文限定，第一阶段保留。 |
 | EngineCatalogEntry | 引擎目录条目 | `EngineCatalogProvider.ListChildren` 返回的 Engine Catalog 列表项，不是“入口”。 | 回答“当前位置下面有什么、结构上怎么走”；通过 `role=branch/leaf` 表达结构角色；列表摘要使用 `Table`、`Storage`、`LeafCount` 等显式字段，不保留兜底 attributes / stats。 |
 | EngineCatalogRoot | 引擎目录根 | 每个 Engine Catalog 的显性结构根。 | 通常投影为 root `meta_node`；`full_name=""`，ResourceLocator path 为空，但仍可通过 `node_id` 定位。面向用户展示时使用引擎实例名称，不显示内部术语。 |
@@ -35,9 +35,9 @@
 | partition | 消息分区 | Topic 内维护有序 offset 序列的执行分片。 | Transfer 按 partition 保存 committed position；用户选择 topic，不绑定固定 partition。 |
 | EngineCatalogFacts | 引擎目录事实 | Engine 对 Engine Catalog entry 直接知道的结构、存储、索引和原生事实详情。 | 回答“这个条目自身有哪些事实”；详情事实必须落在 `Table`、`Graph`、`Storage`、`Indexes` 等显式字段；不保留兜底 attributes / stats。 |
 | LeafCount | 叶子数量摘要 | Engine Catalog branch 下直接 leaf 条目的数量摘要。 | 只用于低成本列表展示和扫描计划提示；例如 schema 下表数量、database 下 collection 数量。不是递归总量，也不是 Meta item 计数。 |
-| Enterprise Data Catalog | 企业数据目录 | 在各专业模块事实之上建立企业级稳定目录身份、业务语义关联、责任、治理状态、跨模块关系和权限感知发现视图的能力。 | 不是 Engine Catalog、Meta 技术资源树或数据资产目录的副本；由独立 Catalog 模块拥有。 |
-| Catalog module | Catalog 模块 | ADDP 中实现 Enterprise Data Catalog 的独立 owner 模块。 | 除 System 和自身必需 Infra 外，不把其他业务模块可达性作为启动或 Ready 强依赖。 |
-| CatalogEntry | 企业目录条目 | Catalog 模块中代表一项企业资源的稳定目录身份。 | 可以绑定 Meta DataItem 或其他专业资源；业务语义、责任和治理历史随该身份延续，不以物理路径或工作区作为身份。 |
+| Enterprise Catalog | 企业资源目录 | 在各专业模块事实之上，对数据项、标准、指标、模型、服务和数据应用等企业资源建立稳定目录身份、业务语义关联、责任、治理状态、跨模块关系和权限感知发现视图的能力。 | `Catalog` 表示系统化登记和发现，不表示树形分类；不是 Engine Catalog、引擎资源树或资产目录的副本。 |
+| Catalog module | Catalog 模块 | ADDP 中实现 Enterprise Catalog 的独立 owner 模块。 | 除 System 和自身必需 Infra 外，不把其他业务模块可达性作为启动或 Ready 强依赖。 |
+| CatalogEntry | 企业资源目录条目 | Catalog 模块中代表一项企业资源的稳定目录身份。 | 可以绑定 Meta DataItem、Standard 标准或指标、Model 模型、Service 服务、Workbench 数据应用等专业资源；业务语义、责任和治理历史随该身份延续。 |
 | recommended CatalogEntry successor | 企业目录推荐继任项 | Catalog 在弃用一个 CatalogEntry 时，可选指定的同 Tenant 推荐替代条目。 | 前后两个 CatalogEntry 是不同且继续有效的企业身份；旧条目保留详情和审计，不像 `merged` 一样重定向到规范身份。 |
 | CatalogComponent | 企业目录组件 | CatalogEntry 下用于承载字段或内部组件级语义关联的从属对象。 | 默认不是顶级企业目录条目，也不等同于独立 DataItem。 |
 | Catalog Source Binding | 企业目录来源绑定 | Catalog 模块中连接 CatalogEntry 与一个专业模块稳定资源身份的权威关系及历史。 | 第一阶段绑定 Meta DataItem fingerprint；Meta、Standard 等 owner 不保存 `catalog_entry_id` 反向投影。 |
@@ -47,12 +47,19 @@
 | catalog source status | 企业目录来源状态 | 专业来源当前是否仍可由 owner 观察到的状态。 | 统一使用 `active`、`missing`；与治理成熟度和资产发布状态正交。 |
 | catalog governance status | 企业目录治理状态 | CatalogEntry 从自动发现到业务治理确认的成熟度。 | 统一使用 `discovered`、`curated`、`certified`、`deprecated`；来源消失不自动改变治理状态。 |
 | catalog visibility | 企业目录可见性 | Catalog 对某个 CatalogEntry 的发现范围。 | 第一阶段使用 `inventory`、`department`、`tenant`；只控制目录发现，不授予底层内容访问权。 |
+| Asset Directory | 资产目录 | Asset 面向消费者组织已发布资产的多级业务导航能力。 | 由 `AssetCategory` 树和资产归类关系形成；不复制企业资源目录、业务域或引擎资源树。 |
+| AssetCategory | 资产分类 | 资产目录中的一个可分层分类节点。 | 定义名称、父级、说明和展示顺序；分类对象是 Asset，不是 CatalogEntry。整体树称 `AssetCategoryTree`。 |
+| asset category assignment | 资产归类 | Asset 对自身主展示分类的权威归属关系。 | 由 Asset owner 维护，可参考组成 CatalogEntry 的语义，但不得自动复制或继承企业资源目录结构。 |
 | Workbench module | Workbench 模块 | ADDP 面向数据消费者、以已发布 Service 为唯一数据入口的动态查询、可视化和数据应用创作 owner。 | 不直连 Engine、不拥有 SQL、指标、物化或任务编排；Service 不可达只失败依赖该服务的当前请求，不影响 Workbench Ready。 |
 | Service Consumer Descriptor | 服务消费描述 | Service owner 面向消费者发布的、版本化且不包含管理事实的服务输入、输出、分页、格式和执行 operation 契约。 | 稳定协议从 `addp.service_consumer/v1` 开始；不暴露 SQL、Engine 凭据、表名或 Workbench renderer。 |
 | ServiceReference | 服务引用 | 消费者对一个已发布 Service 的强类型稳定引用，由 `service_type + service_id` 组成。 | Workbench View 保存该引用并通过 Service Consumer Catalog 解析，不能保存或猜测执行 URL。 |
 | Workbench View | 工作台视图 | Workbench 中由当前 User 私有持有、绑定一个 ServiceReference、结构化查询模板、参数配置和一种 renderer 配置的可变聚合根。 | 使用正整数 `version` 乐观并发；不保存查询结果、cursor、Token、SQL 或 Service 管理 DTO。 |
 | Data Application | 数据应用 | Workbench 将一个或多个 Workbench View 的已校验配置复制为自身 Component 快照，并拥有草稿、页面布局、参数绑定、发布、下线和稳定运行入口的独立聚合根。 | 不等同于 System Application；运行时不回读来源 View，不保存查询结果、凭据或 Service URL。 |
-| Application Revision | 应用发布修订 | Data Application 每次发布产生的不可变运行快照，包含当次名称、说明、Component、页面布局和参数绑定。 | 使用独立 `revision_number` 表达业务发布版次，不复用聚合根并发字段 `version`；CatalogEntry 标识 Data Application，不标识单个 Revision。 |
+| Application Revision | 应用发布修订 | Data Application 每次发布产生的不可变运行快照，包含当次名称、说明、Component、页面布局、应用展示模式、参数绑定和选择绑定。 | 使用独立 `revision_number` 表达业务发布版次，不复用聚合根并发字段 `version`；CatalogEntry 标识 Data Application，不标识单个 Revision。 |
+| Selection Binding | 选择绑定 | Data Application Revision 中把一个源 Component 当前结果的显式标量字段原子写入 Application Parameter 的声明式配置。 | 目标 Component 只由既有 Parameter Binding 推导；不保存选择值、任意表达式、URL、ServiceReference 或查询片段，首期只用于同页组件联动和受控下钻。 |
+| Application Display Mode | 应用展示模式 | Data Application 页面在交互分析或大屏展示场景中的运行呈现方式。 | 当前稳定值为 `desktop`、`wallboard`；只改变同一页面布局行为，不改变 Component、Service 查询或授权。全屏是浏览器会话状态，不属于发布快照。 |
+| Application Refresh Policy | 应用刷新策略 | Data Application 页面声明的浏览器前台数据刷新间隔。 | 当前仅 `wallboard` 可启用，固定档位为关闭、30 秒、60 秒、300 秒；页面不可见时暂停，查询进行中时不叠加请求。它不创建 Task、Schedule、Execution 或后台计算。 |
+| Application Presentation Sections | 应用呈现区块 | Data Application 页面声明在正式运行入口中显示哪些交互与说明区块。 | 固定区块为 `title`、`parameters`、`query_actions`；修订状态、刷新状态、全屏入口、Component 标题和错误提示不属于可隐藏区块。仅 wallboard 可隐藏区块，且不能形成无法首次查询或无法提供必填参数的页面。 |
 | content | 内容 | 可被按流读取、写入或 range 读取的底层内容对象。 | 例如文件、对象存储 object、容器 entry；由 `contentio.Ref` 定位。 |
 | CAD data item | CAD 数据项 | 保留图层、块、布局、标注等 CAD 原生组织语义的设计图纸数据项。 | 当前内置二维 `dwg`、`dxf`，统一使用 `data_type=cad`；entity-as-row 不改变源 item 类型，CAD→GIS 输出是新的 table item。 |
 | data item | 数据项 | ADDP 管理、扫描、预览、检索、授权和传输的核心数据对象。 | 概念层统一称为数据项。 |
@@ -443,7 +450,7 @@
 5. `spatial`、`temporal`、`statistics`、`extraction`、`semantic`、`partitioning`、`indexing` 等是横切能力，不新增为基础数据类型。
 6. 扫描深度统一使用 `scan_depth`，已完成深度统一使用 `scanned_depth`。不再使用 `scan_level`、`deep state`、`refresh_policy`、`if_stale` 等额外术语。
 7. 面向最终用户的 UI 使用引擎自己的原生术语，例如 `Schema`、数据库、`Bucket`、目录、`Collection`；不得展示 `engine catalog root`、`engine catalog node`、`meta node`、`meta item` 等内部术语。
-8. 靠近 Engine / Plugin / Manager 探查入口的内部契约使用 `EngineCatalog*` 词族，例如 `EngineCatalogRoot`、`EngineCatalogEntry`、`EngineCatalogPath`；既有线上字段 `catalog_paths` 由 Engine 上下文限定并保留。裸名 `Catalog` 和 `CatalogEntry` 只用于企业数据目录，不再表示引擎原生目录。
+8. 靠近 Engine / Plugin / Manager 探查入口的内部契约使用 `EngineCatalog*` 词族，例如 `EngineCatalogRoot`、`EngineCatalogEntry`、`EngineCatalogPath`；既有线上字段 `catalog_paths` 由 Engine 上下文限定并保留。裸名 `Catalog` 和 `CatalogEntry` 只用于企业资源目录，不再表示引擎原生目录。
 9. 靠近 Meta 存储和扫描结果的内部契约使用 `node` / `item` 体系，例如 `meta_node`、`meta_item`、`node_id`、`item_id`。`node` 表达 Meta 树结构，`item` 表达已识别数据项，不应与 Engine Catalog entry 混用。
 10. `resource` 只作为 UI 或资源树展示语境中的宽泛称呼使用。Meta 模块、Engine 插件接口和跨模块 API 不应新增 `resource_*` 字段来替代已有 Engine Catalog、`node_*` 或 `item_*` 术语。
 11. Notebook Native Engine Facade 的公开方法、参数和返回对象使用具体引擎原生术语；`EngineCatalogPath`、`EngineCatalogEntry` 和 `EngineCatalogFacts` 只作为其内部实现契约，不要求 Notebook 使用者理解。

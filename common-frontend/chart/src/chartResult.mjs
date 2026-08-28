@@ -51,3 +51,10 @@ export function buildChartOption(rows, config) {
     }))
   }
 }
+
+export function resultSelectionFromChartEvent(event, rowCount) {
+  const rowIndex = event?.dataIndex
+  return Number.isInteger(rowIndex) && rowIndex >= 0 && rowIndex < rowCount
+    ? { row_index: rowIndex }
+    : null
+}

@@ -16,8 +16,8 @@
           </div>
 
           <!-- 分隔线 + 目录标题 -->
-          <div class="catalog-section-header">
-            <span>{{ t('asset.assetManager.catalog') }}</span>
+          <div class="category-section-header">
+            <span>{{ t('asset.assetManager.category') }}</span>
             <el-button link type="primary" size="small" @click="openAddRootCategory">{{ t('asset.assetManager.newButton') }}</el-button>
           </div>
 
@@ -78,10 +78,10 @@
           <el-button size="small" type="success" @click="batchPublish">{{ t('asset.assetManager.batchPublish') }}</el-button>
           <el-button size="small" @click="batchOffline">{{ t('asset.assetManager.batchOffline') }}</el-button>
           <el-dropdown @command="batchCategorize">
-            <el-button size="small">{{ t('asset.assetManager.assignCatalog') }} <el-icon><ArrowDown /></el-icon></el-button>
+            <el-button size="small">{{ t('asset.assetManager.assignCategory') }} <el-icon><ArrowDown /></el-icon></el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item :command="null">{{ t('asset.assetManager.clearCatalog') }}</el-dropdown-item>
+                <el-dropdown-item :command="null">{{ t('asset.assetManager.clearCategory') }}</el-dropdown-item>
                 <el-dropdown-item v-for="cat in flatCategories" :key="cat.id" :command="cat.id">
                   {{ cat.name }}
                 </el-dropdown-item>
@@ -105,9 +105,9 @@
             </template>
           </el-table-column>
           <el-table-column prop="type_name" :label="t('asset.assetManager.type')" width="90" />
-          <el-table-column prop="catalog_name" :label="t('asset.assetManager.catalog')" width="120" show-overflow-tooltip>
+          <el-table-column prop="category_name" :label="t('asset.assetManager.category')" width="120" show-overflow-tooltip>
             <template #default="{ row }">
-              <span class="category-text">{{ row.catalog_name || '—' }}</span>
+              <span class="category-text">{{ row.category_name || '—' }}</span>
             </template>
           </el-table-column>
           <el-table-column prop="status" :label="t('asset.assetManager.status')" width="90">
@@ -157,8 +157,8 @@
     <!-- 新建/重命名分类弹窗 -->
     <el-dialog v-model="categoryDialogVisible" :title="categoryDialogTitle" width="400px">
       <el-form>
-        <el-form-item :label="t('asset.assetManager.catalogName')">
-          <el-input v-model="categoryForm.name" :placeholder="t('asset.assetManager.catalogNamePlaceholder')" />
+        <el-form-item :label="t('asset.assetManager.categoryName')">
+          <el-input v-model="categoryForm.name" :placeholder="t('asset.assetManager.categoryNamePlaceholder')" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -174,7 +174,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Folder, FolderOpened, ArrowDown } from '@element-plus/icons-vue'
-import { assetAPI, catalogAPI, typeDefinitionAPI } from '../api/asset'
+import { assetAPI, categoryAPI, typeDefinitionAPI } from '../api/asset'
 import { useI18n } from 'vue-i18n'
 import { navigateAssetRoute } from '../utils/moduleNavigation'
 
@@ -205,7 +205,7 @@ const filters = reactive({
 // 分类弹窗
 const categoryDialogVisible = ref(false)
 const categoryDialogTitle = ref('')
-const categoryForm = reactive({ name: '', parentId: null, editId: null })
+const categoryForm = reactive({ name: '', parentId: null, editId: null, version: null })
 
 // ===== 计算属性 =====
 const categoryTree = computed(() => buildTree(categories.value))
@@ -230,7 +230,7 @@ onMounted(async () => {
   await Promise.all([loadAssets(), loadUncategorizedCount()])
 })
 
-watch(() => route.query.catalog_id, async () => {
+watch(() => route.query.category_id, async () => {
   if (!categoryRouteReady.value) return
   if (!applyCategoryFromRoute()) {
     await navigateAssetRoute(router, '/assets', { history: 'replace' })
@@ -254,9 +254,9 @@ async function loadAssets() {
 
     // 分类过滤：null 时传 -1 表示"未分类"，有 id 时传 id
     if (selectedCategoryId.value === null) {
-      params.catalog_id = -1
+      params.category_id = -1
     } else if (selectedCategoryId.value !== undefined) {
-      params.catalog_id = selectedCategoryId.value
+      params.category_id = selectedCategoryId.value
     }
 
     const res = await assetAPI.list(params)
@@ -271,7 +271,7 @@ async function loadAssets() {
 
 async function loadUncategorizedCount() {
   try {
-    const res = await assetAPI.list({ catalog_id: -1, page: 1, page_size: 1 })
+    const res = await assetAPI.list({ category_id: -1, page: 1, page_size: 1 })
     uncategorizedCount.value = res.total || 0
   } catch {
     // ignore
@@ -331,8 +331,8 @@ async function batchOffline() {
 async function batchCategorize(categoryId) {
   if (!selectedIds.value.length) return
   try {
-    await assetAPI.batchCatalog(selectedIds.value, categoryId)
-    ElMessage.success(t('asset.assetManager.catalogAssignSuccess'))
+    await assetAPI.batchCategory(selectedIds.value, categoryId)
+    ElMessage.success(t('asset.assetManager.categoryAssignSuccess'))
     selectedIds.value = []
     await Promise.all([loadAssets(), loadCategories(), loadUncategorizedCount()])
   } catch (e) {
@@ -343,7 +343,7 @@ async function batchCategorize(categoryId) {
 // ===== 分类管理 =====
 async function loadCategories() {
   try {
-    const res = await catalogAPI.list()
+    const res = await categoryAPI.list()
     categories.value = res || []
   } catch {
     categories.value = []
@@ -360,14 +360,14 @@ async function loadTypes() {
 }
 
 function applyCategoryFromRoute() {
-  const catalogId = route.query.catalog_id
-  if (catalogId === undefined) {
+  const categoryId = route.query.category_id
+  if (categoryId === undefined) {
     selectedCategoryId.value = null
     return true
   }
-  if (typeof catalogId !== 'string') return false
+  if (typeof categoryId !== 'string') return false
 
-  const category = flatCategories.value.find(item => String(item.id) === catalogId)
+  const category = flatCategories.value.find(item => String(item.id) === categoryId)
   if (!category) return false
   selectedCategoryId.value = category.id
   return true
@@ -380,7 +380,7 @@ async function initializeCategoryRoute() {
 }
 
 function selectCategory(id) {
-  const query = id === null ? {} : { catalog_id: String(id) }
+  const query = id === null ? {} : { category_id: String(id) }
   navigateAssetRoute(router, { path: '/assets', query }, { history: 'replace' })
 }
 
@@ -400,7 +400,8 @@ function openAddRootCategory() {
   categoryForm.name = ''
   categoryForm.parentId = null
   categoryForm.editId = null
-  categoryDialogTitle.value = t('asset.assetManager.newRootCatalog')
+  categoryForm.version = null
+  categoryDialogTitle.value = t('asset.assetManager.newRootCategory')
   categoryDialogVisible.value = true
 }
 
@@ -408,7 +409,8 @@ function openAddSubCategory(parent) {
   categoryForm.name = ''
   categoryForm.parentId = parent.id
   categoryForm.editId = null
-  categoryDialogTitle.value = t('asset.assetManager.newRootCatalog') + `（${parent.name}）`
+  categoryForm.version = null
+  categoryDialogTitle.value = t('asset.assetManager.newRootCategory') + `（${parent.name}）`
   categoryDialogVisible.value = true
 }
 
@@ -416,20 +418,21 @@ function openRenameCategory(data) {
   categoryForm.name = data.name
   categoryForm.parentId = data.parent_id || null
   categoryForm.editId = data.id
-  categoryDialogTitle.value = t('asset.assetManager.renameCatalog')
+  categoryForm.version = data.version
+  categoryDialogTitle.value = t('asset.assetManager.renameCategory')
   categoryDialogVisible.value = true
 }
 
 async function submitCategory() {
   if (!categoryForm.name.trim()) {
-    ElMessage.warning(t('asset.assetManager.catalogNameRequired'))
+    ElMessage.warning(t('asset.assetManager.categoryNameRequired'))
     return
   }
   try {
     if (categoryForm.editId) {
-      await catalogAPI.update(categoryForm.editId, { name: categoryForm.name })
+      await categoryAPI.update(categoryForm.editId, { version: categoryForm.version, name: categoryForm.name })
     } else {
-      await catalogAPI.create({ name: categoryForm.name, parent_id: categoryForm.parentId })
+      await categoryAPI.create({ name: categoryForm.name, parent_id: categoryForm.parentId })
     }
     categoryDialogVisible.value = false
     await loadCategories()
@@ -441,7 +444,7 @@ async function submitCategory() {
 async function deleteCategory(data) {
   try {
     await ElMessageBox.confirm(`${t('asset.assetManager.deleteCategoryConfirm', { name: data.name })}`, t('asset.assetManager.hint'), { type: 'warning' })
-    await catalogAPI.delete(data.id)
+    await categoryAPI.delete(data.id, data.version)
     await loadCategories()
   } catch (e) {
     if (e !== 'cancel') ElMessage.error(e.response?.data?.error || t('asset.assetManager.deleteFailed'))
@@ -510,7 +513,7 @@ function buildTree(list) {
   color: var(--el-color-primary);
 }
 
-.catalog-section-header {
+.category-section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;

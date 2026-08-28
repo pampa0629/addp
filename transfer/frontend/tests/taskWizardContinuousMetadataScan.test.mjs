@@ -7,7 +7,7 @@ const wizardStateSource = await readFile(
   'utf8'
 )
 
-test('continuous 任务保持自动 Meta 扫描开启', () => {
-  assert.match(wizardStateSource, /auto_scan_metadata:\s*true/)
+test('持久化目标保持自动 Meta 扫描，runtime target 明确关闭', () => {
+  assert.match(wizardStateSource, /auto_scan_metadata:\s*targetBinding\.value\s*!==\s*['"]runtime['"]/)
   assert.doesNotMatch(wizardStateSource, /auto_scan_metadata:\s*!isContinuousTask\.value/)
 })

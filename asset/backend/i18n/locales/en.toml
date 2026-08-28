@@ -16,8 +16,11 @@ other = "Asset type management is read-only, configure via system initialization
 [asset.type.invalid_type_id]
 other = "Invalid type ID"
 
-[asset.catalog.not_found]
-other = "Catalog not found"
+[asset.category.not_found]
+other = "Asset category not found"
+
+[asset.category.version_conflict]
+other = "The asset category was updated by another user. Refresh and try again"
 
 [asset.asset.not_found]
 other = "Asset not found"
@@ -29,7 +32,7 @@ other = "Asset published"
 other = "Asset taken offline"
 
 [asset.asset.catalog_unavailable]
-other = "The enterprise data catalog is currently unavailable; try again later"
+other = "The enterprise catalog is currently unavailable; try again later"
 
 [asset.asset.version_conflict]
 other = "The asset was updated by another user; refresh and try again"

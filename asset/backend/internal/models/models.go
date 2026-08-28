@@ -98,20 +98,20 @@ type TypeFieldSchema struct {
 
 func (TypeFieldSchema) TableName() string { return "asset.type_field_schemas" }
 
-// Catalog 资产目录树（多级层级结构，资产单一归属）
-// 同级目录名称唯一性由数据库 partial index 保证（见 main.go 迁移 SQL）
-type Catalog struct {
+// AssetCategory 是资产目录中的多级分类节点，资产单一归属一个主分类。
+type AssetCategory struct {
 	ID          int64     `gorm:"primaryKey"        json:"id"`
 	TenantID    int64     `gorm:"not null;index"    json:"tenant_id"`
 	Name        string    `gorm:"size:200;not null" json:"name"`
 	ParentID    *int64    `gorm:"index"             json:"parent_id,omitempty"`
 	SortOrder   int       `gorm:"default:0"         json:"sort_order"`
 	Description string    `gorm:"size:500"          json:"description"`
+	Version     int64     `gorm:"not null;default:1" json:"version"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-func (Catalog) TableName() string { return "asset.catalogs" }
+func (AssetCategory) TableName() string { return "asset.categories" }
 
 // Asset 资产主表
 type Asset struct {
@@ -120,7 +120,7 @@ type Asset struct {
 	Name        string     `gorm:"size:500;not null"                         json:"name"`
 	Description string     `gorm:"size:2000"                                 json:"description"`
 	TypeID      int64      `gorm:"not null;index"                            json:"type_id"`
-	CatalogID   *int64     `gorm:"index"                                     json:"catalog_id,omitempty"`
+	CategoryID  *int64     `gorm:"index"                                     json:"category_id,omitempty"`
 	Tags        JSONBArray `gorm:"type:jsonb;default:'[]'"                   json:"tags"`
 	Status      string     `gorm:"size:50;not null;default:'draft';index"    json:"status"` // draft/published/offline
 	OwnerID     int64      `gorm:"not null;index"                            json:"owner_id"`

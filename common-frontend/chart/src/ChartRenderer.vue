@@ -8,7 +8,7 @@ import * as echarts from 'echarts/core'
 import { BarChart, LineChart, PieChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { buildChartOption, validateChartResult } from './chartResult.mjs'
+import { buildChartOption, resultSelectionFromChartEvent, validateChartResult } from './chartResult.mjs'
 
 echarts.use([BarChart, LineChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 
@@ -17,7 +17,7 @@ const props = defineProps({
   config: { type: Object, required: true },
   hasMore: { type: Boolean, default: false }
 })
-const emit = defineEmits(['invalid'])
+const emit = defineEmits(['invalid', 'result-select'])
 const element = ref(null)
 let chart
 let resizeObserver
@@ -31,7 +31,13 @@ async function render() {
   }
   await nextTick()
   if (!element.value) return
-  if (!chart) chart = echarts.init(element.value)
+  if (!chart) {
+    chart = echarts.init(element.value)
+    chart.on('click', (event) => {
+      const selection = resultSelectionFromChartEvent(event, props.rows.length)
+      if (selection) emit('result-select', selection)
+    })
+  }
   chart.setOption(buildChartOption(props.rows, props.config), true)
 }
 

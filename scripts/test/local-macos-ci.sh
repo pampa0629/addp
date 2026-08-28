@@ -203,6 +203,11 @@ prepare_frontends() {
   done
 }
 
+prepare_playwright_browser() {
+  echo "==> Prepare Playwright Chromium"
+  npm --prefix model/frontend exec -- playwright install chromium
+}
+
 prepare_python_venv() {
   local name=$1
   local venv=$2
@@ -234,6 +239,7 @@ prepare_python_venv() {
 
 prepare_dependencies() {
   prepare_frontends
+  prepare_playwright_browser
   prepare_python_venv \
     common-python common-python/.venv "" './common-python[dev]' \
     common-python/pyproject.toml

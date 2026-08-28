@@ -4,9 +4,9 @@
       <el-tag size="small" class="type-tag">{{ getTypeName(asset.type_code, asset.type_name) }}</el-tag>
     </div>
     <div class="asset-name">{{ asset.name }}</div>
-    <div class="catalog-path" v-if="asset.catalog_name">
+    <div class="category-path" v-if="asset.category_name">
       <el-icon><FolderOpened /></el-icon>
-      <span>{{ asset.catalog_name }}</span>
+      <span>{{ asset.category_name }}</span>
     </div>
     <p class="description">{{ asset.description || t('portal.common.noDescription') }}</p>
     <div class="tags" v-if="asset.tags?.length">
@@ -72,7 +72,7 @@ defineProps({
   white-space: nowrap;
 }
 
-.catalog-path {
+.category-path {
   display: flex;
   align-items: center;
   gap: 4px;

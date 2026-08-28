@@ -1,13 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildGeoJSONFeatures, spatialPreviewDescriptor, validateGeoJSONResult } from '../src/utils/geoJSONResult.mjs'
+import { buildGeoJSONFeatures, resultSelectionFromFeature, spatialPreviewDescriptor, validateGeoJSONResult } from '../src/utils/geoJSONResult.mjs'
 
 test('builds GeoJSON features from the descriptor-selected geometry field', () => {
   const rows = [{ shape: { type: 'Point', coordinates: [1, 2] }, name: 'A', hidden: 'x' }]
   const features = buildGeoJSONFeatures(rows, { geometry_field: 'shape', tooltip_fields: ['name'] })
   assert.deepEqual(features[0].geometry.coordinates, [1, 2])
   assert.deepEqual(features[0].properties, { name: 'A' })
+  assert.deepEqual(resultSelectionFromFeature(features[0], rows.length), { row_index: 0 })
   assert.equal(validateGeoJSONResult(rows, true).reason, 'partial_result')
+})
+
+test('rejects feature selections outside the current result', () => {
+  assert.equal(resultSelectionFromFeature({ id: '2' }, 2), null)
+  assert.equal(resultSelectionFromFeature({ id: 'not-an-index' }, 2), null)
 })
 
 test('uses explicit spatial contract facts without guessing a field name', () => {

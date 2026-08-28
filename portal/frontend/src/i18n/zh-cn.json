@@ -69,7 +69,7 @@
       "noResults": "未找到匹配的数据资产，请尝试其他关键词"
     },
     "assetDetail": {
-      "uncategorized": "未编目",
+      "uncategorized": "未分类",
       "pendingTooltip": "已提交申请，等待审批",
       "reviewing": "审批中",
       "fulfilling": "授权履约中",
@@ -80,7 +80,7 @@
       "description": "描述",
       "basicInfo": "基本信息",
       "assetType": "资产类型",
-      "catalog": "所属目录",
+      "category": "所属资产目录",
       "owner": "负责人",
       "publishedAt": "上架时间",
       "assetId": "资产 ID",
@@ -124,9 +124,9 @@
       "algo_model": "算法模型",
       "application": "数据应用"
     },
-    "catalog": {
+    "category": {
       "title": "资产目录",
-      "browse": "目录浏览",
+      "browse": "资产目录浏览",
       "totalAssets": "共 {count} 个资产",
       "noAssets": "此目录下暂无已上架资产"
     }

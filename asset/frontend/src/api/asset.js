@@ -6,14 +6,14 @@ export const typeDefinitionAPI = {
   get: (id) => client.get(`/asset/type-definitions/${id}`)
 }
 
-// 目录管理
-export const catalogAPI = {
-  tree: () => client.get('/asset/catalogs/tree'),
-  list: () => client.get('/asset/catalogs'),
-  get: (id) => client.get(`/asset/catalogs/${id}`),
-  create: (data) => client.post('/asset/catalogs', data),
-  update: (id, data) => client.put(`/asset/catalogs/${id}`, data),
-  delete: (id) => client.delete(`/asset/catalogs/${id}`)
+// 资产分类管理
+export const categoryAPI = {
+  tree: () => client.get('/asset/categories/tree'),
+  list: () => client.get('/asset/categories'),
+  get: (id) => client.get(`/asset/categories/${id}`),
+  create: (data) => client.post('/asset/categories', data),
+  update: (id, data) => client.put(`/asset/categories/${id}`, data),
+  delete: (id, version) => client.delete(`/asset/categories/${id}`, { data: { version } })
 }
 
 // 资产管理
@@ -29,12 +29,12 @@ export const assetAPI = {
 	// 批量操作
   batchPublish: (ids) => client.post('/asset/assets/batch-publish', { ids }),
   batchOffline: (ids) => client.post('/asset/assets/batch-offline', { ids }),
-  batchCatalog: (ids, catalogId) => client.post('/asset/assets/batch-catalog', { ids, catalog_id: catalogId }),
+  batchCategory: (ids, categoryId) => client.post('/asset/assets/batch-category', { ids, category_id: categoryId }),
   // 类型扩展字段定义
   typeFields: (typeId) => client.get(`/asset/assets/type-fields/${typeId}`)
 }
 
-// 企业数据目录只用于管理员显式选择资产组件。
+// 企业资源目录只用于管理员显式选择资产组件。
 export const enterpriseCatalogAPI = {
 	list: (params) => client.get('/catalog/entries', { params }),
 	get: (id) => client.get(`/catalog/entries/${id}`)

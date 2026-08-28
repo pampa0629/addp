@@ -85,7 +85,7 @@ func (s *TypeService) SeedBuiltinTypes() error {
 			TenantID:    0,
 			Name:        "数据应用",
 			Code:        "application",
-			Description: "由企业数据目录中的 Workbench 数据应用发布形成",
+			Description: "由企业资源目录中的 Workbench 数据应用发布形成",
 			Enabled:     true,
 			SortOrder:   6,
 		},

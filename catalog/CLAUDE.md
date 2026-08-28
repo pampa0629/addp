@@ -1,11 +1,11 @@
 # Catalog 模块开发说明
 
-Catalog 是企业数据目录的唯一事实源，负责稳定目录身份、来源绑定、业务语义关联、责任关系、目录可见性和治理状态。
+Catalog 是企业资源目录的唯一事实源，负责稳定目录身份、来源绑定、业务语义关联、责任关系、目录可见性和治理状态。
 
 ## 必读文档
 
-- `docs/concepts/addp企业数据目录体系图.md`
-- `docs/spec/addp企业数据目录实现规范.md`
+- `docs/concepts/addp企业资源目录体系图.md`
+- `docs/spec/addp企业资源目录实现规范.md`
 - `docs/concepts/addp术语表.md`
 - `docs/spec/addp-API设计规范.md`
 - `docs/spec/addp新模块开发指南.md`

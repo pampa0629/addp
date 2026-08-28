@@ -10,7 +10,7 @@
       "none": "Not declared"
     },
     "layout": {
-      "title": "Enterprise Data Catalog",
+      "title": "Enterprise Catalog",
       "entries": "Catalog Browse",
       "myCatalog": "My Catalog",
       "collections": "Project Group Collections",
@@ -20,7 +20,7 @@
       "logout": "Sign out"
     },
     "login": {
-      "title": "Enterprise Data Catalog",
+      "title": "Enterprise Catalog",
       "subtitle": "Catalog",
       "username": "Username",
       "password": "Password",

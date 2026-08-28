@@ -47,15 +47,15 @@ other = "当前项目组中已存在同名目录集合"
 [permissions.catalog.inventory.read.name]
 other = "查看企业资源盘点"
 [permissions.catalog.inventory.read.description]
-other = "查看自动发现且尚未完成业务编目的企业数据目录条目"
+other = "查看自动发现且尚未完成业务编目的企业资源目录条目"
 [permissions.catalog.reference.read.name]
 other = "解析目录引用"
 [permissions.catalog.reference.read.description]
 other = "供 Asset 运行时精确校验 CatalogEntry 的可组合与可发布状态"
 [permissions.catalog.entry.read.name]
-other = "查看企业数据目录"
+other = "查看企业资源目录"
 [permissions.catalog.entry.read.description]
-other = "按目录可见性查看企业数据目录条目"
+other = "按目录可见性查看企业资源目录条目"
 [permissions.catalog.collection.read.name]
 other = "查看项目组目录集合"
 [permissions.catalog.collection.read.description]
@@ -65,7 +65,7 @@ other = "维护项目组目录集合"
 [permissions.catalog.collection.update.description]
 other = "创建、更新和删除当前参与项目组拥有的企业目录集合"
 [permissions.catalog.entry.update.name]
-other = "维护企业数据目录"
+other = "维护企业资源目录"
 [permissions.catalog.entry.update.description]
 other = "维护目录业务信息、语义关联、责任和可见性"
 [permissions.catalog.entry.certify.name]

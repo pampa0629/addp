@@ -52,7 +52,7 @@
           <el-descriptions-item :label="t('asset.assetDetail.assetType')">
             <el-tag size="small">{{ asset.type_name || '-' }}</el-tag>
           </el-descriptions-item>
-		  <el-descriptions-item :label="t('asset.assetDetail.category')">{{ asset.catalog_name || '-' }}</el-descriptions-item>
+		  <el-descriptions-item :label="t('asset.assetDetail.category')">{{ asset.category_name || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('asset.assetDetail.tags')" :span="2">
             <el-tag v-for="tag in (asset.tags || [])" :key="tag" size="small" style="margin-right: 4px">{{ tag }}</el-tag>
             <span v-if="!asset.tags?.length">-</span>
@@ -107,7 +107,7 @@
 
         <el-form-item :label="t('asset.assetDetail.category')">
           <el-cascader
-			v-model="form.catalog_id"
+			v-model="form.category_id"
             :options="categoryOptions"
             :props="{ checkStrictly: true, value: 'id', label: 'name', children: 'children', emitPath: false }"
             :placeholder="t('asset.assetDetail.categoryPlaceholder')"
@@ -164,7 +164,7 @@ import { useConsolePageDescriptor } from '@common-ui'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import CatalogEntryPicker from '../components/CatalogEntryPicker.vue'
-import { assetAPI, catalogAPI, typeDefinitionAPI } from '../api/asset'
+import { assetAPI, categoryAPI, typeDefinitionAPI } from '../api/asset'
 import { useI18n } from 'vue-i18n'
 import { navigateAssetRoute } from '../utils/moduleNavigation'
 
@@ -196,7 +196,7 @@ const form = reactive({
 	version: 0,
   name: '',
 	type_id: null,
-	catalog_id: null,
+	category_id: null,
   description: '',
 	tags: [],
 	components: []
@@ -216,7 +216,7 @@ const categoryOptions = computed(() => categoryTree.value)
 async function loadData() {
   loading.value = true
   try {
-	const [catRes, typeRes] = await Promise.all([catalogAPI.tree(), typeDefinitionAPI.list()])
+	const [catRes, typeRes] = await Promise.all([categoryAPI.tree(), typeDefinitionAPI.list()])
 	categoryTree.value = catRes || []
 	typeOptions.value = (typeRes || []).filter(item => item.enabled)
     await loadAsset()
@@ -237,7 +237,7 @@ watch([editMode, asset], ([editing, currentAsset]) => {
 	form.version = currentAsset.version
     form.name = currentAsset.name
 	form.type_id = currentAsset.type_id
-	form.catalog_id = currentAsset.catalog_id || null
+	form.category_id = currentAsset.category_id || null
     form.description = currentAsset.description || ''
     form.tags = [...(currentAsset.tags || [])]
 	form.components = (currentAsset.components || []).map(item => ({
@@ -256,7 +256,7 @@ async function save() {
 	  version: form.version,
       name: form.name,
 	  type_id: form.type_id,
-	  catalog_id: form.catalog_id || null,
+	  category_id: form.category_id || null,
       description: form.description,
 	  tags: form.tags,
 	  components: form.components

@@ -76,10 +76,17 @@ func main() {
 	workbenchGrantClient := commonClient.NewWorkbenchResourceGrantClient(cfg.WorkbenchURL, serviceTokenSource, nil)
 	indexer, err := search.NewIndexer(cfg.MeilisearchURL, cfg.MeilisearchMasterKey, cfg.MeilisearchPublishedAssetIndex)
 	if err != nil {
-		log.Printf("⚠️  Meilisearch 初始化失败，搜索功能将 fallback 到数据库: %v", err)
+		log.Printf("⚠️  Meilisearch 初始化失败，资产关键词搜索不可用: %v", err)
 		indexer = nil
 	}
 	assetSvc := service.NewAssetService(db, catalogClient, indexer)
+	if err := assetSvc.RebuildPublishedIndex(); err != nil {
+		log.Printf("⚠️  已上架资产搜索投影重建失败，资产关键词搜索暂不可用: %v", err)
+		indexer = nil
+		assetSvc = service.NewAssetService(db, catalogClient, nil)
+	} else if indexer != nil && indexer.Enabled() {
+		log.Printf("✅ 已上架资产搜索投影已重建")
+	}
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 
 	var redisClient *redis.Client

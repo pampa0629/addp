@@ -31,6 +31,24 @@ func TestAssetSchemaMigrationAgainstPostgres(t *testing.T) {
 	); INSERT INTO asset.authorizations (tenant_id, asset_id, user_id, credential) VALUES (7, 9, 91, 'legacy-token')`).Error; err != nil {
 		t.Fatalf("seed legacy authorization: %v", err)
 	}
+	if err := db.Exec(`CREATE TABLE asset.catalogs (
+		id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, name varchar(200) NOT NULL,
+		parent_id bigint, sort_order bigint DEFAULT 0, description varchar(500),
+		created_at timestamptz, updated_at timestamptz
+	); CREATE INDEX idx_asset_catalogs_tenant_id ON asset.catalogs (tenant_id);
+	CREATE INDEX idx_asset_catalogs_parent_id ON asset.catalogs (parent_id);
+	CREATE TABLE asset.assets (
+		id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, name varchar(500) NOT NULL,
+		description varchar(2000), type_id bigint NOT NULL, catalog_id bigint,
+		tags jsonb DEFAULT '[]', status varchar(50) NOT NULL DEFAULT 'draft',
+		owner_id bigint NOT NULL, version bigint NOT NULL DEFAULT 1, published_at timestamptz,
+		created_by bigint NOT NULL, updated_by bigint, created_at timestamptz, updated_at timestamptz
+	); CREATE INDEX idx_asset_assets_catalog_id ON asset.assets (catalog_id);
+	INSERT INTO asset.catalogs (tenant_id, name) VALUES (7, 'Education');
+	INSERT INTO asset.assets (tenant_id, name, type_id, catalog_id, owner_id, created_by)
+	VALUES (7, 'Legacy categorized asset', 1, 1, 11, 11)`).Error; err != nil {
+		t.Fatalf("seed legacy asset category storage: %v", err)
+	}
 	if err := Migrate(db); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
@@ -48,6 +66,37 @@ func TestAssetSchemaMigrationAgainstPostgres(t *testing.T) {
 	}
 	if legacyColumnCount != 0 || authorizationCount != 0 || migrationCount != 1 {
 		t.Fatalf("legacy_columns=%d authorizations=%d migration=%d", legacyColumnCount, authorizationCount, migrationCount)
+	}
+	var category models.AssetCategory
+	if err := db.Where("tenant_id = ? AND name = ?", 7, "Education").First(&category).Error; err != nil {
+		t.Fatalf("renamed AssetCategory was not preserved: %v", err)
+	}
+	var categorizedAsset models.Asset
+	if err := db.Where("tenant_id = ? AND name = ?", 7, "Legacy categorized asset").First(&categorizedAsset).Error; err != nil {
+		t.Fatalf("categorized Asset was not preserved: %v", err)
+	}
+	if categorizedAsset.CategoryID == nil || *categorizedAsset.CategoryID != category.ID || category.Version != 1 {
+		t.Fatalf("renamed category storage category=%#v asset=%#v", category, categorizedAsset)
+	}
+	var legacyCategoryObjectCount, currentCategoryObjectCount int64
+	if err := db.Raw(`SELECT count(*) FROM pg_class object
+		JOIN pg_namespace namespace ON namespace.oid = object.relnamespace
+		WHERE namespace.nspname = 'asset' AND object.relname IN (
+		  'catalogs_id_seq', 'catalogs_pkey', 'idx_asset_catalogs_tenant_id',
+		  'idx_asset_catalogs_parent_id', 'idx_asset_assets_catalog_id'
+		)`).Scan(&legacyCategoryObjectCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Raw(`SELECT count(*) FROM pg_class object
+		JOIN pg_namespace namespace ON namespace.oid = object.relnamespace
+		WHERE namespace.nspname = 'asset' AND object.relname IN (
+		  'categories_id_seq', 'categories_pkey', 'idx_asset_categories_tenant_id',
+		  'idx_asset_categories_parent_id', 'idx_asset_assets_category_id'
+		)`).Scan(&currentCategoryObjectCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if legacyCategoryObjectCount != 0 || currentCategoryObjectCount != 5 {
+		t.Fatalf("legacy category objects=%d current category objects=%d", legacyCategoryObjectCount, currentCategoryObjectCount)
 	}
 
 	typeDefinition := models.TypeDefinition{TenantID: 0, Name: "Data application", Code: "application", Enabled: true}

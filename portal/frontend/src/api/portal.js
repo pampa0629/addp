@@ -10,10 +10,10 @@ export const searchAPI = {
   search: (params) => client.get('/portal/search', { params })
 }
 
-// 目录浏览
-export const catalogAPI = {
-  list: () => client.get('/portal/catalogs'),
-  getAssets: (id, params) => client.get(`/portal/catalogs/${id}/assets`, { params })
+// 资产分类浏览
+export const categoryAPI = {
+  list: () => client.get('/portal/categories'),
+  getAssets: (id, params) => client.get(`/portal/categories/${id}/assets`, { params })
 }
 
 // 资产详情

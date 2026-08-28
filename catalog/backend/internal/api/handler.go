@@ -495,7 +495,7 @@ func (h *Handler) ListGovernanceTasks(c *gin.Context) {
 }
 
 // ListEntries 列出当前调用方可发现的企业目录条目。
-// @Summary 列出企业数据目录 | List enterprise catalog entries
+// @Summary 列出企业资源目录 | List enterprise catalog entries
 // @Description 按目录可见性返回当前租户的企业目录条目；目录可见不代表底层数据内容授权 | Return enterprise catalog entries visible to the caller; catalog visibility does not grant data content access
 // @Tags Catalog
 // @Produce json

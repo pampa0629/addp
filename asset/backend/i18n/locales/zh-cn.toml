@@ -16,8 +16,11 @@ other = "资产类型管理为只读，请通过系统初始化配置"
 [asset.type.invalid_type_id]
 other = "无效的类型ID"
 
-[asset.catalog.not_found]
-other = "目录不存在"
+[asset.category.not_found]
+other = "资产分类不存在"
+
+[asset.category.version_conflict]
+other = "资产分类已被其他人更新，请刷新后重试"
 
 [asset.asset.not_found]
 other = "资产不存在"
@@ -29,7 +32,7 @@ other = "资产已上架"
 other = "资产已下架"
 
 [asset.asset.catalog_unavailable]
-other = "企业数据目录当前不可用，请稍后重试"
+other = "企业资源目录当前不可用，请稍后重试"
 
 [asset.asset.version_conflict]
 other = "资产已被其他人更新，请刷新后重试"

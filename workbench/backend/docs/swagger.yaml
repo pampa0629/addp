@@ -188,18 +188,41 @@ definitions:
     type: object
   github_com_addp_workbench_internal_models.DataApplicationPage:
     properties:
+      display_mode:
+        enum:
+        - desktop
+        - wallboard
+        type: string
       id:
         type: string
       placements:
         items:
           $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationComponentLayout'
         type: array
+      refresh_interval_seconds:
+        enum:
+        - 0
+        - 30
+        - 60
+        - 300
+        type: integer
       title:
         type: string
+      visible_sections:
+        items:
+          enum:
+          - title
+          - parameters
+          - query_actions
+          type: string
+        type: array
     required:
+    - display_mode
     - id
     - placements
+    - refresh_interval_seconds
     - title
+    - visible_sections
     type: object
   github_com_addp_workbench_internal_models.DataApplicationParameter:
     properties:
@@ -277,6 +300,28 @@ definitions:
       snapshot:
         $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationSnapshot'
     type: object
+  github_com_addp_workbench_internal_models.DataApplicationSelectionAssignment:
+    properties:
+      application_parameter_key:
+        type: string
+      source_field:
+        type: string
+    required:
+    - application_parameter_key
+    - source_field
+    type: object
+  github_com_addp_workbench_internal_models.DataApplicationSelectionBinding:
+    properties:
+      assignments:
+        items:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationSelectionAssignment'
+        type: array
+      source_component_id:
+        type: string
+    required:
+    - assignments
+    - source_component_id
+    type: object
   github_com_addp_workbench_internal_models.DataApplicationSnapshot:
     properties:
       components:
@@ -295,6 +340,10 @@ definitions:
         type: array
       schema_version:
         type: string
+      selection_bindings:
+        items:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationSelectionBinding'
+        type: array
     required:
     - components
     - page

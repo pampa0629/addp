@@ -104,7 +104,7 @@ type DSNProvider interface {
 
 ## 三、Provider 分层
 
-本节中的 Catalog 一律指 **Engine Catalog / 引擎目录**。跨模块公共类型使用 `EngineCatalog*` 前缀；不带限定词的 `Catalog` 和 `CatalogEntry` 保留给企业数据目录。既有 `/engines/:id/catalog/...` 路由、`storage.catalog*` capability JSON 和 `catalog.path/v1` 版本值由 Engine 上下文唯一限定，第一阶段保留。
+本节中的 Catalog 一律指 **Engine Catalog / 引擎目录**。跨模块公共类型使用 `EngineCatalog*` 前缀；不带限定词的 `Catalog` 和 `CatalogEntry` 保留给企业资源目录。既有 `/engines/:id/catalog/...` 路由、`storage.catalog*` capability JSON 和 `catalog.path/v1` 版本值由 Engine 上下文唯一限定，第一阶段保留。
 
 ### EngineCatalogModelProvider
 

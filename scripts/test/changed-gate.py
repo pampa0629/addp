@@ -70,6 +70,10 @@ def file_consumers(repository: Path, pattern: str, marker: str) -> set[str]:
     consumers = set()
     for relative_path in MODULE_GATE.git_files(repository, pattern):
         path = repository / relative_path
+        # git ls-files still reports tracked paths deleted in the worktree. A
+        # rename or removal must not make the changed gate try to read them.
+        if not path.is_file():
+            continue
         if marker in path.read_text(encoding="utf-8", errors="ignore"):
             consumers.add(relative_path.split("/", 1)[0])
     return consumers

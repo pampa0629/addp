@@ -13,9 +13,9 @@
             <h2 class="asset-title">{{ asset.name }}</h2>
             <el-tag class="type-badge">{{ getTypeName(asset.type_code, asset.type_name) }}</el-tag>
           </div>
-          <div class="catalog-path">
+          <div class="category-path">
             <el-icon><FolderOpened /></el-icon>
-            <span>{{ asset.catalog_name || t('portal.assetDetail.uncategorized') }}</span>
+            <span>{{ asset.category_name || t('portal.assetDetail.uncategorized') }}</span>
           </div>
           <div class="tags" v-if="asset.tags?.length">
             <el-tag
@@ -60,8 +60,8 @@
           <el-descriptions-item :label="t('portal.assetDetail.assetType')">
             {{ getTypeName(asset.type_code, asset.type_name) }}
           </el-descriptions-item>
-          <el-descriptions-item :label="t('portal.assetDetail.catalog')">
-            {{ asset.catalog_name || t('portal.assetDetail.uncategorized') }}
+          <el-descriptions-item :label="t('portal.assetDetail.category')">
+            {{ asset.category_name || t('portal.assetDetail.uncategorized') }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('portal.assetDetail.owner')">
             {{ asset.owner_name || '-' }}
@@ -309,7 +309,7 @@ async function fetchAsset() {
 }
 
 async function handleBack() {
-  const target = assetDetailReturnTarget(window.history.state?.back, asset.value?.catalog_id)
+  const target = assetDetailReturnTarget(window.history.state?.back, asset.value?.category_id)
   if (target.history === 'back') {
     router.back()
     return
@@ -410,7 +410,7 @@ watch(() => route.params.id, async () => {
   font-size: 12px;
 }
 
-.catalog-path {
+.category-path {
   display: flex;
   align-items: center;
   gap: 6px;

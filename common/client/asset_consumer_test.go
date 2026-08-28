@@ -96,3 +96,37 @@ func TestAssetClientCallsOnlyConsumerProjection(t *testing.T) {
 		t.Fatalf("GetAssets: %v", err)
 	}
 }
+
+func TestAssetClientUsesAssetCategoryContract(t *testing.T) {
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/asset/consumer/assets":
+			if r.URL.Query().Get("category_id") != "12" || r.URL.Query().Get("catalog_id") != "" {
+				t.Errorf("asset category query = %q", r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{"data":[],"total":0}`))
+		case "/api/v1/asset/consumer/categories":
+			_, _ = w.Write([]byte(`[{"id":12,"name":"Education","count":1,"children":[]}]`))
+		default:
+			t.Errorf("unexpected path = %q", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	categoryID := int64(12)
+	client := NewAssetClient(server.URL)
+	if _, err := client.GetAssets(context.Background(), "user-access-token", AssetQueryOptions{CategoryID: &categoryID}); err != nil {
+		t.Fatalf("GetAssets: %v", err)
+	}
+	categories, err := client.GetCategories(context.Background(), "user-access-token")
+	if err != nil || len(categories) != 1 || categories[0].ID != categoryID {
+		t.Fatalf("GetCategories() = %#v, %v", categories, err)
+	}
+	if requestCount != 2 {
+		t.Fatalf("request count = %d, want 2", requestCount)
+	}
+}

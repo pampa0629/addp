@@ -29,7 +29,7 @@ type CleanupService struct {
 type AssetCleanupStats struct {
 	TypeDefinitions       int      `json:"type_definitions"`
 	TypeFieldSchemas      int      `json:"type_field_schemas"`
-	Catalogs              int      `json:"catalogs"`
+	Categories            int      `json:"categories"`
 	Assets                int      `json:"assets"`
 	AssetComponents       int      `json:"asset_components"`
 	AssetExtFields        int      `json:"asset_ext_fields"`
@@ -200,7 +200,7 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 type assetCleanupCandidates struct {
 	typeDefinitions  []models.TypeDefinition
 	typeFieldSchemas []models.TypeFieldSchema
-	catalogs         []models.Catalog
+	categories         []models.AssetCategory
 	assets           []models.Asset
 	assetComponents  []models.AssetComponent
 	assetExtFields   []models.AssetExtField
@@ -213,7 +213,7 @@ func (c assetCleanupCandidates) stats() *AssetCleanupStats {
 	return &AssetCleanupStats{
 		TypeDefinitions:  len(c.typeDefinitions),
 		TypeFieldSchemas: len(c.typeFieldSchemas),
-		Catalogs:         len(c.catalogs),
+		Categories:       len(c.categories),
 		Assets:           len(c.assets),
 		AssetComponents:  len(c.assetComponents),
 		AssetExtFields:   len(c.assetExtFields),
@@ -251,7 +251,7 @@ func (s *CleanupService) listTenantCandidates(ctx context.Context, tenantID int6
 			return candidates, err
 		}
 	}
-	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&candidates.catalogs).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&candidates.categories).Error; err != nil {
 		return candidates, err
 	}
 	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&candidates.assets).Error; err != nil {
@@ -319,7 +319,7 @@ func (s *CleanupService) physicalCleanup(ctx context.Context, candidates assetCl
 		{model: &models.AssetExtField{}, ids: assetExtFieldIDs(candidates.assetExtFields), name: "asset ext fields"},
 		{model: &models.AssetComponent{}, ids: assetComponentIDs(candidates.assetComponents), name: "asset components"},
 		{model: &models.Asset{}, ids: assetIDs(candidates.assets), name: "assets"},
-		{model: &models.Catalog{}, ids: catalogIDs(candidates.catalogs), name: "catalogs"},
+		{model: &models.AssetCategory{}, ids: categoryIDs(candidates.categories), name: "categories"},
 		{model: &models.TypeFieldSchema{}, ids: typeFieldSchemaIDs(candidates.typeFieldSchemas), name: "type field schemas"},
 		{model: &models.TypeDefinition{}, ids: typeDefinitionIDs(candidates.typeDefinitions), name: "type definitions"},
 	} {
@@ -493,7 +493,7 @@ func assetExecuteSummary(stats *AssetCleanupStats) events.CleanupResultSummary {
 func assetCandidateRecordCount(stats *AssetCleanupStats) int {
 	return stats.TypeDefinitions +
 		stats.TypeFieldSchemas +
-		stats.Catalogs +
+		stats.Categories +
 		stats.Assets +
 		stats.AssetComponents +
 		stats.AssetExtFields +
@@ -532,7 +532,7 @@ func typeFieldSchemaIDs(items []models.TypeFieldSchema) []int64 {
 	return ids
 }
 
-func catalogIDs(items []models.Catalog) []int64 {
+func categoryIDs(items []models.AssetCategory) []int64 {
 	ids := make([]int64, 0, len(items))
 	for _, item := range items {
 		ids = append(ids, item.ID)

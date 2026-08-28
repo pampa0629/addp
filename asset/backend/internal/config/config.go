@@ -50,7 +50,7 @@ func LoadConfig() (*Config, error) {
 
 		MeilisearchURL:                 os.Getenv("MEILISEARCH_URL"),
 		MeilisearchMasterKey:           os.Getenv("MEILISEARCH_MASTER_KEY"),
-		MeilisearchPublishedAssetIndex: commonConfig.GetEnv("MEILISEARCH_ASSET_CATALOG_INDEX", "asset_catalog"),
+		MeilisearchPublishedAssetIndex: commonConfig.GetEnv("MEILISEARCH_PUBLISHED_ASSET_INDEX", "asset_published"),
 	}
 
 	commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)

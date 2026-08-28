@@ -261,6 +261,8 @@ import {
 
 Chart 和 Map 只接受单次查询得到的完整有界结果；`has_more=true` 或超过组件上限时必须拒绝渲染。Workbench 等消费模块应在自己的 Renderer Host 中按需加载这些组件，不得复制 renderer，也不得把 Service、Outdoor 或其他 owner 的 DTO 写入共享层。
 
+三组结果 renderer 在用户选择当前结果时统一发出 `result-select`，payload 只包含 `{ row_index }`。`row_index` 始终指向宿主传入的原始 `rows`，renderer 不携带字段值、参数名、目标组件或查询片段；宿主负责根据自己的声明式配置解释选择。数据更新、resize 和重绘不得发出该事件。
+
 ### Agent UI 协议组件
 
 `agent-ui/` 提供 ADDP Agent 界面的共享协议适配层，完整协议、安全上限和降级规则见 `docs/spec/addp智能体交互协议规范.md`：

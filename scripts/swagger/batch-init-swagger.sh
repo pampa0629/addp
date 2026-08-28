@@ -40,7 +40,7 @@ init_p2() {
     init_module "standard" "8110" "数据标准"
     init_module "model" "8181" "数据建模"
     init_module "transfer" "8083" "数据传输"
-	init_module "catalog" "8192" "企业数据目录"
+	init_module "catalog" "8192" "企业资源目录"
 	init_module "workbench" "8193" "服务消费工作台"
 }
 

@@ -115,13 +115,15 @@ class FakeClient:
             return SUITE.Response(200, copy.deepcopy(self.entry))
         if path == "/api/v1/asset/type-definitions":
             return SUITE.Response(200, [{"id": 2, "enabled": True}])
-        if path == "/api/v1/asset/catalogs" and method == "POST":
+        if path == "/api/v1/asset/categories" and method == "POST":
             self.catalog_exists = True
-            return SUITE.Response(201, {"id": 20})
-        if path == "/api/v1/asset/catalogs/20" and method == "DELETE":
+            return SUITE.Response(201, {"id": 20, "version": 1})
+        if path == "/api/v1/asset/categories/20" and method == "DELETE":
+            if body != {"version": 1}:
+                raise AssertionError(f"unexpected AssetCategory delete body: {body}")
             self.catalog_exists = False
             return SUITE.Response(200, {})
-        if path == "/api/v1/asset/catalogs/20" and method == "GET":
+        if path == "/api/v1/asset/categories/20" and method == "GET":
             return SUITE.Response(404, {})
         if path == "/api/v1/asset/assets" and method == "POST":
             self.asset_exists = True

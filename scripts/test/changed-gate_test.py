@@ -74,6 +74,13 @@ class ChangedGateTest(unittest.TestCase):
             MODULE.affected_modules(self.repository, ["common-frontend/basic/index.js"]),
         )
 
+    def test_consumer_scan_skips_tracked_files_deleted_from_worktree(self) -> None:
+        (self.repository / "sample/frontend/package.json").unlink()
+        self.assertEqual(
+            ["alias"],
+            MODULE.affected_modules(self.repository, ["common-frontend/basic/index.js"]),
+        )
+
     def test_common_python_changes_expand_to_registered_consumers(self) -> None:
         self.assertEqual(
             ["agent", "common-python"],

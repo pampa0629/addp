@@ -10,7 +10,7 @@
       "none": "未声明"
     },
     "layout": {
-      "title": "企业数据目录",
+      "title": "企业资源目录",
       "entries": "目录浏览",
       "myCatalog": "我的目录",
       "collections": "项目组目录集合",
@@ -20,7 +20,7 @@
       "logout": "退出登录"
     },
     "login": {
-      "title": "企业数据目录",
+      "title": "企业资源目录",
       "subtitle": "Catalog",
       "username": "用户名",
       "password": "密码",

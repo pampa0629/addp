@@ -32,7 +32,7 @@ export function resolveSearchRouteState(routeQuery = {}) {
   }
 }
 
-export function resolveCatalogRouteState(routeQuery = {}) {
+export function resolveCategoryRouteState(routeQuery = {}) {
   const page = normalizePositiveInteger(routeQuery.page, 1)
   const query = page > 1 ? { page: String(page) } : {}
   return {
@@ -42,16 +42,16 @@ export function resolveCatalogRouteState(routeQuery = {}) {
   }
 }
 
-export function assetDetailReturnTarget(previousRoute, catalogId) {
+export function assetDetailReturnTarget(previousRoute, categoryId) {
   if (typeof previousRoute === 'string' && previousRoute.startsWith('/portal/')) {
     return { history: 'back' }
   }
 
-  const normalizedCatalogId = Number(catalogId)
-  return Number.isInteger(normalizedCatalogId) && normalizedCatalogId > 0
+  const normalizedCategoryId = Number(categoryId)
+  return Number.isInteger(normalizedCategoryId) && normalizedCategoryId > 0
     ? {
         history: 'replace',
-        location: { name: 'Catalog', params: { id: String(normalizedCatalogId) } }
+        location: { name: 'Category', params: { id: String(normalizedCategoryId) } }
       }
     : { history: 'replace', location: { name: 'Search' } }
 }

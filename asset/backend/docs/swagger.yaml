@@ -6,11 +6,11 @@ definitions:
         description: 可选备注
         type: string
     type: object
-  github_com_addp_asset_internal_service.AssetCatalogTreeNode:
+  github_com_addp_asset_internal_service.AssetCategoryTreeNode:
     properties:
       children:
         items:
-          $ref: '#/definitions/github_com_addp_asset_internal_service.AssetCatalogTreeNode'
+          $ref: '#/definitions/github_com_addp_asset_internal_service.AssetCategoryTreeNode'
         type: array
       count:
         type: integer
@@ -30,6 +30,8 @@ definitions:
         type: integer
       updated_at:
         type: string
+      version:
+        type: integer
     type: object
   github_com_addp_asset_internal_service.AssetComponentInput:
     properties:
@@ -40,10 +42,10 @@ definitions:
       sort_order:
         type: integer
     type: object
-  github_com_addp_asset_internal_service.BatchCatalogReq:
+  github_com_addp_asset_internal_service.BatchCategoryRequest:
     properties:
-      catalog_id:
-        description: null 表示清除目录
+      category_id:
+        description: null 表示清除分类
         type: integer
       ids:
         items:
@@ -76,9 +78,22 @@ definitions:
         - revoking
         type: string
     type: object
+  github_com_addp_asset_internal_service.CreateAssetCategoryRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: integer
+      sort_order:
+        type: integer
+    required:
+    - name
+    type: object
   github_com_addp_asset_internal_service.CreateAssetReq:
     properties:
-      catalog_id:
+      category_id:
         type: integer
       components:
         items:
@@ -100,18 +115,13 @@ definitions:
     - name
     - type_id
     type: object
-  github_com_addp_asset_internal_service.CreateCatalogReq:
+  github_com_addp_asset_internal_service.DeleteAssetCategoryRequest:
     properties:
-      description:
-        type: string
-      name:
-        type: string
-      parent_id:
-        type: integer
-      sort_order:
+      version:
+        minimum: 1
         type: integer
     required:
-    - name
+    - version
     type: object
   github_com_addp_asset_internal_service.RejectApplicationReq:
     properties:
@@ -121,9 +131,23 @@ definitions:
     required:
     - reason
     type: object
+  github_com_addp_asset_internal_service.UpdateAssetCategoryRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      sort_order:
+        type: integer
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - version
+    type: object
   github_com_addp_asset_internal_service.UpdateAssetReq:
     properties:
-      catalog_id:
+      category_id:
         type: integer
       components:
         items:
@@ -148,15 +172,6 @@ definitions:
     - name
     - type_id
     - version
-    type: object
-  github_com_addp_asset_internal_service.UpdateCatalogReq:
-    properties:
-      description:
-        type: string
-      name:
-        type: string
-      sort_order:
-        type: integer
     type: object
   internal_api.consumerApplicationRequest:
     properties:
@@ -519,17 +534,17 @@ paths:
       x-addp-required-permissions:
       - asset.management.read
       - asset.entry.publish
-  /assets/batch-catalog:
+  /assets/batch-category:
     post:
       consumes:
       - application/json
       parameters:
-      - description: 目录变更 | Catalog change
+      - description: 资产分类变更 | Asset category change
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_asset_internal_service.BatchCatalogReq'
+          $ref: '#/definitions/github_com_addp_asset_internal_service.BatchCategoryRequest'
       produces:
       - application/json
       responses:
@@ -540,7 +555,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 批量归入目录 | Batch catalog assets
+      summary: 批量设置资产分类 | Batch categorize assets
       tags:
       - Asset
       x-addp-auth-mode: permission
@@ -735,7 +750,7 @@ paths:
       x-addp-required-permissions:
       - asset.management.read
       - asset.authorization.revoke
-  /catalogs:
+  /categories:
     get:
       produces:
       - application/json
@@ -747,23 +762,23 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 获取资产目录 | List asset catalogs
+      summary: 获取资产分类 | List asset categories
       tags:
-      - Asset Catalog
+      - Asset Category
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - asset.management.read
-      - asset.catalog.read
+      - asset.category.read
     post:
       consumes:
       - application/json
       parameters:
-      - description: 目录 | Catalog
+      - description: 资产分类 | Asset category
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_asset_internal_service.CreateCatalogReq'
+          $ref: '#/definitions/github_com_addp_asset_internal_service.CreateAssetCategoryRequest'
       produces:
       - application/json
       responses:
@@ -774,77 +789,29 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 创建资产目录 | Create asset catalog
+      summary: 创建资产分类 | Create asset category
       tags:
-      - Asset Catalog
+      - Asset Category
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - asset.management.read
-      - asset.catalog.create
-  /catalogs/{id}:
+      - asset.category.create
+  /categories/{id}:
     delete:
-      parameters:
-      - description: 目录 ID | Catalog ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除资产目录 | Delete asset catalog
-      tags:
-      - Asset Catalog
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - asset.management.read
-      - asset.catalog.delete
-    get:
-      parameters:
-      - description: 目录 ID | Catalog ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取资产目录详情 | Get asset catalog
-      tags:
-      - Asset Catalog
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - asset.management.read
-      - asset.catalog.read
-    put:
       consumes:
       - application/json
       parameters:
-      - description: 目录 ID | Catalog ID
+      - description: 资产分类 ID | Asset category ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 目录 | Catalog
+      - description: 并发版本 | Concurrency version
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_asset_internal_service.UpdateCatalogReq'
+          $ref: '#/definitions/github_com_addp_asset_internal_service.DeleteAssetCategoryRequest'
       produces:
       - application/json
       responses:
@@ -853,16 +820,102 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
-      summary: 更新资产目录 | Update asset catalog
+      summary: 删除资产分类 | Delete asset category
       tags:
-      - Asset Catalog
+      - Asset Category
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - asset.management.read
-      - asset.catalog.update
-  /catalogs/tree:
+      - asset.category.delete
+    get:
+      parameters:
+      - description: 资产分类 ID | Asset category ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取资产分类详情 | Get asset category
+      tags:
+      - Asset Category
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.management.read
+      - asset.category.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 资产分类 ID | Asset category ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 资产分类 | Asset category
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_asset_internal_service.UpdateAssetCategoryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新资产分类 | Update asset category
+      tags:
+      - Asset Category
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.management.read
+      - asset.category.update
+  /categories/tree:
     get:
       produces:
       - application/json
@@ -874,13 +927,13 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 获取资产目录树 | Get asset catalog tree
+      summary: 获取资产分类树 | Get asset category tree
       tags:
-      - Asset Catalog
+      - Asset Category
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - asset.management.read
-      - asset.catalog.read
+      - asset.category.read
   /consumer/applications:
     get:
       produces:
@@ -1083,7 +1136,7 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - asset.entry.read
-  /consumer/catalogs:
+  /consumer/categories:
     get:
       produces:
       - application/json
@@ -1092,16 +1145,16 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/github_com_addp_asset_internal_service.AssetCatalogTreeNode'
+              $ref: '#/definitions/github_com_addp_asset_internal_service.AssetCategoryTreeNode'
             type: array
       security:
       - BearerAuth: []
-      summary: 浏览已上架资产目录 | Browse published asset catalogs
+      summary: 浏览已上架资产分类 | Browse published asset categories
       tags:
       - Asset Consumer
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - asset.catalog.read
+      - asset.category.read
   /ratings:
     get:
       produces:

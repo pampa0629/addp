@@ -43,7 +43,7 @@
             </el-menu-item>
             <el-menu-item index="/categories">
               <el-icon><Files /></el-icon>
-              <span>{{ t('asset.layout.catalogManagement') }}</span>
+              <span>{{ t('asset.layout.categoryManagement') }}</span>
             </el-menu-item>
             <el-menu-item index="/assets">
               <el-icon><List /></el-icon>

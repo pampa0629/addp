@@ -187,7 +187,7 @@ func openGrantFulfillmentTestDB(t *testing.T) *gorm.DB {
 			icon_url TEXT, description TEXT, enabled BOOLEAN, sort_order INTEGER, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE asset.assets (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL, description TEXT,
-			type_id INTEGER NOT NULL, catalog_id INTEGER, tags TEXT, status TEXT, owner_id INTEGER, version INTEGER,
+			type_id INTEGER NOT NULL, category_id INTEGER, tags TEXT, status TEXT, owner_id INTEGER, version INTEGER,
 			published_at DATETIME, created_by INTEGER, updated_by INTEGER, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE asset.asset_components (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, asset_id INTEGER NOT NULL,

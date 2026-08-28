@@ -56,8 +56,8 @@ func SetupRouter(
 	// 已发布资产消费面
 	// ============================================================
 	api.GET("/search", permission("asset.entry.read"), handleSearch(assetClient))
-	api.GET("/catalogs", permission("asset.catalog.read"), handleCatalogs(assetClient))
-	api.GET("/catalogs/:id/assets", permission("asset.catalog.read", "asset.entry.read"), handleCatalogAssets(assetClient))
+	api.GET("/categories", permission("asset.category.read"), handleCategories(assetClient))
+	api.GET("/categories/:id/assets", permission("asset.category.read", "asset.entry.read"), handleCategoryAssets(assetClient))
 	api.GET("/assets", permission("asset.entry.read"), handleAssets(assetClient))
 	api.GET("/assets/:id", permission("asset.entry.read"), handleAssetDetail(assetClient))
 

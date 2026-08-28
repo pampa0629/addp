@@ -2364,6 +2364,97 @@ func TestInvitationEnrollmentTicketRemovalForwardMigrationAgainstPostgres(t *tes
 	}
 }
 
+func TestAssetCategoryPermissionForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset AssetCategory Permission migration schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	through108, through109 := migrationFilesBeforeAndThrough(t, "000109_iam_asset_category_permissions.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through108, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 108: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.role_permissions (role_id, permission_id, source_type, created_by_principal_id)
+		SELECT role.id, permission.id, 'product', NULL
+		FROM system.roles AS role
+		JOIN system.permissions AS permission ON permission.permission_key = 'asset.catalog.read'
+		WHERE role.tenant_id IS NULL AND role.role_key = 'tenant.data_viewer'
+		ON CONFLICT (role_id, permission_id) DO NOTHING
+	`); err != nil {
+		t.Fatalf("seed additional legacy Asset Catalog binding: %v", err)
+	}
+	var oldBindingCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions AS binding
+		JOIN system.permissions AS permission ON permission.id = binding.permission_id
+		WHERE permission.permission_key LIKE 'asset.catalog.%'
+	`).Scan(&oldBindingCount); err != nil {
+		t.Fatalf("count legacy Asset Catalog bindings: %v", err)
+	}
+
+	if err := (&Runner{DSN: dsn, FS: through109, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply AssetCategory Permission migration 109: %v", err)
+	}
+	if err := (&Runner{DSN: dsn, FS: through109, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("re-run AssetCategory Permission migration catalog: %v", err)
+	}
+
+	var version, activeCategoryPermissions, disabledCatalogPermissions, remainingOldBindings, newBindingCount, viewerBindingCount int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read migration 109 version: %v", err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM system.permissions WHERE permission_key LIKE 'asset.category.%' AND status = 'active'`).Scan(&activeCategoryPermissions); err != nil {
+		t.Fatalf("count active AssetCategory Permissions: %v", err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM system.permissions WHERE permission_key LIKE 'asset.catalog.%' AND status = 'disabled'`).Scan(&disabledCatalogPermissions); err != nil {
+		t.Fatalf("count disabled legacy Asset Catalog Permissions: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*) FILTER (WHERE old_permission.permission_key LIKE 'asset.catalog.%'),
+		       count(*) FILTER (WHERE old_permission.permission_key LIKE 'asset.category.%')
+		FROM system.role_permissions AS binding
+		JOIN system.permissions AS old_permission ON old_permission.id = binding.permission_id
+	`).Scan(&remainingOldBindings, &newBindingCount); err != nil {
+		t.Fatalf("count migrated AssetCategory role bindings: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions AS binding
+		JOIN system.roles AS role ON role.id = binding.role_id
+		JOIN system.permissions AS permission ON permission.id = binding.permission_id
+		WHERE role.tenant_id IS NULL
+		  AND role.role_key = 'tenant.data_viewer'
+		  AND permission.permission_key = 'asset.category.read'
+		  AND binding.source_type = 'product'
+		  AND binding.created_by_principal_id IS NULL
+	`).Scan(&viewerBindingCount); err != nil {
+		t.Fatalf("read migrated additional AssetCategory binding: %v", err)
+	}
+	if version != 109 || dirty || activeCategoryPermissions != 4 || disabledCatalogPermissions != 4 ||
+		remainingOldBindings != 0 || newBindingCount != oldBindingCount || viewerBindingCount != 1 {
+		t.Fatalf(
+			"migration 109 state=(%d,%t) permissions=(category:%d,catalog_disabled:%d) bindings=(old:%d,new:%d,want:%d,viewer:%d)",
+			version, dirty, activeCategoryPermissions, disabledCatalogPermissions,
+			remainingOldBindings, newBindingCount, oldBindingCount, viewerBindingCount,
+		)
+	}
+}
+
 func TestRunnerAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
@@ -3484,8 +3575,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount < 344 || disabledPermissionCount != 53 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 344 and exactly 53", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount < 344 || disabledPermissionCount != 57 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 344 and exactly 57", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string

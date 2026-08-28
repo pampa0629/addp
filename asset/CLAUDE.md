@@ -2,7 +2,7 @@
 
 ## 模块定位
 
-Asset 模块负责数据资产管理，包括资产类型、资产分类、一个或多个企业 CatalogEntry 的资产组合、资产上下架、授权申请、授权有效期、评价反馈和运营。Asset 不再跨 Meta、Service、Standard、Develop 自动发现并直接创建资产草稿，CatalogEntry 是唯一资源组合入口。
+Asset 模块负责数据资产管理，包括资产类型、`AssetCategory` 多级资产目录、一个或多个企业 CatalogEntry 的资产组合、资产上下架、授权申请、授权有效期、评价反馈和运营。AssetCategory 只组织 Asset，不复制企业资源目录、业务域或引擎资源树；CatalogEntry 是唯一资源组合入口。
 
 ## 技术栈与端口
 
@@ -23,19 +23,19 @@ asset/
 │   ├── internal/api/handlers.go
 │   ├── docs/                  # 由 swag 生成的发布检查文档
 │   ├── internal/models/models.go
-│   ├── internal/service/      # asset/catalog/type/application/authorization/rating
+│   ├── internal/service/      # asset/category/type/application/authorization/rating
 │   └── internal/search/       # Meilisearch indexer
 └── frontend/src/
-    ├── views/                 # AssetManager、CatalogManagement、ApplicationList
+    ├── views/                 # AssetManager、CategoryManagement、ApplicationList
     ├── api/asset.js
     └── components/Layout.vue
 ```
 
 ## API 与数据
 
-- Asset 是 `asset.management.read`、`asset.catalog.*`、`asset.entry.*`、`asset.application.*`、`asset.authorization.*` 和 `asset.rating.*` 的 Permission owner；定义只存在于 `authorization/permissions.yaml`，通过 `common/authorization` 发布期聚合，不在服务启动时动态注册。
+- Asset 是 `asset.management.read`、`asset.category.*`、`asset.entry.*`、`asset.application.*`、`asset.authorization.*` 和 `asset.rating.*` 的 Permission owner；定义只存在于 `authorization/permissions.yaml`，通过 `common/authorization` 发布期聚合，不在服务启动时动态注册。
 - 路由前缀：`/api/v1/asset`。
-- 主要资源：`type-definitions`、`catalogs`、`assets`、`applications`、`authorizations`、`ratings`。
+- 主要资源：`type-definitions`、`categories`、`assets`、`applications`、`authorizations`、`ratings`。
 - 公开业务路由只绑定 `internal/api/handlers.go` 中的真实 Handler；类型定义只读，不发布永久返回 403 的写路由。
 - 每个公开 Operation 必须在 Swagger 中声明 `x-addp-auth-mode`，Permission 模式使用 Asset Manifest 中的精确 Key。
 - 管理路由必须同时要求 `asset.management.read` 和对应资源 Permission；消费路由位于唯一的 `/consumer` 子资源下，只允许已发布资产，并把申请、授权和评价主体固定为当前 User AuthContext。
@@ -70,5 +70,5 @@ bash scripts/swagger/check-route-coverage.sh asset
 
 - 模块内 Router 使用 `/assets`、`/applications`、`/categories` 等无模块前缀路径；Console 公开 URL 统一加 `/asset` 前缀。
 - 资产公开路由为 `/assets/new`、`/assets/:id` 和 `/assets/:id/edit`；创建与编辑都基于 CatalogEntry 选择和组合。
-- 资产列表当前目录使用 `catalog_id`；申请与授权默认 `applications` Tab 省略，问题反馈使用 `?tab=feedbacks`。
+- 资产列表分类使用 `category_id`；申请与授权默认 `applications` Tab 省略，问题反馈使用 `?tab=feedbacks`。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`；编辑保存和取消均用 `replace` 回到详情。

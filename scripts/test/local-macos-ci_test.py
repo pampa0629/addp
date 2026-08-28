@@ -23,6 +23,7 @@ class LocalMacOSCiTest(unittest.TestCase):
         self.publisher = self.root / "publisher"
         self.fake_bin = self.root / "bin"
         self.make_log = self.root / "make.log"
+        self.npm_log = self.root / "npm.log"
 
         subprocess.run(["git", "init", "--bare", "-q", str(self.origin)], check=True)
         subprocess.run(["git", "init", "-q", str(self.repository)], check=True)
@@ -119,7 +120,14 @@ class LocalMacOSCiTest(unittest.TestCase):
             printf '%s\n' "${NODE_VERSION:-v24.20.0}"
             """,
         )
-        self._executable("npm", "#!/bin/bash\nexit 0\n")
+        self._executable(
+            "npm",
+            """
+            #!/bin/bash
+            printf '%s\n' "$*" >> "$NPM_LOG"
+            exit 0
+            """,
+        )
         self._executable(
             "go",
             """
@@ -165,6 +173,7 @@ class LocalMacOSCiTest(unittest.TestCase):
         environment = os.environ.copy()
         environment["PATH"] = f"{self.fake_bin}:{environment['PATH']}"
         environment["MAKE_LOG"] = str(self.make_log)
+        environment["NPM_LOG"] = str(self.npm_log)
         environment["FAIL_MAKE_TARGET"] = fail_target
         environment["ACTIVE_INFRA"] = "1" if active_infra else "0"
         environment["NODE_VERSION"] = node_version
@@ -180,6 +189,11 @@ class LocalMacOSCiTest(unittest.TestCase):
         if not self.make_log.exists():
             return []
         return self.make_log.read_text(encoding="utf-8").splitlines()
+
+    def _npm_commands(self) -> list[str]:
+        if not self.npm_log.exists():
+            return []
+        return self.npm_log.read_text(encoding="utf-8").splitlines()
 
     def _publish_change(self) -> str:
         change = self.publisher / "change.txt"
@@ -218,6 +232,10 @@ class LocalMacOSCiTest(unittest.TestCase):
         first = self._run()
 
         self.assertEqual(first.returncode, 0, first.stderr + first.stdout)
+        self.assertIn(
+            "--prefix model/frontend exec -- playwright install chromium",
+            self._npm_commands(),
+        )
         self.assertEqual(
             ["test", "build BUILD_ARGS=--force", "infra-up", "test-integration", "infra-down"],
             self._make_commands(),

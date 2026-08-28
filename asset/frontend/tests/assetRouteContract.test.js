@@ -8,20 +8,20 @@ const readSource = path => readFileSync(new URL(`../src/${path}`, import.meta.ur
 describe('Asset public route contract', () => {
   it('delegates standalone navigation to the requested Vue Router history mode', async () => {
     const router = {
-      resolve: vi.fn(() => ({ fullPath: '/assets?catalog_id=12' })),
+      resolve: vi.fn(() => ({ fullPath: '/assets?category_id=12' })),
       push: vi.fn(),
       replace: vi.fn()
     }
 
     await navigateAssetRoute(
       router,
-      { path: '/assets', query: { catalog_id: '12' } },
+      { path: '/assets', query: { category_id: '12' } },
       { history: 'replace' }
     )
 
     expect(router.replace).toHaveBeenCalledWith({
       path: '/assets',
-      query: { catalog_id: '12' }
+      query: { category_id: '12' }
     })
     expect(router.push).not.toHaveBeenCalled()
   })
@@ -35,12 +35,35 @@ describe('Asset public route contract', () => {
     expect(router).not.toMatch(/path: ['"]\/?asset\//)
   })
 
-  it('persists the selected catalog in the canonical asset-list query', () => {
+  it('persists the selected asset category in the canonical asset-list query', () => {
     const assetManager = readSource('views/AssetManager.vue')
 
-    expect(assetManager).toContain('route.query.catalog_id')
-    expect(assetManager).toContain('{ catalog_id: String(id) }')
+    expect(assetManager).toContain('route.query.category_id')
+    expect(assetManager).toContain('{ category_id: String(id) }')
     expect(assetManager).toContain("{ history: 'replace' }")
+  })
+
+  it('uses the single AssetCategory API and optimistic concurrency contract', () => {
+    const api = readSource('api/asset.js')
+    const categoryManagement = readSource('views/CategoryManagement.vue')
+
+    expect(api).toContain("client.get('/asset/categories/tree')")
+    expect(api).toContain("client.post('/asset/assets/batch-category'")
+    expect(api).not.toContain('/asset/catalogs')
+    expect(api).not.toContain('batch-catalog')
+    expect(categoryManagement).toContain('version: form.value.version')
+    expect(categoryManagement).toContain('categoryAPI.delete(data.id, data.version)')
+  })
+
+  it('presents the category tree as the Asset Directory without reusing Catalog', () => {
+    const zhCn = JSON.parse(readSource('i18n/zh-cn.json')).asset
+    const en = JSON.parse(readSource('i18n/en.json')).asset
+
+    expect(zhCn.category.title).toBe('资产目录管理')
+    expect(zhCn.category.detailTitle).toBe('目录节点详情')
+    expect(en.layout.assetCatalog).toBe('Asset Directory')
+    expect(en.category.title).toBe('Asset Directory Management')
+    expect(JSON.stringify(en)).not.toContain('Asset Catalog')
   })
 
   it('loads selectable CatalogEntry candidates from the inventory view', () => {

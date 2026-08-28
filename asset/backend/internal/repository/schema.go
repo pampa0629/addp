@@ -21,9 +21,12 @@ func Migrate(db *gorm.DB) error {
 			if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", assetSchemaLockID).Error; err != nil {
 				return fmt.Errorf("acquire asset schema lock: %w", err)
 			}
+			if err := renameAssetCategoryStorage(tx); err != nil {
+				return err
+			}
 		}
 		if err := tx.AutoMigrate(
-			&models.TypeDefinition{}, &models.TypeFieldSchema{}, &models.Catalog{}, &models.Asset{},
+			&models.TypeDefinition{}, &models.TypeFieldSchema{}, &models.AssetCategory{}, &models.Asset{},
 			&models.AssetComponent{}, &models.AssetExtField{}, &models.Application{},
 			&models.Authorization{}, &models.Rating{},
 		); err != nil {
@@ -33,8 +36,35 @@ func Migrate(db *gorm.DB) error {
 			return nil
 		}
 		statements := []string{
-			`DROP TABLE IF EXISTS asset.categories`,
-			`ALTER TABLE asset.assets DROP COLUMN IF EXISTS category_id`,
+			`DO $migration$
+			 BEGIN
+			   IF to_regclass('asset.catalogs_id_seq') IS NOT NULL THEN
+			     IF to_regclass('asset.categories_id_seq') IS NOT NULL THEN
+			       RAISE EXCEPTION 'asset schema contains both catalogs_id_seq and categories_id_seq';
+			     END IF;
+			     ALTER SEQUENCE asset.catalogs_id_seq RENAME TO categories_id_seq;
+			   END IF;
+			   IF EXISTS (
+			     SELECT 1 FROM pg_constraint
+			     WHERE connamespace = 'asset'::regnamespace
+			       AND conrelid = 'asset.categories'::regclass
+			       AND conname = 'catalogs_pkey'
+			   ) THEN
+			     IF EXISTS (
+			       SELECT 1 FROM pg_constraint
+			       WHERE connamespace = 'asset'::regnamespace
+			         AND conrelid = 'asset.categories'::regclass
+			         AND conname = 'categories_pkey'
+			     ) THEN
+			       RAISE EXCEPTION 'asset categories contains both catalogs_pkey and categories_pkey';
+			     END IF;
+			     ALTER TABLE asset.categories RENAME CONSTRAINT catalogs_pkey TO categories_pkey;
+			   END IF;
+			 END
+			 $migration$`,
+			`DROP INDEX IF EXISTS asset.idx_asset_catalogs_parent_id`,
+			`DROP INDEX IF EXISTS asset.idx_asset_catalogs_tenant_id`,
+			`DROP INDEX IF EXISTS asset.idx_asset_assets_catalog_id`,
 			`UPDATE asset.assets SET status = 'offline' WHERE status = 'published' AND NOT EXISTS (
 			 SELECT 1 FROM asset.asset_components component WHERE component.asset_id = asset.assets.id
 			)`,
@@ -82,10 +112,12 @@ func Migrate(db *gorm.DB) error {
 			   (status = 'revocation_pending' AND revoked_at IS NULL) OR
 			   (status = 'revoked' AND target_resource_id <> '' AND revoked_at IS NOT NULL)
 			 )`,
-			`CREATE UNIQUE INDEX IF NOT EXISTS idx_catalogs_unique_root_name
-			 ON asset.catalogs (tenant_id, name) WHERE parent_id IS NULL`,
-			`CREATE UNIQUE INDEX IF NOT EXISTS idx_catalogs_unique_child_name
-			 ON asset.catalogs (tenant_id, parent_id, name) WHERE parent_id IS NOT NULL`,
+			`DROP INDEX IF EXISTS asset.idx_catalogs_unique_root_name`,
+			`DROP INDEX IF EXISTS asset.idx_catalogs_unique_child_name`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_categories_unique_root_name
+			 ON asset.categories (tenant_id, name) WHERE parent_id IS NULL`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_categories_unique_child_name
+			 ON asset.categories (tenant_id, parent_id, name) WHERE parent_id IS NOT NULL`,
 			`CREATE UNIQUE INDEX IF NOT EXISTS uq_asset_component_entry
 			 ON asset.asset_components (tenant_id, asset_id, catalog_entry_id)`,
 			`CREATE UNIQUE INDEX IF NOT EXISTS uq_asset_component_primary
@@ -100,4 +132,45 @@ func Migrate(db *gorm.DB) error {
 		}
 		return nil
 	})
+}
+
+func renameAssetCategoryStorage(tx *gorm.DB) error {
+	var catalogsExists, categoriesExists bool
+	if err := tx.Raw(`SELECT to_regclass('asset.catalogs') IS NOT NULL`).Scan(&catalogsExists).Error; err != nil {
+		return fmt.Errorf("inspect legacy asset catalogs table: %w", err)
+	}
+	if err := tx.Raw(`SELECT to_regclass('asset.categories') IS NOT NULL`).Scan(&categoriesExists).Error; err != nil {
+		return fmt.Errorf("inspect asset categories table: %w", err)
+	}
+	if catalogsExists && categoriesExists {
+		return fmt.Errorf("asset schema contains both catalogs and categories tables")
+	}
+	if catalogsExists {
+		if err := tx.Exec(`ALTER TABLE asset.catalogs RENAME TO categories`).Error; err != nil {
+			return fmt.Errorf("rename asset catalogs table: %w", err)
+		}
+	}
+
+	var catalogColumnExists, categoryColumnExists bool
+	if err := tx.Raw(`SELECT EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_schema = 'asset' AND table_name = 'assets' AND column_name = 'catalog_id'
+	)`).Scan(&catalogColumnExists).Error; err != nil {
+		return fmt.Errorf("inspect legacy asset catalog_id column: %w", err)
+	}
+	if err := tx.Raw(`SELECT EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_schema = 'asset' AND table_name = 'assets' AND column_name = 'category_id'
+	)`).Scan(&categoryColumnExists).Error; err != nil {
+		return fmt.Errorf("inspect asset category_id column: %w", err)
+	}
+	if catalogColumnExists && categoryColumnExists {
+		return fmt.Errorf("asset assets table contains both catalog_id and category_id columns")
+	}
+	if catalogColumnExists {
+		if err := tx.Exec(`ALTER TABLE asset.assets RENAME COLUMN catalog_id TO category_id`).Error; err != nil {
+			return fmt.Errorf("rename asset catalog_id column: %w", err)
+		}
+	}
+	return nil
 }

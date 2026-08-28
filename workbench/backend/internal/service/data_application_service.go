@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/workbench/internal/models"
 	"github.com/addp/workbench/internal/repository"
 	"github.com/google/uuid"
@@ -214,10 +215,14 @@ func (s *DataApplicationService) Runtime(tenantID, userID int64, id string) (*mo
 }
 
 func (s *DataApplicationService) snapshotFromViews(ctx context.Context, request DescriptorRequest, applicationName string, views []models.View) (models.DataApplicationSnapshot, error) {
+	refreshIntervalSeconds := models.ApplicationRefreshIntervalDisabled
 	snapshot := models.DataApplicationSnapshot{
 		SchemaVersion: models.DataApplicationSnapshotSchemaVersion,
-		Page:          models.DataApplicationPage{ID: uuid.NewString(), Title: applicationName},
-		Components:    make([]models.DataApplicationComponent, 0, len(views)),
+		Page: models.DataApplicationPage{
+			ID: uuid.NewString(), Title: applicationName, DisplayMode: models.ApplicationDisplayModeDesktop,
+			RefreshIntervalSeconds: &refreshIntervalSeconds, VisibleSections: defaultApplicationVisibleSections(),
+		},
+		Components: make([]models.DataApplicationComponent, 0, len(views)),
 	}
 	for index, view := range views {
 		input, err := writeRequestFromView(view)
@@ -269,7 +274,7 @@ func (s *DataApplicationService) validateSnapshot(ctx context.Context, request D
 		return ErrInvalidDataApplication
 	}
 	pageID, err := uuid.Parse(strings.TrimSpace(snapshot.Page.ID))
-	if err != nil || pageID == uuid.Nil || strings.TrimSpace(snapshot.Page.Title) == "" || len([]rune(snapshot.Page.Title)) > 200 {
+	if err != nil || pageID == uuid.Nil || strings.TrimSpace(snapshot.Page.Title) == "" || len([]rune(snapshot.Page.Title)) > 200 || !allowedApplicationDisplayMode(snapshot.Page.DisplayMode) || !allowedApplicationRefreshPolicy(snapshot.Page) {
 		return ErrInvalidDataApplication
 	}
 	components := make(map[string]models.DataApplicationComponent, len(snapshot.Components))
@@ -303,7 +308,13 @@ func (s *DataApplicationService) validateSnapshot(ctx context.Context, request D
 	if err := validateApplicationPlacements(snapshot.Page.Placements, components); err != nil {
 		return err
 	}
-	return validateApplicationParameters(snapshot.Parameters, snapshot.ParameterBindings, components, componentParameters, descriptors)
+	if err := validateApplicationParameters(snapshot.Parameters, snapshot.ParameterBindings, components, componentParameters, descriptors); err != nil {
+		return err
+	}
+	if err := validateApplicationPresentationSections(snapshot.Page, snapshot.Parameters, snapshot.ParameterBindings, components); err != nil {
+		return err
+	}
+	return validateSelectionBindings(snapshot.SelectionBindings, snapshot.Parameters, snapshot.ParameterBindings, components, descriptors)
 }
 
 func validateApplicationPlacements(placements []models.DataApplicationComponentLayout, components map[string]models.DataApplicationComponent) error {
@@ -397,6 +408,212 @@ func componentParameterFilter(component models.DataApplicationComponent, key str
 	return models.ViewParameterFilter{}, false
 }
 
+func validateSelectionBindings(bindings []models.DataApplicationSelectionBinding, parameters []models.DataApplicationParameter, parameterBindings []models.DataApplicationParameterBinding, components map[string]models.DataApplicationComponent, descriptors map[string]*models.ConsumerDescriptor) error {
+	applicationParameters := make(map[string]models.DataApplicationParameter, len(parameters))
+	for _, parameter := range parameters {
+		applicationParameters[parameter.Key] = parameter
+	}
+	targetBindings := make(map[string][]models.DataApplicationParameterBinding, len(parameters))
+	for _, binding := range parameterBindings {
+		targetBindings[binding.ApplicationParameterKey] = append(targetBindings[binding.ApplicationParameterKey], binding)
+	}
+	seenSources := make(map[string]struct{}, len(bindings))
+	for _, binding := range bindings {
+		sourceComponent, exists := components[binding.SourceComponentID]
+		if !exists || len(binding.Assignments) == 0 {
+			return ErrInvalidDataApplication
+		}
+		if _, duplicate := seenSources[binding.SourceComponentID]; duplicate {
+			return ErrInvalidDataApplication
+		}
+		seenSources[binding.SourceComponentID] = struct{}{}
+		sourceDescriptor := descriptors[binding.SourceComponentID]
+		selectedFields := make(map[string]struct{}, len(sourceComponent.QueryTemplate.Select))
+		for _, field := range sourceComponent.QueryTemplate.Select {
+			selectedFields[field] = struct{}{}
+		}
+		outputFields := make(map[string]models.ConsumerOutputField, len(sourceDescriptor.OutputContract.Fields))
+		for _, field := range sourceDescriptor.OutputContract.Fields {
+			outputFields[field.Name] = field
+		}
+		seenParameters := make(map[string]struct{}, len(binding.Assignments))
+		for _, assignment := range binding.Assignments {
+			sourceField, exists := outputFields[assignment.SourceField]
+			if !exists || !selectionScalarFieldType(sourceField.Type) {
+				return ErrInvalidDataApplication
+			}
+			if _, selected := selectedFields[assignment.SourceField]; !selected {
+				return ErrInvalidDataApplication
+			}
+			applicationParameter, exists := applicationParameters[assignment.ApplicationParameterKey]
+			if !exists || (applicationParameter.Required && sourceField.Nullable) {
+				return ErrInvalidDataApplication
+			}
+			if _, duplicate := seenParameters[assignment.ApplicationParameterKey]; duplicate {
+				return ErrInvalidDataApplication
+			}
+			seenParameters[assignment.ApplicationParameterKey] = struct{}{}
+			bindingsForTarget := targetBindings[assignment.ApplicationParameterKey]
+			if len(bindingsForTarget) == 0 {
+				return ErrInvalidDataApplication
+			}
+			for _, targetBinding := range bindingsForTarget {
+				targetComponent := components[targetBinding.ComponentID]
+				parameterFilter, exists := componentParameterFilter(targetComponent, targetBinding.ComponentParameterKey)
+				if !exists || !selectionScalarOperator(parameterFilter.Operator) {
+					return ErrInvalidDataApplication
+				}
+				targetField, exists := consumerField(descriptors[targetBinding.ComponentID], parameterFilter.Field)
+				if !exists || targetField.Type != sourceField.Type {
+					return ErrInvalidDataApplication
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func selectionScalarFieldType(fieldType datatype.FieldType) bool {
+	switch fieldType {
+	case datatype.FieldTypeString, datatype.FieldTypeBool,
+		datatype.FieldTypeInt, datatype.FieldTypeBigInt, datatype.FieldTypeFloat,
+		datatype.FieldTypeDouble, datatype.FieldTypeDecimal,
+		datatype.FieldTypeDate, datatype.FieldTypeTime, datatype.FieldTypeTimestamp,
+		datatype.FieldTypeUUID:
+		return true
+	default:
+		return false
+	}
+}
+
+func selectionScalarOperator(operator string) bool {
+	switch operator {
+	case "eq", "ne", "lt", "lte", "gt", "gte":
+		return true
+	default:
+		return false
+	}
+}
+
+func allowedApplicationDisplayMode(displayMode string) bool {
+	switch displayMode {
+	case models.ApplicationDisplayModeDesktop, models.ApplicationDisplayModeWallboard:
+		return true
+	default:
+		return false
+	}
+}
+
+func allowedApplicationRefreshPolicy(page models.DataApplicationPage) bool {
+	if page.RefreshIntervalSeconds == nil {
+		return false
+	}
+	refreshIntervalSeconds := *page.RefreshIntervalSeconds
+	if page.DisplayMode != models.ApplicationDisplayModeWallboard {
+		return refreshIntervalSeconds == models.ApplicationRefreshIntervalDisabled
+	}
+	switch refreshIntervalSeconds {
+	case models.ApplicationRefreshIntervalDisabled,
+		models.ApplicationRefreshInterval30Seconds,
+		models.ApplicationRefreshInterval60Seconds,
+		models.ApplicationRefreshInterval300Seconds:
+		return true
+	default:
+		return false
+	}
+}
+
+func defaultApplicationVisibleSections() []string {
+	return []string{
+		models.ApplicationVisibleSectionTitle,
+		models.ApplicationVisibleSectionParameters,
+		models.ApplicationVisibleSectionQueryActions,
+	}
+}
+
+func validateApplicationPresentationSections(page models.DataApplicationPage, parameters []models.DataApplicationParameter, bindings []models.DataApplicationParameterBinding, components map[string]models.DataApplicationComponent) error {
+	if page.VisibleSections == nil {
+		return ErrInvalidDataApplication
+	}
+	visible := make(map[string]struct{}, len(page.VisibleSections))
+	for _, section := range page.VisibleSections {
+		switch section {
+		case models.ApplicationVisibleSectionTitle, models.ApplicationVisibleSectionParameters, models.ApplicationVisibleSectionQueryActions:
+		default:
+			return ErrInvalidDataApplication
+		}
+		if _, duplicate := visible[section]; duplicate {
+			return ErrInvalidDataApplication
+		}
+		visible[section] = struct{}{}
+	}
+	if page.DisplayMode == models.ApplicationDisplayModeDesktop {
+		if len(visible) != len(defaultApplicationVisibleSections()) {
+			return ErrInvalidDataApplication
+		}
+		return nil
+	}
+	if _, queryActionsVisible := visible[models.ApplicationVisibleSectionQueryActions]; !queryActionsVisible {
+		if page.RefreshIntervalSeconds == nil || *page.RefreshIntervalSeconds == models.ApplicationRefreshIntervalDisabled {
+			return ErrInvalidDataApplication
+		}
+	}
+	if _, parametersVisible := visible[models.ApplicationVisibleSectionParameters]; parametersVisible {
+		return nil
+	}
+	bindingsByParameter := make(map[string][]models.DataApplicationParameterBinding, len(parameters))
+	for _, binding := range bindings {
+		bindingsByParameter[binding.ApplicationParameterKey] = append(bindingsByParameter[binding.ApplicationParameterKey], binding)
+	}
+	for _, parameter := range parameters {
+		if !parameter.Required {
+			continue
+		}
+		parameterBindings := bindingsByParameter[parameter.Key]
+		if len(parameter.DefaultValue) == 0 || len(parameterBindings) == 0 {
+			return ErrInvalidDataApplication
+		}
+		for _, binding := range parameterBindings {
+			component, exists := components[binding.ComponentID]
+			if !exists {
+				return ErrInvalidDataApplication
+			}
+			filter, exists := componentParameterFilter(component, binding.ComponentParameterKey)
+			if !exists || !rawApplicationParameterHasValue(parameter.DefaultValue, filter.Operator) {
+				return ErrInvalidDataApplication
+			}
+		}
+	}
+	return nil
+}
+
+func rawApplicationParameterHasValue(raw json.RawMessage, operator string) bool {
+	var value any
+	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
+		return false
+	}
+	if operator == "is_null" || operator == "is_not_null" {
+		booleanValue, ok := value.(bool)
+		return ok && booleanValue
+	}
+	switch typed := value.(type) {
+	case nil:
+		return false
+	case string:
+		return typed != ""
+	case []any:
+		if len(typed) == 0 {
+			return false
+		}
+		for _, item := range typed {
+			if item == nil || item == "" {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func consumerField(descriptor *models.ConsumerDescriptor, name string) (models.ConsumerQueryField, bool) {
 	for _, field := range descriptor.InputContract.Fields {
 		if field.Name == name {
@@ -473,6 +690,27 @@ func decodeDataApplicationSnapshot(raw []byte) (models.DataApplicationSnapshot, 
 }
 
 func canonicalizeDataApplicationSnapshot(snapshot *models.DataApplicationSnapshot) {
+	if snapshot.Page.DisplayMode == "" {
+		snapshot.Page.DisplayMode = models.ApplicationDisplayModeDesktop
+	}
+	if snapshot.Page.RefreshIntervalSeconds == nil {
+		refreshIntervalSeconds := models.ApplicationRefreshIntervalDisabled
+		snapshot.Page.RefreshIntervalSeconds = &refreshIntervalSeconds
+	}
+	if snapshot.Page.VisibleSections == nil {
+		snapshot.Page.VisibleSections = defaultApplicationVisibleSections()
+	} else {
+		visibleSections := make(map[string]struct{}, len(snapshot.Page.VisibleSections))
+		for _, section := range snapshot.Page.VisibleSections {
+			visibleSections[section] = struct{}{}
+		}
+		snapshot.Page.VisibleSections = snapshot.Page.VisibleSections[:0]
+		for _, section := range defaultApplicationVisibleSections() {
+			if _, visible := visibleSections[section]; visible {
+				snapshot.Page.VisibleSections = append(snapshot.Page.VisibleSections, section)
+			}
+		}
+	}
 	if snapshot.Page.Placements == nil {
 		snapshot.Page.Placements = []models.DataApplicationComponentLayout{}
 	}
@@ -484,6 +722,9 @@ func canonicalizeDataApplicationSnapshot(snapshot *models.DataApplicationSnapsho
 	}
 	if snapshot.ParameterBindings == nil {
 		snapshot.ParameterBindings = []models.DataApplicationParameterBinding{}
+	}
+	if snapshot.SelectionBindings == nil {
+		snapshot.SelectionBindings = []models.DataApplicationSelectionBinding{}
 	}
 	for index := range snapshot.Components {
 		component := &snapshot.Components[index]

@@ -5,6 +5,7 @@
       :rows="rows"
       :columns="config.columns || []"
       :fields="descriptor?.output_contract?.fields || []"
+      @result-select="emit('result-select', $event)"
     />
     <el-alert
       v-else-if="invalidReason"
@@ -18,6 +19,7 @@
       :config="config"
       :has-more="Boolean(page?.has_more)"
       @invalid="invalidReason = $event"
+      @result-select="emit('result-select', $event)"
     />
     <GeoJSONResultRenderer
       v-else-if="rendererType === 'map'"
@@ -26,6 +28,7 @@
       :spatial="descriptor.output_contract.spatial"
       :has-more="Boolean(page?.has_more)"
       @invalid="invalidReason = $event"
+      @result-select="emit('result-select', $event)"
     />
   </div>
 </template>
@@ -47,6 +50,7 @@ const props = defineProps({
   descriptor: { type: Object, default: null },
   page: { type: Object, default: () => ({}) }
 })
+const emit = defineEmits(['result-select'])
 const { t } = useI18n()
 const emittedReason = ref('')
 const validationReason = computed(() => {

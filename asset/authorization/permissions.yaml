@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: asset
-manifest_version: 2
+manifest_version: 3
 permissions:
   - key: asset.application.approve
     allowed_scope_types: [tenant, department, project_group]
@@ -58,38 +58,38 @@ permissions:
     status: active
     name_i18n_key: permissions.asset.authorization.revoke.name
     description_i18n_key: permissions.asset.authorization.revoke.description
-  - key: asset.catalog.create
+  - key: asset.category.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium
     tenant_customizable: true
     delegable: false
     status: active
-    name_i18n_key: permissions.asset.catalog.create.name
-    description_i18n_key: permissions.asset.catalog.create.description
-  - key: asset.catalog.delete
+    name_i18n_key: permissions.asset.category.create.name
+    description_i18n_key: permissions.asset.category.create.description
+  - key: asset.category.delete
     allowed_scope_types: [tenant, department, project_group]
     risk_level: high
     tenant_customizable: true
     delegable: false
     status: active
-    name_i18n_key: permissions.asset.catalog.delete.name
-    description_i18n_key: permissions.asset.catalog.delete.description
-  - key: asset.catalog.read
+    name_i18n_key: permissions.asset.category.delete.name
+    description_i18n_key: permissions.asset.category.delete.description
+  - key: asset.category.read
     allowed_scope_types: [tenant, department, project_group]
     risk_level: low
     tenant_customizable: true
     delegable: false
     status: active
-    name_i18n_key: permissions.asset.catalog.read.name
-    description_i18n_key: permissions.asset.catalog.read.description
-  - key: asset.catalog.update
+    name_i18n_key: permissions.asset.category.read.name
+    description_i18n_key: permissions.asset.category.read.description
+  - key: asset.category.update
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium
     tenant_customizable: true
     delegable: false
     status: active
-    name_i18n_key: permissions.asset.catalog.update.name
-    description_i18n_key: permissions.asset.catalog.update.description
+    name_i18n_key: permissions.asset.category.update.name
+    description_i18n_key: permissions.asset.category.update.description
   - key: asset.entry.delete
     allowed_scope_types: [tenant, department, project_group]
     risk_level: high

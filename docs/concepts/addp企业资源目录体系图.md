@@ -1,6 +1,6 @@
-# ADDP 企业数据目录体系图
+# ADDP 企业资源目录体系图
 
-本文定义 ADDP 企业数据目录（Enterprise Data Catalog）的概念边界、事实所有权和用户视图。实现约束见 [企业数据目录实现规范](../spec/addp企业数据目录实现规范.md)。
+本文定义 ADDP 企业资源目录（Enterprise Catalog）的概念边界、事实所有权和用户视图。实现约束见 [企业资源目录实现规范](../spec/addp企业资源目录实现规范.md)。
 
 ## 一、为什么需要独立 Catalog
 
@@ -50,7 +50,7 @@ erDiagram
     }
 ```
 
-- `CatalogEntry` 是企业目录稳定身份。它独立于当前物理路径、工作区和资产发布状态。
+- `CatalogEntry` 是企业资源目录稳定身份。它独立于当前物理路径、工作区和资产发布状态。
 - `SourceBinding` 是 CatalogEntry 与专业资源之间的权威绑定及历史。关联只保存在 Catalog。
 - `CatalogComponent` 是字段或内部组件级从属对象，默认不成为顶级企业目录条目。
 - 业务语义关联、责任关系、治理状态和推荐继任关系都以 CatalogEntry 为锚点。
@@ -93,7 +93,7 @@ flowchart LR
 | Workbench | Data Application 草稿、Component、布局、参数绑定、不可变 Revision、发布状态和运行入口 |
 | Catalog | CatalogEntry、来源绑定、具体资源的语义关联、责任、治理状态和目录可见性 |
 | Manager | 预览、剖析、快显、内容读取和内容检索 |
-| Asset | 资产身份与版本、CatalogEntry 组合、发布、申请、授权、评价和运营 |
+| Asset | 资产身份与版本、CatalogEntry 组合、AssetCategory 多级资产目录、发布、申请、授权、评价和运营 |
 | System / IAM | Tenant、Department、Project Group、User、成员关系和 AuthContext |
 
 Catalog 可以保存专业资源的最小“已观察摘要”用于列表、搜索和离线展示，但该摘要是可重建投影，不是专业事实源。Meta 和 Standard 不保存 `catalog_entry_id` 反向投影。
@@ -147,7 +147,7 @@ Department 表达长期组织责任，Project Group 表达阶段性协作，User
 
 ## 六、目录视图与搜索
 
-企业数据目录不是一棵单一树，采用“主业务域 + 分面筛选 + 关系导航”。Standard Domain 是业务主分类；Department、来源系统、对象类型、责任、治理状态、质量和鲜活度等作为分面。
+企业资源目录不是一棵单一树，采用“主业务域 + 分面筛选 + 关系导航”。Standard Domain 表达少量、稳定的治理责任边界；Department、来源系统、对象类型、责任、治理状态、质量和鲜活度等作为分面。Catalog 不为满足门户导航而扩张 Domain 层级，也不持久化一棵通用企业资源树。
 
 | 搜索能力 | Owner | 目标 |
 | --- | --- | --- |
@@ -162,7 +162,7 @@ Catalog 提供三个权限感知视图：
 
 1. 治理目录：Catalog 的默认业务视图，查看允许发现的 `curated`、`certified` 和 `deprecated` 条目；即使调用者拥有盘点权限，也不因此默认混入 `discovered` 条目。
 2. 资源盘点：只对同时具有 `catalog.entry.read` 和 `catalog.inventory.read` 的治理、技术人员开放，查看允许发现的 `discovered` 及以上条目；自动建档的 DataItem 全量可查，但只在该视图中默认进入结果集。
-3. 资产门户：消费者通过 Asset / Portal 查看已发布资产，不直接浏览 Catalog 全量盘点。
+3. 资产门户：消费者通过 Asset / Portal 的 AssetCategory 多级资产目录查看已发布资产，不直接浏览 Catalog 全量盘点。
 
 Catalog 列表中的 Domain、Department 和 Engine Instance 都是稳定引用：稳定 ID 留在 API、URL 和聚合内部，用户通过可搜索的名称选择器交互，列表不把裸 ID 当作业务文案。“当前可见 CatalogEntry 中出现了哪些引用”由 Catalog 计算，引用名称、编码、类型和状态由 Standard / System 动态解析。Catalog 不复制 owner 完整列表，owner 短时不可达也不能阻塞 Catalog 列表、启动或 Ready。
 
@@ -186,6 +186,8 @@ flowchart LR
     Publish --> Consume["Portal 申请与消费"]
 ```
 
+AssetCategory 与 Catalog 的组织方式相互独立：Catalog 组织和治理 CatalogEntry，AssetCategory 只对已发布 Asset 提供面向消费者的多级导航。Asset 可以组合跨业务域的多个 CatalogEntry，因此其分类由发布人显式确认，不能照搬任一组成条目的 Domain 或企业目录视图。
+
 这是一条唯一主路径。不得把业务元数据写回 Meta，不得让 Asset 绕过 Catalog 自动发现专业资源，也不得用 Manager 技术资源树替代企业目录。
 
 ## 八、相关文档
@@ -193,5 +195,5 @@ flowchart LR
 - [ADDP 术语表](addp术语表.md)
 - [ADDP 核心概念关系图](addp核心概念关系图.md)
 - [ADDP 模块架构图](addp模块架构图.md)
-- [企业数据目录实现规范](../spec/addp企业数据目录实现规范.md)
-- [企业数据目录与 Catalog 模块专题](../next/ADDP企业数据目录能力专题.md)
+- [企业资源目录实现规范](../spec/addp企业资源目录实现规范.md)
+- [企业资源目录与 Catalog 模块专题](../next/ADDP企业资源目录能力专题.md)

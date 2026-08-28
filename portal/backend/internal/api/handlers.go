@@ -92,55 +92,55 @@ func handleHome(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 }
 
 // ============================================================
-// 目录浏览
+// 资产分类浏览
 // ============================================================
 
-// @Summary 获取目录树 | Get catalog tree
+// @Summary 获取资产分类树 | Get asset category tree
 // @Tags Portal
 // @Produce json
 // @Success 200 {array} map[string]interface{}
 // @Failure 502 {object} map[string]string "资产服务调用失败 | Asset service request failed"
-// @Router /catalogs [get]
+// @Router /categories [get]
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.catalog.read"]
-// handleCatalogs GET /api/portal/catalogs
-// 返回目录树（只含有 published 资产的节点）
-func handleCatalogs(assetClient *commonClient.AssetClient) gin.HandlerFunc {
+// @x-addp-required-permissions ["asset.category.read"]
+// handleCategories GET /api/v1/portal/categories
+// 返回资产分类树（只含有 published 资产的节点）
+func handleCategories(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		catalogs, err := assetClient.GetCatalogs(c.Request.Context(), userAccessToken(c))
+		categories, err := assetClient.GetCategories(c.Request.Context(), userAccessToken(c))
 		if err != nil {
-			writeAssetClientError(c, err, "获取目录失败")
+			writeAssetClientError(c, err, "获取资产分类失败")
 			return
 		}
-		commonAPI.SuccessResponse(c, catalogs)
+		commonAPI.SuccessResponse(c, categories)
 	}
 }
 
-// @Summary 获取目录下的资产列表 | Get assets in catalog
+// @Summary 获取分类下的资产列表 | Get assets in category
 // @Tags Portal
 // @Produce json
-// @Param id path int true "目录ID | Catalog ID"
+// @Param id path int true "资产分类 ID | Asset category ID"
 // @Success 200 {object} map[string]interface{}
 // @Failure 502 {object} map[string]string "资产服务调用失败 | Asset service request failed"
-// @Router /catalogs/{id}/assets [get]
+// @Router /categories/{id}/assets [get]
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.catalog.read","asset.entry.read"]
-// handleCatalogAssets GET /api/portal/catalogs/:id/assets
-func handleCatalogAssets(assetClient *commonClient.AssetClient) gin.HandlerFunc {
+// @x-addp-required-permissions ["asset.category.read","asset.entry.read"]
+// handleCategoryAssets GET /api/v1/portal/categories/:id/assets
+func handleCategoryAssets(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		catalogID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		categoryID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 		if err != nil {
-			commonAPI.BadRequestError(c, "无效的目录 ID")
+			commonAPI.BadRequestError(c, "无效的资产分类 ID")
 			return
 		}
 		page, pageSize := commonAPI.GetPaginationParams(c)
 
 		resp, err := assetClient.GetAssets(c.Request.Context(), userAccessToken(c), commonClient.AssetQueryOptions{
-			CatalogID: &catalogID,
-			Page:      page,
-			PageSize:  pageSize,
+			CategoryID: &categoryID,
+			Page:       page,
+			PageSize:   pageSize,
 		})
 		if err != nil {
 			writeAssetClientError(c, err, "获取资产列表失败")
@@ -159,7 +159,7 @@ func handleCatalogAssets(assetClient *commonClient.AssetClient) gin.HandlerFunc 
 // @Produce json
 // @Param keyword query string false "搜索关键词 | Search keyword"
 // @Param type_id query int false "类型ID | Type ID"
-// @Param catalog_id query int false "目录ID | Catalog ID"
+// @Param category_id query int false "资产分类 ID | Asset category ID"
 // @Success 200 {object} map[string]interface{}
 // @Failure 502 {object} map[string]string "资产服务调用失败 | Asset service request failed"
 // @Router /assets [get]
@@ -182,9 +182,9 @@ func handleAssets(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 				opts.TypeID = tid
 			}
 		}
-		if catStr := c.Query("catalog_id"); catStr != "" {
-			if cid, err := strconv.ParseInt(catStr, 10, 64); err == nil {
-				opts.CatalogID = &cid
+		if categoryValue := c.Query("category_id"); categoryValue != "" {
+			if categoryID, err := strconv.ParseInt(categoryValue, 10, 64); err == nil {
+				opts.CategoryID = &categoryID
 			}
 		}
 

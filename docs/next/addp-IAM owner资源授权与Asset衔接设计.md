@@ -1,4 +1,4 @@
-# IAM Owner 资源授权与 Asset 衔接设计（已并入企业数据目录专题）
+# IAM Owner 资源授权与 Asset 衔接设计（已并入企业资源目录专题）
 
 本文原先讨论的通用 Owner ResourceRef 方案已被 CatalogEntry 稳定身份方案取代，不能作为 Asset 来源模型继续实现。
 
@@ -6,5 +6,5 @@
 
 后续设计和迁移清单统一见：
 
-- [ADDP 企业数据目录能力专题](ADDP企业数据目录能力专题.md)
-- [ADDP 企业数据目录实现规范](../spec/addp企业数据目录实现规范.md)
+- [ADDP 企业资源目录能力专题](ADDP企业资源目录能力专题.md)
+- [ADDP 企业资源目录实现规范](../spec/addp企业资源目录实现规范.md)

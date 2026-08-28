@@ -156,12 +156,12 @@ Workbench 不提供：
 ```text
 Workbench View
   -> Data Application
-  -> desktop | mobile | wallboard 展示配置
+  -> desktop | wallboard 展示配置
 ```
 
-`wallboard` 后续可以拥有固定画布比例、全屏、轮播、自动刷新、深色主题和大屏组件，但仍调用同一 Service。浏览器定时刷新不进入 Orchestrator；高成本统计必须由上游提前计算并发布为服务。
+`wallboard` 复用同一 Application Revision、Component、Parameter Binding、Selection Binding 和 Service 查询，只改变页面在当前浏览器视口中的布局行为。首段能力固定为视口自适应画布和用户主动全屏；不保存屏幕分辨率、缩放倍率或全屏状态，不复制一套大屏 Component 配置。
 
-大屏能力不进入第一阶段。
+轮播、深色主题和专用大屏 renderer 仍属后续能力。`wallboard` 可以在发布快照中选择显式的浏览器前台刷新档位；它不进入 Orchestrator，高成本统计仍必须由上游提前计算并发布为服务。
 
 ## 五、领域模型
 
@@ -314,7 +314,7 @@ Data Application 聚合根负责：
 
 - 一个或多个 Component 及其页面和布局；
 - 应用级参数及其到 Component 参数的显式绑定；
-- `desktop | mobile | wallboard` 展示配置；
+- `desktop | wallboard` 展示配置；
 - 草稿、发布、下线和版本生命周期；
 - 稳定运行入口以及与 CatalogEntry 的发布衔接。
 
@@ -324,7 +324,7 @@ Data Application 可以只有一个 Component。是否成为应用取决于显�
 
 Data Application 不授予底层数据访问权。运行时每个 Component 都使用当前访问者身份调用其 Service，由 Service 实时执行 Permission、Resource Grant / Policy 和契约校验；Application 发布、CatalogEntry 或 Asset 授权都不能替代 Service 最终授权。
 
-Phase 4A 的最小创作范围固定为单页 `desktop`：一个页面、十二列栅格和一个或多个 Component。`mobile | wallboard`、多页面、联动和轮播仍在 Phase 5；数据库快照不得预埋未实现的第二套页面或展示模式字段。
+Phase 4A 的最小创作范围固定为单页 `desktop`：一个页面、十二列栅格和一个或多个 Component。Selection Binding 同页联动和 `wallboard` 展示模式进入 Phase 5；`mobile`、多页面和轮播仍属后续范围，数据库快照不得预埋未实现的第二套页面或展示模式字段。
 
 Data Application 使用独立于 Workbench View 的唯一 API：
 
@@ -348,6 +348,178 @@ GET    /api/v1/workbench/data_applications/:id/runtime
 Phase 4A 的稳定运行响应只向创建者开放，并要求 `workbench.data_application.execute`。这不是临时兼容路径：创建者始终可以运行自己发布的应用；其他用户必须等 Phase 4B 接入 owner Resource Grant、Asset 履约和 Portal 打开链路后才可运行。当前不得用“同 Tenant 即可读”、公开链接、API Key、专属 Token 或 Catalog 可见性代替资源授权。
 
 发布后的 Data Application 先由 Catalog 建立企业 CatalogEntry，再由 Asset 通过 `AssetComponent.catalog_entry_id` 组合为 `application` 类型资产。Asset 只保存资产组合、发布和授权履约事实，不保存应用页面、组件树或运行配置。
+
+### 5.4 Phase 5 组件联动与受控下钻设计
+
+Phase 4A 已实现的“参数联动”是一个 Application Parameter 通过多条 `parameter_bindings` 同时驱动多个 Component；它仍由用户在参数区输入值，不表示某个 Component 的选择结果可以改变其他 Component。Phase 5 必须把两类 Binding 分开建模，不能让 renderer 直接修改目标 Component 的查询：
+
+```text
+用户输入 ──────────────────────────────┐
+                                      v
+Renderer 结果选择 -> Selection Binding -> Application Parameter
+                                      -> Parameter Binding
+                                      -> Component Query -> Service
+```
+
+稳定概念为 **Selection Binding / 选择绑定**：Data Application Revision 中声明“从哪个源 Component 的当前结果选择哪些字段，并原子写入哪些 Application Parameter”。目标 Component 不在选择绑定中重复保存，而是由既有 `parameter_bindings` 唯一推导；同一 Component 的真实请求继续只由 `buildComponentQuery` 一类参数编译主路径生成。
+
+最小快照结构为：
+
+```json
+{
+  "selection_bindings": [
+    {
+      "source_component_id": "8e4f...",
+      "assignments": [
+        {
+          "source_field": "city_code",
+          "application_parameter_key": "selected_city"
+        }
+      ]
+    }
+  ]
+}
+```
+
+首期不增加 `event`、`action`、`target_component_ids`、`query_mode`、表达式或脚本字段：每个源 Component 最多一条选择绑定，事件固定为用户选择一个当前结果，赋值后自动查询由这些 Application Parameter 影响的去重 Component 集合。以后只有出现第二种已经确认的真实交互时，才讨论扩展契约，不能预先建设通用事件 DSL。
+
+#### 5.4.1 受控下钻的首期边界
+
+首期“下钻”只表示同一页面内的汇总到明细：源 Component 返回的某个标量字段被显式映射到 Application Parameter，下游明细 Component 本来就通过公开 Service Input Contract 接受该参数。Workbench 不推断层级、不生成维度路径，也不在浏览器聚合或拼接查询。
+
+首期不包含：
+
+- 跳转到任意 URL、外部应用或未声明页面；
+- 动态替换 ServiceReference、operation、字段名或查询模板；
+- 多页面导航、面包屑、返回栈和跨页面状态恢复；
+- bbox、范围刷选、多选集合、框选、级联树或任意值转换；
+- Renderer 之间直接发请求、直接持有对方实例或共享私有状态。
+
+多页面下钻必须等 Phase 5 的多页面模型单独确认后，再复用 Application Parameter 状态；不能为首期同页联动预埋隐藏页面或通用导航动作。
+
+#### 5.4.2 Renderer 与 Workbench Runtime 的职责
+
+三类共享 renderer 只发出统一的 `result-select` 意图，payload 固定为当前结果中的 `row_index`，不携带 ServiceReference、目标 Component、参数名或任意查询片段：
+
+| Renderer | 选择来源 | `row_index` 来源 |
+| --- | --- | --- |
+| Table | 用户点击当前页的一行 | 当前页原始 rows 下标 |
+| Chart | 用户点击 bar、line point 或 pie item | ECharts `dataIndex`；Chart 不在客户端排序或聚合，因此仍对应原始 rows |
+| Map | 用户点击一个 Feature | 构造 Feature 时保留的原始 rows 下标，不依赖 tooltip 字段 |
+
+`WorkbenchRendererHost` 负责把三个 primitive 的事件归一化，Data Application Runtime 再用源 Component 当前的原始 rows 和 `selection_bindings` 读取字段值。共享 renderer 不读取选择绑定，不持久化选择，也不认识 Workbench 领域模型。
+
+一次选择的运行语义固定为：
+
+1. 先读取并校验该选择绑定的全部 assignment；任一字段缺失、类型不兼容或必填目标收到 `null` 时，整次选择不修改任何参数；
+2. 原子更新 Application Parameter 状态，参数区同步显示新值；
+3. 根据 `parameter_bindings` 推导并去重受影响 Component，把它们的 cursor 全部重置到第一页；
+4. 并行查询受影响 Component，每个 Component 独立显示 Service 错误，已更新参数不因局部请求失败而回滚；
+5. 同一目标的快速连续选择采用 last-selection-wins，请求序号较旧的响应不得覆盖较新的结果；由 props 更新或查询完成引起的 renderer 重绘不得再次发出选择事件。
+
+手工输入 Application Parameter 仍按现有“查询全部”主路径提交，不因首期选择联动改成逐键自动查询。用户选择结果后可以直接在现有参数控件中查看、修改或清空最终值，不建立第二份不可见的 interaction state。
+
+#### 5.4.3 保存与校验
+
+`selection_bindings` 属于 Data Application 草稿和不可变 Application Revision 快照，不单独建表，不增加运行 API，也不保存用户实际选择值或查询结果。该字段是 `addp.workbench_data_application/v1` 当前契约的附加集合：缺失时由同一规范化主路径收敛为空数组，既有不可变 Revision 保持原文和原行为；Backend 不增加 v1/v2 双运行分支。
+
+Workbench Backend 在草稿保存和发布时必须使用已读取的 Consumer Descriptor 严格校验：
+
+- 源 Component 存在，同一源 Component 只有一条选择绑定；
+- assignment 的源字段同时存在于源输出契约和 `query_template.select`；
+- 源字段是 `string | bool | int | bigint | float | double | decimal | date | time | timestamp | uuid` 标量，不接受 geometry、array、json、bytes 或 unknown；
+- Application Parameter 存在，同一条选择绑定不能重复写入同一参数；
+- 源输出 `FieldType` 与该 Application Parameter 所有目标 Component Filter 的输入 `FieldType` 完全一致，首期不做字符串、数值、日期或单值/数组的隐式转换；
+- 必填 Application Parameter 的源输出字段必须声明为非 nullable；目标 Filter 必须是现有标量操作符，`in | not_in | is_null | is_not_null` 不进入首期选择绑定；
+- Descriptor fingerprint、Component 配置、Parameter Binding 和 Service 最终执行权限继续走已有校验，不因联动新增旁路。
+
+前端编辑器新增“选择联动”区即可，不建设节点画布。创作者选择源 Component 后，源字段选项来自当前 Descriptor 输出契约，Application Parameter 选项按上述类型规则过滤；界面只读展示由既有参数绑定推导出的受影响 Component，保存时仍由 Backend 作最终校验。
+
+`Selection Binding` 已补入正式术语表和核心概念关系图；实现按 Backend 快照 DTO、共享 renderer 事件、Runtime 和编辑器的单一路线推进。
+
+### 5.5 Phase 5 单页 Wallboard 展示模式
+
+稳定概念为 **Application Display Mode / 应用展示模式**。展示模式属于 Data Application 当前页面的发布事实，最小快照字段为：
+
+```json
+{
+  "page": {
+    "id": "...",
+    "title": "...",
+    "display_mode": "wallboard",
+    "placements": []
+  }
+}
+```
+
+当前只允许 `desktop | wallboard`：
+
+- `desktop` 保持现有十二列流式页面，按 Component 高度自然滚动，适合个人交互分析；
+- `wallboard` 使用同一十二列 placement，把全部布局行压入扣除页头和参数区后的当前视口，Component 内部自行处理滚动和 resize，适合会议室、展厅和态势总览；
+- 两种模式共享同一 Component、Application Parameter、Parameter Binding、Selection Binding、ServiceReference、运行 URL 和当前访问者授权，不存在第二套大屏查询或大屏应用实体；
+- 编辑器只选择展示模式，不保存屏幕物理尺寸、浏览器尺寸、缩放值或全屏状态。旧 Revision 读取时由同一快照规范化主路径把缺失值收敛为 `desktop`，新建、更新和发布只接受显式合法枚举；不增加 v1/v2 运行分支；
+- 全屏按钮在两种模式都可使用，调用浏览器 Fullscreen API；进入或退出状态只存在于当前浏览器会话，并监听浏览器自身的 `fullscreenchange`，发布修订和后端不保存该状态。
+
+本段不包含 `mobile`、多页面、画布拖拽缩放、轮播、自动刷新、主题切换、电视遥控交互或专用大屏 renderer。`wallboard` 不能绕过 Service 的有界结果、权限和契约校验，也不自动触发后台任务。
+
+### 5.6 Phase 5 Wallboard 应用刷新策略
+
+稳定概念为 **Application Refresh Policy / 应用刷新策略**。它是 Data Application 当前页面的发布事实，继续位于同一 `addp.workbench_data_application/v1` 快照中：
+
+```json
+{
+  "page": {
+    "display_mode": "wallboard",
+    "refresh_interval_seconds": 60
+  }
+}
+```
+
+首期只允许 `0 | 30 | 60 | 300`，其中 `0` 表示关闭；非零值只允许与 `display_mode=wallboard` 同时保存，`desktop` 必须为 `0`。使用固定档位而不是任意秒数，可以限制 Service 压力并让发布修订的行为可预期。既有快照缺少该字段时由同一解码主路径收敛为 `0`，新建、更新和发布均输出并校验显式整数，不增加兼容字段或第二套 schema。
+
+运行语义固定为：
+
+1. 运行页完成 Application Revision 和全部 Consumer Descriptor 加载后，启用刷新时立即执行一次“查询全部组件”；
+2. 前一次自动查询结束后才开始计算下一次间隔，不使用可能堆积请求的固定并发 tick；
+3. `document.hidden=true` 时不启动新查询并清除等待中的计时器，页面重新可见时立即刷新一次再恢复间隔；
+4. 手工查询、选择联动或其他 Component 查询仍在进行时，自动刷新跳过本轮并重新等待完整间隔；已有 latest-request-wins 继续保护用户快速交互产生的响应顺序；
+5. 单个 Component 失败只显示其现有错误并继续后续刷新，其他 Component 的成功结果不回滚；参数当前值保持不变，每次刷新都按当前 Application Parameter 状态重新构造查询；
+6. 计时器只存在于当前运行页浏览器会话，离开页面即销毁，不创建 Task、Schedule、Execution、服务端轮询、查询结果缓存或新的 Workbench 运行 API。
+
+刷新只能再次读取已发布 Service 的当前有界结果，不能承担上游数据生产、昂贵统计、物化或告警职责。本段仍不包含页面轮播、后台标签页刷新、自定义 cron、秒级刷新、失败通知或跨终端同步。
+
+### 5.7 Phase 5 Wallboard 应用呈现区块
+
+稳定概念为 **Application Presentation Sections / 应用呈现区块**。它只控制正式运行入口的页面说明和查询交互是否显示，不改变 Data Application、Component、Parameter、Binding、查询模板或授权。页面快照增加唯一正向列表：
+
+```json
+{
+  "page": {
+    "display_mode": "wallboard",
+    "refresh_interval_seconds": 30,
+    "visible_sections": ["title", "parameters"]
+  }
+}
+```
+
+当前区块固定为：
+
+| 值 | 显示内容 | 隐藏时仍保留 |
+| --- | --- | --- |
+| `title` | `page.title` 与 Data Application 说明 | 修订状态、刷新状态和全屏入口组成的紧凑工具栏 |
+| `parameters` | Application Parameter 控件区 | 当前参数状态和 Parameter Binding 仍在内存中参与查询 |
+| `query_actions` | “查询全部”、Component“查询”和 Table 分页操作 | 自动刷新、Selection Binding 和错误提示 |
+
+约束固定为：
+
+1. `visible_sections` 是必填、无重复的枚举列表；新建默认包含全部三个区块，既有不可变 Revision 缺失时由同一快照规范化主路径收敛为全部显示；
+2. `desktop` 必须包含全部区块，只允许 `wallboard` 隐藏；切换回桌面时编辑器立即恢复全部区块，不增加桌面简洁模式；
+3. 隐藏 `query_actions` 时 `refresh_interval_seconds` 必须为非零合法档位，以保证 Descriptor 加载后仍有唯一首次查询主路径；
+4. 隐藏 `parameters` 时，每个必填 Application Parameter 必须有默认值，且该默认值对它绑定的每一个 Component Filter 都是运行时有效输入；不能发布一个只能报“缺少必填参数”且又没有输入入口的页面；
+5. 修订状态、自动刷新状态、全屏入口、Component 标题、加载与查询错误始终可见，不进入可隐藏列表；隐藏区块不能抑制授权、契约变化或失败提示；
+6. 运行页标题使用发布快照中的 `page.title`；Data Application `name` 继续作为聚合身份、列表和目录名称，不再错误替代页面呈现标题。
+
+本段不增加自定义 CSS、任意 DOM selector、按 Component 隐藏、悬浮工具栏、编辑/运行双快照、匿名 kiosk URL 或第二套 renderer。全部配置继续随 Application Revision 不可变发布。
 
 ## 六、Service Consumer Descriptor 与 Consumer Catalog
 
@@ -582,7 +754,7 @@ renderer 只能消费输出契约，不根据业务名称猜测角色。第一�
 
 | 能力 | 放置位置 | 组件 | 边界 |
 | --- | --- | --- | --- |
-| 表格结果 | `common-frontend/basic` | `TabularResultRenderer` | 渲染字段和行，发出排序、翻页和行选择事件 |
+| 表格结果 | `common-frontend/basic` | `TabularResultRenderer` | 渲染当前页字段和行并发出当前结果选择事件；cursor 仍由宿主维护 |
 | 图表结果 | 新建 `common-frontend/chart` | `ChartRenderer` | 使用 ECharts 渲染已完整的有界表格结果 |
 | 空间结果 | `common-frontend/map` | `GeoJSONResultRenderer` | 复用 `MapContainer`、OpenLayers、CRS registry 和底图 profile |
 | 渲染编排 | `workbench/frontend` | `WorkbenchRendererHost` | 选择 renderer、适配 Service 结果、判断完整性并处理 cursor |
@@ -908,10 +1080,14 @@ Phase 4B 再接企业目录和资产授权主线：
 
 ### Phase 5：BI 深化与大屏
 
-- [ ] 视图联动和受控下钻；
+- [x] 实现 5.4 节 Selection Binding、同页 Component 选择联动和受控下钻；
 - [ ] 多页面布局；
-- [ ] `desktop | mobile | wallboard` 展示配置；
-- [ ] 全屏、轮播和刷新策略；
+- [x] 实现 5.5 节 `desktop | wallboard` 单页展示模式；
+- [x] 实现浏览器会话级全屏；
+- [ ] `mobile` 展示模式；
+- [ ] 页面轮播；
+- [x] 实现 5.6 节 wallboard 应用刷新策略；
+- [x] 实现 5.7 节 wallboard 应用呈现区块；
 - [ ] 外部 BI 消费服务的契约与接入指南；
 - [ ] 评估正式 Data Application 资产运营指标。
 
@@ -922,8 +1098,7 @@ Workbench 不因为 Phase 5 增强而取得数据建模、SQL、指标定义或�
 - Graph、Tile、Registered Service 适配；
 - 多服务 JOIN；
 - 自由 SQL 和计算字段语言；
-- Data Application 和多页面；
-- 大屏；
+- 多页面 Data Application；
 - 外部 API Key；
 - 后台定时刷新；
 - 订阅、告警和邮件报表；
@@ -1241,9 +1416,67 @@ ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?sslmode=disable' mak
 
 两个长期 Workbench 示例 `1714dcf7-f34e-4996-a8dc-3b88998ebe55`、`d6c30859-15c8-4b88-964b-f2dd315fb923` 未删除、未下线。本轮没有创建新的浏览器临时 Asset 或 Data Application。Phase 4 至此进入可接力状态；下一步应先确认 Phase 5 的最小范围，再决定优先做 BI 深化还是大屏展示，不应把两者同时展开。
 
+### 14.11 Phase 5 第一段实现与验收（2026-08-27）
+
+5.4 节三个边界已经确认并完成实现：稳定概念使用 `Selection Binding / 选择绑定`；首期只支持同页 Component 联动；赋值只允许完全同类型的标量字段。正式术语表、核心概念关系图、模块架构说明和 Workbench 模块边界已经同步，不建设通用事件/动作 DSL、多页面导航、bbox、多选或任意值转换。
+
+Backend 在 `addp.workbench_data_application/v1` 快照中增加唯一 `selection_bindings` 集合，并在创建、更新和发布的同一校验主路径中核对源 Component、已选择输出字段、标量类型、Application Parameter、Parameter Binding、目标过滤字段及操作符。目标 Component 始终从既有 `parameter_bindings` 推导；发布修订仍是不可变 JSON 快照，不增加数据库表、运行 API、兼容字段或 v1/v2 双运行分支。
+
+`common-frontend` 的表格、图表和地图 renderer 统一发出只含 `{ row_index }` 的 `result-select`，Workbench Renderer Host 再把事件交给 Runtime。Runtime 只从源 Component 当前原始 rows 读取声明字段，原子更新 Application Parameter，按 Parameter Binding 推导并重查受影响组件；并发查询使用 last-selection-wins，旧响应不能覆盖新选择。编辑器新增“选择联动”区，按 Descriptor 和完全同类型规则过滤源字段及 Application Parameter，并只读展示受影响组件。
+
+真实浏览器验收使用长期应用 `d6c30859-15c8-4b88-964b-f2dd315fb923`，未创建临时应用、未删除或下线任何长期应用。该应用已发布为修订 2：源表格 `City` 绑定共享城市参数；把参数临时改成“观察值”后点击结果行，参数立即回填为“长沙市”，表格和图表自动重查，页面及浏览器 error/warn 日志均为空。Backend、PostgreSQL、三组 renderer、Workbench Frontend 构建测试和 Swagger 路由覆盖门禁均已通过。
+
+当时标准 `make test-module MODULE=workbench` 的前置 `platform T0` 和 `make test-changed` 曾被并行 Asset/IAM 改动阻塞；相关 Permission、Swagger 和已删除文件扫描问题随后已收口。最终 `make test-changed` 已通过，其中包含 Workbench Backend、27 项 Frontend 测试与生产构建、PostgreSQL T2、Swagger 和 CI 登记检查；该历史阻塞不再作为当前接力前置条件。
+
+### 14.12 Phase 5 单页 Wallboard 与全屏实现（2026-08-27）
+
+5.5 节已经按单一路线实现。Data Application 的 `page` 增加必填 `display_mode`，新建固定产生 `desktop`，更新和发布只接受 `desktop | wallboard`；读取缺少该字段的既有不可变 Revision 时，由 Backend 快照规范化主路径收敛为 `desktop`，Frontend 不保留第二个缺省兜底。该字段继续位于 `addp.workbench_data_application/v1` JSON 快照，不新增表、迁移、API、路由或运行分支。
+
+编辑器增加国际化的展示模式选择，并把“桌面布局”统一改为“页面布局”。Runtime 的 `desktop` 保持原流式十二列栅格；`wallboard` 计算 placement 最大布局行数，把这些行压入扣除页头和参数区后的当前浏览器视口。全屏按钮直接使用浏览器 Fullscreen API，并监听 `fullscreenchange`；全屏状态不进入草稿、Revision 或 Backend。两种模式继续复用同一 Parameter Binding、Selection Binding、Component 查询和当前访问者 Service 授权。
+
+真实浏览器验收继续使用长期应用 `d6c30859-15c8-4b88-964b-f2dd315fb923`，未创建、删除或下线其他应用。旧草稿读取后明确显示“桌面”；切换为“大屏”保存并发布修订 3 后，运行根节点使用 `runtime--wallboard`，十二行 placement 生成 `repeat(12, minmax(0, 1fr))` 视口网格。查询返回 10 行；进入全屏后按钮变为“退出全屏”，退出后恢复；点击表格结果仍能把共享城市参数从“观察值”写回“长沙市”并自动重查，浏览器 error/warn 日志为空。
+
+最终标准 `make test-module MODULE=workbench` 已完整通过 platform T0、Workbench Go T1、27 项 Frontend T1/T3 与生产构建、PostgreSQL T2；独立 Swagger 生成和 17 个公开路由覆盖、书稿及 diff 检查同样通过。带全部允许测试 DSN 的 `make test-changed` 已通过 platform、Agent 以及 Asset Go/Frontend，随后被当前并行 Asset PostgreSQL 改动阻断：`TestAssetSchemaMigrationAgainstPostgres` 在幂等迁移检查中发现 `asset.authorizations` relation 不存在。该失败不涉及 Workbench 文件或本轮契约；应由 Asset 当前改动收口后重新执行仓库聚合门禁。
+
+### 14.13 Phase 5 Wallboard 应用刷新策略实现（2026-08-28）
+
+5.6 节已经按单一路线完成代码和门禁。Data Application 的 `page` 增加必填 `refresh_interval_seconds`，只接受 `0 | 30 | 60 | 300`；`desktop` 只能为 `0`，`wallboard` 可选择任一档位。Backend 使用可检测字段缺失的请求 DTO，更新和发布不能把缺失误判为关闭；读取缺少该字段的既有不可变 Revision 时，才由同一快照规范化主路径补为 `0`。该字段继续位于现有 JSON 快照，不新增表、迁移、路由或运行 API。
+
+编辑器在展示模式旁提供国际化固定档位，切回桌面会立即把策略收敛为关闭。Runtime 启用刷新后在 Descriptor 全部加载完成时立即查询一次，前一次查询结束后才创建下一次单次计时器；页面不可见时清除计时器，重新可见时立即刷新。手工或联动查询仍在进行时自动刷新跳过本轮，参数当前值保持不变，Component 继续独立显示查询错误。离开运行页会移除计时器和可见性监听，不创建 Task、Schedule、Execution 或后台轮询。
+
+验证已经完成：
+
+```bash
+WORKBENCH_POSTGRES_TEST_DSN='postgres://addp:***@localhost:15432/addp_test?sslmode=disable' \
+  make test-module MODULE=workbench
+bash scripts/swagger/gen-swagger.sh workbench
+bash scripts/swagger/check-route-coverage.sh workbench
+git diff --check
+```
+
+标准模块门禁完整通过 platform T0、Workbench Go T1、28 项 Frontend T1/T3 与生产构建、PostgreSQL T2；Swagger 明确把字段声明为必填整数枚举，17 个公开路由覆盖一致。真实浏览器验收继续使用长期应用 `d6c30859-15c8-4b88-964b-f2dd315fb923`：编辑器选择 30 秒并保存后成功发布修订 4；运行页明确显示“自动刷新：30 秒”，无需手工查询即返回 10 行表格并完成图表渲染。Gateway 和 Service 日志从首次查询开始，每隔 30 秒稳定出现两条 Component 查询且全部返回 200，连续多轮没有请求堆积；浏览器 error/warn 日志为空。验收后已关闭运行标签页，避免继续产生后台轮询。长期应用 `1714dcf7-f34e-4996-a8dc-3b88998ebe55`、`d6c30859-15c8-4b88-964b-f2dd315fb923` 均未删除或下线。
+
+### 14.14 Phase 5 Wallboard 应用呈现区块实现（2026-08-28）
+
+5.7 节已经按单一路线完成设计、实现和验收。稳定概念 `Application Presentation Sections / 应用呈现区块` 已同步进入术语表、核心概念关系图、模块架构图和 Workbench 模块边界。现有 `page` 快照增加必填 `visible_sections`，只接受无重复的 `title | parameters | query_actions` 正向列表；新建默认全部显示，既有不可变 Revision 缺失时由 Backend 快照规范化主路径补全，列表顺序同时按固定枚举顺序规范化，避免语义相同的配置产生不同修订指纹。没有增加数据库表、迁移、路由、运行 API 或第二套页面模型。
+
+编辑器只允许 `wallboard` 隐藏区块；切换回 `desktop` 会恢复全部区块。保存、更新和发布共用 Backend 约束：隐藏查询动作必须启用合法自动刷新，隐藏参数区必须保证每个必填 Application Parameter 都具有可用于全部绑定过滤器的默认值。Frontend 在选择和保存时提前给出国际化提示，Backend 仍作为最终契约边界。Runtime 的标题来源已经收敛为发布快照 `page.title`；修订状态、刷新状态、全屏入口、组件标题、加载和查询错误始终显示。
+
+最终标准验证为：
+
+```bash
+WORKBENCH_POSTGRES_TEST_DSN='postgres://addp:***@localhost:15432/addp_test?sslmode=disable' \
+  make test-module MODULE=workbench
+bash scripts/swagger/gen-swagger.sh workbench
+bash scripts/swagger/check-route-coverage.sh workbench
+git diff --check
+```
+
+模块门禁完整覆盖 platform T0、Workbench Go T1、29 项 Frontend T1/T3 与生产构建、PostgreSQL T2；Swagger 把 `visible_sections` 声明为必填枚举数组，17 个公开路由覆盖一致。真实浏览器验收继续使用长期应用 `d6c30859-15c8-4b88-964b-f2dd315fb923`，未创建、删除或下线应用：在大屏、30 秒刷新条件下隐藏全部三个可选区块，保存并发布修订 5。运行页只保留紧凑工具栏、两个组件标题和查询结果；页面标题、说明、参数控件、查询按钮及表格分页均未出现。跨过一个完整 30 秒刷新周期后，表格与图表仍保持真实长沙市查询结果，页面查询错误为 0，浏览器 error/warn 日志为空；验收后已关闭运行标签页。
+
 ## 十五、概念设计状态
 
-当前没有待确认的 Phase 0 概念问题。进入实现后若 Service 现有公开执行路由、授权模型或 Query Service 输出契约与本文冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
+当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Service 公开执行路由、授权模型和 Query Service 输出契约没有发生变化。Phase 5 单页能力已经收口，下一步建议优先评估正式 Data Application 的资产运营指标，只确定可观测事实、指标口径和责任模块，不立即建设统计页面；在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
 
 ## 十六、相关文档
 
@@ -1258,9 +1491,9 @@ ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?sslmode=disable' mak
 - `common-frontend/docs/ARCHITECTURE.md`
 - `common-frontend/docs/addp前端风格设计规范.md`
 - `common-frontend/map/README.md`
-- `docs/concepts/addp企业数据目录体系图.md`
-- `docs/spec/addp企业数据目录实现规范.md`
-- `docs/next/ADDP企业数据目录能力专题.md`
+- `docs/concepts/addp企业资源目录体系图.md`
+- `docs/spec/addp企业资源目录实现规范.md`
+- `docs/next/ADDP企业资源目录能力专题.md`
 - `docs/next/Outdoor业务数据治理推进方案.md`
 - `docs/plan/数据资产模块群规划.md`
 - `service/CLAUDE.md`

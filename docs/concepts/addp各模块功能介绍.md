@@ -302,7 +302,7 @@
 
 ---
 
-### 15. Catalog（企业数据目录）
+### 15. Catalog（企业资源目录）
 
 **职责定位**：在专业模块事实之上建立企业级稳定目录身份、业务语义关联、责任、治理状态和权限感知发现
 
@@ -321,7 +321,7 @@ Catalog 不拥有 DataItem 技术元数据、Standard 语义定义、Manager 内
 - Backend：8192
 - Frontend：5189 (dev)
 
-**详细文档**：`docs/concepts/addp企业数据目录体系图.md`、`docs/spec/addp企业数据目录实现规范.md`
+**详细文档**：`docs/concepts/addp企业资源目录体系图.md`、`docs/spec/addp企业资源目录实现规范.md`
 
 ---
 
@@ -495,7 +495,7 @@ import { TablePreview, GeoJsonPreview } from '@common-ui-map'
 - Model: `model/CLAUDE.md`
 - Quality: `quality/CLAUDE.md`
 - Monitor: `monitor/docs/Monitor模块实施报告.md`
-- Catalog: `docs/concepts/addp企业数据目录体系图.md`、`docs/spec/addp企业数据目录实现规范.md`
+- Catalog: `docs/concepts/addp企业资源目录体系图.md`、`docs/spec/addp企业资源目录实现规范.md`
 - Asset: `asset/CLAUDE.md`
 - Portal: `portal/CLAUDE.md`
 

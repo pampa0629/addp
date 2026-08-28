@@ -44,13 +44,14 @@ func setupAssetCleanupTestDB(t *testing.T) *gorm.DB {
 			sort_order INTEGER DEFAULT 0,
 			created_at DATETIME
 		)`,
-		`CREATE TABLE asset.catalogs (
+		`CREATE TABLE asset.categories (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
 			name TEXT NOT NULL,
 			parent_id INTEGER,
 			sort_order INTEGER DEFAULT 0,
 			description TEXT,
+			version INTEGER NOT NULL DEFAULT 1,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -60,7 +61,7 @@ func setupAssetCleanupTestDB(t *testing.T) *gorm.DB {
 			name TEXT NOT NULL,
 			description TEXT,
 			type_id INTEGER NOT NULL,
-			catalog_id INTEGER,
+			category_id INTEGER,
 			tags TEXT,
 			status TEXT NOT NULL DEFAULT 'draft',
 			owner_id INTEGER NOT NULL,
@@ -197,7 +198,7 @@ func TestAssetCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ScanReclaimCandidates: %v", err)
 	}
-	if stats.TypeDefinitions != 1 || stats.TypeFieldSchemas != 1 || stats.Catalogs != 1 || stats.Assets != 1 ||
+	if stats.TypeDefinitions != 1 || stats.TypeFieldSchemas != 1 || stats.Categories != 1 || stats.Assets != 1 ||
 		stats.AssetComponents != 1 || stats.AssetExtFields != 1 || stats.Applications != 1 || stats.Authorizations != 1 || stats.Ratings != 1 {
 		t.Fatalf("unexpected tenant scan stats: %+v", stats)
 	}
@@ -223,19 +224,19 @@ func seedAssetCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64) (int
 	if err := db.Create(&fieldSchema).Error; err != nil {
 		t.Fatalf("create field schema: %v", err)
 	}
-	catalog := models.Catalog{TenantID: tenantID, Name: "Catalog"}
-	if err := db.Create(&catalog).Error; err != nil {
-		t.Fatalf("create catalog: %v", err)
+	category := models.AssetCategory{TenantID: tenantID, Name: "Catalog"}
+	if err := db.Create(&category).Error; err != nil {
+		t.Fatalf("create category: %v", err)
 	}
 	asset := models.Asset{
-		TenantID:  tenantID,
-		Name:      "Asset",
-		TypeID:    typeDef.ID,
-		CatalogID: &catalog.ID,
-		Status:    "published",
-		OwnerID:   1,
-		Version:   1,
-		CreatedBy: 1,
+		TenantID:   tenantID,
+		Name:       "Asset",
+		TypeID:     typeDef.ID,
+		CategoryID: &category.ID,
+		Status:     "published",
+		OwnerID:    1,
+		Version:    1,
+		CreatedBy:  1,
 	}
 	if err := db.Create(&asset).Error; err != nil {
 		t.Fatalf("create asset: %v", err)
@@ -279,7 +280,7 @@ func assertAssetCleanupCount(t *testing.T, db *gorm.DB, tenantID int64, expected
 		args  []interface{}
 	}{
 		{name: "type_definitions", model: &models.TypeDefinition{}, where: "tenant_id = ?", args: []interface{}{tenantID}},
-		{name: "catalogs", model: &models.Catalog{}, where: "tenant_id = ?", args: []interface{}{tenantID}},
+		{name: "categories", model: &models.AssetCategory{}, where: "tenant_id = ?", args: []interface{}{tenantID}},
 		{name: "assets", model: &models.Asset{}, where: "tenant_id = ?", args: []interface{}{tenantID}},
 		{name: "applications", model: &models.Application{}, where: "tenant_id = ?", args: []interface{}{tenantID}},
 		{name: "authorizations", model: &models.Authorization{}, where: "tenant_id = ?", args: []interface{}{tenantID}},

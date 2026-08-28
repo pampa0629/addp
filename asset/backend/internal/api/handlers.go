@@ -16,7 +16,7 @@ import (
 
 type Handler struct {
 	typeSvc          *service.TypeService
-	catalogSvc       *service.CatalogService
+	categorySvc      *service.CategoryService
 	assetSvc         *service.AssetService
 	applicationSvc   *service.ApplicationService
 	authorizationSvc *service.AuthorizationService
@@ -31,7 +31,7 @@ func newHandler(db *gorm.DB, assetSvc *service.AssetService) *Handler {
 	authorizationSvc := service.NewAuthorizationService(db)
 	return &Handler{
 		typeSvc:          service.NewTypeService(db),
-		catalogSvc:       service.NewCatalogService(db),
+		categorySvc:      service.NewCategoryService(db),
 		assetSvc:         assetSvc,
 		applicationSvc:   service.NewApplicationService(db, authorizationSvc),
 		authorizationSvc: authorizationSvc,
@@ -89,35 +89,35 @@ func (h *Handler) getType(c *gin.Context) {
 	commonAPI.SuccessResponse(c, typeDefinition)
 }
 
-// listCatalogs godoc
-// @Summary 获取资产目录 | List asset catalogs
-// @Tags Asset Catalog
+// listCategories godoc
+// @Summary 获取资产分类 | List asset categories
+// @Tags Asset Category
 // @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.management.read","asset.catalog.read"]
-// @Router /catalogs [get]
-func (h *Handler) listCatalogs(c *gin.Context) {
-	catalogs, err := h.catalogSvc.ListAll(commonAuth.GetTenantID(c))
+// @x-addp-required-permissions ["asset.management.read","asset.category.read"]
+// @Router /categories [get]
+func (h *Handler) listCategories(c *gin.Context) {
+	categories, err := h.categorySvc.ListAll(commonAuth.GetTenantID(c))
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
-	commonAPI.SuccessResponse(c, catalogs)
+	commonAPI.SuccessResponse(c, categories)
 }
 
-// getCatalogTree godoc
-// @Summary 获取资产目录树 | Get asset catalog tree
-// @Tags Asset Catalog
+// getCategoryTree godoc
+// @Summary 获取资产分类树 | Get asset category tree
+// @Tags Asset Category
 // @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.management.read","asset.catalog.read"]
-// @Router /catalogs/tree [get]
-func (h *Handler) getCatalogTree(c *gin.Context) {
-	tree, err := h.catalogSvc.GetTree(commonAuth.GetTenantID(c))
+// @x-addp-required-permissions ["asset.management.read","asset.category.read"]
+// @Router /categories/tree [get]
+func (h *Handler) getCategoryTree(c *gin.Context) {
+	tree, err := h.categorySvc.GetTree(commonAuth.GetTenantID(c))
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return
@@ -125,98 +125,125 @@ func (h *Handler) getCatalogTree(c *gin.Context) {
 	commonAPI.SuccessResponse(c, tree)
 }
 
-// getCatalog godoc
-// @Summary 获取资产目录详情 | Get asset catalog
-// @Tags Asset Catalog
+// getCategory godoc
+// @Summary 获取资产分类详情 | Get asset category
+// @Tags Asset Category
 // @Produce json
-// @Param id path int true "目录 ID | Catalog ID"
+// @Param id path int true "资产分类 ID | Asset category ID"
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.management.read","asset.catalog.read"]
-// @Router /catalogs/{id} [get]
-func (h *Handler) getCatalog(c *gin.Context) {
+// @Failure 404 {object} map[string]string
+// @x-addp-required-permissions ["asset.management.read","asset.category.read"]
+// @Router /categories/{id} [get]
+func (h *Handler) getCategory(c *gin.Context) {
 	id, ok := pathID(c, "id")
 	if !ok {
 		return
 	}
-	catalog, err := h.catalogSvc.Get(commonAuth.GetTenantID(c), id)
+	category, err := h.categorySvc.Get(commonAuth.GetTenantID(c), id)
 	if err != nil {
-		commonAPI.NotFoundError(c, commoni18n.T(c, i18nkeys.MsgCatalogNotFound))
+		commonAPI.NotFoundError(c, commoni18n.T(c, i18nkeys.MsgCategoryNotFound))
 		return
 	}
-	commonAPI.SuccessResponse(c, catalog)
+	commonAPI.SuccessResponse(c, category)
 }
 
-// createCatalog godoc
-// @Summary 创建资产目录 | Create asset catalog
-// @Tags Asset Catalog
+// createCategory godoc
+// @Summary 创建资产分类 | Create asset category
+// @Tags Asset Category
 // @Accept json
 // @Produce json
-// @Param request body service.CreateCatalogReq true "目录 | Catalog"
+// @Param request body service.CreateAssetCategoryRequest true "资产分类 | Asset category"
 // @Success 201 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.management.read","asset.catalog.create"]
-// @Router /catalogs [post]
-func (h *Handler) createCatalog(c *gin.Context) {
-	var request service.CreateCatalogReq
+// @x-addp-required-permissions ["asset.management.read","asset.category.create"]
+// @Router /categories [post]
+func (h *Handler) createCategory(c *gin.Context) {
+	var request service.CreateAssetCategoryRequest
 	if !commonAPI.BindJSON(c, &request) {
 		return
 	}
-	catalog, err := h.catalogSvc.Create(commonAuth.GetTenantID(c), &request)
+	category, err := h.categorySvc.Create(commonAuth.GetTenantID(c), &request)
 	if err != nil {
 		commonAPI.BadRequestError(c, err.Error())
 		return
 	}
-	commonAPI.CreatedResponse(c, catalog)
+	commonAPI.CreatedResponse(c, category)
 }
 
-// updateCatalog godoc
-// @Summary 更新资产目录 | Update asset catalog
-// @Tags Asset Catalog
+// updateCategory godoc
+// @Summary 更新资产分类 | Update asset category
+// @Tags Asset Category
 // @Accept json
 // @Produce json
-// @Param id path int true "目录 ID | Catalog ID"
-// @Param request body service.UpdateCatalogReq true "目录 | Catalog"
+// @Param id path int true "资产分类 ID | Asset category ID"
+// @Param request body service.UpdateAssetCategoryRequest true "资产分类 | Asset category"
 // @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]string
+// @Failure 409 {object} map[string]string
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.management.read","asset.catalog.update"]
-// @Router /catalogs/{id} [put]
-func (h *Handler) updateCatalog(c *gin.Context) {
+// @x-addp-required-permissions ["asset.management.read","asset.category.update"]
+// @Router /categories/{id} [put]
+func (h *Handler) updateCategory(c *gin.Context) {
 	id, ok := pathID(c, "id")
 	if !ok {
 		return
 	}
-	var request service.UpdateCatalogReq
+	var request service.UpdateAssetCategoryRequest
 	if !commonAPI.BindJSON(c, &request) {
 		return
 	}
-	catalog, err := h.catalogSvc.Update(commonAuth.GetTenantID(c), id, &request)
+	category, err := h.categorySvc.Update(commonAuth.GetTenantID(c), id, &request)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			commonAPI.NotFoundError(c, commoni18n.T(c, i18nkeys.MsgCategoryNotFound))
+			return
+		}
+		if errors.Is(err, service.ErrAssetCategoryVersionConflict) {
+			c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, i18nkeys.MsgCategoryVersionConflict), "error_code": "asset_category_version_conflict"})
+			return
+		}
 		commonAPI.BadRequestError(c, err.Error())
 		return
 	}
-	commonAPI.SuccessResponse(c, catalog)
+	commonAPI.SuccessResponse(c, category)
 }
 
-// deleteCatalog godoc
-// @Summary 删除资产目录 | Delete asset catalog
-// @Tags Asset Catalog
+// deleteCategory godoc
+// @Summary 删除资产分类 | Delete asset category
+// @Tags Asset Category
+// @Accept json
 // @Produce json
-// @Param id path int true "目录 ID | Catalog ID"
+// @Param id path int true "资产分类 ID | Asset category ID"
+// @Param request body service.DeleteAssetCategoryRequest true "并发版本 | Concurrency version"
 // @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]string
+// @Failure 409 {object} map[string]string
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.management.read","asset.catalog.delete"]
-// @Router /catalogs/{id} [delete]
-func (h *Handler) deleteCatalog(c *gin.Context) {
+// @x-addp-required-permissions ["asset.management.read","asset.category.delete"]
+// @Router /categories/{id} [delete]
+func (h *Handler) deleteCategory(c *gin.Context) {
 	id, ok := pathID(c, "id")
 	if !ok {
 		return
 	}
-	if err := h.catalogSvc.Delete(commonAuth.GetTenantID(c), id); err != nil {
+	var request service.DeleteAssetCategoryRequest
+	if !commonAPI.BindJSON(c, &request) {
+		return
+	}
+	if err := h.categorySvc.Delete(commonAuth.GetTenantID(c), id, request.Version); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			commonAPI.NotFoundError(c, commoni18n.T(c, i18nkeys.MsgCategoryNotFound))
+			return
+		}
+		if errors.Is(err, service.ErrAssetCategoryVersionConflict) {
+			c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, i18nkeys.MsgCategoryVersionConflict), "error_code": "asset_category_version_conflict"})
+			return
+		}
 		commonAPI.BadRequestError(c, err.Error())
 		return
 	}
@@ -238,9 +265,9 @@ func (h *Handler) listAssets(c *gin.Context) {
 	params := &service.AssetListParams{
 		Page: page, PageSize: pageSize, Status: c.Query("status"), TypeID: typeID, Keyword: c.Query("keyword"),
 	}
-	if value := c.Query("catalog_id"); value != "" {
-		if catalogID, err := strconv.ParseInt(value, 10, 64); err == nil {
-			params.CatalogID = &catalogID
+	if value := c.Query("category_id"); value != "" {
+		if categoryID, err := strconv.ParseInt(value, 10, 64); err == nil {
+			params.CategoryID = &categoryID
 		}
 	}
 	assets, total, err := h.assetSvc.List(commonAuth.GetTenantID(c), params)
@@ -453,25 +480,25 @@ func (h *Handler) batchAssetAction(c *gin.Context, action func(uint, []int64) (i
 	commonAPI.SuccessResponse(c, gin.H{"affected": count})
 }
 
-// batchCatalogAssets godoc
-// @Summary 批量归入目录 | Batch catalog assets
+// batchCategoryAssets godoc
+// @Summary 批量设置资产分类 | Batch categorize assets
 // @Tags Asset
 // @Accept json
 // @Produce json
-// @Param request body service.BatchCatalogReq true "目录变更 | Catalog change"
+// @Param request body service.BatchCategoryRequest true "资产分类变更 | Asset category change"
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["asset.management.read","asset.entry.update"]
-// @Router /assets/batch-catalog [post]
-func (h *Handler) batchCatalogAssets(c *gin.Context) {
-	var request service.BatchCatalogReq
+// @Router /assets/batch-category [post]
+func (h *Handler) batchCategoryAssets(c *gin.Context) {
+	var request service.BatchCategoryRequest
 	if !commonAPI.BindJSON(c, &request) {
 		return
 	}
-	count, err := h.assetSvc.BatchCatalog(commonAuth.GetTenantID(c), request.IDs, request.CatalogID)
+	count, err := h.assetSvc.BatchCategory(commonAuth.GetTenantID(c), request.IDs, request.CategoryID)
 	if err != nil {
-		commonAPI.InternalServerError(c, err.Error())
+		respondAssetOperationError(c, err)
 		return
 	}
 	commonAPI.SuccessResponse(c, gin.H{"affected": count})

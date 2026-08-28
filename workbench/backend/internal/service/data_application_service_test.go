@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -184,10 +186,10 @@ func TestDataApplicationServiceOwnsSnapshotAndImmutableRevision(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	if created.Version != 1 || created.PublicationStatus != models.PublicationStatusUnpublished || len(created.Snapshot.Components) != 1 || len(created.Snapshot.Parameters) != 1 {
+	if created.Version != 1 || created.PublicationStatus != models.PublicationStatusUnpublished || created.Snapshot.Page.DisplayMode != models.ApplicationDisplayModeDesktop || created.Snapshot.Page.RefreshIntervalSeconds == nil || *created.Snapshot.Page.RefreshIntervalSeconds != models.ApplicationRefreshIntervalDisabled || len(created.Snapshot.Page.VisibleSections) != 3 || len(created.Snapshot.Components) != 1 || len(created.Snapshot.Parameters) != 1 {
 		t.Fatalf("created application = %#v", created)
 	}
-	if created.Snapshot.Parameters == nil || created.Snapshot.ParameterBindings == nil || created.Snapshot.Page.Placements == nil {
+	if created.Snapshot.Parameters == nil || created.Snapshot.ParameterBindings == nil || created.Snapshot.SelectionBindings == nil || created.Snapshot.Page.VisibleSections == nil || created.Snapshot.Page.Placements == nil {
 		t.Fatalf("snapshot collections must use JSON arrays: %#v", created.Snapshot)
 	}
 	if created.Snapshot.Components[0].Title != "Orders" || created.Snapshot.Components[0].ServiceRef.ServiceID != 23 {
@@ -224,18 +226,85 @@ func TestDataApplicationServiceOwnsSnapshotAndImmutableRevision(t *testing.T) {
 
 	draft := published.Snapshot
 	draft.Page.Title = "Edited draft page"
+	draft.Page.DisplayMode = models.ApplicationDisplayModeWallboard
+	draft.Page.RefreshIntervalSeconds = applicationRefreshInterval(models.ApplicationRefreshInterval30Seconds)
+	draft.Page.VisibleSections = []string{models.ApplicationVisibleSectionTitle}
 	updated, err := applications.Update(context.Background(), 7, 11, created.ID, DescriptorRequest{BearerToken: "user-token"}, models.DataApplicationUpdateRequest{
 		Name: "Edited draft", Description: published.Description, Snapshot: draft, Version: 2,
 	})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
-	if updated.Version != 3 || !updated.HasUnpublishedChanges || updated.PublicationStatus != models.PublicationStatusPublished {
+	if updated.Version != 3 || !updated.HasUnpublishedChanges || updated.PublicationStatus != models.PublicationStatusPublished || len(updated.Snapshot.Page.VisibleSections) != 1 || updated.Snapshot.Page.VisibleSections[0] != models.ApplicationVisibleSectionTitle {
 		t.Fatalf("updated application = %#v", updated)
 	}
 	runtimeAfterEdit, err := applications.Runtime(7, 11, created.ID)
-	if err != nil || runtimeAfterEdit.Name != "Order application" || runtimeAfterEdit.Snapshot.Page.Title == "Edited draft page" {
+	if err != nil || runtimeAfterEdit.Name != "Order application" || runtimeAfterEdit.Snapshot.Page.Title == "Edited draft page" || runtimeAfterEdit.Snapshot.Page.DisplayMode != models.ApplicationDisplayModeDesktop || runtimeAfterEdit.Snapshot.Page.RefreshIntervalSeconds == nil || *runtimeAfterEdit.Snapshot.Page.RefreshIntervalSeconds != models.ApplicationRefreshIntervalDisabled || len(runtimeAfterEdit.Snapshot.Page.VisibleSections) != 3 {
 		t.Fatalf("published revision changed with draft: runtime=%#v err=%v", runtimeAfterEdit, err)
+	}
+
+	invalidDisplayMode := cloneDataApplicationSnapshot(t, draft)
+	invalidDisplayMode.Page.DisplayMode = "mobile"
+	if err := applications.validateSnapshot(context.Background(), DescriptorRequest{}, invalidDisplayMode); !errors.Is(err, ErrInvalidDataApplication) {
+		t.Fatalf("invalid display mode error = %v", err)
+	}
+
+	invalidRefreshInterval := cloneDataApplicationSnapshot(t, draft)
+	invalidRefreshInterval.Page.RefreshIntervalSeconds = applicationRefreshInterval(10)
+	if err := applications.validateSnapshot(context.Background(), DescriptorRequest{}, invalidRefreshInterval); !errors.Is(err, ErrInvalidDataApplication) {
+		t.Fatalf("invalid refresh interval error = %v", err)
+	}
+
+	desktopRefresh := cloneDataApplicationSnapshot(t, draft)
+	desktopRefresh.Page.DisplayMode = models.ApplicationDisplayModeDesktop
+	if err := applications.validateSnapshot(context.Background(), DescriptorRequest{}, desktopRefresh); !errors.Is(err, ErrInvalidDataApplication) {
+		t.Fatalf("desktop refresh policy error = %v", err)
+	}
+
+	missingRefreshPolicy := cloneDataApplicationSnapshot(t, draft)
+	missingRefreshPolicy.Page.RefreshIntervalSeconds = nil
+	if err := applications.validateSnapshot(context.Background(), DescriptorRequest{}, missingRefreshPolicy); !errors.Is(err, ErrInvalidDataApplication) {
+		t.Fatalf("missing refresh policy error = %v", err)
+	}
+
+	missingVisibleSections := cloneDataApplicationSnapshot(t, draft)
+	missingVisibleSections.Page.VisibleSections = nil
+	if err := applications.validateSnapshot(context.Background(), DescriptorRequest{}, missingVisibleSections); !errors.Is(err, ErrInvalidDataApplication) {
+		t.Fatalf("missing visible sections error = %v", err)
+	}
+
+	invalidVisibleSections := cloneDataApplicationSnapshot(t, draft)
+	invalidVisibleSections.Page.VisibleSections = []string{"legend"}
+	if err := applications.validateSnapshot(context.Background(), DescriptorRequest{}, invalidVisibleSections); !errors.Is(err, ErrInvalidDataApplication) {
+		t.Fatalf("invalid visible sections error = %v", err)
+	}
+
+	duplicateVisibleSections := cloneDataApplicationSnapshot(t, draft)
+	duplicateVisibleSections.Page.VisibleSections = []string{models.ApplicationVisibleSectionTitle, models.ApplicationVisibleSectionTitle}
+	if err := applications.validateSnapshot(context.Background(), DescriptorRequest{}, duplicateVisibleSections); !errors.Is(err, ErrInvalidDataApplication) {
+		t.Fatalf("duplicate visible sections error = %v", err)
+	}
+
+	desktopHiddenSection := cloneDataApplicationSnapshot(t, created.Snapshot)
+	desktopHiddenSection.Page.VisibleSections = []string{models.ApplicationVisibleSectionTitle}
+	if err := applications.validateSnapshot(context.Background(), DescriptorRequest{}, desktopHiddenSection); !errors.Is(err, ErrInvalidDataApplication) {
+		t.Fatalf("desktop hidden section error = %v", err)
+	}
+
+	hiddenQueryActionsWithoutRefresh := cloneDataApplicationSnapshot(t, draft)
+	hiddenQueryActionsWithoutRefresh.Page.RefreshIntervalSeconds = applicationRefreshInterval(models.ApplicationRefreshIntervalDisabled)
+	if err := applications.validateSnapshot(context.Background(), DescriptorRequest{}, hiddenQueryActionsWithoutRefresh); !errors.Is(err, ErrInvalidDataApplication) {
+		t.Fatalf("hidden query actions without refresh error = %v", err)
+	}
+
+	requiredDefault := cloneDataApplicationSnapshot(t, draft)
+	requiredDefault.Parameters[0].Required = true
+	if err := applications.validateSnapshot(context.Background(), DescriptorRequest{}, requiredDefault); err != nil {
+		t.Fatalf("hidden parameters with required default error = %v", err)
+	}
+	requiredDefault.Parameters[0].DefaultValue = nil
+	if err := applications.validateSnapshot(context.Background(), DescriptorRequest{}, requiredDefault); !errors.Is(err, ErrInvalidDataApplication) {
+		t.Fatalf("hidden parameters without required default error = %v", err)
 	}
 
 	if _, err := applications.Update(context.Background(), 7, 11, created.ID, DescriptorRequest{}, models.DataApplicationUpdateRequest{
@@ -274,9 +343,130 @@ func TestDataApplicationServiceUsesEmptyArraysWithoutViewParameters(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.Snapshot.Parameters == nil || created.Snapshot.ParameterBindings == nil || len(created.Snapshot.Parameters) != 0 || len(created.Snapshot.ParameterBindings) != 0 {
-		t.Fatalf("empty application parameter collections = %#v, %#v", created.Snapshot.Parameters, created.Snapshot.ParameterBindings)
+	if created.Snapshot.Parameters == nil || created.Snapshot.ParameterBindings == nil || created.Snapshot.SelectionBindings == nil || len(created.Snapshot.Parameters) != 0 || len(created.Snapshot.ParameterBindings) != 0 || len(created.Snapshot.SelectionBindings) != 0 {
+		t.Fatalf("empty application binding collections = %#v, %#v, %#v", created.Snapshot.Parameters, created.Snapshot.ParameterBindings, created.Snapshot.SelectionBindings)
 	}
+}
+
+func TestDataApplicationServiceValidatesSelectionBindings(t *testing.T) {
+	repository := newMemoryDataApplicationRepository()
+	view := dataApplicationSourceView(7, 11)
+	repository.views[view.ID] = view
+	descriptor := testDescriptor(false)
+	applications := NewDataApplicationService(repository, &fakeDescriptorReader{descriptor: descriptor}, nil)
+	created, err := applications.Create(context.Background(), 7, 11, DescriptorRequest{}, models.DataApplicationCreateRequest{Name: "Orders", SourceViewIDs: []string{view.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	valid := cloneDataApplicationSnapshot(t, created.Snapshot)
+	componentID := valid.Components[0].ID
+	valid.Components[0].QueryTemplate.Select = append(valid.Components[0].QueryTemplate.Select, "status")
+	valid.SelectionBindings = []models.DataApplicationSelectionBinding{{
+		SourceComponentID: componentID,
+		Assignments: []models.DataApplicationSelectionAssignment{{
+			SourceField: "status", ApplicationParameterKey: "component_1.status",
+		}},
+	}}
+	if err := applications.validateSnapshot(context.Background(), DescriptorRequest{}, valid); err != nil {
+		t.Fatalf("valid selection binding error = %v", err)
+	}
+	updated, err := applications.Update(context.Background(), 7, 11, created.ID, DescriptorRequest{}, models.DataApplicationUpdateRequest{
+		Name: created.Name, Snapshot: valid, Version: created.Version,
+	})
+	if err != nil || len(updated.Snapshot.SelectionBindings) != 1 {
+		t.Fatalf("Update() selection binding = %#v, %v", updated, err)
+	}
+	published, err := applications.Publish(context.Background(), 7, 11, created.ID, DescriptorRequest{}, updated.Version)
+	if err != nil {
+		t.Fatalf("Publish() selection binding error = %v", err)
+	}
+	runtime, err := applications.Runtime(7, 11, created.ID)
+	if err != nil || published.CurrentRevisionNumber == nil || len(runtime.Snapshot.SelectionBindings) != 1 {
+		t.Fatalf("Runtime() selection binding = %#v, %v", runtime, err)
+	}
+
+	tests := []struct {
+		name   string
+		change func(*models.DataApplicationSnapshot)
+	}{
+		{name: "source field must be selected", change: func(snapshot *models.DataApplicationSnapshot) {
+			snapshot.Components[0].QueryTemplate.Select = []string{"id", "amount"}
+		}},
+		{name: "source and target types must match", change: func(snapshot *models.DataApplicationSnapshot) {
+			snapshot.SelectionBindings[0].Assignments[0].SourceField = "amount"
+		}},
+		{name: "application parameter must exist", change: func(snapshot *models.DataApplicationSnapshot) {
+			snapshot.SelectionBindings[0].Assignments[0].ApplicationParameterKey = "missing"
+		}},
+		{name: "source component binding must be unique", change: func(snapshot *models.DataApplicationSnapshot) {
+			snapshot.SelectionBindings = append(snapshot.SelectionBindings, snapshot.SelectionBindings[0])
+		}},
+		{name: "list operators are not selection targets", change: func(snapshot *models.DataApplicationSnapshot) {
+			snapshot.Components[0].QueryTemplate.ParameterFilters[0].Operator = "in"
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			snapshot := cloneDataApplicationSnapshot(t, valid)
+			test.change(&snapshot)
+			if err := applications.validateSnapshot(context.Background(), DescriptorRequest{}, snapshot); !errors.Is(err, ErrInvalidDataApplication) {
+				t.Fatalf("validateSnapshot() error = %v", err)
+			}
+		})
+	}
+
+	nullableDescriptor := testDescriptor(false)
+	nullableDescriptor.OutputContract.Fields[2].Nullable = true
+	nullableApplications := NewDataApplicationService(repository, &fakeDescriptorReader{descriptor: nullableDescriptor}, nil)
+	required := cloneDataApplicationSnapshot(t, valid)
+	required.Parameters[0].Required = true
+	if err := nullableApplications.validateSnapshot(context.Background(), DescriptorRequest{}, required); !errors.Is(err, ErrInvalidDataApplication) {
+		t.Fatalf("nullable source for required parameter error = %v", err)
+	}
+}
+
+func cloneDataApplicationSnapshot(t *testing.T, snapshot models.DataApplicationSnapshot) models.DataApplicationSnapshot {
+	t.Helper()
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cloned models.DataApplicationSnapshot
+	if err := json.Unmarshal(raw, &cloned); err != nil {
+		t.Fatal(err)
+	}
+	return cloned
+}
+
+func TestDecodeDataApplicationSnapshotCanonicalizesMissingDisplayMode(t *testing.T) {
+	snapshot, err := decodeDataApplicationSnapshot([]byte(`{
+		"schema_version":"addp.workbench_data_application/v1",
+		"page":{"id":"page-a","title":"Page","placements":[]},
+		"components":[],"parameters":[],"parameter_bindings":[],"selection_bindings":[]
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Page.DisplayMode != models.ApplicationDisplayModeDesktop || snapshot.Page.RefreshIntervalSeconds == nil || *snapshot.Page.RefreshIntervalSeconds != models.ApplicationRefreshIntervalDisabled || !slices.Equal(snapshot.Page.VisibleSections, defaultApplicationVisibleSections()) {
+		t.Fatalf("page = %#v", snapshot.Page)
+	}
+
+	snapshot, err = decodeDataApplicationSnapshot([]byte(`{
+		"schema_version":"addp.workbench_data_application/v1",
+		"page":{"id":"page-a","title":"Page","display_mode":"wallboard","refresh_interval_seconds":30,"visible_sections":["query_actions","title"],"placements":[]},
+		"components":[],"parameters":[],"parameter_bindings":[],"selection_bindings":[]
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(snapshot.Page.VisibleSections, []string{models.ApplicationVisibleSectionTitle, models.ApplicationVisibleSectionQueryActions}) {
+		t.Fatalf("visible_sections = %#v", snapshot.Page.VisibleSections)
+	}
+}
+
+func applicationRefreshInterval(value int) *int {
+	return &value
 }
 
 func TestDataApplicationServiceRejectsComponentIdentityChanges(t *testing.T) {

@@ -312,7 +312,7 @@ const docTemplate = `{
                 ]
             }
         },
-        "/assets/batch-catalog": {
+        "/assets/batch-category": {
             "post": {
                 "security": [
                     {
@@ -328,15 +328,15 @@ const docTemplate = `{
                 "tags": [
                     "Asset"
                 ],
-                "summary": "批量归入目录 | Batch catalog assets",
+                "summary": "批量设置资产分类 | Batch categorize assets",
                 "parameters": [
                     {
-                        "description": "目录变更 | Catalog change",
+                        "description": "资产分类变更 | Asset category change",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_asset_internal_service.BatchCatalogReq"
+                            "$ref": "#/definitions/github_com_addp_asset_internal_service.BatchCategoryRequest"
                         }
                     }
                 ],
@@ -855,7 +855,7 @@ const docTemplate = `{
                 ]
             }
         },
-        "/catalogs": {
+        "/categories": {
             "get": {
                 "security": [
                     {
@@ -866,9 +866,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Asset Catalog"
+                    "Asset Category"
                 ],
-                "summary": "获取资产目录 | List asset catalogs",
+                "summary": "获取资产分类 | List asset categories",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -881,7 +881,7 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "asset.management.read",
-                    "asset.catalog.read"
+                    "asset.category.read"
                 ]
             },
             "post": {
@@ -897,17 +897,17 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Asset Catalog"
+                    "Asset Category"
                 ],
-                "summary": "创建资产目录 | Create asset catalog",
+                "summary": "创建资产分类 | Create asset category",
                 "parameters": [
                     {
-                        "description": "目录 | Catalog",
+                        "description": "资产分类 | Asset category",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_asset_internal_service.CreateCatalogReq"
+                            "$ref": "#/definitions/github_com_addp_asset_internal_service.CreateAssetCategoryRequest"
                         }
                     }
                 ],
@@ -923,11 +923,11 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "asset.management.read",
-                    "asset.catalog.create"
+                    "asset.category.create"
                 ]
             }
         },
-        "/catalogs/tree": {
+        "/categories/tree": {
             "get": {
                 "security": [
                     {
@@ -938,9 +938,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Asset Catalog"
+                    "Asset Category"
                 ],
-                "summary": "获取资产目录树 | Get asset catalog tree",
+                "summary": "获取资产分类树 | Get asset category tree",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -953,11 +953,11 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "asset.management.read",
-                    "asset.catalog.read"
+                    "asset.category.read"
                 ]
             }
         },
-        "/catalogs/{id}": {
+        "/categories/{id}": {
             "get": {
                 "security": [
                     {
@@ -968,13 +968,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Asset Catalog"
+                    "Asset Category"
                 ],
-                "summary": "获取资产目录详情 | Get asset catalog",
+                "summary": "获取资产分类详情 | Get asset category",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "目录 ID | Catalog ID",
+                        "description": "资产分类 ID | Asset category ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -987,12 +987,21 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "asset.management.read",
-                    "asset.catalog.read"
+                    "asset.category.read"
                 ]
             },
             "put": {
@@ -1008,24 +1017,24 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Asset Catalog"
+                    "Asset Category"
                 ],
-                "summary": "更新资产目录 | Update asset catalog",
+                "summary": "更新资产分类 | Update asset category",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "目录 ID | Catalog ID",
+                        "description": "资产分类 ID | Asset category ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "目录 | Catalog",
+                        "description": "资产分类 | Asset category",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_asset_internal_service.UpdateCatalogReq"
+                            "$ref": "#/definitions/github_com_addp_asset_internal_service.UpdateAssetCategoryRequest"
                         }
                     }
                 ],
@@ -1036,12 +1045,30 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "asset.management.read",
-                    "asset.catalog.update"
+                    "asset.category.update"
                 ]
             },
             "delete": {
@@ -1050,20 +1077,32 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Asset Catalog"
+                    "Asset Category"
                 ],
-                "summary": "删除资产目录 | Delete asset catalog",
+                "summary": "删除资产分类 | Delete asset category",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "目录 ID | Catalog ID",
+                        "description": "资产分类 ID | Asset category ID",
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "并发版本 | Concurrency version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_asset_internal_service.DeleteAssetCategoryRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -1073,12 +1112,30 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "asset.management.read",
-                    "asset.catalog.delete"
+                    "asset.category.delete"
                 ]
             }
         },
@@ -1400,7 +1457,7 @@ const docTemplate = `{
                 ]
             }
         },
-        "/consumer/catalogs": {
+        "/consumer/categories": {
             "get": {
                 "security": [
                     {
@@ -1413,21 +1470,21 @@ const docTemplate = `{
                 "tags": [
                     "Asset Consumer"
                 ],
-                "summary": "浏览已上架资产目录 | Browse published asset catalogs",
+                "summary": "浏览已上架资产分类 | Browse published asset categories",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/github_com_addp_asset_internal_service.AssetCatalogTreeNode"
+                                "$ref": "#/definitions/github_com_addp_asset_internal_service.AssetCategoryTreeNode"
                             }
                         }
                     }
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "asset.catalog.read"
+                    "asset.category.read"
                 ]
             }
         },
@@ -1631,13 +1688,13 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_asset_internal_service.AssetCatalogTreeNode": {
+        "github_com_addp_asset_internal_service.AssetCategoryTreeNode": {
             "type": "object",
             "properties": {
                 "children": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_asset_internal_service.AssetCatalogTreeNode"
+                        "$ref": "#/definitions/github_com_addp_asset_internal_service.AssetCategoryTreeNode"
                     }
                 },
                 "count": {
@@ -1666,6 +1723,9 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -1683,14 +1743,14 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_asset_internal_service.BatchCatalogReq": {
+        "github_com_addp_asset_internal_service.BatchCategoryRequest": {
             "type": "object",
             "required": [
                 "ids"
             ],
             "properties": {
-                "catalog_id": {
-                    "description": "null 表示清除目录",
+                "category_id": {
+                    "description": "null 表示清除分类",
                     "type": "integer"
                 },
                 "ids": {
@@ -1735,6 +1795,26 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_asset_internal_service.CreateAssetCategoryRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "integer"
+                },
+                "sort_order": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_asset_internal_service.CreateAssetReq": {
             "type": "object",
             "required": [
@@ -1743,7 +1823,7 @@ const docTemplate = `{
                 "type_id"
             ],
             "properties": {
-                "catalog_id": {
+                "category_id": {
                     "type": "integer"
                 },
                 "components": {
@@ -1770,23 +1850,15 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_asset_internal_service.CreateCatalogReq": {
+        "github_com_addp_asset_internal_service.DeleteAssetCategoryRequest": {
             "type": "object",
             "required": [
-                "name"
+                "version"
             ],
             "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "parent_id": {
-                    "type": "integer"
-                },
-                "sort_order": {
-                    "type": "integer"
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -1802,6 +1874,27 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_asset_internal_service.UpdateAssetCategoryRequest": {
+            "type": "object",
+            "required": [
+                "version"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
         "github_com_addp_asset_internal_service.UpdateAssetReq": {
             "type": "object",
             "required": [
@@ -1811,7 +1904,7 @@ const docTemplate = `{
                 "version"
             ],
             "properties": {
-                "catalog_id": {
+                "category_id": {
                     "type": "integer"
                 },
                 "components": {
@@ -1839,20 +1932,6 @@ const docTemplate = `{
                 "version": {
                     "type": "integer",
                     "minimum": 1
-                }
-            }
-        },
-        "github_com_addp_asset_internal_service.UpdateCatalogReq": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "sort_order": {
-                    "type": "integer"
                 }
             }
         },

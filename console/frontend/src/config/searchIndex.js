@@ -58,8 +58,8 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.monitor.executions',  module: 'monitor', route: '/monitor/executions', keywords: ['执行记录', '任务历史', 'execution history'] },
   { labelKey: 'console.menus.monitor.alerts',      module: 'monitor', route: '/monitor/alerts',     keywords: ['告警', '风险', 'alert', 'incident'] },
   { labelKey: 'console.menus.monitor.notifications', module: 'monitor', route: '/monitor/notifications', keywords: ['Webhook', '邮件', '通知', '投递', 'email', 'notification', 'delivery'] },
-  // 企业数据目录
-  { labelKey: 'console.menus.catalog.entries', module: 'catalog', route: '/catalog/entries', keywords: ['企业数据目录', '企业资源', '业务元数据', 'catalog', 'enterprise data catalog', 'inventory'] },
+  // 企业资源目录
+  { labelKey: 'console.menus.catalog.entries', module: 'catalog', route: '/catalog/entries', keywords: ['企业资源目录', '企业资源', '业务元数据', 'catalog', 'enterprise catalog', 'inventory'] },
   { labelKey: 'console.menus.catalog.coverage', module: 'catalog', route: '/catalog/governance/coverage', permissions: ['catalog.inventory.read'], keywords: ['治理覆盖率', '治理完整度', 'catalog governance coverage', 'completeness'] },
   // 资产管理
   { labelKey: 'console.menus.asset.assets',          module: 'asset', route: '/asset/assets',          keywords: ['资产', '数据资产', 'asset'] },

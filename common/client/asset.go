@@ -64,21 +64,21 @@ const (
 )
 
 type AssetSummary struct {
-	ID          int64       `json:"id"`
-	TenantID    int64       `json:"tenant_id"`
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	TypeID      int64       `json:"type_id"`
-	TypeName    string      `json:"type_name"`
-	CatalogID   *int64      `json:"catalog_id,omitempty"`
-	CatalogName string      `json:"catalog_name,omitempty"`
-	Tags        []string    `json:"tags"`
-	Status      AssetStatus `json:"status"`
-	OwnerID     int64       `json:"owner_id"`
-	OwnerName   string      `json:"owner_name"`
-	Version     int64       `json:"version"`
-	CreatedAt   string      `json:"created_at"`
-	UpdatedAt   string      `json:"updated_at"`
+	ID           int64       `json:"id"`
+	TenantID     int64       `json:"tenant_id"`
+	Name         string      `json:"name"`
+	Description  string      `json:"description"`
+	TypeID       int64       `json:"type_id"`
+	TypeName     string      `json:"type_name"`
+	CategoryID   *int64      `json:"category_id,omitempty"`
+	CategoryName string      `json:"category_name,omitempty"`
+	Tags         []string    `json:"tags"`
+	Status       AssetStatus `json:"status"`
+	OwnerID      int64       `json:"owner_id"`
+	OwnerName    string      `json:"owner_name"`
+	Version      int64       `json:"version"`
+	CreatedAt    string      `json:"created_at"`
+	UpdatedAt    string      `json:"updated_at"`
 }
 
 type AssetDetail struct {
@@ -101,11 +101,11 @@ type AssetListResponse struct {
 }
 
 type AssetQueryOptions struct {
-	CatalogID *int64
-	Keyword   string
-	TypeID    int64
-	Page      int
-	PageSize  int
+	CategoryID *int64
+	Keyword    string
+	TypeID     int64
+	Page       int
+	PageSize   int
 }
 
 type TypeStat struct {
@@ -149,12 +149,12 @@ type CreateApplicationRequest struct {
 	DurationDay int    `json:"duration_day"`
 }
 
-type AssetCatalogTreeNode struct {
-	ID       int64                  `json:"id"`
-	Name     string                 `json:"name"`
-	ParentID *int64                 `json:"parent_id,omitempty"`
-	Children []AssetCatalogTreeNode `json:"children,omitempty"`
-	Count    int64                  `json:"count"`
+type AssetCategoryTreeNode struct {
+	ID       int64                   `json:"id"`
+	Name     string                  `json:"name"`
+	ParentID *int64                  `json:"parent_id,omitempty"`
+	Children []AssetCategoryTreeNode `json:"children,omitempty"`
+	Count    int64                   `json:"count"`
 }
 
 type RatingItem struct {
@@ -188,8 +188,8 @@ type paginatedRatings struct {
 
 func (c *AssetClient) GetAssets(ctx context.Context, accessToken string, opts AssetQueryOptions) (*AssetListResponse, error) {
 	query := url.Values{}
-	if opts.CatalogID != nil {
-		query.Set("catalog_id", strconv.FormatInt(*opts.CatalogID, 10))
+	if opts.CategoryID != nil {
+		query.Set("category_id", strconv.FormatInt(*opts.CategoryID, 10))
 	}
 	if opts.Keyword != "" {
 		query.Set("keyword", opts.Keyword)
@@ -227,9 +227,9 @@ func (c *AssetClient) GetAssetDetail(ctx context.Context, accessToken string, as
 	return &result, nil
 }
 
-func (c *AssetClient) GetCatalogs(ctx context.Context, accessToken string) ([]AssetCatalogTreeNode, error) {
-	var result []AssetCatalogTreeNode
-	if err := c.do(ctx, accessToken, http.MethodGet, "/api/v1/asset/consumer/catalogs", nil, nil, &result); err != nil {
+func (c *AssetClient) GetCategories(ctx context.Context, accessToken string) ([]AssetCategoryTreeNode, error) {
+	var result []AssetCategoryTreeNode
+	if err := c.do(ctx, accessToken, http.MethodGet, "/api/v1/asset/consumer/categories", nil, nil, &result); err != nil {
 		return nil, err
 	}
 	return result, nil

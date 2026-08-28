@@ -16,9 +16,9 @@ paths:
         in: query
         name: type_id
         type: integer
-      - description: 目录ID | Catalog ID
+      - description: 资产分类 ID | Asset category ID
         in: query
-        name: catalog_id
+        name: category_id
         type: integer
       produces:
       - application/json
@@ -211,7 +211,7 @@ paths:
       x-addp-required-permissions:
       - asset.rating.create
       - asset.rating.update
-  /catalogs:
+  /categories:
     get:
       produces:
       - application/json
@@ -231,16 +231,16 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 获取目录树 | Get catalog tree
+      summary: 获取资产分类树 | Get asset category tree
       tags:
       - Portal
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - asset.catalog.read
-  /catalogs/{id}/assets:
+      - asset.category.read
+  /categories/{id}/assets:
     get:
       parameters:
-      - description: 目录ID | Catalog ID
+      - description: 资产分类 ID | Asset category ID
         in: path
         name: id
         required: true
@@ -261,12 +261,12 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 获取目录下的资产列表 | Get assets in catalog
+      summary: 获取分类下的资产列表 | Get assets in category
       tags:
       - Portal
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - asset.catalog.read
+      - asset.category.read
       - asset.entry.read
   /home:
     get:
