@@ -313,6 +313,7 @@ func newQualityCleanupTestDB(t *testing.T) *gorm.DB {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
 			element_id INTEGER NOT NULL,
+			element_revision_id INTEGER NOT NULL,
 			engine_id INTEGER NOT NULL,
 			schema_name TEXT,
 			table_name TEXT NOT NULL,
@@ -378,15 +379,16 @@ func newQualityCleanupTestDB(t *testing.T) *gorm.DB {
 func createQualityCleanupRuleApplication(t *testing.T, db *gorm.DB, tenantID int64, engineID int64, name string) models.RuleApplication {
 	t.Helper()
 	item := models.RuleApplication{
-		TenantID:   tenantID,
-		ElementID:  1,
-		EngineID:   engineID,
-		SchemaName: "public",
-		Table:      name,
-		ColumnName: "value",
-		RuleConfig: json.RawMessage(`{"schema_version":"addp.quality.rules/v1","rules":[]}`),
-		Enabled:    true,
-		CreatedBy:  1,
+		TenantID:          tenantID,
+		ElementID:         1,
+		ElementRevisionID: 101,
+		EngineID:          engineID,
+		SchemaName:        "public",
+		Table:             name,
+		ColumnName:        "value",
+		RuleConfig:        json.RawMessage(`{"schema_version":"addp.quality.rules/v1","rules":[]}`),
+		Enabled:           true,
+		CreatedBy:         1,
 	}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatalf("create rule application: %v", err)

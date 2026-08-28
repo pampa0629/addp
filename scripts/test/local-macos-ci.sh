@@ -162,6 +162,7 @@ clear_postgres_gate_environment() {
   unset ASSET_POSTGRES_TEST_DSN
   unset META_POSTGRES_TEST_DSN
   unset CATALOG_POSTGRES_TEST_DSN
+  unset DEVELOP_POSTGRES_TEST_DSN
   unset ADDP_TEST_MODEL_POSTGRES_DSN
   unset SERVICE_POSTGRES_TEST_DSN
   unset STANDARD_POSTGRES_TEST_DSN
@@ -260,6 +261,7 @@ run_postgres_gates() {
     ASSET_POSTGRES_TEST_DSN="$shared_dsn" \
     META_POSTGRES_TEST_DSN="$shared_dsn" \
     CATALOG_POSTGRES_TEST_DSN="$shared_dsn" \
+    DEVELOP_POSTGRES_TEST_DSN="$shared_dsn" \
     ADDP_TEST_MODEL_POSTGRES_DSN="$shared_dsn" \
     SERVICE_POSTGRES_TEST_DSN="$shared_dsn" \
     STANDARD_POSTGRES_TEST_DSN="$shared_dsn" \

@@ -76,26 +76,11 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
 			domain_id INTEGER,
-			name TEXT NOT NULL,
 			code TEXT NOT NULL,
-			data_type TEXT NOT NULL,
-			length INTEGER,
-			precision_num INTEGER,
-			scale INTEGER,
-			nullable BOOLEAN,
-			default_value TEXT,
-			format TEXT,
-			value_range TEXT,
-			unit_id INTEGER,
-			security_level TEXT,
-			classification_id INTEGER,
-			code_set_id INTEGER,
-			definition TEXT,
-			example_values TEXT,
-			quality_rules TEXT,
-			status TEXT,
 			steward_id INTEGER,
 			tags TEXT,
+			current_revision_id INTEGER,
+			draft_revision_id INTEGER,
 			created_by INTEGER NOT NULL,
 			updated_by INTEGER,
 			created_at DATETIME,
@@ -103,26 +88,49 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			version INTEGER NOT NULL DEFAULT 1,
 			lifecycle_state TEXT NOT NULL DEFAULT 'active'
 		)`,
+		`CREATE TABLE standard.element_revisions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, element_id INTEGER NOT NULL, revision_no INTEGER NOT NULL,
+			status TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, data_type TEXT NOT NULL,
+			length INTEGER, precision_num INTEGER, scale INTEGER, nullable BOOLEAN, default_value TEXT, format TEXT,
+			value_domain_kind TEXT NOT NULL, range_constraint TEXT, code_set_revision_id INTEGER, unit_id INTEGER,
+			security_level TEXT, classification_id INTEGER, example_values TEXT, extra_quality_rules TEXT,
+			compiled_quality_rules TEXT, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME,
+			submitted_by INTEGER, submitted_at DATETIME, published_by INTEGER, published_at DATETIME,
+			created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME
+		)`,
 		`CREATE TABLE standard.code_sets (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
+			domain_id INTEGER,
 			code TEXT NOT NULL,
-			name TEXT NOT NULL,
-			type TEXT,
-			description TEXT,
+			origin TEXT NOT NULL,
+			steward_id INTEGER,
+			tags TEXT,
+			current_revision_id INTEGER,
+			draft_revision_id INTEGER,
+			created_by INTEGER NOT NULL,
+			updated_by INTEGER,
 			created_at DATETIME,
 			updated_at DATETIME,
-			version INTEGER NOT NULL DEFAULT 1
+			version INTEGER NOT NULL DEFAULT 1,
+			lifecycle_state TEXT NOT NULL DEFAULT 'active'
 		)`,
-		`CREATE TABLE standard.code_items (
+		`CREATE TABLE standard.code_set_revisions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, code_set_id INTEGER NOT NULL, revision_no INTEGER NOT NULL,
+			status TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL, value_type TEXT NOT NULL,
+			change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME, submitted_by INTEGER,
+			submitted_at DATETIME, published_by INTEGER, published_at DATETIME, created_by INTEGER NOT NULL,
+			updated_by INTEGER, created_at DATETIME, updated_at DATETIME
+		)`,
+		`CREATE TABLE standard.code_set_revision_items (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			code_set_id INTEGER NOT NULL,
+			code_set_revision_id INTEGER NOT NULL,
 			code TEXT NOT NULL,
-			value TEXT NOT NULL,
-			description TEXT,
+			label TEXT NOT NULL,
+			definition TEXT,
 			sort_order INTEGER,
-			is_active BOOLEAN,
-			parent_id INTEGER,
+			status TEXT,
+			replacement_item_id INTEGER,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -350,8 +358,15 @@ func TestStandardCleanupTenantDeletedLogicalDeprecatesStatefulDefinitions(t *tes
 	if err := db.First(&element, ids.elementID).Error; err != nil {
 		t.Fatalf("load element: %v", err)
 	}
-	if element.Status != "deprecated" {
-		t.Fatalf("expected element deprecated, got %s", element.Status)
+	if element.CurrentRevisionID != nil {
+		t.Fatalf("expected element current revision cleared, got %d", *element.CurrentRevisionID)
+	}
+	var elementRevision models.ElementRevision
+	if err := db.Where("element_id = ?", ids.elementID).First(&elementRevision).Error; err != nil {
+		t.Fatalf("load element revision: %v", err)
+	}
+	if elementRevision.Status != models.RevisionStatusWithdrawn {
+		t.Fatalf("expected element revision withdrawn, got %s", elementRevision.Status)
 	}
 	var metric models.Metric
 	if err := db.First(&metric, ids.metricID).Error; err != nil {
@@ -466,11 +481,18 @@ func seedStandardCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64, w
 	if err := db.Create(&deprecatedGlossary).Error; err != nil {
 		t.Fatalf("create deprecated glossary: %v", err)
 	}
-	codeSet := models.CodeSet{TenantID: tenantID, Code: "codeset_" + suffix, Name: "Code Set " + suffix}
+	codeSet := models.CodeSet{TenantID: tenantID, DomainID: &domain.ID, Code: "codeset_" + suffix, Origin: models.CodeSetOriginTenant, CreatedBy: 1, LifecycleState: "active"}
 	if err := db.Create(&codeSet).Error; err != nil {
 		t.Fatalf("create code set: %v", err)
 	}
-	codeItem := models.CodeItem{CodeSetID: codeSet.ID, Code: "item_" + suffix, Value: "Item " + suffix, IsActive: true}
+	codeSetRevision := models.CodeSetRevision{CodeSetID: codeSet.ID, RevisionNo: 1, Status: models.RevisionStatusPublished, Name: "Code Set " + suffix, Description: "definition", ValueType: "string", ChangeSummary: "initial", CreatedBy: 1}
+	if err := db.Create(&codeSetRevision).Error; err != nil {
+		t.Fatalf("create code set revision: %v", err)
+	}
+	if err := db.Model(&codeSet).Update("current_revision_id", codeSetRevision.ID).Error; err != nil {
+		t.Fatalf("link code set revision: %v", err)
+	}
+	codeItem := models.CodeSetRevisionItem{CodeSetRevisionID: codeSetRevision.ID, Code: "item_" + suffix, Label: "Item " + suffix, Status: models.CodeItemStatusActive}
 	if err := db.Create(&codeItem).Error; err != nil {
 		t.Fatalf("create code item: %v", err)
 	}
@@ -491,20 +513,18 @@ func seedStandardCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64, w
 		t.Fatalf("create grading level: %v", err)
 	}
 	element := models.Element{
-		TenantID:         tenantID,
-		DomainID:         &domain.ID,
-		Name:             "Amount " + suffix,
-		Code:             "amount_" + suffix,
-		DataType:         "decimal",
-		UnitID:           &unit.ID,
-		ClassificationID: &classification.ID,
-		CodeSetID:        &codeSet.ID,
-		Definition:       "amount definition",
-		Status:           "approved",
-		CreatedBy:        1,
+		TenantID: tenantID, DomainID: &domain.ID, Code: "amount_" + suffix,
+		CreatedBy: 1, LifecycleState: "active",
 	}
 	if err := db.Create(&element).Error; err != nil {
 		t.Fatalf("create element: %v", err)
+	}
+	elementRevision := models.ElementRevision{ElementID: element.ID, RevisionNo: 1, Status: models.RevisionStatusPublished, Name: "Amount " + suffix, Definition: "amount definition", DataType: "decimal", ValueDomainKind: models.ValueDomainUnrestricted, UnitID: &unit.ID, ClassificationID: &classification.ID, ChangeSummary: "initial", CreatedBy: 1}
+	if err := db.Create(&elementRevision).Error; err != nil {
+		t.Fatalf("create element revision: %v", err)
+	}
+	if err := db.Model(&element).Update("current_revision_id", elementRevision.ID).Error; err != nil {
+		t.Fatalf("link element revision: %v", err)
 	}
 	if err := db.Create(&models.GlossaryElementMapping{GlossaryID: glossary.ID, ElementID: element.ID}).Error; err != nil {
 		t.Fatalf("create glossary element mapping: %v", err)
@@ -602,7 +622,7 @@ func assertStandardCleanupCounts(t *testing.T, db *gorm.DB, expected standardCle
 	assertStandardCleanupCount(t, db, &models.Document{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.documents, "documents")
 	assertStandardCleanupCount(t, db, &models.DimensionHierarchy{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.dimensionHierarchies, "dimension hierarchies")
 	assertStandardCleanupCount(t, db, &models.StandardReferenceDeletion{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.referenceDeletions, "reference deletions")
-	assertStandardCleanupCount(t, db, &models.CodeItem{}, "", nil, expected.codeItems, "code items")
+	assertStandardCleanupCount(t, db, &models.CodeSetRevisionItem{}, "", nil, expected.codeItems, "code items")
 	assertStandardCleanupCount(t, db, &models.GlossaryElementMapping{}, "", nil, expected.glossaryElementMappings, "glossary element mappings")
 	assertStandardCleanupCount(t, db, &models.MetricElementMapping{}, "", nil, expected.metricElementMappings, "metric element mappings")
 	assertStandardCleanupCount(t, db, &models.MetricDependency{}, "", nil, expected.metricDependencies, "metric dependencies")

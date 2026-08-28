@@ -7,7 +7,17 @@ import (
 	"time"
 )
 
-// JSONB PostgreSQL JSONB 类型
+const (
+	RevisionStatusDraft      = "draft"
+	RevisionStatusInReview   = "in_review"
+	RevisionStatusPublished  = "published"
+	RevisionStatusSuperseded = "superseded"
+	RevisionStatusWithdrawn  = "withdrawn"
+	ValueDomainUnrestricted  = "unrestricted"
+	ValueDomainRange         = "range"
+	ValueDomainEnumeration   = "enumeration"
+)
+
 type JSONB map[string]interface{}
 
 func (j JSONB) Value() (driver.Value, error) {
@@ -32,87 +42,161 @@ func (j *JSONB) Scan(value interface{}) error {
 	return fmt.Errorf("unsupported type: %T", value)
 }
 
-// Element 数据元
+// Element 是数据元的稳定身份。业务定义只存在于 ElementRevision。
 type Element struct {
-	ID               int64       `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID         int64       `gorm:"not null;index;uniqueIndex:uq_standard_elements_tenant_code" json:"tenant_id"`
-	DomainID         *int64      `gorm:"index" json:"domain_id,omitempty"`
-	Name             string      `gorm:"size:200;not null" json:"name"`
-	Code             string      `gorm:"size:100;not null;uniqueIndex:uq_standard_elements_tenant_code" json:"code"`
-	DataType         string      `gorm:"size:50;not null" json:"data_type"` // string/int/float/date/bool/json
-	Length           *int        `json:"length,omitempty"`
-	PrecisionNum     *int        `json:"precision_num,omitempty"`
-	Scale            *int        `json:"scale,omitempty"`
-	Nullable         bool        `gorm:"default:true" json:"nullable"`
-	DefaultValue     string      `gorm:"type:text" json:"default_value"`
-	Format           string      `gorm:"size:200" json:"format"`
-	ValueRange       JSONB       `gorm:"type:jsonb;serializer:json" json:"value_range"`
-	UnitID           *int64      `gorm:"index" json:"unit_id,omitempty"`           // 关联计量单位
-	SecurityLevel    string      `gorm:"size:10" json:"security_level"`            // L1/L2/L3/L4
-	ClassificationID *int64      `gorm:"index" json:"classification_id,omitempty"` // 关联数据分类
-	CodeSetID        *int64      `gorm:"index" json:"code_set_id,omitempty"`       // 关联码值集
-	Definition       string      `gorm:"type:text" json:"definition"`
-	ExampleValues    StringArray `gorm:"type:jsonb;serializer:json" json:"example_values"`
-	QualityRules     JSONB       `gorm:"type:jsonb;serializer:json" json:"quality_rules"` // 质量规则
-	Status           string      `gorm:"size:20;default:'draft'" json:"status"`           // draft/approved/deprecated
-	StewardID        *int64      `json:"steward_id,omitempty"`
-	Tags             StringArray `gorm:"type:jsonb;serializer:json" json:"tags"`
-	CreatedBy        int64       `gorm:"not null" json:"created_by"`
-	UpdatedBy        *int64      `json:"updated_by,omitempty"`
-	CreatedAt        time.Time   `json:"created_at"`
-	UpdatedAt        time.Time   `json:"updated_at"`
-	Version          int64       `gorm:"not null;default:1" json:"version"`
-	LifecycleState   string      `gorm:"size:16;not null;default:'active';check:ck_standard_elements_lifecycle_state,lifecycle_state IN ('active','deleting')" json:"lifecycle_state"`
+	ID                int64       `gorm:"primaryKey;autoIncrement" json:"id"`
+	TenantID          int64       `gorm:"not null;index;uniqueIndex:uq_standard_elements_tenant_code" json:"tenant_id"`
+	DomainID          *int64      `gorm:"index" json:"domain_id,omitempty"`
+	Code              string      `gorm:"size:100;not null;uniqueIndex:uq_standard_elements_tenant_code" json:"code"`
+	StewardID         *int64      `json:"steward_id,omitempty"`
+	Tags              StringArray `gorm:"type:jsonb;serializer:json" json:"tags"`
+	CurrentRevisionID *int64      `gorm:"index" json:"current_revision_id,omitempty"`
+	DraftRevisionID   *int64      `gorm:"index" json:"draft_revision_id,omitempty"`
+	CreatedBy         int64       `gorm:"not null" json:"created_by"`
+	UpdatedBy         *int64      `json:"updated_by,omitempty"`
+	CreatedAt         time.Time   `json:"created_at"`
+	UpdatedAt         time.Time   `json:"updated_at"`
+	Version           int64       `gorm:"not null;default:1" json:"version"`
+	LifecycleState    string      `gorm:"size:16;not null;default:'active'" json:"lifecycle_state"`
 }
 
-func (Element) TableName() string {
-	return "standard.elements"
+func (Element) TableName() string { return "standard.elements" }
+
+type RangeConstraint struct {
+	Min          *json.Number `json:"min,omitempty"`
+	Max          *json.Number `json:"max,omitempty"`
+	MinInclusive *bool        `json:"min_inclusive,omitempty"`
+	MaxInclusive *bool        `json:"max_inclusive,omitempty"`
 }
 
-// CreateElementRequest 创建数据元请求
+// ElementRevision 是数据元的一次完整业务定义快照。
+type ElementRevision struct {
+	ID                   int64            `gorm:"primaryKey;autoIncrement" json:"id"`
+	ElementID            int64            `gorm:"not null;index;uniqueIndex:uq_standard_element_revisions_element_no" json:"element_id"`
+	RevisionNo           int64            `gorm:"not null;uniqueIndex:uq_standard_element_revisions_element_no" json:"revision_no"`
+	Status               string           `gorm:"size:20;not null" json:"status"`
+	Name                 string           `gorm:"size:200;not null" json:"name"`
+	Definition           string           `gorm:"type:text;not null" json:"definition"`
+	DataType             string           `gorm:"size:50;not null" json:"data_type"`
+	Length               *int             `json:"length,omitempty"`
+	PrecisionNum         *int             `json:"precision_num,omitempty"`
+	Scale                *int             `json:"scale,omitempty"`
+	Nullable             bool             `gorm:"not null;default:true" json:"nullable"`
+	DefaultValue         string           `gorm:"type:text" json:"default_value"`
+	Format               string           `gorm:"size:200" json:"format"`
+	ValueDomainKind      string           `gorm:"size:20;not null;default:'unrestricted'" json:"value_domain_kind"`
+	RangeConstraint      *RangeConstraint `gorm:"type:jsonb;serializer:json" json:"range_constraint,omitempty"`
+	CodeSetRevisionID    *int64           `gorm:"index" json:"code_set_revision_id,omitempty"`
+	UnitID               *int64           `gorm:"index" json:"unit_id,omitempty"`
+	SecurityLevel        string           `gorm:"size:10" json:"security_level"`
+	ClassificationID     *int64           `gorm:"index" json:"classification_id,omitempty"`
+	ExampleValues        StringArray      `gorm:"type:jsonb;serializer:json" json:"example_values"`
+	ExtraQualityRules    JSONB            `gorm:"type:jsonb;serializer:json" json:"extra_quality_rules"`
+	CompiledQualityRules JSONB            `gorm:"type:jsonb;serializer:json" json:"compiled_quality_rules"`
+	ChangeSummary        string           `gorm:"type:text;not null" json:"change_summary"`
+	EffectiveFrom        *time.Time       `json:"effective_from,omitempty"`
+	EffectiveTo          *time.Time       `json:"effective_to,omitempty"`
+	SubmittedBy          *int64           `json:"submitted_by,omitempty"`
+	SubmittedAt          *time.Time       `json:"submitted_at,omitempty"`
+	PublishedBy          *int64           `json:"published_by,omitempty"`
+	PublishedAt          *time.Time       `json:"published_at,omitempty"`
+	CreatedBy            int64            `gorm:"not null" json:"created_by"`
+	UpdatedBy            *int64           `json:"updated_by,omitempty"`
+	CreatedAt            time.Time        `json:"created_at"`
+	UpdatedAt            time.Time        `json:"updated_at"`
+}
+
+func (ElementRevision) TableName() string { return "standard.element_revisions" }
+
+type ElementAggregate struct {
+	Element
+	CurrentRevision *ElementRevision `json:"current_revision,omitempty"`
+	DraftRevision   *ElementRevision `json:"draft_revision,omitempty"`
+}
+
+// PublishedElementReference 是跨模块解析已发布数据元时使用的只读投影。
+type PublishedElementReference struct {
+	ID             int64  `json:"id"`
+	TenantID       int64  `json:"tenant_id"`
+	Name           string `json:"name"`
+	Code           string `json:"code"`
+	Status         string `json:"status"`
+	LifecycleState string `json:"lifecycle_state"`
+	Version        int64  `json:"version"`
+	RevisionID     int64  `json:"revision_id"`
+	RevisionNo     int64  `json:"revision_no"`
+}
+
 type CreateElementRequest struct {
-	DomainID         *int64                 `json:"domain_id,omitempty"`
-	Name             string                 `json:"name" binding:"required"`
-	Code             string                 `json:"code" binding:"required"`
-	DataType         string                 `json:"data_type" binding:"required"`
-	Length           *int                   `json:"length,omitempty"`
-	PrecisionNum     *int                   `json:"precision_num,omitempty"`
-	Scale            *int                   `json:"scale,omitempty"`
-	Nullable         bool                   `json:"nullable"`
-	DefaultValue     string                 `json:"default_value"`
-	Format           string                 `json:"format"`
-	ValueRange       map[string]interface{} `json:"value_range"`
-	UnitID           *int64                 `json:"unit_id,omitempty"`
-	SecurityLevel    string                 `json:"security_level"`
-	ClassificationID *int64                 `json:"classification_id,omitempty"`
-	CodeSetID        *int64                 `json:"code_set_id,omitempty"`
-	Definition       string                 `json:"definition"`
-	ExampleValues    []string               `json:"example_values"`
-	QualityRules     map[string]interface{} `json:"quality_rules"`
-	StewardID        *int64                 `json:"steward_id,omitempty"`
-	Tags             []string               `json:"tags"`
+	DomainID          *int64                 `json:"domain_id,omitempty"`
+	Code              string                 `json:"code" binding:"required"`
+	StewardID         *int64                 `json:"steward_id,omitempty"`
+	Tags              []string               `json:"tags"`
+	Name              string                 `json:"name" binding:"required"`
+	Definition        string                 `json:"definition" binding:"required"`
+	DataType          string                 `json:"data_type" binding:"required"`
+	Length            *int                   `json:"length,omitempty"`
+	PrecisionNum      *int                   `json:"precision_num,omitempty"`
+	Scale             *int                   `json:"scale,omitempty"`
+	Nullable          bool                   `json:"nullable"`
+	DefaultValue      string                 `json:"default_value"`
+	Format            string                 `json:"format"`
+	ValueDomainKind   string                 `json:"value_domain_kind" binding:"required"`
+	RangeConstraint   *RangeConstraint       `json:"range_constraint,omitempty"`
+	CodeSetRevisionID *int64                 `json:"code_set_revision_id,omitempty"`
+	UnitID            *int64                 `json:"unit_id,omitempty"`
+	SecurityLevel     string                 `json:"security_level"`
+	ClassificationID  *int64                 `json:"classification_id,omitempty"`
+	ExampleValues     []string               `json:"example_values"`
+	ExtraQualityRules map[string]interface{} `json:"extra_quality_rules"`
+	ChangeSummary     string                 `json:"change_summary" binding:"required"`
+	EffectiveFrom     *time.Time             `json:"effective_from,omitempty"`
+	EffectiveTo       *time.Time             `json:"effective_to,omitempty"`
 }
 
-// UpdateElementRequest 更新数据元请求
 type UpdateElementRequest struct {
-	Version          int64                  `json:"version" binding:"required"`
-	DomainID         *int64                 `json:"domain_id,omitempty"`
-	Name             string                 `json:"name"`
-	DataType         string                 `json:"data_type"`
-	Length           *int                   `json:"length,omitempty"`
-	PrecisionNum     *int                   `json:"precision_num,omitempty"`
-	Scale            *int                   `json:"scale,omitempty"`
-	Nullable         *bool                  `json:"nullable,omitempty"`
-	DefaultValue     string                 `json:"default_value"`
-	Format           string                 `json:"format"`
-	ValueRange       map[string]interface{} `json:"value_range"`
-	UnitID           *int64                 `json:"unit_id,omitempty"`
-	SecurityLevel    string                 `json:"security_level"`
-	ClassificationID *int64                 `json:"classification_id,omitempty"`
-	CodeSetID        *int64                 `json:"code_set_id,omitempty"`
-	Definition       string                 `json:"definition"`
-	ExampleValues    []string               `json:"example_values"`
-	QualityRules     map[string]interface{} `json:"quality_rules"`
-	StewardID        *int64                 `json:"steward_id,omitempty"`
-	Tags             []string               `json:"tags"`
+	Version   int64    `json:"version" binding:"required,gt=0" minimum:"1"`
+	DomainID  *int64   `json:"domain_id,omitempty"`
+	StewardID *int64   `json:"steward_id,omitempty"`
+	Tags      []string `json:"tags"`
+}
+
+type CreateElementRevisionRequest struct {
+	Version       int64  `json:"version" binding:"required,gt=0" minimum:"1"`
+	ChangeSummary string `json:"change_summary" binding:"required"`
+}
+
+type UpdateElementRevisionRequest struct {
+	Version           int64                  `json:"version" binding:"required,gt=0" minimum:"1"`
+	Name              string                 `json:"name" binding:"required"`
+	Definition        string                 `json:"definition" binding:"required"`
+	DataType          string                 `json:"data_type" binding:"required"`
+	Length            *int                   `json:"length,omitempty"`
+	PrecisionNum      *int                   `json:"precision_num,omitempty"`
+	Scale             *int                   `json:"scale,omitempty"`
+	Nullable          bool                   `json:"nullable"`
+	DefaultValue      string                 `json:"default_value"`
+	Format            string                 `json:"format"`
+	ValueDomainKind   string                 `json:"value_domain_kind" binding:"required"`
+	RangeConstraint   *RangeConstraint       `json:"range_constraint,omitempty"`
+	CodeSetRevisionID *int64                 `json:"code_set_revision_id,omitempty"`
+	UnitID            *int64                 `json:"unit_id,omitempty"`
+	SecurityLevel     string                 `json:"security_level"`
+	ClassificationID  *int64                 `json:"classification_id,omitempty"`
+	ExampleValues     []string               `json:"example_values"`
+	ExtraQualityRules map[string]interface{} `json:"extra_quality_rules"`
+	ChangeSummary     string                 `json:"change_summary" binding:"required"`
+	EffectiveFrom     *time.Time             `json:"effective_from,omitempty"`
+	EffectiveTo       *time.Time             `json:"effective_to,omitempty"`
+}
+
+type RevisionActionRequest struct {
+	Version int64 `json:"version" binding:"required,gt=0" minimum:"1"`
+}
+
+type PublishedElementQualityRulesResponse struct {
+	ElementID         int64 `json:"element_id"`
+	ElementRevisionID int64 `json:"element_revision_id"`
+	RevisionNo        int64 `json:"revision_no"`
+	QualityRules      JSONB `json:"quality_rules"`
 }

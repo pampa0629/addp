@@ -11,8 +11,8 @@ func TestEmbeddedCatalogContainsQualityQueryIndexes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog: %v", err)
 	}
-	if catalog.LatestVersion != 7 {
-		t.Fatalf("latest migration version = %d, want 7", catalog.LatestVersion)
+	if catalog.LatestVersion != 8 {
+		t.Fatalf("latest migration version = %d, want 8", catalog.LatestVersion)
 	}
 	queryIndexes := catalog.Files[2]
 	if queryIndexes.Name != "000003_quality_query_indexes.up.sql" {
@@ -75,6 +75,15 @@ func TestEmbeddedCatalogContainsQualityQueryIndexes(t *testing.T) {
 	gateTasks := catalog.Files[6]
 	if gateTasks.Name != "000007_materialization_gate_tasks.up.sql" || !strings.Contains(gateTasks.Contents, "quality.materialization_gate_tasks") {
 		t.Fatalf("materialization gate migration = %#v", gateTasks)
+	}
+	revisionBinding := catalog.Files[7]
+	if revisionBinding.Name != "000008_quality_element_revision_binding.up.sql" {
+		t.Fatalf("element revision binding migration = %q", revisionBinding.Name)
+	}
+	for _, required := range []string{"TRUNCATE TABLE quality.rule_applications CASCADE", "ADD COLUMN element_revision_id BIGINT NOT NULL", "element_revision_id > 0"} {
+		if !strings.Contains(revisionBinding.Contents, required) {
+			t.Fatalf("element revision binding migration missing %q", required)
+		}
 	}
 }
 

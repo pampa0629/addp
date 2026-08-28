@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/addp/common/dataquality"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/standard/i18n"
 	"github.com/addp/standard/internal/models"
@@ -14,29 +15,25 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type ElementHandler struct {
-	svc *service.ElementService
-}
+type ElementHandler struct{ svc *service.ElementService }
 
-func NewElementHandler(svc *service.ElementService) *ElementHandler {
-	return &ElementHandler{svc: svc}
-}
+func NewElementHandler(svc *service.ElementService) *ElementHandler { return &ElementHandler{svc: svc} }
 
-// ListElements GET /api/model/elements
+// ListElements godoc
 // @Summary 获取数据元列表 | List data elements
 // @Tags Standard
 // @Produce json
 // @Param ids query string false "数据元 ID 集合，逗号分隔，最多 100 个 | Data element IDs, comma-separated, maximum 100"
+// @Param domain_id query int false "归属业务域 ID | Owning domain ID"
+// @Param status query string false "修订状态 | Revision status"
+// @Param keyword query string false "关键字 | Keyword"
 // @Success 200 {object} models.PaginatedElementResponse
-// @Failure 400 {object} map[string]string "无效的 ID 集合 | Invalid ID collection"
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Failure 400 {object} map[string]string "请求无效 | Invalid request"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.read"]
 // @Router /elements [get]
 // @Security BearerAuth
 func (h *ElementHandler) ListElements(c *gin.Context) {
-	tenantID := getTenantID(c)
 	if len(c.Request.URL.Query()["ids"]) > 1 {
 		respondError(c, http.StatusBadRequest, fmt.Errorf("duplicate element ids filter"))
 		return
@@ -46,35 +43,27 @@ func (h *ElementHandler) ListElements(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-
-	opts := repository.ListElementOptions{
-		IDs:     ids,
-		Status:  c.Query("status"),
-		Keyword: c.Query("keyword"),
-	}
-	if domainIDStr := c.Query("domain_id"); domainIDStr != "" {
-		if id, err := strconv.ParseInt(domainIDStr, 10, 64); err == nil {
-			opts.DomainID = &id
+	opts := repository.ListElementOptions{IDs: ids, Status: c.Query("status"), Keyword: c.Query("keyword")}
+	if value := c.Query("domain_id"); value != "" {
+		id, parseErr := strconv.ParseInt(value, 10, 64)
+		if parseErr != nil || id <= 0 {
+			respondError(c, http.StatusBadRequest, fmt.Errorf("invalid domain_id"))
+			return
 		}
+		opts.DomainID = &id
 	}
-	if pageStr := c.Query("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil {
-			opts.Page = p
-		}
+	if value := c.Query("page"); value != "" {
+		opts.Page, _ = strconv.Atoi(value)
 	}
-	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
-		if ps, err := strconv.Atoi(pageSizeStr); err == nil {
-			opts.PageSize = ps
-		}
+	if value := c.Query("page_size"); value != "" {
+		opts.PageSize, _ = strconv.Atoi(value)
 	}
-
-	elements, total, err := h.svc.ListElements(tenantID, opts)
+	items, total, err := h.svc.ListElements(getTenantID(c), opts)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	page := opts.Page
-	pageSize := opts.PageSize
+	page, pageSize := opts.Page, opts.PageSize
 	if page < 1 {
 		page = 1
 	}
@@ -85,7 +74,7 @@ func (h *ElementHandler) ListElements(c *gin.Context) {
 	if totalPages < 1 {
 		totalPages = 1
 	}
-	c.JSON(http.StatusOK, gin.H{"data": elements, "total": total, "page": page, "page_size": pageSize, "total_pages": totalPages})
+	c.JSON(http.StatusOK, gin.H{"data": items, "total": total, "page": page, "page_size": pageSize, "total_pages": totalPages})
 }
 
 func parseElementIDs(value string) ([]int64, error) {
@@ -97,7 +86,7 @@ func parseElementIDs(value string) ([]int64, error) {
 		return nil, fmt.Errorf("too many element ids")
 	}
 	ids := make([]int64, 0, len(parts))
-	seen := make(map[int64]struct{}, len(parts))
+	seen := map[int64]struct{}{}
 	for _, part := range parts {
 		if part == "" || strings.TrimSpace(part) != part {
 			return nil, fmt.Errorf("invalid element ids")
@@ -106,7 +95,7 @@ func parseElementIDs(value string) ([]int64, error) {
 		if err != nil || id <= 0 {
 			return nil, fmt.Errorf("invalid element ids")
 		}
-		if _, exists := seen[id]; exists {
+		if _, ok := seen[id]; ok {
 			continue
 		}
 		seen[id] = struct{}{}
@@ -115,184 +104,329 @@ func parseElementIDs(value string) ([]int64, error) {
 	return ids, nil
 }
 
-// CreateElement POST /api/model/elements
-// @Summary 创建数据元 | Create data element
+// CreateElement godoc
+// @Summary 创建数据元及首个草稿修订 | Create data element with initial draft revision
 // @Tags Standard
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Param request body models.CreateElementRequest true "数据元和首个草稿 | Data element and initial draft"
+// @Success 201 {object} models.ElementAggregate
+// @Failure 400 {object} map[string]string "请求无效 | Invalid request"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.create"]
 // @Router /elements [post]
 // @Security BearerAuth
 func (h *ElementHandler) CreateElement(c *gin.Context) {
 	var req models.CreateElementRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, err)
+	if !bindJSON(c, &req) {
 		return
 	}
-
-	tenantID := getTenantID(c)
-	userID := getUserID(c)
-
-	element, err := h.svc.CreateElement(&req, tenantID, userID)
+	result, err := h.svc.CreateElement(&req, getTenantID(c), getUserID(c))
 	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	c.JSON(http.StatusCreated, element)
+	c.JSON(http.StatusCreated, result)
 }
 
-// GetElement GET /api/model/elements/:id
-// @Summary 获取数据元详情 | Get data element detail
+// GetElement godoc
+// @Summary 获取数据元聚合 | Get data element aggregate
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Success 200 {object} models.ElementAggregate
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.read"]
 // @Router /elements/{id} [get]
 // @Security BearerAuth
 func (h *ElementHandler) GetElement(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
+	id, ok := elementPathID(c, "id")
+	if !ok {
 		return
 	}
-	tenantID := getTenantID(c)
-	element, err := h.svc.GetElement(id, tenantID)
+	result, err := h.svc.GetElement(id, getTenantID(c))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgElementNotFound)})
 		return
 	}
-	c.JSON(http.StatusOK, element)
+	c.JSON(http.StatusOK, result)
 }
 
-// UpdateElement PUT /api/model/elements/:id
-// @Summary 更新数据元 | Update data element
+// UpdateElement godoc
+// @Summary 更新数据元归属信息 | Update data element ownership
 // @Tags Standard
+// @Accept json
 // @Produce json
-// @Param request body models.UpdateElementRequest true "更新数据元 | Update data element"
-// @Success 200 {object} map[string]interface{}
+// @Param request body models.UpdateElementRequest true "归属信息及并发版本 | Ownership and concurrency version"
+// @Success 200 {object} models.ElementAggregate
 // @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.update"]
 // @Router /elements/{id} [put]
 // @Security BearerAuth
 func (h *ElementHandler) UpdateElement(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
+	id, ok := elementPathID(c, "id")
+	if !ok {
 		return
 	}
-
 	var req models.UpdateElementRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, err)
+	if !bindJSON(c, &req) {
 		return
 	}
-
-	tenantID := getTenantID(c)
-	userID := getUserID(c)
-
-	element, err := h.svc.UpdateElement(id, tenantID, userID, &req)
+	result, err := h.svc.UpdateElement(id, getTenantID(c), getUserID(c), &req)
 	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	c.JSON(http.StatusOK, element)
+	c.JSON(http.StatusOK, result)
 }
 
-// DeleteElement DELETE /api/v1/standard/elements/:id
-// @Summary 删除数据元 | Delete data element
+// DeleteElement godoc
+// @Summary 删除数据元稳定身份 | Delete data element identity
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Failure 404 {object} map[string]string "数据元不存在 | Data element not found"
-// @Failure 409 {object} map[string]interface{} "资源仍被 Model 引用 | Resource is still referenced by Model"
-// @Failure 503 {object} map[string]string "Model 引用删除屏障不可用 | Model reference deletion guard unavailable"
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Success 200 {object} map[string]string
+// @Failure 409 {object} map[string]string "仍被引用 | Still referenced"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.delete"]
 // @Router /elements/{id} [delete]
 // @Security BearerAuth
 func (h *ElementHandler) DeleteElement(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
+	id, ok := elementPathID(c, "id")
+	if !ok {
 		return
 	}
-	tenantID := getTenantID(c)
-	if err := h.svc.DeleteElement(c.Request.Context(), id, tenantID); err != nil {
+	if err := h.svc.DeleteElement(c.Request.Context(), id, getTenantID(c)); err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
 }
 
-// ApproveElement POST /api/model/elements/:id/approve
-// @Summary 审批数据元 | Approve data element
+// ListElementRevisions godoc
+// @Summary 获取数据元修订历史 | List data element revisions
 // @Tags Standard
 // @Produce json
-// @Param request body models.VersionRequest true "当前资源版本 | Current resource version"
-// @Success 200 {object} map[string]interface{}
-// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Success 200 {array} models.ElementRevision
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["standard.element.approve"]
-// @Router /elements/{id}/approve [post]
+// @x-addp-required-permissions ["standard.element.read"]
+// @Router /elements/{id}/revisions [get]
 // @Security BearerAuth
-func (h *ElementHandler) ApproveElement(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
+func (h *ElementHandler) ListElementRevisions(c *gin.Context) {
+	id, ok := elementPathID(c, "id")
+	if !ok {
 		return
 	}
-	var req models.VersionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	items, err := h.svc.ListRevisions(id, getTenantID(c))
+	if err != nil {
+		respondError(c, http.StatusNotFound, err)
+		return
+	}
+	c.JSON(http.StatusOK, items)
+}
+
+// CreateElementRevision godoc
+// @Summary 从最近修订创建新草稿 | Create a new draft from latest revision
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.CreateElementRevisionRequest true "并发版本和变更说明 | Version and change summary"
+// @Success 201 {object} models.ElementAggregate
+// @Failure 409 {object} map[string]string "草稿已存在或版本冲突 | Draft exists or version conflict"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.element.update"]
+// @Router /elements/{id}/revisions [post]
+// @Security BearerAuth
+func (h *ElementHandler) CreateElementRevision(c *gin.Context) {
+	id, ok := elementPathID(c, "id")
+	if !ok {
+		return
+	}
+	var req models.CreateElementRevisionRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	result, err := h.svc.CreateRevision(id, getTenantID(c), getUserID(c), &req)
+	if err != nil {
+		respondError(c, http.StatusConflict, err)
+		return
+	}
+	c.JSON(http.StatusCreated, result)
+}
+
+// GetElementRevision godoc
+// @Summary 获取数据元修订 | Get data element revision
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} models.ElementRevision
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.element.read"]
+// @Router /elements/{id}/revisions/{revision_id} [get]
+// @Security BearerAuth
+func (h *ElementHandler) GetElementRevision(c *gin.Context) {
+	id, revisionID, ok := elementRevisionPath(c)
+	if !ok {
+		return
+	}
+	result, err := h.svc.GetRevision(id, revisionID, getTenantID(c))
+	if err != nil {
+		respondError(c, http.StatusNotFound, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// UpdateElementRevision godoc
+// @Summary 更新数据元草稿修订 | Update data element draft revision
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.UpdateElementRevisionRequest true "完整草稿及并发版本 | Full draft and concurrency version"
+// @Success 200 {object} models.ElementAggregate
+// @Failure 409 {object} map[string]string "状态或版本冲突 | State or version conflict"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.element.update"]
+// @Router /elements/{id}/revisions/{revision_id} [put]
+// @Security BearerAuth
+func (h *ElementHandler) UpdateElementRevision(c *gin.Context) {
+	id, revisionID, ok := elementRevisionPath(c)
+	if !ok {
+		return
+	}
+	var req models.UpdateElementRevisionRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	result, err := h.svc.UpdateRevision(id, revisionID, getTenantID(c), getUserID(c), &req)
+	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-
-	tenantID := getTenantID(c)
-	userID := getUserID(c)
-
-	if err := h.svc.ApproveElement(id, tenantID, userID, req.Version); err != nil {
-		respondError(c, http.StatusInternalServerError, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgApproveSuccess)})
+	c.JSON(http.StatusOK, result)
 }
 
-// GetElementQualityRules GET /api/model/elements/:id/quality-rules
-// @Summary 获取数据元质量规则 | Get data element quality rules
+// SubmitElementRevision godoc
+// @Summary 提交数据元修订审核 | Submit data element revision for review
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.RevisionActionRequest true "当前资源版本 | Current resource version"
+// @Success 200 {object} models.ElementAggregate
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.element.update"]
+// @Router /elements/{id}/revisions/{revision_id}/submit [post]
+// @Security BearerAuth
+func (h *ElementHandler) SubmitElementRevision(c *gin.Context) {
+	h.revisionAction(c, h.svc.SubmitRevision)
+}
+
+// ReturnElementRevision godoc
+// @Summary 退回数据元修订 | Return data element revision to draft
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.RevisionActionRequest true "当前资源版本 | Current resource version"
+// @Success 200 {object} models.ElementAggregate
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.element.publish"]
+// @Router /elements/{id}/revisions/{revision_id}/return [post]
+// @Security BearerAuth
+func (h *ElementHandler) ReturnElementRevision(c *gin.Context) {
+	h.revisionAction(c, h.svc.ReturnRevision)
+}
+
+// PublishElementRevision godoc
+// @Summary 发布数据元修订 | Publish data element revision
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.RevisionActionRequest true "当前资源版本 | Current resource version"
+// @Success 200 {object} models.ElementAggregate
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.element.publish"]
+// @Router /elements/{id}/revisions/{revision_id}/publish [post]
+// @Security BearerAuth
+func (h *ElementHandler) PublishElementRevision(c *gin.Context) {
+	h.revisionAction(c, h.svc.PublishRevision)
+}
+
+// WithdrawElementRevision godoc
+// @Summary 撤回数据元发布修订 | Withdraw published data element revision
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.RevisionActionRequest true "当前资源版本 | Current resource version"
+// @Success 200 {object} models.ElementAggregate
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.element.publish"]
+// @Router /elements/{id}/revisions/{revision_id}/withdraw [post]
+// @Security BearerAuth
+func (h *ElementHandler) WithdrawElementRevision(c *gin.Context) {
+	h.revisionAction(c, h.svc.WithdrawRevision)
+}
+
+// GetElementQualityRules godoc
+// @Summary 获取当前发布数据元质量规则快照 | Get current published element quality rule snapshot
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} models.QualityRulesResponse
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Success 200 {object} models.PublishedElementQualityRulesResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.read"]
 // @Router /elements/{id}/quality-rules [get]
 // @Security BearerAuth
 func (h *ElementHandler) GetElementQualityRules(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
+	id, ok := elementPathID(c, "id")
+	if !ok {
 		return
 	}
+	revision, rules, err := h.svc.GetPublishedQualityRules(id, getTenantID(c))
+	if err != nil {
+		respondError(c, http.StatusNotFound, err)
+		return
+	}
+	value, err := dataquality.ToMap(*rules)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, models.PublishedElementQualityRulesResponse{ElementID: id, ElementRevisionID: revision.ID, RevisionNo: revision.RevisionNo, QualityRules: models.JSONB(value)})
+}
 
-	tenantID := getTenantID(c)
-	rules, err := h.svc.GetQualityRules(id, tenantID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgElementNotFound)})
+func (h *ElementHandler) revisionAction(c *gin.Context, action func(int64, int64, int64, int64, int64) (*models.ElementAggregate, error)) {
+	id, revisionID, ok := elementRevisionPath(c)
+	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, rules)
+	var req models.RevisionActionRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	result, err := action(id, revisionID, getTenantID(c), getUserID(c), req.Version)
+	if err != nil {
+		respondError(c, http.StatusConflict, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+func elementPathID(c *gin.Context, name string) (int64, bool) {
+	id, err := strconv.ParseInt(c.Param(name), 10, 64)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
+		return 0, false
+	}
+	return id, true
+}
+func elementRevisionPath(c *gin.Context) (int64, int64, bool) {
+	id, ok := elementPathID(c, "id")
+	if !ok {
+		return 0, 0, false
+	}
+	revisionID, ok := elementPathID(c, "revision_id")
+	return id, revisionID, ok
+}
+func bindJSON(c *gin.Context, value interface{}) bool {
+	if err := c.ShouldBindJSON(value); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return false
+	}
+	return true
 }

@@ -52,6 +52,21 @@ other = "The resource was modified by another user. Refresh and try again"
 [standard.common.invalid_resource_reference]
 other = "A referenced resource does not exist or belongs to another tenant"
 
+[standard.revision.invalid]
+other = "The standard revision is incomplete or contains inconsistent constraints"
+
+[standard.revision.invalid_transition]
+other = "The revision state does not allow this operation"
+
+[standard.revision.draft_exists]
+other = "This standard object already has a draft revision"
+
+[standard.revision.published_required]
+other = "A current published standard revision is required"
+
+[standard.code_set.platform_immutable]
+other = "Tenant users cannot modify platform code sets"
+
 [standard.common.model_reference_conflict]
 other = "This Standard resource is still referenced by Model. Remove the references before deleting it"
 

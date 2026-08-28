@@ -32,7 +32,14 @@ export const elementAPI = {
   get(id) { return client.get(`/standard/elements/${id}`) },
   update(id, data) { return client.put(`/standard/elements/${id}`, data) },
   delete(id) { return client.delete(`/standard/elements/${id}`) },
-  approve(id, version) { return client.post(`/standard/elements/${id}/approve`, { version }) },
+  listRevisions(id) { return client.get(`/standard/elements/${id}/revisions`) },
+  createRevision(id, data) { return client.post(`/standard/elements/${id}/revisions`, data) },
+  getRevision(id, revisionId) { return client.get(`/standard/elements/${id}/revisions/${revisionId}`) },
+  updateRevision(id, revisionId, data) { return client.put(`/standard/elements/${id}/revisions/${revisionId}`, data) },
+  submitRevision(id, revisionId, version) { return client.post(`/standard/elements/${id}/revisions/${revisionId}/submit`, { version }) },
+  returnRevision(id, revisionId, version) { return client.post(`/standard/elements/${id}/revisions/${revisionId}/return`, { version }) },
+  publishRevision(id, revisionId, version) { return client.post(`/standard/elements/${id}/revisions/${revisionId}/publish`, { version }) },
+  withdrawRevision(id, revisionId, version) { return client.post(`/standard/elements/${id}/revisions/${revisionId}/withdraw`, { version }) },
   getQualityRules(id) { return client.get(`/standard/elements/${id}/quality-rules`) }
 }
 
@@ -43,10 +50,17 @@ export const codeSetAPI = {
   get(id) { return client.get(`/standard/code-sets/${id}`) },
   update(id, data) { return client.put(`/standard/code-sets/${id}`, data) },
   delete(id) { return client.delete(`/standard/code-sets/${id}`) },
-  getItems(codeSetId) { return client.get(`/standard/code-sets/${codeSetId}/items`) },
-  createItem(codeSetId, data) { return client.post(`/standard/code-sets/${codeSetId}/items`, data) },
-  updateItem(codeSetId, itemId, data) { return client.put(`/standard/code-sets/${codeSetId}/items/${itemId}`, data) },
-  deleteItem(codeSetId, itemId, version) { return client.delete(`/standard/code-sets/${codeSetId}/items/${itemId}`, { data: { version } }) }
+  listRevisions(id) { return client.get(`/standard/code-sets/${id}/revisions`) },
+  createRevision(id, data) { return client.post(`/standard/code-sets/${id}/revisions`, data) },
+  getRevision(id, revisionId) { return client.get(`/standard/code-sets/${id}/revisions/${revisionId}`) },
+  updateRevision(id, revisionId, data) { return client.put(`/standard/code-sets/${id}/revisions/${revisionId}`, data) },
+  submitRevision(id, revisionId, version) { return client.post(`/standard/code-sets/${id}/revisions/${revisionId}/submit`, { version }) },
+  returnRevision(id, revisionId, version) { return client.post(`/standard/code-sets/${id}/revisions/${revisionId}/return`, { version }) },
+  publishRevision(id, revisionId, version) { return client.post(`/standard/code-sets/${id}/revisions/${revisionId}/publish`, { version }) },
+  withdrawRevision(id, revisionId, version) { return client.post(`/standard/code-sets/${id}/revisions/${revisionId}/withdraw`, { version }) },
+  createItem(codeSetId, revisionId, data) { return client.post(`/standard/code-sets/${codeSetId}/revisions/${revisionId}/items`, data) },
+  updateItem(codeSetId, revisionId, itemId, data) { return client.put(`/standard/code-sets/${codeSetId}/revisions/${revisionId}/items/${itemId}`, data) },
+  deleteItem(codeSetId, revisionId, itemId, version) { return client.delete(`/standard/code-sets/${codeSetId}/revisions/${revisionId}/items/${itemId}`, { data: { version } }) }
 }
 
 // ========== 计量单位 API ==========

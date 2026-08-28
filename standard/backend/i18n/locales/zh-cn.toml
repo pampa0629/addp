@@ -52,6 +52,21 @@ other = "资源已被其他用户修改，请刷新后重试"
 [standard.common.invalid_resource_reference]
 other = "引用的资源不存在或不属于当前租户"
 
+[standard.revision.invalid]
+other = "标准修订内容不完整或约束不一致"
+
+[standard.revision.invalid_transition]
+other = "当前修订状态不允许执行此操作"
+
+[standard.revision.draft_exists]
+other = "该标准对象已经存在一个草稿修订"
+
+[standard.revision.published_required]
+other = "必须引用当前已发布的标准修订"
+
+[standard.code_set.platform_immutable]
+other = "平台内置码值集不允许由租户修改"
+
 [standard.common.model_reference_conflict]
 other = "该标准资源仍被数据模型引用，请先在 Model 中解除引用后再删除"
 

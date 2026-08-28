@@ -328,6 +328,7 @@ func newCheckTaskRepositoryTestDB(t *testing.T) *gorm.DB {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		element_id INTEGER NOT NULL,
+		element_revision_id INTEGER NOT NULL,
 		engine_id INTEGER NOT NULL,
 		schema_name TEXT,
 		table_name TEXT NOT NULL,
@@ -379,6 +380,9 @@ func createCheckTaskRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID int64
 
 func createCheckTaskRepositoryTestRuleApplication(t *testing.T, db *gorm.DB, application models.RuleApplication) models.RuleApplication {
 	t.Helper()
+	if application.ElementRevisionID == 0 {
+		application.ElementRevisionID = application.ElementID*100 + 1
+	}
 	enabled := application.Enabled
 	if len(application.RuleConfig) == 0 {
 		application.RuleConfig = []byte(`{"schema_version":"addp.quality.rules/v1","rules":[{"rule_key":"00000000-0000-4000-8000-000000000001","type":"not_null","enabled":true,"severity":"error","message":"","params":{}}]}`)

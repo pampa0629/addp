@@ -37,6 +37,8 @@ type ReferenceResolution struct {
 	Status         string        `json:"status,omitempty"`
 	LifecycleState string        `json:"lifecycle_state,omitempty"`
 	Version        int64         `json:"version,omitempty"`
+	RevisionID     int64         `json:"revision_id,omitempty"`
+	RevisionNo     int64         `json:"revision_no,omitempty"`
 }
 
 type ReferenceCandidate struct {
@@ -45,6 +47,8 @@ type ReferenceCandidate struct {
 	Name       string        `json:"name"`
 	Code       string        `json:"code,omitempty"`
 	Status     string        `json:"status"`
+	RevisionID int64         `json:"revision_id,omitempty"`
+	RevisionNo int64         `json:"revision_no,omitempty"`
 }
 
 type ReferenceCandidateList struct {
@@ -58,10 +62,10 @@ type ReferenceCandidateList struct {
 type ReferenceResolutionRepository interface {
 	ResolveDomains(ctx context.Context, tenantID int64, ids []int64) ([]models.Domain, error)
 	ResolveGlossaries(ctx context.Context, tenantID int64, ids []int64) ([]models.Glossary, error)
-	ResolveElements(ctx context.Context, tenantID int64, ids []int64) ([]models.Element, error)
+	ResolveElements(ctx context.Context, tenantID int64, ids []int64) ([]models.PublishedElementReference, error)
 	ListDomainCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.Domain, int64, error)
 	ListGlossaryCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.Glossary, int64, error)
-	ListElementCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.Element, int64, error)
+	ListElementCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.PublishedElementReference, int64, error)
 }
 
 type ReferenceResolutionService struct {
@@ -125,9 +129,9 @@ func (s *ReferenceResolutionService) Resolve(
 	for _, element := range elements {
 		resolved[referenceResolutionKey(ReferenceTypeElement, element.ID)] = ReferenceResolution{
 			ObjectType: ReferenceTypeElement, ID: element.ID, Found: true,
-			Referenceable: element.Status == "approved" && element.LifecycleState == "active",
+			Referenceable: element.Status == models.RevisionStatusPublished && element.LifecycleState == "active",
 			Name:          element.Name, Code: element.Code, Status: element.Status,
-			LifecycleState: element.LifecycleState, Version: element.Version,
+			LifecycleState: element.LifecycleState, Version: element.Version, RevisionID: element.RevisionID, RevisionNo: element.RevisionNo,
 		}
 	}
 
@@ -180,7 +184,7 @@ func (s *ReferenceResolutionService) ListCandidates(
 		}
 		result.Total = total
 		for _, item := range items {
-			result.Data = append(result.Data, ReferenceCandidate{ObjectType: objectType, ID: item.ID, Name: item.Name, Code: item.Code, Status: item.Status})
+			result.Data = append(result.Data, ReferenceCandidate{ObjectType: objectType, ID: item.ID, Name: item.Name, Code: item.Code, Status: item.Status, RevisionID: item.RevisionID, RevisionNo: item.RevisionNo})
 		}
 	default:
 		return nil, ErrInvalidReferenceResolutionRequest

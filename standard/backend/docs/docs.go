@@ -322,29 +322,31 @@ const docTemplate = `{
                     "Standard"
                 ],
                 "summary": "获取码值集列表 | List code sets",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "归属业务域 ID | Owning domain ID",
+                        "name": "domain_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "修订状态 | Revision status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "关键字 | Keyword",
+                        "name": "keyword",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_standard_internal_models.PaginatedCodeSetResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
                         }
                     }
                 },
@@ -359,37 +361,32 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Standard"
                 ],
-                "summary": "创建码值集 | Create code set",
+                "summary": "创建码值集及首个草稿修订 | Create code set with initial draft revision",
+                "parameters": [
+                    {
+                        "description": "码值集和首个草稿 | Code set and initial draft",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CreateCodeSetRequest"
+                        }
+                    }
+                ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "201": {
+                        "description": "Created",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate"
                         }
                     }
                 },
@@ -412,31 +409,12 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "获取码值集详情 | Get code set detail",
+                "summary": "获取码值集聚合 | Get code set aggregate",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate"
                         }
                     }
                 },
@@ -451,16 +429,19 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Standard"
                 ],
-                "summary": "更新码值集 | Update code set",
+                "summary": "更新码值集归属信息 | Update code set ownership",
                 "parameters": [
                     {
-                        "description": "更新码值集 | Update code set",
+                        "description": "归属信息及并发版本 | Ownership and concurrency version",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -473,26 +454,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate"
                         }
                     },
                     "409": {
@@ -522,35 +484,10 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "删除码值集 | Delete code set",
+                "summary": "删除码值集稳定身份 | Delete code set identity",
                 "responses": {
                     "200": {
                         "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -565,7 +502,7 @@ const docTemplate = `{
                 ]
             }
         },
-        "/code-sets/{id}/items": {
+        "/code-sets/{id}/revisions": {
             "get": {
                 "security": [
                     {
@@ -578,32 +515,14 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "获取码值项列表 | List code items",
+                "summary": "获取码值集修订历史 | List code set revisions",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeItem"
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
+                                "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetRevision"
                             }
                         }
                     }
@@ -619,57 +538,32 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Standard"
                 ],
-                "summary": "创建码值项 | Create code item",
+                "summary": "从最近修订创建新草稿 | Create code set draft from latest revision",
                 "parameters": [
                     {
-                        "description": "创建码值项及当前码值集版本 | Create code item with current code-set version",
+                        "description": "并发版本和变更说明 | Version and change summary",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CreateCodeItemRequest"
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CreateCodeSetRevisionRequest"
                         }
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "201": {
+                        "description": "Created",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "资源版本冲突 | Resource version conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate"
                         }
                     }
                 },
@@ -679,8 +573,8 @@ const docTemplate = `{
                 ]
             }
         },
-        "/code-sets/{id}/items/{iid}": {
-            "put": {
+        "/code-sets/{id}/revisions/{revision_id}": {
+            "get": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -692,10 +586,123 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "更新码值项 | Update code item",
+                "summary": "获取码值集修订 | Get code set revision",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetRevision"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.code_set.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "更新码值集草稿修订 | Update code set draft revision",
                 "parameters": [
                     {
-                        "description": "更新码值项及当前码值集版本 | Update code item with current code-set version",
+                        "description": "完整草稿及并发版本 | Full draft and concurrency version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.UpdateCodeSetRevisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.code_set.update"
+                ]
+            }
+        },
+        "/code-sets/{id}/revisions/{revision_id}/items": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "创建草稿码值项 | Create draft code item",
+                "parameters": [
+                    {
+                        "description": "码值项及并发版本 | Code item and concurrency version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CreateCodeItemRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeItemMutationResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.code_set.update"
+                ]
+            }
+        },
+        "/code-sets/{id}/revisions/{revision_id}/items/{item_id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "更新草稿码值项 | Update draft code item",
+                "parameters": [
+                    {
+                        "description": "码值项及并发版本 | Code item and concurrency version",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -708,35 +715,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "资源版本冲突 | Resource version conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeItemMutationResponse"
                         }
                     }
                 },
@@ -751,21 +730,24 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Standard"
                 ],
-                "summary": "删除码值项 | Delete code item",
+                "summary": "删除草稿码值项 | Delete draft code item",
                 "parameters": [
                     {
-                        "description": "当前码值集版本 | Current code-set version",
+                        "description": "当前资源版本 | Current resource version",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_standard_internal_models.VersionRequest"
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
                         }
                     }
                 ],
@@ -773,41 +755,181 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.ResourceVersionResponse"
                         }
                     }
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "standard.code_set.update"
+                ]
+            }
+        },
+        "/code-sets/{id}/revisions/{revision_id}/publish": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "发布码值集修订 | Publish code set revision",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.code_set.publish"
+                ]
+            }
+        },
+        "/code-sets/{id}/revisions/{revision_id}/return": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "退回码值集修订 | Return code set revision to draft",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.code_set.publish"
+                ]
+            }
+        },
+        "/code-sets/{id}/revisions/{revision_id}/submit": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "提交码值集修订审核 | Submit code set revision for review",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.code_set.update"
+                ]
+            }
+        },
+        "/code-sets/{id}/revisions/{revision_id}/withdraw": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "撤回码值集发布修订 | Withdraw published code set revision",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.code_set.publish"
                 ]
             }
         },
@@ -2164,6 +2286,24 @@ const docTemplate = `{
                         "description": "数据元 ID 集合，逗号分隔，最多 100 个 | Data element IDs, comma-separated, maximum 100",
                         "name": "ids",
                         "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "归属业务域 ID | Owning domain ID",
+                        "name": "domain_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "修订状态 | Revision status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "关键字 | Keyword",
+                        "name": "keyword",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -2174,25 +2314,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "无效的 ID 集合 | Invalid ID collection",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
+                        "description": "请求无效 | Invalid request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2212,32 +2334,36 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Standard"
                 ],
-                "summary": "创建数据元 | Create data element",
+                "summary": "创建数据元及首个草稿修订 | Create data element with initial draft revision",
+                "parameters": [
+                    {
+                        "description": "数据元和首个草稿 | Data element and initial draft",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CreateElementRequest"
+                        }
+                    }
+                ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "201": {
+                        "description": "Created",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementAggregate"
                         }
                     },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
+                    "400": {
+                        "description": "请求无效 | Invalid request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2265,31 +2391,12 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "获取数据元详情 | Get data element detail",
+                "summary": "获取数据元聚合 | Get data element aggregate",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementAggregate"
                         }
                     }
                 },
@@ -2304,16 +2411,19 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Standard"
                 ],
-                "summary": "更新数据元 | Update data element",
+                "summary": "更新数据元归属信息 | Update data element ownership",
                 "parameters": [
                     {
-                        "description": "更新数据元 | Update data element",
+                        "description": "归属信息及并发版本 | Ownership and concurrency version",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -2326,26 +2436,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementAggregate"
                         }
                     },
                     "409": {
@@ -2375,35 +2466,10 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "删除数据元 | Delete data element",
+                "summary": "删除数据元稳定身份 | Delete data element identity",
                 "responses": {
                     "200": {
                         "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "数据元不存在 | Data element not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2412,14 +2478,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "资源仍被 Model 引用 | Resource is still referenced by Model",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "503": {
-                        "description": "Model 引用删除屏障不可用 | Model reference deletion guard unavailable",
+                        "description": "仍被引用 | Still referenced",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2431,73 +2490,6 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "standard.element.delete"
-                ]
-            }
-        },
-        "/elements/{id}/approve": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "审批数据元 | Approve data element",
-                "parameters": [
-                    {
-                        "description": "当前资源版本 | Current resource version",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_standard_internal_models.VersionRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "资源版本冲突 | Resource version conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "standard.element.approve"
                 ]
             }
         },
@@ -2766,25 +2758,87 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "获取数据元质量规则 | Get data element quality rules",
+                "summary": "获取当前发布数据元质量规则快照 | Get current published element quality rule snapshot",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_standard_internal_models.QualityRulesResponse"
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.PublishedElementQualityRulesResponse"
                         }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.element.read"
+                ]
+            }
+        },
+        "/elements/{id}/revisions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "获取数据元修订历史 | List data element revisions",
+                "responses": {
+                    "200": {
+                        "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementRevision"
                             }
                         }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.element.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "从最近修订创建新草稿 | Create a new draft from latest revision",
+                "parameters": [
+                    {
+                        "description": "并发版本和变更说明 | Version and change summary",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CreateElementRevisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementAggregate"
+                        }
                     },
-                    "403": {
-                        "description": "无权访问 | Access denied",
+                    "409": {
+                        "description": "草稿已存在或版本冲突 | Draft exists or version conflict",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2795,7 +2849,252 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "standard.element.update"
+                ]
+            }
+        },
+        "/elements/{id}/revisions/{revision_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "获取数据元修订 | Get data element revision",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementRevision"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
                     "standard.element.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "更新数据元草稿修订 | Update data element draft revision",
+                "parameters": [
+                    {
+                        "description": "完整草稿及并发版本 | Full draft and concurrency version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.UpdateElementRevisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementAggregate"
+                        }
+                    },
+                    "409": {
+                        "description": "状态或版本冲突 | State or version conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.element.update"
+                ]
+            }
+        },
+        "/elements/{id}/revisions/{revision_id}/publish": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "发布数据元修订 | Publish data element revision",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.element.publish"
+                ]
+            }
+        },
+        "/elements/{id}/revisions/{revision_id}/return": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "退回数据元修订 | Return data element revision to draft",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.element.publish"
+                ]
+            }
+        },
+        "/elements/{id}/revisions/{revision_id}/submit": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "提交数据元修订审核 | Submit data element revision for review",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.element.update"
+                ]
+            }
+        },
+        "/elements/{id}/revisions/{revision_id}/withdraw": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "撤回数据元发布修订 | Withdraw published data element revision",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.element.publish"
                 ]
             }
         },
@@ -5285,49 +5584,6 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "dataquality.Parameters": {
-            "type": "object",
-            "properties": {
-                "max": {
-                    "type": "string"
-                },
-                "min": {
-                    "type": "string"
-                },
-                "pattern": {
-                    "type": "string"
-                },
-                "values": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "dataquality.Rule": {
-            "type": "object",
-            "properties": {
-                "enabled": {
-                    "type": "boolean"
-                },
-                "message": {
-                    "type": "string"
-                },
-                "params": {
-                    "$ref": "#/definitions/dataquality.Parameters"
-                },
-                "rule_key": {
-                    "type": "string"
-                },
-                "severity": {
-                    "type": "string"
-                },
-                "type": {
-                    "type": "string"
-                }
-            }
-        },
         "github_com_addp_standard_internal_models.CatalogReference": {
             "type": "object",
             "required": [
@@ -5458,10 +5714,80 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_standard_internal_models.CodeItem": {
+        "github_com_addp_standard_internal_models.CodeItemMutationResponse": {
+            "type": "object",
+            "properties": {
+                "item": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetRevisionItem"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.CodeSetAggregate": {
             "type": "object",
             "properties": {
                 "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "current_revision": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetRevision"
+                },
+                "current_revision_id": {
+                    "type": "integer"
+                },
+                "domain_id": {
+                    "type": "integer"
+                },
+                "draft_revision": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetRevision"
+                },
+                "draft_revision_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "lifecycle_state": {
+                    "type": "string"
+                },
+                "origin": {
+                    "type": "string"
+                },
+                "steward_id": {
+                    "type": "integer"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.CodeSetRevision": {
+            "type": "object",
+            "properties": {
+                "change_summary": {
                     "type": "string"
                 },
                 "code_set_id": {
@@ -5470,60 +5796,91 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "created_by": {
+                    "type": "integer"
+                },
                 "description": {
+                    "type": "string"
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
                     "type": "string"
                 },
                 "id": {
                     "type": "integer"
                 },
-                "is_active": {
-                    "type": "boolean"
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetRevisionItem"
+                    }
                 },
-                "parent_id": {
-                    "description": "预留树形结构",
+                "name": {
+                    "type": "string"
+                },
+                "published_at": {
+                    "type": "string"
+                },
+                "published_by": {
                     "type": "integer"
                 },
-                "sort_order": {
+                "revision_no": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "submitted_at": {
+                    "type": "string"
+                },
+                "submitted_by": {
                     "type": "integer"
                 },
                 "updated_at": {
                     "type": "string"
                 },
-                "value": {
+                "updated_by": {
+                    "type": "integer"
+                },
+                "value_type": {
                     "type": "string"
                 }
             }
         },
-        "github_com_addp_standard_internal_models.CodeSet": {
+        "github_com_addp_standard_internal_models.CodeSetRevisionItem": {
             "type": "object",
             "properties": {
                 "code": {
                     "type": "string"
                 },
+                "code_set_revision_id": {
+                    "type": "integer"
+                },
                 "created_at": {
                     "type": "string"
                 },
-                "description": {
+                "definition": {
                     "type": "string"
                 },
                 "id": {
                     "type": "integer"
                 },
-                "name": {
+                "label": {
                     "type": "string"
                 },
-                "tenant_id": {
+                "replacement_item_id": {
                     "type": "integer"
                 },
-                "type": {
-                    "description": "system/custom",
+                "sort_order": {
+                    "type": "integer"
+                },
+                "status": {
                     "type": "string"
                 },
                 "updated_at": {
                     "type": "string"
-                },
-                "version": {
-                    "type": "integer"
                 }
             }
         },
@@ -5531,27 +5888,199 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "code",
-                "value",
+                "label",
+                "status",
                 "version"
             ],
             "properties": {
                 "code": {
                     "type": "string"
                 },
-                "description": {
+                "definition": {
                     "type": "string"
                 },
-                "is_active": {
-                    "type": "boolean"
+                "label": {
+                    "type": "string"
                 },
                 "sort_order": {
                     "type": "integer"
                 },
-                "value": {
+                "status": {
                     "type": "string"
                 },
                 "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.CreateCodeSetRequest": {
+            "type": "object",
+            "required": [
+                "change_summary",
+                "code",
+                "description",
+                "domain_id",
+                "name",
+                "value_type"
+            ],
+            "properties": {
+                "change_summary": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "domain_id": {
                     "type": "integer"
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "steward_id": {
+                    "type": "integer"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "value_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.CreateCodeSetRevisionRequest": {
+            "type": "object",
+            "required": [
+                "change_summary",
+                "version"
+            ],
+            "properties": {
+                "change_summary": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.CreateElementRequest": {
+            "type": "object",
+            "required": [
+                "change_summary",
+                "code",
+                "data_type",
+                "definition",
+                "name",
+                "value_domain_kind"
+            ],
+            "properties": {
+                "change_summary": {
+                    "type": "string"
+                },
+                "classification_id": {
+                    "type": "integer"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "code_set_revision_id": {
+                    "type": "integer"
+                },
+                "data_type": {
+                    "type": "string"
+                },
+                "default_value": {
+                    "type": "string"
+                },
+                "definition": {
+                    "type": "string"
+                },
+                "domain_id": {
+                    "type": "integer"
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
+                    "type": "string"
+                },
+                "example_values": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "extra_quality_rules": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "format": {
+                    "type": "string"
+                },
+                "length": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "precision_num": {
+                    "type": "integer"
+                },
+                "range_constraint": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.RangeConstraint"
+                },
+                "scale": {
+                    "type": "integer"
+                },
+                "security_level": {
+                    "type": "string"
+                },
+                "steward_id": {
+                    "type": "integer"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "unit_id": {
+                    "type": "integer"
+                },
+                "value_domain_kind": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.CreateElementRevisionRequest": {
+            "type": "object",
+            "required": [
+                "change_summary",
+                "version"
+            ],
+            "properties": {
+                "change_summary": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -5713,19 +6242,11 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_standard_internal_models.Element": {
+        "github_com_addp_standard_internal_models.ElementAggregate": {
             "type": "object",
             "properties": {
-                "classification_id": {
-                    "description": "关联数据分类",
-                    "type": "integer"
-                },
                 "code": {
                     "type": "string"
-                },
-                "code_set_id": {
-                    "description": "关联码值集",
-                    "type": "integer"
                 },
                 "created_at": {
                     "type": "string"
@@ -5733,63 +6254,25 @@ const docTemplate = `{
                 "created_by": {
                     "type": "integer"
                 },
-                "data_type": {
-                    "description": "string/int/float/date/bool/json",
-                    "type": "string"
+                "current_revision": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementRevision"
                 },
-                "default_value": {
-                    "type": "string"
-                },
-                "definition": {
-                    "type": "string"
+                "current_revision_id": {
+                    "type": "integer"
                 },
                 "domain_id": {
                     "type": "integer"
                 },
-                "example_values": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
+                "draft_revision": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementRevision"
                 },
-                "format": {
-                    "type": "string"
+                "draft_revision_id": {
+                    "type": "integer"
                 },
                 "id": {
                     "type": "integer"
                 },
-                "length": {
-                    "type": "integer"
-                },
                 "lifecycle_state": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "nullable": {
-                    "type": "boolean"
-                },
-                "precision_num": {
-                    "type": "integer"
-                },
-                "quality_rules": {
-                    "description": "质量规则",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_addp_standard_internal_models.JSONB"
-                        }
-                    ]
-                },
-                "scale": {
-                    "type": "integer"
-                },
-                "security_level": {
-                    "description": "L1/L2/L3/L4",
-                    "type": "string"
-                },
-                "status": {
-                    "description": "draft/approved/deprecated",
                     "type": "string"
                 },
                 "steward_id": {
@@ -5804,8 +6287,111 @@ const docTemplate = `{
                 "tenant_id": {
                     "type": "integer"
                 },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.ElementRevision": {
+            "type": "object",
+            "properties": {
+                "change_summary": {
+                    "type": "string"
+                },
+                "classification_id": {
+                    "type": "integer"
+                },
+                "code_set_revision_id": {
+                    "type": "integer"
+                },
+                "compiled_quality_rules": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.JSONB"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "data_type": {
+                    "type": "string"
+                },
+                "default_value": {
+                    "type": "string"
+                },
+                "definition": {
+                    "type": "string"
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
+                    "type": "string"
+                },
+                "element_id": {
+                    "type": "integer"
+                },
+                "example_values": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "extra_quality_rules": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.JSONB"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "length": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "precision_num": {
+                    "type": "integer"
+                },
+                "published_at": {
+                    "type": "string"
+                },
+                "published_by": {
+                    "type": "integer"
+                },
+                "range_constraint": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.RangeConstraint"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "scale": {
+                    "type": "integer"
+                },
+                "security_level": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "submitted_at": {
+                    "type": "string"
+                },
+                "submitted_by": {
+                    "type": "integer"
+                },
                 "unit_id": {
-                    "description": "关联计量单位",
                     "type": "integer"
                 },
                 "updated_at": {
@@ -5814,11 +6400,8 @@ const docTemplate = `{
                 "updated_by": {
                     "type": "integer"
                 },
-                "value_range": {
-                    "$ref": "#/definitions/github_com_addp_standard_internal_models.JSONB"
-                },
-                "version": {
-                    "type": "integer"
+                "value_domain_kind": {
+                    "type": "string"
                 }
             }
         },
@@ -6099,7 +6682,7 @@ const docTemplate = `{
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSet"
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate"
                     }
                 },
                 "page": {
@@ -6145,7 +6728,7 @@ const docTemplate = `{
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_standard_internal_models.Element"
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementAggregate"
                     }
                 },
                 "page": {
@@ -6297,17 +6880,37 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_standard_internal_models.QualityRulesResponse": {
+        "github_com_addp_standard_internal_models.PublishedElementQualityRulesResponse": {
             "type": "object",
             "properties": {
-                "rules": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dataquality.Rule"
-                    }
+                "element_id": {
+                    "type": "integer"
                 },
-                "schema_version": {
+                "element_revision_id": {
+                    "type": "integer"
+                },
+                "quality_rules": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.JSONB"
+                },
+                "revision_no": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.RangeConstraint": {
+            "type": "object",
+            "properties": {
+                "max": {
                     "type": "string"
+                },
+                "max_inclusive": {
+                    "type": "boolean"
+                },
+                "min": {
+                    "type": "string"
+                },
+                "min_inclusive": {
+                    "type": "boolean"
                 }
             }
         },
@@ -6335,6 +6938,26 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_addp_standard_internal_models.CatalogReferenceResolution"
                     }
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.ResourceVersionResponse": {
+            "type": "object",
+            "properties": {
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.RevisionActionRequest": {
+            "type": "object",
+            "required": [
+                "version"
+            ],
+            "properties": {
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -6441,45 +7064,88 @@ const docTemplate = `{
         "github_com_addp_standard_internal_models.UpdateCodeItemRequest": {
             "type": "object",
             "required": [
-                "value",
+                "label",
+                "status",
                 "version"
             ],
             "properties": {
-                "description": {
+                "definition": {
                     "type": "string"
                 },
-                "is_active": {
-                    "type": "boolean"
+                "label": {
+                    "type": "string"
+                },
+                "replacement_item_id": {
+                    "type": "integer"
                 },
                 "sort_order": {
                     "type": "integer"
                 },
-                "value": {
+                "status": {
                     "type": "string"
                 },
                 "version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
         "github_com_addp_standard_internal_models.UpdateCodeSetRequest": {
             "type": "object",
             "required": [
-                "name",
+                "domain_id",
                 "version"
             ],
             "properties": {
+                "domain_id": {
+                    "type": "integer"
+                },
+                "steward_id": {
+                    "type": "integer"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.UpdateCodeSetRevisionRequest": {
+            "type": "object",
+            "required": [
+                "change_summary",
+                "description",
+                "name",
+                "value_type",
+                "version"
+            ],
+            "properties": {
+                "change_summary": {
+                    "type": "string"
+                },
                 "description": {
+                    "type": "string"
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
                     "type": "string"
                 },
                 "name": {
                     "type": "string"
                 },
-                "type": {
+                "value_type": {
                     "type": "string"
                 },
                 "version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -6561,10 +7227,42 @@ const docTemplate = `{
                 "version"
             ],
             "properties": {
+                "domain_id": {
+                    "type": "integer"
+                },
+                "steward_id": {
+                    "type": "integer"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.UpdateElementRevisionRequest": {
+            "type": "object",
+            "required": [
+                "change_summary",
+                "data_type",
+                "definition",
+                "name",
+                "value_domain_kind",
+                "version"
+            ],
+            "properties": {
+                "change_summary": {
+                    "type": "string"
+                },
                 "classification_id": {
                     "type": "integer"
                 },
-                "code_set_id": {
+                "code_set_revision_id": {
                     "type": "integer"
                 },
                 "data_type": {
@@ -6576,14 +7274,21 @@ const docTemplate = `{
                 "definition": {
                     "type": "string"
                 },
-                "domain_id": {
-                    "type": "integer"
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
+                    "type": "string"
                 },
                 "example_values": {
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
+                },
+                "extra_quality_rules": {
+                    "type": "object",
+                    "additionalProperties": true
                 },
                 "format": {
                     "type": "string"
@@ -6600,9 +7305,8 @@ const docTemplate = `{
                 "precision_num": {
                     "type": "integer"
                 },
-                "quality_rules": {
-                    "type": "object",
-                    "additionalProperties": true
+                "range_constraint": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.RangeConstraint"
                 },
                 "scale": {
                     "type": "integer"
@@ -6610,24 +7314,15 @@ const docTemplate = `{
                 "security_level": {
                     "type": "string"
                 },
-                "steward_id": {
-                    "type": "integer"
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
                 "unit_id": {
                     "type": "integer"
                 },
-                "value_range": {
-                    "type": "object",
-                    "additionalProperties": true
+                "value_domain_kind": {
+                    "type": "string"
                 },
                 "version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -6932,6 +7627,12 @@ const docTemplate = `{
                 "object_type": {
                     "$ref": "#/definitions/github_com_addp_standard_internal_service.ReferenceType"
                 },
+                "revision_id": {
+                    "type": "integer"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
                 "status": {
                     "type": "string"
                 }
@@ -6983,6 +7684,12 @@ const docTemplate = `{
                 },
                 "referenceable": {
                     "type": "boolean"
+                },
+                "revision_id": {
+                    "type": "integer"
+                },
+                "revision_no": {
+                    "type": "integer"
                 },
                 "status": {
                     "type": "string"

@@ -37,12 +37,12 @@ var (
 
 // AssetListParams 资产列表查询参数
 type AssetListParams struct {
-	Page       int
-	PageSize   int
-	Status     string
-	TypeID     int64
-	CategoryID *int64 // nil=不过滤；-1=只看未分类资产
-	Keyword    string
+	Page        int
+	PageSize    int
+	Status      string
+	TypeID      int64
+	CategoryIDs []int64 // nil=不过滤；[-1]=只看未分类资产；正整数集合=匹配任一目录
+	Keyword     string
 }
 
 // AssetWithType 带类型信息的资产（列表展示用）
@@ -116,7 +116,7 @@ func (s *AssetService) List(tenantID uint, params *AssetListParams) ([]AssetWith
 			}
 		}
 		offset := int64((params.Page - 1) * params.PageSize)
-		msResult, err := s.indexer.Search(int64(tenantID), params.Keyword, typeCode, params.CategoryID, int64(params.PageSize), offset)
+		msResult, err := s.indexer.Search(int64(tenantID), params.Keyword, typeCode, params.CategoryIDs, int64(params.PageSize), offset)
 		if err != nil || msResult == nil {
 			return nil, 0, fmt.Errorf("Asset search projection is unavailable: %w", err)
 		}
@@ -158,11 +158,11 @@ func (s *AssetService) List(tenantID uint, params *AssetListParams) ([]AssetWith
 	if params.TypeID > 0 {
 		query = query.Where("a.type_id = ?", params.TypeID)
 	}
-	if params.CategoryID != nil {
-		if *params.CategoryID == -1 {
+	if params.CategoryIDs != nil {
+		if len(params.CategoryIDs) == 1 && params.CategoryIDs[0] == -1 {
 			query = query.Where("a.category_id IS NULL")
 		} else {
-			query = query.Where("a.category_id = ?", *params.CategoryID)
+			query = query.Where("a.category_id IN ?", params.CategoryIDs)
 		}
 	}
 	var total int64

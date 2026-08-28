@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"strconv"
 
 	i18nkeys "github.com/addp/asset/i18n"
@@ -9,6 +10,7 @@ import (
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type consumerApplicationRequest struct {
@@ -26,7 +28,10 @@ type consumerRatingRequest struct {
 // @Summary 浏览已上架资产 | Browse published assets
 // @Tags Asset Consumer
 // @Produce json
+// @Param category_id query int false "资产目录节点 ID；返回该节点及全部后代节点中的已上架资产 | Asset directory node ID; returns published assets in the node subtree"
 // @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string "无效的资产目录节点 ID | Invalid asset directory node ID"
+// @Failure 404 {object} map[string]string "资产目录节点不存在 | Asset directory node not found"
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["asset.entry.read"]
@@ -38,9 +43,21 @@ func (h *Handler) listConsumerAssets(c *gin.Context) {
 		Page: page, PageSize: pageSize, Status: "published", TypeID: typeID, Keyword: c.Query("keyword"),
 	}
 	if value := c.Query("category_id"); value != "" {
-		if categoryID, err := strconv.ParseInt(value, 10, 64); err == nil {
-			params.CategoryID = &categoryID
+		categoryID, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || categoryID <= 0 {
+			commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
+			return
 		}
+		categoryIDs, err := h.categorySvc.SubtreeIDs(commonAuth.GetTenantID(c), categoryID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			commonAPI.NotFoundError(c, commoni18n.T(c, i18nkeys.MsgCategoryNotFound))
+			return
+		}
+		if err != nil {
+			commonAPI.InternalServerError(c, err.Error())
+			return
+		}
+		params.CategoryIDs = categoryIDs
 	}
 	assets, total, err := h.assetSvc.List(commonAuth.GetTenantID(c), params)
 	if err != nil {
@@ -94,6 +111,7 @@ func (h *Handler) getConsumerAssetStats(c *gin.Context) {
 
 // listConsumerCategories godoc
 // @Summary 浏览已上架资产分类 | Browse published asset categories
+// @Description 仅返回包含已上架资产的目录分支，count 为当前节点整棵子树的已上架资产数 | Returns only branches containing published assets; count is the published asset total for the entire subtree
 // @Tags Asset Consumer
 // @Produce json
 // @Success 200 {array} service.AssetCategoryTreeNode

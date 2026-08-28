@@ -48,11 +48,12 @@ func TestIntegrationPostgresRuleKeyIdentityV2Vector(t *testing.T) {
 		t.Fatalf("clear identity vector fixture: %v", err)
 	}
 	if err := tx.Exec(`INSERT INTO quality.rule_applications (
-		id, tenant_id, element_id, engine_id, schema_name, table_name, column_name, rule_config, created_by, created_at, updated_at
-	) VALUES (?, ?, ?, 1, 'public', 'identity_vector', 'value', ?::jsonb, 1, NOW(), NOW())`,
+		id, tenant_id, element_id, element_revision_id, engine_id, schema_name, table_name, column_name, rule_config, created_by, created_at, updated_at
+	) VALUES (?, ?, ?, ?, 1, 'public', 'identity_vector', 'value', ?::jsonb, 1, NOW(), NOW())`,
 		application,
 		tenantID,
 		elementID,
+		elementID+1,
 		`{"schema_version":"addp.quality.rules/v1","rules":[{"rule_key":"`+oldRuleKey+`","type":"not_null","enabled":true,"severity":"error","message":"","params":{}}]}`,
 	).Error; err != nil {
 		t.Fatalf("insert identity vector application: %v", err)

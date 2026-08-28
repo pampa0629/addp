@@ -39,6 +39,9 @@ asset/
 - 公开业务路由只绑定 `internal/api/handlers.go` 中的真实 Handler；类型定义只读，不发布永久返回 403 的写路由。
 - 每个公开 Operation 必须在 Swagger 中声明 `x-addp-auth-mode`，Permission 模式使用 Asset Manifest 中的精确 Key。
 - 管理路由必须同时要求 `asset.management.read` 和对应资源 Permission；消费路由位于唯一的 `/consumer` 子资源下，只允许已发布资产，并把申请、授权和评价主体固定为当前 User AuthContext。
+- 管理端 `/assets?category_id=` 只筛选直接归属该 AssetCategory 的资产；消费端 `/consumer/assets?category_id=` 表示 Asset Directory 子树，必须包含当前节点及全部后代节点的已发布资产。两者是不同使用场景下的唯一明确语义，不增加兼容参数。
+- AssetCategory 名称、父节点、说明和排序作为同一聚合状态，统一通过 `PUT /categories/:id` 完整更新并携带 `version`；`parent_id=null` 表示移动到根目录。不增加第二个 move 路由，不允许移动到自身或任一后代，不要求用户输入内部 ID。
+- AssetCategory 创建、完整更新和删除必须共享同一 Tenant 目录图事务锁，不能让并发移动、挂接和删除破坏树结构。
 - Portal 仅在同步请求栈内向 Asset 消费路由转发当前 User Bearer；Asset 不接受调用方提交的 `applicant_id`、`user_id`、Tenant Header 或内部密钥。
 - 目标来源模型是 `Asset -> AssetComponent[] -> catalog_entry_id`。Asset 不复制 Catalog 的来源绑定、语义关联或责任事实；发布时校验 CatalogEntry 有效性，发布承诺和需要冻结的说明由 Asset 自己版本化。
 - Asset 只通过 Catalog 选择和组合目录对象，不调用 Meta、Service、Standard 或 Develop 自动创建草稿，也不保留 `{source_module, source_reference}` 或 fallback。

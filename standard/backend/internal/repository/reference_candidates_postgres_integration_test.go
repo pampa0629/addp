@@ -31,12 +31,31 @@ func TestPostgresReferenceCandidatesFilterAndPaginateOwnerFacts(t *testing.T) {
 		&models.Domain{TenantID: tenantID, Name: "Legacy Sales", Code: "legacy_sales" + codeSuffix, CreatedBy: 1, Version: 1, LifecycleState: "deleting"},
 		&models.Glossary{TenantID: tenantID, Name: "Customer", Definition: "Approved customer term", Status: "approved", CreatedBy: 1, Version: 1},
 		&models.Glossary{TenantID: tenantID, Name: "Customer draft", Definition: "Draft customer term", Status: "draft", CreatedBy: 1, Version: 1},
-		&models.Element{TenantID: tenantID, Name: "Customer ID", Code: "customer_id" + codeSuffix, DataType: "string", Status: "approved", CreatedBy: 1, Version: 1, LifecycleState: "active"},
-		&models.Element{TenantID: tenantID, Name: "Customer legacy ID", Code: "customer_legacy_id" + codeSuffix, DataType: "string", Status: "deprecated", CreatedBy: 1, Version: 1, LifecycleState: "active"},
 	}
 	for _, row := range rows {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatalf("create candidate fixture: %v", err)
+		}
+	}
+	published := models.Element{TenantID: tenantID, Code: "customer_id" + codeSuffix, CreatedBy: 1, Version: 1, LifecycleState: "active"}
+	draft := models.Element{TenantID: tenantID, Code: "customer_legacy_id" + codeSuffix, CreatedBy: 1, Version: 1, LifecycleState: "active"}
+	for _, fixture := range []struct {
+		identity     *models.Element
+		name, status string
+	}{{&published, "Customer ID", models.RevisionStatusPublished}, {&draft, "Customer legacy ID", models.RevisionStatusDraft}} {
+		if err := db.Create(fixture.identity).Error; err != nil {
+			t.Fatalf("create element identity: %v", err)
+		}
+		revision := models.ElementRevision{ElementID: fixture.identity.ID, RevisionNo: 1, Status: fixture.status, Name: fixture.name, Definition: fixture.name, DataType: "string", ValueDomainKind: models.ValueDomainUnrestricted, ChangeSummary: "initial", CreatedBy: 1}
+		if err := db.Create(&revision).Error; err != nil {
+			t.Fatalf("create element revision: %v", err)
+		}
+		column := "draft_revision_id"
+		if fixture.status == models.RevisionStatusPublished {
+			column = "current_revision_id"
+		}
+		if err := db.Model(fixture.identity).Update(column, revision.ID).Error; err != nil {
+			t.Fatalf("link element revision: %v", err)
 		}
 	}
 	t.Cleanup(func() {

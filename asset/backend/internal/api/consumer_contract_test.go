@@ -21,10 +21,28 @@ func TestConsumerProjectionFiltersVisibilityAndDerivesCurrentUser(t *testing.T) 
 	if err := db.Create(&typeDefinition).Error; err != nil {
 		t.Fatalf("create type: %v", err)
 	}
-	published := models.Asset{TenantID: 7, Name: "published", TypeID: typeDefinition.ID, Status: "published", OwnerID: 1, CreatedBy: 1}
+	root := models.AssetCategory{TenantID: 7, Name: "Government"}
+	if err := db.Create(&root).Error; err != nil {
+		t.Fatalf("create root category: %v", err)
+	}
+	child := models.AssetCategory{TenantID: 7, Name: "Education", ParentID: &root.ID}
+	if err := db.Create(&child).Error; err != nil {
+		t.Fatalf("create child category: %v", err)
+	}
+	otherRoot := models.AssetCategory{TenantID: 7, Name: "Healthcare"}
+	if err := db.Create(&otherRoot).Error; err != nil {
+		t.Fatalf("create other root category: %v", err)
+	}
+	emptyRoot := models.AssetCategory{TenantID: 7, Name: "Empty"}
+	if err := db.Create(&emptyRoot).Error; err != nil {
+		t.Fatalf("create empty category: %v", err)
+	}
+	published := models.Asset{TenantID: 7, Name: "published-root", TypeID: typeDefinition.ID, CategoryID: &root.ID, Status: "published", OwnerID: 1, CreatedBy: 1}
+	publishedChild := models.Asset{TenantID: 7, Name: "published-child", TypeID: typeDefinition.ID, CategoryID: &child.ID, Status: "published", OwnerID: 1, CreatedBy: 1}
+	publishedOther := models.Asset{TenantID: 7, Name: "published-healthcare", TypeID: typeDefinition.ID, CategoryID: &otherRoot.ID, Status: "published", OwnerID: 1, CreatedBy: 1}
 	draft := models.Asset{TenantID: 7, Name: "draft", TypeID: typeDefinition.ID, Status: "draft", OwnerID: 1, CreatedBy: 1}
 	otherTenant := models.Asset{TenantID: 8, Name: "other", TypeID: typeDefinition.ID, Status: "published", OwnerID: 1, CreatedBy: 1}
-	for _, asset := range []*models.Asset{&published, &draft, &otherTenant} {
+	for _, asset := range []*models.Asset{&published, &publishedChild, &publishedOther, &draft, &otherTenant} {
 		if err := db.Create(asset).Error; err != nil {
 			t.Fatalf("create asset: %v", err)
 		}
@@ -42,6 +60,29 @@ func TestConsumerProjectionFiltersVisibilityAndDerivesCurrentUser(t *testing.T) 
 	list := consumerRequest(t, router, http.MethodGet, "/api/v1/asset/consumer/assets", "")
 	if list.Code != http.StatusOK || strings.Contains(list.Body.String(), "draft") || strings.Contains(list.Body.String(), "other") || !strings.Contains(list.Body.String(), "published") {
 		t.Fatalf("consumer list leaked hidden assets: status=%d body=%s", list.Code, list.Body.String())
+	}
+	subtree := consumerRequest(t, router, http.MethodGet, "/api/v1/asset/consumer/assets?category_id="+int64String(root.ID), "")
+	if subtree.Code != http.StatusOK || !strings.Contains(subtree.Body.String(), "published-root") || !strings.Contains(subtree.Body.String(), "published-child") || strings.Contains(subtree.Body.String(), "published-healthcare") {
+		t.Fatalf("consumer subtree mismatch: status=%d body=%s", subtree.Code, subtree.Body.String())
+	}
+	invalidCategory := consumerRequest(t, router, http.MethodGet, "/api/v1/asset/consumer/assets?category_id=invalid", "")
+	if invalidCategory.Code != http.StatusBadRequest {
+		t.Fatalf("invalid category status=%d, want 400 body=%s", invalidCategory.Code, invalidCategory.Body.String())
+	}
+	missingCategory := consumerRequest(t, router, http.MethodGet, "/api/v1/asset/consumer/assets?category_id=999999", "")
+	if missingCategory.Code != http.StatusNotFound {
+		t.Fatalf("missing category status=%d, want 404 body=%s", missingCategory.Code, missingCategory.Body.String())
+	}
+	categories := consumerRequest(t, router, http.MethodGet, "/api/v1/asset/consumer/categories", "")
+	if categories.Code != http.StatusOK || !strings.Contains(categories.Body.String(), "Government") || !strings.Contains(categories.Body.String(), "Education") || strings.Contains(categories.Body.String(), "Empty") {
+		t.Fatalf("consumer category tree mismatch: status=%d body=%s", categories.Code, categories.Body.String())
+	}
+	var categoryTree []assetservice.AssetCategoryTreeNode
+	if err := json.Unmarshal(categories.Body.Bytes(), &categoryTree); err != nil {
+		t.Fatalf("decode consumer category tree: %v", err)
+	}
+	if len(categoryTree) != 2 || categoryTree[0].ID != root.ID || categoryTree[0].Count != 2 || len(categoryTree[0].Children) != 1 || categoryTree[0].Children[0].Count != 1 {
+		t.Fatalf("consumer category subtree counts = %#v", categoryTree)
 	}
 	detail := consumerRequest(t, router, http.MethodGet, "/api/v1/asset/consumer/assets/"+int64String(draft.ID), "")
 	if detail.Code != http.StatusNotFound {
@@ -116,7 +157,7 @@ func consumerTestDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE asset.categories (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL, parent_id INTEGER,
-			sort_order INTEGER, description TEXT, created_at DATETIME, updated_at DATETIME
+			sort_order INTEGER, description TEXT, version INTEGER NOT NULL DEFAULT 1, created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE asset.assets (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL, description TEXT,

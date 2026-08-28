@@ -1,7 +1,5 @@
 package models
 
-import "github.com/addp/common/dataquality"
-
 // ErrorResponse 错误响应
 type ErrorResponse struct {
 	Code    int    `json:"code" example:"400"`
@@ -15,9 +13,6 @@ type SuccessResponse struct {
 	Data    interface{} `json:"data,omitempty"`
 }
 
-// QualityRulesResponse 是 Standard 与 Quality 共享的版本化规则文档。
-type QualityRulesResponse dataquality.Document
-
 // PaginatedGlossaryResponse 业务术语分页列表响应。
 type PaginatedGlossaryResponse struct {
 	Data       []Glossary `json:"data"`
@@ -29,20 +24,20 @@ type PaginatedGlossaryResponse struct {
 
 // PaginatedElementResponse 数据元分页列表响应。
 type PaginatedElementResponse struct {
-	Data       []Element `json:"data"`
-	Total      int64     `json:"total"`
-	Page       int       `json:"page"`
-	PageSize   int       `json:"page_size"`
-	TotalPages int       `json:"total_pages"`
+	Data       []ElementAggregate `json:"data"`
+	Total      int64              `json:"total"`
+	Page       int                `json:"page"`
+	PageSize   int                `json:"page_size"`
+	TotalPages int                `json:"total_pages"`
 }
 
 // PaginatedCodeSetResponse 码值集分页列表响应。
 type PaginatedCodeSetResponse struct {
-	Data       []CodeSet `json:"data"`
-	Total      int64     `json:"total"`
-	Page       int       `json:"page"`
-	PageSize   int       `json:"page_size"`
-	TotalPages int       `json:"total_pages"`
+	Data       []CodeSetAggregate `json:"data"`
+	Total      int64              `json:"total"`
+	Page       int                `json:"page"`
+	PageSize   int                `json:"page_size"`
+	TotalPages int                `json:"total_pages"`
 }
 
 // PaginatedMetricResponse 指标分页列表响应。

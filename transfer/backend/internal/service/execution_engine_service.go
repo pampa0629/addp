@@ -220,6 +220,10 @@ func (s *ExecutionEngineService) executeWatermarkIncrementalTask(ctx context.Con
 	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source.Locator, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
 		s.logger.Warn("failed to persist transfer lineage facts", "error", err, "execution_id", executionID)
 	}
+	if err := s.writeBoundedExecutionOutputs(ctx, executionID, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, metrics.RecordsWritten); err != nil {
+		s.updateExecutionError(ctx, task, executionID, err)
+		return err
+	}
 	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
 		return err
 	}
@@ -347,6 +351,10 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 	}
 	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source.Locator, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
 		s.logger.Warn("failed to persist transfer lineage facts", "error", err, "execution_id", executionID)
+	}
+	if err := s.writeBoundedExecutionOutputs(ctx, executionID, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, metrics.RecordsWritten); err != nil {
+		s.updateExecutionError(ctx, task, executionID, err)
+		return err
 	}
 	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
 		return err
@@ -496,11 +504,7 @@ func (s *ExecutionEngineService) executeRuntimeTargetTableTransferTask(
 	if err := s.writeTransferLineageFacts(ctx, task, executionID, resolvedSpec.Source.Locator, resolvedSpec.Target.Locator, resolvedSpec.Target.ParentLocator, resolvedSpec.Target.Name, resolvedSpec.Target.Policy); err != nil {
 		s.logger.Warn("failed to persist runtime-target transfer lineage facts", "error", err, "execution_id", executionID)
 	}
-	if err := s.executionService.UpdateExecution(ctx, executionID, map[string]interface{}{
-		"metadata": commonModels.JSONMap{"outputs": commonModels.JSONMap{
-			"execution_id": execution.ExecutionID, "target_locator": targetLocator, "row_count": metrics.RecordsWritten,
-		}},
-	}); err != nil {
+	if err := s.writeBoundedExecutionOutputs(ctx, executionID, targetLocator, "", "", metrics.RecordsWritten); err != nil {
 		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
 	}
 	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
@@ -787,6 +791,10 @@ func (s *ExecutionEngineService) executeCommonRawCopyTask(ctx context.Context, t
 	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source.Locator, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
 		s.logger.Warn("failed to persist raw copy lineage facts", "error", err, "execution_id", executionID)
 	}
+	if err := s.writeBoundedExecutionOutputs(ctx, executionID, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, metrics.RecordsWritten); err != nil {
+		s.updateExecutionError(ctx, task, executionID, err)
+		return err
+	}
 	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
 		return err
 	}
@@ -840,6 +848,27 @@ func targetLineageLocator(parentURI, name string) string {
 		resourceType = resourcetree.TypeFile
 	}
 	return (&resourcetree.ResourceLocator{EngineID: parent.EngineID, Path: path, Type: resourceType}).ToURI()
+}
+
+func (s *ExecutionEngineService) writeBoundedExecutionOutputs(ctx context.Context, executionID uint, targetLocator, targetParentLocator, targetName string, rowCount int64) error {
+	locator := strings.TrimSpace(targetLocator)
+	if locator == "" {
+		locator = targetLineageLocator(targetParentLocator, targetName)
+	}
+	if locator == "" {
+		return fmt.Errorf("bounded Transfer execution target locator is empty")
+	}
+	runtimeExecutionID := executionIDString(s, ctx, executionID)
+	if runtimeExecutionID == "" {
+		return fmt.Errorf("bounded Transfer execution identity is empty")
+	}
+	return s.executionService.UpdateExecution(ctx, executionID, map[string]interface{}{
+		"metadata": commonModels.JSONMap{"outputs": commonModels.JSONMap{
+			"execution_id":   runtimeExecutionID,
+			"target_locator": locator,
+			"row_count":      rowCount,
+		}},
+	})
 }
 
 func executionIDString(s *ExecutionEngineService, ctx context.Context, id uint) string {

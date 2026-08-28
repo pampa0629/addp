@@ -98,12 +98,15 @@ func (r *GlossaryRepository) UpdateStatus(id, tenantID, expectedVersion int64, s
 }
 
 // GetMappedElements 获取术语关联的完整数据元列表
-func (r *GlossaryRepository) GetMappedElements(glossaryID, tenantID int64) ([]models.Element, error) {
-	var elements []models.Element
+func (r *GlossaryRepository) GetMappedElements(glossaryID, tenantID int64) ([]models.PublishedElementReference, error) {
+	var elements []models.PublishedElementReference
 	err := r.db.Raw(`
-		SELECT e.* FROM standard.elements e
+		SELECT e.id, e.tenant_id, e.code, e.lifecycle_state, e.version,
+			er.id AS revision_id, er.revision_no, er.name, er.status
+		FROM standard.elements e
 		INNER JOIN standard.glossary_element_mappings gem ON gem.element_id = e.id
-		WHERE gem.glossary_id = ? AND e.tenant_id = ?
+		INNER JOIN standard.element_revisions er ON er.id = e.current_revision_id AND er.status = 'published'
+		WHERE gem.glossary_id = ? AND e.tenant_id = ? AND e.lifecycle_state = 'active'
 	`, glossaryID, tenantID).Scan(&elements).Error
 	return elements, err
 }

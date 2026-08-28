@@ -285,6 +285,45 @@ func TestFinishErrorDetailsPreservesLogsOnFailure(t *testing.T) {
 	}
 }
 
+func TestWriteBoundedExecutionOutputsPersistsCreatedTargetContract(t *testing.T) {
+	ctx := context.Background()
+	db := newExecutionServiceTestDB(t)
+	task := createExecutionServiceTestTask(t, db)
+	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusRunning)
+	executionService := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+	bindExecutionServiceTestLease(t, db, executionService, &execution)
+	engineService := &ExecutionEngineService{executionService: executionService}
+
+	if err := engineService.writeBoundedExecutionOutputs(
+		ctx,
+		uint(execution.ID),
+		"",
+		"addp://engine/2/path/public?type=schema",
+		"ods_outdoor_persons",
+		2188,
+	); err != nil {
+		t.Fatalf("writeBoundedExecutionOutputs() error = %v", err)
+	}
+
+	var stored commonExecution.TaskExecution
+	if err := db.First(&stored, execution.ID).Error; err != nil {
+		t.Fatalf("load execution: %v", err)
+	}
+	outputs, ok := stored.Metadata["outputs"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("metadata.outputs = %#v, want object", stored.Metadata["outputs"])
+	}
+	if outputs["execution_id"] != execution.ExecutionID {
+		t.Fatalf("outputs.execution_id = %#v, want %q", outputs["execution_id"], execution.ExecutionID)
+	}
+	if outputs["target_locator"] != "addp://engine/2/path/public/ods_outdoor_persons?type=table" {
+		t.Fatalf("outputs.target_locator = %#v", outputs["target_locator"])
+	}
+	if outputs["row_count"] != float64(2188) {
+		t.Fatalf("outputs.row_count = %#v, want 2188", outputs["row_count"])
+	}
+}
+
 func TestTableProgressCallbackStoresResumeAndCommitMarkers(t *testing.T) {
 	ctx := context.Background()
 	db := newExecutionServiceTestDB(t)

@@ -81,11 +81,19 @@ func (g *SQLGenerator) failureCondition(column string, rule dataquality.Rule) (s
 		conditions := make([]string, 0, 2)
 		args := make([]interface{}, 0, 2)
 		if params.Min != nil {
-			conditions = append(conditions, column+" IS NOT NULL AND "+column+"::numeric < $"+strconv.Itoa(len(args)+1))
+			operator := "<"
+			if params.MinInclusive != nil && !*params.MinInclusive {
+				operator = "<="
+			}
+			conditions = append(conditions, column+" IS NOT NULL AND "+column+"::numeric "+operator+" $"+strconv.Itoa(len(args)+1))
 			args = append(args, params.Min.String())
 		}
 		if params.Max != nil {
-			conditions = append(conditions, column+" IS NOT NULL AND "+column+"::numeric > $"+strconv.Itoa(len(args)+1))
+			operator := ">"
+			if params.MaxInclusive != nil && !*params.MaxInclusive {
+				operator = ">="
+			}
+			conditions = append(conditions, column+" IS NOT NULL AND "+column+"::numeric "+operator+" $"+strconv.Itoa(len(args)+1))
 			args = append(args, params.Max.String())
 		}
 		return "(" + strings.Join(conditions, " OR ") + ")", args, nil

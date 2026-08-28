@@ -186,7 +186,9 @@ flowchart LR
     Publish --> Consume["Portal 申请与消费"]
 ```
 
-AssetCategory 与 Catalog 的组织方式相互独立：Catalog 组织和治理 CatalogEntry，AssetCategory 只对已发布 Asset 提供面向消费者的多级导航。Asset 可以组合跨业务域的多个 CatalogEntry，因此其分类由发布人显式确认，不能照搬任一组成条目的 Domain 或企业目录视图。
+AssetCategory 与 Catalog 的组织方式相互独立：Catalog 组织和治理 CatalogEntry，AssetCategory 只对已发布 Asset 提供面向消费者的多级导航。Asset 可以组合跨业务域的多个 CatalogEntry，因此其分类由发布人显式确认，不能照搬任一组成条目的 Domain 或企业目录视图。消费者选择任一 AssetCategory 时，目录浏览范围包含该节点及全部后代节点中的已发布 Asset；后台资产工作台的分类筛选仍表示资产的直接归属，不能把两种语义混为一条管理查询。
+
+AssetCategory 的父子关系不是独立关联实体，而是目录节点聚合状态的一部分。调整目录位置必须与名称、说明、排序和并发版本作为一次完整更新；只能选择同 Tenant 的非自身、非后代节点作为新父目录，也可显式选择根目录。前端展示目录名称和层级，稳定 ID 只作为选项值传递。
 
 这是一条唯一主路径。不得把业务元数据写回 Meta，不得让 Asset 绕过 Catalog 自动发现专业资源，也不得用 Manager 技术资源树替代企业目录。
 

@@ -49,6 +49,30 @@
       "continueEditing": "继续编辑",
       "saveBeforeAction": "请先保存当前修改，再执行状态操作"
     },
+    "revision": {
+      "number": "修订号",
+      "history": "修订历史",
+      "changeSummary": "变更说明",
+      "changeSummaryRequired": "请输入变更说明",
+      "newDraft": "创建新草稿",
+      "submit": "提交审核",
+      "return": "退回草稿",
+      "publish": "发布",
+      "withdraw": "撤回",
+      "status": {
+        "draft": "草稿",
+        "in_review": "审核中",
+        "published": "已发布",
+        "superseded": "已取代",
+        "withdrawn": "已撤回"
+      },
+      "confirm": {
+        "submit": "确认提交当前修订审核？",
+        "return": "确认将当前修订退回草稿？",
+        "publish": "确认发布当前修订？发布后将成为唯一当前版本。",
+        "withdraw": "确认撤回当前发布修订？撤回后下游不能再新建引用。"
+      }
+    },
     "layout": {
       "title": "数据标准与建模",
       "logout": "退出登录",
@@ -139,6 +163,8 @@
       "nullableLabel": "允许为空",
       "unitLabel": "计量单位",
       "definitionLabel": "业务含义",
+      "definitionRequired": "请输入业务含义",
+      "formatLabel": "格式约束",
       "securityLevelLabel": "数据分级",
       "classificationLabel": "数据分类",
       "codeSetLabel": "关联码值集",
@@ -146,6 +172,16 @@
       "exampleValuesLabel": "示例值",
       "exampleValuesPlaceholder": "输入后回车添加",
       "qualityRules": "质量规则配置",
+      "compiledRuleHint": "非空、长度、格式、范围和枚举规则由数据元语义字段自动编译；这里只补充唯一性规则。",
+      "valueDomain": "值域约束",
+      "valueDomainKind": "值域类型",
+      "unrestricted": "不限制",
+      "range": "连续范围",
+      "enumeration": "离散枚举",
+      "rangeMin": "最小值",
+      "rangeMax": "最大值",
+      "minInclusive": "包含最小值",
+      "maxInclusive": "包含最大值",
       "addRule": "添加规则",
       "noRules": "暂无质量规则",
       "ruleEnabled": "启用",
@@ -194,6 +230,14 @@
       "namePlaceholder": "如：性别、状态",
       "typeLabel": "类型",
       "descriptionLabel": "描述",
+      "descriptionRequired": "请输入描述",
+      "domainRequired": "请选择归属业务域",
+      "valueType": "码值类型",
+      "origin": "来源",
+      "originValue": {
+        "platform": "平台",
+        "tenant": "租户"
+      },
       "typeSystem": "系统内置",
       "typeCustom": "自定义",
       "codeRequired": "请输入编码",
@@ -205,6 +249,12 @@
       "addItem": "新增码值项",
       "itemCode": "码",
       "itemValue": "值",
+      "itemLabel": "显示名称",
+      "itemDefinition": "定义",
+      "itemStatus": {
+        "active": "有效",
+        "deprecated": "停用"
+      },
       "itemCodePlaceholder": "如：1、M、active",
       "itemValuePlaceholder": "如：男、启用",
       "itemDescription": "描述",

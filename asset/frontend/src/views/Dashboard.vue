@@ -186,11 +186,17 @@ function emptyStats() {
 
 const loading = ref(false)
 const assetOptionsLoading = ref(false)
-const loadAnnouncement = ref('')
+const loadAnnouncementKey = ref('')
 const stats = ref(emptyStats())
 const selectedScope = ref(DASHBOARD_SCOPE_APPLICATION)
 const applicationAssets = ref([])
 let statsRequestSequence = 0
+
+const loadAnnouncement = computed(() => (
+  loadAnnouncementKey.value
+    ? t(`asset.dashboard.${loadAnnouncementKey.value}`)
+    : ''
+))
 
 const selectedScopeLabel = computed(() => {
   if (selectedScope.value === DASHBOARD_SCOPE_ALL) return t('asset.dashboard.scopeAll')
@@ -231,16 +237,16 @@ function shortDate(date) {
 async function fetchStats() {
   const requestSequence = ++statsRequestSequence
   loading.value = true
-  loadAnnouncement.value = ''
+  loadAnnouncementKey.value = ''
   try {
     const result = await statsAPI.dashboard(dashboardStatsParams(selectedScope.value))
     if (requestSequence !== statsRequestSequence) return
     stats.value = result
-    loadAnnouncement.value = t('asset.dashboard.loaded')
+    loadAnnouncementKey.value = 'loaded'
   } catch {
     if (requestSequence !== statsRequestSequence) return
     stats.value = emptyStats()
-    loadAnnouncement.value = t('asset.dashboard.fetchFailed')
+    loadAnnouncementKey.value = 'fetchFailed'
     ElMessage.error(t('asset.dashboard.fetchFailed'))
   } finally {
     if (requestSequence === statsRequestSequence) loading.value = false

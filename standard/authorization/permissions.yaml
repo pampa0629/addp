@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: standard
-manifest_version: 4
+manifest_version: 5
 permissions:
   - key: standard.catalog.read
     allowed_scope_types: [tenant]
@@ -58,6 +58,14 @@ permissions:
     status: active
     name_i18n_key: permissions.standard.code_set.delete.name
     description_i18n_key: permissions.standard.code_set.delete.description
+  - key: standard.code_set.publish
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.standard.code_set.publish.name
+    description_i18n_key: permissions.standard.code_set.publish.description
   - key: standard.code_set.read
     allowed_scope_types: [tenant, department, project_group]
     risk_level: low
@@ -170,14 +178,6 @@ permissions:
     status: active
     name_i18n_key: permissions.standard.domain.update.name
     description_i18n_key: permissions.standard.domain.update.description
-  - key: standard.element.approve
-    allowed_scope_types: [tenant, department, project_group]
-    risk_level: high
-    tenant_customizable: true
-    delegable: false
-    status: active
-    name_i18n_key: permissions.standard.element.approve.name
-    description_i18n_key: permissions.standard.element.approve.description
   - key: standard.element.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium
@@ -194,6 +194,14 @@ permissions:
     status: active
     name_i18n_key: permissions.standard.element.delete.name
     description_i18n_key: permissions.standard.element.delete.description
+  - key: standard.element.publish
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.standard.element.publish.name
+    description_i18n_key: permissions.standard.element.publish.description
   - key: standard.element.read
     allowed_scope_types: [tenant, department, project_group]
     risk_level: low

@@ -1,255 +1,59 @@
 <template>
-  <div class="code-set-list">
-    <!-- 搜索区 -->
-    <el-card shadow="never" class="search-card">
-      <el-row :gutter="12" align="middle">
-        <el-col :span="6">
-          <el-input v-model="searchForm.keyword" :placeholder="$t('standard.codeSet.searchPlaceholder')" clearable @change="handleSearch">
-            <template #prefix><el-icon><Search /></el-icon></template>
-          </el-input>
-        </el-col>
-        <el-col :span="4">
-          <el-select v-model="searchForm.type" :placeholder="$t('standard.common.type')" clearable @change="handleSearch" style="width:100%">
-            <el-option :label="$t('standard.codeSet.typeSystem')" value="system" />
-            <el-option :label="$t('standard.codeSet.typeCustom')" value="custom" />
-          </el-select>
-        </el-col>
-        <el-col :span="4">
-          <el-button v-if="canCreate" type="primary" @click="openCreateDialog">
-            <el-icon><Plus /></el-icon>
-            {{ $t('standard.codeSet.create') }}
-          </el-button>
-        </el-col>
-      </el-row>
-    </el-card>
-
-    <!-- 码值集列表 -->
-    <el-card shadow="never" class="list-card">
-      <el-table :data="codeSets" v-loading="loading" stripe>
+  <div class="page-shell">
+    <div class="page-header"><h2>{{ $t('standard.codeSet.title') }}</h2><el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ $t('standard.codeSet.create') }}</el-button></div>
+    <el-card shadow="never" class="filter-card"><el-row :gutter="12"><el-col :span="8"><el-input v-model="filters.keyword" :prefix-icon="Search" clearable :placeholder="$t('standard.codeSet.searchPlaceholder')" @change="search" /></el-col><el-col :span="6"><el-select v-model="filters.domain_id" clearable :placeholder="$t('standard.common.selectDomain')" style="width:100%" @change="search"><el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" /></el-select></el-col><el-col :span="6"><el-select v-model="filters.status" clearable :placeholder="$t('standard.common.selectStatus')" style="width:100%" @change="search"><el-option v-for="s in statuses" :key="s" :value="s" :label="statusLabel(s)" /></el-select></el-col></el-row></el-card>
+    <el-card shadow="never">
+      <el-table :data="rows" v-loading="loading" stripe>
         <el-table-column :label="$t('standard.codeSet.codeLabel')" prop="code" width="180" />
-        <el-table-column :label="$t('standard.codeSet.nameLabel')" prop="name" min-width="160">
-          <template #default="{ row }">
-            <el-link type="primary" @click="goToDetail(row)">{{ row.name }}</el-link>
-          </template>
-        </el-table-column>
-        <el-table-column :label="$t('standard.common.type')" width="100">
-          <template #default="{ row }">
-            <el-tag :type="row.type === 'system' ? 'success' : 'info'" size="small">
-              {{ row.type === 'system' ? $t('standard.codeSet.typeSystem') : $t('standard.codeSet.typeCustom') }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column :label="$t('standard.common.description')" prop="description" show-overflow-tooltip />
-        <el-table-column :label="$t('standard.common.createdAt')" width="160">
-          <template #default="{ row }">
-            {{ formatStandardDateTime(row.created_at, locale) }}
-          </template>
-        </el-table-column>
-        <el-table-column :label="$t('standard.common.actions')" width="160" fixed="right">
-          <template #default="{ row }">
-            <div class="table-actions">
-              <el-button link type="primary" @click="goToDetail(row)">{{ $t('standard.common.edit') }}</el-button>
-              <el-button v-if="canDelete" link type="danger" :loading="isActionLocked(`code-set:${row.id}`)" :disabled="row.type === 'system'" @click="handleDelete(row)">{{ $t('standard.common.delete') }}</el-button>
-            </div>
-          </template>
-        </el-table-column>
+        <el-table-column :label="$t('standard.codeSet.nameLabel')" min-width="180"><template #default="{row}"><el-link type="primary" @click="detail(row.id)">{{ working(row)?.name || '-' }}</el-link></template></el-table-column>
+        <el-table-column :label="$t('standard.glossary.domainLabel')" width="140"><template #default="{row}">{{ domainName(row.domain_id) }}</template></el-table-column>
+        <el-table-column :label="$t('standard.codeSet.valueType')" width="110"><template #default="{row}">{{ working(row)?.value_type || '-' }}</template></el-table-column>
+        <el-table-column :label="$t('standard.codeSet.origin')" width="100"><template #default="{row}"><el-tag size="small" type="info">{{ $t(`standard.codeSet.originValue.${row.origin}`) }}</el-tag></template></el-table-column>
+        <el-table-column :label="$t('standard.revision.number')" width="80"><template #default="{row}">{{ working(row) ? `R${working(row).revision_no}` : '-' }}</template></el-table-column>
+        <el-table-column :label="$t('standard.common.status')" width="110"><template #default="{row}"><el-tag size="small" :type="statusType(working(row)?.status)">{{ statusLabel(working(row)?.status) }}</el-tag></template></el-table-column>
+        <el-table-column :label="$t('standard.common.actions')" width="150" fixed="right"><template #default="{row}"><el-button link type="primary" @click="detail(row.id)">{{ $t('standard.common.detail') }}</el-button><el-button v-if="canDelete && row.origin !== 'platform'" link type="danger" @click="remove(row)">{{ $t('standard.common.delete') }}</el-button></template></el-table-column>
       </el-table>
-
-      <div class="pagination-wrapper">
-        <el-pagination
-          v-model:current-page="pagination.page"
-          v-model:page-size="pagination.pageSize"
-          :total="pagination.total"
-          :page-sizes="[20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          @change="handlePageChange"
-        />
-      </div>
+      <el-pagination v-if="total" class="pagination" :total="total" :page-size="filters.page_size" :current-page="filters.page" layout="total, prev, pager, next" @current-change="p => { filters.page=p; load() }" />
     </el-card>
-
-    <!-- 新建对话框 -->
-    <el-dialog v-model="createDialogVisible" :title="$t('standard.codeSet.createTitle')" width="540px">
-      <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-width="100px">
-        <el-form-item :label="$t('standard.codeSet.codeLabel')" prop="code">
-          <el-input v-model="createForm.code" :placeholder="$t('standard.codeSet.codePlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="$t('standard.codeSet.nameLabel')" prop="name">
-          <el-input v-model="createForm.name" :placeholder="$t('standard.codeSet.namePlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="$t('standard.common.type')" prop="type">
-          <el-select v-model="createForm.type" style="width:100%">
-            <el-option :label="$t('standard.codeSet.typeCustom')" value="custom" />
-            <el-option :label="$t('standard.codeSet.typeSystem')" value="system" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="$t('standard.common.description')">
-          <el-input v-model="createForm.description" type="textarea" :rows="2" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="createDialogVisible = false">{{ $t('standard.common.cancel') }}</el-button>
-        <el-button type="primary" @click="handleCreate" :loading="creating">{{ $t('standard.codeSet.createAndEdit') }}</el-button>
-      </template>
-    </el-dialog>
+    <el-dialog v-model="dialog" :title="$t('standard.codeSet.createTitle')" width="600px"><el-form ref="formRef" :model="form" :rules="rules" label-width="120px">
+      <el-form-item :label="$t('standard.codeSet.codeLabel')" prop="code"><el-input v-model="form.code" /></el-form-item><el-form-item :label="$t('standard.codeSet.nameLabel')" prop="name"><el-input v-model="form.name" /></el-form-item><el-form-item :label="$t('standard.glossary.domainLabel')" prop="domain_id"><el-select v-model="form.domain_id" style="width:100%"><el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" /></el-select></el-form-item><el-form-item :label="$t('standard.codeSet.valueType')" prop="value_type"><el-select v-model="form.value_type" style="width:100%"><el-option value="string" /><el-option value="int" /><el-option value="bigint" /></el-select></el-form-item><el-form-item :label="$t('standard.codeSet.descriptionLabel')" prop="description"><el-input v-model="form.description" type="textarea" /></el-form-item><el-form-item :label="$t('standard.revision.changeSummary')" prop="change_summary"><el-input v-model="form.change_summary" type="textarea" /></el-form-item>
+    </el-form><template #footer><el-button @click="dialog=false">{{ $t('standard.common.cancel') }}</el-button><el-button type="primary" :loading="creating" @click="create">{{ $t('standard.common.confirm') }}</el-button></template></el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
-import { codeSetAPI } from '../api/standard'
+import { codeSetAPI, domainAPI } from '../api/standard'
+import { useStandardPermissions } from '../composables/useStandardPermissions'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
-import { formatStandardDateTime } from '../utils/dateTime'
-import { useStandardPermissions } from '../composables/useStandardPermissions'
-import { createLatestRequestCoordinator } from '@common-ui'
-import { useActionLock } from '../composables/useActionLock'
 
-const router = useRouter()
-const route = useRoute()
-const { t, locale } = useI18n()
-const { canCreate, canDelete } = useStandardPermissions('code_set')
-const { isLocked: isActionLocked, runLocked } = useActionLock()
-const loading = ref(false)
-const creating = ref(false)
-const codeSets = ref([])
-const createDialogVisible = ref(false)
-const createFormRef = ref(null)
-const listRequests = createLatestRequestCoordinator()
-
-const searchForm = reactive({
-  keyword: typeof route.query.keyword === 'string' ? route.query.keyword : '',
-  type: typeof route.query.type === 'string' ? route.query.type : ''
-})
-const pagination = reactive({
-  page: Number(route.query.page) > 0 ? Number(route.query.page) : 1,
-  pageSize: Number(route.query.page_size) > 0 ? Number(route.query.page_size) : 20,
-  total: 0
-})
-const createForm = reactive({ code: '', name: '', type: 'custom', description: '' })
-const createRules = computed(() => ({
-  code: [{ required: true, message: t('standard.codeSet.codeRequired'), trigger: 'blur' }],
-  name: [{ required: true, message: t('standard.codeSet.nameRequired'), trigger: 'blur' }],
-  type: [{ required: true, message: t('standard.codeSet.typeRequired'), trigger: 'change' }]
-}))
-
-const loadCodeSets = async () => {
-  const params = {
-    page: pagination.page,
-    page_size: pagination.pageSize,
-    keyword: searchForm.keyword || undefined,
-    type: searchForm.type || undefined
-  }
-  const request = listRequests.begin(JSON.stringify(params))
-  loading.value = true
-  try {
-    const res = await codeSetAPI.list(params)
-    if (!listRequests.isCurrent(request, JSON.stringify(params))) return
-    codeSets.value = res.data || []
-    pagination.total = res.total || 0
-  } catch (err) {
-    if (!listRequests.isCurrent(request, JSON.stringify(params))) return
-    codeSets.value = []
-    pagination.total = 0
-    ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.loadFailed'))
-  } finally {
-    if (listRequests.isCurrent(request, JSON.stringify(params))) loading.value = false
-  }
-}
-
-const handleSearch = () => {
-  pagination.page = 1
-  syncQuery()
-  loadCodeSets()
-}
-
-const syncQuery = () => {
-  const query = {}
-  if (searchForm.keyword) query.keyword = searchForm.keyword
-  if (searchForm.type) query.type = searchForm.type
-  if (pagination.page !== 1) query.page = String(pagination.page)
-  if (pagination.pageSize !== 20) query.page_size = String(pagination.pageSize)
-  navigateStandardRoute(router, { path: '/code-sets', query }, { history: 'replace' })
-}
-
-const handlePageChange = () => {
-  syncQuery()
-  loadCodeSets()
-}
-
-const openCreateDialog = () => {
-  Object.assign(createForm, { code: '', name: '', type: 'custom', description: '' })
-  createDialogVisible.value = true
-}
-
-const handleCreate = async () => {
-  if (creating.value) return
-  creating.value = true
-  try {
-    const valid = await createFormRef.value.validate().catch(() => false)
-    if (!valid) return
-    const res = await codeSetAPI.create(createForm)
-    ElMessage.success(t('standard.common.createSuccess'))
-    createDialogVisible.value = false
-    await navigateStandardRoute(router, `/code-sets/${res.id}`, { history: 'replace' })
-  } catch (err) {
-    ElMessage.error(getStandardErrorMessage(err, t))
-  } finally {
-    creating.value = false
-  }
-}
-
-const handleDelete = async (row) => {
-  await runLocked(`code-set:${row.id}`, async () => {
-    try {
-      await ElMessageBox.confirm(t('standard.codeSet.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
-      await codeSetAPI.delete(row.id)
-      ElMessage.success(t('standard.common.deleteSuccess'))
-      await loadCodeSets()
-    } catch (err) {
-      if (!isCanceledInteraction(err)) ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.deleteFailed'))
-    }
-  })
-}
-
-const goToDetail = (row) => {
-  navigateStandardRoute(router, { path: `/code-sets/${row.id}`, query: route.query })
-}
-
-onMounted(() => {
-  loadCodeSets()
-})
+const router=useRouter(), {t}=useI18n(), {canCreate,canDelete}=useStandardPermissions('code_set')
+const loading=ref(false), creating=ref(false), dialog=ref(false), formRef=ref(), rows=ref([]), domains=ref([]), total=ref(0)
+const statuses=['draft','in_review','published','superseded','withdrawn']
+const filters=reactive({keyword:'',domain_id:null,status:'',page:1,page_size:20})
+const blank=()=>({code:'',name:'',domain_id:null,value_type:'string',description:'',change_summary:''})
+const form=reactive(blank())
+const rules=computed(()=>({code:[{required:true,message:t('standard.codeSet.codeRequired')}],name:[{required:true,message:t('standard.codeSet.nameRequired')}],domain_id:[{required:true,message:t('standard.codeSet.domainRequired')}],description:[{required:true,message:t('standard.codeSet.descriptionRequired')}],change_summary:[{required:true,message:t('standard.revision.changeSummaryRequired')}]}))
+const flatten=nodes=>nodes.flatMap(n=>[n,...flatten(n.children||[])])
+const working=row=>row.draft_revision||row.current_revision
+const domainName=id=>domains.value.find(x=>x.id===id)?.name||'-'
+const statusLabel=s=>s?t(`standard.revision.status.${s}`):'-'
+const statusType=s=>({draft:'info',in_review:'warning',published:'success',superseded:'',withdrawn:'danger'}[s]||'info')
+const loadDomains=async()=>{try{domains.value=flatten(await domainAPI.list()||[])}catch{domains.value=[]}}
+const load=async()=>{loading.value=true;try{const params=Object.fromEntries(Object.entries(filters).filter(([,v])=>v!==''&&v!=null));const res=await codeSetAPI.list(params);rows.value=res.data||[];total.value=res.total||0}catch(e){ElMessage.error(getStandardErrorMessage(e,t,'standard.common.loadFailed'))}finally{loading.value=false}}
+const search=()=>{filters.page=1;load()}
+const openCreate=()=>{Object.assign(form,blank());dialog.value=true}
+const create=async()=>{if(!await formRef.value.validate().catch(()=>false))return;creating.value=true;try{const row=await codeSetAPI.create(form);ElMessage.success(t('standard.common.createSuccess'));dialog.value=false;detail(row.id)}catch(e){ElMessage.error(getStandardErrorMessage(e,t))}finally{creating.value=false}}
+const remove=async row=>{try{await ElMessageBox.confirm(t('standard.codeSet.confirmDelete',{name:working(row)?.name||row.code}),t('standard.common.hint'),{type:'warning'});await codeSetAPI.delete(row.id);ElMessage.success(t('standard.common.deleteSuccess'));load()}catch(e){if(!isCanceledInteraction(e))ElMessage.error(getStandardErrorMessage(e,t))}}
+const detail=id=>navigateStandardRoute(router,`/code-sets/${id}`)
+onMounted(()=>{loadDomains();load()})
 </script>
 
 <style scoped>
-.code-set-list {
-  min-height: 100%;
-  padding: 20px;
-  color: var(--addp-text-primary);
-  background: var(--addp-bg-secondary);
-}
-
-.search-card {
-  margin-bottom: 0;
-}
-
-.list-card { margin-top: 12px; }
-
-.code-set-list :deep(.el-card) {
-  background: var(--addp-bg-primary);
-  border-color: var(--addp-border-color);
-  box-shadow: var(--addp-shadow-card);
-}
-
-.table-actions { display: inline-flex; align-items: center; gap: 8px; min-width: max-content; white-space: nowrap; }
-.table-actions :deep(.el-button) { white-space: nowrap; }
-
-.pagination-wrapper {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
-}
+.page-shell{min-height:100%;padding:20px;background:var(--addp-bg-secondary);color:var(--addp-text-primary)}.page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.filter-card{margin-bottom:12px}.pagination{display:flex;justify-content:flex-end;margin-top:16px}.page-shell :deep(.el-card){background:var(--addp-bg-primary);border-color:var(--addp-border-color)}
 </style>

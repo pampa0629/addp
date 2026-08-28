@@ -40,7 +40,7 @@ func TestIntegrationPostgresCatalogSummaryRepository(t *testing.T) {
 	if err := db.Create(&execution).Error; err != nil {
 		t.Fatal(err)
 	}
-	ruleApplication := models.RuleApplication{TenantID: tenantID, ElementID: tenantID, EngineID: 7, SchemaName: "public", Table: "orders", ColumnName: "id", RuleConfig: []byte(`{"schema_version":"addp.quality.rules/v1","rules":[]}`), Enabled: true, CreatedBy: 1}
+	ruleApplication := models.RuleApplication{TenantID: tenantID, ElementID: tenantID, ElementRevisionID: tenantID + 1, EngineID: 7, SchemaName: "public", Table: "orders", ColumnName: "id", RuleConfig: []byte(`{"schema_version":"addp.quality.rules/v1","rules":[]}`), Enabled: true, CreatedBy: 1}
 	if err := db.Create(&ruleApplication).Error; err != nil {
 		t.Fatal(err)
 	}

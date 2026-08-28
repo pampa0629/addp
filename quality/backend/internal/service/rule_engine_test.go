@@ -98,7 +98,7 @@ func TestUpdateRuleApplicationRequiresActiveEngineWhenEnabling(t *testing.T) {
 
 			db := newRuleEngineUpdateTestDB(t)
 			application := models.RuleApplication{
-				TenantID: 7, ElementID: 31, EngineID: 12, SchemaName: "public", Table: "orders", ColumnName: "id",
+				TenantID: 7, ElementID: 31, ElementRevisionID: 3101, EngineID: 12, SchemaName: "public", Table: "orders", ColumnName: "id",
 				RuleConfig: []byte(`{"schema_version":"addp.quality.rules/v1","rules":[]}`), Enabled: false, CreatedBy: 1,
 			}
 			if err := db.Create(&application).Error; err != nil {
@@ -134,7 +134,7 @@ func TestUpdateRuleApplicationRequiresActiveEngineWhenEnabling(t *testing.T) {
 func TestUpdateRuleApplicationAllowsDisablingWithoutEngineAccess(t *testing.T) {
 	db := newRuleEngineUpdateTestDB(t)
 	application := models.RuleApplication{
-		TenantID: 7, ElementID: 31, EngineID: 12, SchemaName: "public", Table: "orders", ColumnName: "id",
+		TenantID: 7, ElementID: 31, ElementRevisionID: 3101, EngineID: 12, SchemaName: "public", Table: "orders", ColumnName: "id",
 		RuleConfig: []byte(`{"schema_version":"addp.quality.rules/v1","rules":[]}`), Enabled: true, CreatedBy: 1,
 	}
 	if err := db.Create(&application).Error; err != nil {
@@ -161,6 +161,7 @@ func newRuleEngineUpdateTestDB(t *testing.T) *gorm.DB {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		element_id INTEGER NOT NULL,
+		element_revision_id INTEGER NOT NULL,
 		engine_id INTEGER NOT NULL,
 		schema_name TEXT NOT NULL,
 		table_name TEXT NOT NULL,

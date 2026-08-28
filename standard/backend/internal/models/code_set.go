@@ -2,77 +2,132 @@ package models
 
 import "time"
 
-// CodeSet 码值集
+const (
+	CodeSetOriginPlatform    = "platform"
+	CodeSetOriginTenant      = "tenant"
+	CodeItemStatusActive     = "active"
+	CodeItemStatusDeprecated = "deprecated"
+)
+
 type CodeSet struct {
-	ID          int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID    int64     `gorm:"not null;index:idx_codeset_tenant;uniqueIndex:uq_standard_code_sets_tenant_code" json:"tenant_id"`
-	Code        string    `gorm:"size:100;not null;uniqueIndex:uq_standard_code_sets_tenant_code" json:"code"`
-	Name        string    `gorm:"size:200;not null" json:"name"`
-	Type        string    `gorm:"size:50;default:custom" json:"type"` // system/custom
-	Description string    `gorm:"type:text" json:"description"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	Version     int64     `gorm:"not null;default:1" json:"version"`
+	ID                int64       `gorm:"primaryKey;autoIncrement" json:"id"`
+	TenantID          int64       `gorm:"not null;index;uniqueIndex:uq_standard_code_sets_tenant_code" json:"tenant_id"`
+	DomainID          *int64      `gorm:"index" json:"domain_id,omitempty"`
+	Code              string      `gorm:"size:100;not null;uniqueIndex:uq_standard_code_sets_tenant_code" json:"code"`
+	Origin            string      `gorm:"size:20;not null;default:'tenant'" json:"origin"`
+	StewardID         *int64      `json:"steward_id,omitempty"`
+	Tags              StringArray `gorm:"type:jsonb;serializer:json" json:"tags"`
+	CurrentRevisionID *int64      `gorm:"index" json:"current_revision_id,omitempty"`
+	DraftRevisionID   *int64      `gorm:"index" json:"draft_revision_id,omitempty"`
+	CreatedBy         int64       `gorm:"not null" json:"created_by"`
+	UpdatedBy         *int64      `json:"updated_by,omitempty"`
+	CreatedAt         time.Time   `json:"created_at"`
+	UpdatedAt         time.Time   `json:"updated_at"`
+	Version           int64       `gorm:"not null;default:1" json:"version"`
+	LifecycleState    string      `gorm:"size:16;not null;default:'active'" json:"lifecycle_state"`
 }
 
-func (CodeSet) TableName() string {
-	return "standard.code_sets"
+func (CodeSet) TableName() string { return "standard.code_sets" }
+
+type CodeSetRevision struct {
+	ID            int64                 `gorm:"primaryKey;autoIncrement" json:"id"`
+	CodeSetID     int64                 `gorm:"not null;index;uniqueIndex:uq_standard_code_set_revisions_set_no" json:"code_set_id"`
+	RevisionNo    int64                 `gorm:"not null;uniqueIndex:uq_standard_code_set_revisions_set_no" json:"revision_no"`
+	Status        string                `gorm:"size:20;not null" json:"status"`
+	Name          string                `gorm:"size:200;not null" json:"name"`
+	Description   string                `gorm:"type:text;not null" json:"description"`
+	ValueType     string                `gorm:"size:20;not null" json:"value_type"`
+	ChangeSummary string                `gorm:"type:text;not null" json:"change_summary"`
+	EffectiveFrom *time.Time            `json:"effective_from,omitempty"`
+	EffectiveTo   *time.Time            `json:"effective_to,omitempty"`
+	SubmittedBy   *int64                `json:"submitted_by,omitempty"`
+	SubmittedAt   *time.Time            `json:"submitted_at,omitempty"`
+	PublishedBy   *int64                `json:"published_by,omitempty"`
+	PublishedAt   *time.Time            `json:"published_at,omitempty"`
+	CreatedBy     int64                 `gorm:"not null" json:"created_by"`
+	UpdatedBy     *int64                `json:"updated_by,omitempty"`
+	CreatedAt     time.Time             `json:"created_at"`
+	UpdatedAt     time.Time             `json:"updated_at"`
+	Items         []CodeSetRevisionItem `gorm:"-" json:"items"`
 }
 
-// CodeItem 码值项
-type CodeItem struct {
-	ID          int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	CodeSetID   int64     `gorm:"not null;index:idx_codeitem_set;uniqueIndex:uq_standard_code_items_set_code" json:"code_set_id"`
-	Code        string    `gorm:"size:100;not null;uniqueIndex:uq_standard_code_items_set_code" json:"code"`
-	Value       string    `gorm:"size:200;not null" json:"value"`
-	Description string    `gorm:"type:text" json:"description"`
-	SortOrder   int       `gorm:"default:0" json:"sort_order"`
-	IsActive    bool      `gorm:"default:true" json:"is_active"`
-	ParentID    *int64    `json:"parent_id"` // 预留树形结构
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+func (CodeSetRevision) TableName() string { return "standard.code_set_revisions" }
+
+type CodeSetRevisionItem struct {
+	ID                int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	CodeSetRevisionID int64     `gorm:"not null;index;uniqueIndex:uq_standard_code_set_revision_items_revision_code" json:"code_set_revision_id"`
+	Code              string    `gorm:"size:100;not null;uniqueIndex:uq_standard_code_set_revision_items_revision_code" json:"code"`
+	Label             string    `gorm:"size:200;not null" json:"label"`
+	Definition        string    `gorm:"type:text" json:"definition"`
+	SortOrder         int       `gorm:"not null;default:0" json:"sort_order"`
+	Status            string    `gorm:"size:20;not null;default:'active'" json:"status"`
+	ReplacementItemID *int64    `json:"replacement_item_id,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
-func (CodeItem) TableName() string {
-	return "standard.code_items"
+func (CodeSetRevisionItem) TableName() string { return "standard.code_set_revision_items" }
+
+type CodeSetAggregate struct {
+	CodeSet
+	CurrentRevision *CodeSetRevision `json:"current_revision,omitempty"`
+	DraftRevision   *CodeSetRevision `json:"draft_revision,omitempty"`
 }
 
-// CreateCodeSetRequest 创建码值集请求
 type CreateCodeSetRequest struct {
-	Code        string `json:"code" binding:"required"`
-	Name        string `json:"name" binding:"required"`
-	Type        string `json:"type"`
-	Description string `json:"description"`
+	DomainID      *int64     `json:"domain_id" binding:"required"`
+	Code          string     `json:"code" binding:"required"`
+	StewardID     *int64     `json:"steward_id,omitempty"`
+	Tags          []string   `json:"tags"`
+	Name          string     `json:"name" binding:"required"`
+	Description   string     `json:"description" binding:"required"`
+	ValueType     string     `json:"value_type" binding:"required"`
+	ChangeSummary string     `json:"change_summary" binding:"required"`
+	EffectiveFrom *time.Time `json:"effective_from,omitempty"`
+	EffectiveTo   *time.Time `json:"effective_to,omitempty"`
 }
 
-// UpdateCodeSetRequest 更新码值集请求
 type UpdateCodeSetRequest struct {
-	Version     int64  `json:"version" binding:"required"`
-	Name        string `json:"name" binding:"required"`
-	Type        string `json:"type"`
-	Description string `json:"description"`
+	Version   int64    `json:"version" binding:"required,gt=0" minimum:"1"`
+	DomainID  *int64   `json:"domain_id" binding:"required"`
+	StewardID *int64   `json:"steward_id,omitempty"`
+	Tags      []string `json:"tags"`
 }
 
-// CreateCodeItemRequest 创建码值项请求
+type CreateCodeSetRevisionRequest struct {
+	Version       int64  `json:"version" binding:"required,gt=0" minimum:"1"`
+	ChangeSummary string `json:"change_summary" binding:"required"`
+}
+
+type UpdateCodeSetRevisionRequest struct {
+	Version       int64      `json:"version" binding:"required,gt=0" minimum:"1"`
+	Name          string     `json:"name" binding:"required"`
+	Description   string     `json:"description" binding:"required"`
+	ValueType     string     `json:"value_type" binding:"required"`
+	ChangeSummary string     `json:"change_summary" binding:"required"`
+	EffectiveFrom *time.Time `json:"effective_from,omitempty"`
+	EffectiveTo   *time.Time `json:"effective_to,omitempty"`
+}
+
 type CreateCodeItemRequest struct {
-	Version     int64  `json:"version" binding:"required"`
-	Code        string `json:"code" binding:"required"`
-	Value       string `json:"value" binding:"required"`
-	Description string `json:"description"`
-	SortOrder   int    `json:"sort_order"`
-	IsActive    bool   `json:"is_active"`
+	Version    int64  `json:"version" binding:"required,gt=0" minimum:"1"`
+	Code       string `json:"code" binding:"required"`
+	Label      string `json:"label" binding:"required"`
+	Definition string `json:"definition"`
+	SortOrder  int    `json:"sort_order"`
+	Status     string `json:"status" binding:"required"`
 }
 
-// UpdateCodeItemRequest 更新码值项请求
 type UpdateCodeItemRequest struct {
-	Version     int64  `json:"version" binding:"required"`
-	Value       string `json:"value" binding:"required"`
-	Description string `json:"description"`
-	SortOrder   int    `json:"sort_order"`
-	IsActive    bool   `json:"is_active"`
+	Version           int64  `json:"version" binding:"required,gt=0" minimum:"1"`
+	Label             string `json:"label" binding:"required"`
+	Definition        string `json:"definition"`
+	SortOrder         int    `json:"sort_order"`
+	Status            string `json:"status" binding:"required"`
+	ReplacementItemID *int64 `json:"replacement_item_id,omitempty"`
 }
 
 type CodeItemMutationResponse struct {
-	Item    *CodeItem `json:"item"`
-	Version int64     `json:"version"`
+	Item    *CodeSetRevisionItem `json:"item"`
+	Version int64                `json:"version"`
 }

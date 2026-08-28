@@ -93,7 +93,7 @@ func (s *GlossaryService) DeprecateGlossary(id, tenantID, userID, version int64)
 }
 
 // GetMappedElements 获取术语关联的完整数据元列表
-func (s *GlossaryService) GetMappedElements(glossaryID, tenantID int64) ([]models.Element, error) {
+func (s *GlossaryService) GetMappedElements(glossaryID, tenantID int64) ([]models.PublishedElementReference, error) {
 	if _, err := s.repo.GetByID(glossaryID, tenantID); err != nil {
 		return nil, err
 	}

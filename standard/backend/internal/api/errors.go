@@ -74,6 +74,24 @@ func respondError(c *gin.Context, status int, err error) {
 		message = commoni18n.T(c, sysi18n.MsgSystemCodeSetImmutable)
 	case errors.Is(err, repository.ErrInvalidTenantReference):
 		message = commoni18n.T(c, sysi18n.MsgInvalidResourceReference)
+	case errors.Is(err, service.ErrInvalidStandardRevision):
+		message = commoni18n.T(c, sysi18n.MsgInvalidStandardRevision)
+		useGenericMessage = false
+	case errors.Is(err, service.ErrInvalidRevisionTransition):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgInvalidRevisionTransition)
+		useGenericMessage = false
+	case errors.Is(err, service.ErrDraftRevisionExists):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgDraftRevisionExists)
+		useGenericMessage = false
+	case errors.Is(err, service.ErrPublishedRevisionRequired):
+		message = commoni18n.T(c, sysi18n.MsgPublishedRevisionRequired)
+		useGenericMessage = false
+	case errors.Is(err, service.ErrPlatformCodeSetImmutable):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgPlatformCodeSetImmutable)
+		useGenericMessage = false
 	case errors.Is(err, repository.ErrVersionConflict):
 		status = http.StatusConflict
 		message = commoni18n.T(c, sysi18n.MsgVersionConflict)

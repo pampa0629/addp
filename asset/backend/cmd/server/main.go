@@ -29,7 +29,7 @@ import (
 
 // @title ADDP Asset API
 // @version 1.0
-// @description ADDP 资产目录、发布、申请、授权和评价 API | ADDP asset catalog, publishing, application, authorization and rating API
+// @description ADDP 资产目录、发布、申请、授权和评价 API | ADDP asset directory, publishing, application, authorization and rating API
 // @BasePath /api/v1/asset
 // @securityDefinitions.apikey BearerAuth
 // @in header

@@ -239,12 +239,29 @@ const docTemplate = `{
                     "Asset"
                 ],
                 "summary": "获取资产列表 | List assets",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "直接归属的资产分类 ID；-1 表示未分类 | Directly assigned asset category ID; -1 means uncategorized",
+                        "name": "category_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "无效的资产分类 ID | Invalid asset category ID",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 },
@@ -956,6 +973,24 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -1048,6 +1083,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "完整更新名称、父目录、说明和排序；parent_id 为 null 时移动到根目录 | Fully updates name, parent, description, and sort order; null parent_id moves the category to the root",
                 "consumes": [
                     "application/json"
                 ],
@@ -1057,7 +1093,7 @@ const docTemplate = `{
                 "tags": [
                     "Asset Category"
                 ],
-                "summary": "更新资产分类 | Update asset category",
+                "summary": "完整更新资产目录节点 | Fully update an asset category",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1082,6 +1118,15 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "404": {
@@ -1220,12 +1265,38 @@ const docTemplate = `{
                     "Asset Consumer"
                 ],
                 "summary": "浏览已上架资产 | Browse published assets",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "资产目录节点 ID；返回该节点及全部后代节点中的已上架资产 | Asset directory node ID; returns published assets in the node subtree",
+                        "name": "category_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "无效的资产目录节点 ID | Invalid asset directory node ID",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "资产目录节点不存在 | Asset directory node not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 },
@@ -1502,6 +1573,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "仅返回包含已上架资产的目录分支，count 为当前节点整棵子树的已上架资产数 | Returns only branches containing published assets; count is the published asset total for the entire subtree",
                 "produces": [
                     "application/json"
                 ],
@@ -1980,6 +2052,10 @@ const docTemplate = `{
         "github_com_addp_asset_internal_service.UpdateAssetCategoryRequest": {
             "type": "object",
             "required": [
+                "description",
+                "name",
+                "parent_id",
+                "sort_order",
                 "version"
             ],
             "properties": {
@@ -1989,8 +2065,13 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "parent_id": {
+                    "type": "integer",
+                    "x-nullable": true
+                },
                 "sort_order": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0
                 },
                 "version": {
                     "type": "integer",
@@ -2099,7 +2180,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/api/v1/asset",
 	Schemes:          []string{},
 	Title:            "ADDP Asset API",
-	Description:      "ADDP 资产目录、发布、申请、授权和评价 API | ADDP asset catalog, publishing, application, authorization and rating API",
+	Description:      "ADDP 资产目录、发布、申请、授权和评价 API | ADDP asset directory, publishing, application, authorization and rating API",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

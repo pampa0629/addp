@@ -1,651 +1,110 @@
 <template>
-  <div class="element-detail" v-loading="loading">
+  <div class="page-shell" v-loading="loading">
     <div class="page-header">
-      <div class="header-left">
-        <el-button :icon="ArrowLeft" @click="goBack">{{ $t('standard.common.back') }}</el-button>
-        <h2>{{ $t('standard.element.detailTitle') }}</h2>
-        <el-tag :type="statusType(element.status)" size="small" v-if="element.status">
-          {{ statusLabel(element.status) }}
-        </el-tag>
-        <el-tag v-if="isDirty" type="warning" size="small">{{ $t('standard.common.unsaved') }}</el-tag>
-      </div>
-      <div class="header-right">
-        <el-button v-if="canUpdate" type="primary" @click="saveChanges" :loading="saving">{{ $t('standard.common.save') }}</el-button>
-        <el-button v-if="canApprove && element.status === 'draft'" type="success" @click="handleApprove" :loading="isActionLocked(actionKey)" :disabled="saving">{{ $t('standard.common.approve') }}</el-button>
+      <div class="header-left"><el-button :icon="ArrowLeft" @click="goBack">{{ $t('standard.common.back') }}</el-button><h2>{{ revision.name || element.code || $t('standard.element.detailTitle') }}</h2><el-tag v-if="revision.status" :type="statusType(revision.status)">R{{ revision.revision_no }} · {{ statusLabel(revision.status) }}</el-tag></div>
+      <div class="actions">
+        <el-button v-if="editable" type="primary" :loading="saving" @click="save">{{ $t('standard.common.save') }}</el-button>
+        <el-button v-if="editable" type="warning" @click="act('submit')">{{ $t('standard.revision.submit') }}</el-button>
+        <el-button v-if="reviewing && canPublish" @click="act('return')">{{ $t('standard.revision.return') }}</el-button>
+        <el-button v-if="reviewing && canPublish" type="success" @click="act('publish')">{{ $t('standard.revision.publish') }}</el-button>
+        <el-button v-if="!element.draft_revision && element.current_revision && canUpdate" @click="newDraft">{{ $t('standard.revision.newDraft') }}</el-button>
+        <el-button v-if="revision.status === 'published' && canPublish" type="danger" @click="act('withdraw')">{{ $t('standard.revision.withdraw') }}</el-button>
       </div>
     </div>
 
-    <el-row :gutter="20">
+    <el-row :gutter="16">
       <el-col :span="16">
-        <!-- 基本信息 -->
-        <el-card class="section-card">
-          <template #header><h3>{{ $t('standard.element.basicInfo') }}</h3></template>
-          <el-form :model="element" label-width="120px" size="default" :disabled="!canUpdate">
-            <el-row :gutter="20">
-              <el-col :span="12">
-                <el-form-item :label="$t('standard.element.nameLabel')">
-                  <el-input v-model="element.name" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="12">
-                <el-form-item :label="$t('standard.element.codeLabel')">
-                  <el-input v-model="element.code" disabled />
-                </el-form-item>
-              </el-col>
+        <el-card shadow="never" class="section"><template #header>{{ $t('standard.element.basicInfo') }}</template>
+          <el-form :model="revision" label-width="130px" :disabled="!editable">
+            <el-row :gutter="16">
+              <el-col :span="12"><el-form-item :label="$t('standard.element.codeLabel')"><el-input :model-value="element.code" disabled /></el-form-item></el-col>
+              <el-col :span="12"><el-form-item :label="$t('standard.element.nameLabel')"><el-input v-model="revision.name" /></el-form-item></el-col>
+              <el-col :span="12"><el-form-item :label="$t('standard.glossary.domainLabel')"><el-select v-model="element.domain_id" clearable style="width:100%"><el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" /></el-select></el-form-item></el-col>
+              <el-col :span="12"><el-form-item :label="$t('standard.element.dataTypeLabel')"><el-select v-model="revision.data_type" style="width:100%"><el-option v-for="type in dataTypes" :key="type" :label="type" :value="type" /></el-select></el-form-item></el-col>
+              <el-col :span="12"><el-form-item :label="$t('standard.element.lengthLabel')"><el-input-number v-model="revision.length" :min="1" style="width:100%" /></el-form-item></el-col>
+              <el-col :span="12"><el-form-item :label="$t('standard.element.nullableLabel')"><el-switch v-model="revision.nullable" /></el-form-item></el-col>
+              <el-col :span="12"><el-form-item :label="$t('standard.element.unitLabel')"><el-select v-model="revision.unit_id" clearable filterable style="width:100%"><el-option v-for="u in units" :key="u.id" :label="`${u.name} (${u.symbol})`" :value="u.id" /></el-select></el-form-item></el-col>
+              <el-col :span="12"><el-form-item :label="$t('standard.element.classificationLabel')"><el-tree-select v-model="revision.classification_id" :data="classificationTree" :props="{ label:'name', value:'id', children:'children' }" clearable style="width:100%" /></el-form-item></el-col>
             </el-row>
-            <el-row :gutter="20">
-              <el-col :span="12">
-                <el-form-item :label="$t('standard.element.dataTypeLabel')">
-                  <el-select v-model="element.data_type" style="width: 100%">
-                    <el-option :label="$t('standard.element.dataTypeString')" value="string" />
-                    <el-option :label="$t('standard.element.dataTypeInt')" value="int" />
-                    <el-option :label="$t('standard.element.dataTypeFloat')" value="float" />
-                    <el-option :label="$t('standard.element.dataTypeDate')" value="date" />
-                    <el-option :label="$t('standard.element.dataTypeBool')" value="bool" />
-                    <el-option :label="$t('standard.element.dataTypeJson')" value="json" />
-                  </el-select>
-                </el-form-item>
-              </el-col>
-              <el-col :span="12">
-                <el-form-item :label="$t('standard.element.lengthLabel')">
-                  <el-input-number v-model="element.length" :min="1" style="width: 100%" />
-                </el-form-item>
-              </el-col>
-            </el-row>
-            <el-row :gutter="20">
-              <el-col :span="12">
-                <el-form-item :label="$t('standard.element.nullableLabel')">
-                  <el-switch v-model="element.nullable" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="12">
-                <el-form-item :label="$t('standard.glossary.domainLabel')">
-                  <el-select v-model="element.domain_id" filterable :placeholder="$t('standard.common.domainOptional')" style="width: 100%">
-                    <el-option v-for="domain in domainList" :key="domain.id" :label="domain.name" :value="domain.id" />
-                  </el-select>
-                </el-form-item>
-              </el-col>
-            </el-row>
-            <el-row :gutter="20">
-              <el-col :span="12">
-                <el-form-item :label="$t('standard.element.unitLabel')">
-                  <el-select v-model="element.unit_id" clearable filterable :placeholder="$t('standard.element.selectUnit')" style="width:100%">
-                    <el-option-group v-for="cat in unitsByCategory" :key="cat.id" :label="cat.name">
-                      <el-option v-for="u in cat.units" :key="u.id" :label="`${u.name}（${u.symbol}）`" :value="u.id" />
-                    </el-option-group>
-                  </el-select>
-                </el-form-item>
-              </el-col>
-            </el-row>
-            <el-row :gutter="20">
-              <el-col :span="12">
-                <el-form-item :label="$t('standard.element.securityLevelLabel')">
-                  <el-select v-model="element.security_level" clearable :placeholder="$t('standard.element.selectSecurityLevel')" style="width:100%">
-                    <el-option v-for="g in gradingLevels" :key="g.level" :label="`${g.level} ${g.name}`" :value="g.level" />
-                  </el-select>
-                </el-form-item>
-              </el-col>
-              <el-col :span="12">
-                <el-form-item :label="$t('standard.element.classificationLabel')">
-                  <el-tree-select
-                    v-model="element.classification_id"
-                    :data="classificationTree"
-                    :props="{ label: 'name', value: 'id', children: 'children' }"
-                    clearable :placeholder="$t('standard.element.selectClassification')" style="width:100%"
-                  />
-                </el-form-item>
-              </el-col>
-            </el-row>
-            <el-form-item :label="$t('standard.element.codeSetLabel')">
-              <el-select v-model="element.code_set_id" clearable filterable style="width: 100%" @change="handleCodeSetChange">
-                <el-option
-                  v-for="cs in codeSets"
-                  :key="cs.id"
-                  :label="`${cs.name} (${cs.code})`"
-                  :value="cs.id"
-                />
-              </el-select>
-            </el-form-item>
-            <el-form-item :label="$t('standard.element.defaultValueLabel')">
-              <el-input v-model="element.default_value" />
-            </el-form-item>
-            <el-form-item :label="$t('standard.element.definitionLabel')">
-              <el-input v-model="element.definition" type="textarea" :rows="3" />
-            </el-form-item>
-            <el-form-item :label="$t('standard.element.exampleValuesLabel')">
-              <el-select
-                v-model="element.example_values"
-                multiple
-                filterable
-                allow-create
-                default-first-option
-                :placeholder="$t('standard.element.exampleValuesPlaceholder')"
-                style="width: 100%"
-              />
-            </el-form-item>
+            <el-form-item :label="$t('standard.element.definitionLabel')"><el-input v-model="revision.definition" type="textarea" :rows="3" /></el-form-item>
+            <el-form-item :label="$t('standard.element.formatLabel')"><el-input v-model="revision.format" /></el-form-item>
+            <el-form-item :label="$t('standard.element.defaultValueLabel')"><el-input v-model="revision.default_value" /></el-form-item>
+            <el-form-item :label="$t('standard.element.exampleValuesLabel')"><el-select v-model="revision.example_values" multiple filterable allow-create style="width:100%" /></el-form-item>
+            <el-form-item :label="$t('standard.revision.changeSummary')"><el-input v-model="revision.change_summary" type="textarea" :rows="2" /></el-form-item>
           </el-form>
         </el-card>
 
-        <!-- 质量规则 -->
-        <el-card class="section-card">
-          <template #header>
-            <div class="card-header">
-              <h3><el-icon class="header-icon"><CircleCheck /></el-icon>{{ $t('standard.element.qualityRules') }}</h3>
-              <el-button v-if="canUpdate" size="small" @click="addRule">{{ $t('standard.element.addRule') }}</el-button>
-            </div>
-          </template>
-          <div v-if="!qualityRules || qualityRules.length === 0" class="empty-rules">
-            <el-empty :description="$t('standard.element.noRules')" />
-          </div>
-          <div v-else class="rules-list">
-            <div v-for="(rule, index) in qualityRules" :key="rule.rule_key" class="rule-item">
-              <div class="rule-header">
-                <el-checkbox v-model="rule.enabled">{{ $t('standard.element.ruleEnabled') }}</el-checkbox>
-                <el-select v-model="rule.type" size="small" style="width: 140px" @change="handleRuleTypeChange(rule)">
-                  <el-option :label="$t('standard.element.ruleNotNull')" value="not_null" />
-                  <el-option :label="$t('standard.element.ruleFormat')" value="format" />
-                  <el-option :label="$t('standard.element.ruleLength')" value="length" />
-                  <el-option :label="$t('standard.element.ruleUnique')" value="unique" />
-                  <el-option :label="$t('standard.element.ruleValueRange')" value="value_range" />
-                  <el-option :label="$t('standard.element.ruleAllowedValues')" value="allowed_values" />
-                </el-select>
-                <el-select v-model="rule.severity" size="small" style="width: 100px">
-                  <el-option :label="$t('standard.element.severityError')" value="error" />
-                  <el-option :label="$t('standard.element.severityWarning')" value="warning" />
-                  <el-option :label="$t('standard.element.severityInfo')" value="info" />
-                </el-select>
-                <el-button v-if="canUpdate" link type="danger" @click="removeRule(index)">{{ $t('standard.common.delete') }}</el-button>
-              </div>
-              <el-input
-                v-model="rule.message"
-                :placeholder="$t('standard.element.ruleMessage')"
-                size="small"
-                class="rule-message"
-              />
-              <div v-if="rule.type === 'format'" class="rule-params">
-                <el-input
-                  v-model="rule.params.pattern"
-                  :placeholder="$t('standard.element.ruleFormatPlaceholder')"
-                  size="small"
-                />
-              </div>
-              <div v-if="rule.type === 'length'" class="rule-params">
-                <el-row :gutter="10">
-                  <el-col :span="12">
-                    <el-input-number v-model="rule.params.min" :placeholder="$t('standard.element.ruleLengthMin')" size="small" style="width: 100%" />
-                  </el-col>
-                  <el-col :span="12">
-                    <el-input-number v-model="rule.params.max" :placeholder="$t('standard.element.ruleLengthMax')" size="small" style="width: 100%" />
-                  </el-col>
-                </el-row>
-              </div>
-              <div v-if="rule.type === 'value_range'" class="rule-params">
-                <el-row :gutter="10" style="margin-top: 8px">
-                  <el-col :span="12">
-                    <el-input-number v-model="rule.params.min" :placeholder="$t('standard.element.ruleMinPlaceholder')" size="small" style="width: 100%" />
-                  </el-col>
-                  <el-col :span="12">
-                    <el-input-number v-model="rule.params.max" :placeholder="$t('standard.element.ruleMaxPlaceholder')" size="small" style="width: 100%" />
-                  </el-col>
-                </el-row>
-              </div>
-              <div v-if="rule.type === 'allowed_values'" class="rule-params">
-                <el-select
-                  v-model="rule.params.values"
-                  multiple
-                  filterable
-                  allow-create
-                  default-first-option
-                  :placeholder="$t('standard.element.ruleEnumPlaceholder')"
-                  size="small"
-                  style="width: 100%"
-                />
-              </div>
-            </div>
-          </div>
+        <el-card shadow="never" class="section"><template #header>{{ $t('standard.element.valueDomain') }}</template>
+          <el-form :model="revision" label-width="130px" :disabled="!editable">
+            <el-form-item :label="$t('standard.element.valueDomainKind')"><el-radio-group v-model="revision.value_domain_kind" @change="resetValueDomain"><el-radio-button value="unrestricted">{{ $t('standard.element.unrestricted') }}</el-radio-button><el-radio-button value="range">{{ $t('standard.element.range') }}</el-radio-button><el-radio-button value="enumeration">{{ $t('standard.element.enumeration') }}</el-radio-button></el-radio-group></el-form-item>
+            <template v-if="revision.value_domain_kind === 'range'">
+              <el-row :gutter="16"><el-col :span="12"><el-form-item :label="$t('standard.element.rangeMin')"><el-input-number v-model="revision.range_constraint.min" style="width:100%" /></el-form-item></el-col><el-col :span="12"><el-form-item :label="$t('standard.element.rangeMax')"><el-input-number v-model="revision.range_constraint.max" style="width:100%" /></el-form-item></el-col></el-row>
+              <el-row :gutter="16"><el-col :span="12"><el-form-item :label="$t('standard.element.minInclusive')"><el-switch v-model="revision.range_constraint.min_inclusive" /></el-form-item></el-col><el-col :span="12"><el-form-item :label="$t('standard.element.maxInclusive')"><el-switch v-model="revision.range_constraint.max_inclusive" /></el-form-item></el-col></el-row>
+            </template>
+            <el-form-item v-if="revision.value_domain_kind === 'enumeration'" :label="$t('standard.element.codeSetLabel')"><el-select v-model="revision.code_set_revision_id" filterable style="width:100%"><el-option v-for="cs in publishedCodeSets" :key="cs.current_revision.id" :label="`${cs.current_revision.name} (${cs.code}) · R${cs.current_revision.revision_no}`" :value="cs.current_revision.id" /></el-select></el-form-item>
+          </el-form>
         </el-card>
 
-        <!-- 关联的码值项（只读展示） -->
-        <el-card class="section-card" v-if="element.code_set_id">
-          <template #header><h3><el-icon class="header-icon"><List /></el-icon>{{ $t('standard.element.codeItems') }}</h3></template>
-          <el-table :data="codeItems" v-loading="codeItemsLoading" size="small" max-height="300">
-            <el-table-column :label="$t('standard.common.code')" prop="code" width="120" />
-            <el-table-column :label="$t('standard.codeSet.itemValue')" prop="value" min-width="140" />
-            <el-table-column :label="$t('standard.common.description')" prop="description" show-overflow-tooltip />
-          </el-table>
+        <el-card shadow="never" class="section"><template #header>{{ $t('standard.element.qualityRules') }}</template>
+          <el-alert :title="$t('standard.element.compiledRuleHint')" type="info" :closable="false" />
+          <el-checkbox v-model="uniqueEnabled" :disabled="!editable" class="unique-rule">{{ $t('standard.element.ruleUnique') }}</el-checkbox>
         </el-card>
-
-        <!-- 关联文档 -->
         <DocumentPanel v-if="element.id" entity-type="element" :entity-id="element.id" v-model:entity-version="element.version" />
       </el-col>
 
       <el-col :span="8">
-        <!-- 元数据信息 -->
-        <el-card class="section-card">
-          <template #header><h3>{{ $t('standard.common.metadata') }}</h3></template>
-          <el-descriptions :column="1" size="small">
-            <el-descriptions-item :label="$t('standard.common.id')">{{ element.id }}</el-descriptions-item>
-            <el-descriptions-item :label="$t('standard.common.createdAt')">{{ formatTime(element.created_at) }}</el-descriptions-item>
-            <el-descriptions-item :label="$t('standard.common.updatedAt')">{{ formatTime(element.updated_at) }}</el-descriptions-item>
-          </el-descriptions>
+        <el-card shadow="never" class="section"><template #header>{{ $t('standard.revision.history') }}</template>
+          <el-timeline><el-timeline-item v-for="item in revisions" :key="item.id" :timestamp="formatTime(item.created_at)"><div class="history-row"><el-link @click="selectRevision(item)">R{{ item.revision_no }} · {{ item.name }}</el-link><el-tag size="small" :type="statusType(item.status)">{{ statusLabel(item.status) }}</el-tag></div><small>{{ item.change_summary }}</small></el-timeline-item></el-timeline>
         </el-card>
-
-        <!-- 关联的业务术语（只读） -->
-        <el-card class="section-card">
-          <template #header><h3>{{ $t('standard.element.relatedGlossaries') }}</h3></template>
-          <div v-if="relatedGlossaries.length === 0" style="color: var(--el-text-color-secondary); font-size: 13px; padding: 8px 0;">
-            {{ $t('standard.element.noGlossaries') }}
-          </div>
-          <div v-else class="glossary-list">
-            <div
-              v-for="g in relatedGlossaries"
-              :key="g.id"
-              class="glossary-item"
-              @click="goToGlossary(g.id)"
-            >
-              <div class="glossary-name">{{ g.name }}</div>
-              <div class="glossary-def">{{ g.definition }}</div>
-              <el-tag size="small" :type="statusType(g.status)" style="margin-top: 4px">{{ statusLabel(g.status) }}</el-tag>
-            </div>
-          </div>
-        </el-card>
+        <el-card shadow="never" class="section"><template #header>{{ $t('standard.common.metadata') }}</template><el-descriptions :column="1"><el-descriptions-item :label="$t('standard.common.id')">{{ element.id }}</el-descriptions-item><el-descriptions-item :label="$t('standard.element.codeLabel')">{{ element.code }}</el-descriptions-item><el-descriptions-item :label="$t('standard.common.createdAt')">{{ formatTime(element.created_at) }}</el-descriptions-item></el-descriptions></el-card>
       </el-col>
     </el-row>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { useConsolePageDescriptor } from '@common-ui'
+import { computed, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, CircleCheck, List } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { domainAPI, elementAPI, codeSetAPI, glossaryAPI, unitAPI, classificationAPI, gradingLevelAPI } from '../api/standard'
+import { ArrowLeft } from '@element-plus/icons-vue'
+import { useConsolePageDescriptor } from '@common-ui'
+import { classificationAPI, codeSetAPI, domainAPI, elementAPI, unitAPI } from '../api/standard'
 import DocumentPanel from '../components/DocumentPanel.vue'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
+import { useStandardPermissions } from '../composables/useStandardPermissions'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 import { formatStandardDateTime } from '../utils/dateTime'
-import { useStandardPermissions } from '../composables/useStandardPermissions'
-import { useActionLock } from '../composables/useActionLock'
-import { useUnsavedChanges } from '../composables/useUnsavedChanges'
 
-const router = useRouter()
-const route = useRoute()
+const route = useRoute(), router = useRouter()
 const { t, locale } = useI18n()
-const { canUpdate, canApprove } = useStandardPermissions('element')
-const { isLocked: isActionLocked, runLocked } = useActionLock()
-const loading = ref(false)
-const saving = ref(false)
-const actionKey = computed(() => `element:${route.params.id}`)
-const element = ref({})
-useConsolePageDescriptor(router, 'standard', {
-  title: computed(() => t('standard.element.recentVisitTitle')),
-  subject: computed(() => element.value?.name || ''),
-  ready: computed(() => Boolean(element.value?.name))
-})
-const codeSets = ref([])
-const domainList = ref([])
-const codeItems = ref([])
-const codeItemsLoading = ref(false)
-const relatedGlossaries = ref([])
-const units = ref([])
-const gradingLevels = ref([])
-const classifications = ref([])
-const editableState = computed(() => {
-  const {
-    id,
-    status,
-    created_at,
-    updated_at,
-    created_by,
-    updated_by,
-    ...editable
-  } = element.value
-  return editable
-})
-const { isDirty, markSaved } = useUnsavedChanges({ state: editableState, t })
-
-const unitsByCategory = computed(() => {
-  const map = {}
-  units.value.forEach(u => {
-    const catId = u.category_id || 0
-    const catName = u.category?.name || t('standard.element.other')
-    if (!map[catId]) map[catId] = { id: catId, name: catName, units: [] }
-    map[catId].units.push(u)
-  })
-  return Object.values(map)
-})
-
-const classificationTree = computed(() => buildTree(classifications.value))
-function buildTree(list, parentId = null) {
-  return list.filter(i => (i.parent_id || null) === parentId).map(i => ({ ...i, children: buildTree(list, i.id) }))
-}
-
-const flattenDomains = (nodes) => {
-  const result = []
-  const traverse = (list) => {
-    for (const node of list) {
-      result.push(node)
-      if (node.children) traverse(node.children)
-    }
-  }
-  traverse(nodes)
-  return result
-}
-
-const qualityRules = computed({
-  get() {
-    if (!element.value.quality_rules) return []
-    const qr = element.value.quality_rules
-    if (qr.schema_version === 'addp.quality.rules/v1' && Array.isArray(qr.rules)) return qr.rules
-    return []
-  },
-  set(val) {
-    if (!element.value.quality_rules) {
-      element.value.quality_rules = { schema_version: 'addp.quality.rules/v1', rules: val }
-    } else {
-      element.value.quality_rules.rules = val
-    }
-  }
-})
-
-const statusType = (s) => ({ draft: 'info', approved: 'success', deprecated: 'warning' }[s] || 'info')
-const statusLabel = (s) => ({
-  draft: t('standard.common.draft'),
-  approved: t('standard.common.approved'),
-  deprecated: t('standard.common.deprecated')
-}[s] || s)
-
-const goToGlossary = (id) => {
-  navigateStandardRoute(router, `/glossaries/${id}`)
-}
-
-const formatTime = (time) => {
-  return formatStandardDateTime(time, locale.value)
-}
-
-const goBack = () => navigateStandardRoute(router, { path: '/elements', query: route.query }, { history: 'replace' })
-
-const loadElement = async () => {
-  loading.value = true
-  try {
-    const res = await elementAPI.get(route.params.id)
-    element.value = res || {}
-    if (!element.value.quality_rules) {
-      element.value.quality_rules = { schema_version: 'addp.quality.rules/v1', rules: [] }
-    } else if (element.value.quality_rules.schema_version !== 'addp.quality.rules/v1' || !Array.isArray(element.value.quality_rules.rules)) {
-      throw new Error('invalid quality rules document')
-    }
-    if (element.value.code_set_id) {
-      loadCodeItems(element.value.code_set_id)
-    }
-    markSaved()
-  } catch (e) {
-    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
-    goBack()
-  } finally {
-    loading.value = false
-  }
-}
-
-const loadCodeSets = async () => {
-  try {
-    const res = await codeSetAPI.list({ page_size: 500 })
-    codeSets.value = res.data || []
-  } catch (e) {
-    codeSets.value = []
-  }
-}
-
-const loadDomains = async () => {
-  try {
-    const res = await domainAPI.list()
-    domainList.value = flattenDomains(res || [])
-  } catch (e) {
-    domainList.value = []
-  }
-}
-
-const loadRelatedGlossaries = async () => {
-  try {
-    const res = await glossaryAPI.list({ element_id: route.params.id })
-    relatedGlossaries.value = res || []
-  } catch (e) {
-    relatedGlossaries.value = []
-  }
-}
-
-const loadUnits = async () => {
-  try {
-    const res = await unitAPI.list({ page_size: 500 })
-    units.value = res || []
-  } catch (e) {
-    units.value = []
-  }
-}
-
-const loadGradingLevels = async () => {
-  try {
-    const res = await gradingLevelAPI.list()
-    gradingLevels.value = res || []
-  } catch (e) {
-    gradingLevels.value = []
-  }
-}
-
-const loadClassifications = async () => {
-  try {
-    const res = await classificationAPI.list()
-    classifications.value = res || []
-  } catch (e) {
-    classifications.value = []
-  }
-}
-
-const loadCodeItems = async (codeSetId) => {
-  if (!codeSetId) {
-    codeItems.value = []
-    return
-  }
-  codeItemsLoading.value = true
-  try {
-    const res = await codeSetAPI.getItems(codeSetId)
-    codeItems.value = res || []
-  } catch (e) {
-    codeItems.value = []
-  } finally {
-    codeItemsLoading.value = false
-  }
-}
-
-const handleCodeSetChange = (codeSetId) => {
-  loadCodeItems(codeSetId)
-}
-
-const addRule = () => {
-  const newRule = {
-    rule_key: globalThis.crypto.randomUUID(),
-    type: 'not_null',
-    enabled: true,
-    severity: 'error',
-    message: '',
-    params: {}
-  }
-  qualityRules.value = [...qualityRules.value, newRule]
-}
-
-const removeRule = (index) => {
-  qualityRules.value = qualityRules.value.filter((_, i) => i !== index)
-}
-
-const handleRuleTypeChange = (rule) => {
-  rule.params = {}
-}
-
-const saveChanges = async () => {
-  if (saving.value) return
-  saving.value = true
-  try {
-    await elementAPI.update(route.params.id, element.value)
-    ElMessage.success(t('standard.common.saveSuccess'))
-    await loadElement()
-  } catch (e) {
-    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.saveFailed'))
-  } finally {
-    saving.value = false
-  }
-}
-
-const handleApprove = async () => {
-  if (isDirty.value) {
-    ElMessage.warning(t('standard.common.saveBeforeAction'))
-    return
-  }
-  await runLocked(actionKey.value, async () => {
-    try {
-      await ElMessageBox.confirm(t('standard.element.confirmApprove'), t('standard.common.hint'), { type: 'info' })
-      await elementAPI.approve(route.params.id, element.value.version)
-      ElMessage.success(t('standard.common.approveSuccess'))
-      await loadElement()
-    } catch (e) {
-      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.approveFailed'))
-    }
-  })
-}
-
-watch(() => route.params.id, () => {
-  loadElement()
-  loadRelatedGlossaries()
-}, { immediate: true })
-
-onMounted(() => {
-  loadDomains()
-  loadCodeSets()
-  loadUnits()
-  loadGradingLevels()
-  loadClassifications()
-})
+const { canUpdate, canPublish } = useStandardPermissions('element')
+const loading = ref(false), saving = ref(false), element = ref({}), revisions = ref([]), domains = ref([]), units = ref([]), classifications = ref([]), publishedCodeSets = ref([])
+const revision = reactive({}), uniqueEnabled = ref(false)
+const dataTypes = ['string', 'text', 'int', 'bigint', 'float', 'decimal', 'date', 'datetime', 'bool', 'json']
+const editable = computed(() => canUpdate.value && revision.status === 'draft' && element.value.draft_revision_id === revision.id)
+const reviewing = computed(() => revision.status === 'in_review' && element.value.draft_revision_id === revision.id)
+const classificationTree = computed(() => tree(classifications.value))
+useConsolePageDescriptor(router, 'standard', { title: computed(() => t('standard.element.recentVisitTitle')), subject: computed(() => revision.name || element.value.code || ''), ready: computed(() => Boolean(element.value.id)) })
+function tree(list, parent = null) { return list.filter(x => (x.parent_id || null) === parent).map(x => ({ ...x, children: tree(list, x.id) })) }
+const flatten = nodes => nodes.flatMap(node => [node, ...flatten(node.children || [])])
+const statusLabel = s => s ? t(`standard.revision.status.${s}`) : '-'
+const statusType = s => ({ draft:'info', in_review:'warning', published:'success', superseded:'', withdrawn:'danger' }[s] || 'info')
+const formatTime = value => formatStandardDateTime(value, locale.value)
+const extraRules = enabled => ({ schema_version:'addp.quality.rules/v1', rules: enabled ? [{ rule_key: crypto.randomUUID(), type:'unique', enabled:true, severity:'error', message:'', params:{} }] : [] })
+const setRevision = value => { Object.keys(revision).forEach(k => delete revision[k]); Object.assign(revision, structuredClone(value || {})); revision.example_values ||= []; revision.value_domain_kind ||= 'unrestricted'; if (revision.value_domain_kind === 'range') revision.range_constraint ||= { min:null, max:null, min_inclusive:true, max_inclusive:true }; uniqueEnabled.value = Boolean(revision.extra_quality_rules?.rules?.some(r => r.type === 'unique' && r.enabled)) }
+const load = async () => { loading.value = true; try { const [aggregate, history] = await Promise.all([elementAPI.get(route.params.id), elementAPI.listRevisions(route.params.id)]); element.value = aggregate; revisions.value = history || []; setRevision(aggregate.draft_revision || aggregate.current_revision || history?.[0]) } catch (e) { ElMessage.error(getStandardErrorMessage(e,t,'standard.common.loadFailed')); goBack() } finally { loading.value = false } }
+const loadOptions = async () => { const [d,u,c,cs] = await Promise.allSettled([domainAPI.list(), unitAPI.list({page_size:500}), classificationAPI.list(), codeSetAPI.list({status:'published',page_size:500})]); domains.value = d.status === 'fulfilled' ? flatten(d.value || []) : []; units.value = u.status === 'fulfilled' ? u.value || [] : []; classifications.value = c.status === 'fulfilled' ? c.value || [] : []; publishedCodeSets.value = cs.status === 'fulfilled' ? (cs.value.data || []).filter(x => x.current_revision) : [] }
+const revisionPayload = version => ({ version, name:revision.name, definition:revision.definition, data_type:revision.data_type, length:revision.length || null, precision_num:revision.precision_num || null, scale:revision.scale ?? null, nullable:Boolean(revision.nullable), default_value:revision.default_value || '', format:revision.format || '', value_domain_kind:revision.value_domain_kind, range_constraint:revision.value_domain_kind === 'range' ? revision.range_constraint : null, code_set_revision_id:revision.value_domain_kind === 'enumeration' ? revision.code_set_revision_id : null, unit_id:revision.unit_id || null, security_level:revision.security_level || '', classification_id:revision.classification_id || null, example_values:revision.example_values || [], extra_quality_rules:extraRules(uniqueEnabled.value), change_summary:revision.change_summary, effective_from:revision.effective_from || null, effective_to:revision.effective_to || null })
+const save = async () => { saving.value = true; try { const identity = await elementAPI.update(element.value.id, { version:element.value.version, domain_id:element.value.domain_id || null, steward_id:element.value.steward_id || null, tags:element.value.tags || [] }); const aggregate = await elementAPI.updateRevision(element.value.id, revision.id, revisionPayload(identity.version)); element.value = aggregate; setRevision(aggregate.draft_revision); ElMessage.success(t('standard.common.saveSuccess')); await load() } catch (e) { ElMessage.error(getStandardErrorMessage(e,t,'standard.common.saveFailed')) } finally { saving.value = false } }
+const resetValueDomain = kind => { revision.range_constraint = kind === 'range' ? { min:null, max:null, min_inclusive:true, max_inclusive:true } : null; revision.code_set_revision_id = null }
+const act = async action => { try { await ElMessageBox.confirm(t(`standard.revision.confirm.${action}`), t('standard.common.hint')); const method = { submit:'submitRevision', return:'returnRevision', publish:'publishRevision', withdraw:'withdrawRevision' }[action]; element.value = await elementAPI[method](element.value.id, revision.id, element.value.version); ElMessage.success(t('standard.common.updateSuccess')); await load() } catch (e) { if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e,t)) } }
+const newDraft = async () => { try { const { value } = await ElMessageBox.prompt(t('standard.revision.changeSummary'), t('standard.revision.newDraft'), { inputPattern:/\S+/, inputErrorMessage:t('standard.revision.changeSummaryRequired') }); element.value = await elementAPI.createRevision(element.value.id, { version:element.value.version, change_summary:value.trim() }); await load() } catch (e) { if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e,t)) } }
+const selectRevision = item => setRevision(item)
+const goBack = () => navigateStandardRoute(router, '/elements', { history:'replace' })
+watch(() => route.params.id, () => { load(); loadOptions() }, { immediate:true })
 </script>
 
 <style scoped>
-.element-detail {
-  padding: 20px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.header-left h2 {
-  margin: 0;
-  font-size: 18px;
-  color: var(--el-text-color-primary);
-}
-
-.section-card {
-  margin-bottom: 20px;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.card-header h3 {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 15px;
-  color: var(--el-text-color-primary);
-}
-
-.header-icon {
-  color: var(--el-color-primary);
-}
-
-.empty-rules {
-  padding: 40px 0;
-}
-
-.rules-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.rule-item {
-  padding: 12px;
-  background: var(--el-fill-color-light);
-  border-radius: 4px;
-  border: 1px solid var(--el-border-color);
-}
-
-.rule-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-
-.rule-message {
-  margin-bottom: 8px;
-}
-
-.rule-params {
-  margin-top: 8px;
-}
-
-.glossary-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.glossary-item {
-  padding: 8px 10px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: border-color 0.2s;
-}
-
-.glossary-item:hover {
-  border-color: var(--el-color-primary);
-}
-
-.glossary-name {
-  font-weight: 500;
-  font-size: 14px;
-  color: var(--el-color-primary);
-}
-
-.glossary-def {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-@media (max-width: 768px) {
-  .element-detail { padding: 12px; }
-  .page-header { align-items: flex-start; flex-wrap: wrap; gap: 10px; }
-  .header-left, .header-right { flex-wrap: wrap; }
-  .element-detail :deep(.el-row) { margin-left: 0 !important; margin-right: 0 !important; }
-  .element-detail :deep(.el-col) { max-width: 100%; flex: 0 0 100%; }
-  .element-detail :deep(.el-col + .el-col) { margin-top: 12px; }
-}
+.page-shell{min-height:100%;padding:20px;background:var(--addp-bg-secondary);color:var(--addp-text-primary)}.page-header,.header-left,.actions,.history-row{display:flex;align-items:center}.page-header{justify-content:space-between;gap:16px;margin-bottom:16px}.header-left,.actions{gap:10px;flex-wrap:wrap}.section{margin-bottom:16px}.unique-rule{margin-top:16px}.history-row{justify-content:space-between;gap:8px}.page-shell :deep(.el-card){background:var(--addp-bg-primary);border-color:var(--addp-border-color)}h2{margin:0;font-size:20px}
 </style>

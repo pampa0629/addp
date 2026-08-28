@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -11,277 +12,406 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type CodeSetHandler struct {
-	codeSetService *service.CodeSetService
-}
+type CodeSetHandler struct{ svc *service.CodeSetService }
 
-func NewCodeSetHandler(codeSetService *service.CodeSetService) *CodeSetHandler {
-	return &CodeSetHandler{codeSetService: codeSetService}
-}
+func NewCodeSetHandler(svc *service.CodeSetService) *CodeSetHandler { return &CodeSetHandler{svc: svc} }
 
-// ListCodeSets 获取码值集列表
+// ListCodeSets godoc
 // @Summary 获取码值集列表 | List code sets
 // @Tags Standard
 // @Produce json
+// @Param domain_id query int false "归属业务域 ID | Owning domain ID"
+// @Param status query string false "修订状态 | Revision status"
+// @Param keyword query string false "关键字 | Keyword"
 // @Success 200 {object} models.PaginatedCodeSetResponse
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.read"]
 // @Router /code-sets [get]
 // @Security BearerAuth
 func (h *CodeSetHandler) ListCodeSets(c *gin.Context) {
-	tenantID := c.GetInt64("tenant_id")
-
-	keyword := c.Query("keyword")
-	codeSetType := c.Query("type")
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-
-	codeSets, total, err := h.codeSetService.ListCodeSets(tenantID, keyword, codeSetType, page, pageSize)
+	var domainID *int64
+	if raw := c.Query("domain_id"); raw != "" {
+		value, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || value <= 0 {
+			respondError(c, http.StatusBadRequest, fmt.Errorf("invalid domain_id"))
+			return
+		}
+		domainID = &value
+	}
+	items, total, err := h.svc.ListCodeSets(getTenantID(c), domainID, c.Query("keyword"), c.Query("status"), page, pageSize)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-
 	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
 	if totalPages < 1 {
 		totalPages = 1
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"data":        codeSets,
-		"total":       total,
-		"page":        page,
-		"page_size":   pageSize,
-		"total_pages": totalPages,
-	})
+	c.JSON(http.StatusOK, gin.H{"data": items, "total": total, "page": page, "page_size": pageSize, "total_pages": totalPages})
 }
 
-// CreateCodeSet 创建码值集
-// @Summary 创建码值集 | Create code set
+// CreateCodeSet godoc
+// @Summary 创建码值集及首个草稿修订 | Create code set with initial draft revision
 // @Tags Standard
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Param request body models.CreateCodeSetRequest true "码值集和首个草稿 | Code set and initial draft"
+// @Success 201 {object} models.CodeSetAggregate
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.create"]
 // @Router /code-sets [post]
 // @Security BearerAuth
 func (h *CodeSetHandler) CreateCodeSet(c *gin.Context) {
-	tenantID := c.GetInt64("tenant_id")
-
 	var req models.CreateCodeSetRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, err)
+	if !bindJSON(c, &req) {
 		return
 	}
-
-	codeSet, err := h.codeSetService.CreateCodeSet(tenantID, &req)
+	result, err := h.svc.CreateCodeSet(getTenantID(c), getUserID(c), &req)
 	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-
-	c.JSON(http.StatusCreated, codeSet)
+	c.JSON(http.StatusCreated, result)
 }
 
-// GetCodeSet 获取码值集详情
-// @Summary 获取码值集详情 | Get code set detail
+// GetCodeSet godoc
+// @Summary 获取码值集聚合 | Get code set aggregate
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Success 200 {object} models.CodeSetAggregate
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.read"]
 // @Router /code-sets/{id} [get]
 // @Security BearerAuth
 func (h *CodeSetHandler) GetCodeSet(c *gin.Context) {
-	tenantID := c.GetInt64("tenant_id")
-	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
-
-	codeSet, err := h.codeSetService.GetCodeSet(id, tenantID)
+	id, ok := elementPathID(c, "id")
+	if !ok {
+		return
+	}
+	result, err := h.svc.GetCodeSet(id, getTenantID(c))
 	if err != nil {
 		respondError(c, http.StatusNotFound, err)
 		return
 	}
-
-	c.JSON(http.StatusOK, codeSet)
+	c.JSON(http.StatusOK, result)
 }
 
-// UpdateCodeSet 更新码值集
-// @Summary 更新码值集 | Update code set
+// UpdateCodeSet godoc
+// @Summary 更新码值集归属信息 | Update code set ownership
 // @Tags Standard
+// @Accept json
 // @Produce json
-// @Param request body models.UpdateCodeSetRequest true "更新码值集 | Update code set"
-// @Success 200 {object} map[string]interface{}
+// @Param request body models.UpdateCodeSetRequest true "归属信息及并发版本 | Ownership and concurrency version"
+// @Success 200 {object} models.CodeSetAggregate
 // @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.update"]
 // @Router /code-sets/{id} [put]
 // @Security BearerAuth
 func (h *CodeSetHandler) UpdateCodeSet(c *gin.Context) {
-	tenantID := c.GetInt64("tenant_id")
-	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
-
-	var req models.UpdateCodeSetRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, err)
+	id, ok := elementPathID(c, "id")
+	if !ok {
 		return
 	}
-
-	codeSet, err := h.codeSetService.UpdateCodeSet(id, tenantID, &req)
+	var req models.UpdateCodeSetRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	result, err := h.svc.UpdateCodeSet(id, getTenantID(c), getUserID(c), &req)
 	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-
-	c.JSON(http.StatusOK, codeSet)
+	c.JSON(http.StatusOK, result)
 }
 
-// DeleteCodeSet 删除码值集
-// @Summary 删除码值集 | Delete code set
+// DeleteCodeSet godoc
+// @Summary 删除码值集稳定身份 | Delete code set identity
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Failure 409 {object} map[string]string
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Success 200 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.delete"]
 // @Router /code-sets/{id} [delete]
 // @Security BearerAuth
 func (h *CodeSetHandler) DeleteCodeSet(c *gin.Context) {
-	tenantID := c.GetInt64("tenant_id")
-	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
-
-	if err := h.codeSetService.DeleteCodeSet(id, tenantID); err != nil {
+	id, ok := elementPathID(c, "id")
+	if !ok {
+		return
+	}
+	if err := h.svc.DeleteCodeSet(id, getTenantID(c)); err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
 }
 
-// GetCodeItems 获取码值项列表
-// @Summary 获取码值项列表 | List code items
+// ListCodeSetRevisions godoc
+// @Summary 获取码值集修订历史 | List code set revisions
 // @Tags Standard
 // @Produce json
-// @Success 200 {array} models.CodeItem
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Success 200 {array} models.CodeSetRevision
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.read"]
-// @Router /code-sets/{id}/items [get]
+// @Router /code-sets/{id}/revisions [get]
 // @Security BearerAuth
-func (h *CodeSetHandler) GetCodeItems(c *gin.Context) {
-	tenantID := c.GetInt64("tenant_id")
-	codeSetID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
-
-	items, err := h.codeSetService.GetCodeItems(codeSetID, tenantID)
+func (h *CodeSetHandler) ListCodeSetRevisions(c *gin.Context) {
+	id, ok := elementPathID(c, "id")
+	if !ok {
+		return
+	}
+	items, err := h.svc.ListRevisions(id, getTenantID(c))
 	if err != nil {
 		respondError(c, http.StatusNotFound, err)
 		return
 	}
-
 	c.JSON(http.StatusOK, items)
 }
 
-// CreateCodeItem 创建码值项
-// @Summary 创建码值项 | Create code item
+// CreateCodeSetRevision godoc
+// @Summary 从最近修订创建新草稿 | Create code set draft from latest revision
 // @Tags Standard
-// @Param request body models.CreateCodeItemRequest true "创建码值项及当前码值集版本 | Create code item with current code-set version"
-// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Param request body models.CreateCodeSetRevisionRequest true "并发版本和变更说明 | Version and change summary"
+// @Success 201 {object} models.CodeSetAggregate
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.update"]
-// @Router /code-sets/{id}/items [post]
+// @Router /code-sets/{id}/revisions [post]
+// @Security BearerAuth
+func (h *CodeSetHandler) CreateCodeSetRevision(c *gin.Context) {
+	id, ok := elementPathID(c, "id")
+	if !ok {
+		return
+	}
+	var req models.CreateCodeSetRevisionRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	result, err := h.svc.CreateRevision(id, getTenantID(c), getUserID(c), &req)
+	if err != nil {
+		respondError(c, http.StatusConflict, err)
+		return
+	}
+	c.JSON(http.StatusCreated, result)
+}
+
+// GetCodeSetRevision godoc
+// @Summary 获取码值集修订 | Get code set revision
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} models.CodeSetRevision
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.code_set.read"]
+// @Router /code-sets/{id}/revisions/{revision_id} [get]
+// @Security BearerAuth
+func (h *CodeSetHandler) GetCodeSetRevision(c *gin.Context) {
+	id, revisionID, ok := elementRevisionPath(c)
+	if !ok {
+		return
+	}
+	result, err := h.svc.GetRevision(id, revisionID, getTenantID(c))
+	if err != nil {
+		respondError(c, http.StatusNotFound, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// UpdateCodeSetRevision godoc
+// @Summary 更新码值集草稿修订 | Update code set draft revision
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.UpdateCodeSetRevisionRequest true "完整草稿及并发版本 | Full draft and concurrency version"
+// @Success 200 {object} models.CodeSetAggregate
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.code_set.update"]
+// @Router /code-sets/{id}/revisions/{revision_id} [put]
+// @Security BearerAuth
+func (h *CodeSetHandler) UpdateCodeSetRevision(c *gin.Context) {
+	id, revisionID, ok := elementRevisionPath(c)
+	if !ok {
+		return
+	}
+	var req models.UpdateCodeSetRevisionRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	result, err := h.svc.UpdateRevision(id, revisionID, getTenantID(c), getUserID(c), &req)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// SubmitCodeSetRevision godoc
+// @Summary 提交码值集修订审核 | Submit code set revision for review
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.RevisionActionRequest true "当前资源版本 | Current resource version"
+// @Success 200 {object} models.CodeSetAggregate
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.code_set.update"]
+// @Router /code-sets/{id}/revisions/{revision_id}/submit [post]
+// @Security BearerAuth
+func (h *CodeSetHandler) SubmitCodeSetRevision(c *gin.Context) {
+	h.revisionAction(c, h.svc.SubmitRevision)
+}
+
+// ReturnCodeSetRevision godoc
+// @Summary 退回码值集修订 | Return code set revision to draft
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.RevisionActionRequest true "当前资源版本 | Current resource version"
+// @Success 200 {object} models.CodeSetAggregate
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.code_set.publish"]
+// @Router /code-sets/{id}/revisions/{revision_id}/return [post]
+// @Security BearerAuth
+func (h *CodeSetHandler) ReturnCodeSetRevision(c *gin.Context) {
+	h.revisionAction(c, h.svc.ReturnRevision)
+}
+
+// PublishCodeSetRevision godoc
+// @Summary 发布码值集修订 | Publish code set revision
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.RevisionActionRequest true "当前资源版本 | Current resource version"
+// @Success 200 {object} models.CodeSetAggregate
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.code_set.publish"]
+// @Router /code-sets/{id}/revisions/{revision_id}/publish [post]
+// @Security BearerAuth
+func (h *CodeSetHandler) PublishCodeSetRevision(c *gin.Context) {
+	h.revisionAction(c, h.svc.PublishRevision)
+}
+
+// WithdrawCodeSetRevision godoc
+// @Summary 撤回码值集发布修订 | Withdraw published code set revision
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.RevisionActionRequest true "当前资源版本 | Current resource version"
+// @Success 200 {object} models.CodeSetAggregate
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.code_set.publish"]
+// @Router /code-sets/{id}/revisions/{revision_id}/withdraw [post]
+// @Security BearerAuth
+func (h *CodeSetHandler) WithdrawCodeSetRevision(c *gin.Context) {
+	h.revisionAction(c, h.svc.WithdrawRevision)
+}
+
+// CreateCodeItem godoc
+// @Summary 创建草稿码值项 | Create draft code item
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.CreateCodeItemRequest true "码值项及并发版本 | Code item and concurrency version"
+// @Success 201 {object} models.CodeItemMutationResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.code_set.update"]
+// @Router /code-sets/{id}/revisions/{revision_id}/items [post]
 // @Security BearerAuth
 func (h *CodeSetHandler) CreateCodeItem(c *gin.Context) {
-	tenantID := c.GetInt64("tenant_id")
-	codeSetID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
-
-	var req models.CreateCodeItemRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, err)
+	id, revisionID, ok := elementRevisionPath(c)
+	if !ok {
 		return
 	}
-
-	item, err := h.codeSetService.CreateCodeItem(codeSetID, tenantID, &req)
+	var req models.CreateCodeItemRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	result, err := h.svc.CreateCodeItem(id, revisionID, getTenantID(c), &req)
 	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-
-	c.JSON(http.StatusCreated, item)
+	c.JSON(http.StatusCreated, result)
 }
 
-// UpdateCodeItem 更新码值项
-// @Summary 更新码值项 | Update code item
+// UpdateCodeItem godoc
+// @Summary 更新草稿码值项 | Update draft code item
 // @Tags Standard
-// @Param request body models.UpdateCodeItemRequest true "更新码值项及当前码值集版本 | Update code item with current code-set version"
-// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Param request body models.UpdateCodeItemRequest true "码值项及并发版本 | Code item and concurrency version"
+// @Success 200 {object} models.CodeItemMutationResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.update"]
-// @Router /code-sets/{id}/items/{iid} [put]
+// @Router /code-sets/{id}/revisions/{revision_id}/items/{item_id} [put]
 // @Security BearerAuth
 func (h *CodeSetHandler) UpdateCodeItem(c *gin.Context) {
-	tenantID := c.GetInt64("tenant_id")
-	codeSetID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
-	itemID, _ := strconv.ParseInt(c.Param("iid"), 10, 64)
-
-	var req models.UpdateCodeItemRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, err)
+	id, revisionID, itemID, ok := codeItemPath(c)
+	if !ok {
 		return
 	}
-
-	item, err := h.codeSetService.UpdateCodeItem(codeSetID, itemID, tenantID, &req)
+	var req models.UpdateCodeItemRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	result, err := h.svc.UpdateCodeItem(id, revisionID, itemID, getTenantID(c), &req)
 	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-
-	c.JSON(http.StatusOK, item)
+	c.JSON(http.StatusOK, result)
 }
 
-// DeleteCodeItem 删除码值项
-// @Summary 删除码值项 | Delete code item
+// DeleteCodeItem godoc
+// @Summary 删除草稿码值项 | Delete draft code item
 // @Tags Standard
-// @Param request body models.VersionRequest true "当前码值集版本 | Current code-set version"
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Failure 409 {object} map[string]string
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Param request body models.RevisionActionRequest true "当前资源版本 | Current resource version"
+// @Success 200 {object} models.ResourceVersionResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.update"]
-// @Router /code-sets/{id}/items/{iid} [delete]
+// @Router /code-sets/{id}/revisions/{revision_id}/items/{item_id} [delete]
 // @Security BearerAuth
 func (h *CodeSetHandler) DeleteCodeItem(c *gin.Context) {
-	tenantID := c.GetInt64("tenant_id")
-	codeSetID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
-	itemID, _ := strconv.ParseInt(c.Param("iid"), 10, 64)
-	var req models.VersionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	id, revisionID, itemID, ok := codeItemPath(c)
+	if !ok {
+		return
+	}
+	var req models.RevisionActionRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	if err := h.svc.DeleteCodeItem(id, revisionID, itemID, getTenantID(c), req.Version); err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-
-	if err := h.codeSetService.DeleteCodeItem(codeSetID, itemID, tenantID, req.Version); err != nil {
-		respondError(c, http.StatusBadRequest, err)
-		return
-	}
-
 	c.JSON(http.StatusOK, models.ResourceVersionResponse{Version: req.Version + 1})
+}
+
+func (h *CodeSetHandler) revisionAction(c *gin.Context, action func(int64, int64, int64, int64, int64) (*models.CodeSetAggregate, error)) {
+	id, revisionID, ok := elementRevisionPath(c)
+	if !ok {
+		return
+	}
+	var req models.RevisionActionRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	result, err := action(id, revisionID, getTenantID(c), getUserID(c), req.Version)
+	if err != nil {
+		respondError(c, http.StatusConflict, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+func codeItemPath(c *gin.Context) (int64, int64, int64, bool) {
+	id, revisionID, ok := elementRevisionPath(c)
+	if !ok {
+		return 0, 0, 0, false
+	}
+	itemID, ok := elementPathID(c, "item_id")
+	return id, revisionID, itemID, ok
 }

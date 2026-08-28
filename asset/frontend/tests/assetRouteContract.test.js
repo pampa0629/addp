@@ -52,7 +52,11 @@ describe('Asset public route contract', () => {
     expect(api).not.toContain('/asset/catalogs')
     expect(api).not.toContain('batch-catalog')
     expect(categoryManagement).toContain('version: form.value.version')
+    expect(categoryManagement).toContain('parent_id: form.value.parent_value === ROOT_CATEGORY_PARENT ? null : form.value.parent_value')
+    expect(categoryManagement).toContain("error_code === 'asset_category_version_conflict'")
+    expect(categoryManagement).toContain('reloadEditBaseline')
     expect(categoryManagement).toContain('categoryAPI.delete(data.id, data.version)')
+    expect(api).not.toContain('/move')
   })
 
   it('presents the category tree as the Asset Directory without reusing Catalog', () => {
@@ -90,6 +94,9 @@ describe('Asset public route contract', () => {
     expect(api).toContain("dashboard: (params = {}) => client.get('/asset/assets/stats/dashboard', { params })")
     expect(dashboard).toContain('dashboardStatsParams(selectedScope.value)')
     expect(dashboard).toContain('requestSequence !== statsRequestSequence')
+    expect(dashboard).toContain("const loadAnnouncementKey = ref('')")
+    expect(dashboard).toContain('t(`asset.dashboard.${loadAnnouncementKey.value}`)')
+    expect(dashboard).not.toContain('loadAnnouncement.value = t(')
     expect(dashboard).toContain('stats.effective_authorized_users')
     expect(dashboard).not.toContain('authorization_active')
     expect(dashboard).not.toMatch(/\sstyle=\"/)

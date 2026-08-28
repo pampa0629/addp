@@ -1,14 +1,21 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
 	"github.com/addp/asset/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-var ErrAssetCategoryVersionConflict = errors.New("AssetCategory version conflict")
+var (
+	ErrAssetCategoryVersionConflict = errors.New("AssetCategory version conflict")
+	ErrAssetCategoryParentNotFound  = errors.New("AssetCategory parent not found")
+	ErrAssetCategoryInvalidParent   = errors.New("AssetCategory parent would create a cycle")
+	ErrAssetCategoryDuplicateName   = errors.New("AssetCategory sibling name conflict")
+)
 
 type CategoryService struct {
 	db *gorm.DB
@@ -28,10 +35,34 @@ type CreateAssetCategoryRequest struct {
 
 // UpdateAssetCategoryRequest 更新目录请求
 type UpdateAssetCategoryRequest struct {
-	Version     int64   `json:"version" binding:"required,min=1"`
-	Name        *string `json:"name"`
-	Description *string `json:"description"`
-	SortOrder   *int    `json:"sort_order"`
+	Version     int64  `json:"version" binding:"required,min=1"`
+	Name        string `json:"name" binding:"required"`
+	ParentID    *int64 `json:"parent_id" validate:"required" extensions:"x-nullable"`
+	Description string `json:"description" validate:"required"`
+	SortOrder   int    `json:"sort_order" binding:"min=0" validate:"required"`
+	complete    bool
+}
+
+func (r *UpdateAssetCategoryRequest) UnmarshalJSON(data []byte) error {
+	type requestAlias UpdateAssetCategoryRequest
+	var decoded requestAlias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	*r = UpdateAssetCategoryRequest(decoded)
+	_, hasParent := fields["parent_id"]
+	_, hasDescription := fields["description"]
+	_, hasSortOrder := fields["sort_order"]
+	r.complete = hasParent && hasDescription && hasSortOrder
+	return nil
+}
+
+func (r *UpdateAssetCategoryRequest) IsComplete() bool {
+	return r.complete
 }
 
 type DeleteAssetCategoryRequest struct {
@@ -73,6 +104,7 @@ func (s *CategoryService) GetTree(tenantID uint) ([]AssetCategoryTreeNode, error
 }
 
 // GetPublishedTree 返回至少包含一个已上架资产的目录及其必要祖先。
+// Count 表示当前目录整棵子树中的已上架资产数，与消费端按子树浏览的语义一致。
 func (s *CategoryService) GetPublishedTree(tenantID uint) ([]AssetCategoryTreeNode, error) {
 	var categories []AssetCategoryWithCount
 	if err := s.db.Table("asset.categories c").
@@ -85,8 +117,31 @@ func (s *CategoryService) GetPublishedTree(tenantID uint) ([]AssetCategoryTreeNo
 		return nil, err
 	}
 
-	tree := buildCategoryTree(categories, nil)
-	return keepPublishedCategoryBranches(tree), nil
+	tree := keepPublishedCategoryBranches(buildCategoryTree(categories, nil))
+	rollUpPublishedAssetCounts(tree)
+	return tree, nil
+}
+
+// SubtreeIDs 返回指定目录及其全部后代目录 ID。不存在或跨租户的根目录返回 not found。
+func (s *CategoryService) SubtreeIDs(tenantID uint, rootID int64) ([]int64, error) {
+	var ids []int64
+	if err := s.db.Raw(`WITH RECURSIVE category_tree AS (
+		SELECT id
+		FROM asset.categories
+		WHERE tenant_id = ? AND id = ?
+		UNION
+		SELECT child.id
+		FROM asset.categories child
+		JOIN category_tree parent ON child.parent_id = parent.id
+		WHERE child.tenant_id = ?
+	)
+	SELECT id FROM category_tree ORDER BY id`, tenantID, rootID, tenantID).Scan(&ids).Error; err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return ids, nil
 }
 
 func keepPublishedCategoryBranches(nodes []AssetCategoryTreeNode) []AssetCategoryTreeNode {
@@ -98,6 +153,15 @@ func keepPublishedCategoryBranches(nodes []AssetCategoryTreeNode) []AssetCategor
 		}
 	}
 	return result
+}
+
+func rollUpPublishedAssetCounts(nodes []AssetCategoryTreeNode) int64 {
+	var total int64
+	for i := range nodes {
+		nodes[i].Count += rollUpPublishedAssetCounts(nodes[i].Children)
+		total += nodes[i].Count
+	}
+	return total
 }
 
 func buildCategoryTree(categories []AssetCategoryWithCount, parentID *int64) []AssetCategoryTreeNode {
@@ -127,112 +191,165 @@ func (s *CategoryService) Get(tenantID uint, id int64) (*models.AssetCategory, e
 	return &category, nil
 }
 
-// checkDuplicateName 检查同级目录下是否已存在同名目录（excludeID 为 0 时不排除任何记录）
-func (s *CategoryService) checkDuplicateName(tenantID uint, parentID *int64, name string, excludeID int64) error {
-	var count int64
-	// IS NOT DISTINCT FROM 是 PostgreSQL 的 NULL-safe 相等比较
-	query := s.db.Model(&models.AssetCategory{}).
-		Where("tenant_id = ? AND name = ? AND parent_id IS NOT DISTINCT FROM ?", tenantID, name, parentID)
-	if excludeID > 0 {
-		query = query.Where("id != ?", excludeID)
-	}
-	if err := query.Count(&count).Error; err != nil {
-		return err
-	}
-	if count > 0 {
-		return fmt.Errorf("同一目录下已存在名称为「%s」的目录", name)
-	}
-	return nil
-}
-
 // Create 创建目录
 func (s *CategoryService) Create(tenantID uint, req *CreateAssetCategoryRequest) (*models.AssetCategory, error) {
-	// 校验父目录存在
-	if req.ParentID != nil {
-		if _, err := s.Get(tenantID, *req.ParentID); err != nil {
-			return nil, fmt.Errorf("父目录不存在")
+	var category models.AssetCategory
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		categories, err := lockTenantCategoryGraph(tx, tenantID)
+		if err != nil {
+			return err
 		}
-	}
-
-	// 同级唯一名称校验
-	if err := s.checkDuplicateName(tenantID, req.ParentID, req.Name, 0); err != nil {
-		return nil, err
-	}
-
-	category := &models.AssetCategory{
-		TenantID:    int64(tenantID),
-		Name:        req.Name,
-		ParentID:    req.ParentID,
-		Description: req.Description,
-		SortOrder:   req.SortOrder,
-	}
-	if err := s.db.Create(category).Error; err != nil {
-		return nil, err
-	}
-	return category, nil
-}
-
-// Update 更新目录
-func (s *CategoryService) Update(tenantID uint, id int64, req *UpdateAssetCategoryRequest) (*models.AssetCategory, error) {
-	category, err := s.Get(tenantID, id)
+		if req.ParentID != nil {
+			if _, found := categoryByID(categories, *req.ParentID); !found {
+				return ErrAssetCategoryParentNotFound
+			}
+		}
+		if categoryNameExists(categories, req.ParentID, req.Name, 0) {
+			return ErrAssetCategoryDuplicateName
+		}
+		category = models.AssetCategory{
+			TenantID:    int64(tenantID),
+			Name:        req.Name,
+			ParentID:    req.ParentID,
+			Description: req.Description,
+			SortOrder:   req.SortOrder,
+		}
+		return tx.Create(&category).Error
+	})
 	if err != nil {
 		return nil, err
 	}
+	return &category, nil
+}
 
-	if req.Name != nil {
-		// 同级唯一名称校验（排除自身）
-		if err := s.checkDuplicateName(tenantID, category.ParentID, *req.Name, id); err != nil {
-			return nil, err
+// Update 完整更新目录节点，包括其父子位置。
+func (s *CategoryService) Update(tenantID uint, id int64, req *UpdateAssetCategoryRequest) (*models.AssetCategory, error) {
+	var updated models.AssetCategory
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		categories, err := lockTenantCategoryGraph(tx, tenantID)
+		if err != nil {
+			return err
 		}
-	}
-	updates := map[string]any{"version": gorm.Expr("version + 1")}
-	if req.Name != nil {
-		updates["name"] = *req.Name
-	}
-	if req.Description != nil {
-		updates["description"] = *req.Description
-	}
-	if req.SortOrder != nil {
-		updates["sort_order"] = *req.SortOrder
-	}
-	result := s.db.Model(&models.AssetCategory{}).
-		Where("id = ? AND tenant_id = ? AND version = ?", id, tenantID, req.Version).
-		Updates(updates)
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	if result.RowsAffected == 0 {
-		var count int64
-		if err := s.db.Model(&models.AssetCategory{}).Where("id = ? AND tenant_id = ?", id, tenantID).Count(&count).Error; err != nil {
-			return nil, err
+		category, found := categoryByID(categories, id)
+		if !found {
+			return gorm.ErrRecordNotFound
 		}
-		if count == 0 {
-			return nil, gorm.ErrRecordNotFound
+		if category.Version != req.Version {
+			return ErrAssetCategoryVersionConflict
 		}
-		return nil, ErrAssetCategoryVersionConflict
-	}
-	if err := s.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(category).Error; err != nil {
+		if err := validateCategoryParent(categories, id, req.ParentID); err != nil {
+			return err
+		}
+		if categoryNameExists(categories, req.ParentID, req.Name, id) {
+			return ErrAssetCategoryDuplicateName
+		}
+		var parentValue any
+		if req.ParentID != nil {
+			parentValue = *req.ParentID
+		}
+
+		result := tx.Model(&models.AssetCategory{}).
+			Where("id = ? AND tenant_id = ? AND version = ?", id, tenantID, req.Version).
+			Updates(map[string]any{
+				"name":        req.Name,
+				"parent_id":   parentValue,
+				"description": req.Description,
+				"sort_order":  req.SortOrder,
+				"version":     gorm.Expr("version + 1"),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return ErrAssetCategoryVersionConflict
+		}
+		return tx.Where("id = ? AND tenant_id = ?", id, tenantID).First(&updated).Error
+	})
+	if err != nil {
 		return nil, err
 	}
-	return category, nil
+	return &updated, nil
+}
+
+func lockTenantCategoryGraph(tx *gorm.DB, tenantID uint) ([]models.AssetCategory, error) {
+	query := tx.Where("tenant_id = ?", tenantID).Order("id ASC")
+	if tx.Dialector.Name() == "postgres" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	var categories []models.AssetCategory
+	if err := query.Find(&categories).Error; err != nil {
+		return nil, err
+	}
+	return categories, nil
+}
+
+func categoryByID(categories []models.AssetCategory, id int64) (models.AssetCategory, bool) {
+	for _, category := range categories {
+		if category.ID == id {
+			return category, true
+		}
+	}
+	return models.AssetCategory{}, false
+}
+
+func validateCategoryParent(categories []models.AssetCategory, categoryID int64, parentID *int64) error {
+	if parentID == nil {
+		return nil
+	}
+	byID := make(map[int64]models.AssetCategory, len(categories))
+	for _, category := range categories {
+		byID[category.ID] = category
+	}
+	visited := map[int64]struct{}{categoryID: {}}
+	currentID := *parentID
+	for {
+		if _, seen := visited[currentID]; seen {
+			return ErrAssetCategoryInvalidParent
+		}
+		visited[currentID] = struct{}{}
+		parent, found := byID[currentID]
+		if !found {
+			return ErrAssetCategoryParentNotFound
+		}
+		if parent.ParentID == nil {
+			return nil
+		}
+		currentID = *parent.ParentID
+	}
+}
+
+func categoryNameExists(categories []models.AssetCategory, parentID *int64, name string, excludeID int64) bool {
+	for _, category := range categories {
+		if category.ID != excludeID && category.Name == name && equalOptionalInt64(category.ParentID, parentID) {
+			return true
+		}
+	}
+	return false
+}
+
+func equalOptionalInt64(left, right *int64) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 // Delete 删除目录（如果有子目录或有资产关联则拒绝）
 func (s *CategoryService) Delete(tenantID uint, id, version int64) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		var category models.AssetCategory
-		if err := tx.Where("id = ? AND tenant_id = ?", id, tenantID).First(&category).Error; err != nil {
+		categories, err := lockTenantCategoryGraph(tx, tenantID)
+		if err != nil {
 			return err
+		}
+		category, found := categoryByID(categories, id)
+		if !found {
+			return gorm.ErrRecordNotFound
 		}
 		if category.Version != version {
 			return ErrAssetCategoryVersionConflict
 		}
 
-		var childCount int64
-		if err := tx.Model(&models.AssetCategory{}).Where("parent_id = ? AND tenant_id = ?", id, tenantID).Count(&childCount).Error; err != nil {
-			return err
-		}
-		if childCount > 0 {
+		if categoryHasChildren(categories, id) {
 			return fmt.Errorf("该分类下有子分类，无法删除")
 		}
 
@@ -260,4 +377,13 @@ func (s *CategoryService) Delete(tenantID uint, id, version int64) error {
 		}
 		return ErrAssetCategoryVersionConflict
 	})
+}
+
+func categoryHasChildren(categories []models.AssetCategory, categoryID int64) bool {
+	for _, category := range categories {
+		if category.ParentID != nil && *category.ParentID == categoryID {
+			return true
+		}
+	}
+	return false
 }

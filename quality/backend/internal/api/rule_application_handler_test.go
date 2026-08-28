@@ -29,7 +29,7 @@ func TestRuleApplicationListUsesTenantFiltersAndNormalizesPage(t *testing.T) {
 			t.Fatalf("unexpected Standard request: %s", r.URL.String())
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":11,"name":"Order ID","code":"order_id"}],"total":1,"page":1,"page_size":100,"total_pages":1}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":11,"code":"order_id","current_revision":{"id":1101,"revision_no":2,"status":"published","name":"Order ID","data_type":"string"}}],"total":1,"page":1,"page_size":100,"total_pages":1}`))
 	}))
 	defer standardServer.Close()
 	standardClient := commonClient.NewStandardClient(standardServer.URL, commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
@@ -73,7 +73,7 @@ func TestRuleApplicationElementCandidatesUseTenantServiceProjection(t *testing.T
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":12,"name":"Gender","code":"gender","quality_rules":{"schema_version":"addp.quality.rules/v1","rules":[{"rule_key":"00000000-0000-4000-8000-000000000001","type":"not_null","enabled":true,"severity":"error","message":"required","params":{}}]}}],"total":1,"page":1,"page_size":100,"total_pages":1}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":12,"code":"gender","current_revision":{"id":1201,"revision_no":3,"status":"published","name":"Gender","data_type":"string","compiled_quality_rules":{"schema_version":"addp.quality.rules/v1","rules":[{"rule_key":"00000000-0000-4000-8000-000000000001","type":"not_null","enabled":true,"severity":"error","message":"required","params":{}}]}}}],"total":1,"page":1,"page_size":100,"total_pages":1}`))
 	}))
 	defer standardServer.Close()
 	standardClient := commonClient.NewStandardClient(standardServer.URL, commonClient.ServiceTokenProviderFunc(func(_ context.Context, tenantID uint) (string, error) {
@@ -206,6 +206,7 @@ func newRuleApplicationHandlerTestDB(t *testing.T) *gorm.DB {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		element_id INTEGER NOT NULL,
+		element_revision_id INTEGER NOT NULL,
 		engine_id INTEGER NOT NULL,
 		schema_name TEXT NOT NULL,
 		table_name TEXT NOT NULL,
@@ -224,6 +225,9 @@ func newRuleApplicationHandlerTestDB(t *testing.T) *gorm.DB {
 
 func createRuleApplicationHandlerApplication(t *testing.T, db *gorm.DB, application models.RuleApplication) models.RuleApplication {
 	t.Helper()
+	if application.ElementRevisionID == 0 {
+		application.ElementRevisionID = application.ElementID*100 + 1
+	}
 	if len(application.RuleConfig) == 0 {
 		application.RuleConfig = []byte(`{"schema_version":"addp.quality.rules/v1","rules":[]}`)
 	}

@@ -22,6 +22,15 @@ other = "资产分类不存在"
 [asset.category.version_conflict]
 other = "资产分类已被其他人更新，请刷新后重试"
 
+[asset.category.parent_not_found]
+other = "目标父目录不存在"
+
+[asset.category.invalid_parent]
+other = "不能将目录移动到自身或其后代目录下"
+
+[asset.category.duplicate_name]
+other = "目标目录下已存在同名目录"
+
 [asset.asset.not_found]
 other = "资产不存在"
 

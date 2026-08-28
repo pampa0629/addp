@@ -22,6 +22,15 @@ other = "Asset category not found"
 [asset.category.version_conflict]
 other = "The asset category was updated by another user. Refresh and try again"
 
+[asset.category.parent_not_found]
+other = "The target parent category does not exist"
+
+[asset.category.invalid_parent]
+other = "A category cannot be moved under itself or one of its descendants"
+
+[asset.category.duplicate_name]
+other = "A category with the same name already exists under the target parent"
+
 [asset.asset.not_found]
 other = "Asset not found"
 

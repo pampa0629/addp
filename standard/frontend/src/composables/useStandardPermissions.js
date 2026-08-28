@@ -11,6 +11,7 @@ export function useStandardPermissions(resource) {
     canUpdate: has('update'),
     canDelete: has('delete'),
     canApprove: has('approve'),
+    canPublish: has('publish'),
     canOffline: has('offline')
   }
 }

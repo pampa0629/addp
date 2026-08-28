@@ -252,7 +252,7 @@ func TestIntegrationPostgresQualityWorkerHonorsConcurrencyLimit(t *testing.T) {
 			t.Fatalf("insert target row %s: %v", tableName, err)
 		}
 		application := models.RuleApplication{
-			TenantID: tenantID, ElementID: tenantID + int64(index), EngineID: engineID,
+			TenantID: tenantID, ElementID: tenantID + int64(index), ElementRevisionID: tenantID + 1000 + int64(index), EngineID: engineID,
 			SchemaName: schemaName, Table: tableName, ColumnName: "value", RuleConfig: ruleConfig,
 			Enabled: true, CreatedBy: userID, CreatedAt: now, UpdatedAt: now,
 		}
@@ -436,7 +436,7 @@ func newQualityExecutionContractServer(t *testing.T, engineID, elementID, tenant
 		case r.Method == http.MethodPost && r.URL.Path == fmt.Sprintf("/api/v1/system/engines/%d/catalog/facts", engineID):
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"table": map[string]interface{}{"fields": []map[string]interface{}{{"name": columnName, "nullable": true}}}})
 		case r.Method == http.MethodGet && r.URL.Path == fmt.Sprintf("/api/v1/standard/elements/%d/quality-rules", elementID):
-			_ = json.NewEncoder(w).Encode(document)
+			_ = json.NewEncoder(w).Encode(commonClient.ElementQualityRulesSnapshot{ElementID: elementID, ElementRevisionID: elementID + 1000, RevisionNo: 1, QualityRules: document})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/system/auth/execution-authorizations":
 			var request commonClient.IssueExecutionAuthorizationRequest
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {

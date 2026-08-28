@@ -18,10 +18,13 @@ func TestEnsureSchemaEnforcesTenantAndAggregateUniqueness(t *testing.T) {
 	if err := db.Exec(`CREATE UNIQUE INDEX standard.idx_codeset_tenant_code ON code_sets (code)`).Error; err != nil {
 		t.Fatalf("create legacy code-set index: %v", err)
 	}
-	if err := db.Exec(`INSERT INTO standard.code_items (id, code_set_id, code) VALUES (1, 1, 'enabled')`).Error; err != nil {
+	if err := db.Exec(`INSERT INTO standard.code_set_revisions (id, code_set_id, revision_no) VALUES (10, 1, 1)`).Error; err != nil {
+		t.Fatalf("seed code set revision: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO standard.code_set_revision_items (id, code_set_revision_id, code) VALUES (1, 10, 'enabled')`).Error; err != nil {
 		t.Fatalf("seed code item: %v", err)
 	}
-	if err := db.Exec(`CREATE UNIQUE INDEX standard.idx_codeitem_set_code ON code_items (code)`).Error; err != nil {
+	if err := db.Exec(`CREATE UNIQUE INDEX standard.idx_codeitem_set_code ON code_set_revision_items (code)`).Error; err != nil {
 		t.Fatalf("create legacy code-item index: %v", err)
 	}
 
@@ -38,10 +41,13 @@ func TestEnsureSchemaEnforcesTenantAndAggregateUniqueness(t *testing.T) {
 	if err := db.Exec(`INSERT INTO standard.code_sets (id, tenant_id, code) VALUES (3, 10, 'shared')`).Error; err == nil {
 		t.Fatal("same code in one tenant should be rejected")
 	}
-	if err := db.Exec(`INSERT INTO standard.code_items (id, code_set_id, code) VALUES (2, 2, 'enabled')`).Error; err != nil {
+	if err := db.Exec(`INSERT INTO standard.code_set_revisions (id, code_set_id, revision_no) VALUES (20, 2, 1)`).Error; err != nil {
+		t.Fatalf("seed second code set revision: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO standard.code_set_revision_items (id, code_set_revision_id, code) VALUES (2, 20, 'enabled')`).Error; err != nil {
 		t.Fatalf("same item code in another code set should be allowed: %v", err)
 	}
-	if err := db.Exec(`INSERT INTO standard.code_items (id, code_set_id, code) VALUES (3, 1, 'enabled')`).Error; err == nil {
+	if err := db.Exec(`INSERT INTO standard.code_set_revision_items (id, code_set_revision_id, code) VALUES (3, 10, 'enabled')`).Error; err == nil {
 		t.Fatal("same item code in one code set should be rejected")
 	}
 }
@@ -135,8 +141,10 @@ func openStandardSchemaTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE standard.reference_deletions (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, resource_type TEXT NOT NULL, resource_id INTEGER NOT NULL)`,
 		`CREATE TABLE standard.domains (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,
 		`CREATE TABLE standard.elements (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,
+		`CREATE TABLE standard.element_revisions (id INTEGER PRIMARY KEY, element_id INTEGER NOT NULL, revision_no INTEGER NOT NULL)`,
 		`CREATE TABLE standard.code_sets (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,
-		`CREATE TABLE standard.code_items (id INTEGER PRIMARY KEY, code_set_id INTEGER NOT NULL, code TEXT NOT NULL)`,
+		`CREATE TABLE standard.code_set_revisions (id INTEGER PRIMARY KEY, code_set_id INTEGER NOT NULL, revision_no INTEGER NOT NULL)`,
+		`CREATE TABLE standard.code_set_revision_items (id INTEGER PRIMARY KEY, code_set_revision_id INTEGER NOT NULL, code TEXT NOT NULL)`,
 		`CREATE TABLE standard.measurement_categories (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,
 		`CREATE TABLE standard.classifications (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,
 		`CREATE TABLE standard.grading_levels (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, level TEXT NOT NULL)`,

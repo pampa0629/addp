@@ -150,7 +150,11 @@ func TestStandardClientRequiresActiveLifecycleForReferenceValidation(t *testing.
 					return
 				}
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"id":42,"tenant_id":7,"lifecycle_state":"` + lifecycleState + `"}`))
+				body := `{"id":42,"tenant_id":7,"lifecycle_state":"` + lifecycleState + `"}`
+				if resource.name == "element" {
+					body = `{"id":42,"tenant_id":7,"lifecycle_state":"` + lifecycleState + `","current_revision":{"id":101,"revision_no":2,"status":"published","name":"Customer ID","data_type":"string"}}`
+				}
+				_, _ = w.Write([]byte(body))
 			}))
 			defer server.Close()
 
@@ -168,7 +172,7 @@ func TestStandardClientRequiresActiveLifecycleForReferenceValidation(t *testing.
 	}
 }
 
-func TestStandardClientReadsDirectVersionedQualityRuleDocument(t *testing.T) {
+func TestStandardClientReadsPublishedRevisionQualityRuleSnapshot(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/standard/elements/12/quality-rules" {
 			http.NotFound(w, r)
@@ -178,7 +182,7 @@ func TestStandardClientReadsDirectVersionedQualityRuleDocument(t *testing.T) {
 			t.Fatalf("unexpected auth headers: Authorization=%q X-Tenant-ID=%q", r.Header.Get("Authorization"), r.Header.Get("X-Tenant-ID"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"schema_version":"addp.quality.rules/v1","rules":[{"rule_key":"00000000-0000-4000-8000-000000000001","type":"not_null","enabled":true,"severity":"error","message":"required","params":{}}]}`))
+		_, _ = w.Write([]byte(`{"element_id":12,"element_revision_id":1201,"revision_no":3,"quality_rules":{"schema_version":"addp.quality.rules/v1","rules":[{"rule_key":"00000000-0000-4000-8000-000000000001","type":"not_null","enabled":true,"severity":"error","message":"required","params":{}}]}}`))
 	}))
 	defer server.Close()
 
@@ -189,7 +193,7 @@ func TestStandardClientReadsDirectVersionedQualityRuleDocument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetElementQualityRules() error = %v", err)
 	}
-	if document.SchemaVersion != "addp.quality.rules/v1" || len(document.Rules) != 1 || document.Rules[0].Type != "not_null" {
+	if document.ElementID != 12 || document.ElementRevisionID != 1201 || document.RevisionNo != 3 || document.QualityRules.SchemaVersion != "addp.quality.rules/v1" || len(document.QualityRules.Rules) != 1 || document.QualityRules.Rules[0].Type != "not_null" {
 		t.Fatalf("quality rule document = %#v", document)
 	}
 }
@@ -204,7 +208,7 @@ func TestStandardClientRejectsLegacyQualityRuleEnvelope(t *testing.T) {
 	client := NewStandardClient(server.URL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
 		return "tenant-token", nil
 	}), server.Client()).WithTenantID(7)
-	if _, err := client.GetElementQualityRules(context.Background(), 12); err == nil || !strings.Contains(err.Error(), "unknown field \"data\"") {
+	if _, err := client.GetElementQualityRules(context.Background(), 12); err == nil || !strings.Contains(err.Error(), "invalid element revision identity") {
 		t.Fatalf("GetElementQualityRules() error = %v, want legacy envelope rejection", err)
 	}
 }
@@ -222,7 +226,7 @@ func TestStandardClientListsElementSummariesByCanonicalIDs(t *testing.T) {
 			t.Fatalf("pagination query = %q", r.URL.RawQuery)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":12,"name":"Order ID","code":"order_id"},{"id":7,"name":"Customer ID","code":"customer_id"}],"total":2,"page":1,"page_size":100,"total_pages":1}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":12,"code":"order_id","current_revision":{"id":1201,"revision_no":1,"status":"published","name":"Order ID","data_type":"string"}},{"id":7,"code":"customer_id","current_revision":{"id":701,"revision_no":2,"status":"published","name":"Customer ID","data_type":"string"}}],"total":2,"page":1,"page_size":100,"total_pages":1}`))
 	}))
 	defer server.Close()
 
@@ -250,7 +254,7 @@ func TestStandardClientListsElementCandidates(t *testing.T) {
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":12,"name":"Gender","code":"gender","quality_rules":{"schema_version":"addp.quality.rules/v1","rules":[{"rule_key":"00000000-0000-4000-8000-000000000001","type":"not_null","enabled":true,"severity":"error","message":"required","params":{}}]}}],"total":1,"page":2,"page_size":20,"total_pages":1}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":12,"code":"gender","current_revision":{"id":1201,"revision_no":3,"status":"published","name":"Gender","data_type":"string","compiled_quality_rules":{"schema_version":"addp.quality.rules/v1","rules":[{"rule_key":"00000000-0000-4000-8000-000000000001","type":"not_null","enabled":true,"severity":"error","message":"required","params":{}}]}}}],"total":1,"page":2,"page_size":20,"total_pages":1}`))
 	}))
 	defer server.Close()
 

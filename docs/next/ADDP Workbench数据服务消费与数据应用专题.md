@@ -1514,11 +1514,13 @@ git diff --check
 
 5.8 节推荐的第一阶段 Asset 运营分组已经沿唯一 `/assets/stats/dashboard` 路由实现。Backend 支持全部资产、`application` 类型和具体 Asset 三种交集范围，完整传播查询错误；申请结果拆分为待审 / 通过 / 驳回，有效授权改为当前未过期、已履约并按用户去重，评价和两类 30 天趋势使用同一 Asset 范围。跨 Tenant、类型不匹配或不存在的具体 Asset 返回不存在。路由授权同步收紧为 Asset Entry、Application、Authorization、Rating 四类只读 Permission 的 all-of。
 
-Asset 运营看板默认展示全部数据应用资产，并可选择全部资产或具体数据应用 Asset；全部文案、范围说明、错误、趋势可访问名称和异步播报均使用中英文 i18n，样式使用 ADDP 主题变量。Backend 全量 Go 测试、9 项 Asset 前端测试与生产构建、Swagger 生成和 41 个公开路由覆盖、授权覆盖均已通过。Asset PostgreSQL 标准门禁新增运营聚合用例，先发现并修复 PostgreSQL 保留字表别名问题，随后 Schema 与运营聚合两段真实 PostgreSQL 测试通过且清理测试 Schema。运行态浏览器复核须在 Asset 服务按标准方式重启后完成。
+Asset 运营看板默认展示全部数据应用资产，并可选择全部资产或具体数据应用 Asset；全部文案、范围说明、错误、趋势可访问名称和异步播报均使用中英文 i18n，样式使用 ADDP 主题变量。Backend 全量 Go 测试、9 项 Asset 前端测试与生产构建、Swagger 生成和 41 个公开路由覆盖、授权覆盖均已通过。Asset PostgreSQL 标准门禁新增运营聚合用例，先发现并修复 PostgreSQL 保留字表别名问题，随后 Schema 与运营聚合两段真实 PostgreSQL 测试通过且清理测试 Schema。
+
+标准重启后的真实浏览器复核已经完成。当前 Tenant 没有 application 类型 Asset，因此默认“全部数据应用资产”范围返回 0，选择器只展示“全部资产”和“全部数据应用资产”，未创建临时 Asset 补造选项；具体 Asset 的 Tenant / 类型 / 不存在隔离继续由 SQLite 与真实 PostgreSQL 聚合测试覆盖。切换到“全部资产”后返回 1097 个资产（1089 草稿、0 上架、8 下架）、5 个申请（5 通过）、0 个有效授权用户和 1 条 5.0 评价，30 天申请趋势存在 2026-07-30 的记录。中英文运行时切换还发现异步播报曾缓存翻译后的中文字符串，导致英文页面保留中文“已加载”消息；现改为只保存 `loaded | fetchFailed` 语义状态并按当前 locale 实时翻译，回归测试先失败后通过，中英文页面正文与播报均已复核一致。最后恢复为中文和默认数据应用范围；整个验证未创建、修改或删除业务对象。
 
 ## 十五、概念设计状态
 
-当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成。Service 公开执行路由、授权模型和 Query Service 输出契约没有发生变化。运行态复核完成后，下一步建议优先评估并编写“外部 BI 消费服务的契约与接入指南”，不立即增加跨模块综合统计或 Workbench 运行埋点；只有确认成功打开次数、独立访问用户和 Revision 分布确有独立产品价值时，才进入 Workbench owner 运行准入事实设计。在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
+当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成运行态复核。Service 公开执行路由、授权模型和 Query Service 输出契约没有发生变化。下一步建议优先评估并编写“外部 BI 消费服务的契约与接入指南”，不立即增加跨模块综合统计或 Workbench 运行埋点；只有确认成功打开次数、独立访问用户和 Revision 分布确有独立产品价值时，才进入 Workbench owner 运行准入事实设计。在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
 
 ## 十六、相关文档
 

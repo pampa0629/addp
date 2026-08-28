@@ -154,53 +154,55 @@ func TestDirectResourceUpdatesRejectStaleVersion(t *testing.T) {
 	}
 }
 
-func TestElementUpdateRejectsStaleVersion(t *testing.T) {
+func TestElementIdentityUpdateRejectsStaleVersion(t *testing.T) {
 	db := openVersionedTestDB(t,
 		`CREATE TABLE standard.elements (
-			id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, domain_id INTEGER, name TEXT, data_type TEXT,
-			length INTEGER, precision_num INTEGER, scale INTEGER, nullable BOOLEAN, default_value TEXT, format TEXT,
-			value_range TEXT, unit_id INTEGER, security_level TEXT, classification_id INTEGER, code_set_id INTEGER,
-			definition TEXT, example_values TEXT, quality_rules TEXT, steward_id INTEGER, tags TEXT, updated_by INTEGER,
+			id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, domain_id INTEGER, code TEXT, steward_id INTEGER,
+			tags TEXT, current_revision_id INTEGER, draft_revision_id INTEGER, updated_by INTEGER,
 			updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1
 		)`,
-		`INSERT INTO standard.elements (id, tenant_id, name, data_type, version) VALUES (1, 7, 'Original', 'string', 1)`,
+		`INSERT INTO standard.elements (id, tenant_id, code, domain_id, version) VALUES (1, 7, 'customer_id', 10, 1)`,
 	)
 	repo := NewElementRepository(db)
-	if err := repo.Update(&models.Element{ID: 1, TenantID: 7, Name: "First update", DataType: "string"}, 1); err != nil {
+	domain20 := int64(20)
+	if err := repo.UpdateIdentity(&models.Element{ID: 1, TenantID: 7, DomainID: &domain20}, 1); err != nil {
 		t.Fatalf("first update element: %v", err)
 	}
-	if err := repo.Update(&models.Element{ID: 1, TenantID: 7, Name: "Stale update", DataType: "string"}, 1); !errors.Is(err, ErrVersionConflict) {
+	domain30 := int64(30)
+	if err := repo.UpdateIdentity(&models.Element{ID: 1, TenantID: 7, DomainID: &domain30}, 1); !errors.Is(err, ErrVersionConflict) {
 		t.Fatalf("stale update element error = %v, want ErrVersionConflict", err)
 	}
 	var current struct {
-		Name    string
-		Version int64
+		DomainID int64
+		Version  int64
 	}
-	if err := db.Raw(`SELECT name, version FROM standard.elements WHERE id = 1`).Scan(&current).Error; err != nil {
+	if err := db.Raw(`SELECT domain_id, version FROM standard.elements WHERE id = 1`).Scan(&current).Error; err != nil {
 		t.Fatalf("load current element: %v", err)
 	}
-	if current.Name != "First update" || current.Version != 2 {
-		t.Fatalf("current element = name %q version %d, want first update version 2", current.Name, current.Version)
+	if current.DomainID != 20 || current.Version != 2 {
+		t.Fatalf("current element = domain %d version %d, want domain 20 version 2", current.DomainID, current.Version)
 	}
 }
 
 func TestCodeItemMutationRejectsStaleParentVersionWithoutSideEffect(t *testing.T) {
 	db := openVersionedTestDB(t,
-		`CREATE TABLE standard.code_sets (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1)`,
-		`CREATE TABLE standard.code_items (id INTEGER PRIMARY KEY, code_set_id INTEGER NOT NULL, value TEXT, description TEXT, sort_order INTEGER, is_active BOOLEAN, updated_at DATETIME)`,
-		`INSERT INTO standard.code_sets (id, tenant_id, version) VALUES (1, 7, 1)`,
-		`INSERT INTO standard.code_items (id, code_set_id, value) VALUES (1, 1, 'Original')`,
+		`CREATE TABLE standard.code_sets (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, origin TEXT NOT NULL, draft_revision_id INTEGER, updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1)`,
+		`CREATE TABLE standard.code_set_revisions (id INTEGER PRIMARY KEY, code_set_id INTEGER NOT NULL, status TEXT NOT NULL)`,
+		`CREATE TABLE standard.code_set_revision_items (id INTEGER PRIMARY KEY, code_set_revision_id INTEGER NOT NULL, label TEXT, definition TEXT, sort_order INTEGER, status TEXT, replacement_item_id INTEGER, updated_at DATETIME)`,
+		`INSERT INTO standard.code_sets (id, tenant_id, origin, draft_revision_id, version) VALUES (1, 7, 'tenant', 10, 1)`,
+		`INSERT INTO standard.code_set_revisions (id, code_set_id, status) VALUES (10, 1, 'draft')`,
+		`INSERT INTO standard.code_set_revision_items (id, code_set_revision_id, label, status) VALUES (1, 10, 'Original', 'active')`,
 	)
 	repo := NewCodeSetRepository(db)
-	first := &models.CodeItem{ID: 1, CodeSetID: 1, Value: "First", IsActive: true}
-	if err := repo.UpdateItem(first, 7, 1); err != nil {
+	first := &models.CodeSetRevisionItem{ID: 1, CodeSetRevisionID: 10, Label: "First", Status: models.CodeItemStatusActive}
+	if err := repo.UpdateItem(1, 10, 1, 7, first, 1); err != nil {
 		t.Fatalf("first update item: %v", err)
 	}
-	stale := &models.CodeItem{ID: 1, CodeSetID: 1, Value: "Stale", IsActive: true}
-	if err := repo.UpdateItem(stale, 7, 1); !errors.Is(err, ErrVersionConflict) {
+	stale := &models.CodeSetRevisionItem{ID: 1, CodeSetRevisionID: 10, Label: "Stale", Status: models.CodeItemStatusActive}
+	if err := repo.UpdateItem(1, 10, 1, 7, stale, 1); !errors.Is(err, ErrVersionConflict) {
 		t.Fatalf("stale update item error = %v, want ErrVersionConflict", err)
 	}
-	assertParentVersionAndChildValue(t, db, "code_sets", "code_items", "value", "First")
+	assertParentVersionAndChildValue(t, db, "code_sets", "code_set_revision_items", "label", "First")
 }
 
 func TestHierarchyLevelMutationRejectsStaleParentVersionWithoutSideEffect(t *testing.T) {

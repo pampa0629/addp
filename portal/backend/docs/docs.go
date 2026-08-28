@@ -341,6 +341,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "仅包含有已上架资产的分支，count 为当前节点整棵子树的已上架资产数 | Contains only branches with published assets; count is the published asset total for the entire subtree",
                 "produces": [
                     "application/json"
                 ],
@@ -388,11 +389,11 @@ const docTemplate = `{
                 "tags": [
                     "Portal"
                 ],
-                "summary": "获取分类下的资产列表 | Get assets in category",
+                "summary": "获取资产目录子树的资产列表 | Get assets in an asset directory subtree",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "资产分类 ID | Asset category ID",
+                        "description": "资产目录节点 ID | Asset directory node ID",
                         "name": "id",
                         "in": "path",
                         "required": true

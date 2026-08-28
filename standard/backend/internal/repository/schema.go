@@ -32,8 +32,10 @@ func Migrate(db *gorm.DB) error {
 			&models.Glossary{},
 			&models.GlossaryElementMapping{},
 			&models.Element{},
+			&models.ElementRevision{},
 			&models.CodeSet{},
-			&models.CodeItem{},
+			&models.CodeSetRevision{},
+			&models.CodeSetRevisionItem{},
 			&models.MeasurementCategory{},
 			&models.Unit{},
 			&models.Classification{},
@@ -54,7 +56,7 @@ func Migrate(db *gorm.DB) error {
 		); err != nil {
 			return fmt.Errorf("auto migrate standard schema: %w", err)
 		}
-		if err := migrateStandardQualityRuleKeys(tx); err != nil {
+		if err := migrateStandardRevisionData(tx); err != nil {
 			return err
 		}
 		if err := migrateStandardCatalogMetricChanges(tx); err != nil {
@@ -269,7 +271,7 @@ func prepareStandardSchemaMigration(db *gorm.DB) error {
 	if db.Dialector.Name() != "postgres" {
 		return nil
 	}
-	statement := `DO $do$ BEGIN
+	statements := []string{`DO $do$ BEGIN
 		IF EXISTS (
 			SELECT 1 FROM information_schema.columns
 			WHERE table_schema = 'standard' AND table_name = 'documents' AND column_name = 'version'
@@ -280,9 +282,142 @@ func prepareStandardSchemaMigration(db *gorm.DB) error {
 		) THEN
 			ALTER TABLE standard.documents RENAME COLUMN version TO document_version;
 		END IF;
-	END $do$`
-	if err := db.Exec(statement).Error; err != nil {
-		return fmt.Errorf("prepare standard schema migration: %w", err)
+	END $do$`,
+		`DO $do$ BEGIN
+			IF to_regclass('standard.code_sets') IS NOT NULL THEN
+				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS domain_id BIGINT;
+				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS origin VARCHAR(20) NOT NULL DEFAULT 'tenant';
+				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS steward_id BIGINT;
+				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS tags JSONB;
+				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS current_revision_id BIGINT;
+				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS draft_revision_id BIGINT;
+				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS created_by BIGINT NOT NULL DEFAULT 0;
+				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS updated_by BIGINT;
+				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS lifecycle_state VARCHAR(16) NOT NULL DEFAULT 'active';
+			END IF;
+		END $do$`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return fmt.Errorf("prepare standard schema migration: %w", err)
+		}
+	}
+	return nil
+}
+
+// migrateStandardRevisionData 将旧的可变标准记录一次性收敛为稳定身份和首个修订，随后删除旧列与旧码项表。
+func migrateStandardRevisionData(db *gorm.DB) error {
+	if db.Dialector.Name() != "postgres" {
+		return nil
+	}
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS standard.data_migrations (
+			version BIGINT PRIMARY KEY,
+			name TEXT NOT NULL,
+			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`DO $do$ BEGIN
+			IF EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'standard' AND table_name = 'code_sets' AND column_name = 'name'
+			) AND NOT EXISTS (SELECT 1 FROM standard.data_migrations WHERE version = 2026082801) THEN
+				INSERT INTO standard.code_set_revisions (
+					code_set_id, revision_no, status, name, description, value_type,
+					change_summary, created_by, created_at, updated_at
+				)
+				SELECT id, 1, 'published', name, COALESCE(NULLIF(description, ''), name), 'string',
+					'Converted to revision model', created_by, created_at, updated_at
+				FROM standard.code_sets
+				ORDER BY id;
+
+				UPDATE standard.code_sets AS code_set
+				SET current_revision_id = revision.id,
+					origin = CASE WHEN code_set.type = 'system' THEN 'platform' ELSE 'tenant' END
+				FROM standard.code_set_revisions AS revision
+				WHERE revision.code_set_id = code_set.id AND revision.revision_no = 1;
+
+				IF to_regclass('standard.code_items') IS NOT NULL THEN
+					INSERT INTO standard.code_set_revision_items (
+						id, code_set_revision_id, code, label, definition, sort_order, status, created_at, updated_at
+					)
+					SELECT item.id, code_set.current_revision_id, item.code, item.value,
+						COALESCE(item.description, ''), item.sort_order,
+						CASE WHEN item.is_active THEN 'active' ELSE 'deprecated' END,
+						item.created_at, item.updated_at
+					FROM standard.code_items AS item
+					JOIN standard.code_sets AS code_set ON code_set.id = item.code_set_id
+					ORDER BY item.id;
+				END IF;
+			END IF;
+		END $do$`,
+		`DO $do$ BEGIN
+			IF EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'standard' AND table_name = 'elements' AND column_name = 'name'
+			) AND NOT EXISTS (SELECT 1 FROM standard.data_migrations WHERE version = 2026082801) THEN
+				INSERT INTO standard.element_revisions (
+					element_id, revision_no, status, name, definition, data_type, length, precision_num, scale,
+					nullable, default_value, format, value_domain_kind, range_constraint, code_set_revision_id,
+					unit_id, security_level, classification_id, example_values, extra_quality_rules,
+					compiled_quality_rules, change_summary, created_by, updated_by, created_at, updated_at
+				)
+				SELECT element.id, 1,
+					CASE element.status WHEN 'approved' THEN 'published' WHEN 'deprecated' THEN 'withdrawn' ELSE 'draft' END,
+					element.name, COALESCE(NULLIF(element.definition, ''), element.name), element.data_type,
+					element.length, element.precision_num, element.scale, element.nullable,
+					element.default_value, element.format,
+					CASE WHEN element.code_set_id IS NOT NULL THEN 'enumeration'
+						 WHEN element.value_range IS NOT NULL AND element.value_range <> '{}'::jsonb THEN 'range'
+						 ELSE 'unrestricted' END,
+					CASE WHEN element.code_set_id IS NULL THEN element.value_range ELSE NULL END,
+					code_set.current_revision_id, element.unit_id, element.security_level,
+					element.classification_id, element.example_values,
+					'{"schema_version":"addp.quality.rules/v1","rules":[]}'::jsonb,
+					CASE WHEN element.status = 'approved' THEN COALESCE(element.quality_rules, '{"schema_version":"addp.quality.rules/v1","rules":[]}'::jsonb) ELSE NULL END,
+					'Converted to revision model', element.created_by, element.updated_by, element.created_at, element.updated_at
+				FROM standard.elements AS element
+				LEFT JOIN standard.code_sets AS code_set ON code_set.id = element.code_set_id
+				ORDER BY element.id;
+
+				UPDATE standard.elements AS element
+				SET current_revision_id = CASE WHEN revision.status = 'published' THEN revision.id ELSE NULL END,
+					draft_revision_id = CASE WHEN revision.status = 'draft' THEN revision.id ELSE NULL END
+				FROM standard.element_revisions AS revision
+				WHERE revision.element_id = element.id AND revision.revision_no = 1;
+			END IF;
+		END $do$`,
+		`INSERT INTO standard.data_migrations (version, name)
+		 VALUES (2026082801, 'standard_element_code_set_revision_model_v1')
+		 ON CONFLICT (version) DO NOTHING`,
+		`ALTER TABLE standard.elements DROP CONSTRAINT IF EXISTS fk_standard_elements_unit`,
+		`ALTER TABLE standard.elements DROP CONSTRAINT IF EXISTS fk_standard_elements_classification`,
+		`ALTER TABLE standard.elements DROP CONSTRAINT IF EXISTS fk_standard_elements_code_set`,
+		`ALTER TABLE standard.elements DROP COLUMN IF EXISTS name`,
+		`ALTER TABLE standard.elements DROP COLUMN IF EXISTS data_type`,
+		`ALTER TABLE standard.elements DROP COLUMN IF EXISTS length`,
+		`ALTER TABLE standard.elements DROP COLUMN IF EXISTS precision_num`,
+		`ALTER TABLE standard.elements DROP COLUMN IF EXISTS scale`,
+		`ALTER TABLE standard.elements DROP COLUMN IF EXISTS nullable`,
+		`ALTER TABLE standard.elements DROP COLUMN IF EXISTS default_value`,
+		`ALTER TABLE standard.elements DROP COLUMN IF EXISTS format`,
+		`ALTER TABLE standard.elements DROP COLUMN IF EXISTS value_range`,
+		`ALTER TABLE standard.elements DROP COLUMN IF EXISTS unit_id`,
+		`ALTER TABLE standard.elements DROP COLUMN IF EXISTS security_level`,
+		`ALTER TABLE standard.elements DROP COLUMN IF EXISTS classification_id`,
+		`ALTER TABLE standard.elements DROP COLUMN IF EXISTS code_set_id`,
+		`ALTER TABLE standard.elements DROP COLUMN IF EXISTS definition`,
+		`ALTER TABLE standard.elements DROP COLUMN IF EXISTS example_values`,
+		`ALTER TABLE standard.elements DROP COLUMN IF EXISTS quality_rules`,
+		`ALTER TABLE standard.elements DROP COLUMN IF EXISTS status`,
+		`DROP TABLE IF EXISTS standard.code_items CASCADE`,
+		`ALTER TABLE standard.code_sets DROP COLUMN IF EXISTS name`,
+		`ALTER TABLE standard.code_sets DROP COLUMN IF EXISTS type`,
+		`ALTER TABLE standard.code_sets DROP COLUMN IF EXISTS description`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return fmt.Errorf("migrate standard revision data: %w", err)
+		}
 	}
 	return nil
 }
@@ -339,8 +474,10 @@ func postgresStandardSchemaStatements() []string {
 	statements := []string{
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_domains_tenant_code ON standard.domains (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_elements_tenant_code ON standard.elements (tenant_id, code)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_element_revisions_element_no ON standard.element_revisions (element_id, revision_no)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_code_sets_tenant_code ON standard.code_sets (tenant_id, code)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_code_items_set_code ON standard.code_items (code_set_id, code)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_code_set_revisions_set_no ON standard.code_set_revisions (code_set_id, revision_no)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_code_set_revision_items_revision_code ON standard.code_set_revision_items (code_set_revision_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_measurement_categories_tenant_code ON standard.measurement_categories (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_classifications_tenant_code ON standard.classifications (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_grading_levels_tenant_level ON standard.grading_levels (tenant_id, level)",
@@ -369,6 +506,12 @@ func postgresStandardSchemaStatements() []string {
 
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.dimension_hierarchy_levels'::regclass AND conname = 'ck_standard_dimension_hierarchy_levels_level_num') THEN ALTER TABLE standard.dimension_hierarchy_levels ADD CONSTRAINT ck_standard_dimension_hierarchy_levels_level_num CHECK (level_num > 0); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.metric_dependencies'::regclass AND conname = 'ck_standard_metric_dependencies_distinct') THEN ALTER TABLE standard.metric_dependencies ADD CONSTRAINT ck_standard_metric_dependencies_distinct CHECK (from_metric_id <> to_metric_id); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.element_revisions'::regclass AND conname = 'ck_standard_element_revisions_status') THEN ALTER TABLE standard.element_revisions ADD CONSTRAINT ck_standard_element_revisions_status CHECK (status IN ('draft','in_review','published','superseded','withdrawn')); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.element_revisions'::regclass AND conname = 'ck_standard_element_revisions_value_domain') THEN ALTER TABLE standard.element_revisions ADD CONSTRAINT ck_standard_element_revisions_value_domain CHECK ((value_domain_kind = 'unrestricted' AND range_constraint IS NULL AND code_set_revision_id IS NULL) OR (value_domain_kind = 'range' AND range_constraint IS NOT NULL AND code_set_revision_id IS NULL) OR (value_domain_kind = 'enumeration' AND range_constraint IS NULL AND code_set_revision_id IS NOT NULL)); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.code_sets'::regclass AND conname = 'ck_standard_code_sets_origin') THEN ALTER TABLE standard.code_sets ADD CONSTRAINT ck_standard_code_sets_origin CHECK (origin IN ('platform','tenant')); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.code_set_revisions'::regclass AND conname = 'ck_standard_code_set_revisions_status') THEN ALTER TABLE standard.code_set_revisions ADD CONSTRAINT ck_standard_code_set_revisions_status CHECK (status IN ('draft','in_review','published','superseded','withdrawn')); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.code_set_revisions'::regclass AND conname = 'ck_standard_code_set_revisions_value_type') THEN ALTER TABLE standard.code_set_revisions ADD CONSTRAINT ck_standard_code_set_revisions_value_type CHECK (value_type IN ('string','int','bigint')); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.code_set_revision_items'::regclass AND conname = 'ck_standard_code_set_revision_items_status') THEN ALTER TABLE standard.code_set_revision_items ADD CONSTRAINT ck_standard_code_set_revision_items_status CHECK (status IN ('active','deprecated')); END IF; END $do$",
 
 		"CREATE INDEX IF NOT EXISTS idx_standard_glossary_element_mappings_element ON standard.glossary_element_mappings (element_id)",
 		"CREATE INDEX IF NOT EXISTS idx_standard_metric_element_mappings_element ON standard.metric_element_mappings (element_id)",
@@ -414,11 +557,18 @@ func postgresStandardSchemaStatements() []string {
 		{"standard.domains", "fk_standard_domains_parent", "parent_id", "standard.domains(id)", "RESTRICT"},
 		{"standard.glossaries", "fk_standard_glossaries_domain", "domain_id", "standard.domains(id)", "RESTRICT"},
 		{"standard.elements", "fk_standard_elements_domain", "domain_id", "standard.domains(id)", "RESTRICT"},
-		{"standard.elements", "fk_standard_elements_unit", "unit_id", "standard.units(id)", "RESTRICT"},
-		{"standard.elements", "fk_standard_elements_classification", "classification_id", "standard.classifications(id)", "RESTRICT"},
-		{"standard.elements", "fk_standard_elements_code_set", "code_set_id", "standard.code_sets(id)", "RESTRICT"},
-		{"standard.code_items", "fk_standard_code_items_code_set", "code_set_id", "standard.code_sets(id)", "CASCADE"},
-		{"standard.code_items", "fk_standard_code_items_parent", "parent_id", "standard.code_items(id)", "RESTRICT"},
+		{"standard.elements", "fk_standard_elements_current_revision", "current_revision_id", "standard.element_revisions(id)", "SET NULL"},
+		{"standard.elements", "fk_standard_elements_draft_revision", "draft_revision_id", "standard.element_revisions(id)", "SET NULL"},
+		{"standard.element_revisions", "fk_standard_element_revisions_element", "element_id", "standard.elements(id)", "CASCADE"},
+		{"standard.element_revisions", "fk_standard_element_revisions_unit", "unit_id", "standard.units(id)", "RESTRICT"},
+		{"standard.element_revisions", "fk_standard_element_revisions_classification", "classification_id", "standard.classifications(id)", "RESTRICT"},
+		{"standard.element_revisions", "fk_standard_element_revisions_code_set_revision", "code_set_revision_id", "standard.code_set_revisions(id)", "RESTRICT"},
+		{"standard.code_sets", "fk_standard_code_sets_domain", "domain_id", "standard.domains(id)", "RESTRICT"},
+		{"standard.code_sets", "fk_standard_code_sets_current_revision", "current_revision_id", "standard.code_set_revisions(id)", "SET NULL"},
+		{"standard.code_sets", "fk_standard_code_sets_draft_revision", "draft_revision_id", "standard.code_set_revisions(id)", "SET NULL"},
+		{"standard.code_set_revisions", "fk_standard_code_set_revisions_code_set", "code_set_id", "standard.code_sets(id)", "CASCADE"},
+		{"standard.code_set_revision_items", "fk_standard_code_set_revision_items_revision", "code_set_revision_id", "standard.code_set_revisions(id)", "CASCADE"},
+		{"standard.code_set_revision_items", "fk_standard_code_set_revision_items_replacement", "replacement_item_id", "standard.code_set_revision_items(id)", "RESTRICT"},
 		{"standard.units", "fk_standard_units_measurement_category", "category_id", "standard.measurement_categories(id)", "RESTRICT"},
 		{"standard.classifications", "fk_standard_classifications_parent", "parent_id", "standard.classifications(id)", "RESTRICT"},
 		{"standard.metric_categories", "fk_standard_metric_categories_parent", "parent_id", "standard.metric_categories(id)", "RESTRICT"},
@@ -458,8 +608,10 @@ func sqliteStandardSchemaStatements() []string {
 	return []string{
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_domains_tenant_code ON domains (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_elements_tenant_code ON elements (tenant_id, code)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_element_revisions_element_no ON element_revisions (element_id, revision_no)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_code_sets_tenant_code ON code_sets (tenant_id, code)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_code_items_set_code ON code_items (code_set_id, code)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_code_set_revisions_set_no ON code_set_revisions (code_set_id, revision_no)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_code_set_revision_items_revision_code ON code_set_revision_items (code_set_revision_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_measurement_categories_tenant_code ON measurement_categories (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_classifications_tenant_code ON classifications (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_grading_levels_tenant_level ON grading_levels (tenant_id, level)",

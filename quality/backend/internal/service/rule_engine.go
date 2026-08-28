@@ -88,7 +88,7 @@ func (s *RuleEngineService) ListElementCandidates(ctx context.Context, tenantID 
 	items := make([]RuleApplicationElementCandidate, len(elements))
 	for index, element := range elements {
 		items[index] = RuleApplicationElementCandidate{
-			ID: element.ID, Name: element.Name, Code: element.Code, QualityRules: element.QualityRules,
+			ID: element.ID, RevisionID: element.RevisionID, RevisionNo: element.RevisionNo, Name: element.Name, Code: element.Code, QualityRules: element.QualityRules,
 		}
 	}
 	return items, total, nil
@@ -121,7 +121,7 @@ func (s *RuleEngineService) CreateRuleApplication(ctx context.Context, tenantID,
 		return nil, fmt.Errorf("failed to get quality rules: %w", err)
 	}
 
-	enabledRules := rules.EnabledRules()
+	enabledRules := rules.QualityRules.EnabledRules()
 	if len(enabledRules) == 0 {
 		return nil, fmt.Errorf("%w: data element has no enabled quality rules", commonAPI.ErrBadRequest)
 	}
@@ -132,15 +132,16 @@ func (s *RuleEngineService) CreateRuleApplication(ctx context.Context, tenantID,
 	}
 
 	ra := &models.RuleApplication{
-		TenantID:   tenantID,
-		ElementID:  req.ElementID,
-		EngineID:   req.EngineID,
-		SchemaName: req.SchemaName,
-		Table:      req.TableName,
-		ColumnName: req.ColumnName,
-		RuleConfig: ruleConfig,
-		Enabled:    true,
-		CreatedBy:  userID,
+		TenantID:          tenantID,
+		ElementID:         req.ElementID,
+		ElementRevisionID: rules.ElementRevisionID,
+		EngineID:          req.EngineID,
+		SchemaName:        req.SchemaName,
+		Table:             req.TableName,
+		ColumnName:        req.ColumnName,
+		RuleConfig:        ruleConfig,
+		Enabled:           true,
+		CreatedBy:         userID,
 	}
 	if err := s.ruleAppRepo.Create(ra); err != nil {
 		return nil, err
@@ -200,6 +201,8 @@ type RuleApplicationElementSummary struct {
 
 type RuleApplicationElementCandidate struct {
 	ID           int64                `json:"id"`
+	RevisionID   int64                `json:"revision_id"`
+	RevisionNo   int64                `json:"revision_no"`
 	Name         string               `json:"name"`
 	Code         string               `json:"code"`
 	QualityRules dataquality.Document `json:"quality_rules"`

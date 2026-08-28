@@ -15,7 +15,7 @@ func TestReferenceResolutionServicePreservesOrderAndReferenceability(t *testing.
 			{ID: 2, TenantID: 7, Name: "Customer", Version: 3, Status: "approved"},
 			{ID: 3, TenantID: 7, Name: "Draft", Version: 1, Status: "draft"},
 		},
-		elements: []models.Element{{ID: 4, TenantID: 7, Name: "Customer ID", Code: "customer_id", Version: 5, Status: "approved", LifecycleState: "deleting"}},
+		elements: []models.PublishedElementReference{{ID: 4, TenantID: 7, Name: "Customer ID", Code: "customer_id", Version: 5, Status: models.RevisionStatusPublished, LifecycleState: "deleting", RevisionID: 40, RevisionNo: 2}},
 	}
 	service := NewReferenceResolutionService(repository)
 
@@ -52,7 +52,7 @@ func TestReferenceResolutionServiceRejectsInvalidBatch(t *testing.T) {
 
 func TestReferenceResolutionServiceListsReferenceableCandidates(t *testing.T) {
 	repository := &fakeReferenceResolutionRepository{
-		elements: []models.Element{{ID: 4, Name: "Customer ID", Code: "customer_id", Status: "approved", LifecycleState: "active"}},
+		elements: []models.PublishedElementReference{{ID: 4, Name: "Customer ID", Code: "customer_id", Status: models.RevisionStatusPublished, LifecycleState: "active", RevisionID: 40, RevisionNo: 2}},
 	}
 	result, err := NewReferenceResolutionService(repository).ListCandidates(context.Background(), 7, ReferenceTypeElement, " customer ", 1, 20)
 	if err != nil {
@@ -72,7 +72,7 @@ func TestReferenceResolutionServiceListsReferenceableCandidates(t *testing.T) {
 type fakeReferenceResolutionRepository struct {
 	domains     []models.Domain
 	glossaries  []models.Glossary
-	elements    []models.Element
+	elements    []models.PublishedElementReference
 	domainIDs   []int64
 	glossaryIDs []int64
 	elementIDs  []int64
@@ -86,7 +86,7 @@ func (r *fakeReferenceResolutionRepository) ListGlossaryCandidates(context.Conte
 	return r.glossaries, int64(len(r.glossaries)), nil
 }
 
-func (r *fakeReferenceResolutionRepository) ListElementCandidates(context.Context, int64, string, int, int) ([]models.Element, int64, error) {
+func (r *fakeReferenceResolutionRepository) ListElementCandidates(context.Context, int64, string, int, int) ([]models.PublishedElementReference, int64, error) {
 	return r.elements, int64(len(r.elements)), nil
 }
 
@@ -100,7 +100,7 @@ func (r *fakeReferenceResolutionRepository) ResolveGlossaries(_ context.Context,
 	return r.glossaries, nil
 }
 
-func (r *fakeReferenceResolutionRepository) ResolveElements(_ context.Context, _ int64, ids []int64) ([]models.Element, error) {
+func (r *fakeReferenceResolutionRepository) ResolveElements(_ context.Context, _ int64, ids []int64) ([]models.PublishedElementReference, error) {
 	r.elementIDs = append([]int64(nil), ids...)
 	return r.elements, nil
 }

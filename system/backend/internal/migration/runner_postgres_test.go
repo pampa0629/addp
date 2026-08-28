@@ -3618,8 +3618,19 @@ func assertStandardAuthorizationCatalog(t *testing.T, db *sql.DB) {
 	`).Scan(&permissionCount); err != nil {
 		t.Fatalf("read Standard authorization permissions: %v", err)
 	}
-	if permissionCount != 42 {
-		t.Fatalf("Standard authorization permission count = %d, want 42", permissionCount)
+	if permissionCount != 43 {
+		t.Fatalf("Standard authorization permission count = %d, want 43", permissionCount)
+	}
+	var publishPermissionCount, disabledApproveCount int
+	if err := db.QueryRow(`
+		SELECT count(*) FILTER (WHERE permission_key IN ('standard.element.publish', 'standard.code_set.publish') AND status = 'active'),
+		       count(*) FILTER (WHERE permission_key = 'standard.element.approve' AND status = 'disabled')
+		FROM system.permissions
+	`).Scan(&publishPermissionCount, &disabledApproveCount); err != nil {
+		t.Fatalf("read Standard revision publish permissions: %v", err)
+	}
+	if publishPermissionCount != 2 || disabledApproveCount != 1 {
+		t.Fatalf("Standard revision permission transition = publish:%d disabled_approve:%d, want 2 and 1", publishPermissionCount, disabledApproveCount)
 	}
 
 	var rolePermissionCount int
@@ -3635,8 +3646,8 @@ func assertStandardAuthorizationCatalog(t *testing.T, db *sql.DB) {
 	`).Scan(&rolePermissionCount); err != nil {
 		t.Fatalf("read Governance Manager Standard permissions: %v", err)
 	}
-	if rolePermissionCount != 41 {
-		t.Fatalf("Governance Manager Standard permission count = %d, want 41", rolePermissionCount)
+	if rolePermissionCount != 42 {
+		t.Fatalf("Governance Manager Standard permission count = %d, want 42", rolePermissionCount)
 	}
 }
 

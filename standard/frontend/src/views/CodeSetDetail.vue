@@ -1,339 +1,47 @@
 <template>
-  <div class="code-set-detail">
-    <!-- 顶部操作栏 -->
-    <div class="detail-header">
-      <div class="header-left">
-        <el-button text @click="goBack">
-          <el-icon><ArrowLeft /></el-icon>
-          {{ $t('standard.common.back') }}
-        </el-button>
-        <span class="code-set-name">{{ codeSet.name || '...' }}</span>
-        <el-tag :type="codeSet.type === 'system' ? 'success' : 'info'" size="small">
-          {{ codeSet.type === 'system' ? $t('standard.codeSet.typeSystem') : $t('standard.codeSet.typeCustom') }}
-        </el-tag>
-        <el-tag v-if="isDirty" type="warning" size="small">{{ $t('standard.common.unsaved') }}</el-tag>
-      </div>
-      <div class="header-right">
-        <el-button v-if="canModifyCodeSet" type="primary" @click="handleSave" :loading="saving">{{ $t('standard.common.save') }}</el-button>
-      </div>
-    </div>
-
-    <el-row :gutter="16">
-      <!-- 基本信息 -->
-      <el-col :span="24">
-        <el-card shadow="never" class="info-card">
-          <template #header><span class="card-title">{{ $t('standard.codeSet.basicInfo') }}</span></template>
-          <el-form :model="form" label-width="90px" :disabled="!canModifyCodeSet">
-            <el-row :gutter="16">
-              <el-col :span="12">
-                <el-form-item :label="$t('standard.codeSet.codeLabel')">
-                  <el-input :value="codeSet.code" disabled />
-                </el-form-item>
-              </el-col>
-              <el-col :span="12">
-                <el-form-item :label="$t('standard.codeSet.nameLabel')">
-                  <el-input v-model="form.name" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="12">
-                <el-form-item :label="$t('standard.common.type')">
-                  <el-select v-model="form.type" style="width:100%">
-                    <el-option :label="$t('standard.codeSet.typeCustom')" value="custom" />
-                    <el-option :label="$t('standard.codeSet.typeSystem')" value="system" />
-                  </el-select>
-                </el-form-item>
-              </el-col>
-              <el-col :span="24">
-                <el-form-item :label="$t('standard.common.description')">
-                  <el-input v-model="form.description" type="textarea" :rows="2" />
-                </el-form-item>
-              </el-col>
-            </el-row>
-          </el-form>
-        </el-card>
-      </el-col>
-
-      <!-- 码值项列表 -->
-      <el-col :span="24" class="items-column">
-        <el-card shadow="never">
-          <template #header>
-            <div class="card-header-with-action">
-              <span class="card-title">{{ $t('standard.codeSet.items') }}</span>
-              <el-button v-if="canModifyCodeSet" type="primary" size="small" @click="openItemDialog()">
-                <el-icon><Plus /></el-icon>
-                {{ $t('standard.codeSet.addItem') }}
-              </el-button>
-            </div>
-          </template>
-
-          <el-table :data="items" v-loading="itemLoading" stripe>
-            <el-table-column label="#" type="index" width="60" />
-            <el-table-column :label="$t('standard.codeSet.itemCode')" prop="code" width="150" />
-            <el-table-column :label="$t('standard.codeSet.itemValue')" prop="value" min-width="140" />
-            <el-table-column :label="$t('standard.common.sort')" prop="sort_order" width="80" />
-            <el-table-column :label="$t('standard.codeSet.itemActive')" width="80">
-              <template #default="{ row }">
-                <el-tag :type="row.is_active ? 'success' : 'info'" size="small">
-                  {{ row.is_active ? $t('standard.unit.yes') : $t('standard.unit.no') }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column :label="$t('standard.common.description')" prop="description" show-overflow-tooltip />
-            <el-table-column v-if="canModifyCodeSet" :label="$t('standard.common.actions')" width="150" fixed="right">
-              <template #default="{ row }">
-                <div class="table-actions">
-                  <el-button link type="primary" @click="openItemDialog(row)">{{ $t('standard.common.edit') }}</el-button>
-                  <el-button link type="danger" :loading="isActionLocked(`code-item:${row.id}`)" @click="deleteItem(row)">{{ $t('standard.common.delete') }}</el-button>
-                </div>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <!-- 码值项对话框 -->
-    <el-dialog
-      v-model="itemDialogVisible"
-      :title="editingItem ? $t('standard.common.edit') + $t('standard.codeSet.items') : $t('standard.codeSet.addItem')"
-      width="480px"
-    >
-      <el-form ref="itemFormRef" :model="itemForm" :rules="itemRules" label-width="100px">
-        <el-form-item :label="$t('standard.codeSet.itemCode')" prop="code">
-          <el-input v-model="itemForm.code" :placeholder="$t('standard.codeSet.itemCodePlaceholder')" :disabled="!!editingItem" />
-        </el-form-item>
-        <el-form-item :label="$t('standard.codeSet.itemValue')" prop="value">
-          <el-input v-model="itemForm.value" :placeholder="$t('standard.codeSet.itemValuePlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="$t('standard.common.sort')">
-          <el-input-number v-model="itemForm.sort_order" :min="0" style="width:100%" />
-        </el-form-item>
-        <el-form-item :label="$t('standard.codeSet.itemActive')">
-          <el-switch v-model="itemForm.is_active" />
-        </el-form-item>
-        <el-form-item :label="$t('standard.common.description')">
-          <el-input v-model="itemForm.description" type="textarea" :rows="2" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="itemDialogVisible = false">{{ $t('standard.common.cancel') }}</el-button>
-        <el-button type="primary" @click="handleItemSubmit" :loading="itemSubmitting">
-          {{ editingItem ? $t('standard.common.save') : $t('standard.codeSet.addItem') }}
-        </el-button>
-      </template>
-    </el-dialog>
+  <div class="page-shell" v-loading="loading">
+    <div class="page-header"><div class="header-left"><el-button :icon="ArrowLeft" @click="goBack">{{ $t('standard.common.back') }}</el-button><h2>{{ revision.name || codeSet.code || $t('standard.codeSet.detailTitle') }}</h2><el-tag v-if="revision.status" :type="statusType(revision.status)">R{{ revision.revision_no }} · {{ statusLabel(revision.status) }}</el-tag><el-tag v-if="codeSet.origin">{{ $t(`standard.codeSet.originValue.${codeSet.origin}`) }}</el-tag></div><div class="actions"><el-button v-if="editable" type="primary" :loading="saving" @click="save">{{ $t('standard.common.save') }}</el-button><el-button v-if="editable" type="warning" @click="act('submit')">{{ $t('standard.revision.submit') }}</el-button><el-button v-if="reviewing && canPublish" @click="act('return')">{{ $t('standard.revision.return') }}</el-button><el-button v-if="reviewing && canPublish" type="success" @click="act('publish')">{{ $t('standard.revision.publish') }}</el-button><el-button v-if="!codeSet.draft_revision && codeSet.current_revision && canUpdate && !platform" @click="newDraft">{{ $t('standard.revision.newDraft') }}</el-button><el-button v-if="revision.status==='published' && canPublish && !platform" type="danger" @click="act('withdraw')">{{ $t('standard.revision.withdraw') }}</el-button></div></div>
+    <el-row :gutter="16"><el-col :span="16">
+      <el-card shadow="never" class="section"><template #header>{{ $t('standard.codeSet.basicInfo') }}</template><el-form :model="revision" label-width="120px" :disabled="!editable"><el-row :gutter="16"><el-col :span="12"><el-form-item :label="$t('standard.codeSet.codeLabel')"><el-input :model-value="codeSet.code" disabled /></el-form-item></el-col><el-col :span="12"><el-form-item :label="$t('standard.codeSet.nameLabel')"><el-input v-model="revision.name" /></el-form-item></el-col><el-col :span="12"><el-form-item :label="$t('standard.glossary.domainLabel')"><el-select v-model="codeSet.domain_id" style="width:100%"><el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" /></el-select></el-form-item></el-col><el-col :span="12"><el-form-item :label="$t('standard.codeSet.valueType')"><el-select v-model="revision.value_type" style="width:100%"><el-option value="string" /><el-option value="int" /><el-option value="bigint" /></el-select></el-form-item></el-col></el-row><el-form-item :label="$t('standard.codeSet.descriptionLabel')"><el-input v-model="revision.description" type="textarea" :rows="3" /></el-form-item><el-form-item :label="$t('standard.revision.changeSummary')"><el-input v-model="revision.change_summary" type="textarea" :rows="2" /></el-form-item></el-form></el-card>
+      <el-card shadow="never" class="section"><template #header><div class="card-header"><span>{{ $t('standard.codeSet.items') }}</span><el-button v-if="editable" type="primary" size="small" :icon="Plus" @click="openItem()">{{ $t('standard.codeSet.addItem') }}</el-button></div></template><el-table :data="revision.items || []" stripe><el-table-column :label="$t('standard.codeSet.itemCode')" prop="code" width="160" /><el-table-column :label="$t('standard.codeSet.itemLabel')" prop="label" min-width="160" /><el-table-column :label="$t('standard.codeSet.itemDefinition')" prop="definition" show-overflow-tooltip /><el-table-column :label="$t('standard.common.sort')" prop="sort_order" width="80" /><el-table-column :label="$t('standard.common.status')" width="100"><template #default="{row}"><el-tag :type="row.status==='active'?'success':'info'">{{ $t(`standard.codeSet.itemStatus.${row.status}`) }}</el-tag></template></el-table-column><el-table-column v-if="editable" :label="$t('standard.common.actions')" width="140"><template #default="{row}"><el-button link type="primary" @click="openItem(row)">{{ $t('standard.common.edit') }}</el-button><el-button link type="danger" @click="removeItem(row)">{{ $t('standard.common.delete') }}</el-button></template></el-table-column></el-table></el-card>
+    </el-col><el-col :span="8"><el-card shadow="never" class="section"><template #header>{{ $t('standard.revision.history') }}</template><el-timeline><el-timeline-item v-for="item in revisions" :key="item.id" :timestamp="formatTime(item.created_at)"><div class="history-row"><el-link @click="selectRevision(item)">R{{ item.revision_no }} · {{ item.name }}</el-link><el-tag size="small" :type="statusType(item.status)">{{ statusLabel(item.status) }}</el-tag></div><small>{{ item.change_summary }}</small></el-timeline-item></el-timeline></el-card></el-col></el-row>
+    <el-dialog v-model="itemDialog" :title="editingItem ? $t('standard.common.edit') : $t('standard.codeSet.addItem')" width="500px"><el-form ref="itemFormRef" :model="itemForm" label-width="110px"><el-form-item :label="$t('standard.codeSet.itemCode')" required><el-input v-model="itemForm.code" :disabled="Boolean(editingItem)" /></el-form-item><el-form-item :label="$t('standard.codeSet.itemLabel')" required><el-input v-model="itemForm.label" /></el-form-item><el-form-item :label="$t('standard.codeSet.itemDefinition')"><el-input v-model="itemForm.definition" type="textarea" /></el-form-item><el-form-item :label="$t('standard.common.sort')"><el-input-number v-model="itemForm.sort_order" :min="0" /></el-form-item><el-form-item :label="$t('standard.common.status')"><el-radio-group v-model="itemForm.status"><el-radio value="active">{{ $t('standard.codeSet.itemStatus.active') }}</el-radio><el-radio value="deprecated">{{ $t('standard.codeSet.itemStatus.deprecated') }}</el-radio></el-radio-group></el-form-item></el-form><template #footer><el-button @click="itemDialog=false">{{ $t('standard.common.cancel') }}</el-button><el-button type="primary" :loading="itemSaving" @click="saveItem">{{ $t('standard.common.confirm') }}</el-button></template></el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useConsolePageDescriptor } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Plus } from '@element-plus/icons-vue'
-import { codeSetAPI } from '../api/standard'
-import { navigateStandardRoute } from '@/utils/moduleNavigation'
-import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
+import { useConsolePageDescriptor } from '@common-ui'
+import { codeSetAPI, domainAPI } from '../api/standard'
 import { useStandardPermissions } from '../composables/useStandardPermissions'
-import { useActionLock } from '../composables/useActionLock'
-import { useUnsavedChanges } from '../composables/useUnsavedChanges'
+import { navigateStandardRoute } from '@/utils/moduleNavigation'
+import { formatStandardDateTime } from '../utils/dateTime'
+import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 
-const route = useRoute()
-const router = useRouter()
-const goBack = () => navigateStandardRoute(router, { path: '/code-sets', query: route.query }, { history: 'replace' })
-const { t } = useI18n()
-const { canUpdate } = useStandardPermissions('code_set')
-const { isLocked: isActionLocked, runLocked } = useActionLock()
-const canModifyCodeSet = computed(() => canUpdate.value && codeSet.value.type !== 'system')
-const codeSetId = computed(() => Number(route.params.id))
-
-const saving = ref(false)
-const itemLoading = ref(false)
-const itemSubmitting = ref(false)
-const itemDialogVisible = ref(false)
-const editingItem = ref(null)
-const itemFormRef = ref(null)
-
-const codeSet = ref({})
-useConsolePageDescriptor(router, 'standard', {
-  title: computed(() => t('standard.codeSet.recentVisitTitle')),
-  subject: computed(() => codeSet.value?.name || ''),
-  ready: computed(() => Boolean(codeSet.value?.name))
-})
-const form = reactive({ name: '', type: 'custom', description: '' })
-const items = ref([])
-const editableState = computed(() => ({ ...form }))
-const { isDirty, markSaved } = useUnsavedChanges({ state: editableState, t })
-
-const itemForm = reactive({ code: '', value: '', description: '', sort_order: 0, is_active: true })
-const itemRules = computed(() => ({
-  code: [{ required: true, message: t('standard.codeSet.codeRequired'), trigger: 'blur' }],
-  value: [{ required: true, message: t('standard.codeSet.nameRequired'), trigger: 'blur' }]
-}))
-
-const loadCodeSet = async () => {
-  try {
-    const res = await codeSetAPI.get(codeSetId.value)
-    codeSet.value = res || {}
-    Object.assign(form, {
-      name: codeSet.value.name,
-      type: codeSet.value.type || 'custom',
-      description: codeSet.value.description || ''
-    })
-    markSaved()
-  } catch (err) {
-    ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.loadFailed'))
-    goBack()
-  }
-}
-
-const loadItems = async () => {
-  itemLoading.value = true
-  try {
-    const res = await codeSetAPI.getItems(codeSetId.value)
-    items.value = res || []
-  } catch (err) {
-    items.value = []
-    ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.loadFailed'))
-  } finally {
-    itemLoading.value = false
-  }
-}
-
-const handleSave = async () => {
-  if (saving.value) return
-  saving.value = true
-  try {
-    await codeSetAPI.update(codeSetId.value, { ...form, version: codeSet.value.version })
-    ElMessage.success(t('standard.common.saveSuccess'))
-    await loadCodeSet()
-  } catch (err) {
-    ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.saveFailed'))
-  } finally {
-    saving.value = false
-  }
-}
-
-const openItemDialog = (item = null) => {
-  editingItem.value = item
-  if (item) {
-    Object.assign(itemForm, {
-      code: item.code,
-      value: item.value,
-      description: item.description || '',
-      sort_order: item.sort_order || 0,
-      is_active: item.is_active
-    })
-  } else {
-    Object.assign(itemForm, { code: '', value: '', description: '', sort_order: 0, is_active: true })
-  }
-  itemDialogVisible.value = true
-}
-
-const handleItemSubmit = async () => {
-  if (itemSubmitting.value) return
-  itemSubmitting.value = true
-  try {
-    const valid = await itemFormRef.value.validate().catch(() => false)
-    if (!valid) return
-    if (editingItem.value) {
-      const res = await codeSetAPI.updateItem(codeSetId.value, editingItem.value.id, { ...itemForm, version: codeSet.value.version })
-      codeSet.value.version = res.version
-      ElMessage.success(t('standard.common.updateSuccess'))
-    } else {
-      const res = await codeSetAPI.createItem(codeSetId.value, { ...itemForm, version: codeSet.value.version })
-      codeSet.value.version = res.version
-      ElMessage.success(t('standard.common.createSuccess'))
-    }
-    itemDialogVisible.value = false
-    loadItems()
-  } catch (err) {
-    ElMessage.error(getStandardErrorMessage(err, t))
-  } finally {
-    itemSubmitting.value = false
-  }
-}
-
-const deleteItem = async (item) => {
-  await runLocked(`code-item:${item.id}`, async () => {
-    try {
-      await ElMessageBox.confirm(t('standard.codeSet.confirmDeleteItem', { name: item.value }), t('standard.common.hint'), { type: 'warning' })
-      const res = await codeSetAPI.deleteItem(codeSetId.value, item.id, codeSet.value.version)
-      codeSet.value.version = res.version
-      ElMessage.success(t('standard.common.deleteSuccess'))
-      await loadItems()
-    } catch (err) {
-      if (!isCanceledInteraction(err)) ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.deleteFailed'))
-    }
-  })
-}
-
-watch(() => route.params.id, () => {
-  loadCodeSet()
-  loadItems()
-}, { immediate: true })
+const route=useRoute(),router=useRouter(),{t,locale}=useI18n(),{canUpdate,canPublish}=useStandardPermissions('code_set')
+const loading=ref(false),saving=ref(false),itemSaving=ref(false),itemDialog=ref(false),editingItem=ref(null),codeSet=ref({}),revisions=ref([]),domains=ref([])
+const revision=reactive({}),itemForm=reactive({code:'',label:'',definition:'',sort_order:0,status:'active'})
+const platform=computed(()=>codeSet.value.origin==='platform'),editable=computed(()=>canUpdate.value&&!platform.value&&revision.status==='draft'&&codeSet.value.draft_revision_id===revision.id),reviewing=computed(()=>revision.status==='in_review'&&codeSet.value.draft_revision_id===revision.id)
+useConsolePageDescriptor(router,'standard',{title:computed(()=>t('standard.codeSet.recentVisitTitle')),subject:computed(()=>revision.name||codeSet.value.code||''),ready:computed(()=>Boolean(codeSet.value.id))})
+const flatten=nodes=>nodes.flatMap(n=>[n,...flatten(n.children||[])])
+const statusLabel=s=>s?t(`standard.revision.status.${s}`):'-',statusType=s=>({draft:'info',in_review:'warning',published:'success',superseded:'',withdrawn:'danger'}[s]||'info'),formatTime=v=>formatStandardDateTime(v,locale.value)
+const setRevision=value=>{Object.keys(revision).forEach(k=>delete revision[k]);Object.assign(revision,structuredClone(value||{}));revision.items||=[]}
+const load=async()=>{loading.value=true;try{const [aggregate,history]=await Promise.all([codeSetAPI.get(route.params.id),codeSetAPI.listRevisions(route.params.id)]);codeSet.value=aggregate;revisions.value=history||[];setRevision(aggregate.draft_revision||aggregate.current_revision||history?.[0])}catch(e){ElMessage.error(getStandardErrorMessage(e,t,'standard.common.loadFailed'));goBack()}finally{loading.value=false}}
+const loadDomains=async()=>{try{domains.value=flatten(await domainAPI.list()||[])}catch{domains.value=[]}}
+const save=async()=>{saving.value=true;try{const identity=await codeSetAPI.update(codeSet.value.id,{version:codeSet.value.version,domain_id:codeSet.value.domain_id,steward_id:codeSet.value.steward_id||null,tags:codeSet.value.tags||[]});codeSet.value=await codeSetAPI.updateRevision(codeSet.value.id,revision.id,{version:identity.version,name:revision.name,description:revision.description,value_type:revision.value_type,change_summary:revision.change_summary,effective_from:revision.effective_from||null,effective_to:revision.effective_to||null});ElMessage.success(t('standard.common.saveSuccess'));await load()}catch(e){ElMessage.error(getStandardErrorMessage(e,t,'standard.common.saveFailed'))}finally{saving.value=false}}
+const act=async action=>{try{await ElMessageBox.confirm(t(`standard.revision.confirm.${action}`),t('standard.common.hint'));const method={submit:'submitRevision',return:'returnRevision',publish:'publishRevision',withdraw:'withdrawRevision'}[action];codeSet.value=await codeSetAPI[method](codeSet.value.id,revision.id,codeSet.value.version);ElMessage.success(t('standard.common.updateSuccess'));await load()}catch(e){if(!isCanceledInteraction(e))ElMessage.error(getStandardErrorMessage(e,t))}}
+const newDraft=async()=>{try{const{value}=await ElMessageBox.prompt(t('standard.revision.changeSummary'),t('standard.revision.newDraft'),{inputPattern:/\S+/,inputErrorMessage:t('standard.revision.changeSummaryRequired')});await codeSetAPI.createRevision(codeSet.value.id,{version:codeSet.value.version,change_summary:value.trim()});await load()}catch(e){if(!isCanceledInteraction(e))ElMessage.error(getStandardErrorMessage(e,t))}}
+const openItem=item=>{editingItem.value=item||null;Object.assign(itemForm,item?{code:item.code,label:item.label,definition:item.definition||'',sort_order:item.sort_order||0,status:item.status}:{code:'',label:'',definition:'',sort_order:0,status:'active'});itemDialog.value=true}
+const saveItem=async()=>{if(!itemForm.code.trim()||!itemForm.label.trim())return;itemSaving.value=true;try{const result=editingItem.value?await codeSetAPI.updateItem(codeSet.value.id,revision.id,editingItem.value.id,{version:codeSet.value.version,label:itemForm.label,definition:itemForm.definition,sort_order:itemForm.sort_order,status:itemForm.status,replacement_item_id:null}):await codeSetAPI.createItem(codeSet.value.id,revision.id,{version:codeSet.value.version,...itemForm});codeSet.value.version=result.version;itemDialog.value=false;await load();ElMessage.success(t('standard.common.updateSuccess'))}catch(e){ElMessage.error(getStandardErrorMessage(e,t))}finally{itemSaving.value=false}}
+const removeItem=async item=>{try{await ElMessageBox.confirm(t('standard.codeSet.confirmDeleteItem',{name:item.label}),t('standard.common.hint'),{type:'warning'});const result=await codeSetAPI.deleteItem(codeSet.value.id,revision.id,item.id,codeSet.value.version);codeSet.value.version=result.version;await load()}catch(e){if(!isCanceledInteraction(e))ElMessage.error(getStandardErrorMessage(e,t))}}
+const selectRevision=item=>setRevision(item),goBack=()=>navigateStandardRoute(router,'/code-sets',{history:'replace'})
+watch(()=>route.params.id,()=>{load();loadDomains()},{immediate:true})
 </script>
 
 <style scoped>
-.code-set-detail {
-  min-height: 100%;
-  padding: 20px;
-  color: var(--addp-text-primary);
-  background: var(--addp-bg-secondary);
-}
-
-.detail-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.header-right {
-  display: flex;
-  gap: 8px;
-}
-
-.code-set-name {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--addp-text-primary);
-}
-
-.code-set-detail :deep(.el-card) { background: var(--addp-bg-primary); border-color: var(--addp-border-color); box-shadow: var(--addp-shadow-card); }
-
-.info-card {
-  margin-bottom: 0;
-}
-
-.card-title {
-  font-weight: 600;
-  color: var(--addp-text-primary);
-}
-
-.card-header-with-action {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.items-column { margin-top: 16px; }
-.table-actions { display: inline-flex; align-items: center; gap: 8px; min-width: max-content; white-space: nowrap; }
-.table-actions :deep(.el-button) { white-space: nowrap; }
-
-@media (max-width: 768px) {
-  .code-set-detail { padding: 12px; }
-  .detail-header { align-items: flex-start; flex-wrap: wrap; gap: 10px; }
-  .header-left, .header-right { flex-wrap: wrap; }
-  .code-set-detail :deep(.el-row) { margin-left: 0 !important; margin-right: 0 !important; }
-  .code-set-detail :deep(.el-col) { max-width: 100%; flex: 0 0 100%; }
-  .items-column { margin-top: 12px; }
-}
+.page-shell{min-height:100%;padding:20px;background:var(--addp-bg-secondary);color:var(--addp-text-primary)}.page-header,.header-left,.actions,.card-header,.history-row{display:flex;align-items:center}.page-header,.card-header,.history-row{justify-content:space-between}.page-header{gap:16px;margin-bottom:16px}.header-left,.actions{gap:10px;flex-wrap:wrap}.section{margin-bottom:16px}.page-shell :deep(.el-card){background:var(--addp-bg-primary);border-color:var(--addp-border-color)}h2{margin:0;font-size:20px}
 </style>

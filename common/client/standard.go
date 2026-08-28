@@ -158,6 +158,8 @@ type StandardReferenceResolution struct {
 	Status         string `json:"status,omitempty"`
 	LifecycleState string `json:"lifecycle_state,omitempty"`
 	Version        int64  `json:"version,omitempty"`
+	RevisionID     int64  `json:"revision_id,omitempty"`
+	RevisionNo     int64  `json:"revision_no,omitempty"`
 }
 
 type standardReferenceResolutionRequest struct {
@@ -174,6 +176,8 @@ type StandardReferenceCandidate struct {
 	Name       string `json:"name"`
 	Code       string `json:"code,omitempty"`
 	Status     string `json:"status"`
+	RevisionID int64  `json:"revision_id,omitempty"`
+	RevisionNo int64  `json:"revision_no,omitempty"`
 }
 
 type StandardReferenceCandidateList struct {
@@ -251,14 +255,22 @@ func (c *StandardClient) ListReferenceCandidates(
 }
 
 type ElementResponse struct {
-	ID             int64                `json:"id"`
-	TenantID       int64                `json:"tenant_id"`
-	Name           string               `json:"name"`
-	Code           string               `json:"code"`
-	DataType       string               `json:"data_type"`
-	CodeSetID      *int64               `json:"code_set_id"`
-	QualityRules   dataquality.Document `json:"quality_rules"`
-	LifecycleState string               `json:"lifecycle_state"`
+	ID              int64                    `json:"id"`
+	TenantID        int64                    `json:"tenant_id"`
+	Code            string                   `json:"code"`
+	LifecycleState  string                   `json:"lifecycle_state"`
+	CurrentRevision *ElementRevisionResponse `json:"current_revision"`
+	DraftRevision   *ElementRevisionResponse `json:"draft_revision"`
+}
+
+type ElementRevisionResponse struct {
+	ID                   int64                `json:"id"`
+	RevisionNo           int64                `json:"revision_no"`
+	Status               string               `json:"status"`
+	Name                 string               `json:"name"`
+	DataType             string               `json:"data_type"`
+	CodeSetRevisionID    *int64               `json:"code_set_revision_id"`
+	CompiledQualityRules dataquality.Document `json:"compiled_quality_rules"`
 }
 
 type ElementSummary struct {
@@ -269,18 +281,27 @@ type ElementSummary struct {
 
 type ElementCandidate struct {
 	ID           int64                `json:"id"`
+	RevisionID   int64                `json:"revision_id"`
+	RevisionNo   int64                `json:"revision_no"`
 	Name         string               `json:"name"`
 	Code         string               `json:"code"`
 	QualityRules dataquality.Document `json:"quality_rules"`
 }
 
 type elementListResponse struct {
-	Data []ElementSummary `json:"data"`
+	Data []ElementResponse `json:"data"`
 }
 
 type elementCandidateListResponse struct {
-	Data  []ElementCandidate `json:"data"`
-	Total int64              `json:"total"`
+	Data  []ElementResponse `json:"data"`
+	Total int64             `json:"total"`
+}
+
+type ElementQualityRulesSnapshot struct {
+	ElementID         int64                `json:"element_id"`
+	ElementRevisionID int64                `json:"element_revision_id"`
+	RevisionNo        int64                `json:"revision_no"`
+	QualityRules      dataquality.Document `json:"quality_rules"`
 }
 
 type tenantReferenceResponse struct {
@@ -314,6 +335,9 @@ func (c *StandardClient) ValidateElement(ctx context.Context, elementID int64) e
 	if element.LifecycleState != "active" {
 		return fmt.Errorf("standard validate element: %w", ErrStandardReferenceDeleting)
 	}
+	if element.CurrentRevision == nil || element.CurrentRevision.Status != "published" {
+		return fmt.Errorf("standard validate element: %w", ErrTenantReferenceNotFound)
+	}
 	return nil
 }
 
@@ -345,12 +369,20 @@ func (c *StandardClient) ListElementSummaries(ctx context.Context, elementIDs []
 	if err := c.doJSON(ctx, http.MethodGet, "/api/v1/standard/elements?"+query.Encode(), nil, &response); err != nil {
 		return nil, fmt.Errorf("standard list elements: %w", err)
 	}
-	return response.Data, nil
+	result := make([]ElementSummary, 0, len(response.Data))
+	for _, element := range response.Data {
+		if element.CurrentRevision == nil || element.CurrentRevision.Status != "published" {
+			continue
+		}
+		result = append(result, ElementSummary{ID: element.ID, Name: element.CurrentRevision.Name, Code: element.Code})
+	}
+	return result, nil
 }
 
 func (c *StandardClient) ListElementCandidates(ctx context.Context, keyword string, page, pageSize int) ([]ElementCandidate, int64, error) {
 	query := url.Values{
 		"keyword":   []string{keyword},
+		"status":    []string{"published"},
 		"page":      []string{strconv.Itoa(page)},
 		"page_size": []string{strconv.Itoa(pageSize)},
 	}
@@ -358,20 +390,29 @@ func (c *StandardClient) ListElementCandidates(ctx context.Context, keyword stri
 	if err := c.doJSON(ctx, http.MethodGet, "/api/v1/standard/elements?"+query.Encode(), nil, &response); err != nil {
 		return nil, 0, fmt.Errorf("standard list element candidates: %w", err)
 	}
+	result := make([]ElementCandidate, 0, len(response.Data))
 	for index := range response.Data {
-		if err := response.Data[index].QualityRules.Validate(); err != nil {
+		revision := response.Data[index].CurrentRevision
+		if revision == nil || revision.Status != "published" {
+			return nil, 0, errors.New("standard returned element candidate without published revision")
+		}
+		if err := revision.CompiledQualityRules.Validate(); err != nil {
 			return nil, 0, fmt.Errorf("standard returned invalid element candidate quality rules: %w", err)
 		}
+		result = append(result, ElementCandidate{ID: response.Data[index].ID, RevisionID: revision.ID, RevisionNo: revision.RevisionNo, Name: revision.Name, Code: response.Data[index].Code, QualityRules: revision.CompiledQualityRules})
 	}
-	return response.Data, response.Total, nil
+	return result, response.Total, nil
 }
 
-func (c *StandardClient) GetElementQualityRules(ctx context.Context, elementID int64) (*dataquality.Document, error) {
-	var result dataquality.Document
+func (c *StandardClient) GetElementQualityRules(ctx context.Context, elementID int64) (*ElementQualityRulesSnapshot, error) {
+	var result ElementQualityRulesSnapshot
 	if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v1/standard/elements/%d/quality-rules", elementID), nil, &result); err != nil {
 		return nil, fmt.Errorf("standard get element quality rules: %w", err)
 	}
-	if err := result.Validate(); err != nil {
+	if result.ElementID != elementID || result.ElementRevisionID <= 0 || result.RevisionNo <= 0 {
+		return nil, errors.New("standard returned invalid element revision identity")
+	}
+	if err := result.QualityRules.Validate(); err != nil {
 		return nil, fmt.Errorf("standard returned invalid element quality rules: %w", err)
 	}
 	return &result, nil

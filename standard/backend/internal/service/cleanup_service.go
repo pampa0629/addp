@@ -221,7 +221,8 @@ type standardCleanupCandidates struct {
 	glossaryElementMappings  []models.GlossaryElementMapping
 	elements                 []models.Element
 	codeSets                 []models.CodeSet
-	codeItems                []models.CodeItem
+	codeSetRevisions         []models.CodeSetRevision
+	codeItems                []models.CodeSetRevisionItem
 	measurementCategories    []models.MeasurementCategory
 	units                    []models.Unit
 	classifications          []models.Classification
@@ -312,8 +313,14 @@ func (s *CleanupService) listTenantCandidates(ctx context.Context, tenantID int6
 	}
 	codeSetIDs := standardCodeSetIDs(candidates.codeSets)
 	if len(codeSetIDs) > 0 {
-		if err := s.db.WithContext(ctx).Where("code_set_id IN ?", codeSetIDs).Find(&candidates.codeItems).Error; err != nil {
+		if err := s.db.WithContext(ctx).Where("code_set_id IN ?", codeSetIDs).Find(&candidates.codeSetRevisions).Error; err != nil {
 			return candidates, err
+		}
+		revisionIDs := standardCodeSetRevisionIDs(candidates.codeSetRevisions)
+		if len(revisionIDs) > 0 {
+			if err := s.db.WithContext(ctx).Where("code_set_revision_id IN ?", revisionIDs).Find(&candidates.codeItems).Error; err != nil {
+				return candidates, err
+			}
 		}
 	}
 
@@ -392,12 +399,16 @@ func (s *CleanupService) logicalCleanup(ctx context.Context, candidates standard
 		stats.DeprecatedGlossaries++
 	}
 	for _, element := range candidates.elements {
-		if element.Status == "deprecated" {
+		if element.CurrentRevisionID == nil {
 			stats.SkippedItems++
 			continue
 		}
-		if err := s.db.WithContext(ctx).Model(&models.Element{}).Where("id = ?", element.ID).
-			Updates(map[string]interface{}{"status": "deprecated", "version": gorm.Expr("version + 1")}).Error; err != nil {
+		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&models.ElementRevision{}).Where("id = ? AND element_id = ? AND status = ?", *element.CurrentRevisionID, element.ID, models.RevisionStatusPublished).Update("status", models.RevisionStatusWithdrawn).Error; err != nil {
+				return err
+			}
+			return tx.Model(&models.Element{}).Where("id = ?", element.ID).Updates(map[string]interface{}{"current_revision_id": nil, "version": gorm.Expr("version + 1")}).Error
+		}); err != nil {
 			stats.Errors = append(stats.Errors, fmt.Sprintf("deprecate element %d failed: %v", element.ID, err))
 			continue
 		}
@@ -444,7 +455,7 @@ func (s *CleanupService) physicalCleanup(ctx context.Context, candidates standar
 		{model: &models.MetricDependency{}, ids: standardMetricDependencyIDs(candidates.metricDependencies), name: "metric dependencies"},
 		{model: &models.MetricElementMapping{}, ids: standardMetricElementMappingIDs(candidates.metricElementMappings), name: "metric element mappings"},
 		{model: &models.DimensionHierarchyLevel{}, ids: standardDimensionHierarchyLevelIDs(candidates.dimensionHierarchyLevels), name: "dimension hierarchy levels"},
-		{model: &models.CodeItem{}, ids: standardCodeItemIDs(candidates.codeItems), name: "code items"},
+		{model: &models.CodeSetRevisionItem{}, ids: standardCodeItemIDs(candidates.codeItems), name: "code items"},
 		{model: &models.Unit{}, ids: standardUnitIDs(candidates.units), name: "units"},
 		{model: &models.Document{}, ids: standardDocumentIDs(documentsToDelete), name: "documents"},
 		{model: &models.Metric{}, ids: standardMetricIDs(candidates.metrics), name: "metrics"},
@@ -732,7 +743,15 @@ func standardCodeSetIDs(items []models.CodeSet) []int64 {
 	return ids
 }
 
-func standardCodeItemIDs(items []models.CodeItem) []int64 {
+func standardCodeSetRevisionIDs(items []models.CodeSetRevision) []int64 {
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	return ids
+}
+
+func standardCodeItemIDs(items []models.CodeSetRevisionItem) []int64 {
 	ids := make([]int64, 0, len(items))
 	for _, item := range items {
 		ids = append(ids, item.ID)

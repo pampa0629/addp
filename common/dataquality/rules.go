@@ -43,10 +43,12 @@ type Rule struct {
 }
 
 type Parameters struct {
-	Pattern *string      `json:"pattern,omitempty"`
-	Min     *json.Number `json:"min,omitempty"`
-	Max     *json.Number `json:"max,omitempty"`
-	Values  []string     `json:"values,omitempty"`
+	Pattern      *string      `json:"pattern,omitempty"`
+	Min          *json.Number `json:"min,omitempty"`
+	Max          *json.Number `json:"max,omitempty"`
+	MinInclusive *bool        `json:"min_inclusive,omitempty"`
+	MaxInclusive *bool        `json:"max_inclusive,omitempty"`
+	Values       []string     `json:"values,omitempty"`
 }
 
 func EmptyDocument() Document {
@@ -140,11 +142,11 @@ func (r Rule) Validate() error {
 		if r.Params.Pattern == nil || strings.TrimSpace(*r.Params.Pattern) == "" {
 			return fmt.Errorf("format params.pattern must be a non-empty string")
 		}
-		if r.Params.Min != nil || r.Params.Max != nil || r.Params.Values != nil {
+		if r.Params.Min != nil || r.Params.Max != nil || r.Params.MinInclusive != nil || r.Params.MaxInclusive != nil || r.Params.Values != nil {
 			return fmt.Errorf("format params only allows pattern")
 		}
 	case RuleTypeLength:
-		if r.Params.Pattern != nil || r.Params.Values != nil {
+		if r.Params.Pattern != nil || r.Params.MinInclusive != nil || r.Params.MaxInclusive != nil || r.Params.Values != nil {
 			return fmt.Errorf("length params only allows min and max")
 		}
 		if r.Params.Min == nil && r.Params.Max == nil {
@@ -163,7 +165,7 @@ func (r Rule) Validate() error {
 		}
 	case RuleTypeValueRange:
 		if r.Params.Pattern != nil || r.Params.Values != nil {
-			return fmt.Errorf("value_range params only allows min and max")
+			return fmt.Errorf("value_range params only allows min, max and inclusive flags")
 		}
 		if r.Params.Min == nil && r.Params.Max == nil {
 			return fmt.Errorf("value_range params requires min or max")
@@ -180,7 +182,7 @@ func (r Rule) Validate() error {
 			return fmt.Errorf("value_range params.min must be less than or equal to max")
 		}
 	case RuleTypeAllowedValues:
-		if r.Params.Pattern != nil || r.Params.Min != nil || r.Params.Max != nil {
+		if r.Params.Pattern != nil || r.Params.Min != nil || r.Params.Max != nil || r.Params.MinInclusive != nil || r.Params.MaxInclusive != nil {
 			return fmt.Errorf("allowed_values params only allows values")
 		}
 		if len(r.Params.Values) == 0 {
@@ -258,7 +260,7 @@ func (r *Rule) UnmarshalJSON(raw []byte) error {
 }
 
 func (p Parameters) empty() bool {
-	return p.Pattern == nil && p.Min == nil && p.Max == nil && p.Values == nil
+	return p.Pattern == nil && p.Min == nil && p.Max == nil && p.MinInclusive == nil && p.MaxInclusive == nil && p.Values == nil
 }
 
 func nonNegativeInteger(value *json.Number, field string) (int64, bool, error) {

@@ -96,6 +96,7 @@ func handleHome(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 // ============================================================
 
 // @Summary 获取资产分类树 | Get asset category tree
+// @Description 仅包含有已上架资产的分支，count 为当前节点整棵子树的已上架资产数 | Contains only branches with published assets; count is the published asset total for the entire subtree
 // @Tags Portal
 // @Produce json
 // @Success 200 {array} map[string]interface{}
@@ -105,7 +106,7 @@ func handleHome(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["asset.category.read"]
 // handleCategories GET /api/v1/portal/categories
-// 返回资产分类树（只含有 published 资产的节点）
+// 返回资产分类树（只含有 published 资产的分支，count 为子树已上架资产数）
 func handleCategories(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		categories, err := assetClient.GetCategories(c.Request.Context(), userAccessToken(c))
@@ -117,17 +118,17 @@ func handleCategories(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	}
 }
 
-// @Summary 获取分类下的资产列表 | Get assets in category
+// @Summary 获取资产目录子树的资产列表 | Get assets in an asset directory subtree
 // @Tags Portal
 // @Produce json
-// @Param id path int true "资产分类 ID | Asset category ID"
+// @Param id path int true "资产目录节点 ID | Asset directory node ID"
 // @Success 200 {object} map[string]interface{}
 // @Failure 502 {object} map[string]string "资产服务调用失败 | Asset service request failed"
 // @Router /categories/{id}/assets [get]
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["asset.category.read","asset.entry.read"]
-// handleCategoryAssets GET /api/v1/portal/categories/:id/assets
+// handleCategoryAssets GET /api/v1/portal/categories/:id/assets，包含当前节点及全部后代节点中的已上架资产。
 func handleCategoryAssets(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		categoryID, err := strconv.ParseInt(c.Param("id"), 10, 64)

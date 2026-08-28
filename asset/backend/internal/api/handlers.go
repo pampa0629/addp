@@ -157,6 +157,8 @@ func (h *Handler) getCategory(c *gin.Context) {
 // @Produce json
 // @Param request body service.CreateAssetCategoryRequest true "资产分类 | Asset category"
 // @Success 201 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 409 {object} map[string]string
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["asset.management.read","asset.category.create"]
@@ -168,20 +170,22 @@ func (h *Handler) createCategory(c *gin.Context) {
 	}
 	category, err := h.categorySvc.Create(commonAuth.GetTenantID(c), &request)
 	if err != nil {
-		commonAPI.BadRequestError(c, err.Error())
+		writeCategoryMutationError(c, err)
 		return
 	}
 	commonAPI.CreatedResponse(c, category)
 }
 
 // updateCategory godoc
-// @Summary 更新资产分类 | Update asset category
+// @Summary 完整更新资产目录节点 | Fully update an asset category
+// @Description 完整更新名称、父目录、说明和排序；parent_id 为 null 时移动到根目录 | Fully updates name, parent, description, and sort order; null parent_id moves the category to the root
 // @Tags Asset Category
 // @Accept json
 // @Produce json
 // @Param id path int true "资产分类 ID | Asset category ID"
 // @Param request body service.UpdateAssetCategoryRequest true "资产分类 | Asset category"
 // @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 409 {object} map[string]string
 // @Security BearerAuth
@@ -197,20 +201,33 @@ func (h *Handler) updateCategory(c *gin.Context) {
 	if !commonAPI.BindJSON(c, &request) {
 		return
 	}
+	if !request.IsComplete() {
+		commonAPI.BadRequestError(c, commoni18n.T(c, commoni18n.MsgInvalidParams))
+		return
+	}
 	category, err := h.categorySvc.Update(commonAuth.GetTenantID(c), id, &request)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			commonAPI.NotFoundError(c, commoni18n.T(c, i18nkeys.MsgCategoryNotFound))
-			return
-		}
-		if errors.Is(err, service.ErrAssetCategoryVersionConflict) {
-			c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, i18nkeys.MsgCategoryVersionConflict), "error_code": "asset_category_version_conflict"})
-			return
-		}
-		commonAPI.BadRequestError(c, err.Error())
+		writeCategoryMutationError(c, err)
 		return
 	}
 	commonAPI.SuccessResponse(c, category)
+}
+
+func writeCategoryMutationError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		commonAPI.NotFoundError(c, commoni18n.T(c, i18nkeys.MsgCategoryNotFound))
+	case errors.Is(err, service.ErrAssetCategoryVersionConflict):
+		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, i18nkeys.MsgCategoryVersionConflict), "error_code": "asset_category_version_conflict"})
+	case errors.Is(err, service.ErrAssetCategoryDuplicateName):
+		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, i18nkeys.MsgCategoryDuplicateName), "error_code": "asset_category_duplicate_name"})
+	case errors.Is(err, service.ErrAssetCategoryParentNotFound):
+		commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgCategoryParentNotFound))
+	case errors.Is(err, service.ErrAssetCategoryInvalidParent):
+		commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgCategoryInvalidParent))
+	default:
+		commonAPI.BadRequestError(c, err.Error())
+	}
 }
 
 // deleteCategory godoc
@@ -255,6 +272,8 @@ func (h *Handler) deleteCategory(c *gin.Context) {
 // @Summary 获取资产列表 | List assets
 // @Tags Asset
 // @Produce json
+// @Param category_id query int false "直接归属的资产分类 ID；-1 表示未分类 | Directly assigned asset category ID; -1 means uncategorized"
+// @Failure 400 {object} map[string]string "无效的资产分类 ID | Invalid asset category ID"
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
@@ -267,9 +286,12 @@ func (h *Handler) listAssets(c *gin.Context) {
 		Page: page, PageSize: pageSize, Status: c.Query("status"), TypeID: typeID, Keyword: c.Query("keyword"),
 	}
 	if value := c.Query("category_id"); value != "" {
-		if categoryID, err := strconv.ParseInt(value, 10, 64); err == nil {
-			params.CategoryID = &categoryID
+		categoryID, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || categoryID == 0 || categoryID < -1 {
+			commonAPI.BadRequestError(c, commoni18n.T(c, i18nkeys.MsgInvalidID))
+			return
 		}
+		params.CategoryIDs = []int64{categoryID}
 	}
 	assets, total, err := h.assetSvc.List(commonAuth.GetTenantID(c), params)
 	if err != nil {

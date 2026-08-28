@@ -118,8 +118,8 @@ func main() {
 	// 创建 Services
 	domainSvc := service.NewDomainService(domainRepo, tenantReferenceRepo, standardReferenceDeletionSvc)
 	glossarySvc := service.NewGlossaryService(glossaryRepo, tenantReferenceRepo)
-	elementSvc := service.NewElementService(elementRepo, tenantReferenceRepo, standardReferenceDeletionSvc)
-	codeSetSvc := service.NewCodeSetService(codeSetRepo)
+	elementSvc := service.NewElementService(elementRepo, codeSetRepo, tenantReferenceRepo, standardReferenceDeletionSvc)
+	codeSetSvc := service.NewCodeSetService(codeSetRepo, tenantReferenceRepo)
 	unitSvc := service.NewUnitService(mCatRepo, unitRepo)
 	classificationSvc := service.NewClassificationService(classificationRepo, gradingRepo, tenantReferenceRepo)
 	metricSvc := service.NewMetricService(metricCatRepo, metricRepo, tenantReferenceRepo, standardReferenceDeletionSvc)

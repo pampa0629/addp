@@ -1064,6 +1064,27 @@ Catalog 新模块实现必须同时覆盖：
 - Asset、Portal、Console 定向前端测试与生产构建全部通过；`make test-module MODULE=asset` 完整通过 platform T0、Asset Go T1、前端 T1/T3、PostgreSQL T2、Swagger、授权和 CI 自动发现；
 - 用户随后正常统一重启，System、Gateway、Catalog、Asset、Portal、Workbench Ready 与 Console 均为 `200`。Asset schema 中五个旧 `catalog*` 序列、主键和索引对象已全部归零，`categories_id_seq`、`categories_pkey` 与三个新索引完整存在；迁移由 Asset 正常启动自动应用，没有手工改库。Catalog 启动时仍仅出现一次 Workbench 时序告警，随后 checkpoint 已在重启后继续推进，确认自动恢复链路有效。
 
+### 2026-08-28：资产目录子树消费语义收口
+
+- Asset 管理端 `GET /assets?category_id=` 固定表示“直接归属于该 AssetCategory”，用于精确归类、调整和治理；不隐式展开后代目录；
+- Asset 消费端 `GET /consumer/assets?category_id=` 和 Portal `GET /categories/{id}/assets` 固定表示“当前 AssetCategory 及其全部后代”，选择父目录即可浏览整个子树中的已上架资产；
+- 子树展开由 Asset 在同 Tenant 内递归解析权威 `AssetCategory` 关系，Portal 只传递用户选中的一个节点；不让前端展开 ID，不新增 `include_descendants` 兼容开关，不建立第二份目录投影；
+- 消费目录树只返回含有已上架资产的分支，节点 `count` 为当前节点整棵子树的已上架资产总数；因此父节点展示数量与点入后的列表总量一致。管理端目录列表和树仍保留直接归属数；
+- 非法目录 ID 返回 `400`，不存在或跨 Tenant 节点返回 `404`；同一子树 ID 集合同时用于 PostgreSQL 列表查询和 Meilisearch 过滤，不允许搜索路径与数据库路径产生不同的目录语义；
+- SQLite 服务单测、消费 API 契约、搜索过滤单测和真实 PostgreSQL 递归 CTE 门禁已纳入现有 Asset 测试体系；Asset / Portal Swagger 已同步子树和计数语义，不新增 CI workflow。
+- 用户统一重启后，System、Gateway、Asset 和 Portal Ready 均为 `200`；Asset 目录管理页正常展示当前 Tenant 的 6 个多级目录节点，Portal 父目录路由 `/portal/categories/1` 正常返回 0 项，Portal BFF 与 Asset 消费路由均为 `200`，相关页面无 browser warning/error；
+- 当前运行库有 6 个 AssetCategory，但没有任何 `published` Asset，因此本次不为验收临时制造资产或修改发布状态。“父目录子树 `count` 与点入后列表总数一致”已由 API 契约和 PostgreSQL 门禁确定性覆盖，真实数据运行态证据只在自然产生包含后代已上架资产的父目录后补验，不视为实现阻断。
+
+### 2026-08-28：AssetCategory 目录移动契约
+
+- 目录位置属于 AssetCategory 聚合状态，不新增 `/move` 动词路由或独立关联实体；唯一 `PUT /categories/{id}` 收敛为完整更新，请求同时携带 `version`、`name`、`parent_id`、`description` 和 `sort_order`；
+- `parent_id=null` 明确表示移动到根目录；正整数表示移动到同 Tenant 的目标目录。目标不存在、跨 Tenant、指向自身或任一后代、或移动后与同级目录重名时整次更新失败；
+- 后端让 AssetCategory 创建、完整更新和删除共享当前 Tenant 的目录图事务锁；更新在锁内校验完整层级、条件匹配 `id + tenant_id + version` 并递增版本，任一失败不产生部分移动，也不允许并发挂接与删除破坏树结构。版本冲突继续返回 `409 + asset_category_version_conflict`；
+- 前端复用已加载的 AssetCategory 权威树组装父目录选择器，用户只看到名称和层级，不输入 ID；编辑当前节点时从候选中排除自身和全部后代，并提供明确的“根目录”选项；
+- 完整更新请求必须显式包含 `parent_id`、`description` 和 `sort_order`，后端区分字段缺失与合法零值（`null`、空说明和排序 `0`），避免遗漏字段被误解释为移动到根目录或清空聚合状态；Swagger 同步将三者标为 required，并将 `parent_id` 标为 `x-nullable`；
+- 乐观锁冲突时编辑对话框保留当前输入并提示重新加载，只有用户显式选择“重新加载”才以最新版本覆盖表单；目录名称、父目录、排序和说明始终作为一个整体提交；
+- SQLite 服务测试与生产 Router API 契约覆盖同 Tenant 移动、移动到根目录、自身/后代/跨 Tenant 拒绝、同级重名和版本冲突；真实 PostgreSQL 门禁覆盖目录图加锁、移动和环路拒绝，前端 Vitest 覆盖候选排除与可读层级路径，生产构建通过。未增加新 workflow，继续由统一 Asset 测试入口执行。
+
 ## 二十二、当前推进状态
 
 | 工作项 | 状态 | 说明 |
@@ -1081,7 +1102,7 @@ Catalog 新模块实现必须同时覆盖：
 | Catalog 模块实现 | 核心能力已完成 | 自动建档、查询、编目、重绑、历史、搜索投影、PostgreSQL 门禁和平台登记已落地；T4 已登记待专用 Runner 首跑 |
 | 组织、语义与协作实现 | 已完成 | 组织管理、语义、责任、失效治理队列、个人目录标记、Project Group 目录集合、状态推进和审计均已完成 |
 | Manager / Asset 旧路线删除 | 已完成 | Manager owner 内容索引、AssetComponent 单路径、Portal 已发布消费均已收敛，旧 discoverable、AssetRecord 和 `source_reference` 已删除 |
-| 企业资源目录 / 资产目录 / 引擎资源树命名收口 | 已完成 | Enterprise Catalog 使用 `CatalogEntry`；Asset 多级导航使用 `AssetCategory`；Manager 技术树使用 `ResourceTree`，三者不复制、不兼容旧分类契约 |
+| 企业资源目录 / 资产目录 / 引擎资源树命名收口 | 已完成 | Enterprise Catalog 使用 `CatalogEntry`；Asset 多级导航使用 `AssetCategory`；Manager 技术树使用 `ResourceTree`，三者不复制、不兼容旧分类契约；Portal 按 AssetCategory 子树消费，管理端按直接归属管理；AssetCategory 可通过名称层级选择器安全调整父目录 |
 | Model 专业目录接入 | 已完成 | Entity / LogicalTable 自动建档，当前专业事实动态解析，Catalog 仅保存最小可重建投影且不复制 Model 语义 |
 | Standard Metric 专业目录接入 | 已完成 | Metric 自动建档，当前专业事实动态解析，指标定义与内生关系仍只归 Standard |
 | Service QueryService 专业目录接入 | 已完成 | QueryService 自动建档，当前最小摘要动态解析，服务定义、执行契约和消费描述仍只归 Service |
@@ -1121,3 +1142,4 @@ Catalog 新模块实现必须同时覆盖：
 11. 统一 Workspace 评估已收口为“当前不新增”；不得为了形式上统一而添加空壳模块、`workspace_id` 或把引擎 `SpatialWorkspace` 与企业协作概念合并；只在第 10.5 节触发条件成立时重开文档优先评估。
 12. 显式成员批量治理已经完成代码、Swagger、PostgreSQL、前端、Online 契约登记和本机真实写入验收；后续不要增加“全部匹配筛选”、手工 owner ID、Tenant 级 `revision` 或逐条部分成功路线。专用 macOS 只需随既有 `enterprise-catalog-publishing` 做当前页选择和对话框的周期回归，不在永久 fixture 上重复提交批量写入。
 13. **已完成**：正常统一重启后只读确认 Asset schema 中不再存在 `catalogs_id_seq`、`catalogs_pkey`、`idx_asset_catalogs_*` 或 `idx_asset_assets_catalog_id`；迁移由 Asset 启动自动应用，没有手工改库或单独接管整套服务。
+14. AssetCategory 父目录选择器、完整更新契约、同 Tenant 目录图事务锁、环路/跨 Tenant/同级重名/版本冲突校验及统一 Asset 门禁均已完成；服务加载本轮代码后只需在真实页面选择一个非业务关键目录，执行“移动到另一父目录→移动回原位置”的可恢复运行态验收并确认无浏览器错误。不要新增 `/move` 路由、手工 ID 输入或第二份目录关系。

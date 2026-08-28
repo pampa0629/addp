@@ -44,7 +44,7 @@ func (r *TenantReferenceRepository) RequireMetric(tenantID int64, id *int64) err
 }
 
 func (r *TenantReferenceRepository) RequireElement(tenantID, id int64) error {
-	return r.requireActiveOne(&models.Element{}, tenantID, &id)
+	return r.requirePublishedElement(tenantID, id)
 }
 
 func (r *TenantReferenceRepository) RequireGlossary(tenantID, id int64) error {
@@ -52,7 +52,29 @@ func (r *TenantReferenceRepository) RequireGlossary(tenantID, id int64) error {
 }
 
 func (r *TenantReferenceRepository) RequireElements(tenantID int64, ids []int64) error {
-	return r.requireActiveMany(&models.Element{}, tenantID, ids)
+	uniqueIDs := uniqueInt64s(ids)
+	if len(uniqueIDs) == 0 {
+		return nil
+	}
+	var count int64
+	if err := r.db.Model(&models.Element{}).Where("tenant_id = ? AND lifecycle_state = ? AND current_revision_id IS NOT NULL AND id IN ?", tenantID, "active", uniqueIDs).Distinct("id").Count(&count).Error; err != nil {
+		return err
+	}
+	if count != int64(len(uniqueIDs)) {
+		return ErrInvalidTenantReference
+	}
+	return nil
+}
+
+func (r *TenantReferenceRepository) requirePublishedElement(tenantID, id int64) error {
+	var count int64
+	if err := r.db.Model(&models.Element{}).Where("id = ? AND tenant_id = ? AND lifecycle_state = ? AND current_revision_id IS NOT NULL", id, tenantID, "active").Count(&count).Error; err != nil {
+		return err
+	}
+	if count != 1 {
+		return ErrInvalidTenantReference
+	}
+	return nil
 }
 
 func (r *TenantReferenceRepository) RequireGlossaries(tenantID int64, ids []int64) error {

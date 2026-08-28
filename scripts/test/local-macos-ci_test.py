@@ -23,6 +23,7 @@ class LocalMacOSCiTest(unittest.TestCase):
         self.publisher = self.root / "publisher"
         self.fake_bin = self.root / "bin"
         self.make_log = self.root / "make.log"
+        self.make_environment_log = self.root / "make-environment.log"
         self.npm_log = self.root / "npm.log"
 
         subprocess.run(["git", "init", "--bare", "-q", str(self.origin)], check=True)
@@ -92,6 +93,7 @@ class LocalMacOSCiTest(unittest.TestCase):
             """
             #!/bin/bash
             printf '%s\n' "$*" >> "$MAKE_LOG"
+            printf '%s|%s\n' "$*" "${DEVELOP_POSTGRES_TEST_DSN-UNSET}" >> "$MAKE_ENVIRONMENT_LOG"
             if [ -n "${FAIL_MAKE_TARGET:-}" ] && [[ "$*" == *"$FAIL_MAKE_TARGET"* ]]; then
               exit 17
             fi
@@ -169,14 +171,18 @@ class LocalMacOSCiTest(unittest.TestCase):
         fail_target: str = "",
         active_infra: bool = False,
         node_version: str = "v24.20.0",
+        develop_postgres_test_dsn: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment["PATH"] = f"{self.fake_bin}:{environment['PATH']}"
         environment["MAKE_LOG"] = str(self.make_log)
+        environment["MAKE_ENVIRONMENT_LOG"] = str(self.make_environment_log)
         environment["NPM_LOG"] = str(self.npm_log)
         environment["FAIL_MAKE_TARGET"] = fail_target
         environment["ACTIVE_INFRA"] = "1" if active_infra else "0"
         environment["NODE_VERSION"] = node_version
+        if develop_postgres_test_dsn is not None:
+            environment["DEVELOP_POSTGRES_TEST_DSN"] = develop_postgres_test_dsn
         return subprocess.run(
             ["bash", "scripts/test/local-macos-ci.sh", *arguments],
             cwd=self.repository,
@@ -194,6 +200,11 @@ class LocalMacOSCiTest(unittest.TestCase):
         if not self.npm_log.exists():
             return []
         return self.npm_log.read_text(encoding="utf-8").splitlines()
+
+    def _make_environments(self) -> list[str]:
+        if not self.make_environment_log.exists():
+            return []
+        return self.make_environment_log.read_text(encoding="utf-8").splitlines()
 
     def _publish_change(self) -> str:
         change = self.publisher / "change.txt"
@@ -314,6 +325,19 @@ class LocalMacOSCiTest(unittest.TestCase):
         state = self.repository / ".git/addp-local-ci/last-success-sha"
         self.assertEqual(baseline, state.read_text(encoding="utf-8").strip())
         self.assertEqual("infra-down", self._make_commands()[-1])
+
+    def test_postgres_gates_replace_external_develop_dsn_with_shared_test_database(self) -> None:
+        result = self._run(
+            "--no-fetch",
+            develop_postgres_test_dsn="postgres://external/unsafe_database",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn("test|UNSET", self._make_environments())
+        self.assertIn(
+            "test-integration|postgres://addp:addp_password@127.0.0.1:15432/addp_test?sslmode=disable",
+            self._make_environments(),
+        )
 
     def test_check_only_rejects_dirty_checkout(self) -> None:
         (self.repository / "untracked.txt").write_text("dirty\n", encoding="utf-8")

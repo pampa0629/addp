@@ -49,6 +49,30 @@
       "continueEditing": "Continue editing",
       "saveBeforeAction": "Save the current changes before changing status"
     },
+    "revision": {
+      "number": "Revision",
+      "history": "Revision History",
+      "changeSummary": "Change Summary",
+      "changeSummaryRequired": "Enter a change summary",
+      "newDraft": "New Draft",
+      "submit": "Submit",
+      "return": "Return to Draft",
+      "publish": "Publish",
+      "withdraw": "Withdraw",
+      "status": {
+        "draft": "Draft",
+        "in_review": "In Review",
+        "published": "Published",
+        "superseded": "Superseded",
+        "withdrawn": "Withdrawn"
+      },
+      "confirm": {
+        "submit": "Submit this revision for review?",
+        "return": "Return this revision to draft?",
+        "publish": "Publish this revision as the only current revision?",
+        "withdraw": "Withdraw this published revision? New downstream references will be rejected."
+      }
+    },
     "layout": {
       "title": "Data Standards & Modeling",
       "logout": "Logout",
@@ -101,6 +125,8 @@
       "aliasPlaceholder": "Press Enter to add aliases",
       "domainLabel": "Business Domain",
       "definitionLabel": "Definition",
+      "definitionRequired": "Please enter a definition",
+      "formatLabel": "Format Constraint",
       "definitionPlaceholder": "Enter business definition",
       "exampleLabel": "Usage Example",
       "noteLabel": "Note",
@@ -146,6 +172,16 @@
       "exampleValuesLabel": "Example Values",
       "exampleValuesPlaceholder": "Press Enter to add",
       "qualityRules": "Quality Rules",
+      "compiledRuleHint": "Not-null, length, format, range, and enumeration rules are compiled from semantic fields. Only uniqueness is configured here.",
+      "valueDomain": "Value Domain",
+      "valueDomainKind": "Value Domain Type",
+      "unrestricted": "Unrestricted",
+      "range": "Continuous Range",
+      "enumeration": "Enumeration",
+      "rangeMin": "Minimum",
+      "rangeMax": "Maximum",
+      "minInclusive": "Include Minimum",
+      "maxInclusive": "Include Maximum",
       "addRule": "Add Rule",
       "noRules": "No quality rules",
       "ruleEnabled": "Enabled",
@@ -194,6 +230,14 @@
       "namePlaceholder": "e.g. Gender, Status",
       "typeLabel": "Type",
       "descriptionLabel": "Description",
+      "descriptionRequired": "Please enter a description",
+      "domainRequired": "Please select an owning domain",
+      "valueType": "Value Type",
+      "origin": "Origin",
+      "originValue": {
+        "platform": "Platform",
+        "tenant": "Tenant"
+      },
       "typeSystem": "System",
       "typeCustom": "Custom",
       "codeRequired": "Please enter code",
@@ -205,6 +249,12 @@
       "addItem": "Add Item",
       "itemCode": "Code",
       "itemValue": "Value",
+      "itemLabel": "Label",
+      "itemDefinition": "Definition",
+      "itemStatus": {
+        "active": "Active",
+        "deprecated": "Deprecated"
+      },
       "itemCodePlaceholder": "e.g. 1, M, active",
       "itemValuePlaceholder": "e.g. Male, Enabled",
       "itemDescription": "Description",

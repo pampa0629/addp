@@ -139,7 +139,7 @@ func TestIntegrationPostgresIssueConcurrentFirstObservation(t *testing.T) {
 
 	tenantID := time.Now().UnixNano()%100000000 + 920000000
 	application := models.RuleApplication{
-		TenantID: tenantID, ElementID: 11, EngineID: 12, SchemaName: "public", Table: "orders", ColumnName: "amount",
+		TenantID: tenantID, ElementID: 11, ElementRevisionID: 1101, EngineID: 12, SchemaName: "public", Table: "orders", ColumnName: "amount",
 		RuleConfig: []byte(`{"schema_version":"addp.quality.rules/v1","rules":[{"rule_key":"00000000-0000-4000-8000-000000000001","type":"not_null","enabled":true,"severity":"error","message":"","params":{}}]}`),
 		CreatedBy:  1,
 	}

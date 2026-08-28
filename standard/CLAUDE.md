@@ -117,41 +117,71 @@ standard/
 |------|------|------|
 | glossary_id / element_id | int64 PK | 复合主键，多对多关联 |
 
-### `standard.elements` — 数据元（核心对象）
+### `standard.elements` — 数据元稳定身份
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| domain_id | int64? | 所属业务域 |
-| name / code | string | 显示名 / 英文标识符 |
-| data_type | string | string/int/bigint/float/decimal/date/datetime/bool/json/text |
-| length / precision_num / scale | int? | 长度/精度/小数位 |
-| nullable / default_value | bool/string | 可空 / 默认值 |
-| format | string | 格式约束（如日期格式） |
-| value_range | JSONB | 值域约束 |
-| unit_id | int64? | 引用 `standard.units` |
-| security_level | string | `L1` / `L2` / `L3` / `L4` |
-| classification_id | int64? | 引用 `standard.classifications` |
-| code_set_id | int64? | 引用 `standard.code_sets`（码值约束） |
-| quality_rules | JSONB | 质量规则定义 |
-| status | string | `draft` / `approved` |
+| code | string | Tenant 内唯一且不可变的标准编码 |
+| domain_id | int64? | 归属业务域 |
 | steward_id | int64? | 数据责任人 |
 | tags | StringArray | 标签 |
+| current_revision_id | int64? | 当前发布修订 |
+| draft_revision_id | int64? | 当前唯一可编辑草稿 |
+| version | int64 | 资源并发版本，不是业务版次 |
+| lifecycle_state | string | `active` / `deleting` |
 
-### `standard.code_sets` — 码值集
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| code / name | string | 码值集标识 / 名称 |
-| type | string | `system`（系统内置）/ `custom`（用户自定义） |
-
-### `standard.code_items` — 码值项
+### `standard.element_revisions` — 数据元修订
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| code_set_id | int64 | 所属码值集 |
-| code / value | string | 码 / 值 |
-| parent_id | int64? | 预留树形（当前平铺使用） |
-| sort_order / is_active | int/bool | 排序 / 是否启用 |
+| element_id / revision_no | int64 | 数据元身份 / 业务修订号 |
+| status | string | `draft` / `in_review` / `published` / `superseded` / `withdrawn` |
+| name / definition | string/text | 本修订的标准名称与定义 |
+| data_type | string | `string` / `int` / `bigint` / `float` / `decimal` / `date` / `datetime` / `bool` / `json` / `text` |
+| length / precision_num / scale | int? | 与数据类型相容的表示约束 |
+| nullable / default_value / format | bool/string | 可空、默认值和格式约束 |
+| value_domain_kind | string | `unrestricted` / `range` / `enumeration` |
+| range_constraint | JSONB | 连续值域结构；仅 `range` 使用 |
+| code_set_revision_id | int64? | 枚举值域固定引用；仅 `enumeration` 使用 |
+| unit_id / classification_id / security_level | mixed | 计量与安全治理语义 |
+| extra_quality_rules | JSONB | 不能由标准语义推导的附加质量规则 |
+| compiled_quality_rules | JSONB | 发布时从语义约束和附加规则编译的不可变规则快照 |
+| change_summary | text | 本次业务变更说明 |
+| effective_from / effective_to | time? | 生效区间 |
+| submitted_by/at / published_by/at | mixed | 审核发布审计字段 |
+
+### `standard.code_sets` — 码值集稳定身份
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| code | string | Tenant 内唯一且不可变的标准编码 |
+| domain_id | int64? | 归属业务域；Tenant 自定义码值集必填 |
+| origin | string | `platform` / `tenant`，只能由服务端决定 |
+| steward_id | int64? | 数据责任人 |
+| current_revision_id / draft_revision_id | int64? | 当前发布修订 / 当前唯一草稿 |
+| version | int64 | 资源并发版本 |
+
+### `standard.code_set_revisions` — 码值集修订
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| code_set_id / revision_no | int64 | 码值集身份 / 业务修订号 |
+| status | string | 统一标准修订状态 |
+| name / description | string/text | 本修订名称和定义 |
+| value_type | string | 码值的表示类型，首期为 `string` / `int` / `bigint` |
+| change_summary | text | 本次业务变更说明 |
+| effective_from / effective_to | time? | 生效区间 |
+
+### `standard.code_set_revision_items` — 码值修订项
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| code_set_revision_id | int64 | 所属码值集修订 |
+| code / label | string | 机器编码 / 显示名称 |
+| definition | text | 业务含义 |
+| sort_order | int | 排序 |
+| status | string | `active` / `deprecated` |
+| replacement_item_id | int64? | 当前修订内推荐替代码值 |
 
 ### `standard.measurement_categories` — 度量类别
 
@@ -270,17 +300,27 @@ GET/PUT /api/standard/glossaries/:id/elements # 关联数据元
 
 ### 数据元
 ```
-GET/POST /api/standard/elements              # GET 支持 ids=1,2,3 精确筛选，最多 100 个去重 ID
-GET/PUT/DELETE /api/standard/elements/:id
-POST /api/standard/elements/:id/approve
-GET/PUT /api/standard/elements/:id/quality-rules
+GET/POST /api/v1/standard/elements             # 创建稳定身份时同时创建首个草稿
+GET/PUT/DELETE /api/v1/standard/elements/:id   # PUT 只更新归属域、责任人和标签
+GET/POST /api/v1/standard/elements/:id/revisions
+GET/PUT /api/v1/standard/elements/:id/revisions/:revision_id
+POST /api/v1/standard/elements/:id/revisions/:revision_id/submit
+POST /api/v1/standard/elements/:id/revisions/:revision_id/publish
+POST /api/v1/standard/elements/:id/revisions/:revision_id/withdraw
+GET /api/v1/standard/elements/:id/quality-rules # 只返回当前发布修订的编译规则
 ```
 
 ### 码值集
 ```
-GET/POST /api/standard/code-sets
-GET/PUT/DELETE /api/standard/code-sets/:id
-GET/POST/PUT/DELETE /api/standard/code-sets/:id/items
+GET/POST /api/v1/standard/code-sets
+GET/PUT/DELETE /api/v1/standard/code-sets/:id   # PUT 只更新归属域和责任人
+GET/POST /api/v1/standard/code-sets/:id/revisions
+GET/PUT /api/v1/standard/code-sets/:id/revisions/:revision_id
+POST /api/v1/standard/code-sets/:id/revisions/:revision_id/submit
+POST /api/v1/standard/code-sets/:id/revisions/:revision_id/publish
+POST /api/v1/standard/code-sets/:id/revisions/:revision_id/withdraw
+GET/POST /api/v1/standard/code-sets/:id/revisions/:revision_id/items
+PUT/DELETE /api/v1/standard/code-sets/:id/revisions/:revision_id/items/:item_id
 ```
 
 ### 计量单位
@@ -397,13 +437,29 @@ composite（复合指标）
   └─ metric_dependencies 表记录依赖哪些 atomic/derived 指标
 ```
 
-### 术语/数据元/指标的状态流转
+### 数据元与码值集的修订状态流转
 
 ```
-draft → approved → deprecated
-               ↑
-           （可从 deprecated 恢复至 draft）
+draft → in_review → published → superseded
+   ↑         │          │
+   └─────────┘          └→ withdrawn
 ```
+
+- `draft` 是唯一可编辑状态；提交审核后不可继续修改，退回时恢复为同一草稿。
+- `published` 修订不可修改；后续变更从当前发布修订复制为下一草稿。
+- 发布新修订时，旧的当前发布修订在同一事务中转为 `superseded`。
+- `withdrawn` 用于撤回错误发布，不代表创建新版本；稳定身份仍保留历史。
+- 数据元与码值集稳定身份各自最多持有一个草稿和一个当前发布修订。
+
+### 值域与质量规则的单一事实源
+
+数据元修订必须在 `unrestricted`、`range`、`enumeration` 中三选一。`range` 只使用结构化 `range_constraint`；`enumeration` 必须绑定具体 `code_set_revision_id`。两者互斥，且绑定的码值集修订必须已经发布、值类型必须与数据元类型相容。
+
+发布数据元修订时，Standard 从 `nullable`、长度、格式、连续值域和码值集修订确定性编译质量规则，再合并不重复的 `extra_quality_rules`。下游 Quality 只消费当前发布修订的 `compiled_quality_rules` 快照，不允许调用方再维护第二份 `allowed_values`。
+
+### 数据字典边界
+
+数据字典不是 Standard 内的持久化主资源。它由 Meta 的物理结构事实、Catalog 的语义关联和 Standard 的当前发布数据元/码值解释组合形成。Standard 只提供标准数据元目录和发布修订解析能力。
 
 ### 文档关联的多维设计
 

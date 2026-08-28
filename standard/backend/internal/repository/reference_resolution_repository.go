@@ -34,12 +34,15 @@ func (r *ReferenceResolutionRepository) ResolveGlossaries(ctx context.Context, t
 	return result, wrapDBError(err)
 }
 
-func (r *ReferenceResolutionRepository) ResolveElements(ctx context.Context, tenantID int64, ids []int64) ([]models.Element, error) {
-	result := make([]models.Element, 0)
+func (r *ReferenceResolutionRepository) ResolveElements(ctx context.Context, tenantID int64, ids []int64) ([]models.PublishedElementReference, error) {
+	result := make([]models.PublishedElementReference, 0)
 	if len(ids) == 0 {
 		return result, nil
 	}
-	err := r.db.WithContext(ctx).Where("tenant_id = ? AND id IN ?", tenantID, ids).Find(&result).Error
+	err := r.db.WithContext(ctx).Table("standard.elements AS e").
+		Select("e.id, e.tenant_id, e.code, e.lifecycle_state, e.version, er.id AS revision_id, er.revision_no, er.name, er.status").
+		Joins("JOIN standard.element_revisions er ON er.id = e.current_revision_id AND er.status = ?", models.RevisionStatusPublished).
+		Where("e.tenant_id = ? AND e.id IN ?", tenantID, ids).Scan(&result).Error
 	return result, wrapDBError(err)
 }
 
@@ -75,18 +78,20 @@ func (r *ReferenceResolutionRepository) ListGlossaryCandidates(ctx context.Conte
 	return items, total, wrapDBError(err)
 }
 
-func (r *ReferenceResolutionRepository) ListElementCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.Element, int64, error) {
-	query := r.db.WithContext(ctx).Model(&models.Element{}).
-		Where("tenant_id = ? AND status = ? AND lifecycle_state = ?", tenantID, "approved", "active")
+func (r *ReferenceResolutionRepository) ListElementCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.PublishedElementReference, int64, error) {
+	query := r.db.WithContext(ctx).Table("standard.elements AS e").
+		Joins("JOIN standard.element_revisions er ON er.id = e.current_revision_id AND er.status = ?", models.RevisionStatusPublished).
+		Where("e.tenant_id = ? AND e.lifecycle_state = ?", tenantID, "active")
 	if search = strings.TrimSpace(search); search != "" {
 		pattern := "%" + search + "%"
-		query = query.Where("name ILIKE ? OR code ILIKE ? OR definition ILIKE ?", pattern, pattern, pattern)
+		query = query.Where("er.name ILIKE ? OR e.code ILIKE ? OR er.definition ILIKE ?", pattern, pattern, pattern)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, wrapDBError(err)
 	}
-	items := make([]models.Element, 0)
-	err := query.Order("LOWER(name) ASC, id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&items).Error
+	items := make([]models.PublishedElementReference, 0)
+	err := query.Select("e.id, e.tenant_id, e.code, e.lifecycle_state, e.version, er.id AS revision_id, er.revision_no, er.name, er.status").
+		Order("LOWER(er.name) ASC, e.id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Scan(&items).Error
 	return items, total, wrapDBError(err)
 }

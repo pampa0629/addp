@@ -1,33 +1,5 @@
 basePath: /api/v1/standard
 definitions:
-  dataquality.Parameters:
-    properties:
-      max:
-        type: string
-      min:
-        type: string
-      pattern:
-        type: string
-      values:
-        items:
-          type: string
-        type: array
-    type: object
-  dataquality.Rule:
-    properties:
-      enabled:
-        type: boolean
-      message:
-        type: string
-      params:
-        $ref: '#/definitions/dataquality.Parameters'
-      rule_key:
-        type: string
-      severity:
-        type: string
-      type:
-        type: string
-    type: object
   github_com_addp_standard_internal_models.CatalogReference:
     properties:
       source_identity:
@@ -114,69 +86,254 @@ definitions:
       version:
         type: integer
     type: object
-  github_com_addp_standard_internal_models.CodeItem:
+  github_com_addp_standard_internal_models.CodeItemMutationResponse:
+    properties:
+      item:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetRevisionItem'
+      version:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.CodeSetAggregate:
     properties:
       code:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      current_revision:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetRevision'
+      current_revision_id:
+        type: integer
+      domain_id:
+        type: integer
+      draft_revision:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetRevision'
+      draft_revision_id:
+        type: integer
+      id:
+        type: integer
+      lifecycle_state:
+        type: string
+      origin:
+        type: string
+      steward_id:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+      version:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.CodeSetRevision:
+    properties:
+      change_summary:
         type: string
       code_set_id:
         type: integer
       created_at:
         type: string
+      created_by:
+        type: integer
       description:
+        type: string
+      effective_from:
+        type: string
+      effective_to:
         type: string
       id:
         type: integer
-      is_active:
-        type: boolean
-      parent_id:
-        description: 预留树形结构
+      items:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetRevisionItem'
+        type: array
+      name:
+        type: string
+      published_at:
+        type: string
+      published_by:
         type: integer
-      sort_order:
+      revision_no:
+        type: integer
+      status:
+        type: string
+      submitted_at:
+        type: string
+      submitted_by:
         type: integer
       updated_at:
         type: string
-      value:
+      updated_by:
+        type: integer
+      value_type:
         type: string
     type: object
-  github_com_addp_standard_internal_models.CodeSet:
+  github_com_addp_standard_internal_models.CodeSetRevisionItem:
     properties:
       code:
         type: string
+      code_set_revision_id:
+        type: integer
       created_at:
         type: string
-      description:
+      definition:
         type: string
       id:
         type: integer
-      name:
+      label:
         type: string
-      tenant_id:
+      replacement_item_id:
         type: integer
-      type:
-        description: system/custom
+      sort_order:
+        type: integer
+      status:
         type: string
       updated_at:
         type: string
-      version:
-        type: integer
     type: object
   github_com_addp_standard_internal_models.CreateCodeItemRequest:
     properties:
       code:
         type: string
-      description:
+      definition:
         type: string
-      is_active:
-        type: boolean
+      label:
+        type: string
       sort_order:
         type: integer
-      value:
+      status:
         type: string
       version:
+        minimum: 1
         type: integer
     required:
     - code
-    - value
+    - label
+    - status
+    - version
+    type: object
+  github_com_addp_standard_internal_models.CreateCodeSetRequest:
+    properties:
+      change_summary:
+        type: string
+      code:
+        type: string
+      description:
+        type: string
+      domain_id:
+        type: integer
+      effective_from:
+        type: string
+      effective_to:
+        type: string
+      name:
+        type: string
+      steward_id:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+      value_type:
+        type: string
+    required:
+    - change_summary
+    - code
+    - description
+    - domain_id
+    - name
+    - value_type
+    type: object
+  github_com_addp_standard_internal_models.CreateCodeSetRevisionRequest:
+    properties:
+      change_summary:
+        type: string
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - change_summary
+    - version
+    type: object
+  github_com_addp_standard_internal_models.CreateElementRequest:
+    properties:
+      change_summary:
+        type: string
+      classification_id:
+        type: integer
+      code:
+        type: string
+      code_set_revision_id:
+        type: integer
+      data_type:
+        type: string
+      default_value:
+        type: string
+      definition:
+        type: string
+      domain_id:
+        type: integer
+      effective_from:
+        type: string
+      effective_to:
+        type: string
+      example_values:
+        items:
+          type: string
+        type: array
+      extra_quality_rules:
+        additionalProperties: true
+        type: object
+      format:
+        type: string
+      length:
+        type: integer
+      name:
+        type: string
+      nullable:
+        type: boolean
+      precision_num:
+        type: integer
+      range_constraint:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.RangeConstraint'
+      scale:
+        type: integer
+      security_level:
+        type: string
+      steward_id:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+      unit_id:
+        type: integer
+      value_domain_kind:
+        type: string
+    required:
+    - change_summary
+    - code
+    - data_type
+    - definition
+    - name
+    - value_domain_kind
+    type: object
+  github_com_addp_standard_internal_models.CreateElementRevisionRequest:
+    properties:
+      change_summary:
+        type: string
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - change_summary
     - version
     type: object
   github_com_addp_standard_internal_models.CreateLinkedDocumentRequest:
@@ -285,58 +442,27 @@ definitions:
       version:
         type: integer
     type: object
-  github_com_addp_standard_internal_models.Element:
+  github_com_addp_standard_internal_models.ElementAggregate:
     properties:
-      classification_id:
-        description: 关联数据分类
-        type: integer
       code:
         type: string
-      code_set_id:
-        description: 关联码值集
-        type: integer
       created_at:
         type: string
       created_by:
         type: integer
-      data_type:
-        description: string/int/float/date/bool/json
-        type: string
-      default_value:
-        type: string
-      definition:
-        type: string
+      current_revision:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.ElementRevision'
+      current_revision_id:
+        type: integer
       domain_id:
         type: integer
-      example_values:
-        items:
-          type: string
-        type: array
-      format:
-        type: string
+      draft_revision:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.ElementRevision'
+      draft_revision_id:
+        type: integer
       id:
         type: integer
-      length:
-        type: integer
       lifecycle_state:
-        type: string
-      name:
-        type: string
-      nullable:
-        type: boolean
-      precision_num:
-        type: integer
-      quality_rules:
-        allOf:
-        - $ref: '#/definitions/github_com_addp_standard_internal_models.JSONB'
-        description: 质量规则
-      scale:
-        type: integer
-      security_level:
-        description: L1/L2/L3/L4
-        type: string
-      status:
-        description: draft/approved/deprecated
         type: string
       steward_id:
         type: integer
@@ -346,17 +472,83 @@ definitions:
         type: array
       tenant_id:
         type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+      version:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.ElementRevision:
+    properties:
+      change_summary:
+        type: string
+      classification_id:
+        type: integer
+      code_set_revision_id:
+        type: integer
+      compiled_quality_rules:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.JSONB'
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      data_type:
+        type: string
+      default_value:
+        type: string
+      definition:
+        type: string
+      effective_from:
+        type: string
+      effective_to:
+        type: string
+      element_id:
+        type: integer
+      example_values:
+        items:
+          type: string
+        type: array
+      extra_quality_rules:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.JSONB'
+      format:
+        type: string
+      id:
+        type: integer
+      length:
+        type: integer
+      name:
+        type: string
+      nullable:
+        type: boolean
+      precision_num:
+        type: integer
+      published_at:
+        type: string
+      published_by:
+        type: integer
+      range_constraint:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.RangeConstraint'
+      revision_no:
+        type: integer
+      scale:
+        type: integer
+      security_level:
+        type: string
+      status:
+        type: string
+      submitted_at:
+        type: string
+      submitted_by:
+        type: integer
       unit_id:
-        description: 关联计量单位
         type: integer
       updated_at:
         type: string
       updated_by:
         type: integer
-      value_range:
-        $ref: '#/definitions/github_com_addp_standard_internal_models.JSONB'
-      version:
-        type: integer
+      value_domain_kind:
+        type: string
     type: object
   github_com_addp_standard_internal_models.Glossary:
     properties:
@@ -544,7 +736,7 @@ definitions:
     properties:
       data:
         items:
-          $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSet'
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate'
         type: array
       page:
         type: integer
@@ -574,7 +766,7 @@ definitions:
     properties:
       data:
         items:
-          $ref: '#/definitions/github_com_addp_standard_internal_models.Element'
+          $ref: '#/definitions/github_com_addp_standard_internal_models.ElementAggregate'
         type: array
       page:
         type: integer
@@ -673,14 +865,27 @@ definitions:
       resource_type:
         type: string
     type: object
-  github_com_addp_standard_internal_models.QualityRulesResponse:
+  github_com_addp_standard_internal_models.PublishedElementQualityRulesResponse:
     properties:
-      rules:
-        items:
-          $ref: '#/definitions/dataquality.Rule'
-        type: array
-      schema_version:
+      element_id:
+        type: integer
+      element_revision_id:
+        type: integer
+      quality_rules:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.JSONB'
+      revision_no:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.RangeConstraint:
+    properties:
+      max:
         type: string
+      max_inclusive:
+        type: boolean
+      min:
+        type: string
+      min_inclusive:
+        type: boolean
     type: object
   github_com_addp_standard_internal_models.ResolveCatalogReferencesRequest:
     properties:
@@ -699,6 +904,19 @@ definitions:
         items:
           $ref: '#/definitions/github_com_addp_standard_internal_models.CatalogReferenceResolution'
         type: array
+    type: object
+  github_com_addp_standard_internal_models.ResourceVersionResponse:
+    properties:
+      version:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.RevisionActionRequest:
+    properties:
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - version
     type: object
   github_com_addp_standard_internal_models.SetDocumentMappingsRequest:
     properties:
@@ -768,32 +986,63 @@ definitions:
     type: object
   github_com_addp_standard_internal_models.UpdateCodeItemRequest:
     properties:
-      description:
+      definition:
         type: string
-      is_active:
-        type: boolean
+      label:
+        type: string
+      replacement_item_id:
+        type: integer
       sort_order:
         type: integer
-      value:
+      status:
         type: string
       version:
+        minimum: 1
         type: integer
     required:
-    - value
+    - label
+    - status
     - version
     type: object
   github_com_addp_standard_internal_models.UpdateCodeSetRequest:
     properties:
+      domain_id:
+        type: integer
+      steward_id:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - domain_id
+    - version
+    type: object
+  github_com_addp_standard_internal_models.UpdateCodeSetRevisionRequest:
+    properties:
+      change_summary:
+        type: string
       description:
+        type: string
+      effective_from:
+        type: string
+      effective_to:
         type: string
       name:
         type: string
-      type:
+      value_type:
         type: string
       version:
+        minimum: 1
         type: integer
     required:
+    - change_summary
+    - description
     - name
+    - value_type
     - version
     type: object
   github_com_addp_standard_internal_models.UpdateDimensionHierarchyRequest:
@@ -845,9 +1094,27 @@ definitions:
     type: object
   github_com_addp_standard_internal_models.UpdateElementRequest:
     properties:
+      domain_id:
+        type: integer
+      steward_id:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - version
+    type: object
+  github_com_addp_standard_internal_models.UpdateElementRevisionRequest:
+    properties:
+      change_summary:
+        type: string
       classification_id:
         type: integer
-      code_set_id:
+      code_set_revision_id:
         type: integer
       data_type:
         type: string
@@ -855,12 +1122,17 @@ definitions:
         type: string
       definition:
         type: string
-      domain_id:
-        type: integer
+      effective_from:
+        type: string
+      effective_to:
+        type: string
       example_values:
         items:
           type: string
         type: array
+      extra_quality_rules:
+        additionalProperties: true
+        type: object
       format:
         type: string
       length:
@@ -871,27 +1143,25 @@ definitions:
         type: boolean
       precision_num:
         type: integer
-      quality_rules:
-        additionalProperties: true
-        type: object
+      range_constraint:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.RangeConstraint'
       scale:
         type: integer
       security_level:
         type: string
-      steward_id:
-        type: integer
-      tags:
-        items:
-          type: string
-        type: array
       unit_id:
         type: integer
-      value_range:
-        additionalProperties: true
-        type: object
+      value_domain_kind:
+        type: string
       version:
+        minimum: 1
         type: integer
     required:
+    - change_summary
+    - data_type
+    - definition
+    - name
+    - value_domain_kind
     - version
     type: object
   github_com_addp_standard_internal_models.UpdateGlossaryRequest:
@@ -1093,6 +1363,10 @@ definitions:
         type: string
       object_type:
         $ref: '#/definitions/github_com_addp_standard_internal_service.ReferenceType'
+      revision_id:
+        type: integer
+      revision_no:
+        type: integer
       status:
         type: string
     type: object
@@ -1127,6 +1401,10 @@ definitions:
         $ref: '#/definitions/github_com_addp_standard_internal_service.ReferenceType'
       referenceable:
         type: boolean
+      revision_id:
+        type: integer
+      revision_no:
+        type: integer
       status:
         type: string
       version:
@@ -1374,6 +1652,19 @@ paths:
       - standard.classification.update
   /code-sets:
     get:
+      parameters:
+      - description: 归属业务域 ID | Owning domain ID
+        in: query
+        name: domain_id
+        type: integer
+      - description: 修订状态 | Revision status
+        in: query
+        name: status
+        type: string
+      - description: 关键字 | Keyword
+        in: query
+        name: keyword
+        type: string
       produces:
       - application/json
       responses:
@@ -1381,18 +1672,6 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/github_com_addp_standard_internal_models.PaginatedCodeSetResponse'
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
       security:
       - BearerAuth: []
       summary: 获取码值集列表 | List code sets
@@ -1402,29 +1681,25 @@ paths:
       x-addp-required-permissions:
       - standard.code_set.read
     post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 码值集和首个草稿 | Code set and initial draft
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CreateCodeSetRequest'
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate'
       security:
       - BearerAuth: []
-      summary: 创建码值集 | Create code set
+      summary: 创建码值集及首个草稿修订 | Create code set with initial draft revision
       tags:
       - Standard
       x-addp-auth-mode: permission
@@ -1438,29 +1713,12 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "409":
-          description: Conflict
-          schema:
             additionalProperties:
               type: string
             type: object
       security:
       - BearerAuth: []
-      summary: 删除码值集 | Delete code set
+      summary: 删除码值集稳定身份 | Delete code set identity
       tags:
       - Standard
       x-addp-auth-mode: permission
@@ -1473,31 +1731,20 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate'
       security:
       - BearerAuth: []
-      summary: 获取码值集详情 | Get code set detail
+      summary: 获取码值集聚合 | Get code set aggregate
       tags:
       - Standard
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.code_set.read
     put:
+      consumes:
+      - application/json
       parameters:
-      - description: 更新码值集 | Update code set
+      - description: 归属信息及并发版本 | Ownership and concurrency version
         in: body
         name: request
         required: true
@@ -1509,20 +1756,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate'
         "409":
           description: 资源版本冲突 | Resource version conflict
           schema:
@@ -1531,13 +1765,13 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 更新码值集 | Update code set
+      summary: 更新码值集归属信息 | Update code set ownership
       tags:
       - Standard
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.code_set.update
-  /code-sets/{id}/items:
+  /code-sets/{id}/revisions:
     get:
       produces:
       - application/json
@@ -1546,31 +1780,89 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/github_com_addp_standard_internal_models.CodeItem'
+              $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetRevision'
             type: array
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
       security:
       - BearerAuth: []
-      summary: 获取码值项列表 | List code items
+      summary: 获取码值集修订历史 | List code set revisions
       tags:
       - Standard
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.code_set.read
     post:
+      consumes:
+      - application/json
       parameters:
-      - description: 创建码值项及当前码值集版本 | Create code item with current code-set version
+      - description: 并发版本和变更说明 | Version and change summary
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CreateCodeSetRevisionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate'
+      security:
+      - BearerAuth: []
+      summary: 从最近修订创建新草稿 | Create code set draft from latest revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.code_set.update
+  /code-sets/{id}/revisions/{revision_id}:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetRevision'
+      security:
+      - BearerAuth: []
+      summary: 获取码值集修订 | Get code set revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.code_set.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 完整草稿及并发版本 | Full draft and concurrency version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateCodeSetRevisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate'
+      security:
+      - BearerAuth: []
+      summary: 更新码值集草稿修订 | Update code set draft revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.code_set.update
+  /code-sets/{id}/revisions/{revision_id}/items:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 码值项及并发版本 | Code item and concurrency version
         in: body
         name: request
         required: true
@@ -1579,83 +1871,49 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "409":
-          description: 资源版本冲突 | Resource version conflict
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/github_com_addp_standard_internal_models.CodeItemMutationResponse'
       security:
       - BearerAuth: []
-      summary: 创建码值项 | Create code item
+      summary: 创建草稿码值项 | Create draft code item
       tags:
       - Standard
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.code_set.update
-  /code-sets/{id}/items/{iid}:
+  /code-sets/{id}/revisions/{revision_id}/items/{item_id}:
     delete:
+      consumes:
+      - application/json
       parameters:
-      - description: 当前码值集版本 | Current code-set version
+      - description: 当前资源版本 | Current resource version
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_standard_internal_models.VersionRequest'
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "409":
-          description: Conflict
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/github_com_addp_standard_internal_models.ResourceVersionResponse'
       security:
       - BearerAuth: []
-      summary: 删除码值项 | Delete code item
+      summary: 删除草稿码值项 | Delete draft code item
       tags:
       - Standard
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.code_set.update
     put:
+      consumes:
+      - application/json
       parameters:
-      - description: 更新码值项及当前码值集版本 | Update code item with current code-set version
+      - description: 码值项及并发版本 | Code item and concurrency version
         in: body
         name: request
         required: true
@@ -1667,34 +1925,119 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "409":
-          description: 资源版本冲突 | Resource version conflict
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/github_com_addp_standard_internal_models.CodeItemMutationResponse'
       security:
       - BearerAuth: []
-      summary: 更新码值项 | Update code item
+      summary: 更新草稿码值项 | Update draft code item
       tags:
       - Standard
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.code_set.update
+  /code-sets/{id}/revisions/{revision_id}/publish:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate'
+      security:
+      - BearerAuth: []
+      summary: 发布码值集修订 | Publish code set revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.code_set.publish
+  /code-sets/{id}/revisions/{revision_id}/return:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate'
+      security:
+      - BearerAuth: []
+      summary: 退回码值集修订 | Return code set revision to draft
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.code_set.publish
+  /code-sets/{id}/revisions/{revision_id}/submit:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate'
+      security:
+      - BearerAuth: []
+      summary: 提交码值集修订审核 | Submit code set revision for review
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.code_set.update
+  /code-sets/{id}/revisions/{revision_id}/withdraw:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate'
+      security:
+      - BearerAuth: []
+      summary: 撤回码值集发布修订 | Withdraw published code set revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.code_set.publish
   /dimension-hierarchies:
     get:
       produces:
@@ -2562,6 +2905,18 @@ paths:
         in: query
         name: ids
         type: string
+      - description: 归属业务域 ID | Owning domain ID
+        in: query
+        name: domain_id
+        type: integer
+      - description: 修订状态 | Revision status
+        in: query
+        name: status
+        type: string
+      - description: 关键字 | Keyword
+        in: query
+        name: keyword
+        type: string
       produces:
       - application/json
       responses:
@@ -2570,19 +2925,7 @@ paths:
           schema:
             $ref: '#/definitions/github_com_addp_standard_internal_models.PaginatedElementResponse'
         "400":
-          description: 无效的 ID 集合 | Invalid ID collection
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
+          description: 请求无效 | Invalid request
           schema:
             additionalProperties:
               type: string
@@ -2596,29 +2939,31 @@ paths:
       x-addp-required-permissions:
       - standard.element.read
     post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 数据元和首个草稿 | Data element and initial draft
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CreateElementRequest'
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
+            $ref: '#/definitions/github_com_addp_standard_internal_models.ElementAggregate'
+        "400":
+          description: 请求无效 | Invalid request
           schema:
             additionalProperties:
               type: string
             type: object
       security:
       - BearerAuth: []
-      summary: 创建数据元 | Create data element
+      summary: 创建数据元及首个草稿修订 | Create data element with initial draft revision
       tags:
       - Standard
       x-addp-auth-mode: permission
@@ -2632,40 +2977,18 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: 数据元不存在 | Data element not found
-          schema:
             additionalProperties:
               type: string
             type: object
         "409":
-          description: 资源仍被 Model 引用 | Resource is still referenced by Model
-          schema:
-            additionalProperties: true
-            type: object
-        "503":
-          description: Model 引用删除屏障不可用 | Model reference deletion guard unavailable
+          description: 仍被引用 | Still referenced
           schema:
             additionalProperties:
               type: string
             type: object
       security:
       - BearerAuth: []
-      summary: 删除数据元 | Delete data element
+      summary: 删除数据元稳定身份 | Delete data element identity
       tags:
       - Standard
       x-addp-auth-mode: permission
@@ -2678,31 +3001,20 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/github_com_addp_standard_internal_models.ElementAggregate'
       security:
       - BearerAuth: []
-      summary: 获取数据元详情 | Get data element detail
+      summary: 获取数据元聚合 | Get data element aggregate
       tags:
       - Standard
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.element.read
     put:
+      consumes:
+      - application/json
       parameters:
-      - description: 更新数据元 | Update data element
+      - description: 归属信息及并发版本 | Ownership and concurrency version
         in: body
         name: request
         required: true
@@ -2714,20 +3026,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/github_com_addp_standard_internal_models.ElementAggregate'
         "409":
           description: 资源版本冲突 | Resource version conflict
           schema:
@@ -2736,55 +3035,12 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 更新数据元 | Update data element
+      summary: 更新数据元归属信息 | Update data element ownership
       tags:
       - Standard
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.element.update
-  /elements/{id}/approve:
-    post:
-      parameters:
-      - description: 当前资源版本 | Current resource version
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_standard_internal_models.VersionRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "409":
-          description: 资源版本冲突 | Resource version conflict
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 审批数据元 | Approve data element
-      tags:
-      - Standard
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - standard.element.approve
   /elements/{id}/documents:
     get:
       produces:
@@ -2956,27 +3212,217 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_standard_internal_models.QualityRulesResponse'
-        "401":
-          description: 需要登录 | Authentication required
+            $ref: '#/definitions/github_com_addp_standard_internal_models.PublishedElementQualityRulesResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取当前发布数据元质量规则快照 | Get current published element quality rule snapshot
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.read
+  /elements/{id}/revisions:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
           schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
+            items:
+              $ref: '#/definitions/github_com_addp_standard_internal_models.ElementRevision'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取数据元修订历史 | List data element revisions
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 并发版本和变更说明 | Version and change summary
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CreateElementRevisionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.ElementAggregate'
+        "409":
+          description: 草稿已存在或版本冲突 | Draft exists or version conflict
           schema:
             additionalProperties:
               type: string
             type: object
       security:
       - BearerAuth: []
-      summary: 获取数据元质量规则 | Get data element quality rules
+      summary: 从最近修订创建新草稿 | Create a new draft from latest revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.update
+  /elements/{id}/revisions/{revision_id}:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.ElementRevision'
+      security:
+      - BearerAuth: []
+      summary: 获取数据元修订 | Get data element revision
       tags:
       - Standard
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.element.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 完整草稿及并发版本 | Full draft and concurrency version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateElementRevisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.ElementAggregate'
+        "409":
+          description: 状态或版本冲突 | State or version conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新数据元草稿修订 | Update data element draft revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.update
+  /elements/{id}/revisions/{revision_id}/publish:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.ElementAggregate'
+      security:
+      - BearerAuth: []
+      summary: 发布数据元修订 | Publish data element revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.publish
+  /elements/{id}/revisions/{revision_id}/return:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.ElementAggregate'
+      security:
+      - BearerAuth: []
+      summary: 退回数据元修订 | Return data element revision to draft
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.publish
+  /elements/{id}/revisions/{revision_id}/submit:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.ElementAggregate'
+      security:
+      - BearerAuth: []
+      summary: 提交数据元修订审核 | Submit data element revision for review
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.update
+  /elements/{id}/revisions/{revision_id}/withdraw:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.ElementAggregate'
+      security:
+      - BearerAuth: []
+      summary: 撤回数据元发布修订 | Withdraw published data element revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.publish
   /glossaries:
     get:
       produces:

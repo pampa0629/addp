@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 393 {
-		t.Fatalf("descriptor count = %d, want 393", len(descriptors))
+	if len(descriptors) != 394 {
+		t.Fatalf("descriptor count = %d, want 394", len(descriptors))
 	}
 	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "workbench.view.update" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
@@ -353,6 +353,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"standard.classification.update",
 		"standard.code_set.create",
 		"standard.code_set.delete",
+		"standard.code_set.publish",
 		"standard.code_set.read",
 		"standard.code_set.update",
 		"standard.dimension_hierarchy.create",
@@ -367,9 +368,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"standard.domain.delete",
 		"standard.domain.read",
 		"standard.domain.update",
-		"standard.element.approve",
 		"standard.element.create",
 		"standard.element.delete",
+		"standard.element.publish",
 		"standard.element.read",
 		"standard.element.update",
 		"standard.glossary.approve",

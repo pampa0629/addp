@@ -21,17 +21,27 @@ import (
 func TestListElementsFiltersByCanonicalIDs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newElementHandlerTestDB(t)
-	for _, element := range []models.Element{
-		{ID: 11, TenantID: 7, Name: "Customer ID", Code: "customer_id", DataType: "string", CreatedBy: 1},
-		{ID: 12, TenantID: 7, Name: "Order ID", Code: "order_id", DataType: "string", CreatedBy: 1},
-		{ID: 13, TenantID: 8, Name: "Other tenant", Code: "other", DataType: "string", CreatedBy: 1},
+	for _, fixture := range []struct {
+		element  models.Element
+		revision models.ElementRevision
+	}{
+		{models.Element{ID: 11, TenantID: 7, Code: "customer_id", CreatedBy: 1, LifecycleState: "active"}, models.ElementRevision{Name: "Customer ID", Definition: "Customer identifier", DataType: "string", Status: models.RevisionStatusDraft, RevisionNo: 1, ValueDomainKind: models.ValueDomainUnrestricted, ChangeSummary: "initial", CreatedBy: 1}},
+		{models.Element{ID: 12, TenantID: 7, Code: "order_id", CreatedBy: 1, LifecycleState: "active"}, models.ElementRevision{Name: "Order ID", Definition: "Order identifier", DataType: "string", Status: models.RevisionStatusDraft, RevisionNo: 1, ValueDomainKind: models.ValueDomainUnrestricted, ChangeSummary: "initial", CreatedBy: 1}},
+		{models.Element{ID: 13, TenantID: 8, Code: "other", CreatedBy: 1, LifecycleState: "active"}, models.ElementRevision{Name: "Other tenant", Definition: "Other", DataType: "string", Status: models.RevisionStatusDraft, RevisionNo: 1, ValueDomainKind: models.ValueDomainUnrestricted, ChangeSummary: "initial", CreatedBy: 1}},
 	} {
-		if err := db.Create(&element).Error; err != nil {
+		if err := db.Create(&fixture.element).Error; err != nil {
 			t.Fatalf("create element: %v", err)
+		}
+		fixture.revision.ElementID = fixture.element.ID
+		if err := db.Create(&fixture.revision).Error; err != nil {
+			t.Fatalf("create revision: %v", err)
+		}
+		if err := db.Model(&fixture.element).Update("draft_revision_id", fixture.revision.ID).Error; err != nil {
+			t.Fatalf("link revision: %v", err)
 		}
 	}
 
-	handler := NewElementHandler(service.NewElementService(repository.NewElementRepository(db), nil, nil))
+	handler := NewElementHandler(service.NewElementService(repository.NewElementRepository(db), nil, nil, nil))
 	router := gin.New()
 	router.GET("/elements", withElementHandlerAuth(7), handler.ListElements)
 
@@ -96,26 +106,11 @@ func newElementHandlerTestDB(t *testing.T) *gorm.DB {
 		id INTEGER PRIMARY KEY,
 		tenant_id INTEGER NOT NULL,
 		domain_id INTEGER,
-		name TEXT NOT NULL,
 		code TEXT NOT NULL,
-		data_type TEXT NOT NULL,
-		length INTEGER,
-		precision_num INTEGER,
-		scale INTEGER,
-		nullable BOOLEAN,
-		default_value TEXT,
-		format TEXT,
-		value_range BLOB,
-		unit_id INTEGER,
-		security_level TEXT,
-		classification_id INTEGER,
-		code_set_id INTEGER,
-		definition TEXT,
-		example_values BLOB,
-		quality_rules BLOB,
-		status TEXT,
 		steward_id INTEGER,
 		tags BLOB,
+		current_revision_id INTEGER,
+		draft_revision_id INTEGER,
 		created_by INTEGER NOT NULL,
 		updated_by INTEGER,
 		created_at DATETIME,
@@ -124,6 +119,18 @@ func newElementHandlerTestDB(t *testing.T) *gorm.DB {
 		lifecycle_state TEXT NOT NULL DEFAULT 'active'
 	)`).Error; err != nil {
 		t.Fatalf("create elements: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE standard.element_revisions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, element_id INTEGER NOT NULL, revision_no INTEGER NOT NULL,
+		status TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, data_type TEXT NOT NULL,
+		length INTEGER, precision_num INTEGER, scale INTEGER, nullable BOOLEAN, default_value TEXT, format TEXT,
+		value_domain_kind TEXT NOT NULL, range_constraint TEXT, code_set_revision_id INTEGER, unit_id INTEGER,
+		security_level TEXT, classification_id INTEGER, example_values TEXT, extra_quality_rules TEXT,
+		compiled_quality_rules TEXT, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME,
+		submitted_by INTEGER, submitted_at DATETIME, published_by INTEGER, published_at DATETIME,
+		created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create element revisions: %v", err)
 	}
 	return db
 }

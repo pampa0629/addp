@@ -9,6 +9,11 @@ import (
 
 var (
 	ErrInvalidCodeSetType            = errors.New("invalid code set type")
+	ErrInvalidStandardRevision       = fmt.Errorf("%w: invalid standard revision", commonapi.ErrBadRequest)
+	ErrInvalidRevisionTransition     = fmt.Errorf("%w: invalid standard revision transition", commonapi.ErrConflict)
+	ErrDraftRevisionExists           = fmt.Errorf("%w: a draft revision already exists", commonapi.ErrConflict)
+	ErrPublishedRevisionRequired     = fmt.Errorf("%w: published standard revision required", commonapi.ErrBadRequest)
+	ErrPlatformCodeSetImmutable      = fmt.Errorf("%w: platform code set is immutable", commonapi.ErrConflict)
 	ErrDomainParentCycle             = errors.New("domain parent cycle")
 	ErrDomainReferenced              = fmt.Errorf("%w: domain is referenced", commonapi.ErrConflict)
 	ErrClassificationParentCycle     = errors.New("classification parent cycle")

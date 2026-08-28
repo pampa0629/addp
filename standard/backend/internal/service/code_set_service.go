@@ -1,6 +1,12 @@
 package service
 
 import (
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
@@ -8,174 +14,244 @@ import (
 
 type CodeSetService struct {
 	repo *repository.CodeSetRepository
+	refs *repository.TenantReferenceRepository
 }
 
-func NewCodeSetService(repo *repository.CodeSetRepository) *CodeSetService {
-	return &CodeSetService{repo: repo}
+func NewCodeSetService(repo *repository.CodeSetRepository, refs *repository.TenantReferenceRepository) *CodeSetService {
+	return &CodeSetService{repo: repo, refs: refs}
 }
 
-// CreateCodeSet 创建码值集
-func (s *CodeSetService) CreateCodeSet(tenantID int64, req *models.CreateCodeSetRequest) (*models.CodeSet, error) {
-	// 校验 code 唯一性
-	exists, err := s.repo.ExistsByCode(tenantID, req.Code, 0)
+func (s *CodeSetService) CreateCodeSet(tenantID, userID int64, req *models.CreateCodeSetRequest) (*models.CodeSetAggregate, error) {
+	if req.DomainID == nil {
+		return nil, fmt.Errorf("%w: domain_id is required", ErrInvalidStandardRevision)
+	}
+	if err := s.refs.RequireDomain(tenantID, req.DomainID); err != nil {
+		return nil, err
+	}
+	if err := validateCodeSetRevision(req.Name, req.Description, req.ValueType, req.ChangeSummary, req.EffectiveFrom, req.EffectiveTo); err != nil {
+		return nil, err
+	}
+	exists, err := s.repo.ExistsByCode(tenantID, strings.TrimSpace(req.Code), 0)
 	if err != nil {
 		return nil, err
 	}
 	if exists {
 		return nil, commonapi.ErrConflict
 	}
-
-	// 校验 type
-	if req.Type == "" {
-		req.Type = "custom"
-	}
-	if req.Type != "system" && req.Type != "custom" {
-		return nil, ErrInvalidCodeSetType
-	}
-
-	codeSet := &models.CodeSet{
-		TenantID:    tenantID,
-		Code:        req.Code,
-		Name:        req.Name,
-		Type:        req.Type,
-		Description: req.Description,
-	}
-
-	if err := s.repo.Create(codeSet); err != nil {
+	identity := &models.CodeSet{TenantID: tenantID, DomainID: req.DomainID, Code: strings.TrimSpace(req.Code), Origin: models.CodeSetOriginTenant, StewardID: req.StewardID, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
+	revision := &models.CodeSetRevision{Name: strings.TrimSpace(req.Name), Description: strings.TrimSpace(req.Description), ValueType: req.ValueType, ChangeSummary: strings.TrimSpace(req.ChangeSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, CreatedBy: userID}
+	if err := s.repo.Create(identity, revision); err != nil {
 		return nil, err
 	}
-
-	return codeSet, nil
+	return s.repo.GetAggregate(identity.ID, tenantID)
 }
 
-// GetCodeSet 获取码值集
-func (s *CodeSetService) GetCodeSet(id, tenantID int64) (*models.CodeSet, error) {
-	return s.repo.GetByID(id, tenantID)
+func (s *CodeSetService) GetCodeSet(id, tenantID int64) (*models.CodeSetAggregate, error) {
+	return s.repo.GetAggregate(id, tenantID)
 }
 
-// ListCodeSets 获取码值集列表
-func (s *CodeSetService) ListCodeSets(tenantID int64, keyword, codeSetType string, page, pageSize int) ([]models.CodeSet, int64, error) {
-	return s.repo.List(tenantID, keyword, codeSetType, page, pageSize)
+func (s *CodeSetService) ListCodeSets(tenantID int64, domainID *int64, keyword, status string, page, pageSize int) ([]models.CodeSetAggregate, int64, error) {
+	return s.repo.List(tenantID, domainID, keyword, status, page, pageSize)
 }
 
-// UpdateCodeSet 更新码值集
-func (s *CodeSetService) UpdateCodeSet(id, tenantID int64, req *models.UpdateCodeSetRequest) (*models.CodeSet, error) {
-	codeSet, err := s.repo.GetByID(id, tenantID)
+func (s *CodeSetService) UpdateCodeSet(id, tenantID, userID int64, req *models.UpdateCodeSetRequest) (*models.CodeSetAggregate, error) {
+	if req.DomainID == nil {
+		return nil, fmt.Errorf("%w: domain_id is required", ErrInvalidStandardRevision)
+	}
+	if err := s.refs.RequireDomain(tenantID, req.DomainID); err != nil {
+		return nil, err
+	}
+	identity, err := s.repo.GetByID(id, tenantID)
 	if err != nil {
 		return nil, err
 	}
-
-	// 校验 type
-	if req.Type != "" && req.Type != "system" && req.Type != "custom" {
-		return nil, ErrInvalidCodeSetType
+	if identity.Origin == models.CodeSetOriginPlatform {
+		return nil, ErrPlatformCodeSetImmutable
 	}
-
-	codeSet.Name = req.Name
-	if req.Type != "" {
-		codeSet.Type = req.Type
-	}
-	codeSet.Description = req.Description
-
-	if err := s.repo.Update(codeSet, req.Version); err != nil {
+	identity.DomainID, identity.StewardID, identity.Tags, identity.UpdatedBy = req.DomainID, req.StewardID, req.Tags, &userID
+	if err := s.repo.UpdateIdentity(identity, req.Version); err != nil {
 		return nil, err
 	}
-	return s.repo.GetByID(id, tenantID)
+	return s.repo.GetAggregate(id, tenantID)
 }
 
-// DeleteCodeSet 删除码值集
 func (s *CodeSetService) DeleteCodeSet(id, tenantID int64) error {
-	codeSet, err := s.repo.GetByID(id, tenantID)
+	identity, err := s.repo.GetByID(id, tenantID)
 	if err != nil {
 		return err
 	}
-
-	// 系统内置码值集禁止删除
-	if codeSet.Type == "system" {
-		return ErrSystemCodeSetImmutable
+	if identity.Origin == models.CodeSetOriginPlatform {
+		return ErrPlatformCodeSetImmutable
 	}
-
 	return mapDeleteConflict(s.repo.Delete(id, tenantID), ErrCodeSetReferenced)
 }
 
-// GetCodeItems 获取码值项列表
-func (s *CodeSetService) GetCodeItems(codeSetID, tenantID int64) ([]models.CodeItem, error) {
-	// 验证码值集是否属于当前租户
-	_, err := s.repo.GetByID(codeSetID, tenantID)
-	if err != nil {
-		return nil, err
-	}
-
-	return s.repo.GetItems(codeSetID)
+func (s *CodeSetService) ListRevisions(id, tenantID int64) ([]models.CodeSetRevision, error) {
+	return s.repo.ListRevisions(id, tenantID)
+}
+func (s *CodeSetService) GetRevision(id, revisionID, tenantID int64) (*models.CodeSetRevision, error) {
+	return s.repo.GetRevision(id, revisionID, tenantID)
 }
 
-// CreateCodeItem 创建码值项
-func (s *CodeSetService) CreateCodeItem(codeSetID, tenantID int64, req *models.CreateCodeItemRequest) (*models.CodeItemMutationResponse, error) {
-	// 验证码值集是否属于当前租户
-	_, err := s.repo.GetByID(codeSetID, tenantID)
+func (s *CodeSetService) CreateRevision(id, tenantID, userID int64, req *models.CreateCodeSetRevisionRequest) (*models.CodeSetAggregate, error) {
+	if strings.TrimSpace(req.ChangeSummary) == "" {
+		return nil, ErrInvalidStandardRevision
+	}
+	if _, err := s.repo.CreateDraft(id, tenantID, userID, req.Version, strings.TrimSpace(req.ChangeSummary)); err != nil {
+		return nil, mapCodeSetRevisionError(err)
+	}
+	return s.repo.GetAggregate(id, tenantID)
+}
+
+func (s *CodeSetService) UpdateRevision(id, revisionID, tenantID, userID int64, req *models.UpdateCodeSetRevisionRequest) (*models.CodeSetAggregate, error) {
+	if err := validateCodeSetRevision(req.Name, req.Description, req.ValueType, req.ChangeSummary, req.EffectiveFrom, req.EffectiveTo); err != nil {
+		return nil, err
+	}
+	revision := &models.CodeSetRevision{ID: revisionID, CodeSetID: id, Name: strings.TrimSpace(req.Name), Description: strings.TrimSpace(req.Description), ValueType: req.ValueType, ChangeSummary: strings.TrimSpace(req.ChangeSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, UpdatedBy: &userID}
+	if err := s.repo.UpdateDraft(id, revisionID, tenantID, userID, req.Version, revision); err != nil {
+		return nil, mapCodeSetRevisionError(err)
+	}
+	return s.repo.GetAggregate(id, tenantID)
+}
+
+func (s *CodeSetService) SubmitRevision(id, revisionID, tenantID, userID, version int64) (*models.CodeSetAggregate, error) {
+	revision, err := s.repo.GetRevision(id, revisionID, tenantID)
 	if err != nil {
 		return nil, err
 	}
+	if err := validateCodeSetRevision(revision.Name, revision.Description, revision.ValueType, revision.ChangeSummary, revision.EffectiveFrom, revision.EffectiveTo); err != nil {
+		return nil, err
+	}
+	active := 0
+	for _, item := range revision.Items {
+		if item.Status == models.CodeItemStatusActive {
+			active++
+		}
+	}
+	if active == 0 {
+		return nil, fmt.Errorf("%w: code set revision requires an active item", ErrInvalidStandardRevision)
+	}
+	if err := s.repo.TransitionRevision(id, revisionID, tenantID, userID, version, models.RevisionStatusDraft, models.RevisionStatusInReview); err != nil {
+		return nil, mapCodeSetRevisionError(err)
+	}
+	return s.repo.GetAggregate(id, tenantID)
+}
 
-	// 校验 code 唯一性
-	exists, err := s.repo.ExistsItemByCode(codeSetID, req.Code, 0)
+func (s *CodeSetService) ReturnRevision(id, revisionID, tenantID, userID, version int64) (*models.CodeSetAggregate, error) {
+	if err := s.repo.TransitionRevision(id, revisionID, tenantID, userID, version, models.RevisionStatusInReview, models.RevisionStatusDraft); err != nil {
+		return nil, mapCodeSetRevisionError(err)
+	}
+	return s.repo.GetAggregate(id, tenantID)
+}
+
+func (s *CodeSetService) PublishRevision(id, revisionID, tenantID, userID, version int64) (*models.CodeSetAggregate, error) {
+	if err := s.repo.PublishRevision(id, revisionID, tenantID, userID, version); err != nil {
+		return nil, mapCodeSetRevisionError(err)
+	}
+	return s.repo.GetAggregate(id, tenantID)
+}
+
+func (s *CodeSetService) WithdrawRevision(id, revisionID, tenantID, userID, version int64) (*models.CodeSetAggregate, error) {
+	if err := s.repo.WithdrawPublished(id, revisionID, tenantID, userID, version); err != nil {
+		return nil, mapCodeSetRevisionError(err)
+	}
+	return s.repo.GetAggregate(id, tenantID)
+}
+
+func (s *CodeSetService) CreateCodeItem(id, revisionID, tenantID int64, req *models.CreateCodeItemRequest) (*models.CodeItemMutationResponse, error) {
+	if err := validateCodeItem(req.Code, req.Label, req.Status); err != nil {
+		return nil, err
+	}
+	revision, err := s.repo.GetRevision(id, revisionID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateCodeValue(revision.ValueType, req.Code); err != nil {
+		return nil, err
+	}
+	exists, err := s.repo.ExistsItemByCode(revisionID, strings.TrimSpace(req.Code), 0)
 	if err != nil {
 		return nil, err
 	}
 	if exists {
 		return nil, commonapi.ErrConflict
 	}
-
-	item := &models.CodeItem{
-		CodeSetID:   codeSetID,
-		Code:        req.Code,
-		Value:       req.Value,
-		Description: req.Description,
-		SortOrder:   req.SortOrder,
-		IsActive:    req.IsActive,
-	}
-
-	if err := s.repo.CreateItem(item, tenantID, req.Version); err != nil {
-		return nil, err
+	item := &models.CodeSetRevisionItem{Code: strings.TrimSpace(req.Code), Label: strings.TrimSpace(req.Label), Definition: strings.TrimSpace(req.Definition), SortOrder: req.SortOrder, Status: req.Status}
+	if err := s.repo.CreateItem(id, revisionID, tenantID, item, req.Version); err != nil {
+		return nil, mapCodeSetRevisionError(err)
 	}
 	return &models.CodeItemMutationResponse{Item: item, Version: req.Version + 1}, nil
 }
 
-// UpdateCodeItem 更新码值项
-func (s *CodeSetService) UpdateCodeItem(codeSetID, itemID, tenantID int64, req *models.UpdateCodeItemRequest) (*models.CodeItemMutationResponse, error) {
-	// 验证码值集是否属于当前租户
-	_, err := s.repo.GetByID(codeSetID, tenantID)
-	if err != nil {
+func (s *CodeSetService) UpdateCodeItem(id, revisionID, itemID, tenantID int64, req *models.UpdateCodeItemRequest) (*models.CodeItemMutationResponse, error) {
+	if err := validateCodeItem("existing", req.Label, req.Status); err != nil {
 		return nil, err
 	}
-
-	item, err := s.repo.GetItemByID(itemID, codeSetID)
-	if err != nil {
-		return nil, err
+	if req.ReplacementItemID != nil {
+		if *req.ReplacementItemID == itemID {
+			return nil, fmt.Errorf("%w: replacement item must be different", ErrInvalidStandardRevision)
+		}
+		revision, err := s.repo.GetRevision(id, revisionID, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		found := false
+		for _, item := range revision.Items {
+			if item.ID == *req.ReplacementItemID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("%w: replacement item must belong to the same revision", ErrInvalidStandardRevision)
+		}
 	}
-
-	item.Value = req.Value
-	item.Description = req.Description
-	item.SortOrder = req.SortOrder
-	item.IsActive = req.IsActive
-
-	if err := s.repo.UpdateItem(item, tenantID, req.Version); err != nil {
-		return nil, err
+	item := &models.CodeSetRevisionItem{ID: itemID, CodeSetRevisionID: revisionID, Label: strings.TrimSpace(req.Label), Definition: strings.TrimSpace(req.Definition), SortOrder: req.SortOrder, Status: req.Status, ReplacementItemID: req.ReplacementItemID}
+	if err := s.repo.UpdateItem(id, revisionID, itemID, tenantID, item, req.Version); err != nil {
+		return nil, mapCodeSetRevisionError(err)
 	}
 	return &models.CodeItemMutationResponse{Item: item, Version: req.Version + 1}, nil
 }
 
-// DeleteCodeItem 删除码值项
-func (s *CodeSetService) DeleteCodeItem(codeSetID, itemID, tenantID, version int64) error {
-	// 验证码值集是否属于当前租户
-	_, err := s.repo.GetByID(codeSetID, tenantID)
-	if err != nil {
-		return err
-	}
+func (s *CodeSetService) DeleteCodeItem(id, revisionID, itemID, tenantID, version int64) error {
+	return mapCodeSetRevisionError(mapDeleteConflict(s.repo.DeleteItem(id, revisionID, itemID, tenantID, version), ErrCodeItemReferenced))
+}
 
-	_, err = s.repo.GetItemByID(itemID, codeSetID)
-	if err != nil {
-		return err
+func validateCodeSetRevision(name, description, valueType, changeSummary string, effectiveFrom, effectiveTo *time.Time) error {
+	if strings.TrimSpace(name) == "" || strings.TrimSpace(description) == "" || strings.TrimSpace(changeSummary) == "" {
+		return ErrInvalidStandardRevision
 	}
+	if valueType != "string" && valueType != "int" && valueType != "bigint" {
+		return fmt.Errorf("%w: invalid code set value_type", ErrInvalidStandardRevision)
+	}
+	if effectiveFrom != nil && effectiveTo != nil && !effectiveFrom.Before(*effectiveTo) {
+		return fmt.Errorf("%w: effective_from must precede effective_to", ErrInvalidStandardRevision)
+	}
+	return nil
+}
 
-	return mapDeleteConflict(s.repo.DeleteItem(itemID, codeSetID, tenantID, version), ErrCodeItemReferenced)
+func validateCodeItem(code, label, status string) error {
+	if strings.TrimSpace(code) == "" || strings.TrimSpace(label) == "" {
+		return ErrInvalidStandardRevision
+	}
+	if status != models.CodeItemStatusActive && status != models.CodeItemStatusDeprecated {
+		return fmt.Errorf("%w: invalid code item status", ErrInvalidStandardRevision)
+	}
+	return nil
+}
+
+func mapCodeSetRevisionError(err error) error {
+	if errors.Is(err, repository.ErrRevisionNotEditable) {
+		return ErrPlatformCodeSetImmutable
+	}
+	return mapRevisionError(err)
+}
+
+func validateCodeValue(valueType, code string) error {
+	if valueType == "int" || valueType == "bigint" {
+		if _, err := strconv.ParseInt(code, 10, 64); err != nil {
+			return fmt.Errorf("%w: code does not match value_type", ErrInvalidStandardRevision)
+		}
+	}
+	return nil
 }

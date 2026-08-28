@@ -638,6 +638,7 @@ roles:
       - standard.classification.update
       - standard.code_set.create
       - standard.code_set.delete
+      - standard.code_set.publish
       - standard.code_set.read
       - standard.code_set.update
       - standard.dimension_hierarchy.create
@@ -652,9 +653,9 @@ roles:
       - standard.domain.delete
       - standard.domain.read
       - standard.domain.update
-      - standard.element.approve
       - standard.element.create
       - standard.element.delete
+      - standard.element.publish
       - standard.element.read
       - standard.element.update
       - standard.glossary.approve

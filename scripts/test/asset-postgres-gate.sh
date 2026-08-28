@@ -27,3 +27,8 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/dashboard.log"; then
     echo "Asset PostgreSQL dashboard gate refuses skipped tests" >&2
     exit 1
 fi
+go test ./internal/service -run '^TestCategoryServiceSubtreeAgainstPostgres$' -count=1 -v 2>&1 | tee "$WORK_DIR/category-subtree.log"
+if grep -q -- '--- SKIP:' "$WORK_DIR/category-subtree.log"; then
+    echo "Asset PostgreSQL category subtree gate refuses skipped tests" >&2
+    exit 1
+fi

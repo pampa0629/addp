@@ -6,8 +6,8 @@ import (
 	"github.com/addp/common/dataquality"
 )
 
-func TestNormalizeQualityRulesDefaultsToVersionedEmptyDocument(t *testing.T) {
-	rules, err := normalizeQualityRules(nil)
+func TestNormalizeExtraQualityRulesDefaultsToVersionedEmptyDocument(t *testing.T) {
+	rules, err := normalizeExtraQualityRules(nil)
 	if err != nil {
 		t.Fatalf("normalizeQualityRules(nil) error = %v", err)
 	}
@@ -20,7 +20,7 @@ func TestNormalizeQualityRulesDefaultsToVersionedEmptyDocument(t *testing.T) {
 	}
 }
 
-func TestNormalizeQualityRulesRejectsLegacyAndRemovedRuleTypes(t *testing.T) {
+func TestNormalizeExtraQualityRulesRejectsStructuralRuleTypes(t *testing.T) {
 	tests := []struct {
 		name  string
 		value map[string]interface{}
@@ -28,18 +28,19 @@ func TestNormalizeQualityRulesRejectsLegacyAndRemovedRuleTypes(t *testing.T) {
 		{name: "legacy array wrapper", value: map[string]interface{}{"rules": []interface{}{}}},
 		{name: "custom rule", value: qualityRuleDocumentForTest("custom")},
 		{name: "data type rule", value: qualityRuleDocumentForTest("data_type")},
+		{name: "not null rule", value: qualityRuleDocumentForTest("not_null")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := normalizeQualityRules(tt.value); err == nil {
+			if _, err := normalizeExtraQualityRules(tt.value); err == nil {
 				t.Fatalf("normalizeQualityRules(%#v) error = nil", tt.value)
 			}
 		})
 	}
 }
 
-func TestNormalizeQualityRulesAcceptsCanonicalRule(t *testing.T) {
-	rules, err := normalizeQualityRules(qualityRuleDocumentForTest("not_null"))
+func TestNormalizeExtraQualityRulesAcceptsUniqueRule(t *testing.T) {
+	rules, err := normalizeExtraQualityRules(qualityRuleDocumentForTest("unique"))
 	if err != nil {
 		t.Fatalf("normalizeQualityRules() error = %v", err)
 	}
@@ -47,7 +48,7 @@ func TestNormalizeQualityRulesAcceptsCanonicalRule(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalized document error = %v", err)
 	}
-	if len(document.Rules) != 1 || document.Rules[0].Type != dataquality.RuleTypeNotNull {
+	if len(document.Rules) != 1 || document.Rules[0].Type != dataquality.RuleTypeUnique {
 		t.Fatalf("normalized document = %#v", document)
 	}
 }

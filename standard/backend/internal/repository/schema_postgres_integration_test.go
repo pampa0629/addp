@@ -20,6 +20,95 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open postgres: %v", err)
 	}
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatalf("begin transaction: %v", tx.Error)
+	}
+	defer tx.Rollback()
+	for _, statement := range []string{
+		`DROP SCHEMA IF EXISTS standard CASCADE`,
+		`CREATE SCHEMA standard`,
+		`CREATE TABLE standard.code_sets (
+			id BIGSERIAL PRIMARY KEY, tenant_id BIGINT NOT NULL, code VARCHAR(100) NOT NULL,
+			name VARCHAR(200) NOT NULL, type VARCHAR(20), description TEXT,
+			created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ, version BIGINT NOT NULL DEFAULT 1
+		)`,
+		`CREATE TABLE standard.code_items (
+			id BIGSERIAL PRIMARY KEY, code_set_id BIGINT NOT NULL, code VARCHAR(100) NOT NULL,
+			value VARCHAR(200) NOT NULL, description TEXT, sort_order INTEGER, is_active BOOLEAN,
+			parent_id BIGINT, created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ
+		)`,
+		`CREATE TABLE standard.elements (
+			id BIGSERIAL PRIMARY KEY, tenant_id BIGINT NOT NULL, domain_id BIGINT,
+			name VARCHAR(200) NOT NULL, code VARCHAR(100) NOT NULL, data_type VARCHAR(50) NOT NULL,
+			length INTEGER, precision_num INTEGER, scale INTEGER, nullable BOOLEAN,
+			default_value TEXT, format VARCHAR(200), value_range JSONB, unit_id BIGINT,
+			security_level VARCHAR(10), classification_id BIGINT, code_set_id BIGINT,
+			definition TEXT, example_values JSONB, quality_rules JSONB, status VARCHAR(20),
+			steward_id BIGINT, tags JSONB, created_by BIGINT NOT NULL, updated_by BIGINT,
+			created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ, version BIGINT NOT NULL DEFAULT 1,
+			lifecycle_state VARCHAR(16) NOT NULL DEFAULT 'active'
+		)`,
+		`INSERT INTO standard.code_sets (id, tenant_id, code, name, type, description, version)
+		 VALUES (101, 7, 'gender', 'Gender', 'custom', 'Gender codes', 3)`,
+		`INSERT INTO standard.code_items (id, code_set_id, code, value, description, sort_order, is_active)
+		 VALUES (1001, 101, 'M', 'Male', 'Male gender', 1, TRUE)`,
+		`INSERT INTO standard.elements (
+			id, tenant_id, name, code, data_type, nullable, code_set_id, definition,
+			example_values, quality_rules, status, created_by, version
+		) VALUES (
+			201, 7, 'Gender', 'gender', 'string', FALSE, 101, 'Customer gender',
+			'["M"]'::jsonb,
+			'{"schema_version":"addp.quality.rules/v1","rules":[]}'::jsonb,
+			'approved', 1, 4
+		)`,
+	} {
+		if err := tx.Exec(statement).Error; err != nil {
+			t.Fatalf("prepare legacy schema with %q: %v", statement, err)
+		}
+	}
+	if err := Migrate(tx); err != nil {
+		t.Fatalf("Migrate() legacy standard schema error = %v", err)
+	}
+	if err := Migrate(tx); err != nil {
+		t.Fatalf("second Migrate() should be idempotent: %v", err)
+	}
+	var migrated struct {
+		ElementRevisionID int64
+		ElementStatus     string
+		CodeSetRevisionID int64
+		CodeSetStatus     string
+		ItemLabel         string
+	}
+	if err := tx.Raw(`SELECT er.id AS element_revision_id, er.status AS element_status,
+		csr.id AS code_set_revision_id, csr.status AS code_set_status, item.label AS item_label
+		FROM standard.elements e
+		JOIN standard.element_revisions er ON er.id = e.current_revision_id
+		JOIN standard.code_set_revisions csr ON csr.id = er.code_set_revision_id
+		JOIN standard.code_set_revision_items item ON item.code_set_revision_id = csr.id
+		WHERE e.id = 201`).Scan(&migrated).Error; err != nil {
+		t.Fatalf("load migrated revision graph: %v", err)
+	}
+	if migrated.ElementRevisionID == 0 || migrated.ElementStatus != models.RevisionStatusPublished || migrated.CodeSetRevisionID == 0 || migrated.CodeSetStatus != models.RevisionStatusPublished || migrated.ItemLabel != "Male" {
+		t.Fatalf("migrated revision graph = %#v", migrated)
+	}
+	var legacyColumns int64
+	if err := tx.Raw(`SELECT COUNT(*) FROM information_schema.columns
+		WHERE table_schema = 'standard' AND ((table_name = 'elements' AND column_name IN ('name','data_type','status','quality_rules','code_set_id')) OR (table_name = 'code_sets' AND column_name IN ('name','type','description')))`).Scan(&legacyColumns).Error; err != nil {
+		t.Fatalf("query legacy columns: %v", err)
+	}
+	if legacyColumns != 0 {
+		t.Fatalf("legacy standard columns remaining = %d", legacyColumns)
+	}
+	var legacyItemTable int64
+	if err := tx.Raw(`SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'standard' AND table_name = 'code_items'`).Scan(&legacyItemTable).Error; err != nil {
+		t.Fatalf("query legacy code item table: %v", err)
+	}
+	if legacyItemTable != 0 {
+		t.Fatal("legacy standard.code_items table still exists")
+	}
+	return
+
 	if err := Migrate(db); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
@@ -244,7 +333,7 @@ func TestPostgresDeletePolicies(t *testing.T) {
 	if err := db.Create(&glossary).Error; err != nil {
 		t.Fatalf("create glossary: %v", err)
 	}
-	element := models.Element{TenantID: tenantID, Name: "element", Code: "delete-policy-element", DataType: "string", CreatedBy: 1}
+	element := models.Element{TenantID: tenantID, Code: "delete-policy-element", CreatedBy: 1, LifecycleState: "active"}
 	if err := db.Create(&element).Error; err != nil {
 		t.Fatalf("create element: %v", err)
 	}

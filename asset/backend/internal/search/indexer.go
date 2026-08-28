@@ -210,13 +210,13 @@ type SearchResult struct {
 }
 
 // Search 搜索已上架资产，返回匹配的资产 ID 列表（按相关度排序）
-func (i *Indexer) Search(tenantID int64, keyword string, typeCode string, categoryID *int64, limit, offset int64) (*SearchResult, error) {
+func (i *Indexer) Search(tenantID int64, keyword string, typeCode string, categoryIDs []int64, limit, offset int64) (*SearchResult, error) {
 	if !i.Enabled() {
 		return nil, nil
 	}
 
 	// 固定过滤：仅返回 published 状态 + 当前租户
-	filters := buildAssetSearchFilters(tenantID, typeCode, categoryID)
+	filters := buildAssetSearchFilters(tenantID, typeCode, categoryIDs)
 	filterStr := strings.Join(filters, " AND ")
 
 	req := &meilisearch.SearchRequest{
@@ -249,7 +249,7 @@ func (i *Indexer) Search(tenantID int64, keyword string, typeCode string, catego
 	return result, nil
 }
 
-func buildAssetSearchFilters(tenantID int64, typeCode string, categoryID *int64) []string {
+func buildAssetSearchFilters(tenantID int64, typeCode string, categoryIDs []int64) []string {
 	filters := []string{
 		fmt.Sprintf("tenant_id = %d", tenantID),
 		"status = \"published\"",
@@ -257,13 +257,17 @@ func buildAssetSearchFilters(tenantID int64, typeCode string, categoryID *int64)
 	if typeCode != "" {
 		filters = append(filters, fmt.Sprintf("type_code = \"%s\"", typeCode))
 	}
-	if categoryID == nil {
+	if categoryIDs == nil {
 		return filters
 	}
-	if *categoryID == -1 {
+	if len(categoryIDs) == 1 && categoryIDs[0] == -1 {
 		return append(filters, "category_id IS NULL")
 	}
-	return append(filters, fmt.Sprintf("category_id = %d", *categoryID))
+	categoryFilters := make([]string, 0, len(categoryIDs))
+	for _, categoryID := range categoryIDs {
+		categoryFilters = append(categoryFilters, fmt.Sprintf("category_id = %d", categoryID))
+	}
+	return append(filters, "("+strings.Join(categoryFilters, " OR ")+")")
 }
 
 // MeilisearchPublishedAt 将 *time.Time 格式化为索引用字符串
