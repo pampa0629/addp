@@ -1601,8 +1601,14 @@
                 "max": {
                     "type": "string"
                 },
+                "max_inclusive": {
+                    "type": "boolean"
+                },
                 "min": {
                     "type": "string"
+                },
+                "min_inclusive": {
+                    "type": "boolean"
                 },
                 "pattern": {
                     "type": "string"
@@ -2157,6 +2163,12 @@
                 },
                 "quality_rules": {
                     "$ref": "#/definitions/dataquality.Document"
+                },
+                "revision_id": {
+                    "type": "integer"
+                },
+                "revision_no": {
+                    "type": "integer"
                 }
             }
         },
@@ -2191,6 +2203,10 @@
                 },
                 "element_id": {
                     "description": "standard.elements.id",
+                    "type": "integer"
+                },
+                "element_revision_id": {
+                    "description": "standard.element_revisions.id",
                     "type": "integer"
                 },
                 "enabled": {
@@ -2655,6 +2671,10 @@
                 },
                 "element_id": {
                     "description": "standard.elements.id",
+                    "type": "integer"
+                },
+                "element_revision_id": {
+                    "description": "standard.element_revisions.id",
                     "type": "integer"
                 },
                 "enabled": {

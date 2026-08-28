@@ -238,11 +238,8 @@
         "platform": "Platform",
         "tenant": "Tenant"
       },
-      "typeSystem": "System",
-      "typeCustom": "Custom",
       "codeRequired": "Please enter code",
       "nameRequired": "Please enter name",
-      "typeRequired": "Please select type",
       "confirmDelete": "Confirm delete code set \"{name}\"?",
       "searchPlaceholder": "Search code/name",
       "items": "Code Items",

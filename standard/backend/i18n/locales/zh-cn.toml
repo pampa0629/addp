@@ -73,9 +73,6 @@ other = "该标准资源仍被数据模型引用，请先在 Model 中解除引�
 [standard.common.model_reference_guard_unavailable]
 other = "数据模型引用检查暂时不可用，已停止删除，请稍后重试"
 
-[standard.code_set.invalid_type]
-other = "码值集类型必须是 system 或 custom"
-
 [standard.domain.parent_cycle]
 other = "业务域父级不能是自身或其子级"
 
@@ -105,9 +102,6 @@ other = "系统内置单位不允许修改或删除"
 
 [standard.unit.referenced]
 other = "计量单位仍被数据元或指标引用，无法删除"
-
-[standard.code_set.system_immutable]
-other = "系统内置码值集不允许删除"
 
 [standard.code_set.referenced]
 other = "码值集仍被数据元引用，无法删除"

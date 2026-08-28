@@ -42,8 +42,6 @@ func respondError(c *gin.Context, status int, err error) {
 		message = commoni18n.T(c, sysi18n.MsgMetricDependencyCycle)
 	case errors.Is(err, service.ErrInvalidHierarchyLevelNumber):
 		message = commoni18n.T(c, sysi18n.MsgInvalidHierarchyLevelNumber)
-	case errors.Is(err, service.ErrInvalidCodeSetType):
-		message = commoni18n.T(c, sysi18n.MsgInvalidCodeSetType)
 	case errors.Is(err, service.ErrDomainParentCycle):
 		message = commoni18n.T(c, sysi18n.MsgDomainParentCycle)
 	case errors.Is(err, service.ErrDomainReferenced):
@@ -70,8 +68,6 @@ func respondError(c *gin.Context, status int, err error) {
 		message = commoni18n.T(c, sysi18n.MsgSystemCategoryImmutable)
 	case errors.Is(err, service.ErrSystemUnitImmutable):
 		message = commoni18n.T(c, sysi18n.MsgSystemUnitImmutable)
-	case errors.Is(err, service.ErrSystemCodeSetImmutable):
-		message = commoni18n.T(c, sysi18n.MsgSystemCodeSetImmutable)
 	case errors.Is(err, repository.ErrInvalidTenantReference):
 		message = commoni18n.T(c, sysi18n.MsgInvalidResourceReference)
 	case errors.Is(err, service.ErrInvalidStandardRevision):

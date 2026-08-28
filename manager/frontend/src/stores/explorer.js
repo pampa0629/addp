@@ -709,8 +709,19 @@ export const useExplorerStore = defineStore('explorer', {
       }
       this.expandedLocators = expanded
 
-      const target = merged.target || chain[chain.length - 1]
-      const targetLocator = response?.target_locator || target.locator || target.id || locator
+      // loadTree(expand_depth=1) 已经完整加载 catalog root 的直接子节点。
+      // ancestors 只返回路径事实；继续补拉路径中其余展开容器的直接子节点，
+      // 否则深链恢复后 schema / directory 会只显示被注入的目标 item。
+      for (const ancestor of merged.path.slice(1, -1)) {
+        const ancestorLocator = ancestor?.locator || ancestor?.id || ''
+        if (ancestorLocator) {
+          await this.loadNodeChildren(ancestorLocator)
+        }
+      }
+
+      const mergedTarget = merged.target || chain[chain.length - 1]
+      const targetLocator = response?.target_locator || mergedTarget.locator || mergedTarget.id || locator
+      const target = findNodeByLocator(this.engineTrees[loc.engineId], targetLocator) || mergedTarget
       this.selectNodeContext(target, targetLocator)
 
       return {

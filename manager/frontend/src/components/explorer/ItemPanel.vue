@@ -311,6 +311,7 @@ import PreviewPanel from '@/components/explorer/PreviewPanel.vue'
 import { optionalCount, pickNestedCount } from '@/utils/metadataRowCount'
 import { parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
+import { getCatalogEntryBySourceIdentity } from '@/api/catalog'
 import { useAuthStore } from '@/store/auth'
 import { LineageViewer, createLineageApi, normalizeLineageGraph } from '@addp/common-frontend/graph'
 
@@ -432,13 +433,8 @@ const loadCatalogSummary = async () => {
   }
   catalogLookupState.value = 'loading'
   try {
-    const response = await client.get('/catalog/entries', {
-      params: {
-        ...(authStore.hasPermission('catalog.inventory.read') ? { view: 'inventory' } : {}),
-        source_identity: fingerprint,
-        page: 1,
-        page_size: 1
-      }
+    const response = await getCatalogEntryBySourceIdentity(fingerprint, {
+      includeInventory: authStore.hasPermission('catalog.inventory.read')
     })
     if (requestSeq !== catalogLookupSeq) return
     catalogSummary.value = response?.data?.[0] || null

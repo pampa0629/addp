@@ -8,7 +8,6 @@ import (
 )
 
 var (
-	ErrInvalidCodeSetType            = errors.New("invalid code set type")
 	ErrInvalidStandardRevision       = fmt.Errorf("%w: invalid standard revision", commonapi.ErrBadRequest)
 	ErrInvalidRevisionTransition     = fmt.Errorf("%w: invalid standard revision transition", commonapi.ErrConflict)
 	ErrDraftRevisionExists           = fmt.Errorf("%w: a draft revision already exists", commonapi.ErrConflict)
@@ -27,7 +26,6 @@ var (
 	ErrMetricReferenced              = fmt.Errorf("%w: metric is referenced", commonapi.ErrConflict)
 	ErrSystemCategoryImmutable       = fmt.Errorf("%w: system measurement category is immutable", commonapi.ErrConflict)
 	ErrSystemUnitImmutable           = fmt.Errorf("%w: system unit is immutable", commonapi.ErrConflict)
-	ErrSystemCodeSetImmutable        = fmt.Errorf("%w: system code set is immutable", commonapi.ErrConflict)
 )
 
 func mapDeleteConflict(err, referencedError error) error {

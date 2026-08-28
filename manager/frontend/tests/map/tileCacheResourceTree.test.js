@@ -80,6 +80,7 @@ describe('tileCacheResourceTree', () => {
     ])
     expect(merged.target).toMatchObject({ label: 'buildings', type: 'table' })
     expect(merged.nodes[0].children[0].children.map((node) => node.label)).toEqual(['roads', 'buildings'])
+    expect(merged.nodes[0].children[0].loaded).toBe(false)
   })
 
   it('keeps locator source identity when selecting a table resource', () => {

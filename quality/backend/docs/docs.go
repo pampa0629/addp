@@ -1608,8 +1608,14 @@ const docTemplate = `{
                 "max": {
                     "type": "string"
                 },
+                "max_inclusive": {
+                    "type": "boolean"
+                },
                 "min": {
                     "type": "string"
+                },
+                "min_inclusive": {
+                    "type": "boolean"
                 },
                 "pattern": {
                     "type": "string"
@@ -2164,6 +2170,12 @@ const docTemplate = `{
                 },
                 "quality_rules": {
                     "$ref": "#/definitions/dataquality.Document"
+                },
+                "revision_id": {
+                    "type": "integer"
+                },
+                "revision_no": {
+                    "type": "integer"
                 }
             }
         },
@@ -2198,6 +2210,10 @@ const docTemplate = `{
                 },
                 "element_id": {
                     "description": "standard.elements.id",
+                    "type": "integer"
+                },
+                "element_revision_id": {
+                    "description": "standard.element_revisions.id",
                     "type": "integer"
                 },
                 "enabled": {
@@ -2662,6 +2678,10 @@ const docTemplate = `{
                 },
                 "element_id": {
                     "description": "standard.elements.id",
+                    "type": "integer"
+                },
+                "element_revision_id": {
+                    "description": "standard.element_revisions.id",
                     "type": "integer"
                 },
                 "enabled": {

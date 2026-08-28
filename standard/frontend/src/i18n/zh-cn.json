@@ -238,11 +238,8 @@
         "platform": "平台",
         "tenant": "租户"
       },
-      "typeSystem": "系统内置",
-      "typeCustom": "自定义",
       "codeRequired": "请输入编码",
       "nameRequired": "请输入名称",
-      "typeRequired": "请选择类型",
       "confirmDelete": "确认删除码值集「{name}」？",
       "searchPlaceholder": "搜索编码/名称",
       "items": "码值项",

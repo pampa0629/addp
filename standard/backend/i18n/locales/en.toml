@@ -73,9 +73,6 @@ other = "This Standard resource is still referenced by Model. Remove the referen
 [standard.common.model_reference_guard_unavailable]
 other = "Model reference validation is temporarily unavailable. The delete was stopped; try again later"
 
-[standard.code_set.invalid_type]
-other = "Code set type must be system or custom"
-
 [standard.domain.parent_cycle]
 other = "A domain parent cannot be itself or its descendant"
 
@@ -105,9 +102,6 @@ other = "System units cannot be updated or deleted"
 
 [standard.unit.referenced]
 other = "The unit is still referenced by an element or metric and cannot be deleted"
-
-[standard.code_set.system_immutable]
-other = "System code sets cannot be deleted"
 
 [standard.code_set.referenced]
 other = "The code set is still referenced by an element and cannot be deleted"

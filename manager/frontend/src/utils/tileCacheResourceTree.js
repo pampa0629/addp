@@ -77,7 +77,8 @@ export function updateResourceNodeChildren(nodes, locator, children) {
 
 export function mergeAncestorChainIntoResourceTree(nodes, chain, { engine = null, parseLocator = null, filterNode = null } = {}) {
   const normalizedChain = (Array.isArray(chain) ? chain : [])
-    .map((node) => normalizeResourceNode(node, engine, { parseLocator, loaded: true }))
+    // ancestors 只证明路径存在，不代表任一容器的直接子节点已经完整加载。
+    .map((node) => normalizeResourceNode(node, engine, { parseLocator, loaded: false }))
     .filter(Boolean)
     .filter((node) => typeof filterNode !== 'function' || filterNode(node))
 
@@ -100,7 +101,6 @@ export function mergeAncestorChainIntoResourceTree(nodes, chain, { engine = null
   for (const node of normalizedChain.slice(1)) {
     current.children = upsertResourceChild(current.children || [], node)
     current.hasChildren = true
-    current.loaded = true
     current = findDirectResourceChild(current.children, node)
     path.push(current)
   }
@@ -172,6 +172,7 @@ function mergeResourceNodeFacts(existing, incoming) {
   return {
     ...existing,
     ...incoming,
+    loaded: existing?.loaded === true || incoming?.loaded === true,
     children: existingChildren.length ? existingChildren : incomingChildren
   }
 }
