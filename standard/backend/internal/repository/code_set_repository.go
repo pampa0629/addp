@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"strings"
 	"time"
 
@@ -35,17 +36,19 @@ func (r *CodeSetRepository) GetByID(id, tenantID int64) (*models.CodeSet, error)
 }
 
 func (r *CodeSetRepository) GetAggregate(id, tenantID int64) (*models.CodeSetAggregate, error) {
+	return r.GetAggregateAt(id, tenantID, time.Time{})
+}
+
+func (r *CodeSetRepository) GetAggregateAt(id, tenantID int64, asOf time.Time) (*models.CodeSetAggregate, error) {
 	identity, err := r.GetByID(id, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	result := &models.CodeSetAggregate{CodeSet: *identity}
-	if identity.CurrentRevisionID != nil {
-		revision, loadErr := r.getRevision(r.db, *identity.CurrentRevisionID, identity.ID, true)
-		if loadErr != nil {
-			return nil, loadErr
-		}
+	if revision, loadErr := r.getEffectiveRevision(r.db, identity.ID, asOf); loadErr == nil {
 		result.CurrentRevision = revision
+	} else if !errors.Is(loadErr, gorm.ErrRecordNotFound) {
+		return nil, loadErr
 	}
 	if identity.DraftRevisionID != nil {
 		revision, loadErr := r.getRevision(r.db, *identity.DraftRevisionID, identity.ID, true)
@@ -57,7 +60,7 @@ func (r *CodeSetRepository) GetAggregate(id, tenantID int64) (*models.CodeSetAgg
 	return result, nil
 }
 
-func (r *CodeSetRepository) List(tenantID int64, domainID *int64, keyword, status string, page, pageSize int) ([]models.CodeSetAggregate, int64, error) {
+func (r *CodeSetRepository) List(tenantID int64, domainID *int64, keyword, status string, page, pageSize int, asOf time.Time) ([]models.CodeSetAggregate, int64, error) {
 	query := r.db.Model(&models.CodeSet{}).Where("code_sets.tenant_id = ?", tenantID)
 	if domainID != nil {
 		query = query.Where("code_sets.domain_id = ?", *domainID)
@@ -88,7 +91,7 @@ func (r *CodeSetRepository) List(tenantID int64, domainID *int64, keyword, statu
 	}
 	items := make([]models.CodeSetAggregate, 0, len(identities))
 	for _, identity := range identities {
-		aggregate, err := r.GetAggregate(identity.ID, tenantID)
+		aggregate, err := r.GetAggregateAt(identity.ID, tenantID, asOf)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -140,7 +143,7 @@ func (r *CodeSetRepository) GetRevision(codeSetID, revisionID, tenantID int64) (
 func (r *CodeSetRepository) GetPublishedRevision(revisionID, tenantID int64) (*models.CodeSetRevision, error) {
 	var revision models.CodeSetRevision
 	err := r.db.Table("standard.code_set_revisions AS csr").Select("csr.*").
-		Joins("JOIN standard.code_sets cs ON cs.id = csr.code_set_id AND cs.current_revision_id = csr.id").
+		Joins("JOIN standard.code_sets cs ON cs.id = csr.code_set_id").
 		Where("csr.id = ? AND cs.tenant_id = ? AND cs.lifecycle_state = ? AND csr.status = ?", revisionID, tenantID, "active", models.RevisionStatusPublished).
 		First(&revision).Error
 	if err != nil {
@@ -169,11 +172,7 @@ func (r *CodeSetRepository) CreateDraft(codeSetID, tenantID, userID, expectedVer
 			return ErrDraftAlreadyExists
 		}
 		var source models.CodeSetRevision
-		if identity.CurrentRevisionID != nil {
-			if err := tx.Where("id = ? AND code_set_id = ?", *identity.CurrentRevisionID, identity.ID).First(&source).Error; err != nil {
-				return err
-			}
-		} else if err := tx.Where("code_set_id = ?", identity.ID).Order("revision_no DESC").First(&source).Error; err != nil {
+		if err := tx.Where("code_set_id = ?", identity.ID).Order("revision_no DESC").First(&source).Error; err != nil {
 			return err
 		}
 		created = source
@@ -262,9 +261,31 @@ func (r *CodeSetRepository) PublishRevision(codeSetID, revisionID, tenantID, use
 		if itemCount == 0 {
 			return ErrInvalidRevisionTransition
 		}
-		if identity.CurrentRevisionID != nil {
-			if err := requireAffectedRow(tx.Model(&models.CodeSetRevision{}).Where("id = ? AND status = ?", *identity.CurrentRevisionID, models.RevisionStatusPublished).Update("status", models.RevisionStatusSuperseded)); err != nil {
-				return err
+		var revision models.CodeSetRevision
+		if err := tx.Where("id = ? AND code_set_id = ? AND status = ?", revisionID, codeSetID, models.RevisionStatusInReview).First(&revision).Error; err != nil {
+			return ErrInvalidRevisionTransition
+		}
+		if revision.EffectiveFrom == nil {
+			return ErrInvalidRevisionTransition
+		}
+		var published []models.CodeSetRevision
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("code_set_id = ? AND status = ?", codeSetID, models.RevisionStatusPublished).Order("effective_from ASC, revision_no ASC").Find(&published).Error; err != nil {
+			return err
+		}
+		for index := range published {
+			candidate := &published[index]
+			if candidate.EffectiveFrom == nil {
+				return ErrEffectiveIntervalConflict
+			}
+			if candidate.EffectiveTo == nil && candidate.EffectiveFrom.Before(*revision.EffectiveFrom) {
+				if err := tx.Model(&models.CodeSetRevision{}).Where("id = ? AND status = ?", candidate.ID, models.RevisionStatusPublished).Update("effective_to", revision.EffectiveFrom).Error; err != nil {
+					return err
+				}
+				closed := *revision.EffectiveFrom
+				candidate.EffectiveTo = &closed
+			}
+			if intervalsOverlap(*candidate.EffectiveFrom, candidate.EffectiveTo, *revision.EffectiveFrom, revision.EffectiveTo) {
+				return ErrEffectiveIntervalConflict
 			}
 		}
 		if err := requireAffectedRow(tx.Model(&models.CodeSetRevision{}).Where("id = ? AND code_set_id = ? AND status = ?", revisionID, codeSetID, models.RevisionStatusInReview).Updates(map[string]interface{}{
@@ -272,7 +293,7 @@ func (r *CodeSetRepository) PublishRevision(codeSetID, revisionID, tenantID, use
 		})); err != nil {
 			return ErrInvalidRevisionTransition
 		}
-		return updateVersioned(tx, &models.CodeSet{}, codeSetID, tenantID, expectedVersion, map[string]interface{}{"current_revision_id": revisionID, "draft_revision_id": nil, "updated_by": userID})
+		return updateVersioned(tx, &models.CodeSet{}, codeSetID, tenantID, expectedVersion, map[string]interface{}{"draft_revision_id": nil, "updated_by": userID})
 	}))
 }
 
@@ -285,13 +306,13 @@ func (r *CodeSetRepository) WithdrawPublished(codeSetID, revisionID, tenantID, u
 		if identity.Version != expectedVersion {
 			return ErrVersionConflict
 		}
-		if identity.Origin == models.CodeSetOriginPlatform || identity.CurrentRevisionID == nil || *identity.CurrentRevisionID != revisionID {
+		if identity.Origin == models.CodeSetOriginPlatform {
 			return ErrInvalidRevisionTransition
 		}
 		if err := requireAffectedRow(tx.Model(&models.CodeSetRevision{}).Where("id = ? AND code_set_id = ? AND status = ?", revisionID, codeSetID, models.RevisionStatusPublished).Update("status", models.RevisionStatusWithdrawn)); err != nil {
 			return ErrInvalidRevisionTransition
 		}
-		return updateVersioned(tx, &models.CodeSet{}, codeSetID, tenantID, expectedVersion, map[string]interface{}{"current_revision_id": nil, "updated_by": userID})
+		return updateVersioned(tx, &models.CodeSet{}, codeSetID, tenantID, expectedVersion, map[string]interface{}{"updated_by": userID})
 	}))
 }
 
@@ -376,6 +397,18 @@ func (r *CodeSetRepository) getRevision(db *gorm.DB, revisionID, codeSetID int64
 		if err := r.loadItems(db, &revision); err != nil {
 			return nil, err
 		}
+	}
+	return &revision, nil
+}
+
+func (r *CodeSetRepository) getEffectiveRevision(db *gorm.DB, codeSetID int64, asOf time.Time) (*models.CodeSetRevision, error) {
+	var revision models.CodeSetRevision
+	query := db.Table("standard.code_set_revisions AS csr").Select("csr.*").Where("csr.code_set_id = ?", codeSetID)
+	if err := effectiveAt(query, "csr", asOf).Order("csr.effective_from DESC, csr.revision_no DESC").First(&revision).Error; err != nil {
+		return nil, err
+	}
+	if err := r.loadItems(db, &revision); err != nil {
+		return nil, err
 	}
 	return &revision, nil
 }

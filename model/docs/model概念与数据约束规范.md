@@ -86,6 +86,14 @@ Permission Guard 只判断候选能力，Repository 和 Service 仍必须对每�
 - DWLayer 是 Tenant 可配置事实。LogicalTable 必须引用已存在的 DWLayer，前端不得维护固定分层枚举作为第二事实源。
 - Model 内部引用由数据库外键、唯一约束和 CHECK 约束保证；跨 Standard Schema 的引用先由 Standard HTTP API 验证，再在 Model 写事务中锁定对应的标准引用删除屏障。后台调用、Mermaid 导入和普通 API 写入必须使用同一屏障路径。
 
+### 数据元修订冻结
+
+EntityAttribute 与 LogicalField 在草稿阶段只维护长期引用 `element_id`，`element_revision_id` 必须为空。Entity 或 LogicalTable 审批时，Model 使用同一个审批时点批量解析全部 `element_id` 对应的 Standard 当前生效修订，并在本地审批事务中把结果冻结到各属性或字段的 `element_revision_id`；任一数据元在该时点没有生效修订时，审批整体失败且不产生状态、版本或冻结字段副作用。
+
+审批后的 DDL、物化、质量规则和历史展示必须以被冻结的 `element_revision_id` 为语义事实，不得动态跟随 Standard 后续生效修订。重新打开聚合时，Model 在同一事务中把聚合转回 `draft` 并清空所属属性或字段的 `element_revision_id`；再次审批重新按新的统一审批时点解析。`element_revision_id` 是审批快照，不接受前端写入，也不建立绕过聚合审批的单独更新接口。
+
+引入冻结字段时，历史已审批聚合如果含有 `element_id`，不能仅凭当前 Standard 状态反推当初审批时使用的精确修订。迁移必须将这类聚合转回 `draft` 并推进版本，由用户在确认后显式重新审批；禁止用迁移时的当前修订伪造历史快照。
+
 ### Standard 引用删除屏障
 
 Standard 的业务域、数据元、维度层级和指标被 Model 引用时，不使用跨 Schema 外键，也不允许 Standard 直接读取 Model 私有表。Standard 硬删除这些资源必须通过 Model 的标准引用删除屏障完成影响评估；一次性“查询无引用后直接删除”存在检查与删除之间的竞态，禁止作为正式路径。

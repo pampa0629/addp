@@ -330,6 +330,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "draft",
+                            "in_review",
+                            "published",
+                            "withdrawn"
+                        ],
                         "type": "string",
                         "description": "修订状态 | Revision status",
                         "name": "status",
@@ -339,6 +345,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "关键字 | Keyword",
                         "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults to server time)",
+                        "name": "as_of",
                         "in": "query"
                     }
                 ],
@@ -410,6 +422,14 @@ const docTemplate = `{
                     "Standard"
                 ],
                 "summary": "获取码值集聚合 | Get code set aggregate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults to server time)",
+                        "name": "as_of",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2294,6 +2314,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "draft",
+                            "in_review",
+                            "published",
+                            "withdrawn"
+                        ],
                         "type": "string",
                         "description": "修订状态 | Revision status",
                         "name": "status",
@@ -2303,6 +2329,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "关键字 | Keyword",
                         "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults to server time)",
+                        "name": "as_of",
                         "in": "query"
                     }
                 ],
@@ -2392,6 +2424,14 @@ const docTemplate = `{
                     "Standard"
                 ],
                 "summary": "获取数据元聚合 | Get data element aggregate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults to server time)",
+                        "name": "as_of",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2758,7 +2798,15 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "获取当前发布数据元质量规则快照 | Get current published element quality rule snapshot",
+                "summary": "获取指定时点生效的数据元质量规则快照 | Get the effective element quality rule snapshot at a point in time",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults to server time)",
+                        "name": "as_of",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -5740,9 +5788,6 @@ const docTemplate = `{
                 "current_revision": {
                     "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetRevision"
                 },
-                "current_revision_id": {
-                    "type": "integer"
-                },
                 "domain_id": {
                     "type": "integer"
                 },
@@ -6256,9 +6301,6 @@ const docTemplate = `{
                 },
                 "current_revision": {
                     "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementRevision"
-                },
-                "current_revision_id": {
-                    "type": "integer"
                 },
                 "domain_id": {
                     "type": "integer"

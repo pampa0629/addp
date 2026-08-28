@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 18
+manifest_version: 19
 permissions:
   - key: audit.event.export
     allowed_scope_types: [platform]
@@ -226,6 +226,46 @@ permissions:
     status: active
     name_i18n_key: permissions.iam.mfa_credential.reset.name
     description_i18n_key: permissions.iam.mfa_credential.reset.description
+  - key: iam.oauth_client.create
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.oauth_client.create.name
+    description_i18n_key: permissions.iam.oauth_client.create.description
+  - key: iam.oauth_client.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.oauth_client.read.name
+    description_i18n_key: permissions.iam.oauth_client.read.description
+  - key: iam.oauth_client.restore
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.oauth_client.restore.name
+    description_i18n_key: permissions.iam.oauth_client.restore.description
+  - key: iam.oauth_client.suspend
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.oauth_client.suspend.name
+    description_i18n_key: permissions.iam.oauth_client.suspend.description
+  - key: iam.oauth_client.update
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.oauth_client.update.name
+    description_i18n_key: permissions.iam.oauth_client.update.description
   - key: iam.permission.read
     allowed_scope_types: [platform, tenant]
     risk_level: low

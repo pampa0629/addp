@@ -279,6 +279,13 @@ type ElementSummary struct {
 	Code string `json:"code"`
 }
 
+type ElementRevisionBinding struct {
+	ElementID  int64
+	RevisionID int64
+	RevisionNo int64
+	DataType   string
+}
+
 type ElementCandidate struct {
 	ID           int64                `json:"id"`
 	RevisionID   int64                `json:"revision_id"`
@@ -347,6 +354,58 @@ func (c *StandardClient) GetElement(ctx context.Context, elementID int64) (*Elem
 		return nil, fmt.Errorf("standard get element: %w", err)
 	}
 	return &element, nil
+}
+
+// ResolveElementRevisions resolves every stable element ID at one shared point
+// in time. Missing, inactive, cross-tenant, or non-effective elements fail the
+// whole call so consumers can freeze an aggregate atomically.
+func (c *StandardClient) ResolveElementRevisions(ctx context.Context, elementIDs []int64, asOf time.Time) (map[int64]ElementRevisionBinding, error) {
+	if c == nil || c.tenantID == nil || *c.tenantID == 0 || asOf.IsZero() {
+		return nil, errors.New("standard resolve element revisions contains invalid parameters")
+	}
+	unique := make([]int64, 0, len(elementIDs))
+	seen := make(map[int64]struct{}, len(elementIDs))
+	for _, elementID := range elementIDs {
+		if elementID <= 0 {
+			return nil, errors.New("standard resolve element revisions requires positive ids")
+		}
+		if _, exists := seen[elementID]; exists {
+			continue
+		}
+		seen[elementID] = struct{}{}
+		unique = append(unique, elementID)
+	}
+	result := make(map[int64]ElementRevisionBinding, len(unique))
+	for offset := 0; offset < len(unique); offset += 100 {
+		end := offset + 100
+		if end > len(unique) {
+			end = len(unique)
+		}
+		values := make([]string, 0, end-offset)
+		for _, elementID := range unique[offset:end] {
+			values = append(values, strconv.FormatInt(elementID, 10))
+		}
+		query := url.Values{
+			"ids":       []string{strings.Join(values, ",")},
+			"as_of":     []string{asOf.UTC().Format(time.RFC3339Nano)},
+			"page":      []string{"1"},
+			"page_size": []string{"100"},
+		}
+		var response elementListResponse
+		if err := c.doJSON(ctx, http.MethodGet, "/api/v1/standard/elements?"+query.Encode(), nil, &response); err != nil {
+			return nil, fmt.Errorf("standard resolve element revisions: %w", err)
+		}
+		for _, element := range response.Data {
+			if _, requested := seen[element.ID]; !requested || element.TenantID != int64(*c.tenantID) || element.LifecycleState != "active" || element.CurrentRevision == nil || element.CurrentRevision.Status != "published" || element.CurrentRevision.ID <= 0 || element.CurrentRevision.RevisionNo <= 0 {
+				return nil, fmt.Errorf("standard resolve element revisions: %w", ErrTenantReferenceNotFound)
+			}
+			result[element.ID] = ElementRevisionBinding{ElementID: element.ID, RevisionID: element.CurrentRevision.ID, RevisionNo: element.CurrentRevision.RevisionNo, DataType: element.CurrentRevision.DataType}
+		}
+	}
+	if len(result) != len(unique) {
+		return nil, fmt.Errorf("standard resolve element revisions: %w", ErrTenantReferenceNotFound)
+	}
+	return result, nil
 }
 
 func (c *StandardClient) ListElementSummaries(ctx context.Context, elementIDs []int64) ([]ElementSummary, error) {

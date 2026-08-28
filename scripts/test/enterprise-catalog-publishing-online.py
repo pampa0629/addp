@@ -355,6 +355,65 @@ def assert_catalog_entry_in_view(
         raise SuiteError(f"Catalog {view} view changed the fixture CatalogEntry identity")
 
 
+def find_portal_category(nodes: list[object], category_id: int) -> dict[str, object] | None:
+    for raw_node in nodes:
+        node = _object(raw_node, "Portal AssetCategory node")
+        if positive_int(node.get("id"), "Portal AssetCategory id") == category_id:
+            return node
+        children = node.get("children") or []
+        if not isinstance(children, list):
+            raise SuiteError("Portal AssetCategory children must be an array")
+        found = find_portal_category(children, category_id)
+        if found is not None:
+            return found
+    return None
+
+
+def validate_portal_category_navigation(
+    client: GatewayClient,
+    category_id: int,
+    category_name: str,
+    asset_id: int,
+) -> dict[str, object]:
+    tree = _array(
+        client.request("GET", "/api/v1/portal/categories", (200,)).payload,
+        "Portal AssetCategory tree",
+    )
+    category = find_portal_category(tree, category_id)
+    if category is None:
+        raise SuiteError("published AssetCategory is missing from the Portal tree")
+    if category.get("name") != category_name:
+        raise SuiteError("Portal AssetCategory name does not match the Asset owner fact")
+    if positive_int(category.get("count"), "Portal AssetCategory count") != 1:
+        raise SuiteError("temporary Portal AssetCategory must contain exactly one published Asset")
+
+    path = f"/api/v1/portal/categories/{category_id}/assets?page=1&page_size=100"
+    result = _object(client.request("GET", path, (200,)).payload, "Portal category assets")
+    data = result.get("data")
+    if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
+        raise SuiteError("Portal category navigation must return exactly one temporary Asset")
+    if positive_int(result.get("total"), "Portal category assets total") != 1:
+        raise SuiteError("Portal category navigation total must be one")
+    if positive_int(data[0].get("id"), "Portal category Asset id") != asset_id:
+        raise SuiteError("Portal category navigation returned a different Asset")
+    if positive_int(data[0].get("category_id"), "Portal category Asset category_id") != category_id:
+        raise SuiteError("Portal category navigation lost the AssetCategory identity")
+    return {
+        "category_id": str(category_id),
+        "asset_id": str(asset_id),
+        "subtree_published_count": 1,
+    }
+
+
+def assert_portal_category_absent(client: GatewayClient, category_id: int) -> None:
+    tree = _array(
+        client.request("GET", "/api/v1/portal/categories", (200,)).payload,
+        "Portal AssetCategory tree after Asset cleanup",
+    )
+    if find_portal_category(tree, category_id) is not None:
+        raise SuiteError("empty temporary AssetCategory remained visible in the Portal tree")
+
+
 def editable_catalog_payload(entry: dict[str, object]) -> dict[str, object]:
     semantic_links = entry.get("semantic_links") or []
     responsibilities = entry.get("responsibilities") or []
@@ -448,7 +507,7 @@ def run_suite(
     department_id: int,
     principal_id: int,
     convergence_timeout: float,
-    browser_runner: Callable[[str, str, str, int], dict[str, object]] | None = None,
+    browser_runner: Callable[[str, str, str, int, int, int], dict[str, object]] | None = None,
 ) -> dict[str, object]:
     deadline = time.monotonic() + convergence_timeout
     asset_id: int | None = None
@@ -492,15 +551,6 @@ def run_suite(
         if coverage_after["total_entries"] != coverage_before["total_entries"]:
             raise SuiteError("Catalog curation unexpectedly changed the active entry denominator")
 
-        browser_evidence: dict[str, object] = {}
-        if browser_runner is not None:
-            browser_evidence = browser_runner(
-                entry_id,
-                fingerprint,
-                str(curated.get("business_name") or curated.get("display_name") or ""),
-                int(coverage_after["total_entries"]),
-            )
-
         types = _array(client.request("GET", "/api/v1/asset/type-definitions", (200,)).payload, "Asset type definitions")
         enabled_types = [item for item in types if isinstance(item, dict) and item.get("enabled") is True]
         if not enabled_types:
@@ -518,6 +568,7 @@ def run_suite(
         )
         asset_category_id = positive_int(asset_category.get("id"), "Asset category id")
         asset_category_version = positive_int(asset_category.get("version"), "Asset category version")
+        asset_category_name = f"Online Catalog {run_id}"
         asset = _object(
             client.request(
                 "POST",
@@ -547,6 +598,22 @@ def run_suite(
             raise SuiteError("Portal Asset components are incomplete")
         if components[0].get("catalog_entry_id") != entry_id:
             raise SuiteError("Portal Asset does not preserve the CatalogEntry identity")
+        portal_category = validate_portal_category_navigation(
+            client,
+            asset_category_id,
+            asset_category_name,
+            asset_id,
+        )
+        browser_evidence: dict[str, object] = {}
+        if browser_runner is not None:
+            browser_evidence = browser_runner(
+                entry_id,
+                fingerprint,
+                str(curated.get("business_name") or curated.get("display_name") or ""),
+                int(coverage_after["total_entries"]),
+                asset_category_id,
+                asset_id,
+            )
 
         return {
             "schema_version": "addp.enterprise-catalog-publishing/v2",
@@ -571,6 +638,7 @@ def run_suite(
                 "governance_coverage": "passed",
                 "browser": "passed" if browser_runner is not None else "not-run",
                 "asset_portal_publishing": "passed",
+                "asset_category_portal_navigation": "passed",
                 "cleanup": "passed",
             },
             "source_resolution": source_resolution,
@@ -579,6 +647,7 @@ def run_suite(
                 "after": coverage_after,
             },
             "browser": browser_evidence,
+            "portal_category": portal_category,
             "temporary_resources_created": 2,
             "residual_resources": 0,
             "cleanup": "passed",
@@ -598,6 +667,8 @@ def run_suite(
                     client.request("DELETE", f"/api/v1/asset/assets/{asset_id}", (200,))
                 client.request("GET", f"/api/v1/asset/assets/{asset_id}", (404,))
                 client.request("GET", f"/api/v1/portal/assets/{asset_id}", (404,))
+                if asset_category_id is not None:
+                    assert_portal_category_absent(client, asset_category_id)
             except Exception as error:
                 cleanup_errors.append(f"Asset: {error}")
         if asset_category_id is not None and asset_category_version is not None:
@@ -634,10 +705,12 @@ def validate_browser_report(
     entry_id: str,
     fingerprint: str,
     total_entries: int,
+    category_id: int,
+    asset_id: int,
 ) -> dict[str, object]:
     payload = _object(report, "Enterprise Catalog browser report")
     expected = {
-        "schema_version": "addp.enterprise-catalog-publishing-browser/v1",
+        "schema_version": "addp.enterprise-catalog-publishing-browser/v2",
         "suite": "enterprise-catalog-publishing",
         "run_id": run_id,
         "result": "passed",
@@ -648,6 +721,9 @@ def validate_browser_report(
         "coverage_dimensions": len(COVERAGE_DIMENSIONS),
         "human_readable_filter_selectors": 3,
         "explicit_batch_governance_ui": True,
+        "portal_category_id": str(category_id),
+        "portal_asset_id": str(asset_id),
+        "portal_category_assets": 1,
         "browser_warning_errors": 0,
     }
     mismatches = [key for key, value in expected.items() if payload.get(key) != value]
@@ -663,6 +739,8 @@ def run_browser(
     fingerprint: str,
     business_name: str,
     total_entries: int,
+    category_id: int,
+    asset_id: int,
 ) -> dict[str, object]:
     artifact_dir = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
     report_path = artifact_dir / "enterprise-catalog-publishing-browser.json"
@@ -675,6 +753,8 @@ def run_browser(
             "ADDP_ONLINE_CATALOG_SOURCE_IDENTITY": fingerprint,
             "ADDP_ONLINE_CATALOG_BUSINESS_NAME": business_name,
             "ADDP_ONLINE_CATALOG_COVERAGE_TOTAL": str(total_entries),
+            "ADDP_ONLINE_ASSET_CATEGORY_ID": str(category_id),
+            "ADDP_ONLINE_ASSET_ID": str(asset_id),
         }
     )
     result = subprocess.run(
@@ -706,6 +786,8 @@ def run_browser(
         entry_id,
         fingerprint,
         total_entries,
+        category_id,
+        asset_id,
     )
 
 
@@ -741,13 +823,15 @@ def main() -> int:
             department_id,
             positive_int(identity["principal_id"], "Online principal id"),
             convergence_timeout,
-            lambda entry_id, fingerprint, business_name, total_entries: run_browser(
+            lambda entry_id, fingerprint, business_name, total_entries, category_id, asset_id: run_browser(
                 repository,
                 environment,
                 entry_id,
                 fingerprint,
                 business_name,
                 total_entries,
+                category_id,
+                asset_id,
             ),
         )
         report["identity"] = identity

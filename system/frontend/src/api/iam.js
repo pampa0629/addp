@@ -81,6 +81,14 @@ export const iamAPI = {
     updateMembership: (id, membershipId, data) => client.put(`/system/tenant/project_groups/${id}/memberships/${membershipId}`, data),
     closeMembership: (id, membershipId, version, reason) => client.post(`/system/tenant/project_groups/${id}/memberships/${membershipId}/close`, { version, reason })
   },
+  oauthClients: {
+    list: (params) => list('/system/tenant/oauth_clients', params),
+    get: (clientId) => client.get(`/system/tenant/oauth_clients/${clientId}`),
+    create: (data) => client.post('/system/tenant/oauth_clients', data),
+    update: (clientId, data) => client.put(`/system/tenant/oauth_clients/${clientId}`, data),
+    suspend: (clientId, version, reason) => client.post(`/system/tenant/oauth_clients/${clientId}/suspend`, { version, reason }),
+    restore: (clientId, version, reason) => client.post(`/system/tenant/oauth_clients/${clientId}/restore`, { version, reason })
+  },
   invitations: {
     list: (params) => list('/system/tenant/invitations', params),
     create: (email) => client.post('/system/tenant/invitations', { email }),

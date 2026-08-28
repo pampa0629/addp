@@ -13,6 +13,7 @@
       <el-col :span="8">
         <el-card class="tree-card" v-loading="loading">
           <el-tree
+            ref="treeRef"
             v-if="treeData.length > 0"
             :data="treeData"
             :props="treeProps"
@@ -166,6 +167,7 @@ const reloading = ref(false)
 const versionConflict = ref(false)
 const formRef = ref(null)
 const nameInputRef = ref(null)
+const treeRef = ref(null)
 
 const form = ref({ name: '', parent_value: ROOT_CATEGORY_PARENT, description: '', sort_order: 0 })
 const rules = computed(() => ({
@@ -186,16 +188,23 @@ const parentOptions = computed(() => {
 })
 
 async function loadTree() {
+  const selectedID = selected.value?.id
   loading.value = true
   try {
     const res = await categoryAPI.tree()
     treeData.value = res || []
-    if (selected.value) selected.value = findCategoryNode(treeData.value, selected.value.id)
+    await selectCategory(selectedID)
   } catch (e) {
     ElMessage.error(t('asset.category.loadFailed'))
   } finally {
     loading.value = false
   }
+}
+
+async function selectCategory(id) {
+  selected.value = id ? findCategoryNode(treeData.value, id) : null
+  await nextTick()
+  treeRef.value?.setCurrentKey(selected.value?.id ?? null)
 }
 
 function handleSelect(data) {
@@ -259,8 +268,9 @@ async function handleSubmit() {
   submitting.value = true
   versionConflict.value = false
   try {
+    let saved
     if (isEdit.value) {
-      await categoryAPI.update(form.value.id, {
+      saved = await categoryAPI.update(form.value.id, {
         version: form.value.version,
         name: form.value.name,
         parent_id: form.value.parent_value === ROOT_CATEGORY_PARENT ? null : form.value.parent_value,
@@ -269,7 +279,7 @@ async function handleSubmit() {
       })
       ElMessage.success(t('asset.category.updateSuccess'))
     } else {
-      await categoryAPI.create({
+      saved = await categoryAPI.create({
         name: form.value.name,
         description: form.value.description,
         sort_order: form.value.sort_order,
@@ -278,8 +288,8 @@ async function handleSubmit() {
       ElMessage.success(t('asset.category.createSuccess'))
     }
     dialogVisible.value = false
-    selected.value = null
     await loadTree()
+    await selectCategory(saved.id)
   } catch (e) {
     if (isEdit.value && e.response?.status === 409 && e.response?.data?.error_code === 'asset_category_version_conflict') {
       versionConflict.value = true

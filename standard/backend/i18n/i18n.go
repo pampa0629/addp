@@ -31,6 +31,7 @@ const (
 	MsgInvalidResourceReference       = "standard.common.invalid_resource_reference"
 	MsgInvalidStandardRevision        = "standard.revision.invalid"
 	MsgInvalidRevisionTransition      = "standard.revision.invalid_transition"
+	MsgEffectiveIntervalConflict      = "standard.revision.effective_interval_conflict"
 	MsgDraftRevisionExists            = "standard.revision.draft_exists"
 	MsgPublishedRevisionRequired      = "standard.revision.published_required"
 	MsgPlatformCodeSetImmutable       = "standard.code_set.platform_immutable"

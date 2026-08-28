@@ -23,6 +23,7 @@ type IAMRuntime struct {
 	MFASessionService                   *iam.MFASessionService
 	TenantMembershipService             *iam.TenantMembershipService
 	OrganizationService                 *iam.OrganizationService
+	OAuthClientManagementService        *iam.OAuthClientManagementService
 	TenantInvitationService             *iam.TenantInvitationService
 	TenantRoleService                   *iam.TenantRoleService
 	PlatformTenantService               *iam.PlatformTenantService
@@ -58,6 +59,7 @@ type IAMRuntime struct {
 	PlatformUserHandler                 *IAMPlatformUserHandler
 	TenantMembershipHandler             *IAMTenantMembershipHandler
 	OrganizationHandler                 *IAMOrganizationHandler
+	OAuthClientManagementHandler        *IAMOAuthClientManagementHandler
 	TenantInvitationHandler             *IAMTenantInvitationHandler
 	TenantRoleHandler                   *IAMTenantRoleHandler
 	InternalAuditHandler                *IAMInternalAuditHandler
@@ -126,6 +128,7 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config, securityPolicy iam.SecurityP
 	}
 	tenantMembershipService := iam.NewTenantMembershipService(repository, nil)
 	organizationService := iam.NewOrganizationService(repository, nil)
+	oauthClientManagementService := iam.NewOAuthClientManagementService(repository)
 	tenantRoleService := iam.NewTenantRoleService(repository, nil)
 	platformTenantService := iam.NewPlatformTenantService(repository, nil)
 	platformUserService := iam.NewPlatformUserService(repository, identityService, nil)
@@ -278,6 +281,10 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config, securityPolicy iam.SecurityP
 	if err != nil {
 		return nil, fmt.Errorf("装配 IAM Organization Handler: %w", err)
 	}
+	oauthClientManagementHandler, err := NewIAMOAuthClientManagementHandler(oauthClientManagementService)
+	if err != nil {
+		return nil, fmt.Errorf("装配 IAM OAuth Client Management Handler: %w", err)
+	}
 	tenantRoleHandler, err := NewIAMTenantRoleHandler(tenantRoleService)
 	if err != nil {
 		return nil, fmt.Errorf("装配 IAM Tenant Role Handler: %w", err)
@@ -336,6 +343,7 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config, securityPolicy iam.SecurityP
 		MFASessionService:                   mfaSessionService,
 		TenantMembershipService:             tenantMembershipService,
 		OrganizationService:                 organizationService,
+		OAuthClientManagementService:        oauthClientManagementService,
 		TenantInvitationService:             tenantInvitationService,
 		TenantRoleService:                   tenantRoleService,
 		PlatformTenantService:               platformTenantService,
@@ -368,6 +376,7 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config, securityPolicy iam.SecurityP
 		PlatformUserHandler:                 platformUserHandler,
 		TenantMembershipHandler:             tenantMembershipHandler,
 		OrganizationHandler:                 organizationHandler,
+		OAuthClientManagementHandler:        oauthClientManagementHandler,
 		TenantInvitationHandler:             tenantInvitationHandler,
 		TenantRoleHandler:                   tenantRoleHandler,
 		InternalAuditHandler:                internalAuditHandler,

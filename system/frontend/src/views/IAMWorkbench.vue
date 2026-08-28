@@ -35,7 +35,7 @@
 <script setup>
 import { computed, markRaw, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Bell, Connection, DocumentChecked, InfoFilled, Lock, OfficeBuilding, Refresh, Tickets, User, UserFilled } from '@element-plus/icons-vue'
+import { Bell, Connection, DocumentChecked, InfoFilled, Key, Lock, OfficeBuilding, Refresh, Tickets, User, UserFilled } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
@@ -48,6 +48,7 @@ import TenantMembershipsPanel from '../components/iam/TenantMembershipsPanel.vue
 import TenantOrganizationPanel from '../components/iam/TenantOrganizationPanel.vue'
 import TenantRolesPanel from '../components/iam/TenantRolesPanel.vue'
 import TenantRoleAssignmentsPanel from '../components/iam/TenantRoleAssignmentsPanel.vue'
+import OAuthClientsPanel from '../components/iam/OAuthClientsPanel.vue'
 import MFASecurityPanel from '../components/iam/MFASecurityPanel.vue'
 import { needsTenantRoleSetup } from '../utils/iamRoles'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
@@ -74,6 +75,7 @@ const allTabs = [
   { key: 'platform-audit', context: 'platform', permission: 'audit.event.read', label: 'system.iam.tabs.platformAudit', icon: markRaw(Bell), component: markRaw(AuditPanel), props: { scope: 'platform' } },
   { key: 'memberships', context: 'tenant', permission: 'iam.tenant_membership.read', label: 'system.iam.tabs.memberships', icon: markRaw(User), component: markRaw(TenantMembershipsPanel) },
   { key: 'organization', context: 'tenant', permissionsAny: ['iam.department.read', 'iam.project_group.read'], label: 'system.iam.tabs.organization', icon: markRaw(Connection), component: markRaw(TenantOrganizationPanel) },
+  { key: 'oauth-clients', context: 'tenant', permission: 'iam.oauth_client.read', label: 'system.iam.tabs.oauthClients', icon: markRaw(Key), component: markRaw(OAuthClientsPanel) },
   { key: 'invitations', context: 'tenant', permission: 'iam.tenant_invitation.read', label: 'system.iam.tabs.invitations', icon: markRaw(Tickets), component: markRaw(TenantInvitationsPanel) },
   { key: 'roles', context: 'tenant', permission: 'iam.tenant_role.read', label: 'system.iam.tabs.roles', icon: markRaw(DocumentChecked), component: markRaw(TenantRolesPanel) },
   { key: 'role-assignments', context: 'tenant', permission: 'iam.tenant_role_assignment.read', label: 'system.iam.tabs.roleAssignments', icon: markRaw(UserFilled), component: markRaw(TenantRoleAssignmentsPanel) },

@@ -106,6 +106,7 @@ import { dwLayerAPI } from '../api/model'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
 import { getModelErrorMessage } from '../utils/apiError'
+import { createDefaultDWLayers } from '../utils/dwLayerDefaults'
 import { buildDWLayerUpdateRequest } from '../utils/modelDetailState'
 
 const { t } = useI18n()
@@ -226,12 +227,7 @@ const handleInitDefault = async () => {
     ElMessage.error(t('model.common.permission_denied'))
     return
   }
-  const defaults = [
-    { layer_code: 'ods', layer_name: '贴源层', naming_rule: 'ods_{domain}_{entity}', description: '原始数据，不做任何加工，保留业务系统原貌', sort_order: 1 },
-    { layer_code: 'dwd', layer_name: '明细层', naming_rule: 'dwd_{domain}_{entity}_d', description: '清洗、标准化、建立维度关联的明细数据', sort_order: 2 },
-    { layer_code: 'dws', layer_name: '汇总层', naming_rule: 'dws_{domain}_{subject}_{period}', description: '面向主题域的轻度聚合数据', sort_order: 3 },
-    { layer_code: 'ads', layer_name: '应用层', naming_rule: 'ads_{subject}_{scene}', description: '面向应用的数据集市，直接支撑报表和 API', sort_order: 4 }
-  ]
+  const defaults = createDefaultDWLayers(t)
 
   initializing.value = true
   try {

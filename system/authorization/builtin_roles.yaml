@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 73
+manifest_version: 74
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -297,6 +297,11 @@ roles:
       - iam.department_membership.create
       - iam.department_membership.read
       - iam.department_membership.update
+      - iam.oauth_client.create
+      - iam.oauth_client.read
+      - iam.oauth_client.restore
+      - iam.oauth_client.suspend
+      - iam.oauth_client.update
       - iam.project_group.close
       - iam.project_group.create
       - iam.project_group.read

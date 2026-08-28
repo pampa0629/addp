@@ -71,7 +71,7 @@
 | Local Account | ADDP 自己管理的登录标识和本地凭据。 | 凭据不是 User 本身。 |
 | External Identity | 外部 IdP 的稳定身份，主键语义为 `issuer + subject`。 | 不以邮箱作为永久唯一身份。 |
 | Service Principal | 应用、自动化任务或工作负载的非人主体。 | 不伪装成 User，不使用用户密码。 |
-| OAuth Client | 请求用户授权的客户端软件。 | 不是 User、Service Principal、Tenant 或角色。 |
+| OAuth Client | 请求用户授权的客户端软件；由 Platform 内置管理或由单个 Tenant 注册管理。 | 不是 User、Service Principal、Tenant 或角色；Tenant Client 只能承接其 owner Tenant 内的用户委托授权。 |
 | Principal | 一次请求中正在被授权判断的主体，可以是 User 或 Service Principal。 | 不等同于客户端软件。 |
 
 ```mermaid
@@ -98,6 +98,8 @@ Authentication Method 表达主体如何证明身份，可以包括：
 - Service Principal 的工作负载认证。
 
 CLI 和 Device Flow 是登录交互通道，不是新的用户体系。无论入口如何，最终都必须建立 ADDP 内部会话和 AuthContext。
+
+OAuth Client 的管理归属不产生 Principal 或 Permission。Platform 内置 Client 由 migration 建立；Tenant 外部 Client 由当前 Tenant 管理，固定为无 Secret 的公共 Client，并使用 Authorization Code + PKCE。Tenant 外部 Client 的授权决定必须同时满足当前 User、当前 Tenant Membership、Client owner Tenant 三者一致；API Key 和 Client Credentials 不得替代这条用户委托关系。
 
 ### 4.4 外部 IdP 与身份联合
 

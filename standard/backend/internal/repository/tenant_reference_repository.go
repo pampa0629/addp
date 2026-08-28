@@ -2,6 +2,7 @@ package repository
 
 import (
 	"errors"
+	"time"
 
 	"github.com/addp/standard/internal/models"
 	"gorm.io/gorm"
@@ -56,8 +57,12 @@ func (r *TenantReferenceRepository) RequireElements(tenantID int64, ids []int64)
 	if len(uniqueIDs) == 0 {
 		return nil
 	}
+	asOf := time.Now().UTC()
 	var count int64
-	if err := r.db.Model(&models.Element{}).Where("tenant_id = ? AND lifecycle_state = ? AND current_revision_id IS NOT NULL AND id IN ?", tenantID, "active", uniqueIDs).Distinct("id").Count(&count).Error; err != nil {
+	if err := r.db.Table("standard.elements AS e").
+		Joins("JOIN standard.element_revisions er ON er.element_id = e.id AND er.status = ? AND er.effective_from <= ? AND (er.effective_to IS NULL OR er.effective_to > ?)", models.RevisionStatusPublished, asOf, asOf).
+		Where("e.tenant_id = ? AND e.lifecycle_state = ? AND e.id IN ?", tenantID, "active", uniqueIDs).
+		Distinct("e.id").Count(&count).Error; err != nil {
 		return err
 	}
 	if count != int64(len(uniqueIDs)) {
@@ -67,8 +72,12 @@ func (r *TenantReferenceRepository) RequireElements(tenantID int64, ids []int64)
 }
 
 func (r *TenantReferenceRepository) requirePublishedElement(tenantID, id int64) error {
+	asOf := time.Now().UTC()
 	var count int64
-	if err := r.db.Model(&models.Element{}).Where("id = ? AND tenant_id = ? AND lifecycle_state = ? AND current_revision_id IS NOT NULL", id, tenantID, "active").Count(&count).Error; err != nil {
+	if err := r.db.Table("standard.elements AS e").
+		Joins("JOIN standard.element_revisions er ON er.element_id = e.id AND er.status = ? AND er.effective_from <= ? AND (er.effective_to IS NULL OR er.effective_to > ?)", models.RevisionStatusPublished, asOf, asOf).
+		Where("e.id = ? AND e.tenant_id = ? AND e.lifecycle_state = ?", id, tenantID, "active").
+		Distinct("e.id").Count(&count).Error; err != nil {
 		return err
 	}
 	if count != 1 {

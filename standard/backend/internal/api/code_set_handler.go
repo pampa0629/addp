@@ -21,26 +21,37 @@ func NewCodeSetHandler(svc *service.CodeSetService) *CodeSetHandler { return &Co
 // @Tags Standard
 // @Produce json
 // @Param domain_id query int false "归属业务域 ID | Owning domain ID"
-// @Param status query string false "修订状态 | Revision status"
+// @Param status query string false "修订状态 | Revision status" Enums(draft,in_review,published,withdrawn)
 // @Param keyword query string false "关键字 | Keyword"
+// @Param as_of query string false "生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults to server time)"
 // @Success 200 {object} models.PaginatedCodeSetResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.read"]
 // @Router /code-sets [get]
 // @Security BearerAuth
 func (h *CodeSetHandler) ListCodeSets(c *gin.Context) {
+	asOf, err := parseOptionalAsOf(c)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	status, err := parseOptionalRevisionStatus(c)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	var domainID *int64
 	if raw := c.Query("domain_id"); raw != "" {
-		value, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || value <= 0 {
+		value, parseErr := strconv.ParseInt(raw, 10, 64)
+		if parseErr != nil || value <= 0 {
 			respondError(c, http.StatusBadRequest, fmt.Errorf("invalid domain_id"))
 			return
 		}
 		domainID = &value
 	}
-	items, total, err := h.svc.ListCodeSets(getTenantID(c), domainID, c.Query("keyword"), c.Query("status"), page, pageSize)
+	items, total, err := h.svc.ListCodeSets(getTenantID(c), domainID, c.Query("keyword"), status, page, pageSize, asOf)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
@@ -80,6 +91,7 @@ func (h *CodeSetHandler) CreateCodeSet(c *gin.Context) {
 // @Summary 获取码值集聚合 | Get code set aggregate
 // @Tags Standard
 // @Produce json
+// @Param as_of query string false "生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults to server time)"
 // @Success 200 {object} models.CodeSetAggregate
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.read"]
@@ -90,7 +102,12 @@ func (h *CodeSetHandler) GetCodeSet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	result, err := h.svc.GetCodeSet(id, getTenantID(c))
+	asOf, err := parseOptionalAsOf(c)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	result, err := h.svc.GetCodeSetAt(id, getTenantID(c), asOf)
 	if err != nil {
 		respondError(c, http.StatusNotFound, err)
 		return

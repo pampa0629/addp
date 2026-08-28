@@ -47,6 +47,8 @@ type oauthClientRow struct {
 	AllowedAudiences   pq.StringArray `gorm:"column:allowed_audiences;type:text[]"`
 	TokenAuthMethod    string         `gorm:"column:token_endpoint_auth_method"`
 	ServicePrincipalID *int64         `gorm:"column:service_principal_id"`
+	OwnerScope         string         `gorm:"column:owner_scope"`
+	OwnerTenantID      *int64         `gorm:"column:owner_tenant_id"`
 	Status             string         `gorm:"column:status"`
 }
 

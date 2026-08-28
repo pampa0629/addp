@@ -462,10 +462,6 @@ func TestStorageAgainstPostgres(t *testing.T) {
 		if !strings.HasPrefix(created.RequestSecret, authorizationRequestSecretPrefix) || created.ExpiresIn != 300 {
 			t.Fatalf("created authorization request = %#v", created)
 		}
-		view, err := bridge.GetAuthorizationRequest(ctx, created.RequestID)
-		if err != nil || view.ClientID != "addp-cli" || view.Scope != "addp.api" {
-			t.Fatalf("GetAuthorizationRequest() = %#v, %v", view, err)
-		}
 		var tenantID int64
 		if err := db.Raw(`SELECT tenant_id FROM system.tenant_memberships WHERE id = ?`, membershipID).
 			Scan(&tenantID).Error; err != nil {
@@ -507,6 +503,10 @@ func TestStorageAgainstPostgres(t *testing.T) {
 				IssuedAt:  time.Now().UTC().Add(-time.Minute),
 				ExpiresAt: time.Now().UTC().Add(14 * time.Minute),
 			},
+		}
+		view, err := bridge.GetAuthorizationRequest(ctx, created.RequestID, authContext)
+		if err != nil || view.ClientID != "addp-cli" || view.Scope != "addp.api" {
+			t.Fatalf("GetAuthorizationRequest() = %#v, %v", view, err)
 		}
 		decision, err := bridge.DecideAuthorization(
 			ctx,

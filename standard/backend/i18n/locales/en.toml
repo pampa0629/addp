@@ -58,11 +58,14 @@ other = "The standard revision is incomplete or contains inconsistent constraint
 [standard.revision.invalid_transition]
 other = "The revision state does not allow this operation"
 
+[standard.revision.effective_interval_conflict]
+other = "The effective interval overlaps another published revision"
+
 [standard.revision.draft_exists]
 other = "This standard object already has a draft revision"
 
 [standard.revision.published_required]
-other = "A current published standard revision is required"
+other = "A published standard revision is required"
 
 [standard.code_set.platform_immutable]
 other = "Tenant users cannot modify platform code sets"

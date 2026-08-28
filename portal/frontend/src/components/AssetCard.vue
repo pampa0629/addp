@@ -1,5 +1,11 @@
 <template>
-  <el-card class="asset-card" shadow="hover" @click="$router.push(`/portal/assets/${asset.id}`)">
+  <el-card
+    class="asset-card"
+    data-testid="portal-asset-card"
+    :data-asset-id="String(asset.id)"
+    shadow="hover"
+    @click="$router.push(`/portal/assets/${asset.id}`)"
+  >
     <div class="card-header">
       <el-tag size="small" class="type-tag">{{ getTypeName(asset.type_code, asset.type_name) }}</el-tag>
     </div>

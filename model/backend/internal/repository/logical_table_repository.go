@@ -171,6 +171,28 @@ func (r *LogicalTableRepository) GetFields(tableID int64) ([]models.LogicalField
 	return fields, commonrepo.WrapDBError(err)
 }
 
+func (r *LogicalTableRepository) FreezeFieldElementRevisions(tableID int64, bindings map[int64]int64) error {
+	if err := r.db.Model(&models.LogicalField{}).Where("table_id = ?", tableID).Update("element_revision_id", nil).Error; err != nil {
+		return commonrepo.WrapDBError(err)
+	}
+	for elementID, revisionID := range bindings {
+		result := r.db.Model(&models.LogicalField{}).
+			Where("table_id = ? AND element_id = ?", tableID, elementID).
+			Update("element_revision_id", revisionID)
+		if result.Error != nil {
+			return commonrepo.WrapDBError(result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
+		}
+	}
+	return nil
+}
+
+func (r *LogicalTableRepository) ClearFieldElementRevisions(tableID int64) error {
+	return commonrepo.WrapDBError(r.db.Model(&models.LogicalField{}).Where("table_id = ?", tableID).Update("element_revision_id", nil).Error)
+}
+
 // CreateField 创建字段
 func (r *LogicalTableRepository) CreateField(field *models.LogicalField) error {
 	return commonrepo.WrapDBError(r.db.Create(field).Error)

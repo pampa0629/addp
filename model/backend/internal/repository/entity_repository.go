@@ -134,6 +134,28 @@ func (r *EntityRepository) GetAttributes(entityID int64) ([]models.EntityAttribu
 	return attrs, commonrepo.WrapDBError(err)
 }
 
+func (r *EntityRepository) FreezeAttributeElementRevisions(entityID int64, bindings map[int64]int64) error {
+	if err := r.db.Model(&models.EntityAttribute{}).Where("entity_id = ?", entityID).Update("element_revision_id", nil).Error; err != nil {
+		return commonrepo.WrapDBError(err)
+	}
+	for elementID, revisionID := range bindings {
+		result := r.db.Model(&models.EntityAttribute{}).
+			Where("entity_id = ? AND element_id = ?", entityID, elementID).
+			Update("element_revision_id", revisionID)
+		if result.Error != nil {
+			return commonrepo.WrapDBError(result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
+		}
+	}
+	return nil
+}
+
+func (r *EntityRepository) ClearAttributeElementRevisions(entityID int64) error {
+	return commonrepo.WrapDBError(r.db.Model(&models.EntityAttribute{}).Where("entity_id = ?", entityID).Update("element_revision_id", nil).Error)
+}
+
 // CreateAttribute 创建实体属性
 func (r *EntityRepository) CreateAttribute(attr *models.EntityAttribute) error {
 	return commonrepo.WrapDBError(r.db.Create(attr).Error)

@@ -8,14 +8,13 @@ import (
 )
 
 const (
-	RevisionStatusDraft      = "draft"
-	RevisionStatusInReview   = "in_review"
-	RevisionStatusPublished  = "published"
-	RevisionStatusSuperseded = "superseded"
-	RevisionStatusWithdrawn  = "withdrawn"
-	ValueDomainUnrestricted  = "unrestricted"
-	ValueDomainRange         = "range"
-	ValueDomainEnumeration   = "enumeration"
+	RevisionStatusDraft     = "draft"
+	RevisionStatusInReview  = "in_review"
+	RevisionStatusPublished = "published"
+	RevisionStatusWithdrawn = "withdrawn"
+	ValueDomainUnrestricted = "unrestricted"
+	ValueDomainRange        = "range"
+	ValueDomainEnumeration  = "enumeration"
 )
 
 type JSONB map[string]interface{}
@@ -44,20 +43,19 @@ func (j *JSONB) Scan(value interface{}) error {
 
 // Element 是数据元的稳定身份。业务定义只存在于 ElementRevision。
 type Element struct {
-	ID                int64       `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID          int64       `gorm:"not null;index;uniqueIndex:uq_standard_elements_tenant_code" json:"tenant_id"`
-	DomainID          *int64      `gorm:"index" json:"domain_id,omitempty"`
-	Code              string      `gorm:"size:100;not null;uniqueIndex:uq_standard_elements_tenant_code" json:"code"`
-	StewardID         *int64      `json:"steward_id,omitempty"`
-	Tags              StringArray `gorm:"type:jsonb;serializer:json" json:"tags"`
-	CurrentRevisionID *int64      `gorm:"index" json:"current_revision_id,omitempty"`
-	DraftRevisionID   *int64      `gorm:"index" json:"draft_revision_id,omitempty"`
-	CreatedBy         int64       `gorm:"not null" json:"created_by"`
-	UpdatedBy         *int64      `json:"updated_by,omitempty"`
-	CreatedAt         time.Time   `json:"created_at"`
-	UpdatedAt         time.Time   `json:"updated_at"`
-	Version           int64       `gorm:"not null;default:1" json:"version"`
-	LifecycleState    string      `gorm:"size:16;not null;default:'active'" json:"lifecycle_state"`
+	ID              int64       `gorm:"primaryKey;autoIncrement" json:"id"`
+	TenantID        int64       `gorm:"not null;index;uniqueIndex:uq_standard_elements_tenant_code" json:"tenant_id"`
+	DomainID        *int64      `gorm:"index" json:"domain_id,omitempty"`
+	Code            string      `gorm:"size:100;not null;uniqueIndex:uq_standard_elements_tenant_code" json:"code"`
+	StewardID       *int64      `json:"steward_id,omitempty"`
+	Tags            StringArray `gorm:"type:jsonb;serializer:json" json:"tags"`
+	DraftRevisionID *int64      `gorm:"index" json:"draft_revision_id,omitempty"`
+	CreatedBy       int64       `gorm:"not null" json:"created_by"`
+	UpdatedBy       *int64      `json:"updated_by,omitempty"`
+	CreatedAt       time.Time   `json:"created_at"`
+	UpdatedAt       time.Time   `json:"updated_at"`
+	Version         int64       `gorm:"not null;default:1" json:"version"`
+	LifecycleState  string      `gorm:"size:16;not null;default:'active'" json:"lifecycle_state"`
 }
 
 func (Element) TableName() string { return "standard.elements" }

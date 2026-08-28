@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 	"unicode/utf8"
 
 	commonClient "github.com/addp/common/client"
@@ -193,14 +194,38 @@ func (s *EntityService) DeleteEntity(id, tenantID, version int64) error {
 }
 
 func (s *EntityService) ApproveEntity(id, tenantID, userID, version int64) (*models.Entity, error) {
-	return s.updateEntityStatus(id, tenantID, userID, version, "draft", "approved", true)
+	entity, err := s.repo.GetByID(id, tenantID)
+	if err != nil {
+		return nil, modelResourceError(err, "entity_not_found", i18n.MsgEntityNotFound)
+	}
+	if err := requireVersion(entity.Version, version); err != nil {
+		return nil, err
+	}
+	if entity.Status != "draft" {
+		return nil, apperrors.Conflict("entity_state_conflict", i18n.MsgEntityStateConflict)
+	}
+	attributes, err := s.repo.GetAttributes(id)
+	if err != nil {
+		return nil, err
+	}
+	elementIDs := make([]int64, 0, len(attributes))
+	for _, attribute := range attributes {
+		if attribute.ElementID != nil {
+			elementIDs = append(elementIDs, *attribute.ElementID)
+		}
+	}
+	bindings, err := resolveElementRevisionSnapshot(s.standard, tenantID, elementIDs, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	return s.updateEntityStatus(id, tenantID, userID, version, "draft", "approved", true, bindings)
 }
 
 func (s *EntityService) ReopenEntity(id, tenantID, userID, version int64) (*models.Entity, error) {
-	return s.updateEntityStatus(id, tenantID, userID, version, "approved", "draft", false)
+	return s.updateEntityStatus(id, tenantID, userID, version, "approved", "draft", false, nil)
 }
 
-func (s *EntityService) updateEntityStatus(id, tenantID, userID, version int64, from, to string, validateApproval bool) (*models.Entity, error) {
+func (s *EntityService) updateEntityStatus(id, tenantID, userID, version int64, from, to string, validateApproval bool, elementRevisions map[int64]int64) (*models.Entity, error) {
 	var entity *models.Entity
 	err := s.repo.DB().Transaction(func(tx *gorm.DB) error {
 		revision, err := repository.LockEntityModelRevision(tx, tenantID)
@@ -217,8 +242,9 @@ func (s *EntityService) updateEntityStatus(id, tenantID, userID, version int64, 
 		if entity.Status != from {
 			return apperrors.Conflict("entity_state_conflict", i18n.MsgEntityStateConflict)
 		}
+		txRepo := repository.NewEntityRepository(tx)
 		if validateApproval {
-			attributes, err := repository.NewEntityRepository(tx).GetAttributes(id)
+			attributes, err := txRepo.GetAttributes(id)
 			if err != nil {
 				return err
 			}
@@ -226,18 +252,36 @@ func (s *EntityService) updateEntityStatus(id, tenantID, userID, version int64, 
 				return apperrors.Validation("entity_approval_attributes_required", i18n.MsgEntityAttributesRequired)
 			}
 			hasPrimaryKey := false
+			references := make([]models.StandardReference, 0, len(attributes))
 			for _, attribute := range attributes {
 				hasPrimaryKey = hasPrimaryKey || attribute.IsPK
 				if attribute.ColumnName == "" || attribute.DataType == "" {
 					return apperrors.Validation("entity_approval_attribute_invalid", i18n.MsgEntityAttributeInvalid)
 				}
+				if attribute.ElementID != nil {
+					if elementRevisions[*attribute.ElementID] <= 0 {
+						return apperrors.NotFound("element_revision_not_found", i18n.MsgReferenceNotFound)
+					}
+					references = append(references, requiredStandardReference(models.StandardResourceElement, *attribute.ElementID))
+				}
 			}
 			if !hasPrimaryKey {
 				return apperrors.Validation("entity_approval_primary_key_required", i18n.MsgEntityPrimaryKeyRequired)
 			}
+			if err := lockStandardReferences(tx, tenantID, references...); err != nil {
+				return err
+			}
+			if err := txRepo.FreezeAttributeElementRevisions(id, elementRevisions); err != nil {
+				return err
+			}
 		}
-		if err := repository.NewEntityRepository(tx).UpdateStatus(id, tenantID, version, to, userID); err != nil {
+		if err := txRepo.UpdateStatus(id, tenantID, version, to, userID); err != nil {
 			return err
+		}
+		if to == "draft" {
+			if err := txRepo.ClearAttributeElementRevisions(id); err != nil {
+				return err
+			}
 		}
 		entity.Status = to
 		entity.Version++

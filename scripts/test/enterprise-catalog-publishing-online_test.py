@@ -34,6 +34,7 @@ class FakeClient:
         self.asset_exists = False
         self.asset_status = ""
         self.catalog_exists = False
+        self.category_name = ""
         self.calls: list[tuple[str, str]] = []
         self.execution_count = 0
 
@@ -117,6 +118,7 @@ class FakeClient:
             return SUITE.Response(200, [{"id": 2, "enabled": True}])
         if path == "/api/v1/asset/categories" and method == "POST":
             self.catalog_exists = True
+            self.category_name = str(body["name"])
             return SUITE.Response(201, {"id": 20, "version": 1})
         if path == "/api/v1/asset/categories/20" and method == "DELETE":
             if body != {"version": 1}:
@@ -155,6 +157,26 @@ class FakeClient:
                     "components": [{"catalog_entry_id": self.entry["id"], "role": "primary"}],
                 },
             )
+        if path == "/api/v1/portal/categories" and method == "GET":
+            if not self.catalog_exists or not self.asset_exists or self.asset_status != "published":
+                return SUITE.Response(200, [])
+            return SUITE.Response(
+                200,
+                [{"id": 20, "name": self.category_name, "count": 1, "children": []}],
+            )
+        if path == "/api/v1/portal/categories/20/assets?page=1&page_size=100" and method == "GET":
+            if not self.catalog_exists or not self.asset_exists or self.asset_status != "published":
+                return SUITE.Response(200, {"data": [], "total": 0, "page": 1, "page_size": 100})
+            return SUITE.Response(
+                200,
+                {
+                    "data": [{"id": 30, "category_id": 20, "status": "published"}],
+                    "total": 1,
+                    "page": 1,
+                    "page_size": 100,
+                    "total_pages": 1,
+                },
+            )
         raise AssertionError(f"unexpected request {method} {path} body={body!r}")
 
     @staticmethod
@@ -176,8 +198,8 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
 
         browser_calls = []
 
-        def browser(entry_id, fingerprint, business_name, total_entries):
-            browser_calls.append((entry_id, fingerprint, business_name, total_entries))
+        def browser(entry_id, fingerprint, business_name, total_entries, category_id, asset_id):
+            browser_calls.append((entry_id, fingerprint, business_name, total_entries, category_id, asset_id))
             return {"result": "passed"}
 
         report = SUITE.run_suite(client, 42, 7, "run-1", 31, 41, 51, 10, browser)
@@ -189,7 +211,11 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
         self.assertEqual(report["cases"]["source_identity_resolution"], "passed")
         self.assertEqual(report["cases"]["governance_coverage"], "passed")
         self.assertEqual(report["cases"]["browser"], "passed")
-        self.assertEqual(browser_calls, [(client.entry["id"], "fingerprint-1", "ADDP Online Catalog Fixture run-1", 1)])
+        self.assertEqual(report["cases"]["asset_category_portal_navigation"], "passed")
+        self.assertEqual(
+            browser_calls,
+            [(client.entry["id"], "fingerprint-1", "ADDP Online Catalog Fixture run-1", 1, 20, 30)],
+        )
         self.assertEqual(report["residual_resources"], 0)
         self.assertFalse(client.asset_exists)
         self.assertFalse(client.catalog_exists)
@@ -199,6 +225,8 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
             client.calls.index(("POST", "/api/v1/asset/assets/30/offline")),
             client.calls.index(("DELETE", "/api/v1/asset/assets/30")),
         )
+        self.assertIn(("GET", "/api/v1/portal/categories"), client.calls)
+        self.assertIn(("GET", "/api/v1/portal/categories/20/assets?page=1&page_size=100"), client.calls)
 
     def test_first_discovered_fixture_is_curated_to_stable_permanent_state(self) -> None:
         client = FakeClient()
@@ -249,7 +277,7 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
 
     def test_validates_browser_report_contract(self) -> None:
         report = {
-            "schema_version": "addp.enterprise-catalog-publishing-browser/v1",
+            "schema_version": "addp.enterprise-catalog-publishing-browser/v2",
             "suite": "enterprise-catalog-publishing",
             "run_id": "run-1",
             "result": "passed",
@@ -260,11 +288,14 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
             "coverage_dimensions": 7,
             "human_readable_filter_selectors": 3,
             "explicit_batch_governance_ui": True,
+            "portal_category_id": "20",
+            "portal_asset_id": "30",
+            "portal_category_assets": 1,
             "browser_warning_errors": 0,
         }
 
         validated = SUITE.validate_browser_report(
-            report, "run-1", "42", self.entry_id, "fingerprint-1", 1
+            report, "run-1", "42", self.entry_id, "fingerprint-1", 1, 20, 30
         )
 
         self.assertEqual(validated, report)

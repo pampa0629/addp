@@ -13,6 +13,8 @@ const requiredNames = [
   'ADDP_ONLINE_CATALOG_SOURCE_IDENTITY',
   'ADDP_ONLINE_CATALOG_BUSINESS_NAME',
   'ADDP_ONLINE_CATALOG_COVERAGE_TOTAL',
+  'ADDP_ONLINE_ASSET_CATEGORY_ID',
+  'ADDP_ONLINE_ASSET_ID',
   'GATEWAY_URL'
 ]
 
@@ -149,10 +151,22 @@ test('enterprise Catalog renders governance coverage, human-readable navigation,
     await expect(frame.getByTestId('catalog-batch-governance-target')).toBeVisible()
     await batchDialog.locator('.el-dialog__headerbtn').click()
 
+    const portalCategoryPath = `/portal/categories/${env.ADDP_ONLINE_ASSET_CATEGORY_ID}`
+    await page.goto(portalCategoryPath)
+    const portalCategory = page.getByTestId('portal-category-page')
+    await expect(portalCategory).toHaveAttribute('data-load-state', 'loaded')
+    await expect(page.getByTestId('portal-category-tree')).toContainText(`Online Catalog ${env.ADDP_ONLINE_TEST_RUN_ID}`)
+    const portalAsset = page
+      .getByTestId('portal-asset-card')
+      .filter({ hasText: `Online Asset ${env.ADDP_ONLINE_TEST_RUN_ID}` })
+    await expect(portalAsset).toHaveCount(1)
+    await expect(portalAsset).toHaveAttribute('data-asset-id', env.ADDP_ONLINE_ASSET_ID)
+    await expect(portalCategory).not.toContainText('undefined')
+
     expect(failedBusinessResponses).toEqual([])
     expect(browserMessages).toEqual([])
     const report = {
-      schema_version: 'addp.enterprise-catalog-publishing-browser/v1',
+      schema_version: 'addp.enterprise-catalog-publishing-browser/v2',
       suite: 'enterprise-catalog-publishing',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID,
       result: 'passed',
@@ -163,6 +177,9 @@ test('enterprise Catalog renders governance coverage, human-readable navigation,
       coverage_dimensions: 7,
       human_readable_filter_selectors: 3,
       explicit_batch_governance_ui: true,
+      portal_category_id: env.ADDP_ONLINE_ASSET_CATEGORY_ID,
+      portal_asset_id: env.ADDP_ONLINE_ASSET_ID,
+      portal_category_assets: 1,
       browser_warning_errors: 0
     }
     writeFileSync(

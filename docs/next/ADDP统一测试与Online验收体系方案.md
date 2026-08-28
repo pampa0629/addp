@@ -93,10 +93,10 @@ Engine Instance 是永久身份，因此 suite 禁止按 Run ID 创建后删除�
 1. Host Gate 全量启动 System、Gateway、Meta、Catalog、Asset 和 Portal，并通过 `business/scripts/online-engine-fixture.sh` 幂等准备 `public.addp_online_catalog_fixture`。
 2. 真实 User Access Token 先经 System AuthContext 验证 Tenant 和精确 Permission，所有业务请求只经 Gateway，不直连 owner 或直接 SQL。
 3. suite 触发 Meta 扫描，以 DataItem fingerprint 等待唯一 CatalogEntry 自动建档；首跑可使用预置 Domain、Department 和当前 User 将永久 fixture 初始化为 `curated`。
-4. 后续运行对同一 CatalogEntry 执行临时编目并在 `finally` 恢复原完整聚合；以 CatalogEntry UUID 创建 AssetComponent，发布后由 Portal 返回同一身份。
-5. 每轮 Asset 经 `published → offline → deleted` 正式生命周期清理，Asset-owned 目录随后删除，双方 GET 404 与 Portal 404 共同证明零临时残留。
+4. 后续运行对同一 CatalogEntry 执行临时编目并在 `finally` 恢复原完整聚合；以 CatalogEntry UUID 创建 AssetComponent，发布后由 Portal 返回同一身份，并通过 AssetCategory 目录树和分类子树列表发现该 Asset；真实浏览器随后打开同一分类页，确认目录名称和唯一 Asset 卡片。
+5. 每轮 Asset 经 `published → offline → deleted` 正式生命周期清理；suite 先确认空 AssetCategory 已从 Portal 目录树消失，再删除 Asset-owned 目录，双方 GET 404 与 Portal Asset 404 共同证明零临时残留。
 
-2026-08-26 已完成 owner suite、永久数据源 fixture、Asset 下架后删除闭环、Host Gate profile、workflow choice、CI 登记检查和确定性协议测试。当前仍是“实现就绪、专用 Runner 首跑待执行”。
+2026-08-28 已完成 owner suite、永久数据源 fixture、AssetCategory 目录消费、Asset 下架后删除闭环、Host Gate profile、workflow choice、CI 登记检查和确定性协议测试。当前仍是“实现就绪、专用 Runner 首跑待执行”。
 
 ### 3.6 `workbench-service-consumption` 实现契约
 

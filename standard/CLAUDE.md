@@ -125,7 +125,6 @@ standard/
 | domain_id | int64? | 归属业务域 |
 | steward_id | int64? | 数据责任人 |
 | tags | StringArray | 标签 |
-| current_revision_id | int64? | 当前发布修订 |
 | draft_revision_id | int64? | 当前唯一可编辑草稿 |
 | version | int64 | 资源并发版本，不是业务版次 |
 | lifecycle_state | string | `active` / `deleting` |
@@ -135,7 +134,7 @@ standard/
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | element_id / revision_no | int64 | 数据元身份 / 业务修订号 |
-| status | string | `draft` / `in_review` / `published` / `superseded` / `withdrawn` |
+| status | string | `draft` / `in_review` / `published` / `withdrawn` |
 | name / definition | string/text | 本修订的标准名称与定义 |
 | data_type | string | `string` / `int` / `bigint` / `float` / `decimal` / `date` / `datetime` / `bool` / `json` / `text` |
 | length / precision_num / scale | int? | 与数据类型相容的表示约束 |
@@ -147,7 +146,7 @@ standard/
 | extra_quality_rules | JSONB | 不能由标准语义推导的附加质量规则 |
 | compiled_quality_rules | JSONB | 发布时从语义约束和附加规则编译的不可变规则快照 |
 | change_summary | text | 本次业务变更说明 |
-| effective_from / effective_to | time? | 生效区间 |
+| effective_from / effective_to | time? | 半开生效区间 `[effective_from, effective_to)`；发布时 `effective_from` 不能为空 |
 | submitted_by/at / published_by/at | mixed | 审核发布审计字段 |
 
 ### `standard.code_sets` — 码值集稳定身份
@@ -158,7 +157,7 @@ standard/
 | domain_id | int64? | 归属业务域；Tenant 自定义码值集必填 |
 | origin | string | `platform` / `tenant`，只能由服务端决定 |
 | steward_id | int64? | 数据责任人 |
-| current_revision_id / draft_revision_id | int64? | 当前发布修订 / 当前唯一草稿 |
+| draft_revision_id | int64? | 当前唯一草稿 |
 | version | int64 | 资源并发版本 |
 
 ### `standard.code_set_revisions` — 码值集修订
@@ -170,7 +169,7 @@ standard/
 | name / description | string/text | 本修订名称和定义 |
 | value_type | string | 码值的表示类型，首期为 `string` / `int` / `bigint` |
 | change_summary | text | 本次业务变更说明 |
-| effective_from / effective_to | time? | 生效区间 |
+| effective_from / effective_to | time? | 半开生效区间 `[effective_from, effective_to)`；发布时 `effective_from` 不能为空 |
 
 ### `standard.code_set_revision_items` — 码值修订项
 
@@ -440,26 +439,27 @@ composite（复合指标）
 ### 数据元与码值集的修订状态流转
 
 ```
-draft → in_review → published → superseded
-   ↑         │          │
-   └─────────┘          └→ withdrawn
+draft → in_review → published → withdrawn
+   ↑         │
+   └─────────┘
 ```
 
 - `draft` 是唯一可编辑状态；提交审核后不可继续修改，退回时恢复为同一草稿。
-- `published` 修订不可修改；后续变更从当前发布修订复制为下一草稿。
-- 发布新修订时，旧的当前发布修订在同一事务中转为 `superseded`。
+- `published` 表示审核通过，业务定义不可修改；后续变更从最新修订复制为下一草稿。
+- 当前生效修订不是持久化指针。Standard 按 `[effective_from, effective_to)` 和请求的 `as_of` 动态解析，未传 `as_of` 时使用服务端当前时间。
+- 同一稳定身份的已发布修订生效区间不得重叠。发布新修订时，服务端可以在同一事务中把前一条开放区间的 `effective_to` 收口到新修订的 `effective_from`；除此之外不得修改已发布定义。
 - `withdrawn` 用于撤回错误发布，不代表创建新版本；稳定身份仍保留历史。
-- 数据元与码值集稳定身份各自最多持有一个草稿和一个当前发布修订。
+- 数据元与码值集稳定身份各自最多持有一个草稿，可以有多个区间不重叠的已发布修订。
 
 ### 值域与质量规则的单一事实源
 
-数据元修订必须在 `unrestricted`、`range`、`enumeration` 中三选一。`range` 只使用结构化 `range_constraint`；`enumeration` 必须绑定具体 `code_set_revision_id`。两者互斥，且绑定的码值集修订必须已经发布、值类型必须与数据元类型相容。
+数据元修订必须在 `unrestricted`、`range`、`enumeration` 中三选一。`range` 只使用结构化 `range_constraint`；`enumeration` 必须绑定具体 `code_set_revision_id`。两者互斥，且绑定的码值集修订必须已经发布、值类型必须与数据元类型相容，码值集修订生效区间必须覆盖数据元修订生效区间。
 
-发布数据元修订时，Standard 从 `nullable`、长度、格式、连续值域和码值集修订确定性编译质量规则，再合并不重复的 `extra_quality_rules`。下游 Quality 只消费当前发布修订的 `compiled_quality_rules` 快照，不允许调用方再维护第二份 `allowed_values`。
+发布数据元修订时，Standard 从 `nullable`、长度、格式、连续值域和固定码值集修订确定性编译质量规则，再合并不重复的 `extra_quality_rules`。下游 Quality 消费指定时点生效修订的 `compiled_quality_rules` 快照，不允许调用方再维护第二份 `allowed_values`。
 
 ### 数据字典边界
 
-数据字典不是 Standard 内的持久化主资源。它由 Meta 的物理结构事实、Catalog 的语义关联和 Standard 的当前发布数据元/码值解释组合形成。Standard 只提供标准数据元目录和发布修订解析能力。
+数据字典不是 Standard 内的持久化主资源。它由 Meta 的物理结构事实、Catalog 的语义关联和 Standard 在查询时点生效的数据元/码值解释组合形成。Standard 只提供标准数据元目录和按时点解析已发布修订的能力。
 
 ### 文档关联的多维设计
 

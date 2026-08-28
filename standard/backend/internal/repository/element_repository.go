@@ -15,6 +15,7 @@ var (
 	ErrDraftAlreadyExists        = errors.New("standard draft revision already exists")
 	ErrRevisionNotEditable       = errors.New("standard revision is not editable")
 	ErrInvalidRevisionTransition = errors.New("invalid standard revision transition")
+	ErrEffectiveIntervalConflict = errors.New("standard effective interval conflicts with a published revision")
 )
 
 type ElementRepository struct{ db *gorm.DB }
@@ -45,17 +46,19 @@ func (r *ElementRepository) GetByID(id, tenantID int64) (*models.Element, error)
 }
 
 func (r *ElementRepository) GetAggregate(id, tenantID int64) (*models.ElementAggregate, error) {
+	return r.GetAggregateAt(id, tenantID, time.Time{})
+}
+
+func (r *ElementRepository) GetAggregateAt(id, tenantID int64, asOf time.Time) (*models.ElementAggregate, error) {
 	element, err := r.GetByID(id, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	result := &models.ElementAggregate{Element: *element}
-	if element.CurrentRevisionID != nil {
-		revision, loadErr := r.getRevisionByID(r.db, *element.CurrentRevisionID, element.ID)
-		if loadErr != nil {
-			return nil, loadErr
-		}
+	if revision, loadErr := r.getEffectiveRevision(r.db, element.ID, asOf); loadErr == nil {
 		result.CurrentRevision = revision
+	} else if !errors.Is(loadErr, gorm.ErrRecordNotFound) {
+		return nil, loadErr
 	}
 	if element.DraftRevisionID != nil {
 		revision, loadErr := r.getRevisionByID(r.db, *element.DraftRevisionID, element.ID)
@@ -74,6 +77,7 @@ type ListElementOptions struct {
 	Keyword  string
 	Page     int
 	PageSize int
+	AsOf     time.Time
 }
 
 func (r *ElementRepository) List(tenantID int64, opts ListElementOptions) ([]models.ElementAggregate, int64, error) {
@@ -111,7 +115,7 @@ func (r *ElementRepository) List(tenantID int64, opts ListElementOptions) ([]mod
 	}
 	items := make([]models.ElementAggregate, 0, len(identities))
 	for _, identity := range identities {
-		aggregate, loadErr := r.GetAggregate(identity.ID, tenantID)
+		aggregate, loadErr := r.GetAggregateAt(identity.ID, tenantID, opts.AsOf)
 		if loadErr != nil {
 			return nil, 0, loadErr
 		}
@@ -162,11 +166,7 @@ func (r *ElementRepository) CreateDraft(elementID, tenantID, userID, expectedVer
 			return ErrDraftAlreadyExists
 		}
 		var source models.ElementRevision
-		if element.CurrentRevisionID != nil {
-			if err := tx.Where("id = ? AND element_id = ?", *element.CurrentRevisionID, element.ID).First(&source).Error; err != nil {
-				return err
-			}
-		} else if err := tx.Where("element_id = ?", element.ID).Order("revision_no DESC").First(&source).Error; err != nil {
+		if err := tx.Where("element_id = ?", element.ID).Order("revision_no DESC").First(&source).Error; err != nil {
 			return err
 		}
 		created = source
@@ -247,9 +247,27 @@ func (r *ElementRepository) PublishRevision(elementID, revisionID, tenantID, use
 		if err := tx.Where("id = ? AND element_id = ? AND status = ?", revisionID, elementID, models.RevisionStatusInReview).First(&revision).Error; err != nil {
 			return ErrInvalidRevisionTransition
 		}
-		if element.CurrentRevisionID != nil {
-			if err := requireAffectedRow(tx.Model(&models.ElementRevision{}).Where("id = ? AND element_id = ? AND status = ?", *element.CurrentRevisionID, elementID, models.RevisionStatusPublished).Update("status", models.RevisionStatusSuperseded)); err != nil {
-				return err
+		if revision.EffectiveFrom == nil {
+			return ErrInvalidRevisionTransition
+		}
+		var published []models.ElementRevision
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("element_id = ? AND status = ?", elementID, models.RevisionStatusPublished).Order("effective_from ASC, revision_no ASC").Find(&published).Error; err != nil {
+			return err
+		}
+		for index := range published {
+			candidate := &published[index]
+			if candidate.EffectiveFrom == nil {
+				return ErrEffectiveIntervalConflict
+			}
+			if candidate.EffectiveTo == nil && candidate.EffectiveFrom.Before(*revision.EffectiveFrom) {
+				if err := tx.Model(&models.ElementRevision{}).Where("id = ? AND status = ?", candidate.ID, models.RevisionStatusPublished).Update("effective_to", revision.EffectiveFrom).Error; err != nil {
+					return err
+				}
+				closed := *revision.EffectiveFrom
+				candidate.EffectiveTo = &closed
+			}
+			if intervalsOverlap(*candidate.EffectiveFrom, candidate.EffectiveTo, *revision.EffectiveFrom, revision.EffectiveTo) {
+				return ErrEffectiveIntervalConflict
 			}
 		}
 		if err := requireAffectedRow(tx.Model(&models.ElementRevision{}).Where("id = ? AND element_id = ? AND status = ?", revisionID, elementID, models.RevisionStatusInReview).Updates(map[string]interface{}{
@@ -258,9 +276,7 @@ func (r *ElementRepository) PublishRevision(elementID, revisionID, tenantID, use
 		})); err != nil {
 			return err
 		}
-		return updateVersioned(tx, &models.Element{}, elementID, tenantID, expectedVersion, map[string]interface{}{
-			"current_revision_id": revisionID, "draft_revision_id": nil, "updated_by": userID,
-		})
+		return updateVersioned(tx, &models.Element{}, elementID, tenantID, expectedVersion, map[string]interface{}{"draft_revision_id": nil, "updated_by": userID})
 	}))
 }
 
@@ -273,22 +289,23 @@ func (r *ElementRepository) WithdrawPublished(elementID, revisionID, tenantID, u
 		if element.Version != expectedVersion {
 			return ErrVersionConflict
 		}
-		if element.CurrentRevisionID == nil || *element.CurrentRevisionID != revisionID {
-			return ErrInvalidRevisionTransition
-		}
 		if err := requireAffectedRow(tx.Model(&models.ElementRevision{}).Where("id = ? AND element_id = ? AND status = ?", revisionID, elementID, models.RevisionStatusPublished).Update("status", models.RevisionStatusWithdrawn)); err != nil {
 			return ErrInvalidRevisionTransition
 		}
-		return updateVersioned(tx, &models.Element{}, elementID, tenantID, expectedVersion, map[string]interface{}{"current_revision_id": nil, "updated_by": userID})
+		return updateVersioned(tx, &models.Element{}, elementID, tenantID, expectedVersion, map[string]interface{}{"updated_by": userID})
 	}))
 }
 
 func (r *ElementRepository) GetPublishedRevision(elementID, tenantID int64) (*models.ElementRevision, error) {
+	return r.GetEffectiveRevision(elementID, tenantID, time.Time{})
+}
+
+func (r *ElementRepository) GetEffectiveRevision(elementID, tenantID int64, asOf time.Time) (*models.ElementRevision, error) {
 	var revision models.ElementRevision
-	err := r.db.Table("standard.element_revisions AS er").Select("er.*").
-		Joins("JOIN standard.elements e ON e.current_revision_id = er.id").
-		Where("e.id = ? AND e.tenant_id = ? AND e.lifecycle_state = ? AND er.status = ?", elementID, tenantID, "active", models.RevisionStatusPublished).
-		First(&revision).Error
+	query := r.db.Table("standard.element_revisions AS er").Select("er.*").
+		Joins("JOIN standard.elements e ON e.id = er.element_id").
+		Where("e.id = ? AND e.tenant_id = ? AND e.lifecycle_state = ?", elementID, tenantID, "active")
+	err := effectiveAt(query, "er", asOf).Order("er.effective_from DESC, er.revision_no DESC").First(&revision).Error
 	return &revision, commonrepo.WrapDBError(err)
 }
 
@@ -313,6 +330,13 @@ func (r *ElementRepository) getRevisionByID(db *gorm.DB, id, elementID int64) (*
 	var revision models.ElementRevision
 	err := db.Where("id = ? AND element_id = ?", id, elementID).First(&revision).Error
 	return &revision, commonrepo.WrapDBError(err)
+}
+
+func (r *ElementRepository) getEffectiveRevision(db *gorm.DB, elementID int64, asOf time.Time) (*models.ElementRevision, error) {
+	var revision models.ElementRevision
+	query := db.Table("standard.element_revisions AS er").Select("er.*").Where("er.element_id = ?", elementID)
+	err := effectiveAt(query, "er", asOf).Order("er.effective_from DESC, er.revision_no DESC").First(&revision).Error
+	return &revision, err
 }
 
 func (r *ElementRepository) requireRevisionState(tx *gorm.DB, elementID, revisionID, tenantID int64, status string, requireDraftPointer bool) error {

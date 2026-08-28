@@ -148,6 +148,19 @@ def validate_enterprise_catalog_publishing_profile(repository: Path, registered:
     ):
         if not (repository / relative).is_file():
             raise RegistrationError(f"enterprise-catalog-publishing requires {relative}")
+    browser_spec = (
+        repository / "console/frontend/e2e/online/enterprise-catalog-publishing.spec.js"
+    ).read_text(encoding="utf-8")
+    for fragment in (
+        "ADDP_ONLINE_ASSET_CATEGORY_ID",
+        "ADDP_ONLINE_ASSET_ID",
+        "/portal/categories/",
+        "portal_category_assets",
+    ):
+        if fragment not in browser_spec:
+            raise RegistrationError(
+                f"enterprise-catalog-publishing browser contract is missing {fragment}"
+            )
     fixture = (repository / "business/scripts/online-engine-fixture.sh").read_text(encoding="utf-8")
     for fragment in ("addp_online_catalog_fixture", "CREATE TABLE IF NOT EXISTS", "ON CONFLICT"):
         if fragment not in fixture:

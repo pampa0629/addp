@@ -79,7 +79,6 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			code TEXT NOT NULL,
 			steward_id INTEGER,
 			tags TEXT,
-			current_revision_id INTEGER,
 			draft_revision_id INTEGER,
 			created_by INTEGER NOT NULL,
 			updated_by INTEGER,
@@ -106,7 +105,6 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			origin TEXT NOT NULL,
 			steward_id INTEGER,
 			tags TEXT,
-			current_revision_id INTEGER,
 			draft_revision_id INTEGER,
 			created_by INTEGER NOT NULL,
 			updated_by INTEGER,
@@ -358,9 +356,6 @@ func TestStandardCleanupTenantDeletedLogicalDeprecatesStatefulDefinitions(t *tes
 	if err := db.First(&element, ids.elementID).Error; err != nil {
 		t.Fatalf("load element: %v", err)
 	}
-	if element.CurrentRevisionID != nil {
-		t.Fatalf("expected element current revision cleared, got %d", *element.CurrentRevisionID)
-	}
 	var elementRevision models.ElementRevision
 	if err := db.Where("element_id = ?", ids.elementID).First(&elementRevision).Error; err != nil {
 		t.Fatalf("load element revision: %v", err)
@@ -489,9 +484,6 @@ func seedStandardCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64, w
 	if err := db.Create(&codeSetRevision).Error; err != nil {
 		t.Fatalf("create code set revision: %v", err)
 	}
-	if err := db.Model(&codeSet).Update("current_revision_id", codeSetRevision.ID).Error; err != nil {
-		t.Fatalf("link code set revision: %v", err)
-	}
 	codeItem := models.CodeSetRevisionItem{CodeSetRevisionID: codeSetRevision.ID, Code: "item_" + suffix, Label: "Item " + suffix, Status: models.CodeItemStatusActive}
 	if err := db.Create(&codeItem).Error; err != nil {
 		t.Fatalf("create code item: %v", err)
@@ -522,9 +514,6 @@ func seedStandardCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64, w
 	elementRevision := models.ElementRevision{ElementID: element.ID, RevisionNo: 1, Status: models.RevisionStatusPublished, Name: "Amount " + suffix, Definition: "amount definition", DataType: "decimal", ValueDomainKind: models.ValueDomainUnrestricted, UnitID: &unit.ID, ClassificationID: &classification.ID, ChangeSummary: "initial", CreatedBy: 1}
 	if err := db.Create(&elementRevision).Error; err != nil {
 		t.Fatalf("create element revision: %v", err)
-	}
-	if err := db.Model(&element).Update("current_revision_id", elementRevision.ID).Error; err != nil {
-		t.Fatalf("link element revision: %v", err)
 	}
 	if err := db.Create(&models.GlossaryElementMapping{GlossaryID: glossary.ID, ElementID: element.ID}).Error; err != nil {
 		t.Fatalf("create glossary element mapping: %v", err)

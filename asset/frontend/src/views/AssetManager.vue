@@ -205,7 +205,14 @@ const filters = reactive({
 // 分类弹窗
 const categoryDialogVisible = ref(false)
 const categoryDialogTitle = ref('')
-const categoryForm = reactive({ name: '', parentId: null, editId: null, version: null })
+const categoryForm = reactive({
+  name: '',
+  parentId: null,
+  description: '',
+  sortOrder: 0,
+  editId: null,
+  version: null
+})
 
 // ===== 计算属性 =====
 const categoryTree = computed(() => buildTree(categories.value))
@@ -399,6 +406,8 @@ function openCreate() {
 function openAddRootCategory() {
   categoryForm.name = ''
   categoryForm.parentId = null
+  categoryForm.description = ''
+  categoryForm.sortOrder = 0
   categoryForm.editId = null
   categoryForm.version = null
   categoryDialogTitle.value = t('asset.assetManager.newRootCategory')
@@ -408,6 +417,8 @@ function openAddRootCategory() {
 function openAddSubCategory(parent) {
   categoryForm.name = ''
   categoryForm.parentId = parent.id
+  categoryForm.description = ''
+  categoryForm.sortOrder = 0
   categoryForm.editId = null
   categoryForm.version = null
   categoryDialogTitle.value = t('asset.assetManager.newRootCategory') + `（${parent.name}）`
@@ -416,7 +427,9 @@ function openAddSubCategory(parent) {
 
 function openRenameCategory(data) {
   categoryForm.name = data.name
-  categoryForm.parentId = data.parent_id || null
+  categoryForm.parentId = data.parent_id ?? null
+  categoryForm.description = data.description || ''
+  categoryForm.sortOrder = data.sort_order ?? 0
   categoryForm.editId = data.id
   categoryForm.version = data.version
   categoryDialogTitle.value = t('asset.assetManager.renameCategory')
@@ -430,7 +443,13 @@ async function submitCategory() {
   }
   try {
     if (categoryForm.editId) {
-      await categoryAPI.update(categoryForm.editId, { version: categoryForm.version, name: categoryForm.name })
+      await categoryAPI.update(categoryForm.editId, {
+        version: categoryForm.version,
+        name: categoryForm.name,
+        parent_id: categoryForm.parentId,
+        description: categoryForm.description,
+        sort_order: categoryForm.sortOrder
+      })
     } else {
       await categoryAPI.create({ name: categoryForm.name, parent_id: categoryForm.parentId })
     }

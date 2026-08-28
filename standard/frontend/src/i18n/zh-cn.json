@@ -4,6 +4,7 @@
       "confirm": "确定",
       "cancel": "取消",
       "save": "保存",
+      "saving": "正在保存",
       "delete": "删除",
       "edit": "编辑",
       "back": "返回",
@@ -32,12 +33,15 @@
       "updatedAt": "更新时间",
       "id": "ID",
       "metadata": "元数据",
+      "governanceInfo": "治理信息",
       "draft": "草稿",
       "approved": "已审批",
       "deprecated": "已废弃",
       "type": "类型",
       "tags": "标签",
       "tagsPlaceholder": "输入后回车添加标签",
+      "stewardId": "责任人用户 ID",
+      "stewardIdPlaceholder": "输入数据责任人的用户 ID",
       "selectDomain": "选择业务域",
       "selectStatus": "选择状态",
       "domainOptional": "选择业务域（可选）",
@@ -59,18 +63,19 @@
       "return": "退回草稿",
       "publish": "发布",
       "withdraw": "撤回",
+      "effectiveFrom": "生效时间",
+      "effectiveTo": "失效时间",
       "status": {
         "draft": "草稿",
         "in_review": "审核中",
         "published": "已发布",
-        "superseded": "已取代",
         "withdrawn": "已撤回"
       },
       "confirm": {
         "submit": "确认提交当前修订审核？",
         "return": "确认将当前修订退回草稿？",
-        "publish": "确认发布当前修订？发布后将成为唯一当前版本。",
-        "withdraw": "确认撤回当前发布修订？撤回后下游不能再新建引用。"
+        "publish": "确认发布该修订？其生效区间不能与其他已发布修订重叠。",
+        "withdraw": "确认撤回该已发布修订？撤回后下游不能再新建引用。"
       }
     },
     "layout": {
@@ -160,6 +165,8 @@
       "dataTypeBool": "布尔 (bool)",
       "dataTypeJson": "JSON (json)",
       "lengthLabel": "长度",
+      "precisionLabel": "精度",
+      "scaleLabel": "标度",
       "nullableLabel": "允许为空",
       "unitLabel": "计量单位",
       "definitionLabel": "业务含义",
@@ -248,6 +255,8 @@
       "itemValue": "值",
       "itemLabel": "显示名称",
       "itemDefinition": "定义",
+      "replacementItem": "推荐替代码值",
+      "noReplacement": "无替代码值",
       "itemStatus": {
         "active": "有效",
         "deprecated": "停用"

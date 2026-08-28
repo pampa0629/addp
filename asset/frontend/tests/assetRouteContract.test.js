@@ -59,6 +59,23 @@ describe('Asset public route contract', () => {
     expect(api).not.toContain('/move')
   })
 
+  it('keeps the selected category synchronized with the tree after mutations', () => {
+    const categoryManagement = readSource('views/CategoryManagement.vue')
+
+    expect(categoryManagement).not.toContain('dialogVisible.value = false\n    selected.value = null')
+    expect(categoryManagement).toContain('await selectCategory(saved.id)')
+    expect(categoryManagement).toContain('treeRef.value?.setCurrentKey')
+  })
+
+  it('keeps AssetManager rename on the full AssetCategory update contract', () => {
+    const assetManager = readSource('views/AssetManager.vue')
+
+    expect(assetManager).not.toContain('{ version: categoryForm.version, name: categoryForm.name }')
+    expect(assetManager).toContain('parent_id: categoryForm.parentId')
+    expect(assetManager).toContain('description: categoryForm.description')
+    expect(assetManager).toContain('sort_order: categoryForm.sortOrder')
+  })
+
   it('presents the category tree as the Asset Directory without reusing Catalog', () => {
     const zhCn = JSON.parse(readSource('i18n/zh-cn.json')).asset
     const en = JSON.parse(readSource('i18n/en.json')).asset

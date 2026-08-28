@@ -158,6 +158,14 @@
                 </el-tag>
               </template>
             </el-table-column>
+            <el-table-column :label="t('model.field.element')" min-width="190">
+              <template #default="{ row }">
+                <span>{{ getElementName(row.element_id) || '-' }}</span>
+                <el-tag v-if="row.element_revision_id" type="info" size="small" class="revision-tag">
+                  {{ t('model.field.element_revision') }} #{{ row.element_revision_id }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column :label="t('model.field.constraints')" width="140">
               <template #default="{ row }">
                 <el-tag v-if="row.is_pk" type="warning" size="small">PK</el-tag>
@@ -499,6 +507,7 @@ const fields = ref([])
 const domains = ref([])
 const layers = ref([])
 const elements = ref([])
+const getElementName = id => elements.value.find(element => element.id === id)?.name
 const ddlContent = ref('')
 
 const metricForm = reactive({ metric_id: null, field_id: null, note: '' })
@@ -931,6 +940,10 @@ watch(() => route.params.id, loadPage, { immediate: true })
 
 .text-muted {
   color: var(--addp-text-tertiary);
+}
+
+.revision-tag {
+  margin-left: 6px;
 }
 
 @media (max-width: 767px) {

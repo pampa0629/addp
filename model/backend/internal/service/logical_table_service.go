@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	commonClient "github.com/addp/common/client"
@@ -317,14 +318,38 @@ func (s *LogicalTableService) DeleteLogicalTable(id, tenantID, version int64) er
 }
 
 func (s *LogicalTableService) ApproveLogicalTable(id, tenantID, userID, version int64) (*models.LogicalTable, error) {
-	return s.updateLogicalTableStatus(id, tenantID, userID, version, "draft", "approved", true)
+	table, err := s.repo.GetByID(id, tenantID)
+	if err != nil {
+		return nil, modelResourceError(err, "logical_table_not_found", i18n.MsgTableNotFound)
+	}
+	if err := requireVersion(table.Version, version); err != nil {
+		return nil, err
+	}
+	if table.Status != "draft" {
+		return nil, apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
+	}
+	fields, err := s.repo.GetFields(id)
+	if err != nil {
+		return nil, err
+	}
+	elementIDs := make([]int64, 0, len(fields))
+	for _, field := range fields {
+		if field.ElementID != nil {
+			elementIDs = append(elementIDs, *field.ElementID)
+		}
+	}
+	bindings, err := resolveElementRevisionSnapshot(s.standard, tenantID, elementIDs, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	return s.updateLogicalTableStatus(id, tenantID, userID, version, "draft", "approved", true, bindings)
 }
 
 func (s *LogicalTableService) ReopenLogicalTable(id, tenantID, userID, version int64) (*models.LogicalTable, error) {
-	return s.updateLogicalTableStatus(id, tenantID, userID, version, "approved", "draft", false)
+	return s.updateLogicalTableStatus(id, tenantID, userID, version, "approved", "draft", false, nil)
 }
 
-func (s *LogicalTableService) updateLogicalTableStatus(id, tenantID, userID, version int64, from, to string, validateApproval bool) (*models.LogicalTable, error) {
+func (s *LogicalTableService) updateLogicalTableStatus(id, tenantID, userID, version int64, from, to string, validateApproval bool, elementRevisions map[int64]int64) (*models.LogicalTable, error) {
 	var table *models.LogicalTable
 	err := s.repo.DB().Transaction(func(tx *gorm.DB) error {
 		var err error
@@ -338,6 +363,7 @@ func (s *LogicalTableService) updateLogicalTableStatus(id, tenantID, userID, ver
 		if table.Status != from {
 			return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
 		}
+		txRepo := repository.NewLogicalTableRepository(tx)
 		if to == "draft" {
 			grouped, err := repository.NewMaterializationGroupRepository(tx).ContainsLogicalTable(context.Background(), tenantID, id)
 			if err != nil {
@@ -354,7 +380,7 @@ func (s *LogicalTableService) updateLogicalTableStatus(id, tenantID, userID, ver
 			if strings.TrimSpace(table.Layer) == "" {
 				return apperrors.Validation("logical_table_layer_required", i18n.MsgValidationFailed)
 			}
-			fields, err := repository.NewLogicalTableRepository(tx).GetFields(id)
+			fields, err := txRepo.GetFields(id)
 			if err != nil {
 				return err
 			}
@@ -362,15 +388,33 @@ func (s *LogicalTableService) updateLogicalTableStatus(id, tenantID, userID, ver
 				return apperrors.Validation("logical_table_approval_fields_required", i18n.MsgTableFieldsRequired)
 			}
 			hasPrimaryKey := false
+			references := make([]models.StandardReference, 0, len(fields))
 			for _, field := range fields {
 				hasPrimaryKey = hasPrimaryKey || field.IsPK
+				if field.ElementID != nil {
+					if elementRevisions[*field.ElementID] <= 0 {
+						return apperrors.NotFound("element_revision_not_found", i18n.MsgReferenceNotFound)
+					}
+					references = append(references, requiredStandardReference(models.StandardResourceElement, *field.ElementID))
+				}
 			}
 			if !hasPrimaryKey {
 				return apperrors.Validation("logical_table_approval_primary_key_required", i18n.MsgTablePrimaryKeyRequired)
 			}
+			if err := lockStandardReferences(tx, tenantID, references...); err != nil {
+				return err
+			}
+			if err := txRepo.FreezeFieldElementRevisions(id, elementRevisions); err != nil {
+				return err
+			}
 		}
-		if err := repository.NewLogicalTableRepository(tx).UpdateStatus(id, tenantID, version, to, userID); err != nil {
+		if err := txRepo.UpdateStatus(id, tenantID, version, to, userID); err != nil {
 			return err
+		}
+		if to == "draft" {
+			if err := txRepo.ClearFieldElementRevisions(id); err != nil {
+				return err
+			}
 		}
 		table.Status = to
 		table.Version++

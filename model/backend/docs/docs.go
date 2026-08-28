@@ -4686,6 +4686,10 @@ const docTemplate = `{
                     "description": "引用数据元（可选）",
                     "type": "integer"
                 },
+                "element_revision_id": {
+                    "description": "聚合审批时冻结的数据元修订",
+                    "type": "integer"
+                },
                 "entity_id": {
                     "type": "integer"
                 },
@@ -4861,6 +4865,10 @@ const docTemplate = `{
                 },
                 "element_id": {
                     "description": "引用数据元（可选）",
+                    "type": "integer"
+                },
+                "element_revision_id": {
+                    "description": "聚合审批时冻结的数据元修订",
                     "type": "integer"
                 },
                 "field_role": {

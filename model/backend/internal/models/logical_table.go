@@ -30,20 +30,21 @@ func (LogicalTable) TableName() string {
 
 // LogicalField 逻辑表字段
 type LogicalField struct {
-	ID           int64  `gorm:"primaryKey;autoIncrement" json:"id"`
-	TableID      int64  `gorm:"not null;index" json:"table_id"`
-	ElementID    *int64 `json:"element_id,omitempty"`                 // 引用数据元（可选）
-	Name         string `gorm:"size:200;not null" json:"name"`        // 字段显示名
-	ColumnName   string `gorm:"size:200;not null" json:"column_name"` // 物理列名
-	DataType     string `gorm:"size:50;not null" json:"data_type"`    // string/int/bigint/float/decimal/date/datetime/bool/json/text
-	Length       *int   `json:"length,omitempty"`
-	Nullable     bool   `gorm:"default:true" json:"nullable"`
-	IsPK         bool   `gorm:"default:false" json:"is_pk"`
-	IsPartition  bool   `gorm:"default:false" json:"is_partition"` // 是否分区字段
-	DefaultValue string `gorm:"type:text" json:"default_value"`
-	Description  string `gorm:"type:text" json:"description"`
-	SortOrder    int    `gorm:"default:0" json:"sort_order"`
-	FieldRole    string `gorm:"size:30;default:'regular'" json:"field_role"`
+	ID                int64  `gorm:"primaryKey;autoIncrement" json:"id"`
+	TableID           int64  `gorm:"not null;index" json:"table_id"`
+	ElementID         *int64 `json:"element_id,omitempty"`                 // 引用数据元（可选）
+	ElementRevisionID *int64 `json:"element_revision_id,omitempty"`        // 聚合审批时冻结的数据元修订
+	Name              string `gorm:"size:200;not null" json:"name"`        // 字段显示名
+	ColumnName        string `gorm:"size:200;not null" json:"column_name"` // 物理列名
+	DataType          string `gorm:"size:50;not null" json:"data_type"`    // string/int/bigint/float/decimal/date/datetime/bool/json/text
+	Length            *int   `json:"length,omitempty"`
+	Nullable          bool   `gorm:"default:true" json:"nullable"`
+	IsPK              bool   `gorm:"default:false" json:"is_pk"`
+	IsPartition       bool   `gorm:"default:false" json:"is_partition"` // 是否分区字段
+	DefaultValue      string `gorm:"type:text" json:"default_value"`
+	Description       string `gorm:"type:text" json:"description"`
+	SortOrder         int    `gorm:"default:0" json:"sort_order"`
+	FieldRole         string `gorm:"size:30;default:'regular'" json:"field_role"`
 	// 枚举：regular / measure_additive / measure_semi / measure_non / dimension_fk / degenerate_dim
 	HierarchyID    *int64    `json:"hierarchy_id,omitempty"`    // → standard.dimension_hierarchies（无 DB FK 约束）
 	HierarchyLevel *int      `json:"hierarchy_level,omitempty"` // 在层级中对应的层次编号

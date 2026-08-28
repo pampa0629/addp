@@ -57,7 +57,7 @@ func setupLifecycleServiceTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE model.entity_attributes (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, entity_id INTEGER NOT NULL, element_id INTEGER,
+			id INTEGER PRIMARY KEY AUTOINCREMENT, entity_id INTEGER NOT NULL, element_id INTEGER, element_revision_id INTEGER,
 			name TEXT NOT NULL, column_name TEXT NOT NULL, data_type TEXT NOT NULL,
 			is_pk BOOLEAN, nullable BOOLEAN, description TEXT, sort_order INTEGER,
 			created_at DATETIME, updated_at DATETIME
@@ -78,7 +78,7 @@ func setupLifecycleServiceTestDB(t *testing.T) *gorm.DB {
 			created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE model.logical_fields (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, table_id INTEGER NOT NULL, element_id INTEGER,
+			id INTEGER PRIMARY KEY AUTOINCREMENT, table_id INTEGER NOT NULL, element_id INTEGER, element_revision_id INTEGER,
 			name TEXT NOT NULL, column_name TEXT NOT NULL, data_type TEXT NOT NULL,
 			length INTEGER, nullable BOOLEAN, is_pk BOOLEAN, is_partition BOOLEAN,
 			default_value TEXT, description TEXT, sort_order INTEGER, field_role TEXT,

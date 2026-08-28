@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestStandardClientResolvesExactReferencesInRequestOrder(t *testing.T) {
@@ -239,6 +240,44 @@ func TestStandardClientListsElementSummariesByCanonicalIDs(t *testing.T) {
 	}
 	if len(elements) != 2 || elements[0].ID != 12 || elements[0].Code != "order_id" {
 		t.Fatalf("elements = %#v", elements)
+	}
+}
+
+func TestStandardClientResolvesElementRevisionsAtOnePointInTime(t *testing.T) {
+	asOf := time.Date(2026, 8, 28, 9, 30, 0, 123000000, time.UTC)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/standard/elements" || r.URL.Query().Get("ids") != "12,7" || r.URL.Query().Get("as_of") != asOf.Format(time.RFC3339Nano) {
+			t.Fatalf("unexpected Standard request: %s", r.URL.String())
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":12,"tenant_id":7,"code":"order_id","lifecycle_state":"active","current_revision":{"id":1201,"revision_no":3,"status":"published","name":"Order ID","data_type":"bigint"}},{"id":7,"tenant_id":7,"code":"customer_id","lifecycle_state":"active","current_revision":{"id":701,"revision_no":2,"status":"published","name":"Customer ID","data_type":"bigint"}}]}`))
+	}))
+	defer server.Close()
+
+	client := NewStandardClient(server.URL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "tenant-token", nil
+	}), server.Client()).WithTenantID(7)
+	bindings, err := client.ResolveElementRevisions(context.Background(), []int64{12, 7, 12}, asOf)
+	if err != nil {
+		t.Fatalf("ResolveElementRevisions() error = %v", err)
+	}
+	if len(bindings) != 2 || bindings[12].RevisionID != 1201 || bindings[7].RevisionNo != 2 {
+		t.Fatalf("bindings = %#v", bindings)
+	}
+}
+
+func TestStandardClientRejectsMissingEffectiveElementRevision(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":12,"tenant_id":7,"code":"order_id","lifecycle_state":"active"}]}`))
+	}))
+	defer server.Close()
+	client := NewStandardClient(server.URL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "tenant-token", nil
+	}), server.Client()).WithTenantID(7)
+	_, err := client.ResolveElementRevisions(context.Background(), []int64{12}, time.Now().UTC())
+	if !errors.Is(err, ErrTenantReferenceNotFound) {
+		t.Fatalf("ResolveElementRevisions() error = %v, want ErrTenantReferenceNotFound", err)
 	}
 }
 

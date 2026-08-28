@@ -85,6 +85,21 @@ describe('IAM management API contract', () => {
     expect(client.post).toHaveBeenCalledWith('/system/tenant/project_groups/5/memberships/14/close', { version: 2, reason: 'completed' })
   })
 
+  it('uses the tenant-owned external OAuth client API family', () => {
+    const definition = { display_name: 'Research BI', redirect_uris: ['https://bi.example.com/oauth/callback'] }
+    iamAPI.oauthClients.list({ status: 'active' })
+    iamAPI.oauthClients.create(definition)
+    iamAPI.oauthClients.update('addp_ext_client', { ...definition, version: 2 })
+    iamAPI.oauthClients.suspend('addp_ext_client', 3, 'connector retired')
+    iamAPI.oauthClients.restore('addp_ext_client', 4, 'connector approved again')
+
+    expect(client.get).toHaveBeenCalledWith('/system/tenant/oauth_clients', { params: { status: 'active' } })
+    expect(client.post).toHaveBeenCalledWith('/system/tenant/oauth_clients', definition)
+    expect(client.put).toHaveBeenCalledWith('/system/tenant/oauth_clients/addp_ext_client', { ...definition, version: 2 })
+    expect(client.post).toHaveBeenCalledWith('/system/tenant/oauth_clients/addp_ext_client/suspend', { version: 3, reason: 'connector retired' })
+    expect(client.post).toHaveBeenCalledWith('/system/tenant/oauth_clients/addp_ext_client/restore', { version: 4, reason: 'connector approved again' })
+  })
+
   it('resets an ordinary local account through the governed platform path', () => {
     const request = { new_password: 'new-secret', reason: 'user lost password' }
 

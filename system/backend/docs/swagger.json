@@ -7327,6 +7327,325 @@
                 ]
             }
         },
+        "/tenant/oauth_clients": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "分页查询当前 Tenant 管理的公共 OAuth Client | List public OAuth clients managed by the current tenant",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户 OAuth 客户端 | Tenant OAuth Clients"
+                ],
+                "summary": "查询外部 OAuth 客户端 | List external OAuth clients",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "客户端 ID 或名称 | Client ID or name",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态：active/disabled | Status: active/disabled",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/internal_api.IAMOAuthClientResponse"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.oauth_client.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "创建固定使用 Authorization Code、PKCE 和 Refresh Token 的无密钥公共客户端 | Create a secretless public client fixed to Authorization Code, PKCE, and Refresh Token",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户 OAuth 客户端 | Tenant OAuth Clients"
+                ],
+                "summary": "创建外部 OAuth 客户端 | Create external OAuth client",
+                "parameters": [
+                    {
+                        "description": "客户端定义 | Client definition",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCreateOAuthClientRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMOAuthClientResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.oauth_client.create"
+                ]
+            }
+        },
+        "/tenant/oauth_clients/{client_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户 OAuth 客户端 | Tenant OAuth Clients"
+                ],
+                "summary": "查询外部 OAuth 客户端详情 | Get external OAuth client",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "OAuth Client ID",
+                        "name": "client_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMOAuthClientResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.oauth_client.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "完整更新显示名称和 redirect URI；协议配置不可修改 | Fully update display name and redirect URIs; protocol settings are immutable",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户 OAuth 客户端 | Tenant OAuth Clients"
+                ],
+                "summary": "更新外部 OAuth 客户端 | Update external OAuth client",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "OAuth Client ID",
+                        "name": "client_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "客户端定义与版本 | Client definition and version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMUpdateOAuthClientRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMOAuthClientResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.oauth_client.update"
+                ]
+            }
+        },
+        "/tenant/oauth_clients/{client_id}/restore": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "恢复注册状态；历史授权和令牌不会恢复 | Restore registration state; historical authorizations and tokens remain revoked",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户 OAuth 客户端 | Tenant OAuth Clients"
+                ],
+                "summary": "恢复外部 OAuth 客户端 | Restore external OAuth client",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "OAuth Client ID",
+                        "name": "client_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "版本与原因 | Version and reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMVersionedLifecycleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMOAuthClientResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.oauth_client.restore"
+                ]
+            }
+        },
+        "/tenant/oauth_clients/{client_id}/suspend": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "停用并撤销该客户端的待授权请求和全部有效令牌族 | Disable and revoke pending authorizations and all active token families for the client",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户 OAuth 客户端 | Tenant OAuth Clients"
+                ],
+                "summary": "停用外部 OAuth 客户端 | Disable external OAuth client",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "OAuth Client ID",
+                        "name": "client_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "版本与原因 | Version and reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMVersionedLifecycleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMOAuthClientResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.oauth_client.suspend"
+                ]
+            }
+        },
         "/tenant/project_groups": {
             "get": {
                 "security": [
@@ -9172,6 +9491,17 @@
                 "LocalAccountStatusDisabled"
             ]
         },
+        "github_com_addp_system_internal_iam.OAuthClientStatus": {
+            "type": "string",
+            "enum": [
+                "active",
+                "disabled"
+            ],
+            "x-enum-varnames": [
+                "OAuthClientStatusActive",
+                "OAuthClientStatusDisabled"
+            ]
+        },
         "github_com_addp_system_internal_iam.OrganizationMembershipStatus": {
             "type": "string",
             "enum": [
@@ -10854,6 +11184,20 @@
                 }
             }
         },
+        "internal_api.IAMCreateOAuthClientRequest": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "redirect_uris": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "internal_api.IAMCreatePrivilegedIdentityChangeRequest": {
             "type": "object",
             "properties": {
@@ -11606,6 +11950,71 @@
                 }
             }
         },
+        "internal_api.IAMOAuthClientResponse": {
+            "type": "object",
+            "properties": {
+                "allowed_audiences": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "allowed_scopes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "client_id": {
+                    "type": "string"
+                },
+                "client_type": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by_principal_id": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "grant_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "owner_scope": {
+                    "type": "string"
+                },
+                "redirect_uris": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "response_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.OAuthClientStatus"
+                },
+                "token_endpoint_auth_method": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.IAMOAuthDeviceDecisionRequest": {
             "type": "object",
             "properties": {
@@ -12261,6 +12670,23 @@
                 },
                 "primary_email": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMUpdateOAuthClientRequest": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "redirect_uris": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },

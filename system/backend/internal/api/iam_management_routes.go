@@ -11,7 +11,7 @@ import (
 func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime, moduleHandler *ModuleRegistryHandler) error {
 	if api == nil || runtime == nil || runtime.Authentication == nil || runtime.FirstPartyCredential == nil ||
 		runtime.PlatformTenantHandler == nil || runtime.PlatformUserHandler == nil ||
-		runtime.TenantMembershipHandler == nil || runtime.OrganizationHandler == nil || runtime.AuditHandler == nil ||
+		runtime.TenantMembershipHandler == nil || runtime.OrganizationHandler == nil || runtime.OAuthClientManagementHandler == nil || runtime.AuditHandler == nil ||
 		runtime.TenantInvitationHandler == nil ||
 		runtime.TenantRoleHandler == nil ||
 		runtime.PrivilegedIdentityChangeHandler == nil || runtime.SecurityPolicyHandler == nil || moduleHandler == nil {
@@ -169,6 +169,16 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime, modu
 	if err != nil {
 		return err
 	}
+	oauthClientPermissions, err := permissionGuards(permission, []string{
+		systemauthorization.PermissionIamOauthClientCreate,
+		systemauthorization.PermissionIamOauthClientRead,
+		systemauthorization.PermissionIamOauthClientRestore,
+		systemauthorization.PermissionIamOauthClientSuspend,
+		systemauthorization.PermissionIamOauthClientUpdate,
+	})
+	if err != nil {
+		return err
+	}
 	tenant := api.Group("/tenant")
 	tenant.Use(runtime.Authentication, runtime.FirstPartyCredential, tenantContext)
 	{
@@ -196,6 +206,15 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime, modu
 			projectGroups.POST("/:id/memberships", organizationPermissions[systemauthorization.PermissionIamProjectGroupMembershipCreate], runtime.OrganizationHandler.CreateProjectGroupMembership)
 			projectGroups.PUT("/:id/memberships/:membership_id", organizationPermissions[systemauthorization.PermissionIamProjectGroupMembershipUpdate], runtime.OrganizationHandler.UpdateProjectGroupMembership)
 			projectGroups.POST("/:id/memberships/:membership_id/close", organizationPermissions[systemauthorization.PermissionIamProjectGroupMembershipClose], runtime.OrganizationHandler.CloseProjectGroupMembership)
+		}
+		oauthClients := tenant.Group("/oauth_clients")
+		{
+			oauthClients.GET("", oauthClientPermissions[systemauthorization.PermissionIamOauthClientRead], runtime.OAuthClientManagementHandler.List)
+			oauthClients.POST("", oauthClientPermissions[systemauthorization.PermissionIamOauthClientCreate], runtime.OAuthClientManagementHandler.Create)
+			oauthClients.GET("/:client_id", oauthClientPermissions[systemauthorization.PermissionIamOauthClientRead], runtime.OAuthClientManagementHandler.Get)
+			oauthClients.PUT("/:client_id", oauthClientPermissions[systemauthorization.PermissionIamOauthClientUpdate], runtime.OAuthClientManagementHandler.Update)
+			oauthClients.POST("/:client_id/suspend", oauthClientPermissions[systemauthorization.PermissionIamOauthClientSuspend], runtime.OAuthClientManagementHandler.Suspend)
+			oauthClients.POST("/:client_id/restore", oauthClientPermissions[systemauthorization.PermissionIamOauthClientRestore], runtime.OAuthClientManagementHandler.Restore)
 		}
 		tenant.GET("/role_permissions", tenantRolePermissions["iam.tenant_role.read"], runtime.TenantRoleHandler.ListAssignablePermissions)
 		roles := tenant.Group("/roles")

@@ -25,8 +25,9 @@ func NewElementHandler(svc *service.ElementService) *ElementHandler { return &El
 // @Produce json
 // @Param ids query string false "数据元 ID 集合，逗号分隔，最多 100 个 | Data element IDs, comma-separated, maximum 100"
 // @Param domain_id query int false "归属业务域 ID | Owning domain ID"
-// @Param status query string false "修订状态 | Revision status"
+// @Param status query string false "修订状态 | Revision status" Enums(draft,in_review,published,withdrawn)
 // @Param keyword query string false "关键字 | Keyword"
+// @Param as_of query string false "生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults to server time)"
 // @Success 200 {object} models.PaginatedElementResponse
 // @Failure 400 {object} map[string]string "请求无效 | Invalid request"
 // @x-addp-auth-mode "permission"
@@ -43,7 +44,16 @@ func (h *ElementHandler) ListElements(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	opts := repository.ListElementOptions{IDs: ids, Status: c.Query("status"), Keyword: c.Query("keyword")}
+	status, err := parseOptionalRevisionStatus(c)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	opts := repository.ListElementOptions{IDs: ids, Status: status, Keyword: c.Query("keyword")}
+	if opts.AsOf, err = parseOptionalAsOf(c); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
 	if value := c.Query("domain_id"); value != "" {
 		id, parseErr := strconv.ParseInt(value, 10, 64)
 		if parseErr != nil || id <= 0 {
@@ -133,6 +143,7 @@ func (h *ElementHandler) CreateElement(c *gin.Context) {
 // @Summary 获取数据元聚合 | Get data element aggregate
 // @Tags Standard
 // @Produce json
+// @Param as_of query string false "生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults to server time)"
 // @Success 200 {object} models.ElementAggregate
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.read"]
@@ -143,7 +154,12 @@ func (h *ElementHandler) GetElement(c *gin.Context) {
 	if !ok {
 		return
 	}
-	result, err := h.svc.GetElement(id, getTenantID(c))
+	asOf, err := parseOptionalAsOf(c)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	result, err := h.svc.GetElementAt(id, getTenantID(c), asOf)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgElementNotFound)})
 		return
@@ -365,9 +381,10 @@ func (h *ElementHandler) WithdrawElementRevision(c *gin.Context) {
 }
 
 // GetElementQualityRules godoc
-// @Summary 获取当前发布数据元质量规则快照 | Get current published element quality rule snapshot
+// @Summary 获取指定时点生效的数据元质量规则快照 | Get the effective element quality rule snapshot at a point in time
 // @Tags Standard
 // @Produce json
+// @Param as_of query string false "生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults to server time)"
 // @Success 200 {object} models.PublishedElementQualityRulesResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.read"]
@@ -378,7 +395,12 @@ func (h *ElementHandler) GetElementQualityRules(c *gin.Context) {
 	if !ok {
 		return
 	}
-	revision, rules, err := h.svc.GetPublishedQualityRules(id, getTenantID(c))
+	asOf, err := parseOptionalAsOf(c)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	revision, rules, err := h.svc.GetPublishedQualityRulesAt(id, getTenantID(c), asOf)
 	if err != nil {
 		respondError(c, http.StatusNotFound, err)
 		return

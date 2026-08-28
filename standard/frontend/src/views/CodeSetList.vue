@@ -34,7 +34,7 @@ import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiErro
 
 const router=useRouter(), {t}=useI18n(), {canCreate,canDelete}=useStandardPermissions('code_set')
 const loading=ref(false), creating=ref(false), dialog=ref(false), formRef=ref(), rows=ref([]), domains=ref([]), total=ref(0)
-const statuses=['draft','in_review','published','superseded','withdrawn']
+const statuses=['draft','in_review','published','withdrawn']
 const filters=reactive({keyword:'',domain_id:null,status:'',page:1,page_size:20})
 const blank=()=>({code:'',name:'',domain_id:null,value_type:'string',description:'',change_summary:''})
 const form=reactive(blank())
@@ -43,7 +43,7 @@ const flatten=nodes=>nodes.flatMap(n=>[n,...flatten(n.children||[])])
 const working=row=>row.draft_revision||row.current_revision
 const domainName=id=>domains.value.find(x=>x.id===id)?.name||'-'
 const statusLabel=s=>s?t(`standard.revision.status.${s}`):'-'
-const statusType=s=>({draft:'info',in_review:'warning',published:'success',superseded:'',withdrawn:'danger'}[s]||'info')
+const statusType=s=>({draft:'info',in_review:'warning',published:'success',withdrawn:'danger'}[s]||'info')
 const loadDomains=async()=>{try{domains.value=flatten(await domainAPI.list()||[])}catch{domains.value=[]}}
 const load=async()=>{loading.value=true;try{const params=Object.fromEntries(Object.entries(filters).filter(([,v])=>v!==''&&v!=null));const res=await codeSetAPI.list(params);rows.value=res.data||[];total.value=res.total||0}catch(e){ElMessage.error(getStandardErrorMessage(e,t,'standard.common.loadFailed'))}finally{loading.value=false}}
 const search=()=>{filters.page=1;load()}

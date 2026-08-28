@@ -1,7 +1,11 @@
 <template>
-  <div class="category-page">
+  <div
+    class="category-page"
+    data-testid="portal-category-page"
+    :data-load-state="categoryLoading || assetLoading ? 'loading' : 'loaded'"
+  >
     <!-- 左侧资产分类树 -->
-    <div class="sidebar" v-loading="categoryLoading">
+    <div class="sidebar" data-testid="portal-category-tree" v-loading="categoryLoading">
       <div class="sidebar-header">
         <h4>{{ t('portal.category.title') }}</h4>
       </div>

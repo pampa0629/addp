@@ -178,6 +178,12 @@ func prepareStandardSchemaMigration(db *gorm.DB) error {
 				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS lifecycle_state VARCHAR(16) NOT NULL DEFAULT 'active';
 			END IF;
 		END $do$`,
+		`DO $do$ BEGIN
+			IF to_regclass('standard.elements') IS NOT NULL THEN
+				ALTER TABLE standard.elements ADD COLUMN IF NOT EXISTS current_revision_id BIGINT;
+				ALTER TABLE standard.elements ADD COLUMN IF NOT EXISTS draft_revision_id BIGINT;
+			END IF;
+		END $do$`,
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {
@@ -295,6 +301,12 @@ func migrateStandardRevisionData(db *gorm.DB) error {
 		`ALTER TABLE standard.code_sets DROP COLUMN IF EXISTS name`,
 		`ALTER TABLE standard.code_sets DROP COLUMN IF EXISTS type`,
 		`ALTER TABLE standard.code_sets DROP COLUMN IF EXISTS description`,
+		`ALTER TABLE standard.elements DROP CONSTRAINT IF EXISTS fk_standard_elements_current_revision`,
+		`ALTER TABLE standard.elements DROP CONSTRAINT IF EXISTS elements_current_revision_id_fkey`,
+		`ALTER TABLE standard.code_sets DROP CONSTRAINT IF EXISTS fk_standard_code_sets_current_revision`,
+		`ALTER TABLE standard.code_sets DROP CONSTRAINT IF EXISTS code_sets_current_revision_id_fkey`,
+		`ALTER TABLE standard.elements DROP COLUMN IF EXISTS current_revision_id`,
+		`ALTER TABLE standard.code_sets DROP COLUMN IF EXISTS current_revision_id`,
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {
@@ -354,6 +366,52 @@ func standardSchemaStatements(dialect string) ([]string, error) {
 
 func postgresStandardSchemaStatements() []string {
 	statements := []string{
+		"DROP TRIGGER IF EXISTS trg_standard_element_revision_effective_interval ON standard.element_revisions",
+		"DROP TRIGGER IF EXISTS trg_standard_code_set_revision_effective_interval ON standard.code_set_revisions",
+		"ALTER TABLE standard.element_revisions DROP CONSTRAINT IF EXISTS ck_standard_element_revisions_status",
+		"ALTER TABLE standard.code_set_revisions DROP CONSTRAINT IF EXISTS ck_standard_code_set_revisions_status",
+		"ALTER TABLE standard.element_revisions DROP CONSTRAINT IF EXISTS ck_standard_element_revisions_effective_interval",
+		"ALTER TABLE standard.code_set_revisions DROP CONSTRAINT IF EXISTS ck_standard_code_set_revisions_effective_interval",
+		"UPDATE standard.element_revisions SET status = 'published' WHERE status = 'superseded'",
+		"UPDATE standard.code_set_revisions SET status = 'published' WHERE status = 'superseded'",
+		`WITH base AS (
+			SELECT id, element_id, revision_no,
+				COALESCE(effective_from, published_at, created_at, NOW()) AS base_from
+			FROM standard.element_revisions WHERE status = 'published'
+		), normalized AS (
+			SELECT id, base_from + (ROW_NUMBER() OVER (PARTITION BY element_id, base_from ORDER BY revision_no, id) - 1) * INTERVAL '1 microsecond' AS normalized_from
+			FROM base
+		)
+		UPDATE standard.element_revisions AS revision
+		SET effective_from = normalized.normalized_from
+		FROM normalized WHERE normalized.id = revision.id`,
+		`WITH base AS (
+			SELECT id, code_set_id, revision_no,
+				COALESCE(effective_from, published_at, created_at, NOW()) AS base_from
+			FROM standard.code_set_revisions WHERE status = 'published'
+		), normalized AS (
+			SELECT id, base_from + (ROW_NUMBER() OVER (PARTITION BY code_set_id, base_from ORDER BY revision_no, id) - 1) * INTERVAL '1 microsecond' AS normalized_from
+			FROM base
+		)
+		UPDATE standard.code_set_revisions AS revision
+		SET effective_from = normalized.normalized_from
+		FROM normalized WHERE normalized.id = revision.id`,
+		"UPDATE standard.element_revisions SET effective_to = NULL WHERE status = 'published' AND effective_to <= effective_from",
+		"UPDATE standard.code_set_revisions SET effective_to = NULL WHERE status = 'published' AND effective_to <= effective_from",
+		`WITH ordered AS (
+			SELECT id, LEAD(effective_from) OVER (PARTITION BY element_id ORDER BY effective_from, revision_no, id) AS next_from
+			FROM standard.element_revisions WHERE status = 'published'
+		)
+		UPDATE standard.element_revisions AS revision SET effective_to = ordered.next_from
+		FROM ordered WHERE ordered.id = revision.id AND ordered.next_from IS NOT NULL
+			AND (revision.effective_to IS NULL OR revision.effective_to > ordered.next_from)`,
+		`WITH ordered AS (
+			SELECT id, LEAD(effective_from) OVER (PARTITION BY code_set_id ORDER BY effective_from, revision_no, id) AS next_from
+			FROM standard.code_set_revisions WHERE status = 'published'
+		)
+		UPDATE standard.code_set_revisions AS revision SET effective_to = ordered.next_from
+		FROM ordered WHERE ordered.id = revision.id AND ordered.next_from IS NOT NULL
+			AND (revision.effective_to IS NULL OR revision.effective_to > ordered.next_from)`,
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_domains_tenant_code ON standard.domains (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_elements_tenant_code ON standard.elements (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_element_revisions_element_no ON standard.element_revisions (element_id, revision_no)",
@@ -388,12 +446,53 @@ func postgresStandardSchemaStatements() []string {
 
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.dimension_hierarchy_levels'::regclass AND conname = 'ck_standard_dimension_hierarchy_levels_level_num') THEN ALTER TABLE standard.dimension_hierarchy_levels ADD CONSTRAINT ck_standard_dimension_hierarchy_levels_level_num CHECK (level_num > 0); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.metric_dependencies'::regclass AND conname = 'ck_standard_metric_dependencies_distinct') THEN ALTER TABLE standard.metric_dependencies ADD CONSTRAINT ck_standard_metric_dependencies_distinct CHECK (from_metric_id <> to_metric_id); END IF; END $do$",
-		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.element_revisions'::regclass AND conname = 'ck_standard_element_revisions_status') THEN ALTER TABLE standard.element_revisions ADD CONSTRAINT ck_standard_element_revisions_status CHECK (status IN ('draft','in_review','published','superseded','withdrawn')); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.element_revisions'::regclass AND conname = 'ck_standard_element_revisions_status') THEN ALTER TABLE standard.element_revisions ADD CONSTRAINT ck_standard_element_revisions_status CHECK (status IN ('draft','in_review','published','withdrawn')); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.element_revisions'::regclass AND conname = 'ck_standard_element_revisions_effective_interval') THEN ALTER TABLE standard.element_revisions ADD CONSTRAINT ck_standard_element_revisions_effective_interval CHECK ((status <> 'published' OR effective_from IS NOT NULL) AND (effective_to IS NULL OR (effective_from IS NOT NULL AND effective_from < effective_to))); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.element_revisions'::regclass AND conname = 'ck_standard_element_revisions_value_domain') THEN ALTER TABLE standard.element_revisions ADD CONSTRAINT ck_standard_element_revisions_value_domain CHECK ((value_domain_kind = 'unrestricted' AND range_constraint IS NULL AND code_set_revision_id IS NULL) OR (value_domain_kind = 'range' AND range_constraint IS NOT NULL AND code_set_revision_id IS NULL) OR (value_domain_kind = 'enumeration' AND range_constraint IS NULL AND code_set_revision_id IS NOT NULL)); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.code_sets'::regclass AND conname = 'ck_standard_code_sets_origin') THEN ALTER TABLE standard.code_sets ADD CONSTRAINT ck_standard_code_sets_origin CHECK (origin IN ('platform','tenant')); END IF; END $do$",
-		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.code_set_revisions'::regclass AND conname = 'ck_standard_code_set_revisions_status') THEN ALTER TABLE standard.code_set_revisions ADD CONSTRAINT ck_standard_code_set_revisions_status CHECK (status IN ('draft','in_review','published','superseded','withdrawn')); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.code_sets'::regclass AND conname = 'ck_standard_code_sets_tenant_domain') THEN ALTER TABLE standard.code_sets ADD CONSTRAINT ck_standard_code_sets_tenant_domain CHECK (origin <> 'tenant' OR domain_id IS NOT NULL); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.code_set_revisions'::regclass AND conname = 'ck_standard_code_set_revisions_status') THEN ALTER TABLE standard.code_set_revisions ADD CONSTRAINT ck_standard_code_set_revisions_status CHECK (status IN ('draft','in_review','published','withdrawn')); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.code_set_revisions'::regclass AND conname = 'ck_standard_code_set_revisions_effective_interval') THEN ALTER TABLE standard.code_set_revisions ADD CONSTRAINT ck_standard_code_set_revisions_effective_interval CHECK ((status <> 'published' OR effective_from IS NOT NULL) AND (effective_to IS NULL OR (effective_from IS NOT NULL AND effective_from < effective_to))); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.code_set_revisions'::regclass AND conname = 'ck_standard_code_set_revisions_value_type') THEN ALTER TABLE standard.code_set_revisions ADD CONSTRAINT ck_standard_code_set_revisions_value_type CHECK (value_type IN ('string','int','bigint')); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.code_set_revision_items'::regclass AND conname = 'ck_standard_code_set_revision_items_status') THEN ALTER TABLE standard.code_set_revision_items ADD CONSTRAINT ck_standard_code_set_revision_items_status CHECK (status IN ('active','deprecated')); END IF; END $do$",
+		`CREATE OR REPLACE FUNCTION standard.enforce_element_revision_effective_interval()
+		RETURNS TRIGGER LANGUAGE plpgsql AS $function$
+		BEGIN
+			IF NEW.status = 'published' AND EXISTS (
+				SELECT 1 FROM standard.element_revisions AS existing
+				WHERE existing.element_id = NEW.element_id
+					AND existing.id <> NEW.id
+					AND existing.status = 'published'
+					AND tstzrange(existing.effective_from, existing.effective_to, '[)') && tstzrange(NEW.effective_from, NEW.effective_to, '[)')
+			) THEN
+				RAISE EXCEPTION 'published data element revision effective intervals overlap' USING ERRCODE = '23514';
+			END IF;
+			RETURN NEW;
+		END;
+		$function$`,
+		"DROP TRIGGER IF EXISTS trg_standard_element_revision_effective_interval ON standard.element_revisions",
+		`CREATE TRIGGER trg_standard_element_revision_effective_interval
+		BEFORE INSERT OR UPDATE OF element_id, status, effective_from, effective_to ON standard.element_revisions
+		FOR EACH ROW EXECUTE FUNCTION standard.enforce_element_revision_effective_interval()`,
+		`CREATE OR REPLACE FUNCTION standard.enforce_code_set_revision_effective_interval()
+		RETURNS TRIGGER LANGUAGE plpgsql AS $function$
+		BEGIN
+			IF NEW.status = 'published' AND EXISTS (
+				SELECT 1 FROM standard.code_set_revisions AS existing
+				WHERE existing.code_set_id = NEW.code_set_id
+					AND existing.id <> NEW.id
+					AND existing.status = 'published'
+					AND tstzrange(existing.effective_from, existing.effective_to, '[)') && tstzrange(NEW.effective_from, NEW.effective_to, '[)')
+			) THEN
+				RAISE EXCEPTION 'published code set revision effective intervals overlap' USING ERRCODE = '23514';
+			END IF;
+			RETURN NEW;
+		END;
+		$function$`,
+		"DROP TRIGGER IF EXISTS trg_standard_code_set_revision_effective_interval ON standard.code_set_revisions",
+		`CREATE TRIGGER trg_standard_code_set_revision_effective_interval
+		BEFORE INSERT OR UPDATE OF code_set_id, status, effective_from, effective_to ON standard.code_set_revisions
+		FOR EACH ROW EXECUTE FUNCTION standard.enforce_code_set_revision_effective_interval()`,
 
 		"CREATE INDEX IF NOT EXISTS idx_standard_glossary_element_mappings_element ON standard.glossary_element_mappings (element_id)",
 		"CREATE INDEX IF NOT EXISTS idx_standard_metric_element_mappings_element ON standard.metric_element_mappings (element_id)",
@@ -439,14 +538,12 @@ func postgresStandardSchemaStatements() []string {
 		{"standard.domains", "fk_standard_domains_parent", "parent_id", "standard.domains(id)", "RESTRICT"},
 		{"standard.glossaries", "fk_standard_glossaries_domain", "domain_id", "standard.domains(id)", "RESTRICT"},
 		{"standard.elements", "fk_standard_elements_domain", "domain_id", "standard.domains(id)", "RESTRICT"},
-		{"standard.elements", "fk_standard_elements_current_revision", "current_revision_id", "standard.element_revisions(id)", "SET NULL"},
 		{"standard.elements", "fk_standard_elements_draft_revision", "draft_revision_id", "standard.element_revisions(id)", "SET NULL"},
 		{"standard.element_revisions", "fk_standard_element_revisions_element", "element_id", "standard.elements(id)", "CASCADE"},
 		{"standard.element_revisions", "fk_standard_element_revisions_unit", "unit_id", "standard.units(id)", "RESTRICT"},
 		{"standard.element_revisions", "fk_standard_element_revisions_classification", "classification_id", "standard.classifications(id)", "RESTRICT"},
 		{"standard.element_revisions", "fk_standard_element_revisions_code_set_revision", "code_set_revision_id", "standard.code_set_revisions(id)", "RESTRICT"},
 		{"standard.code_sets", "fk_standard_code_sets_domain", "domain_id", "standard.domains(id)", "RESTRICT"},
-		{"standard.code_sets", "fk_standard_code_sets_current_revision", "current_revision_id", "standard.code_set_revisions(id)", "SET NULL"},
 		{"standard.code_sets", "fk_standard_code_sets_draft_revision", "draft_revision_id", "standard.code_set_revisions(id)", "SET NULL"},
 		{"standard.code_set_revisions", "fk_standard_code_set_revisions_code_set", "code_set_id", "standard.code_sets(id)", "CASCADE"},
 		{"standard.code_set_revision_items", "fk_standard_code_set_revision_items_revision", "code_set_revision_id", "standard.code_set_revisions(id)", "CASCADE"},

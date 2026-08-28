@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"time"
+
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/standard/internal/models"
 	"gorm.io/gorm"
@@ -100,14 +102,18 @@ func (r *GlossaryRepository) UpdateStatus(id, tenantID, expectedVersion int64, s
 // GetMappedElements 获取术语关联的完整数据元列表
 func (r *GlossaryRepository) GetMappedElements(glossaryID, tenantID int64) ([]models.PublishedElementReference, error) {
 	var elements []models.PublishedElementReference
+	asOf := time.Now().UTC()
 	err := r.db.Raw(`
 		SELECT e.id, e.tenant_id, e.code, e.lifecycle_state, e.version,
 			er.id AS revision_id, er.revision_no, er.name, er.status
 		FROM standard.elements e
 		INNER JOIN standard.glossary_element_mappings gem ON gem.element_id = e.id
-		INNER JOIN standard.element_revisions er ON er.id = e.current_revision_id AND er.status = 'published'
+		INNER JOIN standard.element_revisions er ON er.element_id = e.id
+			AND er.status = 'published'
+			AND er.effective_from <= ?
+			AND (er.effective_to IS NULL OR er.effective_to > ?)
 		WHERE gem.glossary_id = ? AND e.tenant_id = ? AND e.lifecycle_state = 'active'
-	`, glossaryID, tenantID).Scan(&elements).Error
+	`, asOf, asOf, glossaryID, tenantID).Scan(&elements).Error
 	return elements, err
 }
 

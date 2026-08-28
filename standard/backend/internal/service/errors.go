@@ -10,6 +10,7 @@ import (
 var (
 	ErrInvalidStandardRevision       = fmt.Errorf("%w: invalid standard revision", commonapi.ErrBadRequest)
 	ErrInvalidRevisionTransition     = fmt.Errorf("%w: invalid standard revision transition", commonapi.ErrConflict)
+	ErrEffectiveIntervalConflict     = fmt.Errorf("%w: standard revision effective interval conflicts with an existing published revision", commonapi.ErrConflict)
 	ErrDraftRevisionExists           = fmt.Errorf("%w: a draft revision already exists", commonapi.ErrConflict)
 	ErrPublishedRevisionRequired     = fmt.Errorf("%w: published standard revision required", commonapi.ErrBadRequest)
 	ErrPlatformCodeSetImmutable      = fmt.Errorf("%w: platform code set is immutable", commonapi.ErrConflict)

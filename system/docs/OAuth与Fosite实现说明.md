@@ -1,6 +1,6 @@
 # System OAuth 与 Fosite 实现说明
 
-更新日期：2026-08-01
+更新日期：2026-08-28
 
 状态：System 模块正式实现文档。本文记录已接受的协议引擎决策和当前 OAuth 2.0 唯一实现路径。
 
@@ -95,6 +95,10 @@ OAuth 路由统一位于 `/api/v1/system/oauth`，包括 Authorization Request�
 System 协议测试与正式 `addp` CLI 使用同一个 `addp-cli` 公共 Client 和同一组生产路由，不维护测试专用授权端点。
 
 公共原生 Client 不配置 Client Secret。loopback redirect URI 只允许 RFC 8252 的 IP 字面量动态端口例外；scheme、IP、path、query 和 fragment必须匹配注册值。禁止 `localhost`、前缀匹配、通配符和回退 URI。
+
+Tenant 外部 Client 由当前 Tenant 的 System IAM 管理接口注册，仍由同一个 `oauth_clients` 表和 Fosite Storage Adapter 消费。它固定为公共 Authorization Code + PKCE Client，只允许 `addp.api` Scope/Audience 和 Refresh Token；管理端不能提交 grant、Scope、Audience、认证方式、Secret 或 Service Principal。授权交互读取和决定都必须校验当前 AuthContext Tenant 等于 Client owner Tenant。
+
+Tenant Client 停用由 IAM 管理服务在单个事务内完成 Client 状态变更、pending Authorization Request 取消、有效 Token Family 撤销和安全审计。Fosite `GetClient` 只返回 active Client，因此停用后新的授权、Code 兑换与刷新同时失败；恢复只恢复注册状态，不恢复已撤销协议事实。
 
 Service Principal 使用独立 Confidential Client 和 Client Credentials；Service Access Token 不可刷新，且必须绑定明确 Tenant Context 或 Platform Service Context。
 

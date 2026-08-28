@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/addp/standard/internal/models"
 	"gorm.io/gorm"
@@ -39,10 +40,11 @@ func (r *ReferenceResolutionRepository) ResolveElements(ctx context.Context, ten
 	if len(ids) == 0 {
 		return result, nil
 	}
+	asOf := time.Now().UTC()
 	err := r.db.WithContext(ctx).Table("standard.elements AS e").
 		Select("e.id, e.tenant_id, e.code, e.lifecycle_state, e.version, er.id AS revision_id, er.revision_no, er.name, er.status").
-		Joins("JOIN standard.element_revisions er ON er.id = e.current_revision_id AND er.status = ?", models.RevisionStatusPublished).
-		Where("e.tenant_id = ? AND e.id IN ?", tenantID, ids).Scan(&result).Error
+		Joins("JOIN standard.element_revisions er ON er.element_id = e.id AND er.status = ? AND er.effective_from <= ? AND (er.effective_to IS NULL OR er.effective_to > ?)", models.RevisionStatusPublished, asOf, asOf).
+		Where("e.tenant_id = ? AND e.lifecycle_state = ? AND e.id IN ?", tenantID, "active", ids).Scan(&result).Error
 	return result, wrapDBError(err)
 }
 
@@ -79,8 +81,9 @@ func (r *ReferenceResolutionRepository) ListGlossaryCandidates(ctx context.Conte
 }
 
 func (r *ReferenceResolutionRepository) ListElementCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.PublishedElementReference, int64, error) {
+	asOf := time.Now().UTC()
 	query := r.db.WithContext(ctx).Table("standard.elements AS e").
-		Joins("JOIN standard.element_revisions er ON er.id = e.current_revision_id AND er.status = ?", models.RevisionStatusPublished).
+		Joins("JOIN standard.element_revisions er ON er.element_id = e.id AND er.status = ? AND er.effective_from <= ? AND (er.effective_to IS NULL OR er.effective_to > ?)", models.RevisionStatusPublished, asOf, asOf).
 		Where("e.tenant_id = ? AND e.lifecycle_state = ?", tenantID, "active")
 	if search = strings.TrimSpace(search); search != "" {
 		pattern := "%" + search + "%"

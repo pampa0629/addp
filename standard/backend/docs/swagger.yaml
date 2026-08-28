@@ -103,8 +103,6 @@ definitions:
         type: integer
       current_revision:
         $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetRevision'
-      current_revision_id:
-        type: integer
       domain_id:
         type: integer
       draft_revision:
@@ -452,8 +450,6 @@ definitions:
         type: integer
       current_revision:
         $ref: '#/definitions/github_com_addp_standard_internal_models.ElementRevision'
-      current_revision_id:
-        type: integer
       domain_id:
         type: integer
       draft_revision:
@@ -1658,12 +1654,22 @@ paths:
         name: domain_id
         type: integer
       - description: 修订状态 | Revision status
+        enum:
+        - draft
+        - in_review
+        - published
+        - withdrawn
         in: query
         name: status
         type: string
       - description: 关键字 | Keyword
         in: query
         name: keyword
+        type: string
+      - description: 生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults
+          to server time)
+        in: query
+        name: as_of
         type: string
       produces:
       - application/json
@@ -1725,6 +1731,12 @@ paths:
       x-addp-required-permissions:
       - standard.code_set.delete
     get:
+      parameters:
+      - description: 生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults
+          to server time)
+        in: query
+        name: as_of
+        type: string
       produces:
       - application/json
       responses:
@@ -2910,12 +2922,22 @@ paths:
         name: domain_id
         type: integer
       - description: 修订状态 | Revision status
+        enum:
+        - draft
+        - in_review
+        - published
+        - withdrawn
         in: query
         name: status
         type: string
       - description: 关键字 | Keyword
         in: query
         name: keyword
+        type: string
+      - description: 生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults
+          to server time)
+        in: query
+        name: as_of
         type: string
       produces:
       - application/json
@@ -2995,6 +3017,12 @@ paths:
       x-addp-required-permissions:
       - standard.element.delete
     get:
+      parameters:
+      - description: 生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults
+          to server time)
+        in: query
+        name: as_of
+        type: string
       produces:
       - application/json
       responses:
@@ -3206,6 +3234,12 @@ paths:
       - standard.document.update
   /elements/{id}/quality-rules:
     get:
+      parameters:
+      - description: 生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults
+          to server time)
+        in: query
+        name: as_of
+        type: string
       produces:
       - application/json
       responses:
@@ -3215,7 +3249,8 @@ paths:
             $ref: '#/definitions/github_com_addp_standard_internal_models.PublishedElementQualityRulesResponse'
       security:
       - BearerAuth: []
-      summary: 获取当前发布数据元质量规则快照 | Get current published element quality rule snapshot
+      summary: 获取指定时点生效的数据元质量规则快照 | Get the effective element quality rule snapshot
+        at a point in time
       tags:
       - Standard
       x-addp-auth-mode: permission

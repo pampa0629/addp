@@ -4,6 +4,7 @@
       "confirm": "Confirm",
       "cancel": "Cancel",
       "save": "Save",
+      "saving": "Saving",
       "delete": "Delete",
       "edit": "Edit",
       "back": "Back",
@@ -32,12 +33,15 @@
       "updatedAt": "Updated At",
       "id": "ID",
       "metadata": "Metadata",
+      "governanceInfo": "Governance",
       "draft": "Draft",
       "approved": "Approved",
       "deprecated": "Deprecated",
       "type": "Type",
       "tags": "Tags",
       "tagsPlaceholder": "Press Enter to add tags",
+      "stewardId": "Steward User ID",
+      "stewardIdPlaceholder": "Enter the data steward user ID",
       "selectDomain": "Select Domain",
       "selectStatus": "Select Status",
       "domainOptional": "Select Domain (optional)",
@@ -59,17 +63,18 @@
       "return": "Return to Draft",
       "publish": "Publish",
       "withdraw": "Withdraw",
+      "effectiveFrom": "Effective From",
+      "effectiveTo": "Effective To",
       "status": {
         "draft": "Draft",
         "in_review": "In Review",
         "published": "Published",
-        "superseded": "Superseded",
         "withdrawn": "Withdrawn"
       },
       "confirm": {
         "submit": "Submit this revision for review?",
         "return": "Return this revision to draft?",
-        "publish": "Publish this revision as the only current revision?",
+        "publish": "Publish this revision? Its effective interval must not overlap another published revision.",
         "withdraw": "Withdraw this published revision? New downstream references will be rejected."
       }
     },
@@ -162,6 +167,8 @@
       "dataTypeBool": "Boolean (bool)",
       "dataTypeJson": "JSON (json)",
       "lengthLabel": "Length",
+      "precisionLabel": "Precision",
+      "scaleLabel": "Scale",
       "nullableLabel": "Nullable",
       "unitLabel": "Unit",
       "definitionLabel": "Definition",
@@ -248,6 +255,8 @@
       "itemValue": "Value",
       "itemLabel": "Label",
       "itemDefinition": "Definition",
+      "replacementItem": "Recommended Replacement",
+      "noReplacement": "No replacement",
       "itemStatus": {
         "active": "Active",
         "deprecated": "Deprecated"

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/dataquality"
@@ -51,6 +52,10 @@ func (s *ElementService) CreateElement(req *models.CreateElementRequest, tenantI
 
 func (s *ElementService) GetElement(id, tenantID int64) (*models.ElementAggregate, error) {
 	return s.repo.GetAggregate(id, tenantID)
+}
+
+func (s *ElementService) GetElementAt(id, tenantID int64, asOf time.Time) (*models.ElementAggregate, error) {
+	return s.repo.GetAggregateAt(id, tenantID, asOf)
 }
 
 func (s *ElementService) ListElements(tenantID int64, opts repository.ListElementOptions) ([]models.ElementAggregate, int64, error) {
@@ -106,6 +111,9 @@ func (s *ElementService) SubmitRevision(id, revisionID, tenantID, userID, versio
 	if err := s.validateRevision(revision, tenantID); err != nil {
 		return nil, err
 	}
+	if revision.EffectiveFrom == nil {
+		return nil, fmt.Errorf("%w: effective_from is required before review", ErrInvalidStandardRevision)
+	}
 	if err := s.repo.TransitionRevision(id, revisionID, tenantID, userID, version, models.RevisionStatusDraft, models.RevisionStatusInReview); err != nil {
 		return nil, mapRevisionError(err)
 	}
@@ -154,7 +162,11 @@ func (s *ElementService) DeleteElement(ctx context.Context, id, tenantID int64) 
 }
 
 func (s *ElementService) GetPublishedQualityRules(id, tenantID int64) (*models.ElementRevision, *dataquality.Document, error) {
-	revision, err := s.repo.GetPublishedRevision(id, tenantID)
+	return s.GetPublishedQualityRulesAt(id, tenantID, time.Time{})
+}
+
+func (s *ElementService) GetPublishedQualityRulesAt(id, tenantID int64, asOf time.Time) (*models.ElementRevision, *dataquality.Document, error) {
+	revision, err := s.repo.GetEffectiveRevision(id, tenantID, asOf)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -270,6 +282,9 @@ func (s *ElementService) validateRevision(revision *models.ElementRevision, tena
 		if !compatibleValueTypes(dataType, codeSetRevision.ValueType) {
 			return fmt.Errorf("%w: code set value_type is incompatible with data_type", ErrInvalidStandardRevision)
 		}
+		if revision.EffectiveFrom != nil && !effectiveIntervalCovered(revision.EffectiveFrom, revision.EffectiveTo, codeSetRevision.EffectiveFrom, codeSetRevision.EffectiveTo) {
+			return fmt.Errorf("%w: code set revision effective interval must cover the data element revision", ErrInvalidStandardRevision)
+		}
 	default:
 		return fmt.Errorf("%w: invalid value_domain_kind", ErrInvalidStandardRevision)
 	}
@@ -350,6 +365,16 @@ func compatibleValueTypes(elementType, codeSetType string) bool {
 	return codeSetType == "bigint" && (elementType == "bigint" || elementType == "int")
 }
 
+func effectiveIntervalCovered(elementFrom, elementTo, codeSetFrom, codeSetTo *time.Time) bool {
+	if elementFrom == nil || codeSetFrom == nil || elementFrom.Before(*codeSetFrom) {
+		return false
+	}
+	if elementTo == nil {
+		return codeSetTo == nil
+	}
+	return codeSetTo == nil || !elementTo.After(*codeSetTo)
+}
+
 func rangeNumbers(value *models.RangeConstraint) (float64, error) {
 	var min, max float64
 	var err error
@@ -402,6 +427,8 @@ func mapRevisionError(err error) error {
 		return ErrDraftRevisionExists
 	case errors.Is(err, repository.ErrInvalidRevisionTransition), errors.Is(err, repository.ErrRevisionNotEditable):
 		return ErrInvalidRevisionTransition
+	case errors.Is(err, repository.ErrEffectiveIntervalConflict):
+		return ErrEffectiveIntervalConflict
 	default:
 		return err
 	}

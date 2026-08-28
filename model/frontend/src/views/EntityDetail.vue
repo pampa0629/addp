@@ -98,9 +98,12 @@
           <el-table-column :label="t('model.attribute.name')" prop="name" min-width="140" />
           <el-table-column :label="t('model.attribute.column_name')" prop="column_name" min-width="140" />
           <el-table-column :label="t('model.attribute.data_type')" prop="data_type" width="110" />
-          <el-table-column :label="t('model.attribute.element')" width="160">
+          <el-table-column :label="t('model.attribute.element')" min-width="190">
             <template #default="{ row }">
-              {{ getElementName(row.element_id) || '-' }}
+              <span>{{ getElementName(row.element_id) || '-' }}</span>
+              <el-tag v-if="row.element_revision_id" type="info" size="small" class="revision-tag">
+                {{ t('model.attribute.element_revision') }} #{{ row.element_revision_id }}
+              </el-tag>
             </template>
           </el-table-column>
           <el-table-column :label="t('model.attribute.is_pk')" width="80">
@@ -1034,5 +1037,9 @@ onBeforeUnmount(() => stopThemeObserver?.())
 
 .mermaid-viewer .mermaid {
   background: transparent;
+}
+
+.revision-tag {
+  margin-left: 6px;
 }
 </style>

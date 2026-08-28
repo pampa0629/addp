@@ -14,8 +14,25 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 109 {
-		t.Fatalf("LatestVersion = %d, want 109", catalog.LatestVersion)
+	if catalog.LatestVersion != 111 {
+		t.Fatalf("LatestVersion = %d, want 111", catalog.LatestVersion)
+	}
+}
+
+func TestExternalOAuthClientManagementMigrationKeepsTenantOwnershipAndRevocationBoundary(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000111_iam_external_oauth_client_management.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 111: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"ADD COLUMN owner_scope", "ADD COLUMN owner_tenant_id", "ADD COLUMN version",
+		"oauth_clients_management_owner_check", "idx_oauth_clients_created_by_principal", "'iam.oauth_client.suspend'",
+		"'tenant.administrator'", "authorization_version = principal.authorization_version + 1",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 111 missing %q", fragment)
+		}
 	}
 }
 

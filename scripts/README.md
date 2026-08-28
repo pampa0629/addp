@@ -494,7 +494,7 @@ Online 唯一入口为 `make test-online ONLINE_SUITE=<suite>`，并要求环境
 
 `consumer-engine-recovery` 要求全量 ADDP 服务、Console、Manager、Service 和一个专用 PostgreSQL Engine Fixture。Host Gate 通过 `business/scripts/online-engine-fixture.sh` 管理物理端点，该入口只允许 `ADDP_ONLINE_HOST=1` 的 macOS 专用 Runner，使用独立 `ADDP_ONLINE_TEST_ENGINE_*` 变量并拒绝接管非 `business/postgres` Compose 容器；它不读取或创建 `business/.env`。suite 使用真实测试 User 用户名和密码登录 Console，并以同一 User 的 Access Token 校验 Tenant AuthContext 与最小权限。Configuration、Manager Data Explorer、Service Query Services 在同一 Browser Context 中各首次导航一次并等待自身首个请求成功；随后保持同一 Manager iframe，停止/恢复物理 Fixture，并通过 `POST /api/v1/system/engines/{id}/test` 记录 `offline → online`，页面必须通过既有轮询自动收敛。Manager、Service Backend 与 Console、Manager、Service Frontend 的 PID 前后必须一致。Engine Instance 由专用环境长期预置，suite 不创建、删除或修改其身份；退出路径恢复 `online` 后再停止 Fixture 与应用。
 
-`enterprise-catalog-publishing` 要求全量 System、Gateway、Meta、Catalog、Asset、Portal 和 Console，并复用专用 PostgreSQL Engine Fixture。Fixture owner 在物理库启动时幂等建立 `public.addp_online_catalog_fixture`；suite 只经 Gateway 使用真实 User Token 连续发起两次 Meta 扫描，证明 fingerprint 与 CatalogEntry UUID 幂等，再验收资源盘点/治理目录视图、七维治理覆盖率、精确来源身份解析和业务编目。随后以 `AssetComponent.catalog_entry_id` 创建并发布资产，从 Portal 校验同一 CatalogEntry 身份；真实浏览器使用同一专用 User 登录 Console，验证覆盖率页、CatalogEntry 详情、Domain / Department / Engine 名称交互，以及资源盘点当前页显式多选和批量治理对话框；浏览器不实际提交第二次治理写入。临时 Asset 按 `published → offline → deleted` 清理，Asset-owned 目录同步删除；已初始化的永久 Catalog fixture 会恢复运行前编目聚合。环境另需 `ADDP_ONLINE_TEST_USER_USERNAME`、`ADDP_ONLINE_TEST_USER_PASSWORD`、`ADDP_ONLINE_TEST_CATALOG_DOMAIN_ID` 和 `ADDP_ONLINE_TEST_CATALOG_DEPARTMENT_ID`。
+`enterprise-catalog-publishing` 要求全量 System、Gateway、Meta、Catalog、Asset、Portal 和 Console，并复用专用 PostgreSQL Engine Fixture。Fixture owner 在物理库启动时幂等建立 `public.addp_online_catalog_fixture`；suite 只经 Gateway 使用真实 User Token 连续发起两次 Meta 扫描，证明 fingerprint 与 CatalogEntry UUID 幂等，再验收资源盘点/治理目录视图、七维治理覆盖率、精确来源身份解析和业务编目。随后以 `AssetComponent.catalog_entry_id` 创建并发布资产，从 Portal 校验同一 CatalogEntry 身份、AssetCategory 目录树节点与分类子树资产列表；真实浏览器使用同一专用 User 登录，先验证 Catalog 覆盖率、详情、名称导航和批量治理对话框，再打开 `/portal/categories/:id` 确认临时目录节点与 Asset 卡片，浏览器不实际提交第二次治理写入。临时 Asset 按 `published → offline → deleted` 清理，suite 同时确认空分类立即从 Portal 目录树消失，再删除 Asset-owned 目录；已初始化的永久 Catalog fixture 会恢复运行前编目聚合。环境另需 `ADDP_ONLINE_TEST_USER_USERNAME`、`ADDP_ONLINE_TEST_USER_PASSWORD`、`ADDP_ONLINE_TEST_CATALOG_DOMAIN_ID` 和 `ADDP_ONLINE_TEST_CATALOG_DEPARTMENT_ID`。
 
 #### 企业资源目录专用 macOS 完整验证
 
@@ -508,9 +508,9 @@ Online 唯一入口为 `make test-online ONLINE_SUITE=<suite>`，并要求环境
 | `ECV-03` 自动建档幂等 | T4 | 同上 | 两次真实 Meta scan 返回成功，fingerprint 与 CatalogEntry UUID 均不变化 |
 | `ECV-04` 目录读模型 | T4 | 同上 | 同一条目进入 `inventory` 与编目后的 `governance` 视图；治理状态总数与七个覆盖率维度分母自洽 |
 | `ECV-05` 动态来源解析 | T4 | 同上 | Meta fingerprint 经 `POST /catalog/entries/resolve-sources` 精确解析到当前 active CatalogEntry |
-| `ECV-06` Console 交互 | T4 browser | 同上 | 覆盖率七维、CatalogEntry 详情、名称选择器、当前页显式多选和批量治理对话框可用，页面不出现 `undefined`，浏览器 warning/error 与失败业务响应均为 0 |
-| `ECV-07` 发布消费唯一路线 | T4 | 同上 | `Meta → Catalog → AssetComponent → Portal` 保持同一 CatalogEntry UUID |
-| `ECV-08` 清理 | T4 | 同上 | 临时 Asset 下架后删除、Asset-owned 目录删除、Portal 404，`residual_resources=0`，永久 fixture 编目聚合恢复 |
+| `ECV-06` Catalog 与 Portal 交互 | T4 browser | 同上 | 覆盖率七维、CatalogEntry 详情、名称选择器、当前页显式多选和批量治理对话框可用；Portal 分类页展示临时目录与唯一 Asset 卡片，页面不出现 `undefined`，浏览器 warning/error 与失败业务响应均为 0 |
+| `ECV-07` 发布消费唯一路线 | T4 | 同上 | `Meta → Catalog → AssetComponent → Portal` 保持同一 CatalogEntry UUID；AssetCategory 出现在 Portal 目录树，分类子树只返回该临时 Asset |
+| `ECV-08` 清理 | T4 | 同上 | 临时 Asset 下架后删除，空分类从 Portal 树消失，Asset-owned 目录删除、Portal Asset 404，`residual_resources=0`，永久 fixture 编目聚合恢复 |
 
 T0-T3 checkout 执行：
 

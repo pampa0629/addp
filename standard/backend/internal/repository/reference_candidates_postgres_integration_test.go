@@ -47,15 +47,17 @@ func TestPostgresReferenceCandidatesFilterAndPaginateOwnerFacts(t *testing.T) {
 			t.Fatalf("create element identity: %v", err)
 		}
 		revision := models.ElementRevision{ElementID: fixture.identity.ID, RevisionNo: 1, Status: fixture.status, Name: fixture.name, Definition: fixture.name, DataType: "string", ValueDomainKind: models.ValueDomainUnrestricted, ChangeSummary: "initial", CreatedBy: 1}
+		if fixture.status == models.RevisionStatusPublished {
+			effectiveFrom := time.Now().UTC().Add(-time.Hour)
+			revision.EffectiveFrom = &effectiveFrom
+		}
 		if err := db.Create(&revision).Error; err != nil {
 			t.Fatalf("create element revision: %v", err)
 		}
-		column := "draft_revision_id"
-		if fixture.status == models.RevisionStatusPublished {
-			column = "current_revision_id"
-		}
-		if err := db.Model(fixture.identity).Update(column, revision.ID).Error; err != nil {
-			t.Fatalf("link element revision: %v", err)
+		if fixture.status == models.RevisionStatusDraft {
+			if err := db.Model(fixture.identity).Update("draft_revision_id", revision.ID).Error; err != nil {
+				t.Fatalf("link element revision: %v", err)
+			}
 		}
 	}
 	t.Cleanup(func() {

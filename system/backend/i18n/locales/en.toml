@@ -218,3 +218,6 @@ other = "Failed to create resource reclaim execution task"
 other = "Failed to query resource reclaim task history"
 [system.iam.organization_version_conflict]
 other = "The organization resource was changed by another user. Refresh and try again"
+
+[system.iam.oauth_client_version_conflict]
+other = "The OAuth client was changed by another user. Refresh and try again"

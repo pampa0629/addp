@@ -24,18 +24,19 @@ func (Entity) TableName() string {
 
 // EntityAttribute 实体属性
 type EntityAttribute struct {
-	ID          int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	EntityID    int64     `gorm:"not null;index" json:"entity_id"`
-	ElementID   *int64    `json:"element_id,omitempty"` // 引用数据元（可选）
-	Name        string    `gorm:"size:200;not null" json:"name"`
-	ColumnName  string    `gorm:"size:200;not null" json:"column_name"`
-	DataType    string    `gorm:"size:50;not null" json:"data_type"`
-	IsPK        bool      `gorm:"default:false" json:"is_pk"`
-	Nullable    bool      `gorm:"default:true" json:"nullable"`
-	Description string    `gorm:"type:text" json:"description"`
-	SortOrder   int       `gorm:"default:0" json:"sort_order"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID                int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	EntityID          int64     `gorm:"not null;index" json:"entity_id"`
+	ElementID         *int64    `json:"element_id,omitempty"`          // 引用数据元（可选）
+	ElementRevisionID *int64    `json:"element_revision_id,omitempty"` // 聚合审批时冻结的数据元修订
+	Name              string    `gorm:"size:200;not null" json:"name"`
+	ColumnName        string    `gorm:"size:200;not null" json:"column_name"`
+	DataType          string    `gorm:"size:50;not null" json:"data_type"`
+	IsPK              bool      `gorm:"default:false" json:"is_pk"`
+	Nullable          bool      `gorm:"default:true" json:"nullable"`
+	Description       string    `gorm:"type:text" json:"description"`
+	SortOrder         int       `gorm:"default:0" json:"sort_order"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 func (EntityAttribute) TableName() string {

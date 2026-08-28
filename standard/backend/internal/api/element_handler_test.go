@@ -93,6 +93,32 @@ func TestListElementsRejectsInvalidIDs(t *testing.T) {
 	}
 }
 
+func TestListElementsRejectsInvalidAsOf(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, query := range []string{"as_of=not-a-time", "as_of=2026-08-28T00%3A00%3A00Z&as_of=2026-08-29T00%3A00%3A00Z"} {
+		router := gin.New()
+		router.GET("/elements", NewElementHandler(nil).ListElements)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/elements?"+query, nil))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("query %q status = %d, want %d", query, response.Code, http.StatusBadRequest)
+		}
+	}
+}
+
+func TestListElementsRejectsInvalidRevisionStatus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, query := range []string{"status=superseded", "status=draft&status=published"} {
+		router := gin.New()
+		router.GET("/elements", NewElementHandler(nil).ListElements)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/elements?"+query, nil))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("query %q status = %d, want %d", query, response.Code, http.StatusBadRequest)
+		}
+	}
+}
+
 func newElementHandlerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
@@ -109,7 +135,6 @@ func newElementHandlerTestDB(t *testing.T) *gorm.DB {
 		code TEXT NOT NULL,
 		steward_id INTEGER,
 		tags BLOB,
-		current_revision_id INTEGER,
 		draft_revision_id INTEGER,
 		created_by INTEGER NOT NULL,
 		updated_by INTEGER,

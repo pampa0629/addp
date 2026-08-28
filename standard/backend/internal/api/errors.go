@@ -77,6 +77,10 @@ func respondError(c *gin.Context, status int, err error) {
 		status = http.StatusConflict
 		message = commoni18n.T(c, sysi18n.MsgInvalidRevisionTransition)
 		useGenericMessage = false
+	case errors.Is(err, service.ErrEffectiveIntervalConflict):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgEffectiveIntervalConflict)
+		useGenericMessage = false
 	case errors.Is(err, service.ErrDraftRevisionExists):
 		status = http.StatusConflict
 		message = commoni18n.T(c, sysi18n.MsgDraftRevisionExists)

@@ -1,6 +1,6 @@
 # System IAM 数据模型与迁移规范
 
-更新日期：2026-08-01
+更新日期：2026-08-28
 
 状态：System 模块正式实现规范。本文定义已投入运行的 IAM PostgreSQL 模型、事务边界、迁移路径和安全约束。
 
@@ -152,6 +152,10 @@ Refresh 采用轮换和重用检测。并发 Refresh、logout、context switch�
 ## 八、OAuth 协议表
 
 OAuth Client、Authorization Request、PKCE、Authorization Code、Device Authorization 和 Token Family 等协议事实由同一个 Fosite Storage Adapter 访问。具体表映射、锁顺序和 Provider 组合见 `system/docs/OAuth与Fosite实现说明.md`。
+
+`oauth_clients` 同时保存 Platform 内置 Client 和 Tenant 外部 Client。`owner_scope` 固定为 `platform|tenant`，`owner_tenant_id` 只在 Tenant Client 上存在；`client_id`、管理归属、创建人和创建时间不可修改，`version` 用于所有管理写操作的乐观并发控制。Tenant Client 的协议字段固定为公共 Authorization Code + PKCE 与 Refresh Token，不配置 Secret 或 Service Principal；管理端只允许维护显示名称、redirect URI 和 `active|disabled` 生命周期。
+
+Tenant Client 管理 API 只使用当前 Tenant AuthContext 下的 `/api/v1/system/tenant/oauth_clients` 单一路由，不接受 `tenant_id`。停用 Client 必须在同一事务中递增版本、取消 pending Authorization Request、撤销全部有效 Token Family 并写入安全审计；恢复只允许后续重新授权，不恢复历史会话。读取或批准 Tenant Client 的 Authorization Request 时必须复核 AuthContext Tenant 与 Client owner Tenant 一致。
 
 OIDC 表字段是未来协议启用所需的受控预留，不表示 OIDC 已对外启用。
 

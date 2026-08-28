@@ -97,6 +97,7 @@ model/
 |------|------|------|
 | entity_id | int64 | 所属实体 |
 | element_id | int64? | 引用 `standard.elements`（无 DB FK） |
+| element_revision_id | int64? | Entity 审批时冻结的数据元修订；草稿必须为空 |
 | name / column_name | string | 属性名 / 物理列名 |
 | data_type | string | string/int/bigint/float/date/datetime/bool 等 |
 | is_pk / nullable | bool | 主键 / 可空 |
@@ -129,6 +130,7 @@ model/
 |------|------|------|
 | table_id | int64 | 所属逻辑表 |
 | element_id | int64? | 引用 `standard.elements`（无 DB FK） |
+| element_revision_id | int64? | LogicalTable 审批时冻结的数据元修订；草稿必须为空 |
 | field_role | string | `regular` / `measure_additive` / `measure_semi` / `measure_non` / `dimension_fk` / `degenerate_dim` |
 | hierarchy_id / hierarchy_level | int64? / int? | 维度层级关联（引用 standard.dimension_hierarchies） |
 | is_pk / is_partition | bool | 主键 / 分区字段 |

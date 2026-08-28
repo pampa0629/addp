@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
@@ -28,9 +29,13 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 	for _, statement := range []string{
 		`DROP SCHEMA IF EXISTS standard CASCADE`,
 		`CREATE SCHEMA standard`,
+		`CREATE TABLE standard.domains (
+			id BIGSERIAL PRIMARY KEY, tenant_id BIGINT NOT NULL, name VARCHAR(100) NOT NULL,
+			code VARCHAR(50) NOT NULL, created_by BIGINT NOT NULL, version BIGINT NOT NULL DEFAULT 1
+		)`,
 		`CREATE TABLE standard.code_sets (
 			id BIGSERIAL PRIMARY KEY, tenant_id BIGINT NOT NULL, code VARCHAR(100) NOT NULL,
-			name VARCHAR(200) NOT NULL, type VARCHAR(20), description TEXT,
+			domain_id BIGINT, name VARCHAR(200) NOT NULL, type VARCHAR(20), description TEXT,
 			created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ, version BIGINT NOT NULL DEFAULT 1
 		)`,
 		`CREATE TABLE standard.code_items (
@@ -49,8 +54,10 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 			created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ, version BIGINT NOT NULL DEFAULT 1,
 			lifecycle_state VARCHAR(16) NOT NULL DEFAULT 'active'
 		)`,
-		`INSERT INTO standard.code_sets (id, tenant_id, code, name, type, description, version)
-		 VALUES (101, 7, 'gender', 'Gender', 'custom', 'Gender codes', 3)`,
+		`INSERT INTO standard.domains (id, tenant_id, name, code, created_by, version)
+		 VALUES (501, 7, 'Customer', 'customer', 1, 1)`,
+		`INSERT INTO standard.code_sets (id, tenant_id, domain_id, code, name, type, description, version)
+		 VALUES (101, 7, 501, 'gender', 'Gender', 'custom', 'Gender codes', 3)`,
 		`INSERT INTO standard.code_items (id, code_set_id, code, value, description, sort_order, is_active)
 		 VALUES (1001, 101, 'M', 'Male', 'Male gender', 1, TRUE)`,
 		`INSERT INTO standard.elements (
@@ -83,7 +90,7 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 	if err := tx.Raw(`SELECT er.id AS element_revision_id, er.status AS element_status,
 		csr.id AS code_set_revision_id, csr.status AS code_set_status, item.label AS item_label
 		FROM standard.elements e
-		JOIN standard.element_revisions er ON er.id = e.current_revision_id
+		JOIN standard.element_revisions er ON er.element_id = e.id AND er.status = 'published'
 		JOIN standard.code_set_revisions csr ON csr.id = er.code_set_revision_id
 		JOIN standard.code_set_revision_items item ON item.code_set_revision_id = csr.id
 		WHERE e.id = 201`).Scan(&migrated).Error; err != nil {
@@ -92,6 +99,43 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 	if migrated.ElementRevisionID == 0 || migrated.ElementStatus != models.RevisionStatusPublished || migrated.CodeSetRevisionID == 0 || migrated.CodeSetStatus != models.RevisionStatusPublished || migrated.ItemLabel != "Male" {
 		t.Fatalf("migrated revision graph = %#v", migrated)
 	}
+	var elementEffectiveFrom time.Time
+	if err := tx.Raw("SELECT effective_from FROM standard.element_revisions WHERE id = ?", migrated.ElementRevisionID).Scan(&elementEffectiveFrom).Error; err != nil {
+		t.Fatalf("load migrated element effective_from: %v", err)
+	}
+	if err := tx.SavePoint("before_element_overlap").Error; err != nil {
+		t.Fatal(err)
+	}
+	overlappingElement := models.ElementRevision{
+		ElementID: 201, RevisionNo: 2, Status: models.RevisionStatusPublished,
+		Name: "Gender overlap", Definition: "overlap", DataType: "string",
+		ValueDomainKind: models.ValueDomainUnrestricted, ChangeSummary: "overlap",
+		EffectiveFrom: &elementEffectiveFrom, CreatedBy: 1,
+	}
+	if err := tx.Create(&overlappingElement).Error; err == nil {
+		t.Fatal("overlapping published element revision should be rejected")
+	}
+	if err := tx.RollbackTo("before_element_overlap").Error; err != nil {
+		t.Fatal(err)
+	}
+	var codeSetEffectiveFrom time.Time
+	if err := tx.Raw("SELECT effective_from FROM standard.code_set_revisions WHERE id = ?", migrated.CodeSetRevisionID).Scan(&codeSetEffectiveFrom).Error; err != nil {
+		t.Fatalf("load migrated code set effective_from: %v", err)
+	}
+	if err := tx.SavePoint("before_code_set_overlap").Error; err != nil {
+		t.Fatal(err)
+	}
+	overlappingCodeSet := models.CodeSetRevision{
+		CodeSetID: 101, RevisionNo: 2, Status: models.RevisionStatusPublished,
+		Name: "Gender overlap", Description: "overlap", ValueType: "string",
+		ChangeSummary: "overlap", EffectiveFrom: &codeSetEffectiveFrom, CreatedBy: 1,
+	}
+	if err := tx.Create(&overlappingCodeSet).Error; err == nil {
+		t.Fatal("overlapping published code set revision should be rejected")
+	}
+	if err := tx.RollbackTo("before_code_set_overlap").Error; err != nil {
+		t.Fatal(err)
+	}
 	var legacyColumns int64
 	if err := tx.Raw(`SELECT COUNT(*) FROM information_schema.columns
 		WHERE table_schema = 'standard' AND ((table_name = 'elements' AND column_name IN ('name','data_type','status','quality_rules','code_set_id')) OR (table_name = 'code_sets' AND column_name IN ('name','type','description')))`).Scan(&legacyColumns).Error; err != nil {
@@ -99,6 +143,14 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 	}
 	if legacyColumns != 0 {
 		t.Fatalf("legacy standard columns remaining = %d", legacyColumns)
+	}
+	var currentRevisionColumns int64
+	if err := tx.Raw(`SELECT COUNT(*) FROM information_schema.columns
+		WHERE table_schema = 'standard' AND table_name IN ('elements', 'code_sets') AND column_name = 'current_revision_id'`).Scan(&currentRevisionColumns).Error; err != nil {
+		t.Fatalf("query current revision pointer columns: %v", err)
+	}
+	if currentRevisionColumns != 0 {
+		t.Fatalf("current revision pointer columns remaining = %d", currentRevisionColumns)
 	}
 	var legacyItemTable int64
 	if err := tx.Raw(`SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'standard' AND table_name = 'code_items'`).Scan(&legacyItemTable).Error; err != nil {
@@ -251,5 +303,71 @@ func TestPostgresDeletePolicies(t *testing.T) {
 	}
 	if err := db.Delete(&glossary).Error; err != nil {
 		t.Fatalf("delete glossary: %v", err)
+	}
+}
+
+func TestPostgresTenantCodeSetRequiresDomain(t *testing.T) {
+	dsn := os.Getenv("STANDARD_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("STANDARD_POSTGRES_TEST_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	tenantID := int64(9_000_000_002)
+	defer func() {
+		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.CodeSet{}).Error
+		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.Domain{}).Error
+	}()
+	domain := models.Domain{
+		TenantID:  tenantID,
+		Name:      "Code set domain",
+		Code:      "code-set-domain",
+		CreatedBy: 1,
+	}
+	if err := db.Create(&domain).Error; err != nil {
+		t.Fatalf("create domain: %v", err)
+	}
+
+	invalid := models.CodeSet{
+		TenantID:       tenantID,
+		Code:           "missing-domain",
+		Origin:         models.CodeSetOriginTenant,
+		CreatedBy:      1,
+		LifecycleState: "active",
+	}
+	if err := db.Create(&invalid).Error; err == nil {
+		t.Fatal("tenant code set without domain should be rejected")
+	}
+
+	valid := models.CodeSet{
+		TenantID:       tenantID,
+		DomainID:       &domain.ID,
+		Code:           "with-domain",
+		Origin:         models.CodeSetOriginTenant,
+		CreatedBy:      1,
+		LifecycleState: "active",
+	}
+	if err := db.Create(&valid).Error; err != nil {
+		t.Fatalf("create tenant code set with domain: %v", err)
+	}
+	if err := db.Model(&models.CodeSet{}).Where("id = ?", valid.ID).Update("domain_id", nil).Error; err == nil {
+		t.Fatal("clearing a tenant code set domain should be rejected")
+	}
+
+	platform := models.CodeSet{
+		TenantID:       tenantID,
+		Code:           "platform-without-domain",
+		Origin:         models.CodeSetOriginPlatform,
+		CreatedBy:      1,
+		LifecycleState: "active",
+	}
+	if err := db.Create(&platform).Error; err != nil {
+		t.Fatalf("create platform code set without domain: %v", err)
 	}
 }

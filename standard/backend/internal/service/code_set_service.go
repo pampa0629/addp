@@ -50,8 +50,12 @@ func (s *CodeSetService) GetCodeSet(id, tenantID int64) (*models.CodeSetAggregat
 	return s.repo.GetAggregate(id, tenantID)
 }
 
-func (s *CodeSetService) ListCodeSets(tenantID int64, domainID *int64, keyword, status string, page, pageSize int) ([]models.CodeSetAggregate, int64, error) {
-	return s.repo.List(tenantID, domainID, keyword, status, page, pageSize)
+func (s *CodeSetService) GetCodeSetAt(id, tenantID int64, asOf time.Time) (*models.CodeSetAggregate, error) {
+	return s.repo.GetAggregateAt(id, tenantID, asOf)
+}
+
+func (s *CodeSetService) ListCodeSets(tenantID int64, domainID *int64, keyword, status string, page, pageSize int, asOf time.Time) ([]models.CodeSetAggregate, int64, error) {
+	return s.repo.List(tenantID, domainID, keyword, status, page, pageSize, asOf)
 }
 
 func (s *CodeSetService) UpdateCodeSet(id, tenantID, userID int64, req *models.UpdateCodeSetRequest) (*models.CodeSetAggregate, error) {
@@ -122,6 +126,9 @@ func (s *CodeSetService) SubmitRevision(id, revisionID, tenantID, userID, versio
 	if err := validateCodeSetRevision(revision.Name, revision.Description, revision.ValueType, revision.ChangeSummary, revision.EffectiveFrom, revision.EffectiveTo); err != nil {
 		return nil, err
 	}
+	if revision.EffectiveFrom == nil {
+		return nil, fmt.Errorf("%w: effective_from is required before review", ErrInvalidStandardRevision)
+	}
 	active := 0
 	for _, item := range revision.Items {
 		if item.Status == models.CodeItemStatusActive {
@@ -145,6 +152,19 @@ func (s *CodeSetService) ReturnRevision(id, revisionID, tenantID, userID, versio
 }
 
 func (s *CodeSetService) PublishRevision(id, revisionID, tenantID, userID, version int64) (*models.CodeSetAggregate, error) {
+	revision, err := s.repo.GetRevision(id, revisionID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if revision.Status != models.RevisionStatusInReview {
+		return nil, ErrInvalidRevisionTransition
+	}
+	if err := validateCodeSetRevision(revision.Name, revision.Description, revision.ValueType, revision.ChangeSummary, revision.EffectiveFrom, revision.EffectiveTo); err != nil {
+		return nil, err
+	}
+	if revision.EffectiveFrom == nil {
+		return nil, fmt.Errorf("%w: effective_from is required before publish", ErrInvalidStandardRevision)
+	}
 	if err := s.repo.PublishRevision(id, revisionID, tenantID, userID, version); err != nil {
 		return nil, mapCodeSetRevisionError(err)
 	}

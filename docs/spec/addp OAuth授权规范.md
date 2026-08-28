@@ -1,6 +1,6 @@
 # ADDP OAuth 授权规范
 
-更新日期：2026-08-01
+更新日期：2026-08-28
 
 状态：正式规范。OAuth 登录、浏览器会话、资源票据和受委托访问令牌均以本文为准；OAuth 运行代码使用受控 Fosite 唯一主路径。System 负责 Provider、PostgreSQL Storage 和协议事务验收，`common-python` 发布门禁负责 wheel 安装后的 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、刷新轮换、撤销和真实 OS Keychain 产品 E2E。CLI 最终目标支持主流桌面操作系统；当前发布证据只覆盖 macOS Keychain，不宣称 Windows Credential Manager 或 Linux Secret Service 已完成验证。OIDC 尚未启用，当前唯一运行路径不注册 OpenID Handler、不允许 `openid` Scope，也不宣告 Discovery/JWKS。
 
@@ -44,6 +44,45 @@ OAuth Client 独立存储在 `system.oauth_clients`，不复用 `applications` �
 | `addp-cli` | ADDP CLI、Codex、Hermes 等本地 Agent | `http://127.0.0.1/callback`（运行时使用随机端口） | 允许 |
 
 公共客户端不配置 Client Secret。Authorization Code Flow 只接受 PKCE `S256`。非 loopback redirect URI 必须与客户端注册值完全一致；原生应用 loopback redirect URI 按 RFC 8252 允许请求在已注册 URI 的 IP 字面量 host 上使用运行时随机端口，但 `scheme`、IP 字面量、path、query 和 fragment 必须与注册值一致。ADDP CLI 固定绑定 `127.0.0.1`，不得使用 `localhost`、非 loopback IP、任意域名、路径前缀或通配符。授权时使用的完整动态 redirect URI 必须原样用于 Authorization Code 兑换。
+
+### 2.1 租户管理的外部 OAuth Client
+
+外部 BI、桌面工具或其他需要代表当前 User 消费 ADDP 私有数据服务的软件，必须使用当前 Tenant 独立注册的公共 OAuth Client。该能力复用 `system.oauth_clients`，不新增 Application、API Key、Service Principal、Client Secret 或第二套授权协议。
+
+OAuth Client 的管理归属由 `owner_scope` 与 `owner_tenant_id` 表达：
+
+- 内置 Client 使用 `owner_scope=platform` 且 `owner_tenant_id` 为空，只能由 migration 建立；
+- 外部 Client 使用 `owner_scope=tenant` 且 `owner_tenant_id` 等于创建时的当前 Tenant；
+- `client_id`、管理归属、创建人和创建时间创建后不可修改；`version` 是非空正整数乐观并发版本；
+- 外部 Client 只允许 `active|disabled`，不提供删除 API。停用必须同时取消该 Client 的 pending Authorization Request，并撤销其全部有效 Token Family；恢复不会恢复旧授权会话；
+- 创建、完整更新、停用和恢复必须与 IAM 安全审计处于同一事务。
+
+租户外部 Client 的协议配置由 System 固定，不允许管理端提交或修改：
+
+| 字段 | 固定值 |
+| --- | --- |
+| `client_type` | `public` |
+| `grant_types` | `authorization_code`, `refresh_token` |
+| `response_types` | `code` |
+| `allowed_scopes` | `addp.api` |
+| `allowed_audiences` | `addp.api` |
+| `token_endpoint_auth_method` | `none` |
+| `service_principal_id` | 空 |
+
+因此外部 Client 没有可展示、下载或轮换的 Secret。System 生成不可猜测且稳定的 `client_id`；租户管理员只维护显示名称和 redirect URI。每个 redirect URI 必须是无 userinfo、无 fragment、无通配符的绝对 URI：远程回调只能使用 HTTPS；HTTP 只允许 IP 字面量 loopback 地址，不接受 `localhost`。非 loopback URI 完全匹配；loopback URI 只允许 RFC 8252 定义的运行时端口变化，其他部分仍须精确匹配。
+
+管理 API 只存在于当前 Tenant Context，不接受 `tenant_id`，也不允许 OAuth Client Access Token 自助管理 Client：
+
+| Method | Path | 语义 |
+| --- | --- | --- |
+| GET / POST | `/api/v1/system/tenant/oauth_clients` | 分页查询或创建当前 Tenant 的外部 Client |
+| GET / PUT | `/api/v1/system/tenant/oauth_clients/:client_id` | 读取或完整更新显示名称和 redirect URI |
+| POST | `/api/v1/system/tenant/oauth_clients/:client_id/suspend` | 停用 Client 并撤销既有授权 |
+| POST | `/api/v1/system/tenant/oauth_clients/:client_id/restore` | 恢复 Client，仅允许建立新授权 |
+
+公开创建与读取响应可以返回 `client_id`、显示名称、redirect URI、固定协议配置、状态、版本和时间，但不得返回 Secret Hash 或任何令牌材料。对应 Permission 固定为 `iam.oauth_client.create/read/update/suspend/restore`，只授予内置 `tenant.administrator`，不进入 Tenant 自定义 Role 的可分配 Permission 集合。
+
+Authorization Request 的读取和批准都必须复核当前 User AuthContext：`owner_scope=tenant` 时只允许 `context_type=tenant` 且当前 Tenant 与 `owner_tenant_id` 完全一致。客户端不得借助用户在其他 Tenant 或 Platform Realm 的会话取得授权；该约束必须在锁定授权请求并签发 Code 的事务中再次校验。
 
 ## 三、Refresh Token Family
 

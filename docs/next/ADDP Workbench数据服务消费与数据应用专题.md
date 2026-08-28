@@ -546,6 +546,44 @@ Workbench Backend 在草稿保存和发布时必须使用已读取的 Consumer D
 
 该统计接口同时读取 Asset Entry、Application、Authorization 和 Rating 四类私有事实，因此管理端调用必须同时具备四类只读 Permission；不能因结果是聚合值就只校验 Asset Entry 读取权限。前端运营看板默认选择全部数据应用资产，可切换到全部资产或具体数据应用 Asset；范围提示必须明确“仅统计 Asset 自有事实，不代表应用访问活跃度”。
 
+### 5.9 外部 BI 消费服务契约
+
+外部 BI 是 Service 的另一类客户端，不是 Workbench 插件、Data Application 运行模式或新的数据服务类型。它与 Workbench 共用 Service owner 的消费控制面和执行面，但不读取 Workbench View、Application Revision、renderer 配置或 Asset 私有表：
+
+```text
+外部 BI
+  -> 用户委托 OAuth
+  -> Service Consumer Catalog
+  -> Service Consumer Descriptor
+  -> Descriptor 声明的 query operation
+```
+
+第一版只采用用户委托 OAuth。外部 BI 使用独立注册的 OAuth Client，通过 Authorization Code + PKCE 获得绑定当前 User、当前 Tenant Membership 和当前 Role Assignment 的短期 User Access Token，并按 Refresh Token Family 规范轮换。Consumer Catalog、Descriptor 与私有 Query Service 执行均携带同一 Bearer，由 Service 实时校验 `service.data_read.execute` 和后续 Resource Grant / Policy。
+
+第一版明确不采用以下路线：
+
+- 不把 System Application API Key 转换为用户身份、Tenant Membership、Role Permission 或 Service Resource Grant；
+- 不让外部 BI 复用 `addp-cli`、`addp-workbench`、`addp-service` 或其他内置 OAuth Client；
+- 不用 Client Credentials Service Principal 获得通用 Tenant 数据权限；
+- 不增加 Workbench 查询代理、外部 BI 专属执行端点、静态 Token、数据库直连、JDBC / ODBC 旁路或手工复制 Access Token；
+- 不要求外部 BI 解析 Service 管理 DTO、SQL、Engine、schema、table 或内部执行计划。
+
+API Key 仍只表达外部应用身份以及 Gateway 层可选的配额和审计语义，不是私有 Service 数据授权凭据。公开 Query Service 可以按其公开 operation 匿名执行；若后续要求公开调用必须携带 API Key 以归属配额和审计，必须先让该公开 operation 真实经过 Gateway API Key 中间件并校验精确 `allowed_services`，不能仅在指南中宣称当前已有能力。API Key 与 OAuth Bearer 不得同时作为私有服务的两条认证主路径。
+
+外部 BI 的最小运行契约固定为：
+
+1. 使用用户委托 OAuth 获取并轮换 Bearer；
+2. `GET /api/v1/service/consumer/services` 枚举当前用户此刻可执行的服务；
+3. `GET /api/v1/service/consumer/services/:service_type/:service_id` 取得 `addp.service_consumer/v1` Descriptor，并以 `contract_fingerprint` 判断连接定义是否需要显式修订；
+4. 只调用 Descriptor `operations` 声明的 method + path，不猜测 `service_name` 或拼接管理路由；
+5. 按 `input_contract` 构造结构化筛选、字段选择、稳定排序和 cursor 分页，按 `output_contract` 建立字段类型；
+6. 普通刷新使用 `query` intent；有限导出才使用 Descriptor 声明的 export intent，同样服从单次有界结果和 `page.has_more`；
+7. 401 触发标准 OAuth 刷新或重新授权，403 表示当前用户不再具备数据权限，契约指纹变化必须阻断自动刷新并要求显式修订。
+
+System 已提供面向租户管理员的外部 OAuth Client 注册治理：客户端固定为无 Client Secret 的 Public Client，只接受 Authorization Code + PKCE、`addp.api` scope / audience 和受约束的 redirect URI；支持查询、创建、更新、停用、恢复、并发版本与审计。停用会在同一事务中取消待处理授权请求并撤销该客户端的有效 Refresh Token Family，恢复只允许建立新的用户授权，不恢复历史会话。租户 Client 的授权请求和授权决定还必须由该 Client 所属 Tenant 的 User AuthContext 完成，不能跨 Tenant 借用。
+
+正式“可直接照做”的产品接入指南仍须等待真实 BI Connector 完成 OAuth、Descriptor、cursor、刷新、权限撤销和契约变化验收，再把经过验证的请求样例整理成文。具体 BI 品牌只是验收载体，不进入 Service Descriptor 或 ADDP 核心领域模型。
+
 ## 六、Service Consumer Descriptor 与 Consumer Catalog
 
 ### 6.1 必要性
@@ -974,7 +1012,7 @@ workbench.data_application.execute
 - 不代表用户的控制面读取才使用 `addp-workbench` Service Access Token；
 - Workbench 不保存 User Token，不把 User/Tenant/Role 放入 Header、Query 或 Body 让 owner 信任；
 - 浏览器不保存 System Application API Key；
-- API Key 只用于外部应用或无实时用户参与的调用，不作为 Workbench 内部主路径。
+- API Key 只表达外部应用身份以及 Gateway 公开接口的可选配额和审计语义，不替代私有 Service 所需的用户委托 OAuth、Role Permission 或 Resource Grant，也不作为 Workbench 内部主路径。
 
 ### 9.3 Asset 授权
 
@@ -1113,7 +1151,10 @@ Phase 4B 再接企业目录和资产授权主线：
 - [ ] 页面轮播；
 - [x] 实现 5.6 节 wallboard 应用刷新策略；
 - [x] 实现 5.7 节 wallboard 应用呈现区块；
+- [x] 完成 5.9 节外部 BI 消费契约、认证路线与现状缺口核查；
 - [ ] 外部 BI 消费服务的契约与接入指南；
+- [x] 实现外部 OAuth Client 注册治理；
+- [ ] 以真实 BI Connector 完成端到端验收；
 - [x] 完成 5.8 节 Data Application 资产运营指标事实源与模块归属评估；
 - [x] 在 Asset 自有事实范围内实现 `application` 类型及具体 Asset 的运营分组；
 
@@ -1518,9 +1559,27 @@ Asset 运营看板默认展示全部数据应用资产，并可选择全部资�
 
 标准重启后的真实浏览器复核已经完成。当前 Tenant 没有 application 类型 Asset，因此默认“全部数据应用资产”范围返回 0，选择器只展示“全部资产”和“全部数据应用资产”，未创建临时 Asset 补造选项；具体 Asset 的 Tenant / 类型 / 不存在隔离继续由 SQLite 与真实 PostgreSQL 聚合测试覆盖。切换到“全部资产”后返回 1097 个资产（1089 草稿、0 上架、8 下架）、5 个申请（5 通过）、0 个有效授权用户和 1 条 5.0 评价，30 天申请趋势存在 2026-07-30 的记录。中英文运行时切换还发现异步播报曾缓存翻译后的中文字符串，导致英文页面保留中文“已加载”消息；现改为只保存 `loaded | fetchFailed` 语义状态并按当前 locale 实时翻译，回归测试先失败后通过，中英文页面正文与播报均已复核一致。最后恢复为中文和默认数据应用范围；整个验证未创建、修改或删除业务对象。
 
+### 14.17 外部 BI 消费契约与认证现状核查（2026-08-28）
+
+5.9 节已完成 docs-first 核查，本段没有修改运行代码、数据库或 API。Service 当前的唯一私有消费路线已经是 canonical Bearer AuthContext：Consumer Catalog 和 Descriptor 要求 Tenant Context、`service.data_read.execute` 及 Tenant Scope Assignment；Query operation 对私有服务执行相同判断。该能力天然支持用户委托 OAuth，不要求 Workbench 参与查询。
+
+现有 System Application / API Key 路线不能支撑私有 BI：Gateway 只验证 Key、设置本地 Gin Context、限流和写访问日志，不向 Service 传递 Principal、Tenant Membership、Role 或 AuthContext；`allowed_services` 当前也没有执行校验。公开 `/api/query/:serviceName/query` 注册在 API Key 中间件之外，因此连公开调用的 Key 归属、限流和日志也未形成真实闭环。与此同时，System 的 Client Credentials Provisioner 只处理 migration 建立的内置模块 OAuth Client，租户管理员没有注册外部 OAuth Client 的管理 API 或界面；内置 Tenant User Role 也只允许 User Principal，不能直接赋给外部 Service Principal。
+
+据此确认外部 BI 第一版使用独立 OAuth Client 的用户委托 Authorization Code + PKCE，并复用现有 Consumer Catalog、Descriptor 和 query operation；API Key、Client Credentials、内置 Client 复用和 Workbench 代理全部排除。正式“接入指南”继续保持未完成，直到外部 OAuth Client 注册治理和至少一个真实 BI Connector 的端到端验证完成，避免文档先于产品能力宣称可用。
+
+### 14.18 System 外部 OAuth Client 注册治理实现状态（2026-08-28）
+
+System 已在既有 `system.oauth_clients` 聚合上实现租户外部 Client 管理，不新增 Principal、Token 类型或旁路认证。平台内置 Client 固定为 `owner_scope=platform`；租户创建的 Client 固定为 `owner_scope=tenant` 并绑定 `owner_tenant_id` 和创建者。外部 Client ID 使用 `addp_ext_` 前缀和随机主体，Client 固定为 Public Client，不生成或轮换 Client Secret，不绑定 Service Principal。远程回调只允许 HTTPS，HTTP 只允许 `127.0.0.0/8` 或 `::1` 的 IP 字面量回环地址；`localhost`、通配符、用户凭据、fragment、重复地址和超过 10 个回调均被前后端共同拒绝。
+
+租户管理 API 固定为 `GET | POST /api/v1/system/tenant/oauth_clients`、`GET | PUT /api/v1/system/tenant/oauth_clients/:client_id`、`POST .../:client_id/suspend` 和 `POST .../:client_id/restore`。权限固定为 `iam.oauth_client.create | read | update | suspend | restore`，仅授予不可租户定制的内置 `tenant.administrator`；管理操作带正整数 `version` 做乐观并发控制并写 System IAM Audit。停用事务使用数据库时间取消待处理授权请求、撤销该 Client 的有效 Token Family 及派生 Token；恢复不会恢复旧授权。OAuth consent 读取和决定同时校验当前 User AuthContext 的 Tenant 与 Client owner Tenant，跨 Tenant 请求直接拒绝。
+
+System IAM 的“外部 OAuth 客户端”页已接入统一 IAM 工作台及中英文 i18n，支持搜索、状态筛选、创建、编辑、复制 Client ID、停用和恢复。Swagger、授权 Manifest、生成常量、migration 111、后端/前端测试与现有 CI 自动发现入口同步完成。确定性 `go test ./...`、`make test-system-frontend`（10 个文件、41 个测试及生产构建）、`make test-authorization`，以及标准 `test-system-iam-postgres` 的 IAM、OAuth、API 和 migration PostgreSQL 门禁均已通过；运行态页面验收仍需在 System 应用 migration 111 后完成。真实 BI Connector 和正式接入指南仍是后续工作，不因管理控制面完成而提前标记通过。
+
 ## 十五、概念设计状态
 
-当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成运行态复核。Service 公开执行路由、授权模型和 Query Service 输出契约没有发生变化。下一步建议优先评估并编写“外部 BI 消费服务的契约与接入指南”，不立即增加跨模块综合统计或 Workbench 运行埋点；只有确认成功打开次数、独立访问用户和 Revision 分布确有独立产品价值时，才进入 Workbench owner 运行准入事实设计。在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
+当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成运行态复核。外部 BI 的 owner 边界、消费契约、用户委托 OAuth 单一路线和 System 外部 OAuth Client 注册治理已经完成；运行态 UI 验收、真实 BI Connector 端到端验证与正式接入指南尚未完成。
+
+下一步建议先应用 System migration 111 并完成 IAM 页面运行态验收，再选择一个真实 BI Connector 验证 OAuth、Consumer Catalog、Descriptor、cursor、Token 刷新、权限撤销和契约变化，最后产出接入指南。不要修改 Service 查询路由、引入 API Key 私有授权、复用内置 Client 或增加 Workbench 代理。跨模块综合统计和 Workbench 运行埋点继续暂缓；只有确认成功打开次数、独立访问用户和 Revision 分布确有独立产品价值时，才进入 Workbench owner 运行准入事实设计。在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
 
 ## 十六、相关文档
 

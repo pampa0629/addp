@@ -171,6 +171,7 @@ func (b *ConsentBridge) CreateAuthorizationRequest(
 func (b *ConsentBridge) GetAuthorizationRequest(
 	ctx context.Context,
 	requestID string,
+	authContext commonauth.AuthContext,
 ) (*AuthorizationRequestView, error) {
 	parsedID, err := uuid.Parse(requestID)
 	if err != nil {
@@ -186,6 +187,9 @@ func (b *ConsentBridge) GetAuthorizationRequest(
 	if err := b.provider.Storage.dbFromContext(ctx).
 		Where("client_id = ? AND status = 'active'", row.ClientID).Take(&client).Error; err != nil {
 		return nil, toFositeStorageError(err)
+	}
+	if err := validateOAuthClientAuthorizationContext(client, authContext); err != nil {
+		return nil, commonapi.ErrNotFound
 	}
 	return &AuthorizationRequestView{
 		RequestID:  row.ID.String(),
@@ -290,6 +294,15 @@ func (b *ConsentBridge) DecideAuthorization(
 		_ = b.provider.Storage.Rollback(txCtx)
 		return nil, commonapi.ErrConflict
 	}
+	var client oauthClientRow
+	if err := db.Where("client_id = ? AND status = 'active'", row.ClientID).Take(&client).Error; err != nil {
+		_ = b.provider.Storage.Rollback(txCtx)
+		return nil, toFositeStorageError(err)
+	}
+	if err := validateOAuthClientAuthorizationContext(client, authContext); err != nil {
+		_ = b.provider.Storage.Rollback(txCtx)
+		return nil, err
+	}
 	requester, err := b.rebuildAuthorizeRequester(txCtx, &row)
 	if err != nil {
 		_ = b.provider.Storage.Rollback(txCtx)
@@ -368,6 +381,27 @@ func (b *ConsentBridge) DecideAuthorization(
 		ClientID:    row.ClientID,
 		Scope:       strings.Join(row.RequestedScopes, " "),
 	}, nil
+}
+
+func validateOAuthClientAuthorizationContext(client oauthClientRow, authContext commonauth.AuthContext) error {
+	if err := commonauth.ValidateAuthContext(authContext); err != nil || authContext.Principal.Type != "user" {
+		return commonapi.ErrUnauthorized
+	}
+	switch client.OwnerScope {
+	case "platform":
+		return nil
+	case "tenant":
+		if client.OwnerTenantID == nil || authContext.Context.Type != "tenant" || authContext.Context.TenantID == nil {
+			return commonapi.ErrForbidden
+		}
+		tenantID, err := strconv.ParseInt(*authContext.Context.TenantID, 10, 64)
+		if err != nil || tenantID != *client.OwnerTenantID {
+			return commonapi.ErrForbidden
+		}
+		return nil
+	default:
+		return commonapi.ErrUnauthorized
+	}
 }
 
 func (b *ConsentBridge) DecideDeviceAuthorization(

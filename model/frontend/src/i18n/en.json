@@ -88,6 +88,7 @@
       "column_name": "Column Name",
       "data_type": "Data Type",
       "element": "Data Element",
+      "element_revision": "Frozen revision",
       "is_pk": "PK",
       "nullable": "Nullable",
       "description": "Description",
@@ -221,6 +222,7 @@
       "default_value": "Default Value",
       "default_value_placeholder": "e.g. CURRENT_TIMESTAMP / NULL / 0",
       "element": "Data Element",
+      "element_revision": "Frozen revision",
       "element_placeholder": "Optional, auto-link to standard",
       "name_required": "Please enter field name",
       "column_required": "Please enter column name",
@@ -284,7 +286,25 @@
       "naming_placeholder": "e.g. dwd_{domain}_{entity}_d",
       "code_required": "Please enter layer code",
       "name_required": "Please enter layer name",
-      "delete_confirm": "Are you sure to delete this DW layer?"
+      "delete_confirm": "Are you sure to delete this DW layer?",
+      "defaults": {
+        "ods": {
+          "name": "Source Layer",
+          "description": "Source-aligned synchronization layer; deterministic nested projection, array expansion, and type normalization are allowed, but business-rule processing is not."
+        },
+        "dwd": {
+          "name": "Detail Layer",
+          "description": "Standardized detail modeling layer that cleans, deduplicates, unifies business keys, and establishes dimension relationships while preserving traceable detail grain."
+        },
+        "dws": {
+          "name": "Summary Layer",
+          "description": "Subject summary layer that produces reusable summaries and metric results from detail models under stable business definitions."
+        },
+        "ads": {
+          "name": "Application Layer",
+          "description": "Application-oriented data marts that directly support reports and APIs."
+        }
+      }
     },
     "star_schema": {
       "title": "Star Schema View",

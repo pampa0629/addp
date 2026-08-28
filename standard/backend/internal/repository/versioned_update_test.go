@@ -158,7 +158,7 @@ func TestElementIdentityUpdateRejectsStaleVersion(t *testing.T) {
 	db := openVersionedTestDB(t,
 		`CREATE TABLE standard.elements (
 			id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, domain_id INTEGER, code TEXT, steward_id INTEGER,
-			tags TEXT, current_revision_id INTEGER, draft_revision_id INTEGER, updated_by INTEGER,
+			tags TEXT, draft_revision_id INTEGER, updated_by INTEGER,
 			updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1
 		)`,
 		`INSERT INTO standard.elements (id, tenant_id, code, domain_id, version) VALUES (1, 7, 'customer_id', 10, 1)`,

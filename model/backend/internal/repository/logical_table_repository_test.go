@@ -42,6 +42,7 @@ func setupLogicalTableRepositoryTestDB(t *testing.T) *gorm.DB {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			table_id INTEGER NOT NULL,
 			element_id INTEGER,
+			element_revision_id INTEGER,
 			name TEXT NOT NULL,
 			column_name TEXT NOT NULL,
 			data_type TEXT NOT NULL,

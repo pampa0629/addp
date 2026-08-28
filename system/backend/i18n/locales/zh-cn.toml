@@ -218,3 +218,6 @@ other = "创建资源回收执行任务失败"
 other = "查询资源回收任务历史失败"
 [system.iam.organization_version_conflict]
 other = "组织资源已被其他用户修改，请刷新后重试"
+
+[system.iam.oauth_client_version_conflict]
+other = "OAuth 客户端已被其他用户修改，请刷新后重试"

@@ -104,7 +104,12 @@ func (h *IAMOAuthHandler) CreateAuthorizationRequest(c *gin.Context) {
 // @x-addp-auth-mode "self"
 // @Router       /oauth/authorization_requests/{request_id} [get]
 func (h *IAMOAuthHandler) GetAuthorizationRequest(c *gin.Context) {
-	view, err := h.bridge.GetAuthorizationRequest(c.Request.Context(), c.Param("request_id"))
+	authContext, exists := middleware.IAMAuthContextFromGin(c)
+	if !exists {
+		respondIAMOAuthBridgeError(c, commonapi.ErrUnauthorized)
+		return
+	}
+	view, err := h.bridge.GetAuthorizationRequest(c.Request.Context(), c.Param("request_id"), authContext)
 	if err != nil {
 		respondIAMOAuthBridgeError(c, err)
 		return

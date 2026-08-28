@@ -81,15 +81,16 @@
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | data element | 数据元 | 对一个可复用业务数据概念的标准化定义，统一其名称、定义、表示方式、值域、分级分类和责任归属。 | 数据元是 Standard 的稳定身份；业务含义和表示约束保存在不可变的数据元修订中。它不是数据库中的具体字段。 |
-| data element revision | 数据元修订 | 数据元一次可审核、可发布的完整业务定义快照。 | API 与数据库使用 `revision_no` 表达业务版次；`published` 修订不可修改，后续变更必须创建新修订。不得复用资源并发字段 `version`。 |
+| data element revision | 数据元修订 | 数据元一次可审核、可发布的完整业务定义快照。 | API 与数据库使用 `revision_no` 表达业务版次；`published` 修订的业务定义不可修改，后续变更必须创建新修订。不得复用资源并发字段 `version`。 |
 | value domain | 值域 | 数据元允许取值的语义和表示约束。 | ADDP 当前只实现 `unrestricted`、`range`、`enumeration` 三类；一个数据元修订只能选择一种。暂不建立通用 ValueDomain 主资源。 |
 | range value domain | 连续值域 | 通过结构化最小值、最大值及边界是否包含等规则描述的值域。 | 保存于数据元修订；与枚举码值集互斥。格式、长度等表示约束不作为第二套值域事实。 |
 | code set | 码值集 | 一组可复用、受治理的枚举允许值标准。 | 码值集是 Standard 的稳定身份，归属一个主要业务域但允许跨域复用；具体定义和码项保存在码值集修订中。 |
 | code set revision | 码值集修订 | 码值集一次可审核、可发布的完整枚举快照。 | 发布后不可修改；数据元枚举值域必须引用具体 `code_set_revision_id`，不能动态跟随码值集当前版本。 |
 | code item | 码值项 | 码值集修订中的一个允许值，由机器编码、显示名称和业务定义组成。 | 码值项从属于码值集修订，不具有独立发布生命周期；停用或替代码值通过新修订表达。 |
-| standard revision status | 标准修订状态 | 数据元修订和码值集修订的统一审核发布状态。 | 统一使用 `draft`、`in_review`、`published`、`superseded`、`withdrawn`；同一稳定身份至多有一个可编辑草稿和一个当前发布修订。 |
+| standard revision status | 标准修订状态 | 数据元修订和码值集修订的统一审核发布状态。 | 统一使用 `draft`、`in_review`、`published`、`withdrawn`；`published` 只表示审核通过且定义不可变，不等同于当前生效。同一稳定身份至多有一个可编辑草稿，可以有多个生效区间不重叠的已发布修订。 |
+| effective standard revision | 当前生效标准修订 | 在指定业务时点满足 `effective_from <= as_of < effective_to` 的已发布修订；`effective_to` 为空表示无上界。 | Standard 按时点动态解析，不保存 `current_revision_id` 缓存；未显式传入 `as_of` 时使用服务端当前时间。同一稳定身份在任一时点至多解析出一个修订。 |
 | owning domain | 归属业务域 | 对标准对象承担定义、维护和审批责任的主要业务域。 | 码值集归属域不限制其他业务域引用；Tenant 自定义码值集必须指定归属域，平台内置码值集由平台治理。 |
-| data dictionary | 数据字典 | 对实际数据结构及其业务解释形成的查询或导出视图。 | 由 Meta 的物理字段事实、Catalog 的语义关联和 Standard 的已发布数据元/码值解释组合生成；不是 Standard 内新的持久化主资源。 |
+| data dictionary | 数据字典 | 对实际数据结构及其业务解释形成的查询或导出视图。 | 由 Meta 的物理字段事实、Catalog 的语义关联和 Standard 在查询时点生效的数据元/码值解释组合生成；不是 Standard 内新的持久化主资源。 |
 
 ## 数据类型与格式
 
@@ -362,7 +363,7 @@
 | Break-glass Grant | 紧急访问授权 | 在紧急处置中经双人批准产生的限定动作、限定时长且全程审计的临时授权。 | 不是常驻 root，不能删除审计记录或静默修改平台三员规则。 |
 | Platform Statistics Viewer | 平台统计查看者 | 读取已发布跨租户聚合指标的独立平台只读角色。 | 不自动包含在平台三员角色中，不授予 Tenant 业务明细访问权。 |
 | AuthContext | 授权上下文 | System 对访问令牌完成验证并基于当前 Principal、会话模式、Tenant Membership、Role Assignment 和客户端约束生成的权威身份与授权投影。 | 是 Go/Python 模块消费主体事实的唯一契约；不包含主体可访问的全部资源列表，`/users/me` 不是 Token 验证接口。 |
-| OAuth Client | OAuth 客户端 | 代表 `addp-cli`、Codex 或 Hermes 等请求用户授权的客户端软件。 | 不是 ADDP 用户或租户；公共客户端使用 PKCE / Device Flow，不内置 Client Secret。 |
+| OAuth Client | OAuth 客户端 | 代表 `addp-cli`、外部 BI 或桌面工具等请求用户授权的客户端软件；管理归属可以是 Platform 或单个 Tenant。 | 不是 ADDP User、Service Principal、Tenant 或 Application；Tenant 外部 Client 固定使用 Authorization Code + PKCE、无 Client Secret，且只能获得其 owner Tenant 内当前 User 的委托授权。 |
 | OAuth Authorization Request | OAuth 授权请求 | OAuth Client 在打开浏览器前向 System 创建的短期、一次性授权上下文，持有已校验的 Client、redirect URI、Scope 和 PKCE challenge。 | 浏览器只携带随机 `request_id`；取消凭据只在客户端内存保存，System 只保存其 Hash。它不是 Authorization Code 或用户会话。 |
 | OAuth Scope | OAuth 授权范围 | 一枚访问令牌被允许执行的最大能力集合。 | 只能缩小权限，不取代 Tenant Membership、Role Permission、owner 资源权限或审批。 |
 | User Access Token | 用户访问令牌 | 以当前 ADDP 用户为主体、用于访问业务 API 的短期 Bearer Token。 | 通过 AuthContext 解析；不将客户端参数视为用户或租户事实。 |

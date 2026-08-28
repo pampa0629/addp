@@ -1,6 +1,6 @@
 # ADDP 企业资源目录与 Catalog 模块专题
 
-更新时间：2026-08-27
+更新时间：2026-08-28
 
 状态：阶段 0 至阶段 6 的架构、实现与确定性门禁已收口；企业资源目录、资产目录和引擎资源树的命名边界及 `AssetCategory` 单路径迁移已完成；专用 macOS T4 和停机恢复场景作为外部条件验证继续保留，不阻塞本专题完成
 
@@ -608,7 +608,7 @@ Catalog 是自身目录事实和目录操作权限的 owner；底层资源内容
 - [x] 删除 Asset 直接调用多个专业模块自动创建草稿资产的旧路线；
 - [x] 删除 Meta 中以 Asset 命名的 DataItem 搜索文档和发现接口；
 - [x] 删除通用 `source_reference` 资产来源路径；
-- [x] 已登记 `enterprise-catalog-publishing` T4，通过真实 owner API 验证 Meta → Catalog → Asset → Portal 唯一路线、下架后删除与零临时资源残留；保持手工 workflow，等待专用 Runner 首次真实通过。
+- [x] 已登记 `enterprise-catalog-publishing` T4，通过真实 owner API 验证 Meta → Catalog → Asset → AssetCategory → Portal 唯一路线、下架后目录隐藏、删除与零临时资源残留；保持手工 workflow，等待专用 Runner 首次真实通过。
 
 完成门槛：资源发现、企业编目、资产发布只有一条端到端链路。
 
@@ -1019,8 +1019,8 @@ Catalog 新模块实现必须同时覆盖：
 ### 2026-08-27：专用 macOS 完整验证交付
 
 - 没有新增第二套 Online suite、workflow 或 Make 目标；继续使用既有 `make local-ci`、`make test-online ONLINE_SUITE=enterprise-catalog-publishing`、`online-host-gate.sh`、`online-preflight.py`、专用 PostgreSQL Engine Fixture 和 `online-t4-gates.yml`；
-- 现有 `enterprise-catalog-publishing` 已扩展为完整目录主链路：连续两次真实 Meta 扫描验证 fingerprint / CatalogEntry UUID 幂等，验证 `inventory` / `governance` 视图、七维治理覆盖率、Meta fingerprint 精确来源解析、编目、AssetComponent 发布、Portal 同身份消费及零临时资源残留；
-- 同一 suite 新增真实浏览器阶段：以同一专用 User 正常登录 Console，验证治理覆盖率页、CatalogEntry 详情、Domain / Department / Entry Type 三段名称导航和 Engine 名称选择器，并拒绝 `undefined` 文案、浏览器 warning/error 和失败业务响应；浏览器报告写入仓库外 `enterprise-catalog-publishing-browser.json`；
+- 现有 `enterprise-catalog-publishing` 已扩展为完整目录主链路：连续两次真实 Meta 扫描验证 fingerprint / CatalogEntry UUID 幂等，验证 `inventory` / `governance` 视图、七维治理覆盖率、Meta fingerprint 精确来源解析、编目、AssetComponent 发布、Portal 同身份消费、AssetCategory 目录树与分类子树消费及零临时资源残留；
+- 同一 suite 新增真实浏览器阶段：以同一专用 User 正常登录，验证治理覆盖率页、CatalogEntry 详情、Domain / Department / Entry Type 三段名称导航和 Engine 名称选择器，并在临时资产发布后打开 Portal AssetCategory 页面确认目录名称和唯一 Asset 卡片；拒绝 `undefined` 文案、浏览器 warning/error 和失败业务响应，浏览器报告写入仓库外 `enterprise-catalog-publishing-browser.json`；
 - 专用 macOS 验证矩阵固定为 `ECV-00` 至 `ECV-08`，完整命令、环境边界、通过证据和 Artifact 清单已写入 `scripts/README.md`。T0-T3 使用独立 Local CI checkout 执行 `make local-ci LOCAL_CI_ARGS=--full`；T4 使用 `addp-online` Runner checkout 手工触发现有 Online workflow，二者不合并为不安全的 `test-all`；
 - 确定性脚本协议、Host Gate 生命周期和 Online CI 登记检查已纳入现有 `make test-online-runner` / `make test-platform`；另一台 macOS 只负责真实环境首跑和回传证据，不需要临时补脚本或修改仓库内 `.env`。
 
@@ -1084,6 +1084,9 @@ Catalog 新模块实现必须同时覆盖：
 - 完整更新请求必须显式包含 `parent_id`、`description` 和 `sort_order`，后端区分字段缺失与合法零值（`null`、空说明和排序 `0`），避免遗漏字段被误解释为移动到根目录或清空聚合状态；Swagger 同步将三者标为 required，并将 `parent_id` 标为 `x-nullable`；
 - 乐观锁冲突时编辑对话框保留当前输入并提示重新加载，只有用户显式选择“重新加载”才以最新版本覆盖表单；目录名称、父目录、排序和说明始终作为一个整体提交；
 - SQLite 服务测试与生产 Router API 契约覆盖同 Tenant 移动、移动到根目录、自身/后代/跨 Tenant 拒绝、同级重名和版本冲突；真实 PostgreSQL 门禁覆盖目录图加锁、移动和环路拒绝，前端 Vitest 覆盖候选排除与可读层级路径，生产构建通过。未增加新 workflow，继续由统一 Asset 测试入口执行。
+- 统一重启后的真实页面验收使用测试目录 `path3` 完成 `root3 -> root2 -> root3` 可恢复移动；两次提交均即时刷新树和右侧父目录详情，最终再次刷新仍保持 `root3/path3` 原结构，浏览器 warning/error 为 0。首次验收同时发现“提交后清空详情但树保留旧高亮”的前端状态分裂，根因已收口为树内部 current key 与 `selected` 必须由同一 `selectCategory` 同步；修复后移动、移回和刷新三条路径均保持选中详情。
+- 调用方复核发现资产工作台的“重命名目录”仍按旧局部契约只发送 `version + name`，会被完整更新 API 正确拒绝。该入口现已统一保存并回传 `parent_id`、`description`、`sort_order`，不再通过局部负载隐式清空或移动目录；Vitest 增加第二调用方契约回归。真实页面使用 `path3 -> path3-runtime -> path3` 完成可恢复重命名验收，最终仍位于 `root3`，浏览器 warning/error 为 0。
+- 统一 `enterprise-catalog-publishing` T4 已补齐资产目录消费链路：发布临时 Asset 后确认对应 AssetCategory 出现在 Portal 目录树、子树 `count=1` 且分类列表只返回该 Asset；同一 User 浏览器继续打开 `/portal/categories/:id`，确认目录名称和唯一 Asset 卡片。资产正式下架并删除后，先确认空分类立即从 Portal 树消失，再按聚合 `version` 删除临时 AssetCategory。继续复用既有 suite、workflow、Gateway User Token 和零残留清理，不新增 Portal 投影、测试路由或第二套脚本。
 
 ## 二十二、当前推进状态
 
@@ -1142,4 +1145,4 @@ Catalog 新模块实现必须同时覆盖：
 11. 统一 Workspace 评估已收口为“当前不新增”；不得为了形式上统一而添加空壳模块、`workspace_id` 或把引擎 `SpatialWorkspace` 与企业协作概念合并；只在第 10.5 节触发条件成立时重开文档优先评估。
 12. 显式成员批量治理已经完成代码、Swagger、PostgreSQL、前端、Online 契约登记和本机真实写入验收；后续不要增加“全部匹配筛选”、手工 owner ID、Tenant 级 `revision` 或逐条部分成功路线。专用 macOS 只需随既有 `enterprise-catalog-publishing` 做当前页选择和对话框的周期回归，不在永久 fixture 上重复提交批量写入。
 13. **已完成**：正常统一重启后只读确认 Asset schema 中不再存在 `catalogs_id_seq`、`catalogs_pkey`、`idx_asset_catalogs_*` 或 `idx_asset_assets_catalog_id`；迁移由 Asset 启动自动应用，没有手工改库或单独接管整套服务。
-14. AssetCategory 父目录选择器、完整更新契约、同 Tenant 目录图事务锁、环路/跨 Tenant/同级重名/版本冲突校验及统一 Asset 门禁均已完成；服务加载本轮代码后只需在真实页面选择一个非业务关键目录，执行“移动到另一父目录→移动回原位置”的可恢复运行态验收并确认无浏览器错误。不要新增 `/move` 路由、手工 ID 输入或第二份目录关系。
+14. **已完成**：AssetCategory 父目录选择器、完整更新契约、所有前端更新调用方、同 Tenant 目录图事务锁、环路/跨 Tenant/同级重名/版本冲突校验、统一 Asset 门禁，以及真实页面“移动→移回→刷新”和“重命名→恢复”验收均已通过；测试目录已恢复原名称与层级，树高亮与详情状态同步，浏览器无 warning/error。后续不要新增 `/move` 路由、局部更新负载、手工 ID 输入或第二份目录关系。

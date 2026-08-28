@@ -88,6 +88,7 @@
       "column_name": "字段编码",
       "data_type": "数据类型",
       "element": "关联数据元",
+      "element_revision": "冻结修订",
       "is_pk": "主键",
       "nullable": "可空",
       "description": "描述",
@@ -221,6 +222,7 @@
       "default_value": "默认值",
       "default_value_placeholder": "如：CURRENT_TIMESTAMP / NULL / 0",
       "element": "关联数据元",
+      "element_revision": "冻结修订",
       "element_placeholder": "可选，选择后自动关联",
       "name_required": "请输入字段名",
       "column_required": "请输入物理列名",
@@ -284,7 +286,25 @@
       "naming_placeholder": "如：dwd_{domain}_{entity}_d",
       "code_required": "请输入层级代码",
       "name_required": "请输入层级名称",
-      "delete_confirm": "确定删除该分层吗？"
+      "delete_confirm": "确定删除该分层吗？",
+      "defaults": {
+        "ods": {
+          "name": "贴源层",
+          "description": "贴源同步层；允许确定性的嵌套展开、数组拆行和类型规范化，但不承载业务口径加工。"
+        },
+        "dwd": {
+          "name": "明细层",
+          "description": "标准化明细模型层；在 ODS 基础上完成清洗、去重、业务键统一和维度关联，保持可追溯明细粒度。"
+        },
+        "dws": {
+          "name": "汇总层",
+          "description": "主题汇总层；基于明细模型按稳定业务口径形成可复用的主题汇总和指标结果。"
+        },
+        "ads": {
+          "name": "应用层",
+          "description": "面向应用的数据集市，直接支撑报表和 API。"
+        }
+      }
     },
     "star_schema": {
       "title": "星型建模视图",

@@ -49,7 +49,7 @@ const { t } = useI18n()
 const { canCreate, canDelete } = useStandardPermissions('element')
 const loading = ref(false), submitting = ref(false), dialog = ref(false), formRef = ref()
 const elements = ref([]), domains = ref([]), total = ref(0)
-const statuses = ['draft', 'in_review', 'published', 'superseded', 'withdrawn']
+const statuses = ['draft', 'in_review', 'published', 'withdrawn']
 const dataTypes = ['string', 'text', 'int', 'bigint', 'float', 'decimal', 'date', 'datetime', 'bool', 'json']
 const filters = reactive({ keyword: '', domain_id: null, status: '', page: 1, page_size: 20 })
 const emptyForm = () => ({ code: '', name: '', definition: '', data_type: 'string', nullable: true, domain_id: null, value_domain_kind: 'unrestricted', change_summary: '' })
@@ -57,7 +57,7 @@ const form = reactive(emptyForm())
 const rules = computed(() => ({ code: [{ required: true, message: t('standard.element.codeRequired') }], name: [{ required: true, message: t('standard.element.nameRequired') }], definition: [{ required: true, message: t('standard.element.definitionRequired') }], data_type: [{ required: true, message: t('standard.element.dataTypeRequired') }], change_summary: [{ required: true, message: t('standard.revision.changeSummaryRequired') }] }))
 const workingRevision = row => row.draft_revision || row.current_revision
 const statusLabel = s => s ? t(`standard.revision.status.${s}`) : '-'
-const statusType = s => ({ draft: 'info', in_review: 'warning', published: 'success', superseded: '', withdrawn: 'danger' }[s] || 'info')
+const statusType = s => ({ draft: 'info', in_review: 'warning', published: 'success', withdrawn: 'danger' }[s] || 'info')
 const domainName = id => domains.value.find(d => d.id === id)?.name || '-'
 const flatten = nodes => nodes.flatMap(node => [node, ...flatten(node.children || [])])
 const loadDomains = async () => { try { domains.value = flatten(await domainAPI.list() || []) } catch { domains.value = [] } }

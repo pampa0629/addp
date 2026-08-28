@@ -602,6 +602,14 @@ definitions:
     - LocalAccountStatusActive
     - LocalAccountStatusLocked
     - LocalAccountStatusDisabled
+  github_com_addp_system_internal_iam.OAuthClientStatus:
+    enum:
+    - active
+    - disabled
+    type: string
+    x-enum-varnames:
+    - OAuthClientStatusActive
+    - OAuthClientStatusDisabled
   github_com_addp_system_internal_iam.OrganizationMembershipStatus:
     enum:
     - active
@@ -1747,6 +1755,15 @@ definitions:
       primary_email:
         type: string
     type: object
+  internal_api.IAMCreateOAuthClientRequest:
+    properties:
+      display_name:
+        type: string
+      redirect_uris:
+        items:
+          type: string
+        type: array
+    type: object
   internal_api.IAMCreatePrivilegedIdentityChangeRequest:
     properties:
       change_type:
@@ -2234,6 +2251,49 @@ definitions:
       scope:
         type: string
     type: object
+  internal_api.IAMOAuthClientResponse:
+    properties:
+      allowed_audiences:
+        items:
+          type: string
+        type: array
+      allowed_scopes:
+        items:
+          type: string
+        type: array
+      client_id:
+        type: string
+      client_type:
+        type: string
+      created_at:
+        type: string
+      created_by_principal_id:
+        type: string
+      display_name:
+        type: string
+      grant_types:
+        items:
+          type: string
+        type: array
+      owner_scope:
+        type: string
+      redirect_uris:
+        items:
+          type: string
+        type: array
+      response_types:
+        items:
+          type: string
+        type: array
+      status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.OAuthClientStatus'
+      token_endpoint_auth_method:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
   internal_api.IAMOAuthDeviceDecisionRequest:
     properties:
       approve:
@@ -2663,6 +2723,17 @@ definitions:
         type: string
       primary_email:
         type: string
+    type: object
+  internal_api.IAMUpdateOAuthClientRequest:
+    properties:
+      display_name:
+        type: string
+      redirect_uris:
+        items:
+          type: string
+        type: array
+      version:
+        type: integer
     type: object
   internal_api.IAMUpdateProjectGroupMembershipRequest:
     properties:
@@ -7834,6 +7905,216 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - iam.tenant_membership.suspend
+  /tenant/oauth_clients:
+    get:
+      description: 分页查询当前 Tenant 管理的公共 OAuth Client | List public OAuth clients managed
+        by the current tenant
+      parameters:
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: 客户端 ID 或名称 | Client ID or name
+        in: query
+        name: search
+        type: string
+      - description: '状态：active/disabled | Status: active/disabled'
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/internal_api.IAMOAuthClientResponse'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询外部 OAuth 客户端 | List external OAuth clients
+      tags:
+      - 租户 OAuth 客户端 | Tenant OAuth Clients
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.oauth_client.read
+    post:
+      consumes:
+      - application/json
+      description: 创建固定使用 Authorization Code、PKCE 和 Refresh Token 的无密钥公共客户端 | Create
+        a secretless public client fixed to Authorization Code, PKCE, and Refresh
+        Token
+      parameters:
+      - description: 客户端定义 | Client definition
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMCreateOAuthClientRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.IAMOAuthClientResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建外部 OAuth 客户端 | Create external OAuth client
+      tags:
+      - 租户 OAuth 客户端 | Tenant OAuth Clients
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.oauth_client.create
+  /tenant/oauth_clients/{client_id}:
+    get:
+      parameters:
+      - description: OAuth Client ID
+        in: path
+        name: client_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMOAuthClientResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询外部 OAuth 客户端详情 | Get external OAuth client
+      tags:
+      - 租户 OAuth 客户端 | Tenant OAuth Clients
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.oauth_client.read
+    put:
+      consumes:
+      - application/json
+      description: 完整更新显示名称和 redirect URI；协议配置不可修改 | Fully update display name and
+        redirect URIs; protocol settings are immutable
+      parameters:
+      - description: OAuth Client ID
+        in: path
+        name: client_id
+        required: true
+        type: string
+      - description: 客户端定义与版本 | Client definition and version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMUpdateOAuthClientRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMOAuthClientResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新外部 OAuth 客户端 | Update external OAuth client
+      tags:
+      - 租户 OAuth 客户端 | Tenant OAuth Clients
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.oauth_client.update
+  /tenant/oauth_clients/{client_id}/restore:
+    post:
+      consumes:
+      - application/json
+      description: 恢复注册状态；历史授权和令牌不会恢复 | Restore registration state; historical authorizations
+        and tokens remain revoked
+      parameters:
+      - description: OAuth Client ID
+        in: path
+        name: client_id
+        required: true
+        type: string
+      - description: 版本与原因 | Version and reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMVersionedLifecycleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMOAuthClientResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 恢复外部 OAuth 客户端 | Restore external OAuth client
+      tags:
+      - 租户 OAuth 客户端 | Tenant OAuth Clients
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.oauth_client.restore
+  /tenant/oauth_clients/{client_id}/suspend:
+    post:
+      consumes:
+      - application/json
+      description: 停用并撤销该客户端的待授权请求和全部有效令牌族 | Disable and revoke pending authorizations
+        and all active token families for the client
+      parameters:
+      - description: OAuth Client ID
+        in: path
+        name: client_id
+        required: true
+        type: string
+      - description: 版本与原因 | Version and reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMVersionedLifecycleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMOAuthClientResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 停用外部 OAuth 客户端 | Disable external OAuth client
+      tags:
+      - 租户 OAuth 客户端 | Tenant OAuth Clients
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.oauth_client.suspend
   /tenant/project_groups:
     get:
       description: 分页查询当前 Tenant 的跨部门协作集合 | List cross-department collaboration groups

@@ -10,21 +10,20 @@ const (
 )
 
 type CodeSet struct {
-	ID                int64       `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID          int64       `gorm:"not null;index;uniqueIndex:uq_standard_code_sets_tenant_code" json:"tenant_id"`
-	DomainID          *int64      `gorm:"index" json:"domain_id,omitempty"`
-	Code              string      `gorm:"size:100;not null;uniqueIndex:uq_standard_code_sets_tenant_code" json:"code"`
-	Origin            string      `gorm:"size:20;not null;default:'tenant'" json:"origin"`
-	StewardID         *int64      `json:"steward_id,omitempty"`
-	Tags              StringArray `gorm:"type:jsonb;serializer:json" json:"tags"`
-	CurrentRevisionID *int64      `gorm:"index" json:"current_revision_id,omitempty"`
-	DraftRevisionID   *int64      `gorm:"index" json:"draft_revision_id,omitempty"`
-	CreatedBy         int64       `gorm:"not null" json:"created_by"`
-	UpdatedBy         *int64      `json:"updated_by,omitempty"`
-	CreatedAt         time.Time   `json:"created_at"`
-	UpdatedAt         time.Time   `json:"updated_at"`
-	Version           int64       `gorm:"not null;default:1" json:"version"`
-	LifecycleState    string      `gorm:"size:16;not null;default:'active'" json:"lifecycle_state"`
+	ID              int64       `gorm:"primaryKey;autoIncrement" json:"id"`
+	TenantID        int64       `gorm:"not null;index;uniqueIndex:uq_standard_code_sets_tenant_code" json:"tenant_id"`
+	DomainID        *int64      `gorm:"index" json:"domain_id,omitempty"`
+	Code            string      `gorm:"size:100;not null;uniqueIndex:uq_standard_code_sets_tenant_code" json:"code"`
+	Origin          string      `gorm:"size:20;not null;default:'tenant'" json:"origin"`
+	StewardID       *int64      `json:"steward_id,omitempty"`
+	Tags            StringArray `gorm:"type:jsonb;serializer:json" json:"tags"`
+	DraftRevisionID *int64      `gorm:"index" json:"draft_revision_id,omitempty"`
+	CreatedBy       int64       `gorm:"not null" json:"created_by"`
+	UpdatedBy       *int64      `json:"updated_by,omitempty"`
+	CreatedAt       time.Time   `json:"created_at"`
+	UpdatedAt       time.Time   `json:"updated_at"`
+	Version         int64       `gorm:"not null;default:1" json:"version"`
+	LifecycleState  string      `gorm:"size:16;not null;default:'active'" json:"lifecycle_state"`
 }
 
 func (CodeSet) TableName() string { return "standard.code_sets" }

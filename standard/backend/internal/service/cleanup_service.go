@@ -399,15 +399,20 @@ func (s *CleanupService) logicalCleanup(ctx context.Context, candidates standard
 		stats.DeprecatedGlossaries++
 	}
 	for _, element := range candidates.elements {
-		if element.CurrentRevisionID == nil {
+		var publishedCount int64
+		if err := s.db.WithContext(ctx).Model(&models.ElementRevision{}).Where("element_id = ? AND status = ?", element.ID, models.RevisionStatusPublished).Count(&publishedCount).Error; err != nil {
+			stats.Errors = append(stats.Errors, fmt.Sprintf("inspect element %d revisions failed: %v", element.ID, err))
+			continue
+		}
+		if publishedCount == 0 {
 			stats.SkippedItems++
 			continue
 		}
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if err := tx.Model(&models.ElementRevision{}).Where("id = ? AND element_id = ? AND status = ?", *element.CurrentRevisionID, element.ID, models.RevisionStatusPublished).Update("status", models.RevisionStatusWithdrawn).Error; err != nil {
+			if err := tx.Model(&models.ElementRevision{}).Where("element_id = ? AND status = ?", element.ID, models.RevisionStatusPublished).Update("status", models.RevisionStatusWithdrawn).Error; err != nil {
 				return err
 			}
-			return tx.Model(&models.Element{}).Where("id = ?", element.ID).Updates(map[string]interface{}{"current_revision_id": nil, "version": gorm.Expr("version + 1")}).Error
+			return tx.Model(&models.Element{}).Where("id = ?", element.ID).Update("version", gorm.Expr("version + 1")).Error
 		}); err != nil {
 			stats.Errors = append(stats.Errors, fmt.Sprintf("deprecate element %d failed: %v", element.ID, err))
 			continue
